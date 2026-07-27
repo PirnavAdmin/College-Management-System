@@ -1,0 +1,37 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+.product-page { min-height: 100vh; background: #f3f0e9; color: #19342c; font-family: 'DM Sans', sans-serif; }
+.product-hero { min-height: 330px; padding: 56px clamp(24px, 7vw, 108px); display: flex; justify-content: space-between; align-items: end; background: #19342c; color: #f3f0e9; box-sizing: border-box; }
+.product-hero h1, .catalog h2, .product-card h3 { font-family: 'Space Grotesk', sans-serif; letter-spacing: 0; }
+.product-hero h1 { max-width: 680px; margin: 16px 0 12px; font-size: clamp(3rem, 7vw, 6.6rem); line-height: .91; font-weight: 600; color: #f3f0e9; }
+.eyebrow { margin: 0; color: #df8d59; font-size: .72rem; font-weight: 700; letter-spacing: .12em; }
+.hero-copy { max-width: 430px; margin: 0; color: #b8c9bf; font-size: 1.05rem; }
+.hero-mark { width: 88px; height: 88px; display: grid; place-items: center; border: 1px solid #df8d59; border-radius: 50%; color: #df8d59; font-family: 'Space Grotesk', sans-serif; font-size: 1.25rem; transform: rotate(-12deg); }
+.catalog { max-width: 1280px; margin: 0 auto; padding: 58px clamp(24px, 7vw, 108px) 80px; }
+.catalog-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin-bottom: 28px; }
+.catalog h2 { margin: 8px 0 0; color: #19342c; font-size: clamp(2rem, 4vw, 3.8rem); line-height: .98; }
+.result-count { color: #718079; font-size: .9rem; }
+.product-controls { display: grid; grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(150px, 1fr)); gap: 12px; padding: 14px; background: #e7e1d6; border: 1px solid #d4cbbb; }
+.product-controls label { display: flex; flex-direction: column; gap: 6px; color: #718079; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.product-controls input, .product-controls select { min-width: 0; padding: 11px 12px; border: 1px solid #c7bdad; border-radius: 0; background: #f8f5ef; color: #19342c; font: inherit; font-size: .9rem; text-transform: none; letter-spacing: 0; outline-color: #df8d59; }
+.product-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 30px; }
+.product-card { overflow: hidden; background: #faf8f3; border: 1px solid #d8d0c4; transition: transform .2s ease, box-shadow .2s ease; }
+.product-card:hover { transform: translateY(-4px); box-shadow: 0 16px 30px rgba(25, 52, 44, .12); }
+.product-image-wrap { position: relative; aspect-ratio: 1.25; overflow: hidden; background: #ded8cc; }
+.product-image-wrap img { width: 100%; height: 100%; display: block; object-fit: cover; transition: transform .4s ease; }
+.product-card:hover img { transform: scale(1.04); }
+.product-image-wrap span { position: absolute; left: 12px; bottom: 12px; padding: 5px 8px; background: #f3f0e9; color: #19342c; font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.product-info { padding: 18px; }
+.product-title-row { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.product-title-row h3 { margin: 0; color: #19342c; font-size: 1.15rem; font-weight: 600; }
+.product-title-row strong { color: #df6f3d; font-size: 1rem; white-space: nowrap; }
+.product-meta { display: flex; justify-content: space-between; margin-top: 18px; color: #718079; font-size: .78rem; }
+.product-meta span:first-child { color: #c56a3b; }
+.pagination { display: flex; justify-content: center; gap: 8px; margin-top: 40px; }
+.pagination button { width: 38px; height: 38px; border: 1px solid #c7bdad; background: transparent; color: #19342c; cursor: pointer; font: inherit; }
+.pagination button:hover:not(:disabled), .pagination button.active { border-color: #19342c; background: #19342c; color: #f3f0e9; }
+.pagination button:disabled { cursor: not-allowed; opacity: .35; }
+.loading-state, .empty-state { min-height: 280px; display: flex; justify-content: center; align-items: center; gap: 12px; color: #718079; }
+.spinner { width: 22px; height: 22px; display: inline-block; border: 3px solid #c7bdad; border-top-color: #df6f3d; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 800px) { .product-hero { min-height: 390px; align-items: start; flex-direction: column; gap: 36px; } .hero-mark { align-self: end; } .product-controls, .product-grid { grid-template-columns: 1fr; } .catalog-heading { align-items: start; flex-direction: column; } }

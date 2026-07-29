@@ -1,15 +1,20 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout";
+import { resetPassword } from "../api/authApi";
 
 function ResetPassword() {
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const email = location.state?.email;
+  const otp = location.state?.otp;
 
   const [form, setForm] = useState({
     password:"",
     confirmPassword:"",
   });
+  const [loading, setLoading] = useState(false);
 
   const handleChange=(e)=>{
 
@@ -20,9 +25,25 @@ function ResetPassword() {
 
   };
 
-  const handleSubmit=(e)=>{
+  const handleSubmit=async(e)=>{
 
     e.preventDefault();
+
+    if (!email || !otp) {
+      alert("Password reset details are missing. Please verify OTP again.");
+      navigate("/forgot-password");
+      return;
+    }
+
+    if (!form.password || !form.confirmPassword) {
+      alert("Please fill all required fields");
+      return;
+    }
+
+    if (form.password.length < 6) {
+      alert("Password must be at least 6 characters long");
+      return;
+    }
 
     if(form.password!==form.confirmPassword){
 
@@ -31,9 +52,23 @@ function ResetPassword() {
 
     }
 
-    alert("Password Reset Successfully");
+    try {
+      setLoading(true);
 
-    navigate("/login");
+      const response = await resetPassword({
+        email,
+        otp,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+      });
+
+      alert(response.data?.message || "Password Reset Successfully");
+      navigate("/");
+    } catch (error) {
+      alert(error.response?.data?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
 
   };
 
@@ -87,8 +122,9 @@ function ResetPassword() {
         <button
           className="auth-btn"
           type="submit"
+          disabled={loading}
         >
-          Reset Password
+          {loading ? "Resetting..." : "Reset Password"}
         </button>
 
       </form>

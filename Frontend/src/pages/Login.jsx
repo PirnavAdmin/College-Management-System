@@ -9,6 +9,7 @@ import {
 } from "react-icons/fa";
 
 import AuthLayout from "../components/AuthLayout";
+import { loginUser } from "../api/authApi";
 
 function Login() {
 
@@ -21,6 +22,7 @@ function Login() {
     password: "",
     remember: false,
   });
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
 
@@ -33,16 +35,43 @@ function Login() {
 
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
 
     e.preventDefault();
 
-    console.log(loginData);
+    if (!loginData.email.trim() || !loginData.password) {
+      alert("Please enter Email/Mobile and Password");
+      return;
+    }
 
-    alert("Login Successful");
+    try {
+      setLoading(true);
 
-    // Later this will go to Dashboard
-    navigate("/dashboard");
+      const response = await loginUser({
+        emailOrMobile: loginData.email,
+        password: loginData.password,
+      });
+
+      const data = response.data || {};
+      const token =
+        data.token || data.jwt || data.accessToken || data.data?.token;
+      const user = data.user || data.userInfo || data.data?.user;
+
+      if (token) {
+        localStorage.setItem("token", token);
+      }
+
+      if (user) {
+        localStorage.setItem("user", JSON.stringify(user));
+      }
+
+      alert(data.message || "Login Successful");
+      navigate("/");
+    } catch (error) {
+      alert(error.response?.data?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
 
   };
 
@@ -138,9 +167,10 @@ function Login() {
         <button
           className="auth-btn"
           type="submit"
+          disabled={loading}
         >
 
-          Login
+          {loading ? "Logging in..." : "Login"}
 
         </button>
 

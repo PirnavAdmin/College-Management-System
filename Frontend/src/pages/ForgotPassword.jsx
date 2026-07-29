@@ -1,21 +1,46 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/AuthLayout";
+import { forgotPassword } from "../api/authApi";
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function ForgotPassword() {
   const navigate = useNavigate();
   const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!value.trim()) {
-      alert("Please enter your Email or Mobile Number");
+    const email = value.trim();
+
+    if (!email) {
+      alert("Please enter your Email");
       return;
     }
 
-    alert("OTP Sent Successfully!");
-    navigate("/verify-otp");
+    if (!emailRegex.test(email)) {
+      alert("Please enter a valid email address");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await forgotPassword({ email });
+
+      alert(response.data?.message || "OTP Sent Successfully!");
+      navigate("/verify-otp", {
+        state: {
+          email,
+        },
+      });
+    } catch (error) {
+      alert(error.response?.data?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -39,8 +64,8 @@ function ForgotPassword() {
           </div>
         </div>
 
-        <button className="auth-btn" type="submit">
-          Send OTP
+        <button className="auth-btn" type="submit" disabled={loading}>
+          {loading ? "Sending..." : "Send OTP"}
         </button>
 
         <div className="bottom-link">

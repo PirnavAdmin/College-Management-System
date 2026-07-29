@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   FaUser,
   FaEnvelope,
@@ -9,8 +9,13 @@ import {
 } from "react-icons/fa";
 
 import AuthLayout from "../components/AuthLayout";
+import { registerUser } from "../api/authApi";
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function Register() {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState({
     role: "",
     fullName: "",
@@ -19,6 +24,7 @@ function Register() {
     password: "",
     confirmPassword: "",
   });
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -29,16 +35,55 @@ function Register() {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (
+      !formData.role.trim() ||
+      !formData.fullName.trim() ||
+      !formData.email.trim() ||
+      !formData.mobile.trim() ||
+      !formData.password ||
+      !formData.confirmPassword
+    ) {
+      alert("Please fill all required fields");
+      return;
+    }
+
+    if (!emailRegex.test(formData.email)) {
+      alert("Please enter a valid email address");
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      alert("Password must be at least 6 characters long");
+      return;
+    }
 
     if (formData.password !== formData.confirmPassword) {
       alert("Passwords do not match!");
       return;
     }
 
-    console.log(formData);
-    alert("Registration Successful!");
+    try {
+      setLoading(true);
+
+      await registerUser({
+        role: formData.role,
+        fullName: formData.fullName,
+        email: formData.email,
+        mobileNumber: formData.mobile,
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+      });
+
+      alert("Registration Successful!");
+      navigate("/");
+    } catch (error) {
+      alert(error.response?.data?.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -160,8 +205,8 @@ function Register() {
           </div>
         </div>
 
-        <button type="submit" className="auth-btn">
-          Create Account
+        <button type="submit" className="auth-btn" disabled={loading}>
+          {loading ? "Submitting..." : "Create Account"}
         </button>
 
         <div className="bottom-link">

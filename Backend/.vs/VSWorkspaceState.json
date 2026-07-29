@@ -1,0 +1,12 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\src",
+    "\\src\\CMS.API",
+    "\\src\\CMS.API\\DTO",
+    "\\src\\CMS.API\\Models",
+    "\\src\\CMS.API\\Repositories"
+  ],
+  "SelectedNode": "\\src\\CMS.API\\DTO",
+  "PreviewInSolutionExplorer": false
+}

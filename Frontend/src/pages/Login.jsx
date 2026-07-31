@@ -66,7 +66,7 @@ function Login() {
       }
 
       alert(data.message || "Login Successful");
-      navigate("/");
+navigate("/dashboard");
     } catch (error) {
       alert(error.response?.data?.message || "Something went wrong");
     } finally {

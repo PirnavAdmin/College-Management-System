@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getSubjects } from "../../api/authApi";
 import { Link, useNavigate } from "react-router-dom";
 import {
   FiBookOpen,
@@ -19,112 +20,16 @@ import {
   FiBell,
 } from "react-icons/fi";
 
+
 import "./SubjectManagement.css";
 
 const BOARDS = ["State Board", "CBSE", "ICSE"];
 const GROUPS = ["MPC", "BiPC", "CEC", "MEC", "HEC"];
 const ACADEMIC_LEVELS = ["First Year", "Second Year"];
 const SUBJECT_TYPES = ["Theory", "Practical", "Language", "Elective"];
-const STATUSES = ["Active", "Inactive"];
 
-const SUBJECTS = [
-  {
-    id: 1,
-    name: "English",
-    code: "English101",
-    board: "State Board",
-    group: "MPC",
-    level: "First Year",
-    type: "Language",
-    maximumMarks: 100,
-    passingMarks: 35,
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Mathematics IA",
-    code: "MATH101",
-    board: "State Board",
-    group: "MPC",
-    level: "First Year",
-    type: "Theory",
-    maximumMarks: 100,
-    passingMarks: 35,
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Physics",
-    code: "PHY101",
-    board: "State Board",
-    group: "MPC",
-    level: "First Year",
-    type: "Theory",
-    maximumMarks: 100,
-    passingMarks: 35,
-    status: "Active",
-  },
-  {
-    id: 4,
-    name: "Chemistry",
-    code: "CHEM101",
-    board: "State Board",
-    group: "MPC",
-    level: "First Year",
-    type: "Practical",
-    maximumMarks: 100,
-    passingMarks: 35,
-    status: "Inactive",
-  },
-  {
-    id: 5,
-    name: "Botany",
-    code: "BOT201",
-    board: "CBSE",
-    group: "BiPC",
-    level: "Second Year",
-    type: "Theory",
-    maximumMarks: 60,
-    passingMarks: 21,
-    status: "Active",
-  },
-  {
-    id: 6,
-    name: "Zoology",
-    code: "ZOO201",
-    board: "CBSE",
-    group: "BiPC",
-    level: "Second Year",
-    type: "Practical",
-    maximumMarks: 60,
-    passingMarks: 21,
-    status: "Active",
-  },
-  {
-    id: 7,
-    name: "Economics",
-    code: "ECO101",
-    board: "ICSE",
-    group: "CEC",
-    level: "First Year",
-    type: "Theory",
-    maximumMarks: 100,
-    passingMarks: 35,
-    status: "Inactive",
-  },
-  {
-    id: 8,
-    name: "Commerce",
-    code: "COM201",
-    board: "ICSE",
-    group: "MEC",
-    level: "Second Year",
-    type: "Elective",
-    maximumMarks: 100,
-    passingMarks: 35,
-    status: "Active",
-  },
-];
+
+
 
 const INITIAL_FILTERS = {
   search: "",
@@ -132,12 +37,61 @@ const INITIAL_FILTERS = {
   group: "",
   level: "",
   type: "",
-  status: "",
 };
 
 export default function SubjectList() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [subjects, setSubjects] = useState([]);
+
+  /*useEffect(() => {
+  async function fetchSubjects() {
+    try {
+      const response = await getSubjects();
+      console.log(response.data);
+      setSubjects(response.data);
+    } catch (error) {
+      console.error("Error loading subjects:", error);
+    }
+  }
+
+  fetchSubjects();
+}, []);*/
+useEffect(() => {
+  async function fetchSubjects() {
+    try {
+      console.log("Calling GET /api/Subjects...");
+
+      const response = await getSubjects();
+
+      console.log("API Success");
+      console.log("Full Response:", response);
+      console.log("Response Data:", response.data);
+
+      setSubjects(response.data);
+
+      console.log("Subjects State:", response.data);
+    } catch (error) {
+      console.log("API Failed");
+
+      console.error("Error Object:", error);
+
+      if (error.response) {
+        console.log("Status:", error.response.status);
+        console.log("Response:", error.response.data);
+      } else if (error.request) {
+        console.log("Request was sent but no response received.");
+      } else {
+        console.log("Error Message:", error.message);
+      }
+    }
+  }
+
+  fetchSubjects();
+}, []);
+
+
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
@@ -154,27 +108,27 @@ export default function SubjectList() {
 
   const filtered = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
-    return SUBJECTS.filter((subject) => {
+    return subjects.filter((subject) => {
       const matchesTerm =
         term === "" ||
-        subject.name.toLowerCase().includes(term) ||
-        subject.code.toLowerCase().includes(term);
+        subject.subjectName.toLowerCase().includes(term) ||
+        subject.subjectCode.toLowerCase().includes(term)
       return (
-        matchesTerm &&
-        (filters.board === "" || subject.board === filters.board) &&
-        (filters.group === "" || subject.group === filters.group) &&
-        (filters.level === "" || subject.level === filters.level) &&
-        (filters.type === "" || subject.type === filters.type) &&
-        (filters.status === "" || subject.status === filters.status)
-      );
+  matchesTerm &&
+  (filters.board === "" || subject.board === filters.board) &&
+  (filters.group === "" || subject.group === filters.group) &&
+  (filters.level === "" ||
+    subject.academicLevel === filters.level) &&
+  (filters.type === "" ||
+    subject.subjectType === filters.type)
+);
     });
-  }, [filters]);
+  }, [filters, subjects]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * rowsPerPage;
   const rows = filtered.slice(startIndex, startIndex + rowsPerPage);
-  const activeCount = filtered.filter((s) => s.status === "Active").length;
 
   const goToAddSubject = () => {
   navigate("/subjects/add");
@@ -286,19 +240,11 @@ export default function SubjectList() {
                 <FiBookOpen size={18} />
               </span>
               <div>
-                <b>{SUBJECTS.length}</b>
+                <b>{subjects.length}</b>
                 <span>Total Subjects</span>
               </div>
             </div>
-            <div className="sm-card sm-stat">
-              <span className="sm-stat-icon">
-                <FiLayers size={18} />
-              </span>
-              <div>
-                <b>{activeCount}</b>
-                <span>Active (filtered)</span>
-              </div>
-            </div>
+            
             <div className="sm-card sm-stat">
               <span className="sm-stat-icon">
                 <FiGrid size={18} />
@@ -396,22 +342,7 @@ export default function SubjectList() {
                   ))}
                 </select>
               </div>
-              <div className="sm-field">
-                <label htmlFor="filter-status">Status</label>
-                <select
-                  id="filter-status"
-                  className="sm-select"
-                  value={filters.status}
-                  onChange={(event) => updateFilter("status", event.target.value)}
-                >
-                  <option value="">All Status</option>
-                  {STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {status}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              
             </div>
           </section>
 
@@ -442,36 +373,31 @@ export default function SubjectList() {
                         <th>Subject Type</th>
                         <th>Maximum Marks</th>
                         <th>Passing Marks</th>
-                        <th>Status</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((subject) => (
                         <tr key={subject.id}>
-                          <td className="sm-strong">{subject.name}</td>
+                          
+
+                          <td className="sm-strong">{subject.subjectName}</td>
+
                           <td>
-                            <span className="sm-code">{subject.code}</span>
-                          </td>
+  <span className="sm-code">
+    {subject.subjectCode}
+  </span>
+</td>
                           <td>{subject.board}</td>
                           <td>{subject.group}</td>
-                          <td>{subject.level}</td>
+                         <td>{subject.academicLevel}</td>
                           <td>
-                            <span className="sm-badge sm-badge-blue">{subject.type}</span>
-                          </td>
-                          <td>{subject.maximumMarks}</td>
+  <span className="sm-badge sm-badge-blue">
+    {subject.subjectType}
+  </span>
+</td>
+                         <td>{subject.totalMarks}</td>
                           <td>{subject.passingMarks}</td>
-                          <td>
-                            <span
-                              className={
-                                subject.status === "Active"
-                                  ? "sm-badge sm-badge-green"
-                                  : "sm-badge sm-badge-gray"
-                              }
-                            >
-                              {subject.status}
-                            </span>
-                          </td>
                           <td>
                             <div className="sm-row-actions">
                               <button

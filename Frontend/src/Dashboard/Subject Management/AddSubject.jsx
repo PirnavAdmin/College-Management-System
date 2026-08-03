@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { addSubject } from "../../api/authApi";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
@@ -105,92 +106,77 @@ export default function AddSubject() {
     setErrors({});
   };
 
-  const handleSave = (event) => {
+  const handleSave = async (event) => {
   event.preventDefault();
 
   if (!validate()) return;
 
-
-  const oldSubjects =
-    JSON.parse(localStorage.getItem("subjects")) || [];
-
-
-  const newSubject = {
-    id: Date.now(),
-
+  const subjectData = {
     board: form.board,
     group: form.group,
-    level: form.level,
-
-    name: form.name,
-    code: form.code,
-
-    type: form.subjectTypes.join(", "),
-
+    academicLevel: form.level,
+    subjectName: form.name,
+    subjectCode: form.code,
+    subjectType: form.subjectTypes.join(", "),
+    theory: form.subjectTypes.includes("Theory"),
+    practical: form.subjectTypes.includes("Practical"),
+    language: form.subjectTypes.includes("Language"),
+    elective: form.subjectTypes.includes("Elective"),
     internalMarks: Number(form.internalMarks),
     practicalMarks: Number(form.practicalMarks),
     externalMarks: Number(form.externalMarks),
-
-    maximumMarks: totalMarks,
+    totalMarks: totalMarks,
     passingMarks: Number(form.passingMarks),
-
-    status: form.isActive ? "Active" : "Inactive"
   };
 
+  try {
+    await addSubject(subjectData);
 
-  localStorage.setItem(
-    "subjects",
-    JSON.stringify([
-      ...oldSubjects,
-      newSubject
-    ])
-  );
+    alert("Subject Saved Successfully");
 
-
-  alert("Subject Saved Successfully");
-
-
-  navigate("/subjects");
+    navigate("/subjects");
+  } catch (error) {
+    console.error(error);
+    alert("Failed to save subject");
+  }
 };
 
-  const handleSaveAndAddAnother = () => {
 
+const handleSaveAndAddAnother = async () => {
   if (!validate()) return;
 
-  const oldSubjects =
-    JSON.parse(localStorage.getItem("subjects")) || [];
-
-  const newSubject = {
-    id: Date.now(),
+  const subjectData = {
     board: form.board,
     group: form.group,
-    level: form.level,
-    name: form.name,
-    code: form.code,
-    type: form.subjectTypes.join(", "),
+    academicLevel: form.level,
+    subjectName: form.name,
+    subjectCode: form.code,
+    subjectType: form.subjectTypes.join(", "),
+    theory: form.subjectTypes.includes("Theory"),
+    practical: form.subjectTypes.includes("Practical"),
+    language: form.subjectTypes.includes("Language"),
+    elective: form.subjectTypes.includes("Elective"),
     internalMarks: Number(form.internalMarks),
     practicalMarks: Number(form.practicalMarks),
     externalMarks: Number(form.externalMarks),
-    maximumMarks: totalMarks,
+    totalMarks: totalMarks,
     passingMarks: Number(form.passingMarks),
-    status: form.isActive ? "Active" : "Inactive"
   };
 
+  try {
+    await addSubject(subjectData);
 
-  localStorage.setItem(
-    "subjects",
-    JSON.stringify([...oldSubjects, newSubject])
-  );
+    setMessage("Subject saved. You can add another one.");
 
+    resetForm();
 
-  setMessage("Subject saved. You can add another one.");
-
-  resetForm();
-
-  window.setTimeout(() => {
-    setMessage("");
-  },3000);
-
+    setTimeout(() => {
+      setMessage("");
+    }, 3000);
+  } catch (error) {
+    console.error(error);
+    alert("Failed to save subject");
+  }
 };
 
   const handleCancel = () => {

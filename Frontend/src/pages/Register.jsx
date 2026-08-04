@@ -12,6 +12,7 @@ import AuthLayout from "../components/AuthLayout";
 import { registerUser } from "../api/authApi";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const mobileRegex = /^[0-9]{10}$/;
 
 function Register() {
   const navigate = useNavigate();
@@ -27,13 +28,23 @@ function Register() {
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+  const { name, value } = e.target;
+
+  if (name === "mobile") {
+    const onlyDigits = value.replace(/\D/g, "").slice(0, 10);
 
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      mobile: onlyDigits,
     }));
-  };
+    return;
+  }
+
+  setFormData((prev) => ({
+    ...prev,
+    [name]: value,
+  }));
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -54,6 +65,10 @@ function Register() {
       alert("Please enter a valid email address");
       return;
     }
+    if (!mobileRegex.test(formData.mobile)) {
+  alert("Mobile number must be exactly 10 digits");
+  return;
+}
 
     if (formData.password.length < 6) {
       alert("Password must be at least 6 characters long");
@@ -159,13 +174,14 @@ function Register() {
             <FaPhone className="input-icon" />
 
             <input
-              type="tel"
-              name="mobile"
-              placeholder="Enter Mobile Number"
-              value={formData.mobile}
-              onChange={handleChange}
-              required
-            />
+  type="tel"
+  name="mobile"
+  placeholder="Enter Mobile Number"
+  value={formData.mobile}
+  onChange={handleChange}
+  maxLength={10}
+  required
+/>
           </div>
         </div>
 

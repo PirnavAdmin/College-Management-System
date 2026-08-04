@@ -22,13 +22,14 @@ export const getSubjects = () =>
 export const addSubject = (data) =>
   api.post("/api/Subjects", data);
 
+// Update subject
+export const updateSubject = (id, data) =>
+  api.put(`/api/Subjects/${id}`, data);
+
 // Get subject by ID
 export const getSubjectById = (id) =>
   api.get(`/api/Subjects/${id}`);
 
-// Update subject
-export const updateSubject = (id, data) =>
-  api.put(`/api/Subjects/${id}`, data);
 
 // Delete subject
 export const deleteSubject = (id) =>

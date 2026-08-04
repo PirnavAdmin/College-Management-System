@@ -27,7 +27,14 @@ namespace CollegeManagement.API.Middleware
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An unhandled exception occurred during HTTP request processing at {Path}.", context.Request.Path);
+                if (ex is NotFoundException || ex is ConflictException || ex is ValidationException || ex is UnauthorizedException || ex is ForbiddenException)
+                {
+                    _logger.LogWarning("A client error occurred during HTTP request processing at {Path}: {Message}", context.Request.Path, ex.Message);
+                }
+                else
+                {
+                    _logger.LogError(ex, "An unhandled exception occurred during HTTP request processing at {Path}.", context.Request.Path);
+                }
                 await HandleExceptionAsync(context, ex);
             }
         }
@@ -48,7 +55,7 @@ namespace CollegeManagement.API.Middleware
 
             ForbiddenException => (HttpStatusCode.Forbidden, exception.Message),
 
-            _ => (HttpStatusCode.InternalServerError, "An unexpected server error occurred.")   
+            _ => (HttpStatusCode.InternalServerError, exception.Message)
         };
 
             context.Response.StatusCode = (int)statusCode;

@@ -1,9 +1,6 @@
 using CollegeManagement.API.Data;
 using CollegeManagement.API.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace CollegeManagement.API.Repositories
 {
@@ -22,7 +19,7 @@ namespace CollegeManagement.API.Repositories
         public async Task<IEnumerable<Subject>> GetAllAsync()
         {
             return await _context.Subjects
-                .FromSqlRaw("EXEC sp_GetAllSubjects")
+                .FromSqlRaw("CALL sp_GetAllSubjects()")
                 .AsNoTracking()
                 .ToListAsync();
         }
@@ -33,7 +30,7 @@ namespace CollegeManagement.API.Repositories
         public async Task<Subject?> GetByIdAsync(int subjectId)
         {
             var result = await _context.Subjects
-                .FromSqlInterpolated($"EXEC sp_GetSubjectById {subjectId}")
+                .FromSqlInterpolated($"CALL sp_GetSubjectById({subjectId})")
                 .AsNoTracking()
                 .ToListAsync();
 
@@ -47,7 +44,7 @@ namespace CollegeManagement.API.Repositories
         {
             var result = await _context.Subjects
                 .FromSqlInterpolated($@"
-EXEC sp_AddSubject
+CALL sp_AddSubject(
     {subject.Board},
     {subject.Group},
     {subject.AcademicLevel},
@@ -62,7 +59,8 @@ EXEC sp_AddSubject
     {subject.PracticalMarks},
     {subject.ExternalMarks},
     {subject.TotalMarks},
-    {subject.PassingMarks}")
+    {subject.PassingMarks}
+)")
                 .ToListAsync();
 
             return result.First();
@@ -75,7 +73,7 @@ EXEC sp_AddSubject
         {
             var result = await _context.Subjects
                 .FromSqlInterpolated($@"
-EXEC sp_UpdateSubject
+CALL sp_UpdateSubject(
     {subjectId},
     {subject.Board},
     {subject.Group},
@@ -91,7 +89,8 @@ EXEC sp_UpdateSubject
     {subject.PracticalMarks},
     {subject.ExternalMarks},
     {subject.TotalMarks},
-    {subject.PassingMarks}")
+    {subject.PassingMarks}
+)")
                 .ToListAsync();
 
             return result.FirstOrDefault();
@@ -103,7 +102,7 @@ EXEC sp_UpdateSubject
         public async Task<bool> DeleteAsync(int subjectId)
         {
             await _context.Database.ExecuteSqlInterpolatedAsync(
-                $"EXEC sp_DeleteSubject {subjectId}");
+                $"CALL sp_DeleteSubject({subjectId})");
 
             return true;
         }
@@ -114,7 +113,7 @@ EXEC sp_UpdateSubject
         public async Task<IEnumerable<Subject>> GetByGroupAsync(string group)
         {
             return await _context.Subjects
-                .FromSqlInterpolated($"EXEC sp_GetSubjectsByGroup {group}")
+                .FromSqlInterpolated($"CALL sp_GetSubjectsByGroup({group})")
                 .AsNoTracking()
                 .ToListAsync();
         }

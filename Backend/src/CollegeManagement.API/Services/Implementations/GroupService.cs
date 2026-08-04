@@ -13,26 +13,7 @@ namespace CollegeManagement.API.Services
         }
 
 
-        public async Task<PagedGroupResponse> GetAllAsync(
-            int pageNumber,
-            int pageSize,
-            string? search,
-            string? board,
-            int? academicYearId,
-            string? academicLevel,
-            bool? isActive)
-        {
-            return await _groupRepository.GetAllAsync(
-                pageNumber,
-                pageSize,
-                search,
-                board,
-                academicYearId,
-                academicLevel,
-                isActive
-            );
-        }
-
+      
 
         public async Task<GroupResponse?> GetByIdAsync(int groupId)
         {

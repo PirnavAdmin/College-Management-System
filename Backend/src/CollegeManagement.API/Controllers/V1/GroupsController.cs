@@ -1,7 +1,8 @@
 using CollegeManagement.API.DTOs.Groups;
 using CollegeManagement.API.Repositories;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
+using CollegeManagement.API.Exceptions;
+using MySqlConnector;
 
 namespace CollegeManagement.API.Controllers
 {
@@ -18,47 +19,18 @@ namespace CollegeManagement.API.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetGroups(
-            [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 20,
-            [FromQuery] string? search = null,
-            [FromQuery] string? board = null,
-            [FromQuery] int? academicYearId = null,
-            [FromQuery] string? academicLevel = null,
-            [FromQuery] bool? isActive = null)
+        public async Task<IActionResult> GetGroups()
         {
-            if (pageNumber < 1)
-            {
-                pageNumber = 1;
-            }
-
-            if (pageSize < 1 || pageSize > 100)
-            {
-                pageSize = 20;
-            }
-
-            var result = await _groupRepository.GetAllAsync(
-                pageNumber,
-                pageSize,
-                search,
-                board,
-                academicYearId,
-                academicLevel,
-                isActive);
-
+            var result = await _groupRepository.GetAllAsync();
             return Ok(result);
         }
-
         [HttpGet("{groupId:int}")]
         public async Task<IActionResult> GetGroup(
             int groupId)
         {
             if (groupId <= 0)
             {
-                return BadRequest(new
-                {
-                    message = "Valid GroupId is required"
-                });
+                throw new ValidationException("Valid GroupId is required");
             }
 
             var group =
@@ -66,10 +38,7 @@ namespace CollegeManagement.API.Controllers
 
             if (group == null)
             {
-                return NotFound(new
-                {
-                    message = "Group not found"
-                });
+                throw new NotFoundException("Group not found");
             }
 
             return Ok(group);
@@ -81,10 +50,7 @@ namespace CollegeManagement.API.Controllers
         {
             if (string.IsNullOrWhiteSpace(board))
             {
-                return BadRequest(new
-                {
-                    message = "Board is required"
-                });
+                throw new ValidationException("Board is required");
             }
 
             var groups =
@@ -119,12 +85,10 @@ namespace CollegeManagement.API.Controllers
                         data = group
                     });
             }
-            catch (SqlException ex)
+            catch (MySqlException ex)
             {
-                return BadRequest(new
-                {
-                    message = GetSqlErrorMessage(ex)
-                });
+                HandleException(ex);
+                throw;
             }
         }
 
@@ -135,10 +99,7 @@ namespace CollegeManagement.API.Controllers
         {
             if (groupId <= 0)
             {
-                return BadRequest(new
-                {
-                    message = "Valid GroupId is required"
-                });
+                throw new ValidationException("Valid GroupId is required");
             }
 
             if (!ModelState.IsValid)
@@ -155,10 +116,7 @@ namespace CollegeManagement.API.Controllers
 
                 if (group == null)
                 {
-                    return NotFound(new
-                    {
-                        message = "Group not found"
-                    });
+                    throw new NotFoundException("Group not found");
                 }
 
                 return Ok(new
@@ -167,12 +125,10 @@ namespace CollegeManagement.API.Controllers
                     data = group
                 });
             }
-            catch (SqlException ex)
+            catch (MySqlException ex)
             {
-                return BadRequest(new
-                {
-                    message = GetSqlErrorMessage(ex)
-                });
+                HandleException(ex);
+                throw;
             }
         }
 
@@ -182,10 +138,7 @@ namespace CollegeManagement.API.Controllers
         {
             if (groupId <= 0)
             {
-                return BadRequest(new
-                {
-                    message = "Valid GroupId is required"
-                });
+                throw new ValidationException("Valid GroupId is required");
             }
 
             try
@@ -195,10 +148,7 @@ namespace CollegeManagement.API.Controllers
 
                 if (!deleted)
                 {
-                    return NotFound(new
-                    {
-                        message = "Group not found"
-                    });
+                    throw new NotFoundException("Group not found");
                 }
 
                 return Ok(new
@@ -206,12 +156,10 @@ namespace CollegeManagement.API.Controllers
                     message = "Group deleted successfully"
                 });
             }
-            catch (SqlException ex)
+            catch (MySqlException ex)
             {
-                return BadRequest(new
-                {
-                    message = GetSqlErrorMessage(ex)
-                });
+                HandleException(ex);
+                throw;
             }
         }
 
@@ -222,10 +170,7 @@ namespace CollegeManagement.API.Controllers
         {
             if (string.IsNullOrWhiteSpace(groupCode))
             {
-                return BadRequest(new
-                {
-                    message = "Group code is required"
-                });
+                throw new ValidationException("Group code is required");
             }
 
             var exists =
@@ -241,20 +186,18 @@ namespace CollegeManagement.API.Controllers
             });
         }
 
-        private static string GetSqlErrorMessage(
-            SqlException exception)
+        private static void HandleException(MySqlException exception)
         {
-            return exception.Number switch
+            var message = exception.Message;
+            if (message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
             {
-                50001 => "Board is required",
-                50002 => "Valid AcademicYearId is required",
-                50003 => "Academic level is required",
-                50004 => "Group name is required",
-                50005 => "Group code is required",
-                50006 => "Group code already exists",
-                50007 => "Group not found",
-                _ => exception.Message
-            };
+                throw new ConflictException(message);
+            }
+            if (message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new NotFoundException(message);
+            }
+            throw new ValidationException(message);
         }
     }
 }

@@ -40,10 +40,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173",
-                "https://sterile-retorted-tightness.ngrok-free.dev")
+            .SetIsOriginAllowed(origin => true)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -280,6 +277,8 @@ using (var scope = app.Services.CreateScope())
             services.GetRequiredService<AppDbContext>();
 
         context.Database.Migrate();
+
+       
     }
     catch (Exception ex)
     {

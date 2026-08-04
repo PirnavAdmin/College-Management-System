@@ -4,17 +4,11 @@ namespace CollegeManagement.API.Repositories
 {
     public interface IGroupRepository
     {
-        Task<PagedGroupResponse> GetAllAsync(
-            int pageNumber,
-            int pageSize,
-            string? search,
-            string? board,
-            int? academicYearId,
-            string? academicLevel,
-            bool? isActive);
+        
 
         Task<GroupResponse?> GetByIdAsync(
             int groupId);
+        Task<List<GroupListItemDto>> GetAllAsync();
 
         Task<List<GroupListItemDto>> GetByBoardAsync(
             string board);

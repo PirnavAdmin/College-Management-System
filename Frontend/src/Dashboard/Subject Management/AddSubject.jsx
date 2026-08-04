@@ -1,24 +1,16 @@
-import { useMemo, useState } from "react";
-import { addSubject } from "../../api/authApi";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { addSubject, getSubjectById, updateSubject } from "../../api/authApi";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
 import {
-  FiBell,
   FiBookOpen,
   FiCheckCircle,
-  FiGrid,
   FiInfo,
   FiLayers,
-  FiMenu,
   FiPercent,
   FiPlus,
   FiRotateCcw,
-  FiSave,
-  FiSearch,
-  FiSettings,
   FiToggleRight,
-  FiUsers,
-  FiX,
 } from "react-icons/fi";
 
 import "./SubjectManagement.css";
@@ -49,14 +41,52 @@ function toNumber(value) {
 
 export default function AddSubject() {
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const location = useLocation();
+
+  const editMode = location.state?.editMode || false;
+  const subjectId = location.state?.subjectId || null;
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState("success");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (editMode && subjectId) {
+      async function fetchSubject() {
+        try {
+          const response = await getSubjectById(subjectId);
+
+          const data = response.data;
+
+          setForm({
+            board: data.board,
+            group: data.group,
+            level: data.academicLevel,
+            name: data.subjectName,
+            code: data.subjectCode,
+            subjectTypes: data.subjectType ? data.subjectType.split(", ") : [],
+            internalMarks: data.internalMarks,
+            practicalMarks: data.practicalMarks,
+            externalMarks: data.externalMarks,
+            passingMarks: data.passingMarks,
+            isActive: data.isActive ?? true,
+          });
+        } catch (error) {
+          console.error("Error loading subject:", error);
+          alert("Unable to load subject details");
+        }
+      }
+
+      fetchSubject();
+    }
+  }, [editMode, subjectId]);
 
   const totalMarks = useMemo(
     () =>
-      toNumber(form.internalMarks) + toNumber(form.practicalMarks) + toNumber(form.externalMarks),
+      toNumber(form.internalMarks) +
+      toNumber(form.practicalMarks) +
+      toNumber(form.externalMarks),
     [form.internalMarks, form.practicalMarks, form.externalMarks],
   );
   const maximumMarks = totalMarks;
@@ -78,6 +108,12 @@ export default function AddSubject() {
         ? prev.subjectTypes.filter((item) => item !== type)
         : [...prev.subjectTypes, type],
     }));
+    setErrors((prev) => {
+      if (!prev.subjectTypes) return prev;
+      const next = { ...prev };
+      delete next.subjectTypes;
+      return next;
+    });
   };
 
   const validate = () => {
@@ -86,16 +122,33 @@ export default function AddSubject() {
     if (!form.group) nextErrors.group = "Group is required";
     if (!form.level) nextErrors.level = "Academic level is required";
     if (!form.name.trim()) nextErrors.name = "Subject name is required";
-    else if (form.name.trim().length > 100) nextErrors.name = "Maximum 100 characters";
+    else if (form.name.trim().length > 100)
+      nextErrors.name = "Maximum 100 characters";
     if (!form.code.trim()) nextErrors.code = "Subject code is required";
-    else if (form.code.trim().length > 20) nextErrors.code = "Maximum 20 characters";
-    if (form.passingMarks === "") nextErrors.passingMarks = "Passing marks are required";
-    else if (toNumber(form.passingMarks) <= 0)
+    else if (form.code.trim().length > 20)
+      nextErrors.code = "Maximum 20 characters";
+    if (form.subjectTypes.length === 0)
+      nextErrors.subjectTypes = "Select at least one subject type";
+
+    const marks = [
+      ["internalMarks", form.internalMarks],
+      ["practicalMarks", form.practicalMarks],
+      ["externalMarks", form.externalMarks],
+    ];
+    marks.forEach(([key, value]) => {
+      if (value !== "" && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+        nextErrors[key] = "Marks must be a non-negative number";
+      }
+    });
+    if (form.passingMarks === "")
+      nextErrors.passingMarks = "Passing marks are required";
+    else if (!Number.isFinite(Number(form.passingMarks)) || Number(form.passingMarks) <= 0)
       nextErrors.passingMarks = "Passing marks must be greater than 0";
     else if (totalMarks > 0 && toNumber(form.passingMarks) > totalMarks)
       nextErrors.passingMarks = "Passing marks cannot exceed total marks";
     if (totalMarks <= 0)
-      nextErrors.totalMarks = "Total marks are required (enter internal / practical / external)";
+      nextErrors.totalMarks =
+        "Total marks are required (enter internal / practical / external)";
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -104,178 +157,116 @@ export default function AddSubject() {
   const resetForm = () => {
     setForm(EMPTY_FORM);
     setErrors({});
+    setMessage("");
+    setMessageType("success");
+  };
+
+  const saveSubject = async ({ addAnother = false } = {}) => {
+    if (isSaving || !validate()) return;
+
+    const subjectData = {
+      board: form.board,
+      group: form.group,
+      academicLevel: form.level,
+      subjectName: form.name.trim(),
+      subjectCode: form.code.trim(),
+      subjectType: form.subjectTypes.join(", "),
+      theory: form.subjectTypes.includes("Theory"),
+      practical: form.subjectTypes.includes("Practical"),
+      language: form.subjectTypes.includes("Language"),
+      elective: form.subjectTypes.includes("Elective"),
+      internalMarks: Number(form.internalMarks),
+      practicalMarks: Number(form.practicalMarks),
+      externalMarks: Number(form.externalMarks),
+      totalMarks: totalMarks,
+      passingMarks: Number(form.passingMarks),
+      isActive: form.isActive,
+    };
+
+    try {
+      setIsSaving(true);
+      setMessage("");
+      setMessageType("success");
+      if (editMode) {
+        await updateSubject(subjectId, subjectData);
+      } else {
+        await addSubject(subjectData);
+      }
+
+      if (addAnother) {
+        resetForm();
+        setMessageType("success");
+        setMessage("Subject saved. You can add another subject.");
+      } else {
+        navigate("/dashboard/subjects");
+      }
+    } catch (error) {
+      console.error(error);
+      const apiMessage = error.response?.data?.message;
+      setMessageType("error");
+      setMessage(
+        apiMessage || (editMode ? "Unable to update subject." : "Unable to save subject."),
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSave = async (event) => {
-  event.preventDefault();
-
-  if (!validate()) return;
-
-  const subjectData = {
-    board: form.board,
-    group: form.group,
-    academicLevel: form.level,
-    subjectName: form.name,
-    subjectCode: form.code,
-    subjectType: form.subjectTypes.join(", "),
-    theory: form.subjectTypes.includes("Theory"),
-    practical: form.subjectTypes.includes("Practical"),
-    language: form.subjectTypes.includes("Language"),
-    elective: form.subjectTypes.includes("Elective"),
-    internalMarks: Number(form.internalMarks),
-    practicalMarks: Number(form.practicalMarks),
-    externalMarks: Number(form.externalMarks),
-    totalMarks: totalMarks,
-    passingMarks: Number(form.passingMarks),
+    event.preventDefault();
+    await saveSubject();
   };
 
-  try {
-    await addSubject(subjectData);
-
-    alert("Subject Saved Successfully");
-
-    navigate("/subjects");
-  } catch (error) {
-    console.error(error);
-    alert("Failed to save subject");
-  }
-};
-
-
-const handleSaveAndAddAnother = async () => {
-  if (!validate()) return;
-
-  const subjectData = {
-    board: form.board,
-    group: form.group,
-    academicLevel: form.level,
-    subjectName: form.name,
-    subjectCode: form.code,
-    subjectType: form.subjectTypes.join(", "),
-    theory: form.subjectTypes.includes("Theory"),
-    practical: form.subjectTypes.includes("Practical"),
-    language: form.subjectTypes.includes("Language"),
-    elective: form.subjectTypes.includes("Elective"),
-    internalMarks: Number(form.internalMarks),
-    practicalMarks: Number(form.practicalMarks),
-    externalMarks: Number(form.externalMarks),
-    totalMarks: totalMarks,
-    passingMarks: Number(form.passingMarks),
+  const handleSaveAndAddAnother = async () => {
+    await saveSubject({ addAnother: true });
   };
-
-  try {
-    await addSubject(subjectData);
-
-    setMessage("Subject saved. You can add another one.");
-
-    resetForm();
-
-    setTimeout(() => {
-      setMessage("");
-    }, 3000);
-  } catch (error) {
-    console.error(error);
-    alert("Failed to save subject");
-  }
-};
 
   const handleCancel = () => {
-  navigate("/subjects");
+  navigate("/dashboard/subjects");
 };
 
   return (
     <div className="sm-root">
-      {sidebarOpen ? (
-        <button
-          type="button"
-          aria-label="Close menu"
-          className="sm-overlay"
-          onClick={() => setSidebarOpen(false)}
-        />
-      ) : null}
 
       {/* Sidebar */}
-      <aside className={sidebarOpen ? "sm-sidebar is-open" : "sm-sidebar"}>
-        <div className="sm-brand">
-          <span className="sm-brand-mark">
-            <FiLayers size={18} />
-          </span>
-          College ERP
-        </div>
-        <nav className="sm-nav">
-          <Link to="/subjects" className="sm-nav-item">
-            <FiGrid size={16} /> Dashboard
-          </Link>
-          <span className="sm-nav-label">Academics</span>
-          <Link to="/subjects" className="sm-nav-item">
-            <FiBookOpen size={16} /> Subject Management
-          </Link>
-          <Link to="/subjects/add" className="sm-nav-item is-active">
-            <FiPlus size={16} /> Add Subject
-          </Link>
-          <span className="sm-nav-label">Administration</span>
-          <Link to="/subjects" className="sm-nav-item">
-            <FiUsers size={16} /> Students
-          </Link>
-          <Link to="/subjects" className="sm-nav-item">
-            <FiSettings size={16} /> Settings
-          </Link>
-        </nav>
-      </aside>
 
       <div className="sm-main">
         {/* Navbar */}
-        <header className="sm-navbar">
-          <button
-            type="button"
-            className="sm-icon-btn sm-menu-btn"
-            aria-label="Toggle menu"
-            onClick={() => setSidebarOpen((open) => !open)}
-          >
-            {sidebarOpen ? <FiX size={18} /> : <FiMenu size={18} />}
-          </button>
-          <div className="sm-navbar-search">
-            <FiSearch size={16} />
-            <input type="search" placeholder="Search anything..." aria-label="Global search" />
-          </div>
-          <div className="sm-spacer" />
-          <button type="button" className="sm-icon-btn" aria-label="Notifications">
-            <FiBell size={18} />
-          </button>
-          <div className="sm-avatar">
-            <span>AD</span>
-            <small>
-              Admin User
-              <br />
-              Administrator
-            </small>
-          </div>
-        </header>
 
         <main className="sm-content">
           {/* Breadcrumb */}
           <nav className="sm-breadcrumb" aria-label="Breadcrumb">
-            <Link to="/subjects">Dashboard</Link>
+            <Link to="/dashboard">Dashboard</Link>
+<span>/</span>
+<Link to="/dashboard/subjects">Subject Management</Link>
             <span>/</span>
-            <Link to="/subjects">Subject Management</Link>
-            <span>/</span>
-            <span className="is-current">Add Subject</span>
+            <span className="is-current">
+              {editMode ? "Update Subject" : "Add Subject"}
+            </span>
           </nav>
 
           {/* Header */}
           <div className="sm-header">
             <div>
-              <h1>Add Subject</h1>
-              <p>Create a new subject with marks configuration and status.</p>
+              <h1>{editMode ? "Update Subject" : "Add Subject"}</h1>
+              <p>
+                {editMode
+                  ? "Update subject information."
+                  : "Create a new subject with marks configuration and status."}
+              </p>
             </div>
             <div className="sm-actions">
-              <Link to="/subjects" className="sm-btn sm-btn-outline">
-                <FiBookOpen size={16} /> Back to Subject List
-              </Link>
+              <Link to="/dashboard/subjects" className="sm-btn sm-btn-outline">
+  <FiBookOpen size={16} /> Back to Subject List
+</Link>
             </div>
           </div>
 
-          <form className="sm-card sm-card-pad" onSubmit={handleSave} noValidate>
+          <form
+            className="sm-card sm-card-pad"
+            onSubmit={handleSave}
+            noValidate
+          >
             {/* Section 1 */}
             <h2 className="sm-section-title">
               <FiInfo size={18} /> Basic Information
@@ -298,7 +289,9 @@ const handleSaveAndAddAnother = async () => {
                     </option>
                   ))}
                 </select>
-                {errors.board ? <span className="sm-error">{errors.board}</span> : null}
+                {errors.board ? (
+                  <span className="sm-error">{errors.board}</span>
+                ) : null}
               </div>
 
               <div className="sm-field">
@@ -318,7 +311,9 @@ const handleSaveAndAddAnother = async () => {
                     </option>
                   ))}
                 </select>
-                {errors.group ? <span className="sm-error">{errors.group}</span> : null}
+                {errors.group ? (
+                  <span className="sm-error">{errors.group}</span>
+                ) : null}
               </div>
 
               <div className="sm-field">
@@ -338,7 +333,9 @@ const handleSaveAndAddAnother = async () => {
                     </option>
                   ))}
                 </select>
-                {errors.level ? <span className="sm-error">{errors.level}</span> : null}
+                {errors.level ? (
+                  <span className="sm-error">{errors.level}</span>
+                ) : null}
               </div>
 
               <div className="sm-field">
@@ -354,7 +351,9 @@ const handleSaveAndAddAnother = async () => {
                   value={form.name}
                   onChange={(event) => setField("name", event.target.value)}
                 />
-                {errors.name ? <span className="sm-error">{errors.name}</span> : null}
+                {errors.name ? (
+                  <span className="sm-error">{errors.name}</span>
+                ) : null}
               </div>
 
               <div className="sm-field">
@@ -370,7 +369,9 @@ const handleSaveAndAddAnother = async () => {
                   value={form.code}
                   onChange={(event) => setField("code", event.target.value)}
                 />
-                {errors.code ? <span className="sm-error">{errors.code}</span> : null}
+                {errors.code ? (
+                  <span className="sm-error">{errors.code}</span>
+                ) : null}
               </div>
             </div>
 
@@ -384,7 +385,10 @@ const handleSaveAndAddAnother = async () => {
               {SUBJECT_TYPES.map((type) => {
                 const checked = form.subjectTypes.includes(type);
                 return (
-                  <label key={type} className={checked ? "sm-check is-checked" : "sm-check"}>
+                  <label
+                    key={type}
+                    className={checked ? "sm-check is-checked" : "sm-check"}
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
@@ -395,7 +399,12 @@ const handleSaveAndAddAnother = async () => {
                 );
               })}
             </div>
-            <span className="sm-hint">You can select more than one subject type.</span>
+            {errors.subjectTypes ? (
+              <span className="sm-error">{errors.subjectTypes}</span>
+            ) : null}
+            <span className="sm-hint">
+              You can select more than one subject type.
+            </span>
 
             <hr className="sm-divider" />
 
@@ -413,8 +422,13 @@ const handleSaveAndAddAnother = async () => {
                   className="sm-input"
                   placeholder="0"
                   value={form.internalMarks}
-                  onChange={(event) => setField("internalMarks", event.target.value)}
+                  onChange={(event) =>
+                    setField("internalMarks", event.target.value)
+                  }
                 />
+                {errors.internalMarks ? (
+                  <span className="sm-error">{errors.internalMarks}</span>
+                ) : null}
               </div>
               <div className="sm-field">
                 <label htmlFor="practicalMarks">Practical Marks</label>
@@ -425,8 +439,13 @@ const handleSaveAndAddAnother = async () => {
                   className="sm-input"
                   placeholder="0"
                   value={form.practicalMarks}
-                  onChange={(event) => setField("practicalMarks", event.target.value)}
+                  onChange={(event) =>
+                    setField("practicalMarks", event.target.value)
+                  }
                 />
+                {errors.practicalMarks ? (
+                  <span className="sm-error">{errors.practicalMarks}</span>
+                ) : null}
               </div>
               <div className="sm-field">
                 <label htmlFor="externalMarks">External Marks</label>
@@ -437,16 +456,32 @@ const handleSaveAndAddAnother = async () => {
                   className="sm-input"
                   placeholder="0"
                   value={form.externalMarks}
-                  onChange={(event) => setField("externalMarks", event.target.value)}
+                  onChange={(event) =>
+                    setField("externalMarks", event.target.value)
+                  }
                 />
+                {errors.externalMarks ? (
+                  <span className="sm-error">{errors.externalMarks}</span>
+                ) : null}
               </div>
               <div className="sm-field">
                 <label htmlFor="totalMarks">
                   Total Marks<span className="sm-req">*</span>
                 </label>
-                <input id="totalMarks" type="number" className="sm-input" value={totalMarks} readOnly disabled />
-                <span className="sm-hint">Auto calculated from internal + practical + external.</span>
-                {errors.totalMarks ? <span className="sm-error">{errors.totalMarks}</span> : null}
+                <input
+                  id="totalMarks"
+                  type="number"
+                  className="sm-input"
+                  value={totalMarks}
+                  readOnly
+                  disabled
+                />
+                <span className="sm-hint">
+                  Auto calculated from internal + practical + external.
+                </span>
+                {errors.totalMarks ? (
+                  <span className="sm-error">{errors.totalMarks}</span>
+                ) : null}
               </div>
               <div className="sm-field">
                 <label htmlFor="passingMarks">
@@ -456,17 +491,32 @@ const handleSaveAndAddAnother = async () => {
                   id="passingMarks"
                   type="number"
                   min="0"
-                  className={errors.passingMarks ? "sm-input is-error" : "sm-input"}
+                  className={
+                    errors.passingMarks ? "sm-input is-error" : "sm-input"
+                  }
                   placeholder="e.g. 35"
                   value={form.passingMarks}
-                  onChange={(event) => setField("passingMarks", event.target.value)}
+                  onChange={(event) =>
+                    setField("passingMarks", event.target.value)
+                  }
                 />
-                {errors.passingMarks ? <span className="sm-error">{errors.passingMarks}</span> : null}
+                {errors.passingMarks ? (
+                  <span className="sm-error">{errors.passingMarks}</span>
+                ) : null}
               </div>
               <div className="sm-field">
                 <label htmlFor="maximumMarks">Maximum Marks</label>
-                <input id="maximumMarks" type="number" className="sm-input" value={maximumMarks} readOnly disabled />
-                <span className="sm-hint">Auto calculated from total marks.</span>
+                <input
+                  id="maximumMarks"
+                  type="number"
+                  className="sm-input"
+                  value={maximumMarks}
+                  readOnly
+                  disabled
+                />
+                <span className="sm-hint">
+                  Auto calculated from total marks.
+                </span>
               </div>
             </div>
 
@@ -481,12 +531,19 @@ const handleSaveAndAddAnother = async () => {
                 type="checkbox"
                 checked={form.isActive}
                 onChange={(event) => setField("isActive", event.target.checked)}
-                style={{ position: "absolute", opacity: 0, width: 0, height: 0 }}
+                style={{
+                  position: "absolute",
+                  opacity: 0,
+                  width: 0,
+                  height: 0,
+                }}
               />
               <span className="sm-toggle-track" aria-hidden="true" />
               <span
                 className={
-                  form.isActive ? "sm-badge sm-badge-green" : "sm-badge sm-badge-gray"
+                  form.isActive
+                    ? "sm-badge sm-badge-green"
+                    : "sm-badge sm-badge-gray"
                 }
               >
                 {form.isActive ? "Active" : "Inactive"}
@@ -497,20 +554,43 @@ const handleSaveAndAddAnother = async () => {
 
             {/* Buttons */}
             <div className="sm-actions">
-              <button type="submit" className="sm-btn sm-btn-primary">
-                <FiSave size={16} /> Save Subject
+              <button
+                type="submit"
+                className="sm-btn sm-btn-primary"
+                disabled={isSaving}
+              >
+                <span className="is-current">
+                  {isSaving
+                    ? "Saving..."
+                    : editMode
+                      ? "Update Subject"
+                      : "Add Subject"}
+                </span>
               </button>
+              {!editMode && (
+                <button
+                  type="button"
+                  className="sm-btn sm-btn-outline"
+                  onClick={handleSaveAndAddAnother}
+                  disabled={isSaving}
+                >
+                  <FiPlus size={16} /> Save & Add Another
+                </button>
+              )}
               <button
                 type="button"
                 className="sm-btn sm-btn-outline"
-                onClick={handleSaveAndAddAnother}
+                onClick={resetForm}
+                disabled={isSaving}
               >
-                <FiPlus size={16} /> Save &amp; Add Another
-              </button>
-              <button type="button" className="sm-btn sm-btn-outline" onClick={resetForm}>
                 <FiRotateCcw size={16} /> Reset
               </button>
-              <button type="button" className="sm-btn sm-btn-ghost" onClick={handleCancel}>
+              <button
+                type="button"
+                className="sm-btn sm-btn-ghost"
+                onClick={handleCancel}
+                disabled={isSaving}
+              >
                 Cancel
               </button>
             </div>
@@ -519,7 +599,10 @@ const handleSaveAndAddAnother = async () => {
       </div>
 
       {message ? (
-        <div className="sm-toast" role="status">
+        <div
+          className={messageType === "error" ? "sm-toast is-error" : "sm-toast"}
+          role="status"
+        >
           <FiCheckCircle size={18} /> {message}
         </div>
       ) : null}

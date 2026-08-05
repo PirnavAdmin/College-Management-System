@@ -1,0 +1,37 @@
+export const apiEndpoints = {
+  auth: {
+    login: "/api/Auth/login",
+    register: "/api/Auth/register",
+    forgotPassword: "/api/Auth/forgot-password",
+    verifyOtp: "/api/Auth/verify-otp",
+    resetPassword: "/api/Auth/reset-password",
+    users: "/api/Auth/users",
+    user: (id) => `/api/Auth/user/${id}`,
+  },
+  groups: {
+    list: "/api/v1/groups",
+    create: "/api/v1/groups",
+    detail: (groupId) => `/api/v1/groups/${groupId}`,
+    update: (groupId) => `/api/v1/groups/${groupId}`,
+    remove: (groupId) => `/api/v1/groups/${groupId}`,
+    byBoard: (board) => `/api/v1/groups/board/${encodeURIComponent(board)}`,
+    validateCode: "/api/v1/groups/validate-code",
+  },
+  boards: {
+    list: "/api/v1/boards",
+    create: "/api/v1/boards",
+    detail: (boardId) => `/api/v1/boards/${boardId}`,
+    update: (boardId) => `/api/v1/boards/${boardId}`,
+    remove: (boardId) => `/api/v1/boards/${boardId}`,
+    status: (boardId) => `/api/v1/boards/${boardId}/status`,
+    countries: "/api/v1/boards/countries",
+    states: (countryId) => `/api/v1/boards/states/${countryId}`,
+    academicPatterns: "/api/v1/boards/academic-patterns",
+    academicLevels: "/api/v1/boards/academic-levels",
+    gradingSystems: "/api/v1/boards/grading-systems",
+    validateCode: "/api/v1/boards/validate-board-code",
+  },
+  academicYears: {
+    list: "/api/v1/academic-years",
+  },
+};

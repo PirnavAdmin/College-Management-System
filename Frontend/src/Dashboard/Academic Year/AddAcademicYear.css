@@ -1,0 +1,5 @@
+.addAcademicYear,
+.addAcademicYearForm {
+  display: grid;
+  gap: var(--space-4);
+}

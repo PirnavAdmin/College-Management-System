@@ -1,0 +1,48 @@
+.addGroup {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.addGroupCard {
+  max-width: 1040px;
+}
+
+.addGroupForm {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.addGroupGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+
+.addGroupFull {
+  grid-column: 1 / -1;
+}
+
+.addGroup b {
+  color: var(--color-danger);
+}
+
+.addGroupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.addGroupLoading {
+  color: var(--color-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .addGroupGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .addGroupActions .btn {
+    flex: 1 1 140px;
+  }
+}

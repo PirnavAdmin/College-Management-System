@@ -1,0 +1,5 @@
+.addFaculty,
+.addFacultyForm {
+  display: grid;
+  gap: var(--space-4);
+}

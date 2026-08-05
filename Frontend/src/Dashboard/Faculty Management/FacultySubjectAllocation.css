@@ -1,0 +1,9 @@
+.facultySubjectAllocation,
+.allocationForm {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.allocationFormCard {
+  margin-bottom: var(--space-4);
+}

@@ -1,0 +1,4 @@
+.academicYearList {
+  display: grid;
+  gap: var(--space-4);
+}

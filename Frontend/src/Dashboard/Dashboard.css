@@ -1,0 +1,465 @@
+.dashboardLayout {
+  --sidebar-expanded: 286px;
+  --sidebar-collapsed: 82px;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.dashboardSidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 50;
+  display: flex;
+  width: var(--sidebar-expanded);
+  height: 100vh;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0f1f3a;
+  color: #dbeafe;
+  transition: width 180ms ease, transform 180ms ease;
+}
+
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebarBrand {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  text-decoration: none;
+}
+
+.brandMark {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  background: #0891b2;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.brandText {
+  min-width: 0;
+}
+
+.brandText strong,
+.brandText small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brandText strong {
+  font-size: 15px;
+}
+
+.brandText small {
+  margin-top: 2px;
+  color: #93c5fd;
+  font-size: 12px;
+}
+
+.sidebarCollapseButton,
+.mobileMenuButton,
+.sidebarLogout {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #dbeafe;
+  cursor: pointer;
+}
+
+.sidebarCollapseButton {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+.sidebarCollapseButton:hover,
+.sidebarLogout:hover,
+.navParent:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.sidebarNavigation {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+.sidebarNavigation::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebarNavigation::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.navModule {
+  margin-bottom: 4px;
+}
+
+.navParent {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+  padding: 10px 11px;
+  text-align: left;
+  text-decoration: none;
+}
+
+.navParent svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.navParent span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.navParent.isActive {
+  background: rgba(8, 145, 178, 0.16);
+  color: #fff;
+}
+
+.navChevron {
+  transition: transform 180ms ease;
+}
+
+.navChevron.isOpen {
+  transform: rotate(180deg);
+}
+
+.navChildren {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 180ms ease;
+}
+
+.navChildren.isOpen {
+  max-height: 180px;
+}
+
+.navChild {
+  display: block;
+  overflow: hidden;
+  margin: 2px 0 2px 34px;
+  border-radius: 8px;
+  color: #aebbd0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 9px 10px;
+  text-decoration: none;
+}
+
+.navChild:hover,
+.navChild.active {
+  background: rgba(14, 165, 233, 0.16);
+  color: #fff;
+}
+
+.navChild.active {
+  box-shadow: none;
+}
+
+.sidebarFooter {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebarUser {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebarAvatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(34, 211, 238, 0.16);
+  color: #a5f3fc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sidebarUserText {
+  min-width: 0;
+}
+
+.sidebarUserText strong,
+.sidebarUserText small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebarUserText strong {
+  color: #fff;
+  font-size: 13px;
+}
+
+.sidebarUserText small {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.sidebarLogout {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboardMain {
+  min-height: 100vh;
+  margin-left: var(--sidebar-expanded);
+  transition: margin-left 180ms ease;
+}
+
+.dashboardTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 22px;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.mobileMenuButton {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-color: var(--color-border);
+  background: #fff;
+  color: var(--color-text);
+}
+
+.topbarTitle strong,
+.topbarTitle span {
+  display: block;
+}
+
+.topbarTitle strong {
+  font-size: 15px;
+}
+
+.topbarTitle span {
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.topbarSpacer {
+  flex: 1;
+}
+
+.demoModeBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  background: #f0f9ff;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dashboardContent {
+  width: 100%;
+  max-width: 1480px;
+  margin: 0 auto;
+  padding: 22px;
+}
+
+.isCollapsed .dashboardSidebar {
+  width: var(--sidebar-collapsed);
+}
+
+.isCollapsed .dashboardMain {
+  margin-left: var(--sidebar-collapsed);
+}
+
+.isCollapsed .brandText,
+.isCollapsed .navParent span,
+.isCollapsed .navChevron,
+.isCollapsed .navChildren,
+.isCollapsed .sidebarUserText,
+.isCollapsed .sidebarLogout span {
+  display: none;
+}
+
+.isCollapsed .sidebarHeader,
+.isCollapsed .sidebarFooter {
+  padding-inline: 12px;
+}
+
+.isCollapsed .sidebarBrand,
+.isCollapsed .navParent {
+  justify-content: center;
+}
+
+.isCollapsed .sidebarUser {
+  justify-content: center;
+}
+
+.isCollapsed .sidebarLogout {
+  width: 100%;
+}
+
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 768px) {
+  .dashboardLayout {
+    display: block;
+  }
+
+  .dashboardSidebar {
+    z-index: 1000;
+    width: min(82vw, 320px);
+    height: 100dvh;
+    transform: translateX(-100%);
+  }
+
+  .isCollapsed .dashboardSidebar {
+    width: min(82vw, 320px);
+  }
+
+  .isCollapsed .brandText,
+  .isCollapsed .navParent span,
+  .isCollapsed .navChevron,
+  .isCollapsed .navChildren,
+  .isCollapsed .sidebarUserText,
+  .isCollapsed .sidebarLogout span {
+    display: block;
+  }
+
+  .isCollapsed .sidebarBrand,
+  .isCollapsed .navParent,
+  .isCollapsed .sidebarUser {
+    justify-content: flex-start;
+  }
+
+  .dashboardSidebar.isDrawerOpen {
+    transform: translateX(0);
+  }
+
+  .dashboardMain,
+  .isCollapsed .dashboardMain {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .dashboardTopbar {
+    gap: 10px;
+    min-height: 60px;
+    padding: 10px 16px;
+  }
+
+  .mobileMenuButton {
+    display: inline-grid;
+    flex: 0 0 auto;
+  }
+
+  .sidebarCollapseButton {
+    display: none;
+  }
+
+  .drawerBackdrop {
+    z-index: 999;
+  }
+
+  .dashboardContent {
+    padding: 16px;
+  }
+
+  .topbarTitle {
+    min-width: 0;
+  }
+
+  .topbarTitle strong,
+  .topbarTitle span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .demoModeBadge {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .dashboardSidebar {
+    width: min(286px, 88vw);
+  }
+
+  .topbarTitle strong {
+    font-size: 14px;
+  }
+
+  .topbarTitle span {
+    font-size: 11px;
+  }
+}

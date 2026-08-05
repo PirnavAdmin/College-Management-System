@@ -1,0 +1,111 @@
+.groupList {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.groupStats {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.groupNotice {
+  border-radius: var(--radius-control);
+  padding: 11px 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.groupNoticeSuccess {
+  border: 1px solid #bbf7d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.groupFilterToolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(4, minmax(160px, 1fr)) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.groupFilterActions,
+.groupPageButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.groupPagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.groupPageActive {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: var(--color-primary);
+}
+
+.groupDangerButton {
+  border-color: #fecaca;
+  background: #fff;
+  color: var(--color-danger);
+}
+
+.groupDangerButton:hover {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.groupDeleteModal {
+  width: min(100%, 460px);
+}
+
+.groupDeleteModal h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.groupDeleteBody {
+  padding: 18px;
+}
+
+.groupDeleteBody p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.55;
+}
+
+@media (max-width: 1100px) {
+  .groupFilterToolbar {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .groupStats,
+  .groupFilterToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .groupFilterActions .btn,
+  .groupPageButtons .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .groupPagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

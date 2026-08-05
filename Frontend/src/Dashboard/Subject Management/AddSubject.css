@@ -1,0 +1,22 @@
+.addSubject,
+.addSubjectForm {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.subjectTypeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+.subjectTypeOption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-soft);
+  font-weight: 600;
+}

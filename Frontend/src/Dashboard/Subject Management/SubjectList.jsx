@@ -1,491 +1,139 @@
 import { useEffect, useMemo, useState } from "react";
-import { getSubjects } from "../../api/authApi";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  FiBookOpen,
-  FiChevronLeft,
-  FiChevronRight,
-  FiEdit2,
-  FiEye,
-  FiGrid,
-  FiLayers,
-  FiMenu,
-  FiPlus,
-  FiRotateCcw,
-  FiSearch,
-  FiSettings,
-  FiTrash2,
-  FiUsers,
-  FiX,
-  FiBell,
-} from "react-icons/fi";
-
-
-import "./SubjectManagement.css";
+import { FiEdit2, FiEye, FiPlus, FiRefreshCw, FiRotateCcw, FiTrash2, FiX } from "react-icons/fi";
+import api, { getApiErrorMessage } from "../../api/axios";
+import Button from "../../shared/components/Button";
+import Card from "../../shared/components/Card";
+import DataTable from "../../shared/components/DataTable";
+import EmptyState from "../../shared/components/EmptyState";
+import PageHeader from "../../shared/components/PageHeader";
+import { asArray } from "../../shared/utils/responseHelpers";
+import "./SubjectList.css";
 
 const BOARDS = ["State Board", "CBSE", "ICSE"];
 const GROUPS = ["MPC", "BiPC", "CEC", "MEC", "HEC"];
 const ACADEMIC_LEVELS = ["First Year", "Second Year"];
 const SUBJECT_TYPES = ["Theory", "Practical", "Language", "Elective"];
-
-
-
-
-const INITIAL_FILTERS = {
-  search: "",
-  board: "",
-  group: "",
-  level: "",
-  type: "",
-};
+const initialFilters = { search: "", board: "", group: "", academicLevel: "", subjectType: "" };
 
 export default function SubjectList() {
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
   const [subjects, setSubjects] = useState([]);
+  const [filters, setFilters] = useState(initialFilters);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  /*useEffect(() => {
-  async function fetchSubjects() {
+  const fetchSubjects = async (signal, group = filters.group) => {
     try {
-      const response = await getSubjects();
-      console.log(response.data);
-      setSubjects(response.data);
-    } catch (error) {
-      console.error("Error loading subjects:", error);
+      setLoading(true);
+      setError("");
+      const endpoint = group ? `/api/Subjects/group/${group}` : "/api/Subjects";
+      const response = await api.get(endpoint, { signal });
+      setSubjects(asArray(response.data));
+    } catch (fetchError) {
+      if (fetchError.name !== "CanceledError") setError(getApiErrorMessage(fetchError));
+    } finally {
+      if (!signal?.aborted) setLoading(false);
     }
-  }
+  };
 
-  fetchSubjects();
-}, []);*/
-useEffect(() => {
-  async function fetchSubjects() {
+  const fetchSubjectById = async (subjectId) => {
     try {
-      console.log("Calling GET /api/Subjects...");
-
-      const response = await getSubjects();
-
-      console.log("API Success");
-      console.log("Full Response:", response);
-      console.log("Response Data:", response.data);
-
-      setSubjects(response.data);
-
-      console.log("Subjects State:", response.data);
-    } catch (error) {
-      console.log("API Failed");
-
-      console.error("Error Object:", error);
-
-      if (error.response) {
-        console.log("Status:", error.response.status);
-        console.log("Response:", error.response.data);
-      } else if (error.request) {
-        console.log("Request was sent but no response received.");
-      } else {
-        console.log("Error Message:", error.message);
-      }
+      const response = await api.get(`/api/Subjects/${subjectId}`);
+      setSelectedSubject(response.data?.data || response.data);
+    } catch (viewError) {
+      setError(getApiErrorMessage(viewError));
     }
-  }
+  };
 
-  fetchSubjects();
-}, []);
+  const deleteSubject = async (subjectId) => {
+    if (!window.confirm("Delete this subject?")) return;
+    try {
+      await api.delete(`/api/Subjects/${subjectId}`);
+      await fetchSubjects();
+    } catch (deleteError) {
+      setError(getApiErrorMessage(deleteError));
+    }
+  };
 
-
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
-  const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSubjects(controller.signal, "");
+    return () => controller.abort();
+  }, []);
 
   const updateFilter = (key, value) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-    setPage(1);
+    setFilters((current) => ({ ...current, [key]: value }));
+    if (key === "group") fetchSubjects(undefined, value);
   };
 
-  const resetFilters = () => {
-    setFilters(INITIAL_FILTERS);
-    setPage(1);
-  };
-
-  const filtered = useMemo(() => {
-    const term = filters.search.trim().toLowerCase();
+  const filteredSubjects = useMemo(() => {
+    const search = filters.search.trim().toLowerCase();
     return subjects.filter((subject) => {
-      const matchesTerm =
-        term === "" ||
-        subject.subjectName.toLowerCase().includes(term) ||
-        subject.subjectCode.toLowerCase().includes(term)
+      const matchesSearch =
+        !search ||
+        subject.subjectName?.toLowerCase().includes(search) ||
+        subject.subjectCode?.toLowerCase().includes(search);
       return (
-  matchesTerm &&
-  (filters.board === "" || subject.board === filters.board) &&
-  (filters.group === "" || subject.group === filters.group) &&
-  (filters.level === "" ||
-    subject.academicLevel === filters.level) &&
-  (filters.type === "" ||
-    subject.subjectType === filters.type)
-);
+        matchesSearch &&
+        (!filters.board || subject.board === filters.board) &&
+        (!filters.academicLevel || subject.academicLevel === filters.academicLevel) &&
+        (!filters.subjectType || subject.subjectType?.includes(filters.subjectType))
+      );
     });
   }, [filters, subjects]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * rowsPerPage;
-  const rows = filtered.slice(startIndex, startIndex + rowsPerPage);
-
-  const goToAddSubject = () => {
-  navigate("/subjects/add");
-};
-
   return (
-    <div className="sm-root">
-      {sidebarOpen ? (
-        <button
-          type="button"
-          aria-label="Close menu"
-          className="sm-overlay"
-          onClick={() => setSidebarOpen(false)}
-        />
-      ) : null}
-
-      {/* Sidebar */}
-      <aside className={sidebarOpen ? "sm-sidebar is-open" : "sm-sidebar"}>
-        <div className="sm-brand">
-          <span className="sm-brand-mark">
-            <FiLayers size={18} />
-          </span>
-          CMS
+    <section className="subjectList">
+      <PageHeader title="Subject List" subtitle="Manage subjects, academic levels, subject types, and marks." actions={<><Button onClick={() => setFilters(initialFilters)}><FiRotateCcw /> Reset</Button><Button onClick={() => fetchSubjects()}><FiRefreshCw /> Refresh</Button><Link className="btn btn-primary" to="/dashboard/subjects/new"><FiPlus /> Add Subject</Link></>} />
+      {error ? <div className="notice notice-error">{error}</div> : null}
+      <Card padded={false}>
+        <div className="filterToolbar">
+          <input className="input" placeholder="Search subject" value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} />
+          <select className="select" value={filters.board} onChange={(event) => updateFilter("board", event.target.value)}><option value="">All Boards</option>{BOARDS.map((item) => <option key={item}>{item}</option>)}</select>
+          <select className="select" value={filters.group} onChange={(event) => updateFilter("group", event.target.value)}><option value="">All Groups</option>{GROUPS.map((item) => <option key={item}>{item}</option>)}</select>
+          <select className="select" value={filters.academicLevel} onChange={(event) => updateFilter("academicLevel", event.target.value)}><option value="">All Levels</option>{ACADEMIC_LEVELS.map((item) => <option key={item}>{item}</option>)}</select>
+          <select className="select" value={filters.subjectType} onChange={(event) => updateFilter("subjectType", event.target.value)}><option value="">All Types</option>{SUBJECT_TYPES.map((item) => <option key={item}>{item}</option>)}</select>
         </div>
-        <nav className="sm-nav">
-          <Link to="/subjects" className="sm-nav-item">
-            <FiGrid size={16} /> Dashboard
-          </Link>
-        
-          <Link to="/subjects" className="sm-nav-item is-active">
-            <FiBookOpen size={16} /> Subject Management
-          </Link>
-          <Link to="/subjects/add" className="sm-nav-item">
-            <FiPlus size={16} /> Add Subject
-          </Link>
-          <span className="sm-nav-label">Administration</span>
-          <Link to="/subjects" className="sm-nav-item">
-            <FiUsers size={16} /> Students
-          </Link>
-          <Link to="/subjects" className="sm-nav-item">
-            <FiSettings size={16} /> Settings
-          </Link>
-        </nav>
-      </aside>
-
-      <div className="sm-main">
-        {/* Navbar */}
-        <header className="sm-navbar">
-          <button
-            type="button"
-            className="sm-icon-btn sm-menu-btn"
-            aria-label="Toggle menu"
-            onClick={() => setSidebarOpen((open) => !open)}
-          >
-            {sidebarOpen ? <FiX size={18} /> : <FiMenu size={18} />}
-          </button>
-          <div className="sm-navbar-search">
-            <FiSearch size={16} />
-            <input type="search" placeholder="Search anything..." aria-label="Global search" />
-          </div>
-          <div className="sm-spacer" />
-          <button type="button" className="sm-icon-btn" aria-label="Notifications">
-            <FiBell size={18} />
-          </button>
-          <div className="sm-avatar">
-            <span>AD</span>
-            <small>
-              Admin User
-              <br />
-              Administrator
-            </small>
-          </div>
-        </header>
-
-        <main className="sm-content">
-          {/* Breadcrumb */}
-          <nav className="sm-breadcrumb" aria-label="Breadcrumb">
-            <Link to="/subjects">Dashboard</Link>
-            <span>/</span>
-            <Link to="/subjects">Subject Management</Link>
-            <span>/</span>
-            <span className="is-current">Subject List</span>
-          </nav>
-
-          {/* Header */}
-          <div className="sm-header">
-            <div>
-              <h1>Subject List</h1>
-              <p>Manage all subjects configured for your intermediate college.</p>
-            </div>
-            <div className="sm-actions">
-              <button type="button" className="sm-btn sm-btn-outline" onClick={resetFilters}>
-                <FiRotateCcw size={16} /> Reset Filters
-              </button>
-              <button 
-  type="button" 
-  className="sm-btn sm-btn-primary" 
-  onClick={goToAddSubject}
->
-  <FiPlus size={16} /> Add New Subject
-</button>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div className="sm-stats">
-            <div className="sm-card sm-stat">
-              <span className="sm-stat-icon">
-                <FiBookOpen size={18} />
-              </span>
-              <div>
-                <b>{subjects.length}</b>
-                <span>Total Subjects</span>
+        {loading ? <EmptyState title="Loading subjects" /> : (
+          <DataTable
+            columns={[
+              { key: "subjectName", label: "Subject Name" },
+              { key: "subjectCode", label: "Subject Code" },
+              { key: "group", label: "Group" },
+              { key: "academicLevel", label: "Academic Level" },
+              { key: "subjectType", label: "Subject Type" },
+              { key: "totalMarks", label: "Maximum Marks" },
+              { key: "passingMarks", label: "Passing Marks" },
+            ]}
+            rows={filteredSubjects}
+            empty={<EmptyState title="No subjects found" message="Add subjects or adjust filters." />}
+            renderActions={(subject) => (
+              <div className="row-actions">
+                <button className="icon-button" type="button" title="View" onClick={() => fetchSubjectById(subject.subjectId || subject.id)}><FiEye /></button>
+                <button className="icon-button" type="button" title="Edit" onClick={() => navigate(`/dashboard/subjects/${subject.subjectId || subject.id}/edit`)}><FiEdit2 /></button>
+                <button className="icon-button" type="button" title="Delete" onClick={() => deleteSubject(subject.subjectId || subject.id)}><FiTrash2 /></button>
               </div>
-            </div>
-            
-            <div className="sm-card sm-stat">
-              <span className="sm-stat-icon">
-                <FiGrid size={18} />
-              </span>
-              <div>
-                <b>{GROUPS.length}</b>
-                <span>Groups</span>
-              </div>
-            </div>
-            <div className="sm-card sm-stat">
-              <span className="sm-stat-icon">
-                <FiUsers size={18} />
-              </span>
-              <div>
-                <b>{BOARDS.length}</b>
-                <span>Boards</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Search + Filters */}
-          <section className="sm-card sm-card-pad">
-            <div className="sm-search" style={{ marginBottom: 12 }}>
-              <FiSearch size={16} />
-              <input
-                type="search"
-                placeholder="Search Subject..."
-                value={filters.search}
-                onChange={(event) => updateFilter("search", event.target.value)}
-                aria-label="Search Subject"
-              />
-            </div>
-            <div className="sm-filter-grid">
-              <div className="sm-field">
-                <label htmlFor="filter-board">Board</label>
-                <select
-                  id="filter-board"
-                  className="sm-select"
-                  value={filters.board}
-                  onChange={(event) => updateFilter("board", event.target.value)}
-                >
-                  <option value="">All Boards</option>
-                  {BOARDS.map((board) => (
-                    <option key={board} value={board}>
-                      {board}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm-field">
-                <label htmlFor="filter-group">Group</label>
-                <select
-                  id="filter-group"
-                  className="sm-select"
-                  value={filters.group}
-                  onChange={(event) => updateFilter("group", event.target.value)}
-                >
-                  <option value="">All Groups</option>
-                  {GROUPS.map((group) => (
-                    <option key={group} value={group}>
-                      {group}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm-field">
-                <label htmlFor="filter-level">Academic Level</label>
-                <select
-                  id="filter-level"
-                  className="sm-select"
-                  value={filters.level}
-                  onChange={(event) => updateFilter("level", event.target.value)}
-                >
-                  <option value="">All Levels</option>
-                  {ACADEMIC_LEVELS.map((level) => (
-                    <option key={level} value={level}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm-field">
-                <label htmlFor="filter-type">Subject Type</label>
-                <select
-                  id="filter-type"
-                  className="sm-select"
-                  value={filters.type}
-                  onChange={(event) => updateFilter("type", event.target.value)}
-                >
-                  <option value="">All Types</option>
-                  {SUBJECT_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-            </div>
-          </section>
-
-          {/* Table */}
-          <section className="sm-card">
-            {rows.length === 0 ? (
-              <div className="sm-empty">
-                <div className="sm-empty-art">
-                  <FiBookOpen size={38} />
-                </div>
-                <h3>No Subjects Found</h3>
-                <p>Try adjusting your filters, or create a new subject to get started.</p>
-                <button type="button" className="sm-btn sm-btn-primary" onClick={goToAddSubject}>
-                  <FiPlus size={16} /> Add New Subject
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="sm-table-wrap">
-                  <table className="sm-table">
-                    <thead>
-                      <tr>
-                        <th>Subject Name</th>
-                        <th>Subject Code</th>
-                        <th>Board</th>
-                        <th>Group</th>
-                        <th>Academic Level</th>
-                        <th>Subject Type</th>
-                        <th>Maximum Marks</th>
-                        <th>Passing Marks</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((subject) => (
-                        <tr key={subject.id}>
-                          
-
-                          <td className="sm-strong">{subject.subjectName}</td>
-
-                          <td>
-  <span className="sm-code">
-    {subject.subjectCode}
-  </span>
-</td>
-                          <td>{subject.board}</td>
-                          <td>{subject.group}</td>
-                         <td>{subject.academicLevel}</td>
-                          <td>
-  <span className="sm-badge sm-badge-blue">
-    {subject.subjectType}
-  </span>
-</td>
-                         <td>{subject.totalMarks}</td>
-                          <td>{subject.passingMarks}</td>
-                          <td>
-                            <div className="sm-row-actions">
-                              <button
-                                type="button"
-                                className="sm-act view"
-                                aria-label={`View ${subject.name}`}
-                              >
-                                <FiEye size={15} />
-                              </button>
-                              <button
-                                type="button"
-                                className="sm-act edit"
-                                aria-label={`Edit ${subject.name}`}
-                              >
-                                <FiEdit2 size={15} />
-                              </button>
-                              <button
-                                type="button"
-                                className="sm-act delete"
-                                aria-label={`Delete ${subject.name}`}
-                              >
-                                <FiTrash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Pagination */}
-                <div className="sm-pagination">
-                  <div className="sm-rows">
-                    <label htmlFor="rows-per-page">Rows per page</label>
-                    <select
-                      id="rows-per-page"
-                      value={rowsPerPage}
-                      onChange={(event) => {
-                        setRowsPerPage(Number(event.target.value));
-                        setPage(1);
-                      }}
-                    >
-                      {[5, 10, 25, 50].map((size) => (
-                        <option key={size} value={size}>
-                          {size}
-                        </option>
-                      ))}
-                    </select>
-                    <span>
-                      Showing {startIndex + 1}-{Math.min(startIndex + rowsPerPage, filtered.length)}{" "}
-                      of {filtered.length}
-                    </span>
-                  </div>
-                  <div className="sm-pages">
-                    <button
-                      type="button"
-                      className="sm-page"
-                      onClick={() => setPage((value) => Math.max(1, value - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <FiChevronLeft size={14} /> Previous
-                    </button>
-                    {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => (
-                      <button
-                        key={number}
-                        type="button"
-                        className={number === currentPage ? "sm-page is-active" : "sm-page"}
-                        onClick={() => setPage(number)}
-                      >
-                        {number}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="sm-page"
-                      onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                      disabled={currentPage === totalPages}
-                    >
-                      Next <FiChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              </>
             )}
+          />
+        )}
+      </Card>
+      {selectedSubject ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedSubject(null)}>
+          <section className="card modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h2>{selectedSubject.subjectName || "Subject Details"}</h2>
+              <button className="icon-button" type="button" onClick={() => setSelectedSubject(null)}><FiX /></button>
+            </div>
+            <div className="subjectDetails">
+              {["subjectCode", "board", "group", "academicLevel", "subjectType", "totalMarks", "passingMarks"].map((key) => (
+                <div key={key}><strong>{key.replace(/([A-Z])/g, " $1")}</strong><span>{selectedSubject[key] || "-"}</span></div>
+              ))}
+            </div>
           </section>
-        </main>
-      </div>
-    </div>
+        </div>
+      ) : null}
+    </section>
   );
 }

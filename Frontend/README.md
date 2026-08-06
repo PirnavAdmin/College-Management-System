@@ -1,6 +1,6 @@
 # College Management System
 
-A Vite + React admin dashboard for an Intermediate College Management System. The project is organized so eight team members can work in separate feature folders without route, layout, or API conflicts.
+A Vite + React admin and student portal for an Intermediate College Management System.
 
 ## Tech Stack
 
@@ -31,194 +31,93 @@ Create `.env` from `.env.example`.
 ```bash
 VITE_API_BASE_URL=https://sterile-retorted-tightness.ngrok-free.dev
 VITE_USE_DEV_PROXY=true
-VITE_ENABLE_MOCK_AUTH=true
 ```
 
-The API base URL is read in `src/config/env.js` and used by the central API clients in `src/api/axios.js` and `src/services/apiClient.js`. Components must not hardcode URLs or import axios directly.
+When `VITE_USE_DEV_PROXY=true`, axios uses same-origin `/api/...` URLs and Vite proxies them to `VITE_API_BASE_URL`.
 
 ## Local API Proxy / CORS Workaround
 
-The backend may block direct browser requests from `http://localhost:5173` when CORS is not configured. In local development, Vite proxies same-origin frontend calls to the backend:
-
-- Frontend calls `/api/...`, for example `/api/v1/boards`.
-- Vite proxies that request to `VITE_API_BASE_URL`.
-- Enable this with `VITE_USE_DEV_PROXY=true`.
+- Frontend calls `/api/...`, for example `/api/Admin/login` or `/api/v1/boards`.
+- Vite proxies the request to `VITE_API_BASE_URL`.
 - Restart `npm run dev` after changing `vite.config.js` or `.env`.
-- Production still requires backend CORS to be configured properly.
+- Production backend deployments must configure CORS properly.
 
-## Folder Structure
+## Authentication
 
-```text
-src/
-  app/                 App shell and Vite entry point
-  assets/              Images and static assets imported by React
-  config/              Environment config
-  routes/              AppRoutes and shared route path constants
-  layouts/             AuthLayout and DashboardLayout
-  theme/               CSS variables and global theme classes
-  shared/              Reusable components and utilities
-  services/            Central API client alias and endpoint map
-  Dashboard/           Dashboard layout and module screens
-  features/auth/       Public authentication screens and mock login helper
-```
+- Admin login uses `POST /api/Admin/login`.
+- Normal user login uses `POST /api/Auth/login` after admin login is rejected.
+- Register uses `POST /api/Auth/register`.
+- Register assigns role `"student"` automatically; the register page does not show a role field.
+- Admin users are redirected to `/dashboard`.
+- Student users are redirected to `/student-dashboard`.
+
+## Dashboards
+
+- `/dashboard` is the existing admin dashboard and requires an admin user.
+- `/student-dashboard` is a simple student portal and requires a non-admin logged-in user.
+- Admin users who open `/student-dashboard` are redirected back to `/dashboard`.
+- Student users who open `/dashboard` are redirected to `/student-dashboard`.
+
+## Admin Header
+
+The admin dashboard header includes:
+
+- Module search with route suggestions.
+- Dark/light theme toggle stored in `localStorage` as `cms_theme`.
+- Profile dropdown with name, email, role, and logout.
+
+The drawer footer profile/logout section has been removed.
 
 ## Key Files
 
-- `src/app/main.jsx`: React app bootstrap and global CSS imports.
-- `src/app/App.jsx`: Root app component.
-- `src/routes/AppRoutes.jsx`: All route definitions. Keep new routes here.
-- `src/routes/routePaths.js`: Shared route constants.
-- `src/Dashboard/Dashboard.jsx`: The only dashboard sidebar and main content layout. Dashboard screens render inside its `Outlet`.
-- `src/layouts/AuthLayout.jsx`: Shared visual shell for login and password pages.
-- `src/theme/tokens.css`: Color, spacing, radius, shadow, and font variables.
-- `src/theme/theme.css`: Global app theme, sidebar, cards, tables, buttons, forms, modals, and placeholders.
-- `src/api/axios.js`: Axios instance with base URL, auth token interceptor, and graceful HTML/backend error handling.
-- `src/api/apiEndpoints.js`: Auth endpoint constants used by the authentication service.
-- `src/services/apiClient.js`: Central API client export for feature services.
-- `src/services/apiEndpoints.js`: Endpoint map for feature services.
-- `src/Dashboard/Group Management/GroupList.jsx`: Group list, filters, stats, pagination, local demo fallback, and delete confirmation.
-- `src/Dashboard/Group Management/AddGroup.jsx`: Add and edit form for Group records with local demo fallback.
-- `src/Dashboard/Group Management/GroupList.css`: Group list page styling.
-- `src/Dashboard/Group Management/AddGroup.css`: Add/edit group page styling.
+- `src/api/axios.js`: Proxy-aware axios client with token interceptor.
+- `src/api/apiEndpoints.js`: Auth and Admin endpoint constants.
+- `src/features/auth/services/authService.js`: Admin-first login and real backend auth services.
+- `src/features/auth/pages/Login.jsx`: Login UI and admin/student redirect logic.
+- `src/features/auth/pages/Register.jsx`: Student registration UI.
+- `src/routes/ProtectedRoute.jsx`: Role-aware route protection.
+- `src/routes/AppRoutes.jsx`: Public, admin, and student routes.
+- `src/Dashboard/Dashboard.jsx`: Admin sidebar, module search, theme toggle, and profile menu.
+- `src/Dashboard/StudentDashboard/StudentDashboard.jsx`: Student dashboard shell.
 
 ## Routes
 
+Public:
+
 - `/`, `/login`, `/register`, `/forgot-password`, `/verify-otp`, `/reset-password`
+
+Admin:
+
 - `/dashboard`
 - `/dashboard/boards`, `/dashboard/boards/new`, `/dashboard/boards/:boardId/edit`
 - `/dashboard/academic-years`, `/dashboard/academic-years/new`
-- `/dashboard/groups`, `/dashboard/groups/add`, `/dashboard/groups/edit/:groupId`, `/dashboard/sections`
-- `/dashboard/subjects`, `/dashboard/subjects/new`, `/dashboard/subjects/:subjectId/edit`
-- `/dashboard/faculty`, `/dashboard/faculty/new`, `/dashboard/faculty/:facultyId/edit`, `/dashboard/faculty/subject-allocation`
-- `/dashboard/admissions/new`, `/dashboard/students`, `/dashboard/students/:studentId`
-- `/dashboard/timetable`, `/dashboard/attendance`, `/dashboard/assignments/new`
-- `/dashboard/examinations/new`, `/dashboard/examinations/schedule`, `/dashboard/marks-entry`
-- `/dashboard/results/publish`, `/dashboard/results/student`, `/dashboard/promotions`
-- `/dashboard/fees/structure`, `/dashboard/fees/collection`, `/dashboard/certificates/generate`, `/dashboard/reports`
+- `/dashboard/groups`, `/dashboard/groups/add`, `/dashboard/groups/edit/:groupId`
+- `/dashboard/sections`, `/dashboard/subjects`, `/dashboard/faculty`, `/dashboard/reports`
 
-Backward redirect: `/faculty/subject-allocation` redirects to `/dashboard/faculty/subject-allocation`.
-Compatibility redirects also preserve old dashboard URLs such as `/dashboard/subjects/add`, `/dashboard/boards/add`, `/dashboard/courses`, `/dashboard/course-management`, `/dashboard/results`, and `/dashboard/certificates`.
+Student:
 
-## Module Status
+- `/student-dashboard`
 
-Completed/refactored:
+## API Endpoints
 
-- Auth pages and `features/auth/services/authService.js`
-- Group Management under `src/Dashboard/Group Management`
-- Subject List and Add/Edit Subject under `src/Dashboard/Subject Management`
-- Faculty List, Add Faculty, and Faculty Subject Allocation under `src/Dashboard/Faculty Management`
-- Real Dashboard Home at `/dashboard`
+Admin:
 
-Placeholder only:
+- `POST /api/Admin/login`
+- `POST /api/Admin`
+- `GET /api/Admin`
+- `GET /api/Admin/{adminId}`
+- `POST /api/Admin/change-password`
+- `PUT /api/Admin/{adminId}/status`
 
-- Boards
-- Academic Years
-- Sections
-- Admissions
-- Students
-- Timetable
-- Attendance
-- Assignments
-- Examinations
-- Exam Schedule
-- Marks Entry
-- Results
-- Promotion
-- Fee Structure
-- Fee Collection
-- Certificates
-- Reports
+Auth:
 
-Pending backend integration:
-
-- Dashboard statistics
-- Placeholder modules listed above
-- Dynamic dropdown data where the backend endpoint is not available yet
-
-## API Service Layer
-
-Feature API calls should live inside service files and use the shared axios client. Authentication keeps `src/features/auth/services/authService.js` because it is shared by public auth pages and includes the temporary mock login switch.
-
-`src/api/axios.js` attaches `Authorization: Bearer <token>` from `localStorage` when available and converts HTML tunnel/error responses into readable API errors.
-
-Group Management is implemented inside `src/Dashboard/Group Management`. Per the Dashboard module style, its API and local demo helpers are kept inline in `GroupList.jsx` and `AddGroup.jsx`, using the existing axios client from `src/api/axios.js`.
-
-Board Management uses `/api/v1/boards` through the existing axios client. During offline/backend-blocked local development it falls back to demo records in `localStorage` under `cms_demo_boards`.
-
-Real Boards endpoints prepared:
-
-- `GET /api/v1/boards`
-- `POST /api/v1/boards`
-- `GET /api/v1/boards/{boardId}`
-- `PUT /api/v1/boards/{boardId}`
-- `DELETE /api/v1/boards/{boardId}`
-- `PATCH /api/v1/boards/{boardId}/status`
-- `GET /api/v1/boards/countries`
-- `GET /api/v1/boards/states/{countryId}`
-- `GET /api/v1/boards/academic-patterns`
-- `GET /api/v1/boards/academic-levels`
-- `GET /api/v1/boards/grading-systems`
-- `POST /api/v1/boards/validate-board-code`
-
-Real Groups endpoints prepared:
-
-- `GET /api/v1/groups`
-- `POST /api/v1/groups`
-- `GET /api/v1/groups/{groupId}`
-- `PUT /api/v1/groups/{groupId}`
-- `DELETE /api/v1/groups/{groupId}`
-- `GET /api/v1/groups/board/{board}`
-- `GET /api/v1/groups/validate-code`
-
-When `VITE_ENABLE_MOCK_AUTH=true`, Group Management uses local demo records stored in `localStorage` under `cms_demo_groups`. If the backend request fails while mock auth is disabled, the screens fall back to the same local demo records so UI testing can continue. Set `VITE_ENABLE_MOCK_AUTH=false` to prefer real backend APIs.
-
-## Temporary Demo Login
-
-Use this only when the backend is offline and the UI needs local testing.
-
-- Enable with `VITE_ENABLE_MOCK_AUTH=true`.
-- Demo email: `admin@cms.test`
-- Demo password: `Admin@123`
-- Disable mock login later by setting `VITE_ENABLE_MOCK_AUTH=false`.
-- Real backend integration remains unchanged; only `loginUser` switches to the local mock when the flag is enabled.
-
-## Theme System
-
-Use CSS variables from `src/theme/tokens.css` for colors, spacing, radius, and shadows. Shared theme classes in `src/theme/theme.css` include:
-
-- `.card`, `.btn`, `.input`, `.select`, `.textarea`
-- `.data-table`, `.empty-state`, `.placeholder`
-- `.stat-grid`, `.stat-card`
-- `.sidebar`, `.dashboard-content`, `.modal`
-
-Do not add Tailwind classes or scattered hardcoded color systems.
-
-## Shared Components
-
-- `Button.jsx`: Standard button styling.
-- `Card.jsx`: Standard panel container.
-- `DataTable.jsx`: Shared table rendering.
-- `EmptyState.jsx`: Empty results UI.
-- `FormField.jsx`: Label, field, and error wrapper.
-- `PageHeader.jsx`: Page title and action bar.
-- `PagePlaceholder.jsx`: Clean pending implementation screen.
-- `StatCard.jsx`: Dashboard/stat widgets.
-
-## Team Workflow
-
-Each team member should work inside their assigned feature folder. Add page-specific CSS under that feature only when shared theme classes are not enough. Keep cross-feature helpers in `src/shared`, and keep all HTTP functions in service files.
-
-
-
-## Coding Rules
-
-- Do not call axios directly from components.
-- Use shared components where practical.
-- Use theme variables and theme classes.
-- Keep routes inside `AppRoutes`.
-- Keep new feature page-specific code inside the matching `src/features/<feature-name>` folder. Existing legacy dashboard modules should be moved gradually instead of duplicated.
-- Do not commit `node_modules`, `dist`, `.env`, or `.git`.
-- Do not create duplicate layout wrappers inside feature pages.
+- `POST /api/Auth/login`
+- `POST /api/Auth/register`
+- `POST /api/Auth/forgot-password`
+- `POST /api/Auth/verify-otp`
+- `POST /api/Auth/reset-password`
+- `GET /api/Auth/users`
+- `GET /api/Auth/user/{id}`
 
 ## Build and Lint
 

@@ -1,0 +1,121 @@
+.studentDashboard {
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.studentTopbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  max-width: 1180px;
+  margin: 0 auto 22px;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.studentTopbar h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.studentTopbar p {
+  margin: 6px 0 0;
+  color: var(--color-muted);
+}
+
+.studentProfile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.studentAvatar {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: var(--color-primary);
+  font-weight: 800;
+}
+
+.studentProfile strong,
+.studentProfile small {
+  display: block;
+}
+
+.studentProfile small {
+  color: var(--color-muted);
+}
+
+.studentProfile button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.studentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.studentCard {
+  min-height: 160px;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.studentCard span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: var(--radius-card);
+  background: #e0f2fe;
+  color: var(--color-accent);
+}
+
+.studentCard h2 {
+  margin: 16px 0 6px;
+  font-size: 18px;
+}
+
+.studentCard p {
+  margin: 0;
+  color: var(--color-muted);
+}
+
+@media (max-width: 640px) {
+  .studentDashboard {
+    padding: 16px;
+  }
+
+  .studentTopbar,
+  .studentProfile {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

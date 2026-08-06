@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { FiEdit2, FiPlus, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import api, { getApiErrorMessage } from "../../api/axios";
-import { env } from "../../config/env";
 import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
 import DataTable from "../../shared/components/DataTable";
@@ -11,47 +10,7 @@ import PageHeader from "../../shared/components/PageHeader";
 import StatCard from "../../shared/components/StatCard";
 import "./GroupList.css";
 
-const STORAGE_KEY = "cms_demo_groups";
 const PAGE_SIZE = 5;
-
-const DEFAULT_GROUPS = [
-  {
-    groupId: 1,
-    groupName: "MPC",
-    groupCode: "MPC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate First Year",
-    totalSubjects: 6,
-    description: "Mathematics, Physics and Chemistry group",
-    isActive: true,
-  },
-  {
-    groupId: 2,
-    groupName: "BiPC",
-    groupCode: "BIPC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate First Year",
-    totalSubjects: 6,
-    description: "Biology, Physics and Chemistry group",
-    isActive: true,
-  },
-  {
-    groupId: 3,
-    groupName: "CEC",
-    groupCode: "CEC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate Second Year",
-    totalSubjects: 5,
-    description: "Commerce, Economics and Civics group",
-    isActive: false,
-  },
-];
 
 const initialFilters = {
   search: "",
@@ -82,17 +41,11 @@ export default function GroupList() {
     try {
       setLoading(true);
       setError("");
-
-      if (env.enableMockAuth) {
-        setGroups(readDemoGroups().map(normalizeGroup));
-        return;
-      }
-
       const response = await api.get("/api/v1/groups");
       setGroups(getGroupsFromResponse(response).map(normalizeGroup));
-    } catch (fetchError) {
-      setGroups(readDemoGroups().map(normalizeGroup));
-      setError(`${getApiErrorMessage(fetchError)} Showing local demo groups.`);
+    } catch {
+      setGroups([]);
+      setError("Unable to load groups. Please check backend API connection.");
     } finally {
       setLoading(false);
     }
@@ -162,17 +115,7 @@ export default function GroupList() {
     try {
       setDeleting(true);
       setError("");
-
-      if (env.enableMockAuth) {
-        deleteDemoGroup(deleteTarget.groupId);
-      } else {
-        try {
-          await api.delete(`/api/v1/groups/${deleteTarget.groupId}`);
-        } catch (deleteError) {
-          deleteDemoGroup(deleteTarget.groupId);
-          setError(`${getApiErrorMessage(deleteError)} Deleted from local demo groups instead.`);
-        }
-      }
+      await api.delete(`/api/v1/groups/${deleteTarget.groupId}`);
 
       setDeleteTarget(null);
       setMessage("Group deleted successfully");
@@ -393,21 +336,5 @@ function normalizeGroup(group = {}) {
   };
 }
 
-function readDemoGroups() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    // Reset local demo groups if storage was manually edited.
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_GROUPS));
-  return DEFAULT_GROUPS;
-}
 
-function writeDemoGroups(groups) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
-}
 
-function deleteDemoGroup(groupId) {
-  writeDemoGroups(readDemoGroups().filter((group) => String(group.groupId) !== String(groupId) && String(group.id) !== String(groupId)));
-}

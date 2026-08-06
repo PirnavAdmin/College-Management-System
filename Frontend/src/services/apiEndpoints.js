@@ -1,4 +1,12 @@
 export const apiEndpoints = {
+  admin: {
+    login: "/api/Admin/login",
+    create: "/api/Admin",
+    getAll: "/api/Admin",
+    getById: (adminId) => `/api/Admin/${adminId}`,
+    changePassword: "/api/Admin/change-password",
+    updateStatus: (adminId) => `/api/Admin/${adminId}/status`,
+  },
   auth: {
     login: "/api/Auth/login",
     register: "/api/Auth/register",
@@ -6,6 +14,7 @@ export const apiEndpoints = {
     verifyOtp: "/api/Auth/verify-otp",
     resetPassword: "/api/Auth/reset-password",
     users: "/api/Auth/users",
+    userById: (id) => `/api/Auth/user/${id}`,
     user: (id) => `/api/Auth/user/${id}`,
   },
   groups: {
@@ -31,16 +40,23 @@ export const apiEndpoints = {
     gradingSystems: "/api/v1/boards/grading-systems",
     validateCode: "/api/v1/boards/validate-board-code",
   },
+  departments: {
+    list: "/api/v1/departments",
+  },
+  faculty: {
+    list: "/api/v1/faculty",
+    create: "/api/v1/faculty",
+    detail: (id) => `/api/v1/faculty/${id}`,
+    update: (id) => `/api/v1/faculty/${id}`,
+    remove: (id) => `/api/v1/faculty/${id}`,
+    uploadPhoto: "/api/v1/faculty/upload-photo",
+    photo: (id) => `/api/v1/faculty/photo/${id}`,
+    dropdown: "/api/v1/faculty/dropdown",
+    assignSubject: "/api/v1/faculty/assign-subject",
+    assignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
+    workload: (facultyId) => `/api/v1/faculty/workload/${facultyId}`,
+  },
   academicYears: {
     list: "/api/v1/academic-years",
-  },
-  assignments: {
-    list: "/api/v1/assignments",
-    create: "/api/v1/assignments",
-    detail: (assignmentId) => `/api/v1/assignments/${assignmentId}`,
-    update: (assignmentId) => `/api/v1/assignments/${assignmentId}`,
-    remove: (assignmentId) => `/api/v1/assignments/${assignmentId}`,
-    submit: (assignmentId) => `/api/v1/assignments/${assignmentId}/submit`,
-    submissions: (assignmentId) => `/api/v1/assignments/${assignmentId}/submissions`,
   },
 };

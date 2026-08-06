@@ -34,6 +34,7 @@ import FeeStructure from "../Dashboard/Fee Management/FeeStructure";
 import FeeCollection from "../Dashboard/Fee Management/FeeCollection";
 import GenerateCertificate from "../Dashboard/Certificates/GenerateCertificate";
 import Reports from "../Dashboard/Reports/Reports";
+import StudentDashboard from "../Dashboard/StudentDashboard/StudentDashboard";
 
 export default function AppRoutes() {
   return (
@@ -50,7 +51,7 @@ export default function AppRoutes() {
         element={<Navigate to="/dashboard/faculty/subject-allocation" replace />}
       />
 
-      <Route element={<ProtectedRoute />}>
+      <Route element={<ProtectedRoute requireAdmin />}>
         <Route path="/dashboard" element={<Dashboard />}>
           <Route index element={<DashboardHome />} />
           <Route path="boards" element={<BoardList />} />
@@ -103,6 +104,9 @@ export default function AppRoutes() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Route>
+      <Route element={<ProtectedRoute requireStudent />}>
+        <Route path="/student-dashboard" element={<StudentDashboard />} />
+      </Route>
 
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
@@ -113,3 +117,4 @@ function CourseManagementEditRedirect() {
   const { groupId } = useParams();
   return <Navigate to={`/dashboard/groups/edit/${groupId}`} replace />;
 }
+

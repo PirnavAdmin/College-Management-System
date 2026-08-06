@@ -1,7 +1,7 @@
 :root {
   --font-sans: "Inter", "Poppins", "Segoe UI", system-ui, sans-serif;
-  --color-sidebar: #0f1f3a;
-  --color-sidebar-soft: #172b4d;
+  --color-sidebar: #cfe6fb;
+  --color-sidebar-soft: #eaf4ff;
   --color-primary: #2563eb;
   --color-primary-dark: #1d4ed8;
   --color-accent: #0891b2;
@@ -26,4 +26,25 @@
   --space-6: 24px;
   --space-8: 32px;
   --sidebar-width: 280px;
+}
+
+.theme-light {
+  --color-bg: #f3f6fb;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f8fafc;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-border: #dbe3ef;
+}
+
+.theme-dark {
+  --color-bg: #0f172a;
+  --color-sidebar: #111827;
+  --color-sidebar-soft: #1f2937;
+  --color-surface: #1e293b;
+  --color-surface-soft: #111827;
+  --color-text: #f8fafc;
+  --color-muted: #cbd5e1;
+  --color-border: #334155;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2), 0 16px 32px rgba(0, 0, 0, 0.28);
 }

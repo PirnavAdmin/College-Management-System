@@ -59,10 +59,4 @@ export const apiEndpoints = {
   academicYears: {
     list: "/api/v1/academic-years",
   },
-  sections: {
-    list: "/api/v1/sections",
-  },
-  subjects: {
-    list: "/api/Subjects",
-  },
 };

@@ -41,6 +41,8 @@
 
 .theme-dark {
   --color-bg: #0f172a;
+  --color-sidebar: #111827;
+  --color-sidebar-soft: #1f2937;
   --color-surface: #1e293b;
   --color-surface-soft: #111827;
   --color-text: #f8fafc;

@@ -3,6 +3,61 @@
   gap: var(--space-4);
 }
 
+.theme-dark .facultySubjectAllocation,
+.theme-dark .facultySubjectAllocation .workloadHeaderCard,
+.theme-dark .facultySubjectAllocation .workloadControlsCard,
+.theme-dark .facultySubjectAllocation .tableCard,
+.theme-dark .facultySubjectAllocation .infoCard,
+.theme-dark .facultySubjectAllocation .statCard,
+.theme-dark .facultySubjectAllocation .errorCard {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text) !important;
+}
+
+.theme-dark .facultySubjectAllocation .workloadTable th,
+.theme-dark .facultySubjectAllocation .workloadTable td,
+.theme-dark .facultySubjectAllocation .workloadTable tr:hover {
+  background: transparent !important;
+  color: var(--color-text) !important;
+}
+
+.theme-dark .facultySubjectAllocation .workloadTable tr:hover td {
+  background: rgba(148, 163, 184, 0.12) !important;
+}
+
+.theme-dark .facultySubjectAllocation .searchInput,
+.theme-dark .facultySubjectAllocation .searchInput input,
+.theme-dark .facultySubjectAllocation .select,
+.theme-dark .facultySubjectAllocation select,
+.theme-dark .facultySubjectAllocation .input {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+}
+
+.theme-dark .facultySubjectAllocation .form-field label {
+  color: var(--color-muted) !important;
+}
+
+.theme-dark .facultySubjectAllocation .workloadTable th,
+.theme-dark .facultySubjectAllocation .workloadTable td {
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.theme-dark .facultySubjectAllocation .workloadTable tr:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.theme-dark .facultySubjectAllocation .searchInput,
+.theme-dark .facultySubjectAllocation .searchInput input,
+.theme-dark .facultySubjectAllocation .select,
+.theme-dark .facultySubjectAllocation .input {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
 .workloadHeaderCard,
 .workloadControlsCard,
 .tableCard,
@@ -58,6 +113,7 @@
   background: transparent;
   width: 100%;
   outline: none;
+  color: var(--color-text);
 }
 
 .filterGroup {

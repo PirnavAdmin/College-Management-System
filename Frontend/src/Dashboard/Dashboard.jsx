@@ -184,7 +184,7 @@ export default function Dashboard() {
       <aside className={`dashboardSidebar ${drawerOpen ? "isDrawerOpen" : ""}`}>
         <div className="sidebarHeader">
           <Link className="sidebarBrand" to="/dashboard" onClick={() => setDrawerOpen(false)}>
-            <span className="brandMark">CM</span>
+            <span className="brandMark">CMS</span>
             <span className="brandText"><strong>CMS Admin</strong><small>Intermediate College</small></span>
           </Link>
         </div>

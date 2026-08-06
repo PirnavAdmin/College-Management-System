@@ -20,6 +20,7 @@ import {
   FiEye,
   FiFileText,
   FiPercent,
+  FiSearch,
 } from "react-icons/fi";
 import "./StudentProfile.css";
 
@@ -203,6 +204,16 @@ export default function StudentProfile() {
           <p className="sp-subtitle">View complete student academic information.</p>
         </div>
         <div className="sp-header-actions">
+          <div className="sp-search-group">
+            <input
+              type="search"
+              className="sp-search-input"
+              placeholder="Search by admission number or name"
+            />
+            <button type="button" className="sp-btn sp-btn-primary">
+              <FiSearch size={16} /> Search
+            </button>
+          </div>
           <button type="button" className="sp-btn sp-btn-primary">
             <FiEdit size={16} /> Edit Profile
           </button>
@@ -546,15 +557,6 @@ export default function StudentProfile() {
       <div className="sp-footer-actions">
         <button type="button" className="sp-btn sp-btn-ghost">
           <FiArrowLeft size={16} /> Back
-        </button>
-        <button type="button" className="sp-btn">
-          <FiEdit size={16} /> Edit
-        </button>
-        <button type="button" className="sp-btn">
-          <FiPrinter size={16} /> Print
-        </button>
-        <button type="button" className="sp-btn sp-btn-primary">
-          <FiDownload size={16} /> Download PDF
         </button>
       </div>
     </div>

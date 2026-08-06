@@ -13,6 +13,16 @@ import "./FacultySubjectAllocation.css";
 
 const fields = [["faculty", "Faculty"], ["board", "Board"], ["academicYear", "Academic Year"], ["group", "Group"], ["academicLevel", "Academic Level"], ["section", "Section"], ["subject", "Subject"]];
 const idFields = { academicYear: "academicYearId", group: "groupId", academicLevel: "academicLevelId", section: "sectionId", subject: "subjectId" };
+const defaultAcademicLevelOptions = [
+  { id: 1, name: "First Year" },
+  { id: 2, name: "Second Year" },
+];
+const defaultSectionOptions = [
+  { id: 1, name: "Section A" },
+  { id: 2, name: "Section B" },
+  { id: 3, name: "Section C" },
+  { id: 4, name: "Section D" },
+];
 const initialForm = { ...fields.reduce((acc, [key]) => ({ ...acc, [key]: "" }), {}), facultyId: "", boardId: "", academicYearId: "", groupId: "", academicLevelId: "", sectionId: "", subjectId: "" };
 
 export default function FacultySubjectAllocation() {
@@ -24,7 +34,8 @@ export default function FacultySubjectAllocation() {
   const [error, setError] = useState("");
   const [facultyOptions, setFacultyOptions] = useState([]);
   const [boardOptions, setBoardOptions] = useState([]);
-  const [academicOptions, setAcademicOptions] = useState({ academicYear: [], group: [], academicLevel: [], section: [], subject: [] });
+  const [academicOptions, setAcademicOptions] = useState({ academicYear: [], group: [], academicLevel: defaultAcademicLevelOptions, section: defaultSectionOptions });
+  const [subjectOptions, setSubjectOptions] = useState([]);
   const [workload, setWorkload] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterValues, setFilterValues] = useState({ board: "", academicYear: "", academicLevel: "" });
@@ -61,11 +72,9 @@ export default function FacultySubjectAllocation() {
   };
   const fetchAcademicOptions = async (signal) => {
     const requests = {
-      academicYear: api.get(apiEndpoints.academicYears.list, { signal }),
       group: api.get(apiEndpoints.groups.list, { signal }),
       academicLevel: api.get(apiEndpoints.boards.academicLevels, { signal }),
       section: api.get(apiEndpoints.sections.list, { signal }),
-      subject: api.get(apiEndpoints.subjects.list, { signal }),
     };
     const results = await Promise.allSettled(Object.values(requests));
     if (signal.aborted) return;
@@ -74,15 +83,57 @@ export default function FacultySubjectAllocation() {
       if (results[index].status === "fulfilled") {
         const options = toDropdownOptions(results[index].value.data);
         if (key === "group") {
-          nextOptions[key] = toDropdownOptions(results[index].value.data, false);
-        } else if (key === "subject") {
-          nextOptions[key] = options.filter((item) => String(item.name).trim().toLowerCase() !== "physics lab");
+          nextOptions[key] = options;
+        } else if (key === "academicLevel") {
+          nextOptions[key] = options.length ? options : defaultAcademicLevelOptions;
+        } else if (key === "section") {
+          nextOptions[key] = options.length ? options : defaultSectionOptions;
         } else {
           nextOptions[key] = options;
+        }
+      } else {
+        if (key === "academicLevel") {
+          nextOptions[key] = defaultAcademicLevelOptions;
+        }
+        if (key === "section") {
+          nextOptions[key] = defaultSectionOptions;
         }
       }
     });
     setAcademicOptions((current) => ({ ...current, ...nextOptions }));
+  };
+
+  const fetchAcademicYearOptions = async (signal) => {
+    try {
+      const response = await api.get(apiEndpoints.academicYears.list, { signal, params: { "api-version": "1.0" } });
+      const payload = response.data?.data ?? response.data;
+      const options = asArray(payload).map((item) => ({
+        id: item.academicYearId ?? item.id,
+        name: item.academicYearName ?? item.name,
+      })).filter((item) => item.id && item.name);
+      if (options.length) {
+        setAcademicOptions((current) => ({ ...current, academicYear: options }));
+      }
+    } catch (fetchError) {
+      if (fetchError.name !== "CanceledError") setError(getApiErrorMessage(fetchError));
+    }
+  };
+
+  const fetchSubjectOptions = async (signal) => {
+    try {
+      const response = await api.get(apiEndpoints.subjects.list, { signal });
+      const options = asArray(response.data)
+        .map((item) => ({
+          id: item.subjectId ?? item.id ?? item.value,
+          name: item.subjectName ?? item.name ?? item.label,
+        }))
+        .filter((item) => item.id && item.name);
+      if (options.length) {
+        setSubjectOptions(options);
+      }
+    } catch (fetchError) {
+      if (fetchError.name !== "CanceledError") setError(getApiErrorMessage(fetchError));
+    }
   };
   const mapWorkloadAllocations = (allocations = []) => {
     return allocations.map((item) => ({
@@ -125,6 +176,8 @@ export default function FacultySubjectAllocation() {
     fetchFacultyDropdown(controller.signal);
     fetchBoards(controller.signal);
     fetchAcademicOptions(controller.signal);
+    fetchAcademicYearOptions(controller.signal);
+    fetchSubjectOptions(controller.signal);
     return () => controller.abort();
   }, []);
 
@@ -156,8 +209,14 @@ export default function FacultySubjectAllocation() {
     const selected = boardOptions.find((item) => String(item.id) === id);
     setForm((current) => ({ ...current, boardId: id, board: selected?.name || id }));
   };
-  const selectAcademicOption = (key, id) => {
-    const selected = academicOptions[key].find((item) => String(item.id) === id);
+  const selectDropdownOption = (key, id) => {
+    if (key === "subject") {
+      const selected = subjectOptions.find((item) => String(item.id) === id);
+      setForm((current) => ({ ...current, subjectId: id, subject: selected?.name || "" }));
+      return;
+    }
+
+    const selected = academicOptions[key]?.find((item) => String(item.id) === id);
     setForm((current) => ({ ...current, [key]: selected?.name || "", [idFields[key]]: id }));
   };
 
@@ -183,8 +242,22 @@ export default function FacultySubjectAllocation() {
     setSearchTerm("");
     setFilterValues({ board: "", academicYear: "", academicLevel: "" });
   };
-  const getDropdownOptions = (key) => key === "faculty" ? facultyOptions : key === "board" ? boardOptions : academicOptions[key] || [];
-  const getDropdownValue = (key) => key === "faculty" ? form.facultyId : key === "board" ? form.boardId : form[idFields[key]];
+  const getDropdownOptions = (key) =>
+    key === "faculty"
+      ? facultyOptions
+      : key === "board"
+      ? boardOptions
+      : key === "subject"
+      ? subjectOptions
+      : academicOptions[key] || [];
+  const getDropdownValue = (key) =>
+    key === "faculty"
+      ? form.facultyId
+      : key === "board"
+      ? form.boardId
+      : key === "subject"
+      ? form.subjectId
+      : form[idFields[key]];
   const resetForm = () => { setForm(initialForm); setEditingId(null); };
 
   const handleSubmit = async (event) => {
@@ -258,12 +331,12 @@ export default function FacultySubjectAllocation() {
                       ? setFaculty(event.target.value)
                       : key === "board"
                       ? setBoard(event.target.value)
-                      : selectAcademicOption(key, event.target.value)
+                      : selectDropdownOption(key, event.target.value)
                   }
                 >
                   <option value="">Select {label}</option>
-                  {getDropdownOptions(key).map((item) => (
-                    <option key={item.id} value={item.id}>
+                  {getDropdownOptions(key).map((item, index) => (
+                    <option key={`${key}-${item.id}-${index}`} value={item.id}>
                       {item.name}
                     </option>
                   ))}
@@ -435,9 +508,19 @@ export default function FacultySubjectAllocation() {
 function toDropdownOptions(data, deduplicate = true) {
   const payload = data?.data ?? data;
   const records = Array.isArray(payload) ? payload : payload?.items ?? payload?.content ?? payload?.records ?? [];
-  const options = records.map((item) => ({
-    id: item.id ?? item.academicYearId ?? item.groupId ?? item.academicLevelId ?? item.sectionId ?? item.subjectId ?? item.value ?? item.code,
-    name: item.name ?? item.academicYearName ?? item.academicYear ?? item.yearName ?? item.groupName ?? item.levelName ?? item.sectionName ?? item.subjectName ?? item.label ?? item.code,
-  })).filter((item) => item.id && item.name);
-  return deduplicate ? options.filter((item, index) => options.findIndex((candidate) => String(candidate.name).trim().toLowerCase() === String(item.name).trim().toLowerCase()) === index) : options;
+  const options = records
+    .map((item, index) => {
+      const id = item.id ?? item.academicYearId ?? item.groupId ?? item.academicLevelId ?? item.sectionId ?? item.subjectId ?? item.value ?? item.code ?? index;
+      const name = item.name ?? item.academicYearName ?? item.academicYear ?? item.yearName ?? item.groupName ?? item.levelName ?? item.sectionName ?? item.subjectName ?? item.label ?? item.code;
+      return { id: String(id), name };
+    })
+    .filter((item) => item.id && item.name);
+  return deduplicate
+    ? options.filter(
+        (item, index) =>
+          options.findIndex(
+            (candidate) => String(candidate.name).trim().toLowerCase() === String(item.name).trim().toLowerCase(),
+          ) === index,
+      )
+    : options;
 }

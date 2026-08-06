@@ -58,9 +58,18 @@ export const apiEndpoints = {
   },
   academicYears: {
     list: "/api/v1/academic-years",
+    create: "/api/v1/academic-years",
+    detail: (academicYearId) => `/api/v1/academic-years/${academicYearId}`,
+    update: (academicYearId) => `/api/v1/academic-years/${academicYearId}`,
+    remove: (academicYearId) => `/api/v1/academic-years/${academicYearId}`,
   },
   sections: {
-    list: "/api/v1/sections",
+    list: "/api/v1/Sections",
+    create: "/api/v1/Sections",
+    detail: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    update: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    remove: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    byGroup: (groupId) => `/api/v1/Sections/group/${encodeURIComponent(groupId)}`,
   },
   subjects: {
     list: "/api/Subjects",

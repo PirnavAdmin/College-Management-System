@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+// import "react-toastify/dist/ReactToastify.css";
 import "./MarksEntry.css";
 
 const FALLBACK_BOARDS = [
@@ -44,6 +44,7 @@ const fieldLabels = { board: "Board", academicYear: "Academic Year", academicLev
 const totalOf = (student) => [student.internal, student.practical, student.theory].reduce((sum, mark) => sum + (Number(mark) || 0), 0);
 const isComplete = (student) => [student.internal, student.practical, student.theory].every((mark) => mark !== "");
 const gradeOf = (total) => total >= 90 ? "A+" : total >= 80 ? "A" : total >= 70 ? "B+" : total >= 60 ? "B" : total >= 50 ? "C" : total >= 40 ? "D" : "F";
+
 const validateMark = (value, maximum) => {
   if (value === "") return "Required";
   if (!/^\d+$/.test(value)) return "Only whole numbers allowed";
@@ -185,7 +186,7 @@ export default function MarksEntry() {
     setStudents((current) => current.map((student) => ({ ...student, internal: "", practical: "", theory: "", verified: false })));
     setRowErrors({}); setEditingIds(new Set()); setSelectedIds([]); setDeleteOpen(false); toast.warning("All marks cleared successfully.");
   }, []);
-  
+
   const allVisibleSelected = visibleStudents.length > 0 && visibleStudents.every((student) => selectedIds.includes(student.id));
 
   return <section className="marksEntry" aria-label="Marks entry module">

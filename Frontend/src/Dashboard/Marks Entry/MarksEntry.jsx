@@ -9,7 +9,7 @@ const FALLBACK_BOARDS = [
   { boardId: 3, boardName: "CBSE", status: true },
   { boardId: 4, boardName: "ICSE", status: true },
   { boardId: 5, boardName: "OTHERS", status: true },
-  
+
 ];
 
 const FALLBACK_SUBJECTS = {
@@ -33,7 +33,7 @@ const STUDENTS = [
 
 const OPTIONS = {
   academicYear: [["2025-26", "2025 - 2026"], ["2026-27", "2026 - 2027"]],
-  academicLevel:[["Intermediate-first-year", "Intermediate First Year"], ["Intermediate-second-year", "Intermediate Second Year"]],
+  academicLevel: [["Intermediate-first-year", "Intermediate First Year"], ["Intermediate-second-year", "Intermediate Second Year"]],
   group: [["MPC", "MPC"], ["BiPC", "BiPC"], ["CEC", "CEC"], ["MEC", "MEC"]],
   section: [["A", "Section A"], ["B", "Section B"], ["C", "Section C"]],
   examination: [["semester-1", "Semester I"], ["semester-2", "Semester II"], ["midterm", "Midterm Examination"]],
@@ -107,9 +107,11 @@ export default function MarksEntry() {
     setFilters((current) => ({ ...current, [name]: value, ...(name === "group" ? { subject: "" } : {}) }));
     setFilterErrors((current) => ({ ...current, [name]: undefined, ...(name === "group" ? { subject: undefined } : {}) }));
   }, []);
+
   const validateFilter = useCallback((name) => {
     setFilterErrors((current) => ({ ...current, [name]: filters[name] ? undefined : `Select ${fieldLabels[name]}` }));
   }, [filters]);
+
   const checkStudents = useCallback(() => {
     const errors = Object.fromEntries(Object.entries(filters).filter(([, value]) => !value).map(([name]) => [name, `Select ${fieldLabels[name]}`]));
     setFilterErrors(errors);
@@ -118,11 +120,13 @@ export default function MarksEntry() {
     setRowErrors({}); setEditingIds(new Set()); setSelectedIds([]); setSearch(""); setActiveTab("entry");
     toast.success("Students loaded for evaluation.");
   }, [filters]);
+
   const changeMark = useCallback((id, field, value) => {
     if (value !== "" && !/^\d*$/.test(value)) return;
     setStudents((current) => current.map((student) => student.id === id ? { ...student, [field]: value, verified: student[field] !== value ? false : student.verified } : student));
     setRowErrors((current) => ({ ...current, [id]: { ...current[id], [field]: validateMark(value, field === "theory" ? 40 : 30) } }));
   }, []);
+
   const saveRow = useCallback((id) => {
     const student = students.find((item) => item.id === id);
     const errors = { internal: validateMark(student.internal, 30), practical: validateMark(student.practical, 30), theory: validateMark(student.theory, 40) };
@@ -131,11 +135,13 @@ export default function MarksEntry() {
     setEditingIds((current) => { const next = new Set(current); next.delete(id); return next; });
     toast.success("Marks saved.");
   }, [students]);
+
   const toggleSelection = useCallback((id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]), []);
   const toggleAll = useCallback(() => {
     const ids = visibleStudents.map((student) => student.id);
     setSelectedIds((current) => ids.every((id) => current.includes(id)) ? current.filter((id) => !ids.includes(id)) : [...new Set([...current, ...ids])]);
   }, [visibleStudents]);
+
   const verifySelected = useCallback(() => {
     if (!selectedIds.length) { toast.error("Select at least one student to verify."); return; }
     const incomplete = students.filter((student) => selectedIds.includes(student.id) && !isComplete(student));
@@ -143,35 +149,43 @@ export default function MarksEntry() {
     setStudents((current) => current.map((student) => selectedIds.includes(student.id) ? { ...student, verified: true } : student));
     toast.success("Selected students verified.");
   }, [selectedIds, students]);
+
   const editSelected = useCallback(() => {
     if (!selectedIds.length) { toast.error("Select at least one student to edit."); return; }
     setEditingIds((current) => new Set([...current, ...selectedIds]));
   }, [selectedIds]);
+
   const saveSelected = useCallback(() => {
     if (!selectedIds.length) { toast.error("Select at least one student to save."); return; }
     const selected = students.filter((student) => selectedIds.includes(student.id));
+
     const errors = {};
     selected.forEach((student) => { errors[student.id] = { internal: validateMark(student.internal, 30), practical: validateMark(student.practical, 30), theory: validateMark(student.theory, 40) }; });
     setRowErrors((current) => ({ ...current, ...errors }));
+
     if (Object.values(errors).some((row) => Object.values(row).some(Boolean))) { toast.error("Correct the mark validation errors before saving."); return; }
     setEditingIds((current) => { const next = new Set(current); selectedIds.forEach((id) => next.delete(id)); return next; });
     toast.success("Marks saved.");
   }, [selectedIds, students]);
+
   const verifyStudent = useCallback((id) => {
     const student = students.find((item) => item.id === id);
     if (!isComplete(student)) { toast.error("Enter all marks before verification."); return; }
     setStudents((current) => current.map((item) => item.id === id ? { ...item, verified: true } : item));
     toast.success("Student verified.");
   }, [students]);
+
   const submitEvaluation = useCallback(() => {
     if (!students.length) { toast.error("Load students before submitting."); return; }
     if (!students.some(isComplete)) { toast.error("Enter marks before submitting."); return; }
     toast.success("Evaluation submitted successfully.");
   }, [students]);
+
   const clearMarks = useCallback(() => {
     setStudents((current) => current.map((student) => ({ ...student, internal: "", practical: "", theory: "", verified: false })));
     setRowErrors({}); setEditingIds(new Set()); setSelectedIds([]); setDeleteOpen(false); toast.warning("All marks cleared successfully.");
   }, []);
+  
   const allVisibleSelected = visibleStudents.length > 0 && visibleStudents.every((student) => selectedIds.includes(student.id));
 
   return <section className="marksEntry" aria-label="Marks entry module">

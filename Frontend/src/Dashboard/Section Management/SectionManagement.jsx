@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { FiSave, FiRotateCcw } from "react-icons/fi";
+import { Link } from "react-router-dom";
+import { FiEdit3, FiRotateCcw, FiSave, FiTrash2 } from "react-icons/fi";
 import api, { getApiErrorMessage } from "../../api/axios";
 import { env } from "../../config/env";
+import { apiEndpoints } from "../../services/apiEndpoints";
 import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
 import FormField from "../../shared/components/FormField";
@@ -59,22 +60,33 @@ const FALLBACK_TEACHERS = [
   { id: 3, name: "Priya Nair" },
 ];
 
+const FALLBACK_SECTIONS = [
+  { id: 101, sectionName: "A", roomNumber: "101", board: "State Board", academicLevel: "Intermediate First Year", maxStrength: 40 },
+  { id: 102, sectionName: "B", roomNumber: "102", board: "CBSE", academicLevel: "Intermediate Second Year", maxStrength: 38 },
+];
+
 export default function SectionManagement() {
-  const navigate = useNavigate();
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
   const [dropdowns, setDropdowns] = useState(initialDropdowns);
+  const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [feedback, setFeedback] = useState({ type: "", message: "" });
   const [submitting, setSubmitting] = useState(false);
+  const [editingSectionId, setEditingSectionId] = useState(null);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
-    const loadDropdowns = async () => {
+
+    const loadInitialData = async () => {
       try {
         setLoading(true);
         setLoadError("");
+        setFeedback({ type: "", message: "" });
 
         if (env.enableMockAuth) {
           setDropdowns({
@@ -84,14 +96,16 @@ export default function SectionManagement() {
             academicLevels: initialDropdowns.academicLevels,
             teachers: FALLBACK_TEACHERS,
           });
+          setSections(FALLBACK_SECTIONS);
           return;
         }
 
-        const [boardResponse, yearResponse, groupResponse, facultyResponse] = await Promise.all([
-          api.get("/api/v1/boards", { signal: controller.signal }),
-          api.get("/api/v1/academic-years", { signal: controller.signal }),
-          api.get("/api/v1/groups", { signal: controller.signal }),
-          api.get("/api/v1/faculty", { signal: controller.signal }),
+        const [boardResponse, yearResponse, groupResponse, facultyResponse, sectionResponse] = await Promise.all([
+          api.get(apiEndpoints.boards.list, { signal: controller.signal }),
+          api.get(apiEndpoints.academicYears.list, { signal: controller.signal }),
+          api.get(apiEndpoints.groups.list, { signal: controller.signal }),
+          api.get(apiEndpoints.faculty.list, { signal: controller.signal }),
+          api.get(apiEndpoints.sections.list, { signal: controller.signal }),
         ]);
 
         setDropdowns({
@@ -101,9 +115,10 @@ export default function SectionManagement() {
           academicLevels: initialDropdowns.academicLevels,
           teachers: normalizeTeachers(facultyResponse.data),
         });
+        setSections(asArray(sectionResponse.data).map(normalizeSection));
       } catch (error) {
         if (error.name !== "CanceledError") {
-          setLoadError("Unable to load dropdown data. Using fallback values where possible.");
+          setLoadError(getRequestErrorMessage(error));
           setDropdowns({
             boards: FALLBACK_BOARDS,
             academicYears: FALLBACK_ACADEMIC_YEARS,
@@ -111,13 +126,14 @@ export default function SectionManagement() {
             academicLevels: initialDropdowns.academicLevels,
             teachers: FALLBACK_TEACHERS,
           });
+          setSections(FALLBACK_SECTIONS);
         }
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
     };
 
-    loadDropdowns();
+    loadInitialData();
     return () => controller.abort();
   }, []);
 
@@ -153,6 +169,27 @@ export default function SectionManagement() {
     setForm(initialForm);
     setErrors({});
     setSubmitError("");
+    setEditingSectionId(null);
+    setFeedback({ type: "", message: "" });
+  };
+
+  const loadSections = async (groupId = "") => {
+    try {
+      setSectionsLoading(true);
+      const endpoint = groupId ? apiEndpoints.sections.byGroup(groupId) : apiEndpoints.sections.list;
+      const response = await api.get(endpoint);
+      setSections(asArray(response.data).map(normalizeSection));
+    } catch (error) {
+      setLoadError(getRequestErrorMessage(error));
+    } finally {
+      setSectionsLoading(false);
+    }
+  };
+
+  const handleGroupFilterChange = async (event) => {
+    const nextGroupId = event.target.value;
+    setSelectedGroupId(nextGroupId);
+    await loadSections(nextGroupId);
   };
 
   const handleSubmit = async (event) => {
@@ -160,26 +197,72 @@ export default function SectionManagement() {
     if (submitting) return;
     if (!validate()) return;
 
+    const selectedBoard = dropdowns.boards.find((board) => String(board.name) === String(form.board));
+    const selectedGroup = dropdowns.groups.find((group) => String(group.id) === String(form.groupId));
+
     const payload = {
-      board: form.board,
+      board: selectedBoard?.name ?? String(form.board),
       academicYearId: Number(form.academicYearId),
-      groupId: Number(form.groupId),
+      group: selectedGroup?.name ?? String(form.groupId),
       academicLevel: form.academicLevel,
       sectionName: form.sectionName.trim(),
       roomNumber: form.roomNumber.trim(),
       classTeacherId: Number(form.classTeacherId),
-      maxStrength: Number(form.maxStrength),
+      maximumStrength: Number(form.maxStrength),
     };
 
     try {
       setSubmitting(true);
       setSubmitError("");
-      await createSection(payload);
-      navigate("/dashboard", { state: { successMessage: "Section saved successfully." } });
+      setFeedback({ type: "", message: "" });
+
+      if (editingSectionId) {
+        await api.put(apiEndpoints.sections.update(editingSectionId), payload);
+      } else {
+        await api.post(apiEndpoints.sections.create, payload);
+      }
+
+      await loadSections(selectedGroupId);
+      setFeedback({
+        type: "success",
+        message: editingSectionId ? "Section updated successfully." : "Section created successfully.",
+      });
+      resetForm();
     } catch (error) {
-      setSubmitError(getApiErrorMessage(error));
+      setSubmitError(getRequestErrorMessage(error));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleEdit = (section) => {
+    setEditingSectionId(section.id);
+    setForm({
+      board: section.board ?? "",
+      academicYearId: section.academicYearId ?? "",
+      groupId: section.groupId ?? "",
+      academicLevel: section.academicLevel ?? "",
+      sectionName: section.sectionName ?? "",
+      roomNumber: section.roomNumber ?? "",
+      classTeacherId: section.classTeacherId ?? "",
+      maxStrength: section.maxStrength ?? "",
+    });
+    setErrors({});
+    setSubmitError("");
+  };
+
+  const handleDelete = async (sectionId) => {
+    if (!window.confirm("Delete this section?")) return;
+
+    try {
+      setSubmitError("");
+      setFeedback({ type: "", message: "" });
+      await api.delete(apiEndpoints.sections.remove(sectionId));
+      await loadSections(selectedGroupId);
+      if (editingSectionId === sectionId) resetForm();
+      setFeedback({ type: "success", message: "Section deleted successfully." });
+    } catch (error) {
+      setSubmitError(getRequestErrorMessage(error));
     }
   };
 
@@ -194,6 +277,8 @@ export default function SectionManagement() {
       <Card className="sectionManagementCard">
         {loadError ? <div className="notice notice-error">{loadError}</div> : null}
         {submitError ? <div className="notice notice-error">{submitError}</div> : null}
+        {feedback.message ? <div className={`notice ${feedback.type === "success" ? "notice-success" : "notice-error"}`}>{feedback.message}</div> : null}
+
         <form className="sectionManagementForm" onSubmit={handleSubmit} noValidate>
           <div className="sectionManagementGrid">
             <FormField label="Board" error={errors.board}>
@@ -256,7 +341,7 @@ export default function SectionManagement() {
 
           <div className="sectionManagementActions">
             <Button type="submit" variant="primary" disabled={submitting || loading}>
-              <FiSave /> {submitting ? "Saving..." : "Save Section"}
+              <FiSave /> {submitting ? "Saving..." : editingSectionId ? "Update Section" : "Save Section"}
             </Button>
             <Button type="button" onClick={resetForm} disabled={submitting || loading}>
               <FiRotateCcw /> Reset
@@ -264,14 +349,63 @@ export default function SectionManagement() {
             <Link className="btn btn-secondary" to="/dashboard">Cancel</Link>
           </div>
         </form>
+
+        <div className="sectionManagementActions" style={{ marginTop: "1rem" }}>
+          <label className="formField" style={{ minWidth: "220px" }}>
+            <span>Filter by Group</span>
+            <select className="select" value={selectedGroupId} onChange={handleGroupFilterChange} disabled={loading}>
+              <option value="">All Groups</option>
+              {dropdowns.groups.map((group) => (
+                <option key={group.id} value={group.id}>{group.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {sectionsLoading ? <p>Loading sections...</p> : null}
+
+        <div className="sectionsTableWrap">
+          <table className="sectionsTable">
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Room</th>
+                <th>Board</th>
+                <th>Academic Level</th>
+                <th>Max Strength</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sections.length > 0 ? sections.map((section) => (
+                <tr key={section.id}>
+                  <td>{section.sectionName}</td>
+                  <td>{section.roomNumber}</td>
+                  <td>{section.board}</td>
+                  <td>{section.academicLevel}</td>
+                  <td>{section.maxStrength}</td>
+                  <td>
+                    <div className="sectionsRowActions">
+                      <Button type="button" className="iconBtn iconBtn--edit" onClick={() => handleEdit(section)}>
+                        <FiEdit3 /> Edit
+                      </Button>
+                      <Button type="button" className="iconBtn iconBtn--delete" onClick={() => handleDelete(section.id)}>
+                        <FiTrash2 /> Delete
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan="6" className="sectionsEmptyRow">No sections found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </section>
   );
-}
-
-async function createSection(section) {
-  // TODO: Replace placeholder endpoint with real section API path when available.
-  return api.post("/api/v1/sections", section);
 }
 
 function normalizeBoards(responseData) {
@@ -300,4 +434,38 @@ function normalizeTeachers(responseData) {
     id: item.facultyId ?? item.id ?? item.employeeId ?? item.id,
     name: item.fullName ?? item.name ?? [item.firstName, item.lastName].filter(Boolean).join(" ") ?? "",
   }));
+}
+
+function normalizeSection(item) {
+  return {
+    id: item.sectionId ?? item.id ?? item.sectionID ?? item.section_id,
+    board: item.board ?? item.boardName ?? "",
+    academicYearId: item.academicYearId ?? item.academicYear?.id ?? "",
+    groupId: item.groupId ?? item.group?.id ?? "",
+    academicLevel: item.academicLevel ?? item.academicLevelName ?? "",
+    sectionName: item.sectionName ?? item.name ?? "",
+    roomNumber: item.roomNumber ?? item.room ?? "",
+    classTeacherId: item.classTeacherId ?? item.classTeacher?.id ?? "",
+    maxStrength: item.maxStrength ?? item.maximumStrength ?? "",
+  };
+}
+
+function getRequestErrorMessage(error) {
+  if (!error?.response) {
+    return "Network error. Please check your connection and try again.";
+  }
+
+  if (error.response.status === 401) {
+    return "Unauthorized. Please sign in again and try the request.";
+  }
+
+  if (error.response.status === 404) {
+    return "The requested section was not found.";
+  }
+
+  if (error.response.status >= 500) {
+    return "The server is currently unavailable. Please try again later.";
+  }
+
+  return getApiErrorMessage(error);
 }

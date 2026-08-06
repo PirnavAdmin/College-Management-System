@@ -1,749 +1,200 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import "./MarksEntry.css";
 
-const TEMP_BOARDS = [
-  { id: 1, boardName: "BIE Telangana", status: true },
-  { id: 2, boardName: "BIE Andhra Pradesh", status: true },
-  { id: 3, boardName: "BIE Karnataka", status: false }
+const FALLBACK_BOARDS = [
+  { boardId: 1, boardName: "BIE Telangana", status: true },
+  { boardId: 2, boardName: "BIE Andhra Pradesh", status: true },
+  { boardId: 3, boardName: "CBSE", status: true },
+  { boardId: 4, boardName: "ICSE", status: true },
+  { boardId: 5, boardName: "OTHERS", status: true },
+  
 ];
 
-const TEMP_SUBJECTS = {
+const FALLBACK_SUBJECTS = {
   MPC: [
-    { id: "m1", subjectName: "Mathematics" },
-    { id: "p1", subjectName: "Physics" },
-    { id: "c1", subjectName: "Chemistry" }
+    { subjectId: 1, subjectName: "Mathematics", subjectCode: "MATH101", group: "MPC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 },
+    { subjectId: 2, subjectName: "Physics", subjectCode: "PHY101", group: "MPC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 },
+    { subjectId: 3, subjectName: "Chemistry", subjectCode: "CHEM101", group: "MPC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 },
   ],
   BiPC: [
-    { id: "b1", subjectName: "Botany" },
-    { id: "z1", subjectName: "Zoology" },
-    { id: "c2", subjectName: "Chemistry" }
+    { subjectId: 4, subjectName: "Botany", subjectCode: "BOT101", group: "BiPC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 },
+    { subjectId: 5, subjectName: "Zoology", subjectCode: "ZOO101", group: "BiPC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 },
+    { subjectId: 3, subjectName: "Chemistry", subjectCode: "CHEM101", group: "BiPC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 },
   ],
-  CEC: [
-    { id: "e1", subjectName: "Economics" },
-    { id: "p2", subjectName: "Political Science" },
-    { id: "c3", subjectName: "Commerce" }
-  ],
-  MEC: [
-    { id: "m2", subjectName: "Mathematics" },
-    { id: "e2", subjectName: "Economics" },
-    { id: "c4", subjectName: "Commerce" }
-  ],
-  HEC: [
-    { id: "h2", subjectName: "History"},
-    { id: "e2", subjectName: "Economics" },
-    { id: "c4", subjectName: "Commerce" }
-  ]
+  CEC: [{ subjectId: 6, subjectName: "Economics", subjectCode: "ECO101", group: "CEC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 }],
+  MEC: [{ subjectId: 1, subjectName: "Mathematics", subjectCode: "MATH101", group: "MEC", academicLevel: "UG", subjectType: "Theory", maximumMarks: 100, passingMarks: 35 }],
 };
 
-const MOCK_STUDENTS = [
-  { id: 101, rollNo: "C101", studentName: "Aarav Reddy", internal: "", practical: "", theory: "", verified: false },
-  { id: 102, rollNo: "C102", studentName: "Bhavya Sharma", internal: "", practical: "", theory: "", verified: false },
-  { id: 103, rollNo: "C103", studentName: "Charitha Kumar", internal: "", practical: "", theory: "", verified: false },
-  { id: 104, rollNo: "C104", studentName: "Devansh Nair", internal: "", practical: "", theory: "", verified: false },
-  { id: 105, rollNo: "C105", studentName: "Esha Varma", internal: "", practical: "", theory: "", verified: false },
-  { id: 106, rollNo: "C106", studentName: "Farhan Khan", internal: "", practical: "", theory: "", verified: false },
-  { id: 107, rollNo: "C107", studentName: "Geeta Rao", internal: "", practical: "", theory: "", verified: false },
-  { id: 108, rollNo: "C108", studentName: "Harish Patel", internal: "", practical: "", theory: "", verified: false },
-  { id: 109, rollNo: "C109", studentName: "Ishaan Desai", internal: "", practical: "", theory: "", verified: false },
-  { id: 110, rollNo: "C110", studentName: "Jiya Thomas", internal: "", practical: "", theory: "", verified: false }
-];
+const STUDENTS = [
+  [1, "UG2026001", "Rahul Kumar"], [2, "UG2026002", "Sai Kiran"], [3, "UG2026003", "Ananya Reddy"], [4, "UG2026004", "Vikram Singh"], [5, "UG2026005", "Meera Nair"], [6, "UG2026006", "Karthik Rao"],
+].map(([id, rollNo, studentName]) => ({ id, rollNo, studentName, internal: "", practical: "", theory: "", verified: false }));
 
-const ACADEMIC_YEARS = [
-  { id: "2024-25", label: "2024 - 2025" },
-  { id: "2025-26", label: "2025 - 2026" },
-  { id: "2026-27", label: "2026 - 2027" }
-];
-
-const ACADEMIC_LEVELS = [
-  { id: "UG", label: "Undergraduate" },
-  { id: "PG", label: "Postgraduate" },
-  { id: "Diploma", label: "Diploma" }
-];
-
-const GROUPS = [
-  { id: "MPC", label: "MPC" },
-  { id: "BiPC", label: "BiPC" },
-  { id: "CEC", label: "CEC" },
-  { id: "MEC", label: "MEC" }
-];
-
-const SECTIONS = [
-  { id: "A", label: "Section A" },
-  { id: "B", label: "Section B" },
-  { id: "C", label: "Section C" }
-];
-
-const EXAMS = [
-  { id: "midterm", label: "Midterm Examination" },
-  { id: "semester1", label: "Semester I Examination" },
-  { id: "semester2", label: "Semester II Examination" }
-];
-
-const getTotal = (row) => {
-  const internal = Number(row.internal) || 0;
-  const practical = Number(row.practical) || 0;
-  const theory = Number(row.theory) || 0;
-  return internal + practical + theory;
+const OPTIONS = {
+  academicYear: [["2025-26", "2025 - 2026"], ["2026-27", "2026 - 2027"]],
+  academicLevel:[["Intermediate-first-year", "Intermediate First Year"], ["Intermediate-second-year", "Intermediate Second Year"]],
+  group: [["MPC", "MPC"], ["BiPC", "BiPC"], ["CEC", "CEC"], ["MEC", "MEC"]],
+  section: [["A", "Section A"], ["B", "Section B"], ["C", "Section C"]],
+  examination: [["semester-1", "Semester I"], ["semester-2", "Semester II"], ["midterm", "Midterm Examination"]],
 };
 
-const validateMarkValue = (value, max) => {
-  if (value === "") return "";
+const blankFilters = { board: "", academicYear: "", academicLevel: "", group: "", section: "", examination: "", subject: "" };
+const fieldLabels = { board: "Board", academicYear: "Academic Year", academicLevel: "Academic Level", group: "Group", section: "Section", examination: "Examination", subject: "Subject" };
+const totalOf = (student) => [student.internal, student.practical, student.theory].reduce((sum, mark) => sum + (Number(mark) || 0), 0);
+const isComplete = (student) => [student.internal, student.practical, student.theory].every((mark) => mark !== "");
+const gradeOf = (total) => total >= 90 ? "A+" : total >= 80 ? "A" : total >= 70 ? "B+" : total >= 60 ? "B" : total >= 50 ? "C" : total >= 40 ? "D" : "F";
+const validateMark = (value, maximum) => {
+  if (value === "") return "Required";
   if (!/^\d+$/.test(value)) return "Only whole numbers allowed";
-  const numeric = Number(value);
-  if (numeric < 0) return `0–${max} only`;
-  if (numeric > max) return `0–${max} only`;
-  return "";
+  return Number(value) > maximum ? `0-${maximum} only` : "";
 };
+
+function GradeBadge({ total, complete }) { return <span className={`gradeBadge ${complete ? "" : "isEmpty"}`}>{complete ? gradeOf(total) : "—"}</span>; }
+function StatusBadge({ verified }) { return <span className={`statusBadge ${verified ? "statusVerified" : "statusPending"}`}>{verified ? "Verified" : "Pending"}</span>; }
 
 export default function MarksEntry() {
   const [boards, setBoards] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [filters, setFilters] = useState({
-    board: "",
-    academicYear: "",
-    academicLevel: "",
-    group: "",
-    section: "",
-    exam: "",
-    subject: ""
-  });
+  const [filters, setFilters] = useState(blankFilters);
   const [filterErrors, setFilterErrors] = useState({});
   const [students, setStudents] = useState([]);
-  const [studentErrors, setStudentErrors] = useState({});
-  const [editingRows, setEditingRows] = useState(new Set());
-  const [selectedStudents, setSelectedStudents] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const [submitMessage, setSubmitMessage] = useState("");
+  const [rowErrors, setRowErrors] = useState({});
+  const [editingIds, setEditingIds] = useState(new Set());
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [activeTab, setActiveTab] = useState("entry");
+  const [search, setSearch] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
-    localStorage.removeItem("marksEntryFilters");
-    localStorage.removeItem("marksEntryRows");
-    localStorage.removeItem("marksEntryUpdatedAt");
-
-    const loadBoards = async () => {
-      try {
-        const response = await fetch("/api/v1/boards");
-        if (!response.ok) throw new Error("Board fetch failed");
-        const data = await response.json();
-        const activeBoards = Array.isArray(data) ? data.filter((board) => board.status === true) : [];
-        setBoards(activeBoards.length ? activeBoards : TEMP_BOARDS.filter((board) => board.status === true));
-      } catch (error) {
-        setBoards(TEMP_BOARDS.filter((board) => board.status === true));
-      }
-    };
-
-    loadBoards();
+    let active = true;
+    fetch("/api/v1/boards")
+      .then((response) => { if (!response.ok) throw new Error("Unable to load boards"); return response.json(); })
+      .then((data) => {
+        const result = Array.isArray(data) ? data.filter((board) => board.status) : [];
+        if (!result.length) throw new Error("No active boards returned");
+        if (active) setBoards(result);
+      })
+      .catch(() => { if (active) { setBoards(FALLBACK_BOARDS); toast.info("Board service unavailable — showing fallback data."); } });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    const loadSubjects = async () => {
-      if (!filters.group) {
-        setSubjects([]);
-        return;
-      }
-
-      try {
-        const response = await fetch(`/api/v1/subjects/group/${encodeURIComponent(filters.group)}`);
-        if (!response.ok) throw new Error("Subject fetch failed");
-        const data = await response.json();
-        if (Array.isArray(data) && data.length) {
-          setSubjects(data);
-          return;
-        }
-      } catch (error) {
-        // fallback below
-      }
-
-      setSubjects(TEMP_SUBJECTS[filters.group] || []);
-    };
-
-    loadSubjects();
+    if (!filters.group) { setSubjects([]); return undefined; }
+    let active = true;
+    fetch(`/api/v1/subjects/group/${encodeURIComponent(filters.group)}`)
+      .then((response) => { if (!response.ok) throw new Error("Unable to load subjects"); return response.json(); })
+      .then((data) => {
+        if (!Array.isArray(data) || !data.length) throw new Error("No subjects returned");
+        if (active) setSubjects(data);
+      })
+      .catch(() => { if (active) { setSubjects(FALLBACK_SUBJECTS[filters.group] || []); toast.info("Subject service unavailable — showing fallback data."); } });
+    return () => { active = false; };
   }, [filters.group]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setNotification(null);
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [notification]);
-
-  useEffect(() => {
-    localStorage.setItem("marksEntryFilters", JSON.stringify(filters));
-    localStorage.setItem("marksEntryRows", JSON.stringify(students));
-    localStorage.setItem("marksEntryUpdatedAt", String(Date.now()));
-  }, [filters, students]);
-
-  const validateFilters = useCallback(() => {
-    const errors = {};
-    if (!filters.board) errors.board = "Please select Board";
-    if (!filters.academicYear) errors.academicYear = "Please select Academic Year";
-    if (!filters.academicLevel) errors.academicLevel = "Please select Academic Level";
-    if (!filters.group) errors.group = "Please select Group";
-    if (!filters.section) errors.section = "Please select Section";
-    if (!filters.exam) errors.exam = "Please select Exam";
-    if (!filters.subject) errors.subject = "Please select Subject";
-    setFilterErrors(errors);
-    return Object.keys(errors).length === 0;
-  }, [filters]);
-
-  const canCheckStudents = useMemo(
-    () => Object.values(filters).every((value) => Boolean(value)),
-    [filters]
-  );
-
-  const handleFilterChange = useCallback((field, value) => {
-    setFilters((current) => ({
-      ...current,
-      [field]: value,
-      ...(field === "group" ? { subject: "" } : {})
-    }));
-    setFilterErrors((current) => ({ ...current, [field]: undefined }));
-    if (field === "group") {
-      setSubjects([]);
-    }
-  }, []);
-
-  const handleCheckStudents = useCallback(() => {
-    if (!validateFilters()) return;
-    setStudents(
-      MOCK_STUDENTS.map((student) => ({
-        ...student,
-        internal: "",
-        practical: "",
-        theory: "",
-        verified: false
-      }))
-    );
-    setSelectedStudents([]);
-    setEditingRows(new Set());
-    setStudentErrors({});
-    setSearchQuery("");
-    setSubmitMessage("");
-    setNotification({ type: "success", text: "Student list loaded for evaluation." });
-  }, [validateFilters]);
-
-  const filteredStudents = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return students;
-    return students.filter((student) => {
-      return (
-        student.rollNo.toLowerCase().includes(query) ||
-        student.studentName.toLowerCase().includes(query)
-      );
-    });
-  }, [searchQuery, students]);
-
+  const allFiltersSelected = useMemo(() => Object.values(filters).every(Boolean), [filters]);
+  const visibleStudents = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return term ? students.filter((student) => student.rollNo.toLowerCase().includes(term) || student.studentName.toLowerCase().includes(term)) : students;
+  }, [search, students]);
   const stats = useMemo(() => {
-    const totalStudents = students.length;
-    const marksEntered = students.filter((student) => {
-      return student.internal !== "" || student.practical !== "" || student.theory !== "";
-    }).length;
-    const verifiedStudents = students.filter((student) => student.verified).length;
-    const pendingStudents = totalStudents - verifiedStudents;
-    const totals = students
-      .map((student) => getTotal(student))
-      .filter((value) => value > 0);
-    const averageMarks = totals.length ? Math.round(totals.reduce((sum, value) => sum + value, 0) / totals.length) : 0;
-    const highestMarks = totals.length ? Math.max(...totals) : 0;
-
-    return {
-      totalStudents,
-      marksEntered,
-      verifiedStudents,
-      pendingStudents,
-      averageMarks,
-      highestMarks
-    };
+    const entered = students.filter(isComplete);
+    const totals = entered.map(totalOf);
+    return { total: students.length, entered: entered.length, verified: students.filter((student) => student.verified).length, pending: students.filter((student) => !student.verified).length, average: totals.length ? Math.round(totals.reduce((sum, total) => sum + total, 0) / totals.length) : 0, highest: totals.length ? Math.max(...totals) : 0 };
   }, [students]);
 
-  const toggleStudentSelection = useCallback(
-    (studentId) => {
-      setSelectedStudents((current) => {
-        if (current.includes(studentId)) {
-          return current.filter((id) => id !== studentId);
-        }
-        return [...current, studentId];
-      });
-    },
-    [setSelectedStudents]
-  );
-
-  const selectAllOnPage = useCallback(() => {
-    const pageIds = filteredStudents.map((student) => student.id);
-    const allSelected = pageIds.every((id) => selectedStudents.includes(id));
-    if (allSelected) {
-      setSelectedStudents((current) => current.filter((id) => !pageIds.includes(id)));
-    } else {
-      setSelectedStudents((current) => [...new Set([...current, ...pageIds])]);
-    }
-  }, [filteredStudents, selectedStudents]);
-
-  const handleMarkChange = useCallback(
-    (studentId, field, value) => {
-      const max = field === "theory" ? 40 : 30;
-      const error = validateMarkValue(value, max);
-      setStudents((current) =>
-        current.map((student) => {
-          if (student.id !== studentId) return student;
-          const updated = {
-            ...student,
-            [field]: value,
-            verified: student.verified ? false : student.verified
-          };
-          return updated;
-        })
-      );
-      setStudentErrors((current) => ({
-        ...current,
-        [studentId]: {
-          ...current[studentId],
-          [field]: error
-        }
-      }));
-    },
-    []
-  );
-
-  const handleEditRow = useCallback((studentId) => {
-    setEditingRows((current) => new Set(current).add(studentId));
+  const changeFilter = useCallback((name, value) => {
+    setFilters((current) => ({ ...current, [name]: value, ...(name === "group" ? { subject: "" } : {}) }));
+    setFilterErrors((current) => ({ ...current, [name]: undefined, ...(name === "group" ? { subject: undefined } : {}) }));
   }, []);
-
-  const handleSaveRow = useCallback(
-    (studentId) => {
-      const student = students.find((row) => row.id === studentId);
-      if (!student) return;
-      const internalError = validateMarkValue(student.internal, 30);
-      const practicalError = validateMarkValue(student.practical, 30);
-      const theoryError = validateMarkValue(student.theory, 40);
-      const rowErrors = {
-        internal: internalError,
-        practical: practicalError,
-        theory: theoryError
-      };
-      setStudentErrors((current) => ({
-        ...current,
-        [studentId]: rowErrors
-      }));
-      if (internalError || practicalError || theoryError) return;
-      setEditingRows((current) => {
-        const next = new Set(current);
-        next.delete(studentId);
-        return next;
-      });
-    },
-    [students]
-  );
-
-  const handleEditSelected = useCallback(() => {
-    setEditingRows((current) => {
-      const next = new Set(current);
-      selectedStudents.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [selectedStudents]);
-
-  const handleVerifySelected = useCallback(() => {
-    setStudents((current) =>
-      current.map((student) => {
-        if (!selectedStudents.includes(student.id)) return student;
-        return {
-          ...student,
-          verified: true
-        };
-      })
-    );
-    setNotification({ type: "success", text: "Selected students verified." });
-  }, [selectedStudents]);
-
-  const handleDeleteAllMarks = useCallback(() => {
-    setStudents((current) =>
-      current.map((student) => ({
-        ...student,
-        internal: "",
-        practical: "",
-        theory: "",
-        verified: false
-      }))
-    );
-    setStudentErrors({});
-    setEditingRows(new Set());
-    setSelectedStudents([]);
-    setNotification({ type: "warning", text: "All marks have been cleared." });
-    setModalOpen(false);
+  const validateFilter = useCallback((name) => {
+    setFilterErrors((current) => ({ ...current, [name]: filters[name] ? undefined : `Select ${fieldLabels[name]}` }));
+  }, [filters]);
+  const checkStudents = useCallback(() => {
+    const errors = Object.fromEntries(Object.entries(filters).filter(([, value]) => !value).map(([name]) => [name, `Select ${fieldLabels[name]}`]));
+    setFilterErrors(errors);
+    if (Object.keys(errors).length) { toast.error("Complete all assessment filters first."); return; }
+    setStudents(STUDENTS.map((student) => ({ ...student })));
+    setRowErrors({}); setEditingIds(new Set()); setSelectedIds([]); setSearch(""); setActiveTab("entry");
+    toast.success("Students loaded for evaluation.");
+  }, [filters]);
+  const changeMark = useCallback((id, field, value) => {
+    if (value !== "" && !/^\d*$/.test(value)) return;
+    setStudents((current) => current.map((student) => student.id === id ? { ...student, [field]: value, verified: student[field] !== value ? false : student.verified } : student));
+    setRowErrors((current) => ({ ...current, [id]: { ...current[id], [field]: validateMark(value, field === "theory" ? 40 : 30) } }));
   }, []);
-
-  const handleSubmitEvaluation = useCallback(() => {
-    if (students.length === 0) {
-      setSubmitMessage("Please load students before submitting.");
-      return;
-    }
-    const hasMarks = students.some((student) => student.internal !== "" || student.practical !== "" || student.theory !== ""
-    );
-    if (!hasMarks) {
-      setSubmitMessage("Please enter marks before submitting.");
-      return;
-    }
-    setSubmitMessage("");
-    setNotification({ type: "success", text: "Evaluation submitted successfully." });
+  const saveRow = useCallback((id) => {
+    const student = students.find((item) => item.id === id);
+    const errors = { internal: validateMark(student.internal, 30), practical: validateMark(student.practical, 30), theory: validateMark(student.theory, 40) };
+    setRowErrors((current) => ({ ...current, [id]: errors }));
+    if (Object.values(errors).some(Boolean)) { toast.error("Correct the mark validation errors before saving."); return; }
+    setEditingIds((current) => { const next = new Set(current); next.delete(id); return next; });
+    toast.success("Marks saved.");
   }, [students]);
+  const toggleSelection = useCallback((id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]), []);
+  const toggleAll = useCallback(() => {
+    const ids = visibleStudents.map((student) => student.id);
+    setSelectedIds((current) => ids.every((id) => current.includes(id)) ? current.filter((id) => !ids.includes(id)) : [...new Set([...current, ...ids])]);
+  }, [visibleStudents]);
+  const verifySelected = useCallback(() => {
+    if (!selectedIds.length) { toast.error("Select at least one student to verify."); return; }
+    const incomplete = students.filter((student) => selectedIds.includes(student.id) && !isComplete(student));
+    if (incomplete.length) { toast.error("Marks must be entered for every selected student before verification."); return; }
+    setStudents((current) => current.map((student) => selectedIds.includes(student.id) ? { ...student, verified: true } : student));
+    toast.success("Selected students verified.");
+  }, [selectedIds, students]);
+  const editSelected = useCallback(() => {
+    if (!selectedIds.length) { toast.error("Select at least one student to edit."); return; }
+    setEditingIds((current) => new Set([...current, ...selectedIds]));
+  }, [selectedIds]);
+  const saveSelected = useCallback(() => {
+    if (!selectedIds.length) { toast.error("Select at least one student to save."); return; }
+    const selected = students.filter((student) => selectedIds.includes(student.id));
+    const errors = {};
+    selected.forEach((student) => { errors[student.id] = { internal: validateMark(student.internal, 30), practical: validateMark(student.practical, 30), theory: validateMark(student.theory, 40) }; });
+    setRowErrors((current) => ({ ...current, ...errors }));
+    if (Object.values(errors).some((row) => Object.values(row).some(Boolean))) { toast.error("Correct the mark validation errors before saving."); return; }
+    setEditingIds((current) => { const next = new Set(current); selectedIds.forEach((id) => next.delete(id)); return next; });
+    toast.success("Marks saved.");
+  }, [selectedIds, students]);
+  const verifyStudent = useCallback((id) => {
+    const student = students.find((item) => item.id === id);
+    if (!isComplete(student)) { toast.error("Enter all marks before verification."); return; }
+    setStudents((current) => current.map((item) => item.id === id ? { ...item, verified: true } : item));
+    toast.success("Student verified.");
+  }, [students]);
+  const submitEvaluation = useCallback(() => {
+    if (!students.length) { toast.error("Load students before submitting."); return; }
+    if (!students.some(isComplete)) { toast.error("Enter marks before submitting."); return; }
+    toast.success("Evaluation submitted successfully.");
+  }, [students]);
+  const clearMarks = useCallback(() => {
+    setStudents((current) => current.map((student) => ({ ...student, internal: "", practical: "", theory: "", verified: false })));
+    setRowErrors({}); setEditingIds(new Set()); setSelectedIds([]); setDeleteOpen(false); toast.warning("All marks cleared successfully.");
+  }, []);
+  const allVisibleSelected = visibleStudents.length > 0 && visibleStudents.every((student) => selectedIds.includes(student.id));
 
-  const activeBoards = useMemo(() => boards.filter((board) => board.status === true), [boards]);
-  const headerCount = students.length;
-  const anySelected = selectedStudents.length > 0;
-
-  return (
-    <div className="marksEntry">
-      <div className="card filterCard">
-        <div className="cardHeader">
-          <div>
-            <h2>Assessment Filters</h2>
-            <p>Use these mandatory filters to load the student evaluation list.</p>
-          </div>
-          <button
-            type="button"
-            className="button button-primary"
-            disabled={!canCheckStudents}
-            onClick={handleCheckStudents}
-          >
-            Check Students
-          </button>
-        </div>
-
-        <div className="filterGrid">
-          <div className="fieldGroup">
-            <label htmlFor="board">Board</label>
-            <select
-              id="board"
-              value={filters.board}
-              onChange={(event) => handleFilterChange("board", event.target.value)}
-            >
-              <option value="">Select Board</option>
-              {activeBoards.map((board) => (
-                <option key={board.id} value={board.boardName}>
-                  {board.boardName}
-                </option>
-              ))}
-            </select>
-            {filterErrors.board && <div className="fieldError">{filterErrors.board}</div>}
-          </div>
-
-          <div className="fieldGroup">
-            <label htmlFor="academicYear">Academic Year</label>
-            <select
-              id="academicYear"
-              value={filters.academicYear}
-              onChange={(event) => handleFilterChange("academicYear", event.target.value)}
-            >
-              <option value="">Select Academic Year</option>
-              {ACADEMIC_YEARS.map((year) => (
-                <option key={year.id} value={year.id}>
-                  {year.label}
-                </option>
-              ))}
-            </select>
-            {filterErrors.academicYear && <div className="fieldError">{filterErrors.academicYear}</div>}
-          </div>
-
-          <div className="fieldGroup">
-            <label htmlFor="academicLevel">Academic Level</label>
-            <select
-              id="academicLevel"
-              value={filters.academicLevel}
-              onChange={(event) => handleFilterChange("academicLevel", event.target.value)}
-            >
-              <option value="">Select Academic Level</option>
-              {ACADEMIC_LEVELS.map((level) => (
-                <option key={level.id} value={level.id}>
-                  {level.label}
-                </option>
-              ))}
-            </select>
-            {filterErrors.academicLevel && <div className="fieldError">{filterErrors.academicLevel}</div>}
-          </div>
-
-          <div className="fieldGroup">
-            <label htmlFor="group">Group</label>
-            <select
-              id="group"
-              value={filters.group}
-              onChange={(event) => handleFilterChange("group", event.target.value)}
-            >
-              <option value="">Select Group</option>
-              {GROUPS.map((groupItem) => (
-                <option key={groupItem.id} value={groupItem.id}>
-                  {groupItem.label}
-                </option>
-              ))}
-            </select>
-            {filterErrors.group && <div className="fieldError">{filterErrors.group}</div>}
-          </div>
-
-          <div className="fieldGroup">
-            <label htmlFor="section">Section</label>
-            <select
-              id="section"
-              value={filters.section}
-              onChange={(event) => handleFilterChange("section", event.target.value)}
-            >
-              <option value="">Select Section</option>
-              {SECTIONS.map((sectionItem) => (
-                <option key={sectionItem.id} value={sectionItem.id}>
-                  {sectionItem.label}
-                </option>
-              ))}
-            </select>
-            {filterErrors.section && <div className="fieldError">{filterErrors.section}</div>}
-          </div>
-
-          <div className="fieldGroup">
-            <label htmlFor="exam">Exam</label>
-            <select
-              id="exam"
-              value={filters.exam}
-              onChange={(event) => handleFilterChange("exam", event.target.value)}
-            >
-              <option value="">Select Exam</option>
-              {EXAMS.map((examItem) => (
-                <option key={examItem.id} value={examItem.id}>
-                  {examItem.label}
-                </option>
-              ))}
-            </select>
-            {filterErrors.exam && <div className="fieldError">{filterErrors.exam}</div>}
-          </div>
-
-          <div className="fieldGroup">
-            <label htmlFor="subject">Subject</label>
-            <select
-              id="subject"
-              value={filters.subject}
-              onChange={(event) => handleFilterChange("subject", event.target.value)}
-              disabled={!filters.group}
-            >
-              <option value="">Select Subject</option>
-              {subjects.map((subjectItem) => (
-                <option key={subjectItem.id} value={subjectItem.subjectName}>
-                  {subjectItem.subjectName}
-                </option>
-              ))}
-            </select>
-            {filterErrors.subject && <div className="fieldError">{filterErrors.subject}</div>}
-          </div>
-        </div>
+  return <section className="marksEntry" aria-label="Marks entry module">
+    <div className="marksCard filterCard">
+      <div className="sectionHeading"><div><h2> Assessment details</h2><p>All fields are required before students can be loaded.</p></div><button className="marksButton primary" type="button" disabled={!allFiltersSelected} onClick={checkStudents}>Check Students</button></div>
+      <div className="marksFilterGrid">
+        <SelectField label="Board" name="board" value={filters.board} onChange={changeFilter} onBlur={validateFilter} error={filterErrors.board}><option value="">Select board</option>{boards.map((board) => <option key={board.boardId} value={board.boardId}>{board.boardName}</option>)}</SelectField>
+        {Object.entries(OPTIONS).map(([name, options]) => <SelectField key={name} label={fieldLabels[name]} name={name} value={filters[name]} onChange={changeFilter} onBlur={validateFilter} error={filterErrors[name]}><option value="">Select {fieldLabels[name]}</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectField>)}
+        <SelectField label="Subject" name="subject" value={filters.subject} onChange={changeFilter} onBlur={validateFilter} error={filterErrors.subject} disabled={!filters.group}><option value="">Select subject</option>{subjects.map((subject) => <option key={subject.subjectId} value={subject.subjectId}>{subject.subjectName} ({subject.subjectCode})</option>)}</SelectField>
       </div>
-
-      <div className="card statsCard">
-        <div className="statsGrid">
-          <div className="statTile">
-            <span className="statLabel">Total Students</span>
-            <strong>{stats.totalStudents}</strong>
-          </div>
-          <div className="statTile">
-            <span className="statLabel">Marks Entered</span>
-            <strong>{stats.marksEntered}</strong>
-          </div>
-          <div className="statTile">
-            <span className="statLabel">Verified Students</span>
-            <strong>{stats.verifiedStudents}</strong>
-          </div>
-          <div className="statTile">
-            <span className="statLabel">Pending Students</span>
-            <strong>{stats.pendingStudents}</strong>
-          </div>
-          <div className="statTile">
-            <span className="statLabel">Average Marks</span>
-            <strong>{stats.averageMarks}</strong>
-          </div>
-          <div className="statTile">
-            <span className="statLabel">Highest Marks</span>
-            <strong>{stats.highestMarks}</strong>
-          </div>
-        </div>
-      </div>
-
-      <div className="card searchCard">
-        <div className="searchRow">
-          <div>
-            <h3>Student Search</h3>
-            <p>Search the student list by Roll No or Name.</p>
-          </div>
-          <input
-            type="search"
-            placeholder="Search student by Roll No or Name"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="card tableCard">
-        <div className="tableHeader">
-          <div>
-            <h3>Marks Entry</h3>
-            <p>{headerCount} students available for evaluation.</p>
-          </div>
-          <div className="tableActions">
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={handleEditSelected}
-              disabled={!anySelected}
-            >
-              Edit Selected
-            </button>
-            <button
-              type="button"
-              className="button button-success"
-              onClick={handleVerifySelected}
-              disabled={!anySelected}
-            >
-              Verify Selected
-            </button>
-          </div>
-        </div>
-
-        <div className="tableWrapper">
-          <table className="dataTable">
-            <thead>
-              <tr>
-                <th>
-                  <label className="checkboxLabel">
-                    <input
-                      type="checkbox"
-                      checked={filteredStudents.length > 0 && filteredStudents.every((student) => selectedStudents.includes(student.id))}
-                      onChange={selectAllOnPage}
-                    />
-                  </label>
-                </th>
-                <th>Roll No</th>
-                <th>Student Name</th>
-                <th>Internal Marks</th>
-                <th>Practical Marks</th>
-                <th>Theory Marks</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.map((student) => {
-                const isEditing = editingRows.has(student.id);
-                const errors = studentErrors[student.id] || {};
-                const total = getTotal(student);
-                return (
-                  <tr key={student.id}>
-                    <td>
-                      <label className="checkboxLabel">
-                        <input
-                          type="checkbox"
-                          checked={selectedStudents.includes(student.id)}
-                          onChange={() => toggleStudentSelection(student.id)}
-                        />
-                      </label>
-                    </td>
-                    <td>{student.rollNo}</td>
-                    <td>{student.studentName}</td>
-                    <td>
-                      <input
-                        type="text"
-                        className={errors.internal ? "fieldInput fieldInvalid" : "fieldInput"}
-                        value={student.internal}
-                        onChange={(event) => handleMarkChange(student.id, "internal", event.target.value)}
-                        disabled={!isEditing}
-                        placeholder="0-30"
-                      />
-                      {errors.internal && <div className="fieldError">{errors.internal}</div>}
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        className={errors.practical ? "fieldInput fieldInvalid" : "fieldInput"}
-                        value={student.practical}
-                        onChange={(event) => handleMarkChange(student.id, "practical", event.target.value)}
-                        disabled={!isEditing}
-                        placeholder="0-30"
-                      />
-                      {errors.practical && <div className="fieldError">{errors.practical}</div>}
-                    </td>
-                    <td>
-                      <input
-                        type="text"
-                        className={errors.theory ? "fieldInput fieldInvalid" : "fieldInput"}
-                        value={student.theory}
-                        onChange={(event) => handleMarkChange(student.id, "theory", event.target.value)}
-                        disabled={!isEditing}
-                        placeholder="0-40"
-                      />
-                      {errors.theory && <div className="fieldError">{errors.theory}</div>}
-                    </td>
-                    <td>{total}</td>
-                    <td>
-                      <span className={`statusBadge ${student.verified ? "statusVerified" : "statusPending"}`}>
-                        {student.verified ? "Verified" : "Pending"}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className={isEditing ? "button button-success button-small" : "button button-secondary button-small"}
-                        onClick={() => (isEditing ? handleSaveRow(student.id) : handleEditRow(student.id))}
-                      >
-                        {isEditing ? "Save" : "Edit"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!filteredStudents.length && (
-                <tr>
-                  <td colSpan={9} className="emptyRow">
-                    No students available. Adjust filters and load the student list.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card actionCard">
-        <div className="actionRow">
-          <button type="button" className="button button-danger" onClick={() => setModalOpen(true)}>
-            Delete All Marks
-          </button>
-          <div className="actionGroup">
-            {submitMessage && <span className="submitFeedback">{submitMessage}</span>}
-            <button type="button" className="button button-primary" onClick={handleSubmitEvaluation}>
-              Submit Evaluation
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {notification && (
-        <div className={`toast ${notification.type === "success" ? "toastSuccess" : "toastWarning"}`}>
-          {notification.text}
-        </div>
-      )}
-
-      {modalOpen && (
-        <div className="modalOverlay">
-          <div className="modalCard">
-            <h2>Clear all entered marks?</h2>
-            <p>Are you sure you want to clear all entered marks?</p>
-            <div className="modalActions">
-              <button type="button" className="button button-secondary" onClick={() => setModalOpen(false)}>
-                Cancel
-              </button>
-              <button type="button" className="button button-danger" onClick={handleDeleteAllMarks}>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
-  );
+    {students.length > 0 && <>
+      <div className="statsGrid">{[["Total Students", stats.total], ["Marks Entered", stats.entered], ["Verified Students", stats.verified], ["Pending Students", stats.pending], ["Average Marks", stats.average], ["Highest Marks", stats.highest]].map(([label, value]) => <div className="statTile" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+      <div className="marksCard"><div className="tabBar"><button className={activeTab === "entry" ? "active" : ""} onClick={() => setActiveTab("entry")} type="button">Marks Entry</button><button className={activeTab === "verify" ? "active" : ""} onClick={() => setActiveTab("verify")} type="button">Verification <span>{stats.verified}/{stats.total}</span></button></div>
+        <div className="tableToolbar"><label className="searchField">Search students<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Roll number or student name" /></label>{activeTab === "verify" && <div className="verifyActions"><button type="button" className="marksButton secondary" onClick={editSelected}>Edit Selected</button><button type="button" className="marksButton secondary" onClick={saveSelected}>Save Selected</button><button type="button" className="marksButton success" onClick={verifySelected}>Verify Selected</button></div>}</div>
+        <StudentTable students={visibleStudents} activeTab={activeTab} selectedIds={selectedIds} allSelected={allVisibleSelected} toggleAll={toggleAll} toggleSelection={toggleSelection} editingIds={editingIds} setEditingIds={setEditingIds} rowErrors={rowErrors} changeMark={changeMark} saveRow={saveRow} verifyStudent={verifyStudent} />
+      </div>
+      <div className="marksCard footerActions"><p>Only complete, verified marks can be submitted.</p><div><button type="button" className="marksButton dangerOutline" onClick={() => setDeleteOpen(true)}>Clear All Marks</button><button type="button" className="marksButton primary" onClick={submitEvaluation}>Submit Evaluation</button></div></div>
+    </>}
+    {deleteOpen && <div className="modalOverlay" role="presentation"><div className="deleteModal" role="dialog" aria-modal="true" aria-labelledby="delete-title"><h2 id="delete-title">Clear all marks?</h2><p>Are you sure you want to clear all entered marks? This cannot be undone.</p><div><button type="button" className="marksButton secondary" onClick={() => setDeleteOpen(false)}>Cancel</button><button type="button" className="marksButton danger" onClick={clearMarks}>Delete</button></div></div></div>}
+    <ToastContainer position="bottom-right" theme="colored" newestOnTop closeOnClick />
+  </section>;
 }
+
+function SelectField({ label, name, value, onChange, onBlur, error, children, disabled = false }) { return <label className="filterField">{label}<select value={value} disabled={disabled} onBlur={() => onBlur(name)} onChange={(event) => onChange(name, event.target.value)}>{children}</select>{error && <small>{error}</small>}</label>; }
+function StudentTable({ students, activeTab, selectedIds, allSelected, toggleAll, toggleSelection, editingIds, setEditingIds, rowErrors, changeMark, saveRow, verifyStudent }) { return <div className="marksTableWrap"><table className="marksTable"><thead><tr><th><input aria-label="Select all visible students" type="checkbox" checked={allSelected} onChange={toggleAll} /></th><th>Roll No</th><th>Student Name</th><th>Internal <small>/30</small></th><th>Practical <small>/30</small></th><th>Theory <small>/40</small></th><th>Total</th><th>Grade</th><th>Status</th><th>Action</th></tr></thead><tbody>{students.length ? students.map((student) => { const editing = editingIds.has(student.id); const complete = isComplete(student); return <tr key={student.id}><td><input aria-label={`Select ${student.studentName}`} type="checkbox" checked={selectedIds.includes(student.id)} onChange={() => toggleSelection(student.id)} /></td><td>{student.rollNo}</td><td><strong>{student.studentName}</strong></td>{["internal", "practical", "theory"].map((field) => <td key={field}><input className={rowErrors[student.id]?.[field] ? "invalid" : ""} aria-label={`${field} marks for ${student.studentName}`} disabled={!editing} inputMode="numeric" value={student[field]} onChange={(event) => changeMark(student.id, field, event.target.value)} />{rowErrors[student.id]?.[field] && <small className="markError">{rowErrors[student.id][field]}</small>}</td>)}<td>{complete ? totalOf(student) : "—"}</td><td><GradeBadge complete={complete} total={totalOf(student)} /></td><td><StatusBadge verified={student.verified} /></td><td><div className="rowActions"><button type="button" className="rowButton" onClick={() => editing ? saveRow(student.id) : setEditingIds((current) => new Set(current).add(student.id))}>{editing ? "Save" : "Edit"}</button>{activeTab === "verify" && <button type="button" className="rowButton verifyRow" onClick={() => verifyStudent(student.id)}>Verify</button>}</div></td></tr>; }) : <tr><td colSpan="10" className="emptyTable">No students match your search.</td></tr>}</tbody></table></div>; }

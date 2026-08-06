@@ -153,7 +153,7 @@ export default function AddGroup() {
         ) : (
           <form className="addGroupForm" noValidate onSubmit={saveGroup}>
             <div className="addGroupGrid">
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Board <b>*</b>
                 </span>
@@ -166,7 +166,7 @@ export default function AddGroup() {
                 {errors.board ? <small className="field-error">{errors.board}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Academic Year <b>*</b>
                 </span>
@@ -185,7 +185,7 @@ export default function AddGroup() {
                 {errors.academicYearId ? <small className="field-error">{errors.academicYearId}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Academic Level <b>*</b>
                 </span>
@@ -202,7 +202,7 @@ export default function AddGroup() {
                 {errors.academicLevel ? <small className="field-error">{errors.academicLevel}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Group Name <b>*</b>
                 </span>
@@ -215,7 +215,7 @@ export default function AddGroup() {
                 {errors.groupName ? <small className="field-error">{errors.groupName}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Group Code <b>*</b>
                 </span>
@@ -228,7 +228,7 @@ export default function AddGroup() {
                 {errors.groupCode ? <small className="field-error">{errors.groupCode}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>Status</span>
                 <select className="select" value={form.status} onChange={(event) => updateField("status", event.target.value)}>
                   <option value="Active">Active</option>
@@ -236,7 +236,7 @@ export default function AddGroup() {
                 </select>
               </label>
 
-              <label className="form-field addGroupFull">
+              <label className="form-field addGroupField addGroupFull">
                 <span>Description</span>
                 <textarea
                   className="textarea"

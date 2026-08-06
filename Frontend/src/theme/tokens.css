@@ -15,6 +15,8 @@
   --color-success: #059669;
   --color-warning: #d97706;
   --color-danger: #dc2626;
+  --color-on-primary: #ffffff;
+  --color-overlay: rgba(15, 23, 42, 0.55);
   --radius-card: 8px;
   --radius-control: 8px;
   --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 12px 28px rgba(15, 23, 42, 0.06);
@@ -39,6 +41,8 @@
 
 .theme-dark {
   --color-bg: #0f172a;
+  --color-sidebar: #111827;
+  --color-sidebar-soft: #1f2937;
   --color-surface: #1e293b;
   --color-surface-soft: #111827;
   --color-text: #f8fafc;

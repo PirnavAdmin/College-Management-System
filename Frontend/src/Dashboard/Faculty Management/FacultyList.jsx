@@ -8,21 +8,25 @@ import DataTable from "../../shared/components/DataTable";
 import EmptyState from "../../shared/components/EmptyState";
 import PageHeader from "../../shared/components/PageHeader";
 import { asArray } from "../../shared/utils/responseHelpers";
+import { apiEndpoints } from "../../services/apiEndpoints";
 import "./FacultyList.css";
 
 const normalizeFaculty = (faculty) => ({
   ...faculty,
-  id: faculty.id ?? faculty.facultyId ?? faculty.employeeId,
-  employeeId: faculty.employeeId ?? faculty.id ?? faculty.facultyId,
-  name: faculty.fullName ?? faculty.name ?? [faculty.firstName, faculty.lastName].filter(Boolean).join(" "),
+  id: faculty.facultyId ?? faculty.id ?? null,
+  employeeId: faculty.employeeId ?? faculty.facultyCode ?? faculty.facultyId ?? faculty.id,
+  name:
+    faculty.fullName ?? faculty.name ?? faculty.employeeId ?? [faculty.firstName, faculty.lastName].filter(Boolean).join(" ") ?? "",
   mobile: faculty.mobile ?? faculty.mobileNumber ?? "",
-  department: faculty.department?.name ?? faculty.departmentName ?? faculty.department ?? "",
+  department:
+    faculty.department?.name ?? faculty.department?.departmentName ?? faculty.departmentName ?? faculty.department ?? faculty.departmentId ?? "",
   status: faculty.status ?? (faculty.isActive === false ? "Inactive" : "Active"),
 });
 
 export default function FacultyList() {
   const navigate = useNavigate();
   const [faculty, setFaculty] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -31,11 +35,15 @@ export default function FacultyList() {
     try {
       setLoading(true);
       setError("");
-      const response = await api.get("/api/v1/faculty", {
+      const response = await api.get(apiEndpoints.faculty.list, {
         signal,
         params: { "api-version": "1.0", PageNumber: 1, PageSize: 1000 },
       });
-      setFaculty(asArray(response.data).map(normalizeFaculty));
+      const records = asArray(response.data).map(normalizeFaculty);
+      // map department ids to names if department missing
+      const deptMap = (departments || []).reduce((acc, d) => ({ ...acc, [String(d.id)]: d.name }), {});
+      const augmented = records.map((f) => ({ ...f, department: f.department || deptMap[String(f.departmentId)] || f.department }));
+      setFaculty(augmented);
     } catch (fetchError) {
       if (fetchError.name !== "CanceledError") setError(getApiErrorMessage(fetchError));
     } finally {
@@ -43,10 +51,24 @@ export default function FacultyList() {
     }
   };
 
+  const fetchDepartments = async (signal) => {
+    try {
+      const response = await api.get(apiEndpoints.departments.list, { signal, params: { "api-version": "1.0" } });
+      const apiDepartments = asArray(response.data).map((item) => ({ id: item.id ?? item.departmentId, name: item.name ?? item.departmentName })).filter((item) => item.id && item.name);
+      if (apiDepartments.length) setDepartments(apiDepartments);
+    } catch (err) {
+      // ignore — department column will try other fallbacks
+    }
+  };
+
   const deleteFaculty = async (facultyId) => {
     if (!window.confirm("Delete this faculty member?")) return;
+    if (!facultyId) {
+      setError("This faculty record has no Faculty ID, so it cannot be deleted.");
+      return;
+    }
     try {
-      await api.delete(`/api/v1/faculty/${facultyId}`, { params: { "api-version": "1.0" } });
+      await api.delete(apiEndpoints.faculty.remove(facultyId), { params: { "api-version": "1.0" } });
       await fetchFaculty();
     } catch (deleteError) {
       setError(getApiErrorMessage(deleteError));
@@ -55,7 +77,10 @@ export default function FacultyList() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchFaculty(controller.signal);
+    (async () => {
+      await fetchDepartments(controller.signal);
+      await fetchFaculty(controller.signal);
+    })();
     return () => controller.abort();
   }, []);
 
@@ -82,7 +107,7 @@ export default function FacultyList() {
               { key: "name", label: "Faculty Name" },
               { key: "mobile", label: "Mobile" },
               { key: "email", label: "Email" },
-              { key: "department", label: "Department" },
+              { key: "department", label: "Department", render: (row) => row.department || row.departmentId || "—" },
               { key: "status", label: "Status", render: (row) => <span className="badge">{row.status}</span> },
             ]}
             rows={filteredFaculty}

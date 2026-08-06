@@ -1,9 +1,215 @@
-.facultySubjectAllocation,
-.allocationForm {
+.facultySubjectAllocation {
   display: grid;
   gap: var(--space-4);
 }
 
-.allocationFormCard {
+.workloadHeaderCard,
+.workloadControlsCard,
+.tableCard,
+.infoCard,
+.statCard,
+.errorCard {
+  padding: var(--space-4);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+}
+
+.workloadHeaderContent {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.workloadHeaderContent h2 {
+  margin: 0 0 var(--space-1) 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.workloadControls {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.workloadSearchGroup,
+.filterGroup {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.searchInput {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--color-border);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 14px;
+  background: var(--color-surface);
+}
+
+.searchInput input {
+  border: none;
+  background: transparent;
+  width: 100%;
+  outline: none;
+}
+
+.filterGroup {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+}
+
+.filterClearButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  color: var(--color-primary);
+  background: transparent;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.workloadSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.infoCard {
+  grid-column: span 1;
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  min-height: 150px;
+}
+
+.infoCard .infoIcon,
+.statCard svg {
+  background: var(--color-surface);
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+}
+
+.statCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 150px;
+}
+
+.statCard.primary { background: rgba(0, 112, 243, 0.08); }
+.statCard.success { background: rgba(34, 197, 94, 0.08); }
+.statCard.warning { background: rgba(250, 204, 21, 0.12); }
+.statCard.info { background: rgba(59, 130, 246, 0.1); }
+
+.statCard h3 {
+  margin: 0.5rem 0 0;
+  font-size: 2rem;
+}
+
+.statCard span,
+.infoCard span {
+  display: block;
+  color: var(--color-muted);
+}
+
+.tableCard {
+  overflow: hidden;
+}
+
+.tableHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
   margin-bottom: var(--space-4);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.workloadTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+.workloadTable th,
+.workloadTable td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.workloadTable th {
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.workloadTable tr:hover {
+  background: rgba(0, 112, 243, 0.05);
+}
+
+.tableSkeleton {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.skeletonRow {
+  height: 52px;
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+.errorCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.errorCard p {
+  margin: var(--space-2) 0 0;
+}
+
+@media (max-width: 1100px) {
+  .workloadSummaryGrid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .workloadHeaderContent,
+  .filterGroup,
+  .workloadControls,
+  .tableHeaderRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filterGroup {
+    grid-template-columns: 1fr;
+  }
+
+  .workloadSummaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .workloadTable {
+    min-width: 100%;
+  }
 }

@@ -34,4 +34,13 @@ export const apiEndpoints = {
   academicYears: {
     list: "/api/v1/academic-years",
   },
+  assignments: {
+    list: "/api/v1/assignments",
+    create: "/api/v1/assignments",
+    detail: (assignmentId) => `/api/v1/assignments/${assignmentId}`,
+    update: (assignmentId) => `/api/v1/assignments/${assignmentId}`,
+    remove: (assignmentId) => `/api/v1/assignments/${assignmentId}`,
+    submit: (assignmentId) => `/api/v1/assignments/${assignmentId}/submit`,
+    submissions: (assignmentId) => `/api/v1/assignments/${assignmentId}/submissions`,
+  },
 };

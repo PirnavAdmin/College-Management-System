@@ -50,7 +50,8 @@ const MOCK_STUDENTS = [
 
 const ACADEMIC_YEARS = [
   { id: "2024-25", label: "2024 - 2025" },
-  { id: "2025-26", label: "2025 - 2026" }
+  { id: "2025-26", label: "2025 - 2026" },
+  { id: "2026-27", label: "2026 - 2027" }
 ];
 
 const ACADEMIC_LEVELS = [

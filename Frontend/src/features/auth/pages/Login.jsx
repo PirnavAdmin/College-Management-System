@@ -15,7 +15,20 @@ export default function Login() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    setIsLoggedIn(Boolean(localStorage.getItem("token")));
+    const token = localStorage.getItem("token");
+    const rememberedEmail = localStorage.getItem("rememberedEmail");
+    const rememberedPasswordEncoded = localStorage.getItem("rememberedPassword");
+    setIsLoggedIn(Boolean(token));
+    if (rememberedEmail || rememberedPasswordEncoded) {
+      try {
+        const rememberedPassword = rememberedPasswordEncoded ? atob(rememberedPasswordEncoded) : "";
+        setForm((current) => ({ ...current, email: rememberedEmail || "", password: rememberedPassword || "", remember: Boolean(rememberedEmail || rememberedPasswordEncoded) }));
+      } catch (e) {
+        // ignore decode errors and clear stored password
+        localStorage.removeItem("rememberedPassword");
+        setForm((current) => ({ ...current, email: rememberedEmail || "", remember: Boolean(rememberedEmail) }));
+      }
+    }
   }, []);
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -42,6 +55,19 @@ export default function Login() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       localStorage.setItem("role", data.user?.role || data.roleType || "student");
+
+      if (form.remember) {
+        try {
+          localStorage.setItem("rememberedEmail", form.email.trim());
+          // store password in base64 to avoid storing raw text; note: this is not secure encryption
+          localStorage.setItem("rememberedPassword", btoa(form.password || ""));
+        } catch (e) {
+          // ignore storage errors
+        }
+      } else {
+        localStorage.removeItem("rememberedEmail");
+        localStorage.removeItem("rememberedPassword");
+      }
 
       if (data.user?.isAdmin || data.user?.role === "admin" || data.roleType === "admin") {
         navigate("/dashboard");
@@ -82,7 +108,7 @@ export default function Login() {
               <FiLock className="auth-input-icon" />
               <input name="password" placeholder="Enter password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => setField("password", event.target.value)} />
               <button className="auth-password-toggle" type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((current) => !current)}>
-                {showPassword ? <FiEyeOff /> : <FiEye />}
+                {showPassword ? <FiEye /> : <FiEyeOff />}
               </button>
             </div>
           </label>

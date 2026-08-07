@@ -65,4 +65,17 @@ export const apiEndpoints = {
   subjects: {
     list: "/api/Subjects",
   },
+  timetable: {
+    list: "/api/v1/timetable",
+    create: "/api/v1/timetable",
+    detail: (id) => `/api/v1/timetable/${id}`,
+    update: (id) => `/api/v1/timetable/${id}`,
+    remove: (id) => `/api/v1/timetable/${id}`,
+    byFaculty: (facultyId) => `/api/v1/timetable/faculty/${facultyId}`,
+    byStudent: (studentId) => `/api/v1/timetable/student/${studentId}`,
+    bySection: (sectionId) => `/api/v1/timetable/section/${sectionId}`,
+    copy: "/api/v1/timetable/copy",
+    publish: (id) => `/api/v1/timetable/${id}/publish`,
+    publishSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/publish`,
+  },
 };

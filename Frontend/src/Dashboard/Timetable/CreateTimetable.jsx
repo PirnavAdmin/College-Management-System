@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FiCalendar,
   FiClock,
@@ -15,10 +15,13 @@ import {
   FiLayers,
   FiFileText,
   FiAward,
+  FiCopy,
+  FiUpload,
 } from "react-icons/fi";
+import api, { getApiErrorMessage } from "../../api/axios";
+import { apiEndpoints } from "../../services/apiEndpoints";
 import "./CreateTimetable.css";
 
-const BOARDS = ["BIEAP", "TSBIE", "CBSE"];
 const ACADEMIC_YEARS = ["2025-2026", "2026-2027"];
 const ACADEMIC_LEVELS = ["Intermediate First Year", "Intermediate Second Year"];
 const GROUPS = ["MPC", "BiPC", "MEC", "CEC", "HEC"];
@@ -40,6 +43,7 @@ const ROOMS = ["Room 101", "Room 102", "Lab 1", "Lab 2"];
 
 const INITIAL_FORM = {
   board: "",
+  boardId: "",
   academicYear: "",
   academicLevel: "",
   group: "",
@@ -70,53 +74,6 @@ const FIELD_LABELS = {
   endTime: "End Time",
 };
 
-const INITIAL_ROWS = [
-  {
-    id: 1,
-    day: "Monday",
-    period: "Period 1",
-    subject: "Mathematics",
-    faculty: "Venkatesh Sharma",
-    room: "Room 101",
-    startTime: "09:00",
-    endTime: "09:45",
-    status: true,
-  },
-  {
-    id: 2,
-    day: "Monday",
-    period: "Period 2",
-    subject: "Physics",
-    faculty: "Ravi Kumar",
-    room: "Lab 1",
-    startTime: "09:50",
-    endTime: "10:35",
-    status: true,
-  },
-  {
-    id: 3,
-    day: "Tuesday",
-    period: "Period 3",
-    subject: "Chemistry",
-    faculty: "Lakshmi Devi",
-    room: "Lab 2",
-    startTime: "10:45",
-    endTime: "11:30",
-    status: false,
-  },
-  {
-    id: 4,
-    day: "Wednesday",
-    period: "Period 4",
-    subject: "English",
-    faculty: "Venkatesh Sharma",
-    room: "Room 102",
-    startTime: "11:35",
-    endTime: "12:20",
-    status: true,
-  },
-];
-
 function Select({ id, label, icon, value, options, error, onChange }) {
   return (
     <div className="ct-field">
@@ -132,8 +89,8 @@ function Select({ id, label, icon, value, options, error, onChange }) {
       >
         <option value="">Select {label}</option>
         {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
+          <option key={typeof opt === "string" ? opt : opt.value} value={typeof opt === "string" ? opt : opt.value}>
+            {typeof opt === "string" ? opt : opt.label}
           </option>
         ))}
       </select>
@@ -145,7 +102,39 @@ function Select({ id, label, icon, value, options, error, onChange }) {
 export default function CreateTimetable() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [errors, setErrors] = useState({});
-  const [rows, setRows] = useState(INITIAL_ROWS);
+  const [rows, setRows] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [boardOptions, setBoardOptions] = useState([]);
+
+  const loadRows = async (request = () => api.get(apiEndpoints.timetable.list)) => {
+    try {
+      setLoading(true);
+      setError("");
+      const response = await request();
+      const payload = response.data?.data ?? response.data;
+      const records = Array.isArray(payload) ? payload : payload?.items ?? payload?.content ?? [];
+      setRows(records.map(normalizeTimetable));
+    } catch (loadError) {
+      setError(getApiErrorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchBoards = async () => {
+    try {
+      const response = await api.get(apiEndpoints.boards.list, { headers: { Accept: "application/json" } });
+      const payload = response.data?.data ?? response.data;
+      const records = Array.isArray(payload) ? payload : payload?.items ?? [];
+      setBoardOptions(records.filter((item) => item.status !== false && item.isActive !== false).map((item) => ({ value: String(item.boardId ?? item.id), label: item.boardName ?? item.name ?? item.boardCode })).filter((item) => item.value && item.label));
+    } catch (boardError) {
+      setError(getApiErrorMessage(boardError));
+    }
+  };
+
+  useEffect(() => { loadRows(); fetchBoards(); }, []);
 
   const setField = (name, value) => {
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -169,23 +158,19 @@ export default function CreateTimetable() {
     return Object.keys(next).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) return;
-    setRows((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        day: form.day,
-        period: form.period,
-        subject: form.subject,
-        faculty: form.faculty,
-        room: form.room,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        status: form.status,
-      },
-    ]);
-    setForm(INITIAL_FORM);
+    try {
+      setError("");
+      const payload = { ...form, boardId: Number(form.boardId) };
+      if (editingId) await api.put(apiEndpoints.timetable.update(editingId), payload);
+      else await api.post(apiEndpoints.timetable.create, payload);
+      setForm(INITIAL_FORM);
+      setEditingId(null);
+      await loadRows();
+    } catch (saveError) {
+      setError(getApiErrorMessage(saveError));
+    }
   };
 
   const handleReset = () => {
@@ -193,22 +178,31 @@ export default function CreateTimetable() {
     setErrors({});
   };
 
-  const handleEdit = (row) => {
-    setForm((prev) => ({
-      ...prev,
-      day: row.day,
-      period: row.period,
-      subject: row.subject,
-      faculty: row.faculty,
-      room: row.room,
-      startTime: row.startTime,
-      endTime: row.endTime,
-      status: row.status,
-    }));
-    setRows((prev) => prev.filter((r) => r.id !== row.id));
+  const handleEdit = async (row) => {
+    try {
+      const response = await api.get(apiEndpoints.timetable.detail(row.id));
+      setForm({ ...INITIAL_FORM, ...normalizeTimetable(response.data?.data ?? response.data) });
+      setEditingId(row.id);
+    } catch (editError) {
+      setError(getApiErrorMessage(editError));
+    }
+  };
+  const setBoard = (boardId) => {
+    const selected = boardOptions.find((item) => item.value === boardId);
+    setForm((prev) => ({ ...prev, boardId, board: selected?.label || "" }));
   };
 
-  const handleDelete = (id) => setRows((prev) => prev.filter((r) => r.id !== id));
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this timetable entry?")) return;
+    try { await api.delete(apiEndpoints.timetable.remove(id)); await loadRows(); } catch (deleteError) { setError(getApiErrorMessage(deleteError)); }
+  };
+  const promptLoad = (label, request) => {
+    const id = window.prompt(`Enter ${label} ID:`);
+    if (id) loadRows(() => request(id));
+  };
+  const publishEntry = async (id) => { try { await api.patch(apiEndpoints.timetable.publish(id)); await loadRows(); } catch (publishError) { setError(getApiErrorMessage(publishError)); } };
+  const publishSection = async (sectionId) => { if (!sectionId) return; try { await api.patch(apiEndpoints.timetable.publishSection(sectionId)); await loadRows(); } catch (publishError) { setError(getApiErrorMessage(publishError)); } };
+  const copyEntry = async (id) => { try { await api.post(apiEndpoints.timetable.copy, { sourceTimetableId: id }); await loadRows(); } catch (copyError) { setError(getApiErrorMessage(copyError)); } };
 
   return (
     <div className="ct-root">
@@ -218,6 +212,10 @@ export default function CreateTimetable() {
           <p className="ct-subtitle">Manage timetable for Intermediate College.</p>
         </div>
         <div className="ct-header-actions">
+          <button type="button" className="ct-btn" onClick={() => loadRows()}><FiRotateCcw size={16} /> Refresh</button>
+          <button type="button" className="ct-btn" onClick={() => promptLoad("Faculty", (id) => api.get(apiEndpoints.timetable.byFaculty(id)))}>Faculty View</button>
+          <button type="button" className="ct-btn" onClick={() => promptLoad("Student", (id) => api.get(apiEndpoints.timetable.byStudent(id)))}>Student View</button>
+          <button type="button" className="ct-btn" onClick={() => promptLoad("Section", (id) => api.get(apiEndpoints.timetable.bySection(id)))}>Section View</button>
           <button type="button" className="ct-btn ct-btn-primary" onClick={handleSave}>
             <FiSave size={16} /> Save Timetable
           </button>
@@ -229,6 +227,7 @@ export default function CreateTimetable() {
           </button>
         </div>
       </header>
+      {error ? <div className="ct-error" role="alert">{error}</div> : null}
 
       <section className="ct-card">
         <div className="ct-card-head">
@@ -241,10 +240,10 @@ export default function CreateTimetable() {
             id="ct-board"
             label="Board"
             icon={<FiAward size={13} />}
-            value={form.board}
-            options={BOARDS}
+            value={form.boardId}
+            options={boardOptions}
             error={errors.board}
-            onChange={(v) => setField("board", v)}
+            onChange={setBoard}
           />
           <Select
             id="ct-year"
@@ -410,10 +409,10 @@ export default function CreateTimetable() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {loading || rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="ct-empty">
-                    No timetable entries added yet.
+                    {loading ? "Loading timetable entries..." : "No timetable entries added yet."}
                   </td>
                 </tr>
               ) : (
@@ -441,6 +440,9 @@ export default function CreateTimetable() {
                         >
                           <FiEdit size={14} /> Edit
                         </button>
+                        <button type="button" className="ct-btn ct-btn-icon" onClick={() => copyEntry(row.id)}><FiCopy size={14} /> Copy</button>
+                        <button type="button" className="ct-btn ct-btn-icon" onClick={() => publishEntry(row.id)}><FiUpload size={14} /> Publish</button>
+                        <button type="button" className="ct-btn ct-btn-icon" onClick={() => publishSection(row.sectionId)} disabled={!row.sectionId}><FiUpload size={14} /> Publish Section</button>
                         <button
                           type="button"
                           className="ct-btn ct-btn-icon ct-btn-danger"
@@ -471,4 +473,25 @@ export default function CreateTimetable() {
       </div>
     </div>
   );
+}
+
+function normalizeTimetable(item = {}) {
+  return {
+    ...item,
+    id: item.id ?? item.timetableId,
+    boardId: item.boardId ?? "",
+    board: item.board ?? item.boardName ?? "",
+    academicYear: item.academicYear ?? item.academicYearName ?? "",
+    academicLevel: item.academicLevel ?? item.academicLevelName ?? "",
+    group: item.group ?? item.groupName ?? "",
+    section: item.section ?? item.sectionName ?? "",
+    subject: item.subject ?? item.subjectName ?? "",
+    faculty: item.faculty ?? item.facultyName ?? "",
+    day: item.day ?? item.dayOfWeek ?? "",
+    period: item.period ?? item.periodName ?? "",
+    room: item.room ?? item.roomName ?? "",
+    startTime: item.startTime ?? "",
+    endTime: item.endTime ?? "",
+    status: item.status ?? item.isActive ?? true,
+  };
 }

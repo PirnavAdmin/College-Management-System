@@ -72,10 +72,14 @@
   color: #f8fafc;
 }
 
-.theme-dark .navParent.isActive,
-.theme-dark .navChild.active {
-  background: rgba(56, 189, 248, 0.16);
-  color: #f8fafc;
+.topbarInner {
+  width: 100%;
+  max-width: 1100px; /* narrower navbar width */
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .theme-dark .sidebarAvatar {
@@ -543,6 +547,23 @@
   }
 }
 
+/* Premium dashboard shell */
+.dashboardSidebar { border-right: 1px solid rgba(255,255,255,.10); background: linear-gradient(180deg, #101c41 0%, #0a1531 100%); box-shadow: 12px 0 34px rgba(15,23,42,.12); }
+.sidebarHeader { min-height: 76px; padding-block: 16px; border-color: rgba(255,255,255,.09); }
+.sidebarFooter { border-color: rgba(255,255,255,.09); }
+.brandMark { width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg,#22d3ee,#4f46e5); box-shadow: 0 8px 18px rgba(34,211,238,.22); }
+.brandText strong, .sidebarUserText strong, .navParent, .navChild { color: #e8efff; }
+.brandText small, .sidebarUserText small { color: #9fb0d4; }
+.navParent, .navChild { border-radius: 12px; }
+.navParent:hover, .navChild:hover { background: rgba(148,163,184,.11); color: #fff; }
+.navParent.isActive, .navChild.active { background: linear-gradient(90deg, rgba(79,70,229,.54), rgba(56,189,248,.16)); color: #fff; box-shadow: inset 3px 0 #67e8f9; }
+.sidebarCollapseButton, .sidebarLogout { border-color: rgba(191,219,254,.16); background: rgba(255,255,255,.06); color: #e8efff; border-radius: 12px; }
+.sidebarAvatar { background: linear-gradient(135deg,rgba(34,211,238,.25),rgba(99,102,241,.25)); color: #dffaff; }
+.dashboardTopbar { min-height: 76px; border-bottom-color: rgba(206,215,235,.75); background: rgba(255,255,255,.72); box-shadow: 0 8px 24px rgba(31,52,101,.04); backdrop-filter: blur(20px); }
+.dashboardMenuToggle, .topbarIconButton, .profileButton { border-radius: 14px; background: rgba(255,255,255,.82); }
+.moduleSearch input { height: 46px; border-radius: 14px; background: rgba(255,255,255,.78); box-shadow: inset 0 1px 1px rgba(15,23,42,.03); }
+.moduleSearch input:focus { box-shadow: 0 0 0 4px rgba(79,70,229,.12); }
+
 @media (max-width: 620px) {
   .dashboardSidebar {
     width: min(256px, 88vw);
@@ -639,8 +660,7 @@
   color: var(--color-muted);
 }
 
-.topbarIconButton,
-.profileButton {
+.topbarIconButton {
   display: inline-grid;
   width: 40px;
   height: 40px;
@@ -652,8 +672,7 @@
   cursor: pointer;
 }
 
-.topbarIconButton:hover,
-.profileButton:hover {
+.topbarIconButton:hover {
   border-color: #bfdbfe;
   color: var(--color-primary);
 }
@@ -663,19 +682,66 @@
 }
 
 .profileButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
   border-radius: 999px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(0,0,0,0.04);
+  cursor: pointer;
 }
 
-.profileButton span {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
+.profileButton:hover { border-color: #bfdbfe; }
+
+.profileName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+/* Ensure consistent height and vertical centering */
+.profileButton,
+.topbarIconButton {
+  min-height: 40px;
+  height: 40px;
+}
+
+/* Light mode avatar border/shadow */
+.profileAvatarImg {
+  box-shadow: 0 4px 12px rgba(2,6,23,0.12);
+  border: 2px solid rgba(255,255,255,0.7);
+  transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease;
+}
+
+/* Dark mode adjustments */
+.theme-dark .profileButton {
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.06);
+  color: #e8efff;
+}
+
+.theme-dark .profileName {
+  color: #e8efff;
+}
+
+.theme-dark .profileAvatarImg {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+  border: 2px solid rgba(255,255,255,0.12);
+}
+
+/* Slight transform on hover for affordance */
+.profileButton:hover .profileAvatarImg { transform: translateY(-1px); }
+
+.profileAvatarImg {
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: #dbeafe;
-  color: var(--color-primary);
-  font-size: 11px;
-  font-weight: 800;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 4px 12px rgba(2,6,23,0.12);
+  border: 2px solid rgba(255,255,255,0.7);
 }
 
 .profileButton svg {
@@ -783,6 +849,7 @@
     width: 38px;
     height: 38px;
   }
+  .topbarStats { display: none; }
 }
 
 @media (max-width: 520px) {
@@ -796,6 +863,16 @@
 .dashboardTopbar {
   gap: 14px;
   padding: 16px 24px;
+}
+
+.topbarInner {
+  width: 100%;
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .dashboardMenuToggle {
@@ -817,6 +894,64 @@
   border-color: #bfdbfe;
   background: var(--color-surface-soft);
   color: var(--color-primary);
+}
+
+/* Apps button in topbar */
+.topbarAppsButton {
+  display: inline-grid;
+  align-items: center;
+  justify-items: center;
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+  margin-right: 8px;
+}
+
+.topbarAppsButton:hover {
+  border-color: #bfdbfe;
+  background: var(--color-surface-soft);
+  transform: translateY(-1px);
+}
+
+/* Small stat chips displayed inline in the topbar to make the dashboard look denser */
+.topbarStats {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-left: 18px;
+}
+
+.topbarStat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 88px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.86));
+  box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+  color: var(--color-text);
+}
+
+.topbarStat strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+
+.topbarStat span {
+  display: block;
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-top: 2px;
 }
 
 .moduleSearch {

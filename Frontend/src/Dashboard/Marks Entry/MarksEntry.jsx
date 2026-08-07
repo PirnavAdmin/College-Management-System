@@ -97,6 +97,7 @@ const markErrors = (s) => ({
 });
 
 const isStudentValid = (s) => Object.values(markErrors(s)).every((err) => !err);
+const canAutoSelect = (s) => isComplete(s) && isStudentValid(s);
 
 function GradeBadge({ total, complete }) {
   return <span className={`gradeBadge ${complete ? "" : "isEmpty"}`}>{complete ? gradeOf(total) : "—"}</span>;
@@ -121,7 +122,6 @@ export default function MarksEntry() {
   const [students, setStudents] = useState([]);
   const [rowErrors, setRowErrors] = useState({});
   const [editingIds, setEditingIds] = useState(new Set());
-  const [selectedIds, setSelectedIds] = useState([]);
   const [activeTab, setActiveTab] = useState("entry");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -132,8 +132,18 @@ export default function MarksEntry() {
     // Boards
     fetch("/api/v1/boards")
       .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data) => setBoards(Array.isArray(data) ? data : FALLBACK_BOARDS))
-      .catch(() => setBoards(FALLBACK_BOARDS));
+      .then((data) => {
+        const hasApiData = Array.isArray(data);
+        setBoards(hasApiData ? data : FALLBACK_BOARDS);
+        toast.info(hasApiData ? "Boards loaded successfully." : "Using default board configuration.", {
+          toastId: hasApiData ? "boards-loaded" : "boards-fallback",
+          position: "top-right"
+        });
+      })
+      .catch(() => {
+        setBoards(FALLBACK_BOARDS);
+        toast.info("Using default board configuration.", { toastId: "boards-fallback", position: "top-right" });
+      });
 
     // Academic Years
     fetch("/api/v1/academic-years")
@@ -182,6 +192,11 @@ export default function MarksEntry() {
       ? students.filter((s) => s.rollNo.toLowerCase().includes(term) || s.studentName.toLowerCase().includes(term))
       : students;
   }, [search, students]);
+
+  const selectedIds = useMemo(
+    () => students.filter(canAutoSelect).map((student) => student.studentId),
+    [students]
+  );
 
   const stats = useMemo(() => {
     const entered = students.filter(isComplete);
@@ -251,7 +266,6 @@ export default function MarksEntry() {
       .finally(() => setLoading(false));
 
     setRowErrors({});
-    setSelectedIds([]);
     setSearch("");
     setActiveTab("entry");
   }, [filters]);
@@ -280,7 +294,7 @@ export default function MarksEntry() {
 
   // 4. API Integration: Save Selected / Bulk Save Marks
   const saveSelectedMarks = useCallback(async () => {
-    const targetIds = selectedIds.length ? selectedIds : Array.from(editingIds);
+    const targetIds = selectedIds;
     if (!targetIds.length) {
       toast.error("No student records selected to save.");
       return;
@@ -352,7 +366,7 @@ export default function MarksEntry() {
       return;
     }
 
-    const incomplete = students.filter((s) => selectedIds.includes(s.studentId) && (!isComplete(s) || !isStudentValid(s)));
+    const incomplete = students.filter((s) => selectedIds.includes(s.studentId) && (!canAutoSelect(s) || editingIds.has(s.studentId)));
     if (incomplete.length) {
       toast.error("Complete and valid marks are required prior to verification.");
       return;
@@ -380,7 +394,7 @@ export default function MarksEntry() {
     setStudents((prev) =>
       prev.map((s) => (selectedIds.includes(s.studentId) ? { ...s, verified: true } : s))
     );
-  }, [selectedIds, students, filters]);
+  }, [selectedIds, students, editingIds, filters]);
 
   // 6. API Integration: Publish / Submit Evaluation
   const submitEvaluation = useCallback(async () => {
@@ -421,23 +435,9 @@ export default function MarksEntry() {
       }))
     );
     setRowErrors({});
-    setSelectedIds([]);
     setDeleteOpen(false);
     toast.warning("All marks cleared.");
   }, []);
-
-  const toggleSelection = useCallback((id) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
-  }, []);
-
-  const toggleAll = useCallback(() => {
-    const visibleIds = visibleStudents.map((s) => s.studentId);
-    setSelectedIds((prev) =>
-      visibleIds.every((id) => prev.includes(id))
-        ? prev.filter((id) => !visibleIds.includes(id))
-        : [...new Set([...prev, ...visibleIds])]
-    );
-  }, [visibleStudents]);
 
   const allVisibleSelected = visibleStudents.length > 0 && visibleStudents.every((s) => selectedIds.includes(s.studentId));
 
@@ -571,8 +571,6 @@ export default function MarksEntry() {
               students={visibleStudents}
               selectedIds={selectedIds}
               allSelected={allVisibleSelected}
-              toggleAll={toggleAll}
-              toggleSelection={toggleSelection}
               editingIds={editingIds}
               rowErrors={rowErrors}
               changeMark={changeMark}
@@ -622,14 +620,14 @@ function SelectField({ label, name, value, onChange, onBlur, error, children, di
   );
 }
 
-function CompactStudentTable({ students, selectedIds, allSelected, toggleAll, toggleSelection, editingIds, rowErrors, changeMark }) {
+function CompactStudentTable({ students, selectedIds, allSelected, editingIds, rowErrors, changeMark }) {
   return (
     <div className="marksTableWrap">
       <table className="marksTable compactMarksTable">
         <thead>
           <tr>
             <th>
-              <input aria-label="Select all visible students" type="checkbox" checked={allSelected} onChange={toggleAll} />
+              <input aria-label="All visible students selected" type="checkbox" checked={allSelected} readOnly />
             </th>
             <th>Student Name</th>
             <th>Internal <small>/30</small></th>
@@ -652,7 +650,7 @@ function CompactStudentTable({ students, selectedIds, allSelected, toggleAll, to
                       aria-label={`Select ${student.studentName}`}
                       type="checkbox"
                       checked={selectedIds.includes(student.studentId)}
-                      onChange={() => toggleSelection(student.studentId)}
+                      readOnly
                     />
                   </td>
                   <td data-label="Student Name">

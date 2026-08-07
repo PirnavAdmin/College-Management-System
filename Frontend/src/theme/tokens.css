@@ -46,7 +46,7 @@
   --color-sidebar-soft: var(--color-sidebar-active);
   /* Effects */
   --color-overlay: rgba(15, 23, 42, 0.45);
-  --color-focus-ring: rgba(37, 99, 235, 0.12);
+  --color-focus-ring: rgba(37, 99, 235, 0.10);
   --color-primary-soft: rgba(79, 70, 229, 0.08);
   --color-success-soft: rgba(5, 150, 105, 0.08);
   --color-warning-soft: rgba(217, 119, 6, 0.08);

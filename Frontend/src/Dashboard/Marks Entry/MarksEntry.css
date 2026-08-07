@@ -126,12 +126,13 @@
 .searchField input,
 .marksTable input:not([type="checkbox"]) {
   width: 100%;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: 12px;
   outline: none;
   background: var(--color-surface-soft);
   color: var(--color-text);
   font-size: 13px;
+  transition: border-color .2s ease, box-shadow .2s ease;
 }
 
 .filterField select,
@@ -143,8 +144,9 @@
 .filterField select:focus,
 .searchField input:focus,
 .marksTable input:focus {
+  border-width: 1.25px;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+  box-shadow: 0 0 0 3px var(--color-focus-ring);
 }
 
 .filterField small,
@@ -161,7 +163,7 @@
 }
 
 .statTile {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-left: 4px solid var(--color-primary);
   border-radius: var(--radius-card);
   padding: 10px;
@@ -249,7 +251,7 @@
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: 7px;
   scrollbar-width: none;
 }
@@ -268,7 +270,7 @@
 .marksTable th,
 .marksTable td {
   padding: 8px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border-strong);
   text-align: left;
   font-size: 12px;
   vertical-align: middle;
@@ -283,6 +285,7 @@
   font-size: 10px;
   letter-spacing: .03em;
   text-transform: uppercase;
+  border-bottom-color: var(--color-border-strong);
 }
 
 .marksTable th small {
@@ -492,6 +495,7 @@ body,
 
   .tableToolbar {
     align-items: flex-end;
+    flex-wrap: wrap;
   }
 
   .verifyActions {
@@ -542,6 +546,14 @@ body,
 
   .searchField {
     max-width: 100%;
+  }
+
+  .toolbarActions {
+    width: 100%;
+  }
+
+  .toolbarActions .marksButton {
+    flex: 1 1 140px;
   }
 
   .verifyActions {
@@ -672,6 +684,15 @@ body,
 }
 
 @media (max-width: 480px) {
+
+  .toolbarActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .toolbarActions .marksButton {
+    width: 100%;
+  }
 
   .marksFilterGrid,
   .statsGrid {

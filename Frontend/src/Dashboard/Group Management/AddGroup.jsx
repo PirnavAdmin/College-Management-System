@@ -2,52 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { FiArrowLeft, FiRotateCcw, FiSave } from "react-icons/fi";
 import api, { getApiErrorMessage } from "../../api/axios";
-import { env } from "../../config/env";
 import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
 import PageHeader from "../../shared/components/PageHeader";
 import "./AddGroup.css";
-
-const STORAGE_KEY = "cms_demo_groups";
-
-const DEFAULT_GROUPS = [
-  {
-    groupId: 1,
-    groupName: "MPC",
-    groupCode: "MPC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate First Year",
-    totalSubjects: 6,
-    description: "Mathematics, Physics and Chemistry group",
-    isActive: true,
-  },
-  {
-    groupId: 2,
-    groupName: "BiPC",
-    groupCode: "BIPC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate First Year",
-    totalSubjects: 6,
-    description: "Biology, Physics and Chemistry group",
-    isActive: true,
-  },
-  {
-    groupId: 3,
-    groupName: "CEC",
-    groupCode: "CEC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate Second Year",
-    totalSubjects: 5,
-    description: "Commerce, Economics and Civics group",
-    isActive: false,
-  },
-];
 
 const BOARDS = ["State Board", "CBSE", "ICSE", "Intermediate Board", "University", "Autonomous", "Technical Board"];
 const ACADEMIC_YEARS = [
@@ -90,19 +48,8 @@ export default function AddGroup() {
       setLoading(true);
       setSubmitError("");
 
-      let group;
-      if (env.enableMockAuth) {
-        group = findDemoGroup(groupId);
-      } else {
-        try {
-          const response = await api.get(`/api/v1/groups/${groupId}`);
-          group = response?.data?.group || response?.data?.data || response?.data;
-        } catch (fetchError) {
-          group = findDemoGroup(groupId);
-          setSubmitError(`${getApiErrorMessage(fetchError)} Loaded local demo group instead.`);
-        }
-      }
-
+      const response = await api.get(`/api/v1/groups/${groupId}`);
+      const group = response?.data?.group || response?.data?.data || response?.data;
       if (!group) throw new Error("Group was not found.");
       const isActive = typeof group.isActive === "boolean" ? group.isActive : String(group.status || "Active") === "Active";
       setForm({
@@ -161,27 +108,10 @@ export default function AddGroup() {
       setSaving(true);
       setSubmitError("");
 
-      if (env.enableMockAuth) {
-        if (isEditMode) {
-          updateDemoGroup(groupId, payload);
-        } else {
-          createDemoGroup(payload);
-        }
+      if (isEditMode) {
+        await api.put(`/api/v1/groups/${groupId}`, payload);
       } else {
-        try {
-          if (isEditMode) {
-            await api.put(`/api/v1/groups/${groupId}`, payload);
-          } else {
-            await api.post("/api/v1/groups", payload);
-          }
-        } catch (saveError) {
-          if (isEditMode) {
-            updateDemoGroup(groupId, payload);
-          } else {
-            createDemoGroup(payload);
-          }
-          setSubmitError(`${getApiErrorMessage(saveError)} Saved to local demo groups instead.`);
-        }
+        await api.post("/api/v1/groups", payload);
       }
 
       navigate("/dashboard/groups", {
@@ -223,7 +153,7 @@ export default function AddGroup() {
         ) : (
           <form className="addGroupForm" noValidate onSubmit={saveGroup}>
             <div className="addGroupGrid">
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Board <b>*</b>
                 </span>
@@ -236,7 +166,7 @@ export default function AddGroup() {
                 {errors.board ? <small className="field-error">{errors.board}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Academic Year <b>*</b>
                 </span>
@@ -255,7 +185,7 @@ export default function AddGroup() {
                 {errors.academicYearId ? <small className="field-error">{errors.academicYearId}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Academic Level <b>*</b>
                 </span>
@@ -272,7 +202,7 @@ export default function AddGroup() {
                 {errors.academicLevel ? <small className="field-error">{errors.academicLevel}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Group Name <b>*</b>
                 </span>
@@ -285,7 +215,7 @@ export default function AddGroup() {
                 {errors.groupName ? <small className="field-error">{errors.groupName}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>
                   Group Code <b>*</b>
                 </span>
@@ -298,7 +228,7 @@ export default function AddGroup() {
                 {errors.groupCode ? <small className="field-error">{errors.groupCode}</small> : null}
               </label>
 
-              <label className="form-field">
+              <label className="form-field addGroupField">
                 <span>Status</span>
                 <select className="select" value={form.status} onChange={(event) => updateField("status", event.target.value)}>
                   <option value="Active">Active</option>
@@ -306,7 +236,7 @@ export default function AddGroup() {
                 </select>
               </label>
 
-              <label className="form-field addGroupFull">
+              <label className="form-field addGroupField addGroupFull">
                 <span>Description</span>
                 <textarea
                   className="textarea"
@@ -340,47 +270,3 @@ function sanitizeGroupCode(value = "") {
   return String(value).replace(/\s+/g, "").toUpperCase();
 }
 
-function readDemoGroups() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    // Reset local demo groups if storage was manually edited.
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_GROUPS));
-  return DEFAULT_GROUPS;
-}
-
-function writeDemoGroups(groups) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
-}
-
-function findDemoGroup(groupId) {
-  return readDemoGroups().find((group) => String(group.groupId) === String(groupId) || String(group.id) === String(groupId));
-}
-
-function createDemoGroup(payload) {
-  const groups = readDemoGroups();
-  const nextId = groups.reduce((maxId, group) => Math.max(maxId, Number(group.groupId || group.id || 0)), 0) + 1;
-  const nextGroup = {
-    groupId: nextId,
-    id: nextId,
-    totalSubjects: 0,
-    ...payload,
-  };
-  writeDemoGroups([...groups, nextGroup]);
-}
-
-function updateDemoGroup(groupId, payload) {
-  const groups = readDemoGroups();
-  const index = groups.findIndex((group) => String(group.groupId) === String(groupId) || String(group.id) === String(groupId));
-  if (index === -1) throw new Error("Group was not found.");
-  const nextGroups = [...groups];
-  nextGroups[index] = {
-    ...groups[index],
-    ...payload,
-    groupId: groups[index].groupId || Number(groupId),
-    id: groups[index].id || groups[index].groupId || Number(groupId),
-  };
-  writeDemoGroups(nextGroups);
-}

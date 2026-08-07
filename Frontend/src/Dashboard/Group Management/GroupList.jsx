@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { FiEdit2, FiPlus, FiRefreshCw, FiTrash2 } from "react-icons/fi";
+import { FiEdit2, FiPlus, FiRefreshCw, FiRotateCcw, FiSearch, FiTrash2 } from "react-icons/fi";
 import api, { getApiErrorMessage } from "../../api/axios";
-import { env } from "../../config/env";
 import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
 import DataTable from "../../shared/components/DataTable";
@@ -11,47 +10,7 @@ import PageHeader from "../../shared/components/PageHeader";
 import StatCard from "../../shared/components/StatCard";
 import "./GroupList.css";
 
-const STORAGE_KEY = "cms_demo_groups";
 const PAGE_SIZE = 5;
-
-const DEFAULT_GROUPS = [
-  {
-    groupId: 1,
-    groupName: "MPC",
-    groupCode: "MPC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate First Year",
-    totalSubjects: 6,
-    description: "Mathematics, Physics and Chemistry group",
-    isActive: true,
-  },
-  {
-    groupId: 2,
-    groupName: "BiPC",
-    groupCode: "BIPC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate First Year",
-    totalSubjects: 6,
-    description: "Biology, Physics and Chemistry group",
-    isActive: true,
-  },
-  {
-    groupId: 3,
-    groupName: "CEC",
-    groupCode: "CEC",
-    board: "State Board",
-    academicYearId: 2025,
-    academicYearName: "2025-2026",
-    academicLevel: "Intermediate Second Year",
-    totalSubjects: 5,
-    description: "Commerce, Economics and Civics group",
-    isActive: false,
-  },
-];
 
 const initialFilters = {
   search: "",
@@ -82,17 +41,11 @@ export default function GroupList() {
     try {
       setLoading(true);
       setError("");
-
-      if (env.enableMockAuth) {
-        setGroups(readDemoGroups().map(normalizeGroup));
-        return;
-      }
-
       const response = await api.get("/api/v1/groups");
       setGroups(getGroupsFromResponse(response).map(normalizeGroup));
-    } catch (fetchError) {
-      setGroups(readDemoGroups().map(normalizeGroup));
-      setError(`${getApiErrorMessage(fetchError)} Showing local demo groups.`);
+    } catch {
+      setGroups([]);
+      setError("Unable to load groups. Please check backend API connection.");
     } finally {
       setLoading(false);
     }
@@ -162,17 +115,7 @@ export default function GroupList() {
     try {
       setDeleting(true);
       setError("");
-
-      if (env.enableMockAuth) {
-        deleteDemoGroup(deleteTarget.groupId);
-      } else {
-        try {
-          await api.delete(`/api/v1/groups/${deleteTarget.groupId}`);
-        } catch (deleteError) {
-          deleteDemoGroup(deleteTarget.groupId);
-          setError(`${getApiErrorMessage(deleteError)} Deleted from local demo groups instead.`);
-        }
-      }
+      await api.delete(`/api/v1/groups/${deleteTarget.groupId}`);
 
       setDeleteTarget(null);
       setMessage("Group deleted successfully");
@@ -190,14 +133,14 @@ export default function GroupList() {
         title="Group Management"
         subtitle="Manage academic groups configured for your intermediate college."
         actions={
-          <>
+          <div className="groupHeaderActions">
             <Button type="button" onClick={fetchGroups}>
               <FiRefreshCw /> Refresh
             </Button>
-            <Link className="btn btn-primary" to="/dashboard/groups/add">
+            <Link className="btn btn-primary groupHeaderActionLink" to="/dashboard/groups/add">
               <FiPlus /> Add Group
             </Link>
-          </>
+          </div>
         }
       />
 
@@ -211,52 +154,75 @@ export default function GroupList() {
         <StatCard label="Academic Levels" value={stats.levels} icon="L" />
       </div>
 
-      <Card padded={false}>
+      <Card className="groupListCard" padded={false}>
         <form className="groupFilterToolbar" onSubmit={searchGroups}>
-          <input
-            className="input"
-            placeholder="Search by group name or code"
-            value={filters.search}
-            onChange={(event) => updateFilter("search", event.target.value)}
-            type="search"
-          />
-          <select className="select" value={filters.board} onChange={(event) => updateFilter("board", event.target.value)}>
-            <option value="">All Boards</option>
-            {BOARDS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-          <select
-            className="select"
-            value={filters.academicYear}
-            onChange={(event) => updateFilter("academicYear", event.target.value)}
-          >
-            <option value="">All Academic Years</option>
-            {ACADEMIC_YEARS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-          <select
-            className="select"
-            value={filters.academicLevel}
-            onChange={(event) => updateFilter("academicLevel", event.target.value)}
-          >
-            <option value="">All Academic Levels</option>
-            {ACADEMIC_LEVELS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-          <select className="select" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
-            <option value="">All Statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
+          <div className="groupFilterField groupFilterFieldSearch">
+            <label className="groupFilterLabel">Search</label>
+            <div className="groupFilterInputWrap">
+              <FiSearch className="groupFilterIcon" />
+              <input
+                className="input"
+                placeholder="Search by Group Name or Group Code..."
+                value={filters.search}
+                onChange={(event) => updateFilter("search", event.target.value)}
+                type="search"
+              />
+            </div>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Board</label>
+            <select className="select" value={filters.board} onChange={(event) => updateFilter("board", event.target.value)}>
+              <option value="">All Boards</option>
+              {BOARDS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Academic Year</label>
+            <select
+              className="select"
+              value={filters.academicYear}
+              onChange={(event) => updateFilter("academicYear", event.target.value)}
+            >
+              <option value="">All Academic Years</option>
+              {ACADEMIC_YEARS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Academic Level</label>
+            <select
+              className="select"
+              value={filters.academicLevel}
+              onChange={(event) => updateFilter("academicLevel", event.target.value)}
+            >
+              <option value="">All Academic Levels</option>
+              {ACADEMIC_LEVELS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Status</label>
+            <select className="select" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+              <option value="">All Statuses</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+
           <div className="groupFilterActions">
-            <Button type="submit" variant="primary">
-              Search
+            <Button type="submit" variant="primary" className="groupActionButton">
+              <FiSearch /> Search
             </Button>
-            <Button type="button" onClick={resetFilters}>
-              Reset
+            <Button type="button" onClick={resetFilters} className="groupActionButton groupActionButtonSecondary">
+              <FiRotateCcw /> Reset
             </Button>
           </div>
         </form>
@@ -284,14 +250,14 @@ export default function GroupList() {
             renderActions={(row) => (
               <div className="row-actions">
                 <button
-                  className="icon-button"
+                  className="icon-button icon-button--edit"
                   type="button"
                   title="Edit"
                   onClick={() => navigate(`/dashboard/groups/edit/${row.groupId}`)}
                 >
                   <FiEdit2 />
                 </button>
-                <button className="icon-button" type="button" title="Delete" onClick={() => setDeleteTarget(row)}>
+                <button className="icon-button icon-button--delete" type="button" title="Delete" onClick={() => setDeleteTarget(row)}>
                   <FiTrash2 />
                 </button>
               </div>
@@ -393,21 +359,5 @@ function normalizeGroup(group = {}) {
   };
 }
 
-function readDemoGroups() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    // Reset local demo groups if storage was manually edited.
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_GROUPS));
-  return DEFAULT_GROUPS;
-}
 
-function writeDemoGroups(groups) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
-}
 
-function deleteDemoGroup(groupId) {
-  writeDemoGroups(readDemoGroups().filter((group) => String(group.groupId) !== String(groupId) && String(group.id) !== String(groupId)));
-}

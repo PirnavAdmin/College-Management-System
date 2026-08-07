@@ -31,18 +31,23 @@ export default function Login() {
 
     try {
       setLoading(true);
-      const response = await loginUser({
-        emailOrMobile: form.email.trim(),
-        password: form.password,
-      });
-      const data = response.data || {};
-      const token = data.token || data.jwt || data.accessToken || data.data?.token;
-      const user = data.user || data.userInfo || data.data?.user;
+      const response = await loginUser({ emailOrMobile: form.email.trim(), password: form.password });
+      const data = response || {};
 
-      if (token) localStorage.setItem("token", token);
-      if (user) localStorage.setItem("user", JSON.stringify(user));
+      if (!data.token) {
+        setError("Login succeeded but token was not returned by the server.");
+        return;
+      }
 
-      navigate("/dashboard");
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("role", data.user?.role || data.roleType || "student");
+
+      if (data.user?.isAdmin || data.user?.role === "admin" || data.roleType === "admin") {
+        navigate("/dashboard");
+      } else {
+        navigate("/student-dashboard");
+      }
     } catch (loginError) {
       setError(getApiErrorMessage(loginError));
     } finally {
@@ -51,7 +56,8 @@ export default function Login() {
   };
 
   if (isLoggedIn) {
-    return <Navigate to="/dashboard" replace />;
+    const user = readStoredUser();
+    return <Navigate to={user?.isAdmin || user?.role === "admin" ? "/dashboard" : "/student-dashboard"} replace />;
   }
 
   return (
@@ -61,61 +67,44 @@ export default function Login() {
           <h2>Welcome Back</h2>
           <p>Login to your College Management System account</p>
         </div>
-      <form className="auth-form" onSubmit={handleSubmit}>
-        {error ? <div className="notice notice-error">{error}</div> : null}
-        <label className="auth-field">
-          <span>Email Address</span>
-          <div className="auth-input-wrap">
-            <FiMail className="auth-input-icon" />
-            <input
-              name="email"
-              placeholder="Enter your email"
-              type="email"
-              value={form.email}
-              onChange={(event) => setField("email", event.target.value)}
-            />
-          </div>
-        </label>
-        <label className="auth-field">
-          <span>Password</span>
-          <div className="auth-input-wrap">
-            <FiLock className="auth-input-icon" />
-            <input
-              name="password"
-              placeholder="Enter password"
-              type={showPassword ? "text" : "password"}
-              value={form.password}
-              onChange={(event) => setField("password", event.target.value)}
-            />
-            <button
-              className="auth-password-toggle"
-              type="button"
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              onClick={() => setShowPassword((current) => !current)}
-            >
-              {showPassword ? <FiEyeOff /> : <FiEye />}
-            </button>
-          </div>
-        </label>
-        <div className="auth-link-row">
-          <label className="auth-check">
-            <input
-              type="checkbox"
-              checked={form.remember}
-              onChange={(event) => setField("remember", event.target.checked)}
-            />{" "}
-            Remember me
+        <form className="auth-form" onSubmit={handleSubmit}>
+          {error ? <div className="notice notice-error">{error}</div> : null}
+          <label className="auth-field">
+            <span>Email Address</span>
+            <div className="auth-input-wrap">
+              <FiMail className="auth-input-icon" />
+              <input name="email" placeholder="Enter your email" type="email" value={form.email} onChange={(event) => setField("email", event.target.value)} />
+            </div>
           </label>
-          <Link to="/forgot-password">Forgot password?</Link>
-        </div>
-        <Button className="auth-submit" variant="primary" disabled={loading}>
-          {loading ? "Logging in..." : "Login"}
-        </Button>
-        <div className="auth-bottom">
-          Don&apos;t have an account? <Link to="/register">Register</Link>
-        </div>
-      </form>
+          <label className="auth-field">
+            <span>Password</span>
+            <div className="auth-input-wrap">
+              <FiLock className="auth-input-icon" />
+              <input name="password" placeholder="Enter password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => setField("password", event.target.value)} />
+              <button className="auth-password-toggle" type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((current) => !current)}>
+                {showPassword ? <FiEyeOff /> : <FiEye />}
+              </button>
+            </div>
+          </label>
+          <div className="auth-link-row">
+            <label className="auth-check">
+              <input type="checkbox" checked={form.remember} onChange={(event) => setField("remember", event.target.checked)} /> Remember me
+            </label>
+            <Link to="/forgot-password">Forgot password?</Link>
+          </div>
+          <Button className="auth-submit" variant="primary" disabled={loading}>{loading ? "Logging in..." : "Login"}</Button>
+          <div className="auth-bottom">Don&apos;t have an account? <Link to="/register">Register</Link></div>
+        </form>
       </div>
     </AuthLayout>
   );
+}
+
+function readStoredUser() {
+  try {
+    const stored = localStorage.getItem("user");
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
 }

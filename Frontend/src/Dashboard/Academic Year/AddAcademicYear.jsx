@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FiSave } from "react-icons/fi";
 import api, { getApiErrorMessage } from "../../api/axios";
+import { apiEndpoints } from "../../services/apiEndpoints";
 import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
 import FormField from "../../shared/components/FormField";
@@ -23,7 +24,7 @@ export default function AddAcademicYear() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const createAcademicYear = async (payload) => api.post("/api/v1/academic-years", payload);
+  const createAcademicYear = async (payload) => api.post(apiEndpoints.academicYears.create, payload);
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   const handleSubmit = async (event) => {

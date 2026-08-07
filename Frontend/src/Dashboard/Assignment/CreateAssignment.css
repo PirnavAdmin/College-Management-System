@@ -1,4 +1,286 @@
-.createAssignment {
-  display: grid;
-  gap: var(--space-4);
+/* createAssignment.css — styled to match the CMS Admin dashboard look */
+
+.create-assignment-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2.5rem 1rem 3rem;
+  background-color: #f4f7fb;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  color: #1e293b;
 }
+
+.create-assignment-card {
+  width: 100%;
+  max-width: 760px;
+  background-color: #ffffff;
+  border: 1px solid #e6ebf3;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 38, 71, 0.04), 0 8px 24px rgba(15, 38, 71, 0.06);
+  padding: 2rem 2.25rem 2.25rem;
+}
+
+.page-title {
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #0f2647;
+  margin: 0 0 0.35rem;
+}
+
+.page-subtitle {
+  font-size: 0.975rem;
+  color: #64748b;
+  margin: 0 0 1.75rem;
+}
+
+.assignment-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.15rem 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.form-group.full {
+  grid-column: 1 / -1;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.form-input,
+.form-select,
+.form-textarea,
+.form-file {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #0f2647;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  box-sizing: border-box;
+}
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+  color: #94a3b8;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus,
+.form-file:focus {
+  background-color: #ffffff;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.55;
+}
+
+.form-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2364748B' viewBox='0 0 16 16'%3E%3Cpath d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  padding-right: 2.5rem;
+}
+
+.form-file {
+  padding: 0.45rem 0.6rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #64748b;
+}
+
+.form-file::file-selector-button {
+  padding: 0.45rem 0.9rem;
+  margin-right: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background-color: #e8f0ff;
+  border: 1px solid #cddffd;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+.form-file::file-selector-button:hover {
+  background-color: #d9e6ff;
+  border-color: #b7cdfb;
+}
+
+.error-text {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #dc2626;
+}
+
+.button-group {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #eef2f7;
+}
+
+.create-btn,
+.cancel-btn {
+  padding: 0.7rem 1.4rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: 10px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.1s ease;
+}
+
+.create-btn {
+  background-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.create-btn:hover {
+  background-color: #1740b8;
+  box-shadow: 0 6px 16px rgba(29, 78, 216, 0.24);
+}
+
+.create-btn:active {
+  transform: translateY(1px);
+}
+
+.cancel-btn {
+  background-color: #ffffff;
+  color: #334155;
+  border-color: #e2e8f0;
+}
+
+.cancel-btn:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.cancel-btn:active {
+  transform: translateY(1px);
+}
+
+/* Responsive adjustments */
+@media (max-width: 720px) {
+  .assignment-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .create-assignment-page {
+    padding: 1.25rem 0.85rem 2rem;
+  }
+
+  .create-assignment-card {
+    padding: 1.4rem 1.15rem 1.6rem;
+    border-radius: 12px;
+  }
+
+  .page-title {
+    font-size: 1.45rem;
+  }
+
+  .button-group {
+    flex-direction: column-reverse;
+  }
+
+  .create-btn,
+  .cancel-btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* Assignment list */
+.assignment-list {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.assignment-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  background: #f9fbfd;
+}
+
+.assignment-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.assignment-item-title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #1b2a4a;
+}
+
+.assignment-badge {
+  background: #e8f0fe;
+  color: #1a56db;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.assignment-item-desc {
+  margin: 0 0 0.65rem;
+  color: #4b5b76;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.assignment-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  color: #64748b;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
+.assignment-delete {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+

@@ -16,3 +16,70 @@
 .facultyToolbar .input {
   max-width: 420px;
 }
+
+/* Enhanced toolbar and table styling */
+.facultyToolbar .input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04) inset;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.facultyToolbar .input:focus {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+}
+
+.facultyList .btn.btn-primary {
+  background: linear-gradient(180deg, var(--color-primary), var(--color-primary-dark));
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 10px 30px rgba(37, 99, 235, 0.12);
+}
+
+.facultyList .card {
+  padding: 0;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.facultyList .badge {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.row-actions .icon-button {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  padding: 8px;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--color-text);
+}
+
+.row-actions .icon-button:hover {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Table hover and header */
+.dataTable thead th {
+  background: transparent;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.dataTable tbody tr:hover {
+  background: linear-gradient(90deg, rgba(37,99,235,0.03), rgba(8,145,178,0.02));
+}

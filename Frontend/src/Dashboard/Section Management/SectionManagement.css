@@ -2,3 +2,135 @@
   display: grid;
   gap: var(--space-4);
 }
+
+.sectionManagementCard {
+  max-width: 1040px;
+}
+
+.sectionManagementForm {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sectionManagementGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.sectionManagementActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.sectionManagementActions .btn {
+  min-width: 120px;
+}
+
+@media (max-width: 768px) {
+  .sectionManagementGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionManagementActions .btn {
+    flex: 1 1 100%;
+  }
+}
+
+.sectionsTableWrap {
+  overflow-x: auto;
+  margin-top: 1.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.sectionsTable {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+.sectionsTable thead {
+  background: #f1f5f9;
+}
+
+.sectionsTable th {
+  text-align: left;
+  padding: 0.9rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.sectionsTable td {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  color: #1e293b;
+  font-size: 0.92rem;
+  vertical-align: middle;
+}
+
+.sectionsTable tbody tr:hover {
+  background: #f8fafc;
+}
+
+.sectionsTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sectionsEmptyRow {
+  text-align: center;
+  padding: 2rem 1rem !important;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.sectionsRowActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+}
+
+.iconBtn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.8rem !important;
+  border-radius: 8px !important;
+  font-size: 0.85rem !important;
+  font-weight: 600;
+  min-width: auto !important;
+  white-space: nowrap;
+}
+
+.iconBtn--edit {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+  border: 1px solid #bfdbfe !important;
+}
+
+.iconBtn--edit:hover {
+  background: #dbeafe !important;
+}
+
+.iconBtn--delete {
+  background: #fef2f2 !important;
+  color: #dc2626 !important;
+  border: 1px solid #fecaca !important;
+}
+
+.iconBtn--delete:hover {
+  background: #fee2e2 !important;
+}
+
+@media (max-width: 640px) {
+  .sectionsRowActions {
+    flex-direction: column;
+  }
+}

@@ -5,25 +5,134 @@ import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
 import PageHeader from "../../shared/components/PageHeader";
 
+
+const SUBJECTS = {
+  MPC: {
+    "Intermediate 1st Year": [
+      "English",
+      "Second Language",
+      "Mathematics 1A",
+      "Mathematics 1B",
+      "Physics",
+      "Chemistry",
+    ],
+
+    "Intermediate 2nd Year": [
+      "English",
+      "Second Language",
+      "Mathematics 2A",
+      "Mathematics 2B",
+      "Physics",
+      "Chemistry",
+    ],
+  },
+
+  BiPC: {
+    "Intermediate 1st Year": [
+      "English",
+      "Second Language",
+      "Botany",
+      "Zoology",
+      "Physics",
+      "Chemistry",
+    ],
+
+    "Intermediate 2nd Year": [
+      "English",
+      "Second Language",
+      "Botany",
+      "Zoology",
+      "Physics",
+      "Chemistry",
+    ],
+  },
+
+  MEC: {
+    "Intermediate 1st Year": [
+      "English",
+      "Second Language",
+      "Mathematics 1A",
+      "Mathematics 1B",
+      "Economics I",
+      "Commerce I",
+    ],
+
+    "Intermediate 2nd Year": [
+      "English",
+      "Second Language",
+      "Mathematics 2A",
+      "Mathematics 2B",
+      "Economics II",
+      "Commerce II",
+    ],
+  },
+
+  CEC: {
+    "Intermediate 1st Year": [
+      "English",
+      "Second Language",
+      "Civics I",
+      "Economics I",
+      "Commerce I",
+    ],
+
+    "Intermediate 2nd Year": [
+      "English",
+      "Second Language",
+      "Civics II",
+      "Economics II",
+      "Commerce II",
+    ],
+  },
+
+  HEC: {
+    "Intermediate 1st Year": [
+      "English",
+      "Second Language",
+      "History I",
+      "Economics I",
+      "Civics I",
+    ],
+
+    "Intermediate 2nd Year": [
+      "English",
+      "Second Language",
+      "History II",
+      "Economics II",
+      "Civics II",
+    ],
+  },
+};
+
 const initialResults = [
   {
-    id: 1,
-    studentName: "Rahul Kumar",
-    rollNo: "INT001",
-    subject: "English",
-    internal: 18,
-    practical: 0,
-    external: 72,
-  },
+  id: 1,
+  studentName: "Rahul Kumar",
+  rollNo: "INT001",
+
+  group: "MPC",
+  academicLevel: "Intermediate 1st Year",
+
+  subject: "English",
+
+  internal: 18,
+  practical: 0,
+  external: 72,
+},
   {
-    id: 2,
-    studentName: "Rahul Kumar",
-    rollNo: "INT001",
-    subject: "Physics",
-    internal: 19,
-    practical: 18,
-    external: 48,
-  },
+  id: 2,
+  studentName: "Rahul Kumar",
+  rollNo: "INT001",
+
+  group: "MPC",
+  academicLevel: "Intermediate 1st Year",
+
+  subject: "Physics",
+
+  internal: 19,
+  practical: 18,
+  external: 48,
+},
   {
     id: 3,
     studentName: "Rahul Kumar",
@@ -74,22 +183,34 @@ const calculateGrade = (total) => {
 export default function StudentResult() {
 const [rollNo, setRollNo] = useState("");
 
+const [group, setGroup] = useState("MPC");
+
+const [academicLevel, setAcademicLevel] =
+useState("Intermediate 1st Year");
+
 const [results, setResults] = useState(initialResults);
 
 const [filteredResults, setFilteredResults] =
-  useState(initialResults);
+useState(initialResults);
 
-const [editingId, setEditingId] =
-  useState(null);
+const [editingId, setEditingId] = useState(null);
 
 const [formData, setFormData] = useState({
   studentName: "",
   rollNo: "",
+  group,
+  academicLevel,
+  secondLanguage: "Telugu",
   subject: "",
   internal: "",
   practical: "",
   external: "",
 });
+
+const availableSubjects =
+  SUBJECTS[formData.group || group]?.[
+    formData.academicLevel || academicLevel
+  ] || [];
 
   const searchStudent = (e) => {
   e.preventDefault();
@@ -99,11 +220,22 @@ const [formData, setFormData] = useState({
     return;
   }
 
-  const data = results.filter((item) =>
-    item.rollNo
-      .toLowerCase()
-      .includes(rollNo.toLowerCase())
-  );
+  const data = results.filter(
+    (item)=>
+
+item.rollNo
+.toLowerCase()
+.includes(rollNo.toLowerCase())
+
+&&
+
+item.group===group
+
+&&
+
+item.academicLevel===academicLevel
+
+);
 
   setFilteredResults(data);
 };
@@ -128,14 +260,26 @@ const addResult = () => {
   }
 
   const newRow = {
-    id: Date.now(),
-    studentName: formData.studentName,
-    rollNo: formData.rollNo,
-    subject: formData.subject,
-    internal: Number(formData.internal),
-    practical: Number(formData.practical),
-    external: Number(formData.external),
-  };
+  id: Date.now(),
+
+  studentName: formData.studentName,
+
+  rollNo: formData.rollNo,
+
+  group,
+
+  academicLevel,
+
+  secondLanguage: formData.secondLanguage,
+
+  subject: formData.subject,
+
+  internal: Number(formData.internal),
+
+  practical: Number(formData.practical),
+
+  external: Number(formData.external),
+};
 
   const updated = [...results, newRow];
 
@@ -144,13 +288,16 @@ const addResult = () => {
   setFilteredResults(updated);
 
   setFormData({
-    studentName: "",
-    rollNo: "",
-    subject: "",
-    internal: "",
-    practical: "",
-    external: "",
-  });
+  studentName: "",
+  rollNo: "",
+  group,
+  academicLevel,
+  secondLanguage: "Telugu",
+  subject: "",
+  internal: "",
+  practical: "",
+  external: "",
+});
 };
 
 const editResult = (id) => {
@@ -160,14 +307,21 @@ const editResult = (id) => {
 
   setEditingId(id);
 
-  setFormData({
-    studentName: row.studentName,
-    rollNo: row.rollNo,
-    subject: row.subject,
-    internal: row.internal,
-    practical: row.practical,
-    external: row.external,
-  });
+  setGroup(row.group);
+
+setAcademicLevel(row.academicLevel);
+
+setFormData({
+  studentName: row.studentName,
+  rollNo: row.rollNo,
+  group: row.group,
+  academicLevel: row.academicLevel,
+  secondLanguage: row.secondLanguage || "Telugu",
+  subject: row.subject,
+  internal: row.internal,
+  practical: row.practical,
+  external: row.external,
+});
 };
 
 const saveResult = () => {
@@ -176,6 +330,7 @@ const saveResult = () => {
       ? {
           ...item,
           ...formData,
+          secondLanguage: formData.secondLanguage,
           internal: Number(formData.internal),
           practical: Number(formData.practical),
           external: Number(formData.external),
@@ -278,43 +433,77 @@ const deleteResult = (id) => {
         subtitle="View Published Student Results"
       />
 
-      <Card className="result-search">
+     <Card className="result-search">
 
-  <form onSubmit={searchStudent}>
+<form onSubmit={searchStudent}>
 
-    <label>
+  <div className="search-row">
 
-      Search Roll Number
+    <input
+      type="text"
+      placeholder="Search Roll Number..."
+      value={rollNo}
+      onChange={(e) => {
+        const value = e.target.value;
 
-      <input
-        type="text"
-        placeholder="Enter Roll Number"
-        value={rollNo}
-        onChange={(e) => setRollNo(e.target.value)}
-      />
+        setRollNo(value);
 
-    </label>
+        const data = results.filter(
+          (item) =>
+            item.rollNo.toLowerCase().includes(value.toLowerCase()) &&
+            item.group === group &&
+            item.academicLevel === academicLevel
+        );
 
-    <Button type="submit">
-
-      Search
-
-    </Button>
-
-    <Button
-      type="button"
-      variant="secondary"
-      onClick={() => {
-        setRollNo("");
-        setFilteredResults(results);
+        setFilteredResults(data);
       }}
-    >
+      className="roll-search"
+    />
 
-      Reset
+    <select
+value={academicLevel}
+onChange={(e) => {
 
-    </Button>
+  const value = e.target.value;
 
-  </form>
+  setAcademicLevel(value);
+
+  setFormData(prev => ({
+    ...prev,
+    academicLevel: value,
+    subject: ""
+  }));
+
+}}
+>
+      <option>Intermediate 1st Year</option>
+      <option>Intermediate 2nd Year</option>
+    </select>
+
+    <select
+value={group}
+onChange={(e) => {
+  const value = e.target.value;
+
+  setGroup(value);
+
+  setFormData(prev => ({
+    ...prev,
+    group: value,
+    subject: ""
+  }));
+}}
+>
+      <option>MPC</option>
+      <option>BiPC</option>
+      <option>MEC</option>
+      <option>CEC</option>
+      <option>HEC</option>
+    </select>
+
+  </div>
+
+</form>
 
 </Card>
 
@@ -354,15 +543,55 @@ const deleteResult = (id) => {
 
     <label>
 
-      Subject
+Subject
 
-      <input
-        name="subject"
-        value={formData.subject}
-        onChange={handleInputChange}
-      />
+<select
+    name="subject"
+    value={formData.subject}
+    onChange={handleInputChange}
+>
 
-    </label>
+<option value="">
+Select Subject
+</option>
+
+{availableSubjects.map((subject) => {
+
+  const subjectName =
+    subject === "Second Language"
+      ? `Second Language (${formData.secondLanguage})`
+      : subject;
+
+  return (
+    <option
+      key={subjectName}
+      value={subjectName}
+    >
+      {subjectName}
+    </option>
+  );
+
+})}
+
+</select>
+
+</label>
+
+<label>
+  Second Language
+
+  <select
+    name="secondLanguage"
+    value={formData.secondLanguage}
+    onChange={handleInputChange}
+  >
+    <option>Telugu</option>
+    <option>Hindi</option>
+    <option>Sanskrit</option>
+    <option>Urdu</option>
+  </select>
+
+</label>
 
     <label>
 
@@ -405,13 +634,7 @@ const deleteResult = (id) => {
 
   </div>
 
-  <div
-    style={{
-      display: "flex",
-      gap: 10,
-      marginTop: 20,
-    }}
-  >
+  <div className="form-buttons">
 
     {editingId ? (
 

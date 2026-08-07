@@ -154,6 +154,77 @@
   text-align: center;
 }
 
+/* Search Card */
+
+.search-card {
+  padding: 18px;
+}
+
+.search-container {
+  display: grid;
+  grid-template-columns: 2.5fr 1fr 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.search-input,
+.search-container select {
+  width: 100%;
+  height: 50px;
+  padding: 0 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 16px;
+  outline: none;
+}
+
+.search-input:focus,
+.search-container select:focus {
+  border-color: var(--color-primary);
+}
+
+@media (max-width: 900px) {
+  .search-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*=================================
+button color
+====================================*/
+
+.btn-primary,
+.btn {
+  background: #5D4A36;
+  color: #fff;
+  border: none;
+}
+
+.btn:hover,
+.btn-primary:hover {
+  background: #4a3a2b;
+}
+
+.btn-secondary{
+  background:#b08968;
+  color:#fff;
+}
+
+.btn-secondary:hover{
+  background:#9c7554;
+}
+
+.btn-danger{
+  background:#c0392b;
+  color:#fff;
+}
+
+.btn-danger:hover{
+  background:#a93226;
+}
+
 /* Total */
 .results-table th:nth-child(7),
 .results-table td:nth-child(7) {

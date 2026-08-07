@@ -84,5 +84,17 @@ function getBoardsFromResponse(response) {
 function normalizeBoard(board = {}) {
   const boardId = board.boardId ?? board.id ?? board.boardID;
   const isActive = typeof board.isActive === "boolean" ? board.isActive : String(board.status || "Active") === "Active";
-  return { ...board, id: board.id ?? boardId, boardId, boardName: board.boardName ?? board.name ?? "", boardCode: board.boardCode ?? board.code ?? "", country: board.country ?? "", state: board.state ?? "", academicStructure: board.academicStructure ?? board.academicPattern ?? "", status: board.status ?? (isActive ? "Active" : "Inactive"), isActive, createdDate: board.createdDate ?? board.createdAt ?? "" };
+  return {
+    ...board,
+    id: board.id ?? boardId,
+    boardId,
+    boardName: board.boardName ?? board.name ?? "",
+    boardCode: board.boardCode ?? board.code ?? "",
+    country: board.country ?? board.countryName ?? "",
+    state: board.state ?? board.stateName ?? "",
+    academicStructure: board.academicStructure ?? board.academicPattern ?? board.academicPatternName ?? "",
+    status: board.status ?? (isActive ? "Active" : "Inactive"),
+    isActive,
+    createdDate: board.createdDate ?? board.createdAt ?? "",
+  };
 }

@@ -30,7 +30,7 @@ export default function DashboardHome() {
           <h3>Student Admission Graph</h3>
           <div className="chart-wrap">
             <svg viewBox="0 0 600 120" preserveAspectRatio="none" className="line-chart">
-              <path d="M0,90 L60,78 L120,60 L180,48 L240,36 L300,40 L360,28 L420,50 L480,34 L540,22 L600,18" fill="none" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+              <path className="line-chart-path" d="M0,90 L60,78 L120,60 L180,48 L240,36 L300,40 L360,28 L420,50 L480,34 L540,22 L600,18" fill="none" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <div className="chart-legend">Revenue (in 000s)</div>
           </div>

@@ -15,9 +15,9 @@ import {
   FiLogOut,
   FiMoon,
   FiSearch,
-  FiSidebar,
+  FiMenu,
   FiSun,
-  FiUser,
+  FiX,
   FiUserPlus,
   FiUsers,
   FiBell,
@@ -182,12 +182,13 @@ export default function Dashboard() {
 
   return (
     <div className={`dashboardLayout ${collapsed ? "isCollapsed" : ""}`}>
-      <aside className={`dashboardSidebar ${drawerOpen ? "isDrawerOpen" : ""}`}>
+      <aside id="dashboard-navigation" className={`dashboardSidebar ${drawerOpen ? "isDrawerOpen" : ""}`} aria-label="Dashboard navigation">
         <div className="sidebarHeader">
           <Link className="sidebarBrand" to="/dashboard" onClick={() => setDrawerOpen(false)}>
             <span className="brandMark">CMS</span>
             <span className="brandText"><strong>CMS Admin</strong><small>Intermediate College</small></span>
           </Link>
+          <button className="sidebarCloseButton" type="button" aria-label="Close navigation" onClick={closeDrawer}><FiX /></button>
         </div>
 
         <nav className="sidebarNavigation" aria-label="Main modules">
@@ -213,7 +214,7 @@ export default function Dashboard() {
       <div className="dashboardMain">
         <header className="dashboardTopbar">
           <div className="topbarInner">
-            <button className="topbarAppsButton" type="button" aria-label="Apps" onClick={() => { /* placeholder for apps */ }}><FiGrid /></button>
+            <button className="dashboardMenuToggle" type="button" aria-label={drawerOpen ? "Close navigation" : "Open navigation"} aria-controls="dashboard-navigation" aria-expanded={drawerOpen} onClick={handleSidebarToggle}><FiMenu /></button>
             <div className="moduleSearch" ref={searchRef}>
               <FiSearch className="moduleSearchIcon" />
               <input value={search} onFocus={() => setSearchOpen(true)} onChange={(event) => { setSearch(event.target.value); setSearchOpen(true); }} placeholder="Search..." />
@@ -225,7 +226,7 @@ export default function Dashboard() {
           <button className="topbarIconButton" type="button" aria-label="Toggle theme" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>{theme === "dark" ? <FiSun /> : <FiMoon />}</button>
           <div className="topbarProfile" ref={profileRef}>
             <button className="profileButton" type="button" aria-label="Open profile" onClick={() => setProfileOpen((current) => !current)}>
-              <img className="profileAvatarImg" src={generateAvatar(getInitials(userName))} alt="Profile" />
+              <span className="profileAvatarFallback" aria-hidden="true">{getInitials(userName)}</span>
               <span className="profileName">{userName}</span>
             </button>
             {profileOpen ? <div className="profileMenu"><strong>{userName}</strong>{userEmail ? <span>{userEmail}</span> : null}<small>{userRole}</small><button type="button" onClick={logout}><FiLogOut /> Logout</button></div> : null}
@@ -255,21 +256,6 @@ function getInitials(name = "CMS User") {
   return name.split(" ").filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 }
 
-function generateAvatar(initials = "CU") {
-  const svg = `
-    <svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'>
-      <defs>
-        <linearGradient id='g' x1='0' x2='1' y1='0' y2='1'>
-          <stop offset='0' stop-color='#60a5fa'/>
-          <stop offset='1' stop-color='#4f46e5'/>
-        </linearGradient>
-      </defs>
-      <rect width='100%' height='100%' rx='20' fill='url(#g)' />
-      <text x='50%' y='55%' font-family='Inter, Arial, sans-serif' font-size='14' font-weight='700' fill='#ffffff' text-anchor='middle' dominant-baseline='middle'>${initials}</text>
-    </svg>
-  `;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
 
 
 

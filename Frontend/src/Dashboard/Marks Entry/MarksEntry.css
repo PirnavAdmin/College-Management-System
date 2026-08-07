@@ -1,385 +1,695 @@
 .marksEntry {
   display: grid;
-  gap: 24px;
-  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+  gap: var(--space-4);
+  color: var(--color-text);
 }
 
-.card {
-  background: var(--color-surface);
+.sectionHeading h2,
+.sectionHeading p,
+.deleteModal h2,
+.deleteModal p {
+  margin: 0;
+}
+
+.marksCard,
+.summaryCard {
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--color-border);
-  border-radius: 16px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.04);
-  padding: 22px;
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }
 
-.cardHeader,
-.searchRow,
-.tableHeader,
-.actionRow {
+.marksCard {
+  padding: 16px;
+}
+
+.sectionHeading,
+.tableToolbar,
+.footerActions,
+.summaryTitle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 14px;
 }
 
-.cardHeader h2,
-.searchRow h3,
-.tableHeader h3 {
-  margin: 0 0 6px;
-  font-size: 1.1rem;
+.sectionHeading h2,
+.summaryTitle h2 {
+  font-size: 15px;
 }
 
-.cardHeader p,
-.searchRow p,
-.tableHeader p {
-  margin: 0;
+.sectionHeading p {
+  margin-top: 4px;
   color: var(--color-muted);
-  font-size: 0.92rem;
+  font-size: 12px;
 }
 
-.filterGrid {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 20px;
+.marksButton,
+.rowButton {
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter .16s ease, opacity .16s ease;
 }
 
-.fieldGroup {
-  display: grid;
-  gap: 8px;
+.marksButton:hover,
+.rowButton:hover {
+  filter: brightness(.96);
 }
 
-.fieldGroup label {
-  font-size: 0.9rem;
+.marksButton:disabled,
+.rowButton:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+  filter: none;
+}
+
+.primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.success {
+  background: var(--color-success);
+  color: var(--color-on-primary);
+}
+
+.danger {
+  background: var(--color-danger);
+  color: var(--color-on-primary);
+}
+
+.secondary {
+  background: var(--color-surface-soft);
+  border-color: var(--color-border);
   color: var(--color-text);
 }
 
-.fieldGroup select,
-.fieldGroup input,
-.searchCard input,
-.fieldInput {
+.dangerOutline {
+  background: transparent;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.rowButton {
+  border-color: var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-primary);
+}
+
+.marksFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 17px;
+}
+
+.filterField {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.filterField select,
+.searchField input,
+.marksTable input:not([type="checkbox"]) {
   width: 100%;
-  min-height: 36px;
-  border-radius: 10px;
   border: 1px solid var(--color-border);
+  border-radius: 12px;
+  outline: none;
   background: var(--color-surface-soft);
   color: var(--color-text);
-  padding: 0 12px;
-  font-size: 0.95rem;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  font-size: 13px;
 }
 
-.fieldGroup select:focus,
-.fieldGroup input:focus,
-.fieldInput:focus,
-.searchCard input:focus {
-  outline: none;
+.filterField select,
+.searchField input {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.filterField select:focus,
+.searchField input:focus,
+.marksTable input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
-.fieldError {
-  margin-top: 4px;
-  font-size: 12px;
+.filterField small,
+.markError {
   color: var(--color-danger);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .statsGrid {
   display: grid;
-  gap: 16px;
   grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .statTile {
   border: 1px solid var(--color-border);
-  border-radius: 14px;
-  padding: 16px;
-  background: var(--color-surface-soft);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-card);
+  padding: 10px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  transition: transform .16s ease;
 }
 
-.statLabel {
+.statTile:hover {
+  transform: translateY(-2px);
+}
+
+.statTile span {
   display: block;
-  font-size: 0.85rem;
   color: var(--color-muted);
-  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .statTile strong {
-  font-size: 1.3rem;
-  color: var(--color-text);
+  display: block;
+  margin-top: 5px;
+  font-size: 21px;
 }
 
-.searchCard {
-  padding: 20px 22px;
-}
-
-.searchRow input {
-  max-width: 360px;
-}
-
-.tableCard {
-  padding: 20px 22px;
-}
-
-.tableActions {
+.tabBar {
   display: flex;
-  gap: 10px;
+  gap: 22px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tabBar button {
+  padding: 0 2px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tabBar button.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.tabBar span {
+  padding: 2px 5px;
+  border-radius: 10px;
+  background: var(--color-surface-soft);
+  font-size: 10px;
+}
+
+.tableToolbar {
+  padding: 10px 0;
+}
+
+.toolbarActions,
+.verifyActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.tableWrapper {
+.verifyActions .marksButton {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+
+.searchField {
+  display: grid;
+  width: 100%;
+  max-width: 320px;
+  gap: 5px;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.marksTableWrap {
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
-  margin-top: 18px;
-  border-radius: 18px;
+  overflow-y: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  scrollbar-width: none;
 }
 
-.dataTable {
+.marksTableWrap::-webkit-scrollbar {
+  display: none;
+}
+
+.marksTable {
   width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  min-width: 980px;
+  min-width: 690px;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.dataTable th,
-.dataTable td {
-  padding: 14px 14px;
-  text-align: left;
+.marksTable th,
+.marksTable td {
+  padding: 8px;
   border-bottom: 1px solid var(--color-border);
-  color: var(--color-text);
-  font-size: 0.95rem;
+  text-align: left;
+  font-size: 12px;
+  vertical-align: middle;
 }
 
-.dataTable th {
-  font-weight: 600;
+.marksTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   background: var(--color-surface-soft);
+  color: var(--color-muted);
+  font-size: 10px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
 }
 
-.dataTable tbody tr:hover {
-  background: rgba(24, 144, 255, 0.04);
+.marksTable th small {
+  font-weight: 500;
 }
 
-.checkboxLabel {
+.marksTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.marksTable tbody tr {
+  transition: background-color .16s ease, transform .16s ease;
+}
+
+.marksTable tbody tr:hover {
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+}
+
+.marksTable tbody tr.isEditing {
+  background: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface));
+}
+
+.marksTable input:not([type="checkbox"]) {
+  width: 60px;
+  min-width: 60px;
+  height: 32px;
+  padding: 0 8px;
+  text-align: center;
+}
+
+.compactMarksTable th:nth-child(1),
+.compactMarksTable td:nth-child(1) { width: 34px; text-align: center; }
+.compactMarksTable th:nth-child(3),
+.compactMarksTable td:nth-child(3),
+.compactMarksTable th:nth-child(4),
+.compactMarksTable td:nth-child(4),
+.compactMarksTable th:nth-child(5),
+.compactMarksTable td:nth-child(5) { width: 70px; text-align: center; }
+.compactMarksTable th:nth-child(6),
+.compactMarksTable td:nth-child(6) { width: 60px; text-align: center; }
+.compactMarksTable th:nth-child(7),
+.compactMarksTable td:nth-child(7) { width: 60px; text-align: center; }
+.compactMarksTable th:nth-child(8),
+.compactMarksTable td:nth-child(8) { width: 90px; text-align: center; }
+
+.studentInfo {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.fieldInput {
-  width: 100%;
+.studentInfo strong {
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.fieldInvalid {
+.studentInfo span {
+  color: var(--color-muted);
+  font-size: 11px;
+}
+
+.marksTable input:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+.marksTable input.invalid {
   border-color: var(--color-danger);
 }
 
+.markError {
+  display: block;
+  max-width: 86px;
+  margin-top: 4px;
+}
+
+.emptyTable {
+  padding: 28px !important;
+  color: var(--color-muted);
+  text-align: center !important;
+}
+
+.gradeBadge,
 .statusBadge {
   display: inline-flex;
+  min-width: 30px;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
   border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--color-surface);
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.gradeBadge {
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.gradeBadge.isEmpty {
+  color: var(--color-muted);
 }
 
 .statusPending {
-  background: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 15%, var(--color-surface));
+  color: var(--color-warning);
+}
+
+.statusSaved {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.statusUpdated {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  color: var(--color-accent);
 }
 
 .statusVerified {
-  background: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, var(--color-surface));
+  color: var(--color-success);
 }
 
-.button {
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+.verifyRow {
+  color: var(--color-success);
 }
 
-.button:hover {
-  transform: translateY(-1px);
-}
-
-.button:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.button-primary {
-  background: var(--color-primary);
-  color: var(--color-surface);
-}
-
-.button-secondary {
-  background: var(--color-surface-soft);
-  color: var(--color-text);
-  border-color: var(--color-border);
-}
-
-.button-success {
-  background: var(--color-success);
-  color: var(--color-surface);
-}
-
-.button-warning {
-  background: var(--color-warning);
-  color: var(--color-surface);
-}
-
-.button-danger {
-  background: var(--color-danger);
-  color: var(--color-surface);
-}
-
-.button-small {
-  height: 36px;
-  padding: 0 12px;
-}
-
-.actionCard {
-  padding: 18px 22px;
-}
-
-.actionGroup {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.submitFeedback {
-  color: var(--color-warning);
-  font-size: 0.92rem;
-}
-
-.emptyRow {
-  text-align: center;
+.verifyHint {
+  display: block;
+  margin-top: 5px;
   color: var(--color-muted);
-  padding: 32px 0;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.footerActions {
+  padding: 14px 18px;
+}
+
+.footerActions p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.footerActions>div,
+.deleteModal>div {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
 }
 
 .modalOverlay {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(0, 0, 0, 0.38);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: var(--color-overlay);
 }
 
-.modalCard {
-  width: min(520px, 100%);
-  background: var(--color-surface);
-  border-radius: 20px;
+.deleteModal {
+  width: min(95vw, 420px);
   border: 1px solid var(--color-border);
-  padding: 24px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
 }
 
-.modalCard h2 {
-  margin: 0 0 10px;
-  font-size: 1.2rem;
+.deleteModal h2 {
+  font-size: 18px;
 }
 
-.modalCard p {
-  margin: 0 0 20px;
+.deleteModal p {
+  margin-top: 8px;
   color: var(--color-muted);
+  font-size: 13px;
   line-height: 1.5;
 }
 
-.modalActions {
-  display: flex;
+.deleteModal>div {
   justify-content: flex-end;
-  gap: 12px;
+  margin-top: 20px;
 }
 
-.toast {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  min-width: 260px;
-  padding: 14px 18px;
-  border-radius: 14px;
-  color: var(--color-surface);
-  font-weight: 600;
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
-  z-index: 60;
+.marksEntry .Toastify__toast {
+  font-size: 13px;
 }
 
-.toastSuccess {
-  background: var(--color-success);
+
+
+
+
+html,
+body,
+#root {
+  width: 100%;
+  overflow-x: hidden;
 }
 
-.toastWarning {
-  background: var(--color-warning);
-}
+@media (max-width: 1023px) {
+  .marksCard {
+    padding: 15px;
+  }
 
-/* Hide scrollbars globally while preserving scroll */
-* {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
+  .tableToolbar {
+    align-items: flex-end;
+  }
 
-*::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
+  .verifyActions {
+    justify-content: flex-end;
+  }
 
-.tableWrapper::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
+  .marksButton,
+  .rowButton {
+    min-height: 28px;
+  }
 
-.tableWrapper {
-  -webkit-overflow-scrolling: touch;
-}
+  .marksTable input:not([type="checkbox"]) {
+    width: 55px;
+    min-width: 55px;
+  }
 
-@media (max-width: 1100px) {
+  .marksFilterGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .statsGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 860px) {
-  .filterGrid {
+@media (max-width: 767px) {
+  .marksCard {
+    padding: 14px;
+  }
+
+  .sectionHeading,
+  .tableToolbar,
+  .footerActions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sectionHeading .marksButton,
+  .footerActions>div,
+  .footerActions>div .marksButton {
+    width: 100%;
+  }
+
+  .marksFilterGrid,
+  .statsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .tableHeader,
-  .cardHeader,
-  .searchRow,
-  .actionRow {
-    align-items: flex-start;
+  .searchField {
+    max-width: 100%;
   }
-}
 
-@media (max-width: 640px) {
-  .filterGrid {
+  .verifyActions {
+    width: 100%;
+    display: grid;
     grid-template-columns: 1fr;
   }
 
+  .verifyActions .marksButton {
+    width: 100%;
+  }
+
+  .footerActions>div {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .marksButton,
+  .rowButton {
+    min-height: 32px;
+    font-size: 12px;
+  }
+
+  .marksTableWrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .marksTable,
+  .marksTable tbody,
+  .marksTable tr,
+  .marksTable td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .marksTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .marksTable tbody {
+    display: grid;
+    gap: 13px;
+  }
+
+  .marksTable tbody tr,
+  .marksTable tbody tr.isEditing {
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+    padding: 13px;
+  }
+
+  .marksTable tbody tr.isEditing {
+    border-color: color-mix(in srgb, var(--color-warning) 60%, var(--color-border));
+  }
+
+  .marksTable td {
+    min-height: 30px;
+    padding: 8px 0;
+    border: 0;
+    font-size: 13px;
+  }
+
+  .marksTable td::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-muted);
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  .marksTable td[data-label="Student Name"] {
+    margin-bottom: 4px;
+    padding-top: 2px;
+    font-size: 15px;
+  }
+
+  .marksTable td[data-label="Select"] {
+    position: absolute;
+    right: 24px;
+    width: auto;
+    padding: 0;
+  }
+
+  .marksTable td[data-label="Select"]::before {
+    display: none;
+  }
+
+  .marksTable input:not([type="checkbox"]) {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    font-size: 15px;
+  }
+
+  .markError {
+    max-width: none;
+  }
+
+  .rowActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .rowActions .rowButton {
+    width: 100%;
+  }
+
+  .emptyTable {
+    display: block !important;
+    padding: 24px !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: 10px;
+    background: var(--color-surface);
+  }
+}
+
+@media (max-width: 480px) {
+
+  .marksFilterGrid,
   .statsGrid {
     grid-template-columns: 1fr;
   }
 
-  .tableActions,
-  .actionGroup {
-    width: 100%;
-    justify-content: stretch;
+  .tabBar {
+    gap: 15px;
   }
 
-  .tableActions button,
-  .actionGroup button {
-    width: 100%;
+  .tabBar button {
+    font-size: 12px;
+  }
+
+  .marksButton,
+  .rowButton {
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 11px;
   }
 }

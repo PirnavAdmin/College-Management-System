@@ -1,32 +1,44 @@
 .addGroup {
   width: 100%;
-  max-width: 100%;
+  max-width: 1180px;
   box-sizing: border-box;
   display: grid;
-  gap: 24px;
+  gap: 18px;
   overflow-x: hidden;
+  margin: 0 auto;
+  padding: 0 18px 18px;
 }
+
 
 .addGroup .page-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  margin-bottom: 0;
 }
 
 .addGroup .page-header h1 {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: #111827;
+  color: inherit;
+  font-size: 26px;
+  line-height: 1.12;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .addGroup .page-header p {
   margin: 6px 0 0;
-  font-size: 16px;
-  color: #64748b;
+  color: var(--color-muted, #64748b);
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 720px;
 }
 
 .addGroup .page-actions {
@@ -36,15 +48,20 @@
   align-items: center;
 }
 
+.addGroup .page-actions .btn {
+  align-self: center;
+}
+
 .addGroupCard {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  border-radius: 12px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
-  padding: 16px;
+  border-radius: var(--radius-card, 16px);
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface, #fff);
+  box-shadow: var(--shadow-card, 0 6px 18px rgba(15,23,42,0.04));
+  padding: 24px;
+  margin-top: 0;
 }
 
 .addGroupForm {

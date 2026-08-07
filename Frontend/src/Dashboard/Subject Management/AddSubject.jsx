@@ -108,21 +108,23 @@ export default function AddSubject() {
         {error ? <div className="notice notice-error">{error}</div> : null}
         <form className="addSubjectForm" onSubmit={handleSubmit}>
           <div className="form-grid">
-            <FormField label="Board"><select className="select" value={form.board} onChange={(event) => setField("board", event.target.value)}><option value="">Select Board</option>{BOARDS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-            <FormField label="Group"><select className="select" value={form.group} onChange={(event) => setField("group", event.target.value)}><option value="">Select Group</option>{GROUPS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-            <FormField label="Academic Level"><select className="select" value={form.academicLevel} onChange={(event) => setField("academicLevel", event.target.value)}><option value="">Select Academic Level</option>{ACADEMIC_LEVELS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
-            <FormField label="Subject Name"><input className="input" value={form.subjectName} onChange={(event) => setField("subjectName", event.target.value)} /></FormField>
-            <FormField label="Subject Code"><input className="input" value={form.subjectCode} onChange={(event) => setField("subjectCode", event.target.value)} /></FormField>
+            <FormField label="Board" required><select className="select" value={form.board} onChange={(event) => setField("board", event.target.value)}><option value="">Select Board</option>{BOARDS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+            <FormField label="Group" required><select className="select" value={form.group} onChange={(event) => setField("group", event.target.value)}><option value="">Select Group</option>{GROUPS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+            <FormField label="Academic Level" required><select className="select" value={form.academicLevel} onChange={(event) => setField("academicLevel", event.target.value)}><option value="">Select Academic Level</option>{ACADEMIC_LEVELS.map((item) => <option key={item}>{item}</option>)}</select></FormField>
+            <FormField label="Subject Name" required><input className="input" value={form.subjectName} onChange={(event) => setField("subjectName", event.target.value)} /></FormField>
+            <FormField label="Subject Code" required><input className="input" value={form.subjectCode} onChange={(event) => setField("subjectCode", event.target.value)} /></FormField>
           </div>
-          <div className="subjectTypeGrid">
-            {SUBJECT_TYPES.map((type) => <label className="subjectTypeOption" key={type}><input type="checkbox" checked={form.subjectTypes.includes(type)} onChange={() => toggleType(type)} />{type}</label>)}
-          </div>
+          <FormField label="Subject Type" required>
+            <div className="subjectTypeGrid">
+              {SUBJECT_TYPES.map((type) => <label className="subjectTypeOption" key={type}><input type="checkbox" checked={form.subjectTypes.includes(type)} onChange={() => toggleType(type)} />{type}</label>)}
+            </div>
+          </FormField>
           <div className="form-grid">
             <FormField label="Internal Marks"><input className="input" type="number" value={form.internalMarks} onChange={(event) => setField("internalMarks", event.target.value)} /></FormField>
             <FormField label="Practical Marks"><input className="input" type="number" value={form.practicalMarks} onChange={(event) => setField("practicalMarks", event.target.value)} /></FormField>
             <FormField label="External Marks"><input className="input" type="number" value={form.externalMarks} onChange={(event) => setField("externalMarks", event.target.value)} /></FormField>
             <FormField label="Total Marks"><input className="input" value={totalMarks} readOnly disabled /></FormField>
-            <FormField label="Passing Marks"><input className="input" type="number" value={form.passingMarks} onChange={(event) => setField("passingMarks", event.target.value)} /></FormField>
+            <FormField label="Passing Marks" required><input className="input" type="number" value={form.passingMarks} onChange={(event) => setField("passingMarks", event.target.value)} /></FormField>
           </div>
           <div className="page-actions"><Button variant="primary" disabled={submitting}><FiSave /> {submitting ? "Saving..." : editMode ? "Update Subject" : "Add Subject"}</Button></div>
         </form>

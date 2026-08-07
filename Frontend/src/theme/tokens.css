@@ -1,25 +1,5 @@
 :root {
   --font-sans: "Inter", "Poppins", "Segoe UI", system-ui, sans-serif;
-  --color-sidebar: #0b1635;
-  --color-sidebar-soft: rgba(129, 140, 248, 0.16);
-  --color-primary: #4f46e5;
-  --color-primary-dark: #3730a3;
-  --color-accent: #06b6d4;
-  --color-indigo: #6366f1;
-  --color-bg: #f4f7ff;
-  --color-surface: rgba(255, 255, 255, 0.82);
-  --color-surface-soft: #f8faff;
-  --color-text: #14213d;
-  --color-muted: #64748b;
-  --color-border: #dce4f4;
-  --color-success: #059669;
-  --color-warning: #d97706;
-  --color-danger: #dc2626;
-  --radius-card: 16px;
-  --radius-control: 12px;
-  --shadow-card: 0 12px 32px rgba(37, 62, 122, 0.10), 0 2px 8px rgba(37, 62, 122, 0.05);
-  --shadow-float: 0 22px 46px rgba(37, 62, 122, 0.16);
-  --transition: 0.3s ease;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -27,26 +7,98 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --radius-sm: 8px;
+  --radius-control: 10px;
+  --radius-card: 14px;
+  --border-width: 1px;
   --sidebar-width: 280px;
+  --sidebar-collapsed-width: 80px;
+  --transition-fast: 160ms ease;
+  --transition: 220ms ease;
 }
 
 .theme-light {
-  --color-bg: #f3f6fb;
+  --color-bg: #f5f7fb;
   --color-surface: #ffffff;
   --color-surface-soft: #f8fafc;
+  --color-surface-raised: #ffffff;
   --color-text: #0f172a;
+  --color-text-secondary: #334155;
   --color-muted: #64748b;
   --color-border: #dbe3ef;
+  --color-border-strong: #d1dceb;
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-dark: #3730a3;
+  --color-accent: #0891b2;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-on-primary: #ffffff;
+  /* Sidebar */
+  --color-sidebar: #eaf2ff;
+  --color-sidebar-text: #1e293b;
+  --color-sidebar-muted: #64748b;
+  --color-sidebar-hover: rgba(37, 99, 235, .08);
+  --color-sidebar-active: rgba(37, 99, 235, .12);
+  --color-sidebar-child: rgba(37, 99, 235, .06);
+  --color-sidebar-active-border: rgba(37, 99, 235, .18);
+  --color-sidebar-soft: var(--color-sidebar-active);
+  /* Effects */
+  --color-overlay: rgba(15, 23, 42, 0.45);
+  --color-focus-ring: rgba(37, 99, 235, 0.12);
+  --color-primary-soft: rgba(79, 70, 229, 0.08);
+  --color-success-soft: rgba(5, 150, 105, 0.08);
+  --color-warning-soft: rgba(217, 119, 6, 0.08);
+  --color-danger-soft: rgba(220, 38, 38, 0.08);
+  --shadow-card:
+    0 2px 8px rgba(15, 23, 42, 0.05),
+    0 12px 28px rgba(15, 23, 42, 0.06);
+  --shadow-float:
+    0 20px 48px rgba(15, 23, 42, 0.14);
+  --shadow-control:
+    0 1px 2px rgba(15, 23, 42, 0.08);
 }
 
 .theme-dark {
   --color-bg: #0b1224;
-  --color-sidebar: #0d162a;
-  --color-sidebar-soft: rgba(99, 102, 241, 0.18);
   --color-surface: #17233a;
   --color-surface-soft: #1d2a43;
+  --color-surface-raised: #24344f;
   --color-text: #f1f5ff;
-  --color-muted: #b6c4db;
-  --color-border: #30415e;
-  --shadow-card: 0 14px 32px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.18);
+  --color-text-secondary: #cbd5e1;
+  --color-muted: #94a3b8;
+  --color-border: #334155;
+  --color-border-strong: #475569;
+  --color-primary: #818cf8;
+  --color-primary-hover: #a5b4fc;
+  --color-primary-dark: #c7d2fe;
+  --color-accent: #22d3ee;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-danger: #fb7185;
+  --color-on-primary: #0b1224;
+  /* Sidebar */
+  --color-sidebar: #081120;
+  --color-sidebar-text: #edf3ff;
+  --color-sidebar-muted: #94a3b8;
+  --color-sidebar-hover: rgba(129, 140, 248, .12);
+  --color-sidebar-active: rgba(129, 140, 248, .18);
+  --color-sidebar-child: rgba(129, 140, 248, .08);
+  --color-sidebar-active-border: rgba(129, 140, 248, .28);
+  --color-sidebar-soft: rgba(129, 140, 248, 0.18);
+  /* Effects */
+  --color-overlay: rgba(2, 6, 23, 0.7);
+  --color-focus-ring: rgba(129, 140, 248, 0.18);
+  --color-primary-soft: rgba(129, 140, 248, 0.15);
+  --color-success-soft: rgba(52, 211, 153, 0.14);
+  --color-warning-soft: rgba(251, 191, 36, 0.14);
+  --color-danger-soft: rgba(251, 113, 133, 0.14);
+  --shadow-card:
+    0 2px 10px rgba(0,0,0,0.35),
+    0 16px 32px rgba(0,0,0,0.25);
+  --shadow-float:
+    0 24px 54px rgba(0,0,0,0.5);
+  --shadow-control:
+    0 1px 2px rgba(0,0,0,0.35);
 }

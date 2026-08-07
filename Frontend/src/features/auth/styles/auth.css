@@ -239,6 +239,15 @@ body,
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
 }
 
+/* Hide native password reveal/clear icons where supported */
+.auth-input-wrap input::-ms-clear,
+.auth-input-wrap input::-ms-reveal {
+  display: none;
+}
+.auth-input-wrap input::-webkit-textfield-decoration-container {
+  display: none !important;
+}
+
 .auth-password-toggle {
   position: absolute;
   right: 9px;

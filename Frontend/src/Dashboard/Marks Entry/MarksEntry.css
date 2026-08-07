@@ -26,7 +26,7 @@
 }
 
 .marksCard {
-  padding: 18px;
+  padding: 16px;
 }
 
 .sectionHeading,
@@ -52,11 +52,11 @@
 
 .marksButton,
 .rowButton {
-  min-height: 34px;
+  min-height: 30px;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 7px 12px;
-  font-size: 12px;
+  padding: 5px 10px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   transition: filter .16s ease, opacity .16s ease;
@@ -67,9 +67,11 @@
   filter: brightness(.96);
 }
 
-.marksButton:disabled {
+.marksButton:disabled,
+.rowButton:disabled {
   cursor: not-allowed;
   opacity: .5;
+  filter: none;
 }
 
 .primary {
@@ -125,7 +127,7 @@
 .marksTable input:not([type="checkbox"]) {
   width: 100%;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 12px;
   outline: none;
   background: var(--color-surface-soft);
   color: var(--color-text);
@@ -162,7 +164,7 @@
   border: 1px solid var(--color-border);
   border-left: 4px solid var(--color-primary);
   border-radius: var(--radius-card);
-  padding: 13px;
+  padding: 10px;
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
   transition: transform .16s ease;
@@ -215,7 +217,21 @@
 }
 
 .tableToolbar {
-  padding: 15px 0 12px;
+  padding: 10px 0;
+}
+
+.toolbarActions,
+.verifyActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.verifyActions .marksButton {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 11px;
 }
 
 .searchField {
@@ -244,13 +260,14 @@
 
 .marksTable {
   width: 100%;
-  min-width: 1100px;
+  min-width: 690px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .marksTable th,
 .marksTable td {
-  padding: 10px;
+  padding: 8px;
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   font-size: 12px;
@@ -276,16 +293,55 @@
   border-bottom: 0;
 }
 
-.marksTable td:first-child,
-.marksTable th:first-child {
-  width: 38px;
-  text-align: center;
+.marksTable tbody tr {
+  transition: background-color .16s ease, transform .16s ease;
+}
+
+.marksTable tbody tr:hover {
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+}
+
+.marksTable tbody tr.isEditing {
+  background: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface));
 }
 
 .marksTable input:not([type="checkbox"]) {
-  min-width: 75px;
+  width: 60px;
+  min-width: 60px;
   height: 32px;
   padding: 0 8px;
+  text-align: center;
+}
+
+.compactMarksTable th:nth-child(1),
+.compactMarksTable td:nth-child(1) { width: 34px; text-align: center; }
+.compactMarksTable th:nth-child(3),
+.compactMarksTable td:nth-child(3),
+.compactMarksTable th:nth-child(4),
+.compactMarksTable td:nth-child(4),
+.compactMarksTable th:nth-child(5),
+.compactMarksTable td:nth-child(5) { width: 70px; text-align: center; }
+.compactMarksTable th:nth-child(6),
+.compactMarksTable td:nth-child(6) { width: 60px; text-align: center; }
+.compactMarksTable th:nth-child(7),
+.compactMarksTable td:nth-child(7) { width: 60px; text-align: center; }
+.compactMarksTable th:nth-child(8),
+.compactMarksTable td:nth-child(8) { width: 90px; text-align: center; }
+
+.studentInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.studentInfo strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.studentInfo span {
+  color: var(--color-muted);
+  font-size: 11px;
 }
 
 .marksTable input:disabled {
@@ -350,15 +406,16 @@
   color: var(--color-success);
 }
 
-.verifyActions,
-.rowActions {
-  display: flex;
-  gap: 7px;
-  flex-wrap: wrap;
-}
-
 .verifyRow {
   color: var(--color-success);
+}
+
+.verifyHint {
+  display: block;
+  margin-top: 5px;
+  color: var(--color-muted);
+  font-size: 10px;
+  line-height: 1.25;
 }
 
 .footerActions {
@@ -429,6 +486,28 @@ body,
 }
 
 @media (max-width: 1023px) {
+  .marksCard {
+    padding: 15px;
+  }
+
+  .tableToolbar {
+    align-items: flex-end;
+  }
+
+  .verifyActions {
+    justify-content: flex-end;
+  }
+
+  .marksButton,
+  .rowButton {
+    min-height: 28px;
+  }
+
+  .marksTable input:not([type="checkbox"]) {
+    width: 55px;
+    min-width: 55px;
+  }
+
   .marksFilterGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -465,25 +544,130 @@ body,
     max-width: 100%;
   }
 
+  .verifyActions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .verifyActions .marksButton {
+    width: 100%;
+  }
+
   .footerActions>div {
     display: grid;
     grid-template-columns: 1fr;
   }
 
-  .marksTable th,
+  .marksButton,
+  .rowButton {
+    min-height: 32px;
+    font-size: 12px;
+  }
+
+  .marksTableWrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .marksTable,
+  .marksTable tbody,
+  .marksTable tr,
   .marksTable td {
-    padding: 8px;
-    font-size: 11px;
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .marksTable thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .marksTable tbody {
+    display: grid;
+    gap: 13px;
+  }
+
+  .marksTable tbody tr,
+  .marksTable tbody tr.isEditing {
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+    padding: 13px;
+  }
+
+  .marksTable tbody tr.isEditing {
+    border-color: color-mix(in srgb, var(--color-warning) 60%, var(--color-border));
+  }
+
+  .marksTable td {
+    min-height: 30px;
+    padding: 8px 0;
+    border: 0;
+    font-size: 13px;
+  }
+
+  .marksTable td::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-muted);
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  .marksTable td[data-label="Student Name"] {
+    margin-bottom: 4px;
+    padding-top: 2px;
+    font-size: 15px;
+  }
+
+  .marksTable td[data-label="Select"] {
+    position: absolute;
+    right: 24px;
+    width: auto;
+    padding: 0;
+  }
+
+  .marksTable td[data-label="Select"]::before {
+    display: none;
   }
 
   .marksTable input:not([type="checkbox"]) {
-    height: 30px;
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    font-size: 15px;
   }
 
-  .marksButton,
-  .rowButton {
-    min-height: 30px;
-    font-size: 11px;
+  .markError {
+    max-width: none;
+  }
+
+  .rowActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .rowActions .rowButton {
+    width: 100%;
+  }
+
+  .emptyTable {
+    display: block !important;
+    padding: 24px !important;
+    border: 1px solid var(--color-border) !important;
+    border-radius: 10px;
+    background: var(--color-surface);
   }
 }
 

@@ -2,3 +2,288 @@
   display: grid;
   gap: var(--space-4);
 }
+
+/* ====================================
+   Search Section
+==================================== */
+
+.result-search {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.result-search form {
+  display: flex;
+  align-items: end;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.result-search label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 250px;
+  color: var(--color-muted);
+  font-size: .85rem;
+  font-weight: 600;
+}
+
+.result-search input {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  outline: none;
+}
+
+.result-search input:focus {
+  border-color: var(--color-primary);
+}
+
+.result-search small {
+  color: var(--color-muted);
+  font-size: .78rem;
+}
+
+/* ====================================
+   Result Sheet
+==================================== */
+
+.mark-sheet {
+  overflow: hidden;
+}
+
+/* ====================================
+   Header
+==================================== */
+
+.mark-sheet-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+}
+
+.mark-sheet-top h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.mark-sheet-top p {
+  margin-top: 5px;
+  color: var(--color-muted);
+}
+
+/* ====================================
+   Student Details
+==================================== */
+
+.student-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-surface-soft);
+}
+
+.student-details div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.student-details span {
+  font-size: .78rem;
+  color: var(--color-muted);
+}
+
+.student-details strong {
+  font-size: 1rem;
+}
+
+/* ====================================
+   Table
+==================================== */
+
+.mark-table-wrap {
+  overflow-x: auto;
+}
+
+.mark-table {
+  width: 100%;
+  min-width: 850px;
+  border-collapse: collapse;
+}
+
+.mark-table th {
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
+  text-transform: uppercase;
+  font-size: .75rem;
+  padding: 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mark-table td {
+  padding: 14px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: .9rem;
+}
+
+.mark-table tr:hover {
+  background: rgba(0,0,0,.02);
+}
+
+.mark-table td:first-child {
+  font-weight: 600;
+}
+
+/* ====================================
+   Pass / Fail Badge
+==================================== */
+
+.pass,
+.fail {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.pass {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.fail {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* ====================================
+   Summary
+==================================== */
+
+.result-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.result-overview div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.result-overview span {
+  color: var(--color-muted);
+  font-size: .8rem;
+}
+
+.result-overview strong {
+  font-size: 1.15rem;
+}
+
+.pass-result {
+  color: #15803d;
+}
+
+.fail-result {
+  color: #dc2626;
+}
+
+/* ====================================
+   No Result
+==================================== */
+
+.no-result {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 50px;
+  text-align: center;
+}
+
+.no-result strong {
+  font-size: 1.2rem;
+}
+
+.no-result span {
+  color: var(--color-muted);
+}
+
+/* ====================================
+   Responsive
+==================================== */
+
+@media (max-width:900px) {
+
+  .student-details {
+    grid-template-columns: 1fr;
+  }
+
+  .result-overview {
+    grid-template-columns: repeat(2,1fr);
+  }
+
+}
+
+@media (max-width:600px) {
+
+  .result-search form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .result-search label {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .result-search .btn {
+    width: 100%;
+  }
+
+  .mark-sheet-top {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .mark-sheet-top .btn {
+    width: 100%;
+  }
+
+  .result-overview {
+    grid-template-columns: 1fr;
+  }
+
+}
+
+@media print {
+
+  .page-header,
+  .result-search,
+  .mark-sheet-top .btn {
+    display: none !important;
+  }
+
+  .studentResult {
+    display: block;
+  }
+
+  .mark-sheet {
+    border: none;
+  }
+
+}
+

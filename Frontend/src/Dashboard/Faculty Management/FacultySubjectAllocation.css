@@ -64,8 +64,8 @@
 .infoCard,
 .statCard,
 .errorCard {
-  padding: var(--space-4);
-  border-radius: 20px;
+  padding: var(--space-3);
+  border-radius: 18px;
   box-shadow: var(--shadow-soft);
 }
 
@@ -73,12 +73,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
 .workloadHeaderContent h2 {
-  margin: 0 0 var(--space-1) 0;
+  margin: 0 0 var(--space-2) 0;
+  font-size: 1rem;
 }
 
 .headerActions {
@@ -134,24 +135,24 @@
 
 .workloadSummaryGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: var(--space-3);
 }
 
 .infoCard {
   grid-column: span 1;
   display: flex;
-  gap: var(--space-4);
+  gap: var(--space-3);
   align-items: center;
-  min-height: 150px;
+  min-height: 120px;
 }
 
 .infoCard .infoIcon,
 .statCard svg {
   background: var(--color-surface);
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
 }
@@ -160,8 +161,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: var(--space-4);
-  min-height: 150px;
+  gap: var(--space-3);
+  min-height: 120px;
 }
 
 .statCard.primary { background: rgba(0, 112, 243, 0.08); }

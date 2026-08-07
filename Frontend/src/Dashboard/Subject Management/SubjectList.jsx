@@ -86,7 +86,11 @@ export default function SubjectList() {
 
   return (
     <section className="subjectList">
-      <PageHeader title="Subject List" subtitle="Manage subjects, academic levels, subject types, and marks." actions={<><Button onClick={() => setFilters(initialFilters)}><FiRotateCcw /> Reset</Button><Button onClick={() => fetchSubjects()}><FiRefreshCw /> Refresh</Button><Link className="btn btn-primary" to="/dashboard/subjects/new"><FiPlus /> Add Subject</Link></>} />
+      <PageHeader
+        title="Subject List"
+        subtitle="Keep every subject, level, type, and mark requirement organised in one place."
+        actions={<><Button onClick={() => fetchSubjects()}><FiRefreshCw /> Refresh</Button><Link className="btn btn-primary" to="/dashboard/subjects/new"><FiPlus /> Add Subject</Link></>}
+      />
       {error ? <div className="notice notice-error">{error}</div> : null}
       <Card padded={false}>
         <div className="filterToolbar">

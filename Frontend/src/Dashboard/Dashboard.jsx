@@ -15,11 +15,12 @@ import {
   FiLogOut,
   FiMoon,
   FiSearch,
-  FiSidebar,
+  FiMenu,
   FiSun,
-  FiUser,
+  FiX,
   FiUserPlus,
   FiUsers,
+  FiBell,
 } from "react-icons/fi";
 import "./Dashboard.css";
 
@@ -181,12 +182,13 @@ export default function Dashboard() {
 
   return (
     <div className={`dashboardLayout ${collapsed ? "isCollapsed" : ""}`}>
-      <aside className={`dashboardSidebar ${drawerOpen ? "isDrawerOpen" : ""}`}>
+      <aside id="dashboard-navigation" className={`dashboardSidebar ${drawerOpen ? "isDrawerOpen" : ""}`} aria-label="Dashboard navigation">
         <div className="sidebarHeader">
           <Link className="sidebarBrand" to="/dashboard" onClick={() => setDrawerOpen(false)}>
             <span className="brandMark">CMS</span>
             <span className="brandText"><strong>CMS Admin</strong><small>Intermediate College</small></span>
           </Link>
+          <button className="sidebarCloseButton" type="button" aria-label="Close navigation" onClick={closeDrawer}><FiX /></button>
         </div>
 
         <nav className="sidebarNavigation" aria-label="Main modules">
@@ -211,16 +213,22 @@ export default function Dashboard() {
 
       <div className="dashboardMain">
         <header className="dashboardTopbar">
-          <button className="dashboardMenuToggle" type="button" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={handleSidebarToggle}><FiSidebar /></button>
-          <div className="moduleSearch" ref={searchRef}>
-            <FiSearch className="moduleSearchIcon" />
-            <input value={search} onFocus={() => setSearchOpen(true)} onChange={(event) => { setSearch(event.target.value); setSearchOpen(true); }} placeholder="Search..." />
-            {searchOpen ? <div className="moduleSearchMenu">{filteredModules.length ? filteredModules.map((item) => <button key={item.path} type="button" onClick={() => openModule(item.path)}>{item.label}</button>) : <p>No modules found</p>}</div> : null}
+          <div className="topbarInner">
+            <button className="dashboardMenuToggle" type="button" aria-label={drawerOpen ? "Close navigation" : "Open navigation"} aria-controls="dashboard-navigation" aria-expanded={drawerOpen} onClick={handleSidebarToggle}><FiMenu /></button>
+            <div className="moduleSearch" ref={searchRef}>
+              <FiSearch className="moduleSearchIcon" />
+              <input value={search} onFocus={() => setSearchOpen(true)} onChange={(event) => { setSearch(event.target.value); setSearchOpen(true); }} placeholder="Search..." />
+              {searchOpen ? <div className="moduleSearchMenu">{filteredModules.length ? filteredModules.map((item) => <button key={item.path} type="button" onClick={() => openModule(item.path)}>{item.label}</button>) : <p>No modules found</p>}</div> : null}
+            </div>
+            <div className="topbarSpacer" />
           </div>
-          <div className="topbarSpacer" />
+          <button className="topbarIconButton" type="button" aria-label="Notifications"><FiBell /></button>
           <button className="topbarIconButton" type="button" aria-label="Toggle theme" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>{theme === "dark" ? <FiSun /> : <FiMoon />}</button>
           <div className="topbarProfile" ref={profileRef}>
-            <button className="profileButton" type="button" aria-label="Open profile" onClick={() => setProfileOpen((current) => !current)}><span>{getInitials(userName)}</span><FiUser /></button>
+            <button className="profileButton" type="button" aria-label="Open profile" onClick={() => setProfileOpen((current) => !current)}>
+              <span className="profileAvatarFallback" aria-hidden="true">{getInitials(userName)}</span>
+              <span className="profileName">{userName}</span>
+            </button>
             {profileOpen ? <div className="profileMenu"><strong>{userName}</strong>{userEmail ? <span>{userEmail}</span> : null}<small>{userRole}</small><button type="button" onClick={logout}><FiLogOut /> Logout</button></div> : null}
           </div>
         </header>
@@ -247,6 +255,7 @@ function readStoredUser() {
 function getInitials(name = "CMS User") {
   return name.split(" ").filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 }
+
 
 
 

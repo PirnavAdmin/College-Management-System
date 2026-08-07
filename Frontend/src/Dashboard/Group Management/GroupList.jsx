@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { FiEdit2, FiPlus, FiRefreshCw, FiTrash2 } from "react-icons/fi";
+import { FiEdit2, FiPlus, FiRefreshCw, FiRotateCcw, FiSearch, FiTrash2 } from "react-icons/fi";
 import api, { getApiErrorMessage } from "../../api/axios";
 import Button from "../../shared/components/Button";
 import Card from "../../shared/components/Card";
@@ -133,14 +133,14 @@ export default function GroupList() {
         title="Group Management"
         subtitle="Manage academic groups configured for your intermediate college."
         actions={
-          <>
+          <div className="groupHeaderActions">
             <Button type="button" onClick={fetchGroups}>
               <FiRefreshCw /> Refresh
             </Button>
-            <Link className="btn btn-primary" to="/dashboard/groups/add">
+            <Link className="btn btn-primary groupHeaderActionLink" to="/dashboard/groups/add">
               <FiPlus /> Add Group
             </Link>
-          </>
+          </div>
         }
       />
 
@@ -154,52 +154,75 @@ export default function GroupList() {
         <StatCard label="Academic Levels" value={stats.levels} icon="L" />
       </div>
 
-      <Card padded={false}>
+      <Card className="groupListCard" padded={false}>
         <form className="groupFilterToolbar" onSubmit={searchGroups}>
-          <input
-            className="input"
-            placeholder="Search by group name or code"
-            value={filters.search}
-            onChange={(event) => updateFilter("search", event.target.value)}
-            type="search"
-          />
-          <select className="select" value={filters.board} onChange={(event) => updateFilter("board", event.target.value)}>
-            <option value="">All Boards</option>
-            {BOARDS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-          <select
-            className="select"
-            value={filters.academicYear}
-            onChange={(event) => updateFilter("academicYear", event.target.value)}
-          >
-            <option value="">All Academic Years</option>
-            {ACADEMIC_YEARS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-          <select
-            className="select"
-            value={filters.academicLevel}
-            onChange={(event) => updateFilter("academicLevel", event.target.value)}
-          >
-            <option value="">All Academic Levels</option>
-            {ACADEMIC_LEVELS.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-          <select className="select" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
-            <option value="">All Statuses</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
+          <div className="groupFilterField groupFilterFieldSearch">
+            <label className="groupFilterLabel">Search</label>
+            <div className="groupFilterInputWrap">
+              <FiSearch className="groupFilterIcon" />
+              <input
+                className="input"
+                placeholder="Search by Group Name or Group Code..."
+                value={filters.search}
+                onChange={(event) => updateFilter("search", event.target.value)}
+                type="search"
+              />
+            </div>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Board</label>
+            <select className="select" value={filters.board} onChange={(event) => updateFilter("board", event.target.value)}>
+              <option value="">All Boards</option>
+              {BOARDS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Academic Year</label>
+            <select
+              className="select"
+              value={filters.academicYear}
+              onChange={(event) => updateFilter("academicYear", event.target.value)}
+            >
+              <option value="">All Academic Years</option>
+              {ACADEMIC_YEARS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Academic Level</label>
+            <select
+              className="select"
+              value={filters.academicLevel}
+              onChange={(event) => updateFilter("academicLevel", event.target.value)}
+            >
+              <option value="">All Academic Levels</option>
+              {ACADEMIC_LEVELS.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="groupFilterField">
+            <label className="groupFilterLabel">Status</label>
+            <select className="select" value={filters.status} onChange={(event) => updateFilter("status", event.target.value)}>
+              <option value="">All Statuses</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+
           <div className="groupFilterActions">
-            <Button type="submit" variant="primary">
-              Search
+            <Button type="submit" variant="primary" className="groupActionButton">
+              <FiSearch /> Search
             </Button>
-            <Button type="button" onClick={resetFilters}>
-              Reset
+            <Button type="button" onClick={resetFilters} className="groupActionButton groupActionButtonSecondary">
+              <FiRotateCcw /> Reset
             </Button>
           </div>
         </form>
@@ -227,14 +250,14 @@ export default function GroupList() {
             renderActions={(row) => (
               <div className="row-actions">
                 <button
-                  className="icon-button"
+                  className="icon-button icon-button--edit"
                   type="button"
                   title="Edit"
                   onClick={() => navigate(`/dashboard/groups/edit/${row.groupId}`)}
                 >
                   <FiEdit2 />
                 </button>
-                <button className="icon-button" type="button" title="Delete" onClick={() => setDeleteTarget(row)}>
+                <button className="icon-button icon-button--delete" type="button" title="Delete" onClick={() => setDeleteTarget(row)}>
                   <FiTrash2 />
                 </button>
               </div>

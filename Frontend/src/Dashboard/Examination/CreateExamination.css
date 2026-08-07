@@ -2,3 +2,226 @@
   display: grid;
   gap: var(--space-4);
 }
+
+.createExaminationForm {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.createExaminationCard,
+.createExaminationSubjectsCard,
+.createExaminationSummaryCard {
+  max-width: 1280px;
+}
+
+.createExaminationCard,
+.createExaminationSummaryCard {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.createExaminationSectionTitle {
+  margin: 0;
+  font-size: 18px;
+}
+
+.createExaminationTopSummary,
+.createExaminationSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(170px, 1fr));
+  gap: var(--space-4);
+  max-width: 980px;
+}
+
+.createExaminationSummaryGrid {
+  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  max-width: none;
+}
+
+.createExaminationMetric {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.createExaminationMetric span {
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.createExaminationMetric strong {
+  color: var(--color-text);
+  font-size: 24px;
+}
+
+.createExaminationMetric-success {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+
+.createExaminationMetric-success strong {
+  color: var(--color-success);
+}
+
+.createExaminationMetric-accent {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.createExaminationMetric-accent strong {
+  color: #0369a1;
+}
+
+.createExaminationMetric-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.createExaminationMetric-warning strong {
+  color: #b45309;
+}
+
+.createExaminationGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+
+.createExamination b {
+  color: var(--color-danger);
+}
+
+.createExaminationReadonly {
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
+  cursor: default;
+}
+
+.createExaminationSubjectsHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.createExaminationSubjectsHeader p {
+  margin: 4px 0 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.createExaminationSearch {
+  width: min(100%, 280px);
+}
+
+.createExaminationSubjectsError {
+  margin: var(--space-3) var(--space-4) 0;
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.createExaminationSelectAll {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.createExaminationCode {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.createExaminationSortButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  text-transform: inherit;
+}
+
+.createExaminationInlineField {
+  display: grid;
+  gap: 4px;
+  min-width: 126px;
+}
+
+.createExaminationMarksInput {
+  width: 96px;
+  padding: 8px 10px;
+}
+
+.createExaminationRowActions,
+.createExaminationActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.createExaminationActions {
+  justify-content: flex-end;
+  max-width: 1280px;
+  padding-top: var(--space-2);
+}
+
+.createExaminationToast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 90;
+  padding: 12px 16px;
+  border: 1px solid #86efac;
+  border-radius: var(--radius-control);
+  background: #f0fdf4;
+  box-shadow: var(--shadow-card);
+  color: #166534;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .createExaminationSummaryGrid {
+    grid-template-columns: repeat(2, minmax(170px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .createExaminationGrid,
+  .createExaminationTopSummary,
+  .createExaminationSummaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .createExaminationActions .btn {
+    flex: 1 1 140px;
+  }
+
+  .createExaminationSubjectsHeader {
+    align-items: stretch;
+  }
+
+  .createExaminationSearch {
+    width: 100%;
+  }
+}

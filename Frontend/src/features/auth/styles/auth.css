@@ -132,6 +132,14 @@ body,
   scrollbar-color: #cbd5e1 transparent;
 }
 
+/* SaaS glass authentication refinement */
+.auth-overlay { background: linear-gradient(120deg, rgba(7,16,48,.88), rgba(30,41,108,.62) 52%, rgba(8,47,73,.56)); }
+.auth-feature-card { border-color: rgba(191,219,254,.22); background: rgba(17,31,69,.45); box-shadow: 0 14px 30px rgba(2,6,23,.16), inset 0 1px rgba(255,255,255,.12); transition: transform .3s ease, background .3s ease; }
+.auth-feature-card:hover { transform: translateY(-3px); background: rgba(44,61,123,.52); }
+.auth-card { border: 1px solid rgba(255,255,255,.65); background: rgba(255,255,255,.90); box-shadow: 0 28px 70px rgba(2,6,23,.34); backdrop-filter: blur(18px); }
+.auth-card-header h2 { font-weight: 800; letter-spacing: -.04em; }
+.auth-card input, .auth-card select { border-radius: 12px; }
+
 .auth-login-card {
   max-width: 430px;
   overflow: visible;
@@ -229,6 +237,15 @@ body,
 .auth-input-wrap select:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+/* Hide native password reveal/clear icons where supported */
+.auth-input-wrap input::-ms-clear,
+.auth-input-wrap input::-ms-reveal {
+  display: none;
+}
+.auth-input-wrap input::-webkit-textfield-decoration-container {
+  display: none !important;
 }
 
 .auth-password-toggle {

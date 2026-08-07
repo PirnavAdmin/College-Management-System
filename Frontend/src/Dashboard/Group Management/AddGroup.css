@@ -1,39 +1,129 @@
 .addGroup {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   display: grid;
-  gap: var(--space-4);
+  gap: 24px;
+  overflow-x: hidden;
+}
+
+.addGroup .page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0;
+}
+
+.addGroup .page-header h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.addGroup .page-header p {
+  margin: 6px 0 0;
+  font-size: 16px;
+  color: #64748b;
+}
+
+.addGroup .page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }
 
 .addGroupCard {
-  max-width: 1040px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+  padding: 16px;
 }
 
 .addGroupForm {
   display: grid;
-  gap: var(--space-4);
+  gap: 12px;
+  width: 100%;
 }
 
 .addGroupGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(240px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.addGroupField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.addGroupField span {
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.addGroupField b {
+  color: #dc2626;
+}
+
+.input,
+.select,
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  color: #111827;
+  background: #fff;
+  min-height: 40px;
+}
+
+.textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.field-error {
+  font-size: 13px;
+  color: #dc2626;
+  font-weight: 500;
 }
 
 .addGroupFull {
   grid-column: 1 / -1;
 }
 
-.addGroup b {
-  color: var(--color-danger);
-}
-
 .addGroupActions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  justify-content: flex-end;
+}
+
+.addGroupActions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  box-sizing: border-box;
 }
 
 .addGroupLoading {
-  color: var(--color-muted);
+  color: #64748b;
   font-size: 14px;
 }
 

@@ -58,5 +58,33 @@ export const apiEndpoints = {
   },
   academicYears: {
     list: "/api/v1/academic-years",
+    create: "/api/v1/academic-years",
+    detail: (academicYearId) => `/api/v1/academic-years/${academicYearId}`,
+    update: (academicYearId) => `/api/v1/academic-years/${academicYearId}`,
+    remove: (academicYearId) => `/api/v1/academic-years/${academicYearId}`,
+  },
+  sections: {
+    list: "/api/v1/Sections",
+    create: "/api/v1/Sections",
+    detail: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    update: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    remove: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    byGroup: (groupId) => `/api/v1/Sections/group/${encodeURIComponent(groupId)}`,
+  },
+  subjects: {
+    list: "/api/Subjects",
+  },
+  timetable: {
+    list: "/api/v1/timetable",
+    create: "/api/v1/timetable",
+    detail: (id) => `/api/v1/timetable/${id}`,
+    update: (id) => `/api/v1/timetable/${id}`,
+    remove: (id) => `/api/v1/timetable/${id}`,
+    byFaculty: (facultyId) => `/api/v1/timetable/faculty/${facultyId}`,
+    byStudent: (studentId) => `/api/v1/timetable/student/${studentId}`,
+    bySection: (sectionId) => `/api/v1/timetable/section/${sectionId}`,
+    copy: "/api/v1/timetable/copy",
+    publish: (id) => `/api/v1/timetable/${id}/publish`,
+    publishSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/publish`,
   },
 };

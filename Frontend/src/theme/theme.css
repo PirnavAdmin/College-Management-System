@@ -621,7 +621,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .card { overflow: hidden; border-color: rgba(207, 216, 236, .9); background: var(--color-surface); backdrop-filter: blur(16px); }
 .card:hover { box-shadow: var(--shadow-float); transform: translateY(-2px); }
 .card-pad { padding: 24px; }
-.page-header { margin-bottom: 24px; }
+.page-header { margin-bottom: 14px; }
 .page-header h1 { color: #14213d; font-size: clamp(1.7rem, 3vw, 2.25rem); font-weight: 800; letter-spacing: -.045em; }
 .page-header p { max-width: 680px; font-size: .94rem; line-height: 1.65; }
 .btn { min-height: 42px; border-radius: 12px; box-shadow: 0 2px 5px rgba(39, 50, 108, .06); }

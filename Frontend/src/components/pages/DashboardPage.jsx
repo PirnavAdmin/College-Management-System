@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
-import { Users, GraduationCap, Wallet, AlertCircle, ArrowUpRight, CalendarClock } from "lucide-react";
+import { Users, GraduationCap, ArrowUpRight, CalendarClock } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { StatusBadge } from "@/components/common/Ui.jsx";
 import { dashboardStats, admissionTrend, feeTrend, groupDistribution, students, examSchedule } from "@/data/mockData.js";
 import "./DashboardPage.css";
 
-const icons = [GraduationCap, Users, Wallet, AlertCircle];
+const icons = [GraduationCap, Users];
 const pieColors = ["#1d4ed8", "#60a5fa", "#6d28d9", "#0f9d58"];
 
 export default function DashboardPage() {

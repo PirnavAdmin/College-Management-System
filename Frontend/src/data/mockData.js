@@ -168,8 +168,6 @@ export const attendanceRoster = students.map((s) => ({ id: s.id, roll: s.roll, n
 export const dashboardStats = [
   { label: "Total Students", value: "1,482", delta: "+4.2%", tone: "blue" },
   { label: "Faculty Members", value: "96", delta: "+1.1%", tone: "green" },
-  { label: "Fee Collected", value: "₹1.62 Cr", delta: "+8.7%", tone: "violet" },
-  { label: "Pending Dues", value: "₹18.4 L", delta: "-2.3%", tone: "amber" },
 ];
 
 export const admissionTrend = [

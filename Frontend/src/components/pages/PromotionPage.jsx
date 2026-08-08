@@ -2,6 +2,7 @@ import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast, ConfirmDialog } from "@/components/common/Ui.jsx";
 import { options, students } from "@/data/mockData.js";
+import "./PromotionPage.css";
 
 const filterFields = [
   { name: "curYear", label: "Current Academic Year", type: "select", options: options.year },

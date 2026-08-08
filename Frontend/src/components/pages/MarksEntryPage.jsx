@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import { Pencil, Save } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
+import { marks as marksData, options, examinations } from "@/data/mockData.js";
+import "./MarksEntryPage.css";
 
 // Fallback Data definitions
 const FALLBACK_BOARDS = [{ boardId: 1, boardName: "BIE Telangana", status: true }, { boardId: 2, boardName: "BIE Andhra Pradesh", status: true }, { boardId: 3, boardName: "CBSE", status: true }, { boardId: 4, boardName: "ICSE", status: true }];

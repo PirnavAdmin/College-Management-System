@@ -48,15 +48,13 @@
 .marks-entry-page .cms-input-error { border-color: var(--cms-red); }
 .marks-row-actions { justify-content: center; }
 .marks-entry-page .marks-verify-table .cms-action-btn { width: 34px; height: 34px; border-radius: 9px; }
-.marks-entry-page .marks-edit-action,
-.marks-entry-page .marks-edit-action:hover { color: var(--cms-primary); }
-.marks-entry-page .marks-save-action,
-.marks-entry-page .marks-save-action:hover { color: var(--cms-green); }
+.marks-entry-page .marks-edit-action { color: #2563EB; }
+.marks-entry-page .marks-edit-action:hover,
+.marks-entry-page .marks-edit-action:focus-visible { color: #1D4ED8; }
+.marks-entry-page .marks-save-action { color: #16A34A; }
+.marks-entry-page .marks-save-action:hover,
+.marks-entry-page .marks-save-action:focus-visible { color: #15803D; }
 .marks-entry-page .cms-modal-overlay { align-items: center; padding: 16px; }
-[data-theme="dark"] .marks-entry-page .marks-edit-action,
-[data-theme="dark"] .marks-entry-page .marks-edit-action:hover { color: #93c5fd; }
-[data-theme="dark"] .marks-entry-page .marks-save-action,
-[data-theme="dark"] .marks-entry-page .marks-save-action:hover { color: #4ade80; }
 .marks-entry-page .marks-footer { margin-top: 18px; }
 .marks-entry-page .marks-footer-message { flex: 1 1 300px; color: var(--cms-muted); font-size: 13px; }
 .marks-entry-page .marks-footer-actions { margin-left: auto; }
@@ -69,3 +67,46 @@
   .marks-entry-page .marks-footer-actions .cms-btn { flex: 1 1 160px; width: auto; }
 }
 /* Marks Entry page-specific styles can be added here during module API integration. */
+
+
+/* Verify Tab Action Icon Colors */
+/* Force Lucide icon colors */
+.marks-row-actions {
+  justify-content: center;
+}
+
+.marks-entry-page .marks-verify-table .cms-action-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+/* EDIT */
+.marks-entry-page .marks-verify-table .cms-action-btn.marks-edit-action {
+  color: #2563eb;
+  border-color: #2563eb;
+}
+
+.marks-entry-page .marks-verify-table .cms-action-btn.marks-edit-action:hover,
+.marks-entry-page .marks-verify-table .cms-action-btn.marks-edit-action:focus-visible {
+  color: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+/* SAVE */
+.marks-entry-page .marks-verify-table .cms-action-btn.marks-save-action {
+  color: #16a34a;
+  border-color: #16a34a;
+}
+
+.marks-entry-page .marks-verify-table .cms-action-btn.marks-save-action:hover,
+.marks-entry-page .marks-verify-table .cms-action-btn.marks-save-action:focus-visible {
+  color: #15803d;
+  border-color: #15803d;
+}
+
+/* Lucide SVG follows button color */
+.marks-entry-page .marks-verify-table .cms-action-btn svg {
+  color: currentColor;
+  stroke: currentColor;
+}

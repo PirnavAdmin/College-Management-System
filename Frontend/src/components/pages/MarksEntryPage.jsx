@@ -62,11 +62,12 @@ function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, sa
           const complete = isComplete(student);
           const total = totalOf(student);
           const editable = editingIds.has(student.studentId) && !student.verified && !student.submitted && (activeTab === "entry" || student.markId);
+          const canEdit = activeTab === "verify" && student.markId && !student.verified && !student.submitted && !editingIds.has(student.studentId);
           const eligible = !student.verified && complete && isStudentValid(student) && student.markId && !editingIds.has(student.studentId);
           const readyForVerification = complete && isStudentValid(student) && !student.verified && !student.submitted;
           return <tr key={student.studentId}>
             <td className="cms-number-cell">{activeTab === "entry"
-              ? <input type="checkbox" checked={readyForVerification} disabled={!readyForVerification} onChange={() => {}} aria-label={`Ready for verification: ${student.studentName}`} />
+              ? <input type="checkbox" checked={readyForVerification} disabled={!readyForVerification} onChange={() => { }} aria-label={`Ready for verification: ${student.studentName}`} />
               : <input type="checkbox" checked={selectedVerifyIds.has(student.studentId)} disabled={!eligible} onChange={() => toggleVerifyStudent(student.studentId)} aria-label={`Select ${student.studentName} for verification`} />}
             </td>
             <td><div className="marks-student-info"><strong>{student.studentName}</strong><span className="marks-roll-number">{student.rollNo}</span>{student.submitted ? <span>Submitted</span> : null}</div></td>
@@ -75,10 +76,34 @@ function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, sa
               {rowErrors?.[student.studentId]?.[field] ? <small className="cms-error">{rowErrors[student.studentId][field]}</small> : null}
             </td>)}
             <td className="cms-strong cms-number-cell">{total}</td><td className="cms-number-cell"><GradeBadge total={total} complete={complete} /></td><td className="cms-number-cell"><StatusBadge verified={student.verified} /></td>
-            {activeTab === "verify" ? <td className="cms-number-cell"><div className="cms-actions marks-row-actions">
-              {editable && student.markId ? <button type="button" className="cms-action-btn marks-save-action" onClick={() => saveRow(student.studentId)} aria-label={`Save ${student.studentName}`} title="Save marks"><Save size={16} /></button> : null}
-              {!editable && student.markId && !student.verified && !student.submitted ? <button type="button" className="cms-action-btn marks-edit-action" onClick={() => editRow(student.studentId)} aria-label={`Edit ${student.studentName}`} title="Edit marks"><Pencil size={16} /></button> : null}
-            </div></td> : null}
+            {activeTab === "verify" ?
+              <td className="cms-number-cell">
+                <div className="cms-actions marks-row-actions">
+                  {editable && student.markId ? (
+                    <button
+                      type="button"
+                      className="cms-action-btn marks-save-action"
+                      onClick={() => saveRow(student.studentId)}
+                      aria-label={`Save ${student.studentName}`}
+                      title="Save marks"
+                    >
+                      <Save size={16} strokeWidth={2.2} />
+                    </button>
+                  ) : null}
+
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="cms-action-btn marks-edit-action"
+                      onClick={() => editRow(student.studentId)}
+                      aria-label={`Edit ${student.studentName}`}
+                      title="Edit marks"
+                    >
+                      <Pencil size={16} strokeWidth={2.2} />
+                    </button>
+                  ) : null}
+                </div>
+              </td> : null}
           </tr>;
         }) : <tr><td className="cms-empty" colSpan={activeTab === "verify" ? 9 : 8}>No students match the current search.</td></tr>}
       </tbody>
@@ -88,7 +113,7 @@ function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, sa
 
 
 export default function MarksEntryPage() {
- const [boards, setBoards] = useState([]); const [academicYears, setAcademicYears] = useState([]); const [groups, setGroups] = useState([]); const [sections, setSections] = useState([]); const [exams, setExams] = useState([]); const [subjects, setSubjects] = useState([]);
+  const [boards, setBoards] = useState([]); const [academicYears, setAcademicYears] = useState([]); const [groups, setGroups] = useState([]); const [sections, setSections] = useState([]); const [exams, setExams] = useState([]); const [subjects, setSubjects] = useState([]);
   const [filters, setFilters] = useState(blankFilters); const [filterErrors, setFilterErrors] = useState({}); const [students, setStudents] = useState([]); const [rowErrors, setRowErrors] = useState({}); const [editingIds, setEditingIds] = useState(new Set()); const [selectedVerifyIds, setSelectedVerifyIds] = useState(new Set()); const [activeTab, setActiveTab] = useState("entry"); const [search, setSearch] = useState(""); const [loading, setLoading] = useState(false); const [deleteOpen, setDeleteOpen] = useState(false);
 
   const loadOptions = useCallback(async (url, fallback, setOptions) => {
@@ -174,175 +199,175 @@ export default function MarksEntryPage() {
           </div>
           <div className="cms-card-body">
             <div className="cms-filters cms-filter-grid marks-filter-grid">
-        <SelectField label="Board" name="board"
-          value={filters.board}
-          onChange={changeFilter}
-          onBlur={validateFilter}
-          error={filterErrors.board}>
-          <option value="">Select Board</option>
-          {boards.map((b) =>
-            <option key={b.boardId ?? b.id} value={b.boardId ?? b.id}>
-              {b.boardName ?? b.name}
-            </option>
-          )}</SelectField>
-        <SelectField label="Academic Year" name="academicYearId"
-          value={filters.academicYearId}
-          onChange={changeFilter}
-          onBlur={validateFilter}
-          error={filterErrors.academicYearId}>
-          <option value="">Select Academic Year</option>
-          {academicYears.map((year) =>
-            <option key={year.id ?? year.academicYearId}
-              value={year.id ?? year.academicYearId}>
-              {year.year ?? year.name}
-            </option>
-          )}
-        </SelectField>
-        <SelectField label="Academic Level"
-          name="academicLevel"
-          value={filters.academicLevel}
-          onChange={changeFilter}
-          onBlur={validateFilter}
-          error={filterErrors.academicLevel}>
-          <option value="">Select Academic Level</option>
-          {ACADEMIC_LEVELS.map((level) =>
-            <option key={level.id} value={level.id}>
-              {level.label}
-            </option>
-          )}</SelectField>
-        <SelectField label="Group"
-          name="groupId" value={filters.groupId}
-          onChange={changeFilter}
-          onBlur={validateFilter}
-          error={filterErrors.groupId}>
-          <option value="">Select Group</option>
-          {groups.map((group) =>
-            <option key={group.id ?? group.groupId}
-              value={group.id ?? group.groupId}>
-              {group.groupName ?? group.name}
-            </option>
-          )}</SelectField>
-        <SelectField label="Section"
-          name="sectionId" value={filters.sectionId}
-          onChange={changeFilter} onBlur={validateFilter}
-          error={filterErrors.sectionId}
-          disabled={!filters.groupId}>
-          <option value="">Select Section</option>
-          {sections.map((section) =>
-            <option key={section.id ?? section.sectionId}
-              value={section.id ?? section.sectionId}>
-              {section.sectionName ?? section.name}
-            </option>
-          )}
-        </SelectField>
-        <SelectField label="Examination"
-          name="examinationId" value={filters.examinationId}
-          onChange={changeFilter}
-          onBlur={validateFilter}
-          error={filterErrors.examinationId}>
-          <option value="">Select Examination</option>
-          {exams.map((exam) =>
-            <option key={exam.id ?? exam.examinationId}
-              value={exam.id ?? exam.examinationId}>
-              {exam.examName ?? exam.name}
-            </option>
-          )}</SelectField>
-        <SelectField label="Subject"
-          name="subjectId" value={filters.subjectId}
-          onChange={changeFilter} onBlur={validateFilter}
-          error={filterErrors.subjectId} disabled={!filters.groupId}>
-          <option value="">Select Subject</option>
-          {subjects.map((subject) =>
-            <option key={subject.subjectId ?? subject.id}
-              value={subject.subjectId ?? subject.id}>
-              {subject.subjectName ?? subject.name}
-              ({subject.subjectCode ?? subject.code ?? "—"})
-            </option>
-          )}</SelectField>
+              <SelectField label="Board" name="board"
+                value={filters.board}
+                onChange={changeFilter}
+                onBlur={validateFilter}
+                error={filterErrors.board}>
+                <option value="">Select Board</option>
+                {boards.map((b) =>
+                  <option key={b.boardId ?? b.id} value={b.boardId ?? b.id}>
+                    {b.boardName ?? b.name}
+                  </option>
+                )}</SelectField>
+              <SelectField label="Academic Year" name="academicYearId"
+                value={filters.academicYearId}
+                onChange={changeFilter}
+                onBlur={validateFilter}
+                error={filterErrors.academicYearId}>
+                <option value="">Select Academic Year</option>
+                {academicYears.map((year) =>
+                  <option key={year.id ?? year.academicYearId}
+                    value={year.id ?? year.academicYearId}>
+                    {year.year ?? year.name}
+                  </option>
+                )}
+              </SelectField>
+              <SelectField label="Academic Level"
+                name="academicLevel"
+                value={filters.academicLevel}
+                onChange={changeFilter}
+                onBlur={validateFilter}
+                error={filterErrors.academicLevel}>
+                <option value="">Select Academic Level</option>
+                {ACADEMIC_LEVELS.map((level) =>
+                  <option key={level.id} value={level.id}>
+                    {level.label}
+                  </option>
+                )}</SelectField>
+              <SelectField label="Group"
+                name="groupId" value={filters.groupId}
+                onChange={changeFilter}
+                onBlur={validateFilter}
+                error={filterErrors.groupId}>
+                <option value="">Select Group</option>
+                {groups.map((group) =>
+                  <option key={group.id ?? group.groupId}
+                    value={group.id ?? group.groupId}>
+                    {group.groupName ?? group.name}
+                  </option>
+                )}</SelectField>
+              <SelectField label="Section"
+                name="sectionId" value={filters.sectionId}
+                onChange={changeFilter} onBlur={validateFilter}
+                error={filterErrors.sectionId}
+                disabled={!filters.groupId}>
+                <option value="">Select Section</option>
+                {sections.map((section) =>
+                  <option key={section.id ?? section.sectionId}
+                    value={section.id ?? section.sectionId}>
+                    {section.sectionName ?? section.name}
+                  </option>
+                )}
+              </SelectField>
+              <SelectField label="Examination"
+                name="examinationId" value={filters.examinationId}
+                onChange={changeFilter}
+                onBlur={validateFilter}
+                error={filterErrors.examinationId}>
+                <option value="">Select Examination</option>
+                {exams.map((exam) =>
+                  <option key={exam.id ?? exam.examinationId}
+                    value={exam.id ?? exam.examinationId}>
+                    {exam.examName ?? exam.name}
+                  </option>
+                )}</SelectField>
+              <SelectField label="Subject"
+                name="subjectId" value={filters.subjectId}
+                onChange={changeFilter} onBlur={validateFilter}
+                error={filterErrors.subjectId} disabled={!filters.groupId}>
+                <option value="">Select Subject</option>
+                {subjects.map((subject) =>
+                  <option key={subject.subjectId ?? subject.id}
+                    value={subject.subjectId ?? subject.id}>
+                    {subject.subjectName ?? subject.name}
+                    ({subject.subjectCode ?? subject.code ?? "—"})
+                  </option>
+                )}</SelectField>
             </div>
           </div>
         </section>
         {students.length > 0 && <>
-        <div className="cms-stats-grid marks-stats-grid">
-          {[["Total Students", stats.total],
-          ["Marks Entered", stats.entered],
-          ["Verified Students", stats.verified],
-          ["Pending Students", stats.pending],
-          ["Average Marks", stats.average],
-          ["Highest Marks", stats.highest]].map(([label, value]) =>
-            <div className="cms-stat" key={label}>
-              <span className="cms-stat-label">{label}</span>
-              <strong className="cms-stat-value">{value}</strong>
+          <div className="cms-stats-grid marks-stats-grid">
+            {[["Total Students", stats.total],
+            ["Marks Entered", stats.entered],
+            ["Verified Students", stats.verified],
+            ["Pending Students", stats.pending],
+            ["Average Marks", stats.average],
+            ["Highest Marks", stats.highest]].map(([label, value]) =>
+              <div className="cms-stat" key={label}>
+                <span className="cms-stat-label">{label}</span>
+                <strong className="cms-stat-value">{value}</strong>
+              </div>
+            )}
+          </div>
+          <div className="cms-card">
+            <div className="cms-toolbar marks-toolbar">
+              <div className="cms-actions cms-tabs marks-tabs">
+                <button className={`cms-btn ${activeTab === "entry" ? "cms-btn-primary" : "cms-btn-ghost"}`}
+                  onClick={() => setActiveTab("entry")}
+                  type="button">Marks Entry
+                </button>
+                <button className={`cms-btn ${activeTab === "verify" ? "cms-btn-primary" : "cms-btn-ghost"}`}
+                  onClick={() => setActiveTab("verify")}
+                  type="button">Verification <span>
+                    {stats.verified}/{stats.total}
+                  </span>
+                </button>
+              </div>
+              <div className="cms-search-wrap"><div className="cms-search marks-search">
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by roll number or student name" aria-label="Search students" />
+              </div></div>
+              <div className="cms-toolbar-right cms-toolbar-actions marks-toolbar-actions">{activeTab === "entry" ?
+                <button type="button" className="cms-btn cms-btn-primary"
+                  onClick={editingIds.size ? saveAllMarks : editAll}>
+                  {editingIds.size ? "Save Changes" : "Edit Marks"}
+                </button>
+                : <button type="button" className="cms-btn cms-btn-primary" onClick={verifyAllEligible}>Verify Eligible Students
+                </button>
+              }
+              </div>
             </div>
-          )}
-        </div>
-        <div className="cms-card">
-          <div className="cms-toolbar marks-toolbar">
-            <div className="cms-actions cms-tabs marks-tabs">
-            <button className={`cms-btn ${activeTab === "entry" ? "cms-btn-primary" : "cms-btn-ghost"}`}
-              onClick={() => setActiveTab("entry")}
-              type="button">Marks Entry
-            </button>
-            <button className={`cms-btn ${activeTab === "verify" ? "cms-btn-primary" : "cms-btn-ghost"}`}
-              onClick={() => setActiveTab("verify")}
-              type="button">Verification <span>
-                {stats.verified}/{stats.total}
-              </span>
-            </button>
-            </div>
-            <div className="cms-search-wrap"><div className="cms-search marks-search">
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by roll number or student name" aria-label="Search students" />
-            </div></div>
-            <div className="cms-toolbar-right cms-toolbar-actions marks-toolbar-actions">{activeTab === "entry" ?
+            <div className="cms-table-wrap marks-table-wrap">
+              <StudentTable students={visibleStudents}
+                editingIds={editingIds}
+                rowErrors={rowErrors}
+                changeMark={changeMark}
+                editRow={editRow}
+                saveRow={(id) => saveMarks([id])}
+                activeTab={activeTab}
+                selectedVerifyIds={selectedVerifyIds}
+                toggleVerifyStudent={toggleVerifyStudent} /></div>
+          </div>
+          <div className="cms-card marks-footer"><div className="cms-toolbar">
+            <div className="marks-footer-message">{submitBlocker || "Only complete and verified marks can be submitted."}</div>
+            <div className="cms-toolbar-right marks-footer-actions">
+              <button type="button" className="cms-btn cms-btn-danger"
+                onClick={() => setDeleteOpen(true)}>
+                Clear All Marks
+              </button>
               <button type="button" className="cms-btn cms-btn-primary"
-                onClick={editingIds.size ? saveAllMarks : editAll}>
-                {editingIds.size ? "Save Changes" : "Edit Marks"}
+                disabled={Boolean(submitBlocker)}
+                title={submitBlocker}
+                onClick={submitEvaluation}>Submit Evaluation
               </button>
-              : <button type="button" className="cms-btn cms-btn-primary" onClick={verifyAllEligible}>Verify Eligible Students
+            </div>
+          </div></div>
+        </>}
+        {deleteOpen && <div className="cms-overlay cms-modal-overlay" role="presentation">
+          <div className="cms-modal sm marks-delete-modal" role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-title">
+            <div className="cms-modal-head"><h3 id="delete-title">Clear all marks?</h3></div>
+            <div className="cms-modal-body"><p>Are you sure you want to clear all entered marks? This action cannot be undone.</p></div>
+            <div className="cms-modal-foot">
+              <button type="button" className="cms-btn cms-btn-ghost" onClick={() => setDeleteOpen(false)}>Cancel</button>
+              <button type="button" className="cms-btn cms-btn-danger" onClick={clearMarks}>Clear
               </button>
-            }
             </div>
           </div>
-          <div className="cms-table-wrap marks-table-wrap">
-            <StudentTable students={visibleStudents}
-            editingIds={editingIds}
-            rowErrors={rowErrors}
-            changeMark={changeMark}
-            editRow={editRow}
-            saveRow={(id) => saveMarks([id])}
-            activeTab={activeTab}
-            selectedVerifyIds={selectedVerifyIds}
-            toggleVerifyStudent={toggleVerifyStudent} /></div>
         </div>
-        <div className="cms-card marks-footer"><div className="cms-toolbar">
-          <div className="marks-footer-message">{submitBlocker || "Only complete and verified marks can be submitted."}</div>
-          <div className="cms-toolbar-right marks-footer-actions">
-            <button type="button" className="cms-btn cms-btn-danger"
-              onClick={() => setDeleteOpen(true)}>
-              Clear All Marks
-            </button>
-            <button type="button" className="cms-btn cms-btn-primary"
-              disabled={Boolean(submitBlocker)}
-              title={submitBlocker}
-              onClick={submitEvaluation}>Submit Evaluation
-            </button>
-          </div>
-        </div></div>
-      </>}
-    {deleteOpen && <div className="cms-overlay cms-modal-overlay" role="presentation">
-      <div className="cms-modal sm marks-delete-modal" role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-title">
-        <div className="cms-modal-head"><h3 id="delete-title">Clear all marks?</h3></div>
-        <div className="cms-modal-body"><p>Are you sure you want to clear all entered marks? This action cannot be undone.</p></div>
-        <div className="cms-modal-foot">
-          <button type="button" className="cms-btn cms-btn-ghost" onClick={() => setDeleteOpen(false)}>Cancel</button>
-          <button type="button" className="cms-btn cms-btn-danger" onClick={clearMarks}>Clear
-          </button>
-        </div>
-      </div>
-    </div>
-    }
+        }
         <ToastContainer position="bottom-right" theme="colored" newestOnTop closeOnClick />
       </div>
     </DashboardLayout>

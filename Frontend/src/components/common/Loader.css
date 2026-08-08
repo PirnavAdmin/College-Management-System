@@ -1,0 +1,19 @@
+.cms-loader { display: grid; place-items: center; padding: 56px 0; gap: 12px; }
+.cms-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--cms-primary-soft);
+  border-top-color: var(--cms-primary);
+  animation: cmsSpin 0.8s linear infinite;
+}
+.cms-skeleton {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #eef2f7, #f8fafc, #eef2f7);
+  background-size: 200% 100%;
+  animation: cmsShine 1.2s linear infinite;
+}
+[data-theme="dark"] .cms-skeleton {
+  background: linear-gradient(90deg, #1b2537, #243248, #1b2537);
+}

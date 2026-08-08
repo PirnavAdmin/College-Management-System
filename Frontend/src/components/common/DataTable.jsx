@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { Search, Plus, Pencil, Trash2, Eye, Download } from "lucide-react";
 import { StatusBadge, Loader } from "./Ui.jsx";
-import "./DataTable.css";
 
 const PAGE_SIZE = 5;
 
@@ -136,5 +135,6 @@ export default function DataTable({
     </div>
   );
 }
+
 
 

@@ -1,0 +1,84 @@
+.cms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  padding: 9px 15px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.cms-btn-primary {
+  background: var(--cms-primary);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(29, 78, 216, 0.24);
+}
+.cms-btn-primary:hover {
+  background: var(--cms-primary-dark);
+  transform: translateY(-1px);
+}
+.cms-btn-ghost {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+.cms-btn-ghost:hover {
+  border-color: var(--cms-primary-border);
+  color: var(--cms-primary);
+  background: var(--cms-primary-soft);
+}
+.cms-btn-danger {
+  background: var(--cms-red);
+  color: #fff;
+}
+.cms-btn-danger:hover {
+  background: #b52b2b;
+}
+.cms-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.cms-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--cms-border);
+  background: var(--cms-surface);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--cms-muted);
+  transition: all 0.18s ease;
+}
+.cms-action-btn:hover { color: var(--cms-primary); border-color: var(--cms-primary-border); background: var(--cms-primary-soft); }
+.cms-action-btn.danger:hover { color: var(--cms-red); border-color: #f6c9c9; background: var(--cms-red-soft); }
+.cms-actions { display: flex; gap: 6px; }
+.cms-icon-btn {
+  position: relative;
+  border: 1px solid var(--cms-border);
+  background: var(--cms-surface);
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--cms-muted);
+  transition: all 0.18s ease;
+}
+.cms-icon-btn:hover {
+  color: var(--cms-primary);
+  border-color: var(--cms-primary-border);
+  background: var(--cms-primary-soft);
+}
+[data-theme="dark"] .cms-btn-ghost {
+  background: var(--cms-surface);
+  color: var(--cms-text);
+}
+[data-theme="dark"] .cms-action-btn.danger:hover {
+  border-color: #7f1d1d;
+}

@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { StatusBadge } from "@/components/common/Ui.jsx";
 import { students, feeCollections, results } from "@/data/mockData.js";
+import "./StudentManagementPage.css";
 
 export default function StudentProfilePage({ id }) {
   const student = students.find((s) => String(s.id) === String(id)) || students[0];
@@ -121,6 +122,7 @@ export default function StudentProfilePage({ id }) {
     </DashboardLayout>
   );
 }
+
 
 
 

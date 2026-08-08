@@ -1,0 +1,50 @@
+.cms-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 27, 51, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+  z-index: 100;
+  animation: cmsFade 0.18s ease;
+}
+.cms-modal {
+  background: var(--cms-surface);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 720px;
+  box-shadow: var(--cms-shadow-lg);
+  animation: cmsPop 0.2s ease;
+}
+.cms-modal.sm { max-width: 420px; }
+.cms-modal-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--cms-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cms-modal-head h3 { margin: 0; font-size: 16px; }
+.cms-modal-body { padding: 20px; }
+.cms-modal-foot {
+  padding: 14px 20px;
+  border-top: 1px solid var(--cms-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+[data-theme="dark"] .cms-modal {
+  background: var(--cms-surface);
+  color: var(--cms-text);
+}
+[data-theme="dark"] .cms-overlay { background: rgba(2, 6, 16, 0.66); }
+@media (max-width: 720px) {
+  .cms-modal-foot { flex-direction: column-reverse; }
+  .cms-modal-foot .cms-btn { justify-content: center; width: 100%; }
+}
+@media (max-width: 480px) {
+  .cms-modal-body { padding: 16px; }
+}

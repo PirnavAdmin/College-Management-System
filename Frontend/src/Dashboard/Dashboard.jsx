@@ -188,7 +188,7 @@ export default function Dashboard() {
             <span className="brandMark">CMS</span>
             <span className="brandText"><strong>CMS Admin</strong><small>Intermediate College</small></span>
           </Link>
-          <button className="sidebarCloseButton" type="button" aria-label="Close navigation" onClick={closeDrawer}><FiX /></button>
+          {/* <button className="sidebarCloseButton" type="button" aria-label="Close navigation" onClick={closeDrawer}><FiX /></button> */}
         </div>
 
         <nav className="sidebarNavigation" aria-label="Main modules">

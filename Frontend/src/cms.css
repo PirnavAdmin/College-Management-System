@@ -1188,4 +1188,367 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .cms-search-wrap { min-width: 0; }
 }
 
+/* =========================================================
+   CMS LAYOUT UTILITIES
+   Reusable alignment + responsive utilities
+   ========================================================= */
 
+.cms-page-section {
+  width: 100%;
+  min-width: 0;
+}
+
+.cms-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.cms-section-header-content {
+  min-width: 0;
+}
+
+.cms-section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+
+/* =========================================================
+   FILTER LAYOUT
+   ========================================================= */
+
+.cms-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.cms-filter-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+
+/* =========================================================
+   STAT CARDS
+   ========================================================= */
+
+.cms-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+.cms-stat-card {
+  min-width: 0;
+}
+
+
+/* =========================================================
+   TABS / TOOLBAR
+   ========================================================= */
+
+.cms-tabs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.cms-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cms-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cms-search-wrap {
+  flex: 1 1 280px;
+  min-width: 220px;
+}
+
+.cms-search-input {
+  width: 100%;
+  min-width: 0;
+}
+
+
+/* =========================================================
+   TABLE RESPONSIVENESS
+   ========================================================= */
+
+.cms-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.cms-table-scroll table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.cms-table-scroll th,
+.cms-table-scroll td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.cms-table-scroll th {
+  text-align: left;
+}
+
+.cms-table-scroll .cms-number-cell {
+  text-align: center;
+}
+
+.cms-table-scroll .cms-actions-cell {
+  text-align: right;
+}
+
+
+/* =========================================================
+   MARK INPUTS
+   ========================================================= */
+
+.cms-marks-input {
+  width: 72px;
+  min-width: 72px;
+  text-align: center;
+}
+
+.cms-marks-cell {
+  text-align: center;
+}
+
+
+/* =========================================================
+   BOTTOM ACTION BAR
+   ========================================================= */
+
+.cms-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.cms-action-info {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+.cms-action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 1200px) {
+  .cms-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cms-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+
+@media (max-width: 900px) {
+  .cms-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cms-tabs-toolbar {
+    align-items: stretch;
+  }
+
+  .cms-toolbar {
+    justify-content: stretch;
+  }
+
+  .cms-search-wrap {
+    flex: 1 1 100%;
+  }
+}
+
+
+@media (max-width: 640px) {
+  .cms-section-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cms-section-actions {
+    justify-content: stretch;
+  }
+
+  .cms-section-actions .cms-btn {
+    flex: 1 1 auto;
+  }
+
+  .cms-filter-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .cms-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .cms-tabs {
+    width: 100%;
+  }
+
+  .cms-tabs .cms-btn {
+    flex: 1 1 0;
+  }
+
+  .cms-toolbar {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cms-search-wrap {
+    width: 100%;
+    flex: none;
+  }
+
+  .cms-toolbar .cms-btn {
+    width: 100%;
+  }
+
+  .cms-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cms-action-buttons {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .cms-action-buttons .cms-btn {
+    width: 100%;
+  }
+}
+
+
+@media (max-width: 420px) {
+  .cms-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cms-tabs {
+    flex-direction: column;
+  }
+
+  .cms-tabs .cms-btn {
+    width: 100%;
+  }
+}
+
+/* ---------- Marks entry refinements ---------- */
+.marks-entry-page .marks-stats-grid {
+  gap: 12px;
+  margin: 18px 0;
+}
+.marks-entry-page .marks-stats-grid .cms-stat {
+  min-width: 0;
+  min-height: 94px;
+  padding: 13px 14px;
+  border-left: 4px solid var(--cms-primary);
+  background: linear-gradient(rgba(29, 78, 216, 0.04), rgba(29, 78, 216, 0.04)), var(--cms-surface);
+  box-shadow: 0 1px 2px rgba(16, 32, 60, 0.03), 0 5px 16px rgba(16, 32, 60, 0.045);
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+}
+.marks-entry-page .cms-stat-label { line-height: 1.35; }
+.marks-entry-page .marks-toolbar { justify-content: flex-start; }
+.marks-entry-page .marks-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.marks-entry-page .cms-btn {
+  min-height: 40px;
+  padding: 10px 16px;
+  border-radius: 8px;
+}
+.marks-entry-page .marks-table-wrap { margin-top: 2px; }
+.marks-entry-page .cms-table { min-width: 760px; }
+.marks-entry-page .marks-verify-table { min-width: 700px; }
+.marks-entry-page .marks-verify-table th,
+.marks-entry-page .marks-verify-table td { padding-left: 8px; padding-right: 8px; }
+.marks-entry-page .marks-verify-table th:last-child,
+.marks-entry-page .marks-verify-table td:last-child { width: 58px; min-width: 58px; }
+.marks-entry-page .cms-table th,
+.marks-entry-page .cms-table td { white-space: normal; }
+.marks-entry-page .cms-table .cms-number-cell,
+.marks-entry-page .cms-table .cms-marks-cell { text-align: center; }
+.marks-entry-page .cms-table .cms-marks-cell { min-width: 94px; }
+.marks-entry-page .cms-table .cms-number-cell { min-width: 72px; }
+.marks-entry-page .marks-student-info { min-width: 150px; display: grid; gap: 2px; }
+.marks-entry-page .marks-student-info strong { font-weight: 600; }
+.marks-entry-page .marks-roll-number,
+.marks-entry-page .marks-student-info > span { color: var(--cms-muted); font-size: 11.5px; line-height: 1.25; }
+.marks-entry-page .cms-input-error { border-color: var(--cms-red); }
+.marks-row-actions { justify-content: center; }
+.marks-entry-page .marks-verify-table .cms-action-btn { width: 34px; height: 34px; border-radius: 9px; }
+.marks-entry-page .marks-edit-action,
+.marks-entry-page .marks-edit-action:hover { color: var(--cms-primary); }
+.marks-entry-page .marks-save-action,
+.marks-entry-page .marks-save-action:hover { color: var(--cms-green); }
+.marks-entry-page .cms-modal-overlay { align-items: center; padding: 16px; }
+[data-theme="dark"] .marks-entry-page .marks-edit-action,
+[data-theme="dark"] .marks-entry-page .marks-edit-action:hover { color: #93c5fd; }
+[data-theme="dark"] .marks-entry-page .marks-save-action,
+[data-theme="dark"] .marks-entry-page .marks-save-action:hover { color: #4ade80; }
+.marks-entry-page .marks-footer { margin-top: 18px; }
+.marks-entry-page .marks-footer-message { flex: 1 1 300px; color: var(--cms-muted); font-size: 13px; }
+.marks-entry-page .marks-footer-actions { margin-left: auto; }
+
+@media (max-width: 640px) {
+  .marks-entry-page .marks-toolbar .marks-tabs .cms-btn { width: auto; }
+  .marks-entry-page .marks-toolbar-actions,
+  .marks-entry-page .marks-footer-actions { width: 100%; margin-left: 0; }
+  .marks-entry-page .marks-toolbar-actions .cms-btn,
+  .marks-entry-page .marks-footer-actions .cms-btn { flex: 1 1 160px; width: auto; }
+}

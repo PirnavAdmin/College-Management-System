@@ -2,6 +2,7 @@ import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, FormModal, Loader, Toast } from "@/components/common/Ui.jsx";
 import { options, timetableGrid } from "@/data/mockData.js";
+import "./TimetablePage.css";
 
 const filterFields = [
   { name: "board", label: "Board", type: "select", options: options.board },

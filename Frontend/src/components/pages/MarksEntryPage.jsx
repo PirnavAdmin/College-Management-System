@@ -2,6 +2,7 @@ import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
 import { marks as marksData, options, examinations } from "@/data/mockData.js";
+import "./MarksEntryPage.css";
 
 const filterFields = [
   { name: "board", label: "Board", type: "select", options: options.board },

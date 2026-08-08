@@ -2,6 +2,7 @@ import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
 import { attendanceRoster, options } from "@/data/mockData.js";
+import "./AttendancePage.css";
 
 const marks = ["Present", "Absent", "Late", "Leave"];
 

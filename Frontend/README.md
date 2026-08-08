@@ -105,6 +105,32 @@ Student only:
 
 Only authentication is integrated now. Existing module pages keep the Frontendnew static UI/data so the design remains intact. Module API integration can be added later inside service files without changing the dashboard UI structure.
 
+## Dashboard Module Page Ownership
+
+All 18 dashboard modules have dedicated JSX and CSS files under `src/components/pages/`. Team members should add future module-specific API integration and page logic inside the related module page instead of putting all module code back into one generic page.
+
+| Module | Route | Page files |
+| --- | --- | --- |
+| Board Management | `/dashboard/boards` | `BoardManagementPage.jsx`, `BoardManagementPage.css` |
+| Academic Year | `/dashboard/academic-years` | `AcademicYearPage.jsx`, `AcademicYearPage.css` |
+| Course / Group | `/dashboard/courses` | `CourseGroupPage.jsx`, `CourseGroupPage.css` |
+| Subject Management | `/dashboard/subjects` | `SubjectManagementPage.jsx`, `SubjectManagementPage.css` |
+| Section Management | `/dashboard/sections` | `SectionManagementPage.jsx`, `SectionManagementPage.css` |
+| Faculty Management | `/dashboard/faculty` | `FacultyManagementPage.jsx`, `FacultyManagementPage.css` |
+| Student Admission | `/dashboard/admission` | `StudentAdmissionPage.jsx`, `StudentAdmissionPage.css` |
+| Student Management | `/dashboard/students` | `StudentManagementPage.jsx`, `StudentManagementPage.css` |
+| Timetable | `/dashboard/timetable` | `TimetablePage.jsx`, `TimetablePage.css` |
+| Attendance | `/dashboard/attendance` | `AttendancePage.jsx`, `AttendancePage.css` |
+| Assignments & Materials | `/dashboard/assignments` | `AssignmentsMaterialsPage.jsx`, `AssignmentsMaterialsPage.css` |
+| Examination | `/dashboard/examinations` | `ExaminationPage.jsx`, `ExaminationPage.css` |
+| Marks Entry | `/dashboard/marks-entry` | `MarksEntryPage.jsx`, `MarksEntryPage.css` |
+| Result Processing | `/dashboard/results` | `ResultProcessingPage.jsx`, `ResultProcessingPage.css` |
+| Promotion | `/dashboard/promotion` | `PromotionPage.jsx`, `PromotionPage.css` |
+| Fee Management | `/dashboard/fee-structure` | `FeeManagementPage.jsx`, `FeeManagementPage.css` |
+| Certificates | `/dashboard/certificates` | `CertificatesPage.jsx`, `CertificatesPage.css` |
+| Reports & Analytics | `/dashboard/reports` | `ReportsAnalyticsPage.jsx`, `ReportsAnalyticsPage.css` |
+
+The current UI still reuses shared internal helpers such as `ListPage.jsx`, `FormPage.jsx`, `data/store.js`, and common table/form components where that preserves the existing behavior. Module-specific table/form configuration now lives in each module page file. Add or update endpoint constants in `src/api/apiEndpoints.js` when backend integration begins, and add module services later if a module needs them.
 ## Branding
 
 The app uses `src/assets/P_LOGO.png` and the visible college name is `Pirnav Junior College`.

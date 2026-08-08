@@ -1,0 +1,17 @@
+.cms-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 200;
+  background: #0f2f1d;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: var(--cms-shadow-lg);
+  animation: cmsPop 0.2s ease;
+  font-size: 13.5px;
+}
+[data-theme="dark"] .cms-toast { background: #14532d; }

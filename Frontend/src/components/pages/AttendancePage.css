@@ -1,1 +1,20 @@
-/* Attendance page-specific styles can be added here during module API integration. */
+/* Attendance marking controls moved from src/cms.css. */
+.cms-radio-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.cms-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--cms-border);
+  cursor: pointer;
+  font-size: 12.5px;
+  background: var(--cms-surface);
+  transition: all 0.15s ease;
+}
+.cms-radio:hover { border-color: var(--cms-primary-border); }
+.cms-radio.on-present { background: var(--cms-green-soft); border-color: #bbf7d0; color: var(--cms-green); font-weight: 600; }
+.cms-radio.on-absent { background: var(--cms-red-soft); border-color: #f6c9c9; color: var(--cms-red); font-weight: 600; }
+.cms-radio.on-late { background: var(--cms-amber-soft); border-color: #f3ddb0; color: var(--cms-amber); font-weight: 600; }
+.cms-radio.on-leave { background: var(--cms-violet-soft); border-color: #ddd0fb; color: var(--cms-violet); font-weight: 600; }
+[data-theme="dark"] .cms-radio { background: var(--cms-surface); color: var(--cms-text); }

@@ -1,1 +1,2 @@
-/* Marks Entry page-specific styles can be added here during module API integration. */
+/* Marks-entry table input sizing moved from src/cms.css. */
+.cms-mini-input { width: 90px; }

@@ -1,69 +1,60 @@
-import { useNavigate } from "react-router-dom";
-import { FiBell, FiBookOpen, FiClipboard, FiCreditCard, FiLogOut, FiUser } from "react-icons/fi";
+import { BookOpen, CalendarCheck, ClipboardList, FileText, Megaphone, User, Wallet, LogOut } from "lucide-react";
 import "./StudentDashboard.css";
+import logo from "@/assets/P_LOGO.png";
 
 const cards = [
-  { title: "My Profile", icon: FiUser },
-  { title: "Attendance", icon: FiClipboard },
-  { title: "Assignments", icon: FiBookOpen },
-  { title: "Results", icon: FiClipboard },
-  { title: "Fee Details", icon: FiCreditCard },
-  { title: "Announcements", icon: FiBell },
+  { title: "My Profile", icon: User },
+  { title: "Attendance", icon: CalendarCheck },
+  { title: "Assignments", icon: ClipboardList },
+  { title: "Results", icon: FileText },
+  { title: "Fee Details", icon: Wallet },
+  { title: "Announcements", icon: Megaphone },
 ];
 
-export default function StudentDashboard() {
-  const navigate = useNavigate();
-  const user = readStoredUser();
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("role");
-    navigate("/login", { replace: true });
-  };
-
-  return (
-    <main className="studentDashboard">
-      <header className="studentTopbar">
-        <div>
-          <h1>Student Dashboard</h1>
-          <p>Welcome to your college portal.</p>
-        </div>
-        <div className="studentProfile">
-          <span className="studentAvatar">{getInitials(user?.name)}</span>
-          <div>
-            <strong>{user?.name || "CMS User"}</strong>
-            <small>{user?.email || "Student"}</small>
-          </div>
-          <button type="button" onClick={logout}><FiLogOut /> Logout</button>
-        </div>
-      </header>
-
-      <section className="studentGrid">
-        {cards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <article className="studentCard" key={card.title}>
-              <span><Icon /></span>
-              <h2>{card.title}</h2>
-              <p>Implementation pending</p>
-            </article>
-          );
-        })}
-      </section>
-    </main>
-  );
-}
-
-function readStoredUser() {
+function readUser() {
   try {
-    const stored = localStorage.getItem("user");
-    return stored ? JSON.parse(stored) : null;
+    return JSON.parse(localStorage.getItem("user") || "null");
   } catch {
     return null;
   }
 }
 
-function getInitials(name = "CMS User") {
-  return name.split(" ").filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+export default function StudentDashboard() {
+  const user = readUser();
+  const logout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("role");
+    window.location.assign("/login");
+  };
+
+  return (
+    <div className="student-dashboard">
+      <header className="student-topbar">
+        <div className="student-brand">
+          <img src={logo} alt="Pirnav Junior College logo" />
+          <div><strong>Pirnav Junior College</strong><span>Student Portal</span></div>
+        </div>
+        <div className="student-actions">
+          <span>{user?.name || "Student"}</span>
+          <button type="button" onClick={logout}><LogOut size={16} /> Logout</button>
+        </div>
+      </header>
+      <main className="student-main">
+        <div className="student-hero">
+          <span><BookOpen size={16} /> Portal</span>
+          <h1>Student Dashboard</h1>
+          <p>Welcome to Pirnav Junior College portal.</p>
+        </div>
+        <section className="student-card-grid">
+          {cards.map((card) => {
+            const Icon = card.icon;
+            return <article key={card.title} className="student-card"><Icon size={22} /><h2>{card.title}</h2><p>Implementation pending</p></article>;
+          })}
+        </section>
+      </main>
+    </div>
+  );
 }
+
+

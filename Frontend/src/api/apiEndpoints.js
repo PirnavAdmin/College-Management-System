@@ -15,6 +15,7 @@ export const apiEndpoints = {
     resetPassword: "/api/Auth/reset-password",
     users: "/api/Auth/users",
     userById: (id) => `/api/Auth/user/${id}`,
-    user: (id) => `/api/Auth/user/${id}`,
   },
 };
+
+

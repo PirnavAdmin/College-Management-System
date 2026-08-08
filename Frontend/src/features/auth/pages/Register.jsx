@@ -1,74 +1,78 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FiEye, FiEyeOff, FiLock, FiMail, FiPhone, FiUser } from "react-icons/fi";
-import AuthLayout from "../../../layouts/AuthLayout";
-import Button from "../../../shared/components/Button";
-import { getApiErrorMessage } from "../../../api/axios";
-import { emailRegex, mobileRegex } from "../../../shared/utils/validators";
-import { registerUser } from "../services/authService";
+import AuthLayout from "@/layouts/AuthLayout.jsx";
+import { Field, useForm } from "@/components/common/Ui.jsx";
+import { registerUser } from "@/features/auth/services/authService.js";
+import { getApiErrorMessage } from "@/api/axios.js";
 
-const initialForm = { fullName: "", email: "", mobile: "", password: "", confirmPassword: "" };
+const fields = [
+  { name: "fullName", label: "Full Name", required: true, full: true },
+  { name: "email", label: "Email Address", type: "email", required: true, full: true },
+  { name: "mobile", label: "Mobile Number", type: "tel", required: true, full: true },
+  { name: "password", label: "Password", type: "password", required: true, full: true },
+  { name: "confirmPassword", label: "Confirm Password", type: "password", required: true, full: true },
+];
 
 export default function Register() {
-  const navigate = useNavigate();
-  const [form, setForm] = useState(initialForm);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { values, errors, setValue, validate } = useForm(fields, {});
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
   const [success, setSuccess] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const navigate = useNavigate();
 
-  const setField = (key, value) => setForm((current) => ({ ...current, [key]: key === "mobile" ? value.replace(/\D/g, "").slice(0, 10) : value }));
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setError("");
+  const submit = async (e) => {
+    e.preventDefault();
+    setFormError("");
     setSuccess("");
-    if (Object.values(form).some((value) => !String(value).trim())) {
-      setError("Please fill all required fields.");
+    if (!validate()) return;
+    if (values.password !== values.confirmPassword) {
+      setFormError("Password and Confirm Password must match.");
       return;
     }
-    if (!emailRegex.test(form.email) || !mobileRegex.test(form.mobile)) {
-      setError("Please enter a valid email and 10 digit mobile number.");
-      return;
-    }
-    if (form.password.length < 6 || form.password !== form.confirmPassword) {
-      setError("Password must be at least 6 characters and both passwords must match.");
-      return;
-    }
+
+    setBusy(true);
     try {
-      setLoading(true);
-      const response = await registerUser({ role: "student", fullName: form.fullName, email: form.email, mobileNumber: form.mobile, password: form.password, confirmPassword: form.confirmPassword });
+      const payload = {
+        role: "student",
+        fullName: String(values.fullName || "").trim(),
+        email: String(values.email || "").trim(),
+        mobileNumber: String(values.mobile || "").trim(),
+        password: values.password,
+        confirmPassword: values.confirmPassword,
+      };
+      const response = await registerUser(payload);
       const data = response.data || {};
-      if (data.Status === false || data.status === false) {
-        setError(data.Message || data.message || "Registration failed. Please check the entered details.");
-        return;
-      }
-      setSuccess(data.Message || data.message || "Registration successful. Please login.");
-      navigate("/login");
-    } catch (registerError) {
-      setError(getApiErrorMessage(registerError));
+      const status = data.status ?? data.Status;
+      if (status === false) throw new Error(data.message || data.Message || "Registration failed.");
+      setSuccess(data.message || data.Message || "Registration successful. Please login.");
+      setTimeout(() => navigate("/login", { replace: true }), 700);
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
-    <AuthLayout>
-      <div className="auth-card auth-register-card">
-        <div className="auth-card-header"><h2>Create Account</h2><p>Register to access the College Management System</p></div>
-        <form className="auth-form" onSubmit={handleSubmit}>
-          {error ? <div className="notice notice-error">{error}</div> : null}
-          {success ? <div className="notice">{success}</div> : null}
-          <label className="auth-field"><span>Full Name</span><div className="auth-input-wrap"><FiUser className="auth-input-icon" /><input placeholder="Enter Full Name" value={form.fullName} onChange={(event) => setField("fullName", event.target.value)} /></div></label>
-          <label className="auth-field"><span>Email Address</span><div className="auth-input-wrap"><FiMail className="auth-input-icon" /><input placeholder="Enter Email Address" type="email" value={form.email} onChange={(event) => setField("email", event.target.value)} /></div></label>
-          <label className="auth-field"><span>Mobile Number</span><div className="auth-input-wrap"><FiPhone className="auth-input-icon" /><input placeholder="Enter Mobile Number" value={form.mobile} onChange={(event) => setField("mobile", event.target.value)} /></div></label>
-          <label className="auth-field"><span>Password</span><div className="auth-input-wrap"><FiLock className="auth-input-icon" /><input placeholder="Enter Password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => setField("password", event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((current) => !current)}>{showPassword ? <FiEye /> : <FiEyeOff />}</button></div></label>
-          <label className="auth-field"><span>Confirm Password</span><div className="auth-input-wrap"><FiLock className="auth-input-icon" /><input placeholder="Confirm Password" type={showConfirmPassword ? "text" : "password"} value={form.confirmPassword} onChange={(event) => setField("confirmPassword", event.target.value)} /><button className="auth-password-toggle" type="button" aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"} onClick={() => setShowConfirmPassword((current) => !current)}>{showConfirmPassword ? <FiEye /> : <FiEyeOff />}</button></div></label>
-          <Button className="auth-submit" variant="primary" disabled={loading}>{loading ? "Submitting..." : "Register"}</Button>
-          <div className="auth-bottom">Already have an account? <Link to="/login">Login</Link></div>
-        </form>
+    <AuthLayout title="Create account" subtitle="Register to access the Pirnav Junior College portal." cardClass="auth-register-card">
+      <form onSubmit={submit} noValidate>
+        {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
+        {success ? <div className="cms-alert-success" role="status">{success}</div> : null}
+        <div className="cms-form-grid">
+          {fields.map((f) => (
+            <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />
+          ))}
+        </div>
+        <button type="submit" className="cms-btn cms-btn-primary auth-submit-btn" disabled={busy}>
+          {busy ? "Creating account..." : "Register"}
+        </button>
+      </form>
+      <div className="cms-auth-links">
+        <span style={{ color: "var(--cms-muted)" }}>Already registered?</span>
+        <Link to="/login">Login instead</Link>
       </div>
     </AuthLayout>
   );
 }
+
+

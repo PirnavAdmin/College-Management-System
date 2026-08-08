@@ -1,57 +1,53 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import AuthLayout from "../../../layouts/AuthLayout";
-import Button from "../../../shared/components/Button";
-import FormField from "../../../shared/components/FormField";
-import { getApiErrorMessage } from "../../../api/axios";
-import { resetPassword } from "../services/authService";
+import { Link, useNavigate } from "react-router-dom";
+import AuthLayout from "@/layouts/AuthLayout.jsx";
+import { Field, useForm } from "@/components/common/Ui.jsx";
+import { resetPassword } from "@/features/auth/services/authService.js";
+import { getApiErrorMessage } from "@/api/axios.js";
+
+const fields = [
+  { name: "email", label: "Email Address", type: "email", required: true, full: true },
+  { name: "password", label: "New Password", type: "password", required: true, full: true },
+  { name: "confirmPassword", label: "Confirm Password", type: "password", required: true, full: true },
+];
 
 export default function ResetPassword() {
+  const { values, errors, setValue, validate } = useForm(fields, {});
+  const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState("");
   const navigate = useNavigate();
-  const { state } = useLocation();
-  const email = state?.email;
-  const otp = state?.otp;
-  const [form, setForm] = useState({ password: "", confirmPassword: "" });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setError("");
-    if (!email || !otp || form.password.length < 6 || form.password !== form.confirmPassword) {
-      setError("Reset details are missing or passwords do not match.");
+  const submit = async (e) => {
+    e.preventDefault();
+    setFormError("");
+    if (!validate()) return;
+    if (values.password !== values.confirmPassword) {
+      setFormError("Password and Confirm Password must match.");
       return;
     }
+    setBusy(true);
     try {
-      setLoading(true);
-      await resetPassword({
-        email,
-        otp,
-        password: form.password,
-        confirmPassword: form.confirmPassword,
-      });
-      navigate("/login");
-    } catch (resetError) {
-      setError(getApiErrorMessage(resetError));
+      await resetPassword({ email: values.email, password: values.password, confirmPassword: values.confirmPassword });
+      navigate("/login", { replace: true });
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
   return (
-    <AuthLayout title="Reset Password" subtitle="Create a new secure password.">
-      <form className="auth-form" onSubmit={handleSubmit}>
-        {error ? <div className="notice notice-error">{error}</div> : null}
-        <FormField label="New Password">
-          <input className="input" type="password" value={form.password} onChange={(event) => setField("password", event.target.value)} />
-        </FormField>
-        <FormField label="Confirm Password">
-          <input className="input" type="password" value={form.confirmPassword} onChange={(event) => setField("confirmPassword", event.target.value)} />
-        </FormField>
-        <Button variant="primary" disabled={loading}>{loading ? "Resetting..." : "Reset Password"}</Button>
+    <AuthLayout title="Create new password" subtitle="Set a secure password for your Pirnav Junior College account.">
+      <form onSubmit={submit} noValidate>
+        {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
+        <div className="cms-form-grid">
+          {fields.map((f) => <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />)}
+        </div>
+        <button type="submit" className="cms-btn cms-btn-primary" style={{ width: "100%", marginTop: 18 }} disabled={busy}>{busy ? "Resetting..." : "Reset Password"}</button>
       </form>
+      <div className="cms-auth-links"><Link to="/login">Back to login</Link></div>
     </AuthLayout>
   );
 }
+
+

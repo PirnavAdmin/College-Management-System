@@ -1,136 +1,95 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
-import { FiEye, FiEyeOff, FiLock, FiMail } from "react-icons/fi";
-import AuthLayout from "../../../layouts/AuthLayout";
-import Button from "../../../shared/components/Button";
-import { getApiErrorMessage } from "../../../api/axios";
-import { loginUser } from "../services/authService";
+import { Link, useNavigate } from "react-router-dom";
+import AuthLayout from "@/layouts/AuthLayout.jsx";
+import { Field, useForm } from "@/components/common/Ui.jsx";
+import { loginUser } from "@/features/auth/services/authService.js";
+import { getApiErrorMessage } from "@/api/axios.js";
+
+const fields = [
+  { name: "email", label: "Email or Mobile", type: "text", required: true, placeholder: "Admin@CMS.com", full: true },
+  { name: "password", label: "Password", type: "password", required: true, placeholder: "Password", full: true },
+];
+
+const REMEMBER_KEY = "pirnav-remember-email";
 
 export default function Login() {
+  const { values, errors, setValue, validate } = useForm(fields, {});
+  const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [formError, setFormError] = useState("");
   const navigate = useNavigate();
-  const [showPassword, setShowPassword] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", remember: false });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const rememberedEmail = localStorage.getItem("rememberedEmail");
-    const rememberedPasswordEncoded = localStorage.getItem("rememberedPassword");
-    setIsLoggedIn(Boolean(token));
-    if (rememberedEmail || rememberedPasswordEncoded) {
-      try {
-        const rememberedPassword = rememberedPasswordEncoded ? atob(rememberedPasswordEncoded) : "";
-        setForm((current) => ({ ...current, email: rememberedEmail || "", password: rememberedPassword || "", remember: Boolean(rememberedEmail || rememberedPasswordEncoded) }));
-      } catch (e) {
-        // ignore decode errors and clear stored password
-        localStorage.removeItem("rememberedPassword");
-        setForm((current) => ({ ...current, email: rememberedEmail || "", remember: Boolean(rememberedEmail) }));
+    try {
+      const saved = window.localStorage.getItem(REMEMBER_KEY);
+      if (saved) {
+        setValue("email", saved);
+        setRemember(true);
       }
+    } catch {
+      /* storage unavailable */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    setError("");
-
-    if (!form.email.trim() || !form.password) {
-      setError("Please enter Email/Mobile and Password.");
-      return;
-    }
+  const submit = async (e) => {
+    e.preventDefault();
+    setFormError("");
+    if (!validate()) return;
 
     try {
-      setLoading(true);
-      const response = await loginUser({ emailOrMobile: form.email.trim(), password: form.password });
-      const data = response || {};
+      if (remember) window.localStorage.setItem(REMEMBER_KEY, String(values.email || ""));
+      else window.localStorage.removeItem(REMEMBER_KEY);
+    } catch {
+      /* storage unavailable */
+    }
 
-      if (!data.token) {
-        setError("Login succeeded but token was not returned by the server.");
+    setBusy(true);
+    try {
+      const result = await loginUser({ emailOrMobile: String(values.email || "").trim(), password: values.password });
+      if (!result.token) {
+        setFormError("Login succeeded but token was not returned by the server.");
         return;
       }
-
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      localStorage.setItem("role", data.user?.role || data.roleType || "student");
-
-      if (form.remember) {
-        try {
-          localStorage.setItem("rememberedEmail", form.email.trim());
-          // store password in base64 to avoid storing raw text; note: this is not secure encryption
-          localStorage.setItem("rememberedPassword", btoa(form.password || ""));
-        } catch (e) {
-          // ignore storage errors
-        }
-      } else {
-        localStorage.removeItem("rememberedEmail");
-        localStorage.removeItem("rememberedPassword");
-      }
-
-      if (data.user?.isAdmin || data.user?.role === "admin" || data.roleType === "admin") {
-        navigate("/dashboard");
-      } else {
-        navigate("/student-dashboard");
-      }
-    } catch (loginError) {
-      setError(getApiErrorMessage(loginError));
+      localStorage.setItem("token", result.token);
+      localStorage.setItem("user", JSON.stringify(result.user));
+      localStorage.setItem("role", result.user.role);
+      navigate(result.user.isAdmin || result.user.role === "admin" ? "/dashboard" : "/student-dashboard", { replace: true });
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
-  if (isLoggedIn) {
-    const user = readStoredUser();
-    return <Navigate to={user?.isAdmin || user?.role === "admin" ? "/dashboard" : "/student-dashboard"} replace />;
-  }
-
   return (
-    <AuthLayout>
-      <div className="auth-card auth-login-card">
-        <div className="auth-card-header">
-          <h2>Welcome Back</h2>
-          <p>Login to your College Management System account</p>
+    <AuthLayout title="Welcome back" subtitle="Sign in to the Pirnav Junior College management system.">
+      <form onSubmit={submit} noValidate>
+        {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
+        <div className="cms-form-grid">
+          {fields.map((f) => (
+            <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />
+          ))}
         </div>
-        <form className="auth-form" onSubmit={handleSubmit}>
-          {error ? <div className="notice notice-error">{error}</div> : null}
-          <label className="auth-field">
-            <span>Email Address</span>
-            <div className="auth-input-wrap">
-              <FiMail className="auth-input-icon" />
-              <input name="email" placeholder="Enter your email" type="email" value={form.email} onChange={(event) => setField("email", event.target.value)} />
-            </div>
+        <div className="cms-auth-row">
+          <label className="cms-check" htmlFor="remember-me">
+            <input id="remember-me" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            <span>Remember me</span>
           </label>
-          <label className="auth-field">
-            <span>Password</span>
-            <div className="auth-input-wrap">
-              <FiLock className="auth-input-icon" />
-              <input name="password" placeholder="Enter password" type={showPassword ? "text" : "password"} value={form.password} onChange={(event) => setField("password", event.target.value)} />
-              <button className="auth-password-toggle" type="button" aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((current) => !current)}>
-                {showPassword ? <FiEye /> : <FiEyeOff />}
-              </button>
-            </div>
-          </label>
-          <div className="auth-link-row">
-            <label className="auth-check">
-              <input type="checkbox" checked={form.remember} onChange={(event) => setField("remember", event.target.checked)} /> Remember me
-            </label>
-            <Link to="/forgot-password">Forgot password?</Link>
-          </div>
-          <Button className="auth-submit" variant="primary" disabled={loading}>{loading ? "Logging in..." : "Login"}</Button>
-          <div className="auth-bottom">Don&apos;t have an account? <Link to="/register">Register</Link></div>
-        </form>
+          <Link to="/forgot-password">Forgot password?</Link>
+        </div>
+        <button type="submit" className="cms-btn cms-btn-primary auth-submit-btn" disabled={busy}>
+          {busy ? "Signing in..." : "Login"}
+        </button>
+      </form>
+      <div className="cms-auth-links">
+        <span style={{ color: "var(--cms-muted)" }}>New here?</span>
+        <Link to="/register">Create an account</Link>
       </div>
     </AuthLayout>
   );
 }
 
-function readStoredUser() {
-  try {
-    const stored = localStorage.getItem("user");
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
+
+
+

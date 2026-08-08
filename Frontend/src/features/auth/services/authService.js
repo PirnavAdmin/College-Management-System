@@ -1,5 +1,5 @@
-import apiClient from "../../../api/axios";
-import { apiEndpoints } from "../../../api/apiEndpoints";
+import apiClient from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 
 export const adminLogin = (data) =>
   apiClient.post(apiEndpoints.admin.login, {
@@ -32,11 +32,9 @@ export const loginUser = async (data) => {
 };
 
 export const registerUser = (data) => apiClient.post(apiEndpoints.auth.register, data);
-export const forgotPassword = (data) =>
-  apiClient.post(apiEndpoints.auth.forgotPassword, data);
+export const forgotPassword = (data) => apiClient.post(apiEndpoints.auth.forgotPassword, data);
 export const verifyOtp = (data) => apiClient.post(apiEndpoints.auth.verifyOtp, data);
-export const resetPassword = (data) =>
-  apiClient.post(apiEndpoints.auth.resetPassword, data);
+export const resetPassword = (data) => apiClient.post(apiEndpoints.auth.resetPassword, data);
 export const getUsers = () => apiClient.get(apiEndpoints.auth.users);
 export const getUserById = (id) => apiClient.get(apiEndpoints.auth.userById(id));
 
@@ -45,9 +43,7 @@ function normalizeLoginResponse(payload = {}, enteredEmail, fallbackRole) {
   const status = payload.status ?? payload.Status ?? data.status ?? data.Status;
   const message = payload.message || payload.Message || data.message || data.Message || "Login successful.";
 
-  if (status === false) {
-    throw new Error(message || "Invalid login credentials.");
-  }
+  if (status === false) throw new Error(message || "Invalid login credentials.");
 
   const token =
     payload.AccessToken ||
@@ -79,12 +75,7 @@ function normalizeLoginResponse(payload = {}, enteredEmail, fallbackRole) {
         isAdmin: false,
       };
 
-  return {
-    token,
-    user,
-    roleType: isAdmin ? "admin" : "student",
-    message,
-  };
+  return { token, user, roleType: isAdmin ? "admin" : "student", message };
 }
 
 function buildLoginError(userError, adminError) {
@@ -97,3 +88,5 @@ function getBackendMessage(error) {
   if (typeof data === "string") return data;
   return data?.Message || data?.message || data?.title || error?.message;
 }
+
+

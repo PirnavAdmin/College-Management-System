@@ -13,6 +13,16 @@ export default function ProtectedRoute({ children, requireAdmin = false, require
   return children || <Outlet />;
 }
 
+export function PublicOnlyRoute({ children }) {
+  const token = localStorage.getItem("token");
+  const user = readStoredUser();
+  const role = localStorage.getItem("role") || user?.role;
+  const isAdmin = user?.isAdmin || role === "admin";
+
+  if (token) return <Navigate to={isAdmin ? "/dashboard" : "/student-dashboard"} replace />;
+  return children || <Outlet />;
+}
+
 function readStoredUser() {
   try {
     const stored = localStorage.getItem("user");
@@ -21,3 +31,5 @@ function readStoredUser() {
     return null;
   }
 }
+
+

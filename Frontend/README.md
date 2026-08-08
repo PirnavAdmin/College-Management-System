@@ -1,127 +1,121 @@
-# College Management System
+# Pirnav Junior College CMS Frontend
 
-A Vite + React admin and student portal for an Intermediate College Management System.
+React + Vite frontend for the Pirnav Junior College Management System. This version keeps the completed Frontendnew dashboard UI/design while replacing the TanStack Start/TypeScript runtime with a clean JavaScript + JSX Vite + React Router structure.
 
 ## Tech Stack
 
+- React 19
 - Vite
-- React with JavaScript + JSX
 - React Router
 - Axios
-- React Icons
-- Normal CSS with CSS variables
-- oxlint
-
-## Install
-
-```bash
-npm install
-```
-
-## Run
-
-```bash
-npm run dev
-```
+- Plain CSS through `src/cms.css`
+- Recharts and Lucide React for the existing dashboard visuals
 
 ## Environment
 
-Create `.env` from `.env.example`.
+Create one local `.env` file using `.env.example`:
 
-```bash
-VITE_API_BASE_URL=https://sterile-retorted-tightness.ngrok-free.dev
+```env
+VITE_API_BASE_URL=https://heroics-ambush-baton.ngrok-free.dev
 VITE_USE_DEV_PROXY=true
 ```
 
-When `VITE_USE_DEV_PROXY=true`, axios uses same-origin `/api/...` URLs and Vite proxies them to `VITE_API_BASE_URL`.
+When `VITE_USE_DEV_PROXY=true`, the browser calls `/api/...` and Vite proxies requests to `VITE_API_BASE_URL`. Restart `npm run dev` after changing `.env` or `vite.config.js`.
 
-## Local API Proxy / CORS Workaround
+## Commands
 
-- Frontend calls `/api/...`, for example `/api/Admin/login` or `/api/v1/boards`.
-- Vite proxies the request to `VITE_API_BASE_URL`.
-- Restart `npm run dev` after changing `vite.config.js` or `.env`.
-- Production backend deployments must configure CORS properly.
+```bash
+npm install
+npm run dev
+npm run lint
+npm run build
+```
+
+## Structure
+
+```text
+src/
+  app/                 Vite app entry and root App component
+  api/                 Axios client and API endpoint constants
+  assets/              Images, including P_LOGO.png
+  config/              Environment and module configuration
+  features/auth/       Login, register, password pages, auth service
+  layouts/             Shared AuthLayout
+  routes/              React Router routes and route guards
+  Dashboard/           Student dashboard and dashboard-specific areas
+  components/          Preserved Frontendnew designed UI/pages/layout
+  data/                Existing static module data for UI-only modules
+  hooks/               Theme/sidebar state hooks
+  cms.css              Main plain CSS design system
+  styles.css           CSS entry importing cms.css
+```
 
 ## Authentication
 
-- Admin login uses `POST /api/Admin/login`.
-- Normal user login uses `POST /api/Auth/login` after admin login is rejected.
-- Register uses `POST /api/Auth/register`.
-- Register assigns role `"student"` automatically; the register page does not show a role field.
-- Admin users are redirected to `/dashboard`.
-- Student users are redirected to `/student-dashboard`.
+- Admin login first calls `POST /api/Admin/login`.
+- If admin login fails, normal user login calls `POST /api/Auth/login`.
+- Register calls `POST /api/Auth/register`.
+- Register no longer shows a role field.
+- All registrations send `role: "student"`.
+- Tokens are stored in `localStorage.token`.
+- The user object is stored in `localStorage.user`.
+- The role is stored in `localStorage.role`.
 
-## Dashboards
-
-- `/dashboard` is the existing admin dashboard and requires an admin user.
-- `/student-dashboard` is a simple student portal and requires a non-admin logged-in user.
-- Admin users who open `/student-dashboard` are redirected back to `/dashboard`.
-- Student users who open `/dashboard` are redirected to `/student-dashboard`.
-
-## Admin Header
-
-The admin dashboard header includes:
-
-- Module search with route suggestions.
-- Dark/light theme toggle stored in `localStorage` as `cms_theme`.
-- Profile dropdown with name, email, role, and logout.
-
-The drawer footer profile/logout section has been removed.
-
-## Key Files
-
-- `src/api/axios.js`: Proxy-aware axios client with token interceptor.
-- `src/api/apiEndpoints.js`: Auth and Admin endpoint constants.
-- `src/features/auth/services/authService.js`: Admin-first login and real backend auth services.
-- `src/features/auth/pages/Login.jsx`: Login UI and admin/student redirect logic.
-- `src/features/auth/pages/Register.jsx`: Student registration UI.
-- `src/routes/ProtectedRoute.jsx`: Role-aware route protection.
-- `src/routes/AppRoutes.jsx`: Public, admin, and student routes.
-- `src/Dashboard/Dashboard.jsx`: Admin sidebar, module search, theme toggle, and profile menu.
-- `src/Dashboard/StudentDashboard/StudentDashboard.jsx`: Student dashboard shell.
+Admin users are redirected to `/dashboard`. Student users are redirected to `/student-dashboard`.
 
 ## Routes
 
 Public:
 
-- `/`, `/login`, `/register`, `/forgot-password`, `/verify-otp`, `/reset-password`
+- `/`
+- `/login`
+- `/register`
+- `/forgot-password`
+- `/verify-otp`
+- `/reset-password`
 
-Admin:
+Admin only:
 
 - `/dashboard`
-- `/dashboard/boards`, `/dashboard/boards/new`, `/dashboard/boards/:boardId/edit`
-- `/dashboard/academic-years`, `/dashboard/academic-years/new`
-- `/dashboard/groups`, `/dashboard/groups/add`, `/dashboard/groups/edit/:groupId`
-- `/dashboard/sections`, `/dashboard/subjects`, `/dashboard/faculty`, `/dashboard/reports`
+- `/dashboard/boards`
+- `/dashboard/academic-years`
+- `/dashboard/courses`
+- `/dashboard/subjects`
+- `/dashboard/sections`
+- `/dashboard/faculty`
+- `/dashboard/faculty-allocation`
+- `/dashboard/admission`
+- `/dashboard/students`
+- `/dashboard/timetable`
+- `/dashboard/attendance`
+- `/dashboard/assignments`
+- `/dashboard/examinations`
+- `/dashboard/marks-entry`
+- `/dashboard/results`
+- `/dashboard/promotion`
+- `/dashboard/fee-structure`
+- `/dashboard/certificates`
+- `/dashboard/reports`
 
-Student:
+Student only:
 
 - `/student-dashboard`
 
-## API Endpoints
+## Module API Status
 
-Admin:
+Only authentication is integrated now. Existing module pages keep the Frontendnew static UI/data so the design remains intact. Module API integration can be added later inside service files without changing the dashboard UI structure.
 
-- `POST /api/Admin/login`
-- `POST /api/Admin`
-- `GET /api/Admin`
-- `GET /api/Admin/{adminId}`
-- `POST /api/Admin/change-password`
-- `PUT /api/Admin/{adminId}/status`
+## Branding
 
-Auth:
+The app uses `src/assets/P_LOGO.png` and the visible college name is `Pirnav Junior College`.
 
-- `POST /api/Auth/login`
-- `POST /api/Auth/register`
-- `POST /api/Auth/forgot-password`
-- `POST /api/Auth/verify-otp`
-- `POST /api/Auth/reset-password`
-- `GET /api/Auth/users`
-- `GET /api/Auth/user/{id}`
+## Team Rules
 
-## Build and Lint
-
-```bash
-npm run lint
-npm run build
-```
+- Use JavaScript and JSX only.
+- Do not add `.ts` or `.tsx` source files.
+- Do not call Axios directly from components; add service functions.
+- Keep API paths in `src/api/apiEndpoints.js`.
+- Keep backend base URL in `.env` only.
+- Keep route changes in `src/routes/AppRoutes.jsx`.
+- Keep shared styling in `src/cms.css` unless a feature needs scoped CSS.
+- Do not commit `node_modules`, `dist`, or `.env`.

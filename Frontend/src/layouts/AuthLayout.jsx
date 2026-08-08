@@ -1,51 +1,46 @@
-import collegeImage from "../assets/college.jpg";
-import "../features/auth/styles/auth.css";
+import { Link } from "react-router-dom";
+import ThemeToggle from "@/components/common/ThemeToggle.jsx";
+import HeroSlider from "@/components/common/HeroSlider.jsx";
+import { heroCopy } from "@/data/heroSlides.js";
+import logo from "@/assets/P_LOGO.png";
+import "@/features/auth/styles/auth.css";
 
-const features = [
-  { icon: "🎓", label: "Student Management" },
-  { icon: "👨‍🏫", label: "Faculty Portal" },
-  { icon: "🗓️", label: "Attendance Tracking" },
-  { icon: "📊", label: "Results & Reports" },
-  { icon: "🔐", label: "Secure Authentication" },
-  { icon: "📚", label: "Group Management" },
-];
-
-export default function AuthLayout({ title, subtitle, children }) {
+export default function AuthLayout({ title, subtitle, children, cardClass = "" }) {
   return (
-    <main className="auth-page">
-      <img className="auth-background" src={collegeImage} alt="College campus" />
-      <div className="auth-overlay" />
-      <div className="auth-shell">
-        <section className="auth-brand-panel" aria-label="College Management System">
-          <h1>College Management System</h1>
-          <h2>Smart Campus • Smart Future</h2>
-          <p>
-            A modern College Management System designed to simplify academic
-            and administrative operations through one secure platform.
-          </p>
-          <div className="auth-feature-grid">
-            {features.map((feature) => (
-              <div className="auth-feature-card" key={feature.label}>
-                <span aria-hidden="true">{feature.icon}</span>
-                <strong>{feature.label}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
-        <section className="auth-form-panel">
-          {title || subtitle ? (
-            <div className="auth-card">
-              <div className="auth-card-header">
-                {title ? <h2>{title}</h2> : null}
-                {subtitle ? <p>{subtitle}</p> : null}
-              </div>
-              {children}
-            </div>
-          ) : (
-            children
-          )}
-        </section>
+    <div className="cms-auth">
+      <div className="cms-auth-bg">
+        <HeroSlider variant="bg" />
       </div>
-    </main>
+      <aside className="cms-auth-aside">
+        <div className="cms-landing-brand cms-anim-in" style={{ color: "#fff" }}>
+          <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav Junior College logo" /></span>
+          <span>
+            <strong style={{ color: "#fff" }}>{heroCopy.title}</strong>
+          </span>
+        </div>
+        <div className="cms-anim-up">
+          <h2>{heroCopy.headline}</h2>
+          <p>{heroCopy.subtitle}</p>
+        </div>
+      </aside>
+
+      <main className="cms-auth-main">
+        <div className={`cms-auth-card ${cardClass}`}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div>
+              <h1>{title}</h1>
+            </div>
+            <ThemeToggle />
+          </div>
+          <p>{subtitle}</p>
+          {children}
+          <div className="cms-auth-links" style={{ marginTop: 20 }}>
+            <Link to="/">Back to home</Link>
+          </div>
+        </div>
+      </main>
+    </div>
   );
 }
+
+

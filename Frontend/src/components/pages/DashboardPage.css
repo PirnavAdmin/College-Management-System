@@ -1,0 +1,13 @@
+.cms-stat-value {
+  font-variant-numeric: tabular-nums;
+}
+.cms-card .recharts-wrapper {
+  max-width: 100%;
+}
+@media (max-width: 760px) {
+  .cms-stat-grid,
+  .cms-grid-2,
+  .cms-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}

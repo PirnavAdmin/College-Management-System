@@ -1,0 +1,23 @@
+.cms-toolbar,
+.cms-toolbar-right,
+.cms-pagination,
+.cms-actions {
+  min-width: 0;
+}
+.cms-toolbar-right,
+.cms-actions,
+.cms-pagination {
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .cms-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cms-toolbar-right {
+    justify-content: flex-start;
+  }
+  .cms-search {
+    width: 100%;
+  }
+}

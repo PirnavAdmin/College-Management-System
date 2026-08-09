@@ -21,20 +21,20 @@ export const loginUser = async (credentials) => {
   const isAdminLogin = emailOrMobile.toLowerCase() === ADMIN_EMAIL;
 
   if (isAdminLogin) {
-    console.log("Login endpoint:", apiEndpoints.admin.login, "email/mobile:", emailOrMobile);
+    logLoginSelection(apiEndpoints.admin.login, emailOrMobile);
     try {
       const response = await adminLogin({ email: emailOrMobile, password });
-      console.log("Login response status:", response.status);
+      logLoginResponse(response.status);
       return normalizeAdminLoginResponse(response.data, emailOrMobile);
     } catch (error) {
       throw buildLoginError(error, apiEndpoints.admin.login);
     }
   }
 
-  console.log("Login endpoint:", apiEndpoints.auth.login, "email/mobile:", emailOrMobile);
+  logLoginSelection(apiEndpoints.auth.login, emailOrMobile);
   try {
     const response = await userLogin({ emailOrMobile, password });
-    console.log("Login response status:", response.status);
+    logLoginResponse(response.status);
     return normalizeStudentLoginResponse(response.data, emailOrMobile);
   } catch (error) {
     throw buildLoginError(error, apiEndpoints.auth.login);
@@ -138,4 +138,15 @@ function getBackendMessage(error) {
   const data = error?.response?.data;
   if (typeof data === "string") return data;
   return data?.Message || data?.message || data?.title || error?.message;
+}
+
+function logLoginSelection(endpoint, emailOrMobile) {
+  if (!import.meta.env.DEV) return;
+  console.log("Login selected endpoint:", endpoint);
+  console.log("Login email/mobile:", emailOrMobile);
+}
+
+function logLoginResponse(status) {
+  if (!import.meta.env.DEV) return;
+  console.log("Login response status:", status);
 }

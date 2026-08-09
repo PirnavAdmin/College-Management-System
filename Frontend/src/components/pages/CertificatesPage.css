@@ -1,1 +1,19 @@
-/* Certificates page-specific styles can be added here during module API integration. */
+.cert-section-gap {
+	margin-bottom: 16px;
+}
+
+.cert-space-top-12 {
+	margin-top: 12px;
+}
+
+.cert-space-bottom-12 {
+	margin-bottom: 12px;
+}
+
+.cert-actions-header {
+	text-align: right;
+}
+
+.cert-actions-right {
+	justify-content: flex-end;
+}

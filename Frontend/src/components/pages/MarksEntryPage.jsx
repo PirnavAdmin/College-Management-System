@@ -29,17 +29,17 @@ const temporaryDataToast = () => toast.warn("Using temporary data. API unavailab
 const asValue = (value) => value === null || value === undefined ? "" : String(value);
 
 function GradeBadge({ total, complete }) {
-  const tone = !complete ? "cms-badge-inactive" : total >= 90 ? "cms-badge-active" : total >= 40 ? "cms-badge-warn" : "cms-badge-danger";
-  return <span className={`cms-badge ${tone}`}>{complete ? gradeOf(total) : "—"}</span>;
+  const tone = !complete || total < 40 ? "cms-grade-empty" : "cms-grade-success";
+  return <span className={`cms-grade-badge ${tone}`}>{complete ? gradeOf(total) : "—"}</span>;
 }
 
 function StatusBadge({ verified }) {
-  return <span className={`cms-badge ${verified ? "cms-badge-active" : "cms-badge-warn"}`}>{verified ? "Verified" : "Pending"}</span>;
+  return <span className={`cms-status-badge ${verified ? "cms-status-verified" : "cms-status-pending"}`}>{verified ? "Verified" : "Pending"}</span>;
 }
 
 function SelectField({ label, name, value, onChange, onBlur, error, disabled, children }) {
   return (
-    <div className={`cms-field ${error ? "has-error" : ""}`}>
+    <div className={`cms-field ${error ? "cms-has-error" : ""}`}>
       <label htmlFor={`marks-${name}`}>{label}</label>
       <select id={`marks-${name}`} value={value} onChange={(event) => onChange(name, event.target.value)} onBlur={() => onBlur(name)} disabled={disabled}>
         {children}
@@ -51,7 +51,7 @@ function SelectField({ label, name, value, onChange, onBlur, error, disabled, ch
 
 function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, saveRow, activeTab, selectedVerifyIds, toggleVerifyStudent }) {
   return (
-    <table className={`cms-table ${activeTab === "verify" ? "marks-verify-table" : ""}`}>
+    <table className={`cms-marks-table ${activeTab === "verify" ? "cms-marks-verify-table" : ""}`}>
       <thead><tr>
         <th>Select</th>
         <th>Student</th><th>Internal</th><th>Practical</th><th>Theory</th><th>Total</th><th>Grade</th><th>Status</th>
@@ -65,24 +65,24 @@ function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, sa
           const canEdit = activeTab === "verify" && student.markId && !student.verified && !student.submitted && !editingIds.has(student.studentId);
           const eligible = !student.verified && complete && isStudentValid(student) && student.markId && !editingIds.has(student.studentId);
           const readyForVerification = complete && isStudentValid(student) && !student.verified && !student.submitted;
-          return <tr key={student.studentId}>
-            <td className="cms-number-cell">{activeTab === "entry"
+          return <tr className="cms-marks-row" key={student.studentId}>
+            <td className="cms-marks-cell cms-marks-number-cell" data-label="Select">{activeTab === "entry"
               ? <input type="checkbox" checked={readyForVerification} disabled={!readyForVerification} onChange={() => { }} aria-label={`Ready for verification: ${student.studentName}`} />
               : <input type="checkbox" checked={selectedVerifyIds.has(student.studentId)} disabled={!eligible} onChange={() => toggleVerifyStudent(student.studentId)} aria-label={`Select ${student.studentName} for verification`} />}
             </td>
-            <td><div className="marks-student-info"><strong>{student.studentName}</strong><span className="marks-roll-number">{student.rollNo}</span>{student.submitted ? <span>Submitted</span> : null}</div></td>
-            {["internalMarks", "practicalMarks", "theoryMarks"].map((field) => <td className="cms-marks-cell" key={field}>
-              <input className={`cms-mini-input cms-marks-input ${rowErrors?.[student.studentId]?.[field] ? "cms-input-error" : ""}`} type="text" inputMode="numeric" value={student[field]} disabled={!editable} onChange={(event) => changeMark(student.studentId, field, event.target.value)} aria-label={`${field} for ${student.studentName}`} />
+            <td className="cms-marks-cell" data-label="Student"><div className="cms-marks-student"><strong className="cms-marks-student-name">{student.studentName}</strong><span className="cms-marks-student-roll">{student.rollNo}</span>{student.submitted ? <span>Submitted</span> : null}</div></td>
+            {["internalMarks", "practicalMarks", "theoryMarks"].map((field) => <td className="cms-marks-cell" data-label={field.replace("Marks", "")} key={field}>
+              <input className={`cms-marks-input ${rowErrors?.[student.studentId]?.[field] ? "cms-input-error" : ""}`} type="text" inputMode="numeric" value={student[field]} disabled={!editable} onChange={(event) => changeMark(student.studentId, field, event.target.value)} aria-label={`${field} for ${student.studentName}`} />
               {rowErrors?.[student.studentId]?.[field] ? <small className="cms-error">{rowErrors[student.studentId][field]}</small> : null}
             </td>)}
-            <td className="cms-strong cms-number-cell">{total}</td><td className="cms-number-cell"><GradeBadge total={total} complete={complete} /></td><td className="cms-number-cell"><StatusBadge verified={student.verified} /></td>
+            <td className="cms-strong cms-marks-cell cms-marks-number-cell" data-label="Total">{total}</td><td className="cms-marks-cell cms-marks-number-cell" data-label="Grade"><GradeBadge total={total} complete={complete} /></td><td className="cms-marks-cell cms-marks-number-cell" data-label="Status"><StatusBadge verified={student.verified} /></td>
             {activeTab === "verify" ?
-              <td className="cms-number-cell">
-                <div className="cms-actions marks-row-actions">
+              <td className="cms-marks-cell cms-marks-number-cell" data-label="Actions">
+                <div className="cms-marks-actions">
                   {editable && student.markId ? (
                     <button
                       type="button"
-                      className="cms-action-btn marks-save-action"
+                      className="cms-marks-icon-btn cms-marks-save-btn"
                       onClick={() => saveRow(student.studentId)}
                       aria-label={`Save ${student.studentName}`}
                       title="Save marks"
@@ -94,7 +94,7 @@ function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, sa
                   {canEdit ? (
                     <button
                       type="button"
-                      className="cms-action-btn marks-edit-action"
+                      className="cms-marks-icon-btn cms-marks-edit-btn"
                       onClick={() => editRow(student.studentId)}
                       aria-label={`Edit ${student.studentName}`}
                       title="Edit marks"
@@ -105,7 +105,7 @@ function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, sa
                 </div>
               </td> : null}
           </tr>;
-        }) : <tr><td className="cms-empty" colSpan={activeTab === "verify" ? 9 : 8}>No students match the current search.</td></tr>}
+        }) : <tr className="cms-marks-row"><td className="cms-empty" colSpan={activeTab === "verify" ? 9 : 8}>No students match the current search.</td></tr>}
       </tbody>
     </table>
   );
@@ -189,8 +189,8 @@ export default function MarksEntryPage() {
 
   return (
     <DashboardLayout title="Marks Entry" subtitle="Enter internal, practical and theory marks." breadcrumb={["Examinations"]}>
-      <div className="cms-content cms-page marks-entry-page" aria-label="Marks entry module">
-        <section className="cms-card cms-anim-up cms-assessment-card">
+      <div className="cms-content cms-page cms-marks-page" aria-label="Marks entry module">
+        <section className="cms-card cms-anim-up cms-marks-card">
           <div className="cms-card-head cms-page-head cms-section-header">
             <div><h2>Assessment Details</h2><p>All filter selections are required before loading student records.</p></div>
             <button className="cms-btn cms-btn-primary" type="button" disabled={!allFiltersSelected || loading} onClick={checkStudents}>
@@ -198,7 +198,7 @@ export default function MarksEntryPage() {
             </button>
           </div>
           <div className="cms-card-body">
-            <div className="cms-filters cms-filter-grid marks-filter-grid">
+            <div className="cms-filters cms-filter-grid cms-marks-filter-grid">
               <SelectField label="Board" name="board"
                 value={filters.board}
                 onChange={changeFilter}
@@ -288,37 +288,37 @@ export default function MarksEntryPage() {
           </div>
         </section>
         {students.length > 0 && <>
-          <div className="cms-stats-grid marks-stats-grid">
+          <div className="cms-marks-stats-grid">
             {[["Total Students", stats.total],
             ["Marks Entered", stats.entered],
             ["Verified Students", stats.verified],
             ["Pending Students", stats.pending],
             ["Average Marks", stats.average],
             ["Highest Marks", stats.highest]].map(([label, value]) =>
-              <div className="cms-stat" key={label}>
-                <span className="cms-stat-label">{label}</span>
-                <strong className="cms-stat-value">{value}</strong>
+              <div className="cms-marks-stat-card" key={label}>
+                <span className="cms-marks-stat-label">{label}</span>
+                <strong className="cms-marks-stat-value">{value}</strong>
               </div>
             )}
           </div>
-          <div className="cms-card">
-            <div className="cms-toolbar marks-toolbar">
-              <div className="cms-actions cms-tabs marks-tabs">
-                <button className={`cms-btn ${activeTab === "entry" ? "cms-btn-primary" : "cms-btn-ghost"}`}
+          <div className="cms-card cms-marks-card">
+            <div className="cms-marks-toolbar">
+              <div className="cms-marks-toolbar-left">
+                <button className={`cms-marks-tab ${activeTab === "entry" ? "cms-marks-tab-active" : ""}`}
                   onClick={() => setActiveTab("entry")}
                   type="button">Marks Entry
                 </button>
-                <button className={`cms-btn ${activeTab === "verify" ? "cms-btn-primary" : "cms-btn-ghost"}`}
+                <button className={`cms-marks-tab ${activeTab === "verify" ? "cms-marks-tab-active" : ""}`}
                   onClick={() => setActiveTab("verify")}
                   type="button">Verification <span>
                     {stats.verified}/{stats.total}
                   </span>
                 </button>
               </div>
-              <div className="cms-search-wrap"><div className="cms-search marks-search">
-                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by roll number or student name" aria-label="Search students" />
-              </div></div>
-              <div className="cms-toolbar-right cms-toolbar-actions marks-toolbar-actions">{activeTab === "entry" ?
+              <div className="cms-marks-search">
+                <input className="cms-marks-search-input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by roll number or student name" aria-label="Search students" />
+              </div>
+              <div className="cms-marks-toolbar-right">{activeTab === "entry" ?
                 <button type="button" className="cms-btn cms-btn-primary"
                   onClick={editingIds.size ? saveAllMarks : editAll}>
                   {editingIds.size ? "Save Changes" : "Edit Marks"}
@@ -328,7 +328,7 @@ export default function MarksEntryPage() {
               }
               </div>
             </div>
-            <div className="cms-table-wrap marks-table-wrap">
+            <div className="cms-marks-table-wrap">
               <StudentTable students={visibleStudents}
                 editingIds={editingIds}
                 rowErrors={rowErrors}
@@ -339,9 +339,9 @@ export default function MarksEntryPage() {
                 selectedVerifyIds={selectedVerifyIds}
                 toggleVerifyStudent={toggleVerifyStudent} /></div>
           </div>
-          <div className="cms-card marks-footer"><div className="cms-toolbar">
-            <div className="marks-footer-message">{submitBlocker || "Only complete and verified marks can be submitted."}</div>
-            <div className="cms-toolbar-right marks-footer-actions">
+          <div className="cms-card cms-marks-card"><div className="cms-marks-footer">
+            <div className="cms-marks-footer-message">{submitBlocker || "Only complete and verified marks can be submitted."}</div>
+            <div className="cms-marks-footer-actions">
               <button type="button" className="cms-btn cms-btn-danger"
                 onClick={() => setDeleteOpen(true)}>
                 Clear All Marks
@@ -354,8 +354,8 @@ export default function MarksEntryPage() {
             </div>
           </div></div>
         </>}
-        {deleteOpen && <div className="cms-overlay cms-modal-overlay" role="presentation">
-          <div className="cms-modal sm marks-delete-modal" role="dialog"
+        {deleteOpen && <div className="cms-overlay cms-marks-modal" role="presentation">
+          <div className="cms-modal cms-marks-modal-content" role="dialog"
             aria-modal="true"
             aria-labelledby="delete-title">
             <div className="cms-modal-head"><h3 id="delete-title">Clear all marks?</h3></div>

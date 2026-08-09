@@ -14,7 +14,9 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   const [toast, setToast] = useState("");
 
   const mode = id ? "Edit" : "Add";
-  const label = (sectionConfig.addLabel || sectionConfig.title).replace(/^Add\s+/, "");
+  const label = sectionConfig.formLabel || (sectionConfig.addLabel || sectionConfig.title).replace(/^Add\s+/, "").replace(/^Create\s+/, "");
+  const submitLabel = id ? sectionConfig.updateLabel || `Update ${label}` : sectionConfig.saveLabel || `Save ${label}`;
+  const backLabel = sectionConfig.backLabel || sectionConfig.title;
 
   const submit = (e) => {
     e.preventDefault();
@@ -32,7 +34,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   return (
     <DashboardLayout title={`${mode} ${label}`} subtitle={`Fill in the details below and save to ${id ? "update this" : "create a new"} record.`} breadcrumb={[sectionConfig.title]}>
       <div className="cms-form-page">
-        <Link to={listPath} className="cms-back-link"><ArrowLeft size={15} /> Back to {sectionConfig.title}</Link>
+        <Link to={listPath} className="cms-back-link"><ArrowLeft size={15} /> Back to {backLabel}</Link>
         <form className="cms-card" onSubmit={submit} noValidate>
           <div className="cms-card-body">
             <div className="cms-form-grid">
@@ -40,7 +42,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
             </div>
             <div className="cms-form-actions">
               <button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate(listPath)}>Cancel</button>
-              <button type="submit" className="cms-btn cms-btn-primary" disabled={saving}>{saving ? "Saving..." : `Save ${label}`}</button>
+              <button type="submit" className="cms-btn cms-btn-primary" disabled={saving}>{saving ? "Saving..." : submitLabel}</button>
             </div>
           </div>
         </form>

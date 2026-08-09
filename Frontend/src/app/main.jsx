@@ -4,6 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "../styles.css";
 
+if (import.meta.env.DEV) {
+  console.log("CMS Frontend build loaded from latest role login fix");
+}
+
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
@@ -11,5 +15,6 @@ createRoot(document.getElementById("root")).render(
     </BrowserRouter>
   </React.StrictMode>,
 );
+
 
 

@@ -52,8 +52,9 @@ src/
 
 ## Authentication
 
-- Admin login first calls `POST /api/Admin/login`.
-- If admin login fails, normal user login calls `POST /api/Auth/login`.
+- Admin email `Admin@CMS.com` calls only `POST /api/Admin/login` with `{ email, password }`.
+- Student/user emails call only `POST /api/Auth/login` with `{ emailOrMobile, password }`.
+- One login attempt must never call both login APIs.
 - Register calls `POST /api/Auth/register`.
 - Register no longer shows a role field.
 - All registrations send `role: "student"`.
@@ -145,3 +146,42 @@ The app uses `src/assets/P_LOGO.png` and the visible college name is `Pirnav Jun
 - Keep route changes in `src/routes/AppRoutes.jsx`.
 - Keep shared styling in `src/cms.css` unless a feature needs scoped CSS.
 - Do not commit `node_modules`, `dist`, or `.env`.
+## Team Pull Troubleshooting
+
+After pulling the latest role-based login fix, each teammate should run these commands from the repository root:
+
+```bash
+git fetch origin
+git checkout main
+git pull origin main
+cd Frontend
+npm install
+```
+
+Create the local env file from the example:
+
+```cmd
+copy .env.example .env
+```
+
+Confirm `Frontend/.env` contains:
+
+```env
+VITE_API_BASE_URL=https://heroics-ambush-baton.ngrok-free.dev
+VITE_USE_DEV_PROXY=true
+```
+
+Stop any old Vite dev server with `Ctrl + C`, clear Vite cache, and restart forcefully:
+
+```cmd
+rmdir /s /q node_modules\.vite
+npm run dev -- --force
+```
+
+If login still behaves like old code:
+
+- Make sure the project is running from the latest cloned repo, not an old Downloads ZIP folder.
+- Refresh the browser with `Ctrl + Shift + R`.
+- Run `git log -1 --oneline` and compare the commit hash with the project lead.
+- Open DevTools Console and confirm it prints `CMS Frontend build loaded from latest role login fix`.
+- During login, confirm the console prints only one selected endpoint: `/api/Admin/login` for `Admin@CMS.com`, or `/api/Auth/login` for other users.

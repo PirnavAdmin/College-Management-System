@@ -1,10 +1,11 @@
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 
+const ADMIN_EMAIL = "admin@cms.com";
+
 export const adminLogin = (data) =>
   apiClient.post(apiEndpoints.admin.login, {
-    email: data.emailOrMobile,
-    emailOrMobile: data.emailOrMobile,
+    email: data.email,
     password: data.password,
   });
 
@@ -14,20 +15,29 @@ export const userLogin = (data) =>
     password: data.password,
   });
 
-export const loginUser = async (data) => {
-  let adminError;
-  try {
-    const adminResponse = await adminLogin(data);
-    return normalizeLoginResponse(adminResponse.data, data.emailOrMobile, "admin");
-  } catch (error) {
-    adminError = error;
+export const loginUser = async (credentials) => {
+  const emailOrMobile = String(credentials.emailOrMobile || "").trim();
+  const password = credentials.password;
+  const isAdminLogin = emailOrMobile.toLowerCase() === ADMIN_EMAIL;
+
+  if (isAdminLogin) {
+    console.log("Login endpoint:", apiEndpoints.admin.login, "email/mobile:", emailOrMobile);
+    try {
+      const response = await adminLogin({ email: emailOrMobile, password });
+      console.log("Login response status:", response.status);
+      return normalizeAdminLoginResponse(response.data, emailOrMobile);
+    } catch (error) {
+      throw buildLoginError(error, apiEndpoints.admin.login);
+    }
   }
 
+  console.log("Login endpoint:", apiEndpoints.auth.login, "email/mobile:", emailOrMobile);
   try {
-    const userResponse = await userLogin(data);
-    return normalizeLoginResponse(userResponse.data, data.emailOrMobile, "student");
-  } catch (userError) {
-    throw buildLoginError(userError, adminError);
+    const response = await userLogin({ emailOrMobile, password });
+    console.log("Login response status:", response.status);
+    return normalizeStudentLoginResponse(response.data, emailOrMobile);
+  } catch (error) {
+    throw buildLoginError(error, apiEndpoints.auth.login);
   }
 };
 
@@ -38,48 +48,89 @@ export const resetPassword = (data) => apiClient.post(apiEndpoints.auth.resetPas
 export const getUsers = () => apiClient.get(apiEndpoints.auth.users);
 export const getUserById = (id) => apiClient.get(apiEndpoints.auth.userById(id));
 
-function normalizeLoginResponse(payload = {}, enteredEmail, fallbackRole) {
-  const data = payload.data || payload.Data || payload;
-  const status = payload.status ?? payload.Status ?? data.status ?? data.Status;
-  const message = payload.message || payload.Message || data.message || data.Message || "Login successful.";
+function normalizeAdminLoginResponse(payload = {}, enteredEmail) {
+  const data = getData(payload);
+  assertSuccessful(payload, data);
 
-  if (status === false) throw new Error(message || "Invalid login credentials.");
+  const token = getToken(payload, data);
+  const user = {
+    id: data.adminId || data.AdminId || data.id || data.Id || payload.adminId || payload.AdminId || payload.id || payload.Id || "admin",
+    name: data.name || data.Name || payload.name || payload.Name || "CMS Admin",
+    email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
+    role: "admin",
+    isAdmin: true,
+  };
 
-  const token =
-    payload.AccessToken ||
-    payload.accessToken ||
-    payload.Token ||
-    payload.token ||
-    payload.jwt ||
-    data.AccessToken ||
-    data.accessToken ||
-    data.Token ||
-    data.token ||
-    data.jwt;
-
-  const role = fallbackRole === "admin" ? "admin" : data.Role || data.role || payload.Role || payload.role || "student";
-  const isAdmin = role === "admin" || fallbackRole === "admin";
-  const user = isAdmin
-    ? {
-        id: data.id || data.adminId || data.AdminId || data.UserId || payload.id || payload.UserId,
-        name: data.name || data.Name || payload.name || payload.Name || "CMS Admin",
-        email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
-        role: "admin",
-        isAdmin: true,
-      }
-    : {
-        id: data.UserId || data.userId || data.id || payload.UserId || payload.userId || payload.id,
-        name: data.Name || data.name || data.fullName || payload.Name || payload.name || payload.fullName || "CMS User",
-        email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
-        role,
-        isAdmin: false,
-      };
-
-  return { token, user, roleType: isAdmin ? "admin" : "student", message };
+  return {
+    token,
+    user,
+    roleType: "admin",
+    message: getMessage(payload, data, "Login successful."),
+  };
 }
 
-function buildLoginError(userError, adminError) {
-  const message = getBackendMessage(userError) || getBackendMessage(adminError) || "Invalid credentials or login failed.";
+function normalizeStudentLoginResponse(payload = {}, enteredEmail) {
+  const data = getData(payload);
+  assertSuccessful(payload, data);
+
+  const token = getToken(payload, data);
+  const role = data.Role || data.role || payload.Role || payload.role || "student";
+  const user = {
+    id: data.UserId || data.userId || data.id || data.Id || payload.UserId || payload.userId || payload.id || payload.Id,
+    name: data.Name || data.name || data.fullName || payload.Name || payload.name || payload.fullName || "CMS User",
+    email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
+    role,
+    isAdmin: role === "admin",
+  };
+
+  return {
+    token,
+    user,
+    roleType: user.isAdmin ? "admin" : "student",
+    message: getMessage(payload, data, "Login successful."),
+  };
+}
+
+function getData(payload) {
+  return payload?.data || payload?.Data || payload || {};
+}
+
+function getMessage(payload, data, fallback) {
+  return payload?.message || payload?.Message || data?.message || data?.Message || fallback;
+}
+
+function assertSuccessful(payload, data) {
+  const status = payload?.status ?? payload?.Status ?? data?.status ?? data?.Status;
+  if (status === false) {
+    throw new Error(getMessage(payload, data, "Invalid login credentials."));
+  }
+}
+
+function getToken(payload, data) {
+  return (
+    payload?.AccessToken ||
+    payload?.accessToken ||
+    payload?.Token ||
+    payload?.token ||
+    payload?.jwt ||
+    data?.AccessToken ||
+    data?.accessToken ||
+    data?.Token ||
+    data?.token ||
+    data?.jwt
+  );
+}
+
+function buildLoginError(error, endpoint) {
+  const status = error?.response?.status;
+  if (endpoint === apiEndpoints.admin.login && status === 500) {
+    return new Error("Admin login API failed on server. Please check backend /api/Admin/login.");
+  }
+  if (status === 401) {
+    return new Error("Invalid email/mobile or password.");
+  }
+
+  const message = getBackendMessage(error) || "Login failed. Please try again.";
   return new Error(message);
 }
 
@@ -88,5 +139,3 @@ function getBackendMessage(error) {
   if (typeof data === "string") return data;
   return data?.Message || data?.message || data?.title || error?.message;
 }
-
-

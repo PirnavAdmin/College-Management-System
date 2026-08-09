@@ -4,6 +4,7 @@ import path from "node:path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const apiBaseUrl = env.VITE_API_BASE_URL || "https://heroics-ambush-baton.ngrok-free.dev";
 
   return {
     plugins: [react()],
@@ -22,7 +23,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         "/api": {
-          target: env.VITE_API_BASE_URL,
+          target: apiBaseUrl,
           changeOrigin: true,
           secure: false,
           headers: {
@@ -33,5 +34,6 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
 
 

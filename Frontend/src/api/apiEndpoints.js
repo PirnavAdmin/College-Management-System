@@ -24,6 +24,13 @@
     list: "/api/v1/academic-years",
   },
   groups: {
+    getAll: "/api/v1/groups",
+    create: "/api/v1/groups",
+    getById: (groupId) => `/api/v1/groups/${groupId}`,
+    update: (groupId) => `/api/v1/groups/${groupId}`,
+    delete: (groupId) => `/api/v1/groups/${groupId}`,
+    getByBoard: (board) => `/api/v1/groups/board/${board}`,
+    validateCode: "/api/v1/groups/validate-code",
     list: "/api/v1/groups",
   },
   auth: {

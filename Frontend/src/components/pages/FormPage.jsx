@@ -1,16 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Toast, useForm } from "@/components/common/Ui.jsx";
+import { getApiErrorMessage } from "@/api/axios.js";
 import { addRow, configFor, getRow, updateRow } from "@/data/store.js";
 
 export default function FormPage({ slug, config, id = null, secondary = false, listPath }) {
   const sectionConfig = configFor(config, secondary);
   const navigate = useNavigate();
-  const existing = id ? getRow(slug, secondary, id, config) : null;
-  const { values, errors, setValue, validate } = useForm(sectionConfig.fields, existing || {});
+  const usesApi = Boolean(sectionConfig?.api);
+  const existing = !usesApi && id ? getRow(slug, secondary, id, config) : null;
+  const [fields, setFields] = useState(sectionConfig.fields);
+  const { values, errors, setValue, validate, setValues, setErrors } = useForm(fields, existing || {});
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(usesApi && Boolean(id));
   const [toast, setToast] = useState("");
 
   const mode = id ? "Edit" : "Add";
@@ -18,17 +22,59 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   const submitLabel = id ? sectionConfig.updateLabel || `Update ${label}` : sectionConfig.saveLabel || `Save ${label}`;
   const backLabel = sectionConfig.backLabel || sectionConfig.title;
 
-  const submit = (e) => {
+  useEffect(() => {
+    let ignore = false;
+
+    const loadFormData = async () => {
+      if (!usesApi) return;
+      setLoading(Boolean(id));
+      try {
+        const [loadedFields, loadedRecord] = await Promise.all([
+          sectionConfig.api.loadFields ? sectionConfig.api.loadFields(sectionConfig.fields) : sectionConfig.fields,
+          id && sectionConfig.api.fetchRow ? sectionConfig.api.fetchRow(id) : null,
+        ]);
+        if (ignore) return;
+        setFields(loadedFields);
+        if (loadedRecord) setValues(loadedRecord);
+      } catch (err) {
+        if (!ignore) setToast(getApiErrorMessage(err));
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+
+    loadFormData();
+    return () => {
+      ignore = true;
+    };
+  }, [id, sectionConfig, setValues, usesApi]);
+
+  const submit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
     setSaving(true);
-    setTimeout(() => {
-      if (id) updateRow(slug, secondary, id, values, config);
-      else addRow(slug, secondary, values, config);
+    try {
+      if (usesApi) {
+        if (sectionConfig.api.validateValues) {
+          const validationErrors = await sectionConfig.api.validateValues(values, id);
+          if (validationErrors && Object.keys(validationErrors).length) {
+            setErrors(validationErrors);
+            return;
+          }
+        }
+        await sectionConfig.api.saveRow(values, id);
+      } else if (id) {
+        updateRow(slug, secondary, id, values, config);
+      } else {
+        addRow(slug, secondary, values, config);
+      }
       setToast(`${label} ${id ? "updated" : "created"} successfully`);
-      setSaving(false);
       navigate(listPath);
-    }, 400);
+    } catch (err) {
+      setToast(getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -37,12 +83,16 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
         <Link to={listPath} className="cms-back-link"><ArrowLeft size={15} /> Back to {backLabel}</Link>
         <form className="cms-card" onSubmit={submit} noValidate>
           <div className="cms-card-body">
-            <div className="cms-form-grid">
-              {sectionConfig.fields.map((f) => <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />)}
-            </div>
+            {loading ? (
+              <div className="cms-empty">Loading record...</div>
+            ) : (
+              <div className="cms-form-grid">
+                {fields.map((f) => <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />)}
+              </div>
+            )}
             <div className="cms-form-actions">
               <button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate(listPath)}>Cancel</button>
-              <button type="submit" className="cms-btn cms-btn-primary" disabled={saving}>{saving ? "Saving..." : submitLabel}</button>
+              <button type="submit" className="cms-btn cms-btn-primary" disabled={saving || loading}>{saving ? "Saving..." : submitLabel}</button>
             </div>
           </div>
         </form>

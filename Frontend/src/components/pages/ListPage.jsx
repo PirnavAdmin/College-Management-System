@@ -1,35 +1,106 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
-import { ConfirmDialog, Modal, Toast, StatusBadge } from "@/components/common/Ui.jsx";
+import { ConfirmDialog, FilterBar, Modal, Toast, StatusBadge } from "@/components/common/Ui.jsx";
+import { getApiErrorMessage } from "@/api/axios.js";
 import { configFor, deleteRow, useRows } from "@/data/store.js";
 
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
-  const rows = useRows(slug, secondary, config);
+  const storeRows = useRows(slug, secondary, config);
+  const usesApi = Boolean(sectionConfig?.api?.fetchRows);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({});
   const navigate = useNavigate();
+
+  const loadRows = useCallback(async (nextSearch = "", nextFilters = {}) => {
+    if (!usesApi) return;
+    setLoading(true);
+    setError("");
+    try {
+      const loadedRows = await sectionConfig.api.fetchRows({
+        search: nextSearch,
+        filters: nextFilters,
+      });
+      setRows(loadedRows);
+    } catch (err) {
+      setRows([]);
+      setError(getApiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [sectionConfig, usesApi]);
 
   useEffect(() => {
     setLoading(true);
+    if (usesApi) {
+      loadRows("", {});
+      return undefined;
+    }
     const timer = setTimeout(() => setLoading(false), 450);
     return () => clearTimeout(timer);
-  }, [slug, secondary]);
+  }, [slug, secondary, usesApi]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
+  const displayedRows = usesApi ? rows : storeRows;
+
+  const setFilter = (name, value) => {
+    if (name === "__reset__") {
+      setFilters({});
+      loadRows(search, {});
+      return;
+    }
+    setFilters((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleSearch = useCallback((value) => {
+    setSearch(value);
+    loadRows(value, filters);
+  }, [filters, loadRows]);
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
+    try {
+      if (usesApi && sectionConfig.api.deleteRow) {
+        await sectionConfig.api.deleteRow(deleting.id);
+        await loadRows(search, filters);
+      } else {
+        deleteRow(slug, secondary, deleting.id, config);
+      }
+      setDeleting(null);
+      onToast("Record deleted successfully");
+    } catch (err) {
+      onToast(getApiErrorMessage(err));
+    }
+  };
 
   return (
     <>
       {heading ? <h2 style={{ fontSize: 16, margin: "22px 0 12px" }}>{heading}</h2> : null}
+      {usesApi && sectionConfig.filters?.length ? (
+        <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
+      ) : null}
+      {error ? (
+        <div className="cms-card" style={{ marginBottom: 16 }}>
+          <div className="cms-card-body">
+            <div className="cms-empty">{error}</div>
+            <button className="cms-btn cms-btn-ghost" onClick={() => loadRows(search, filters)}>Retry</button>
+          </div>
+        </div>
+      ) : null}
       <DataTable
         title={sectionConfig.title}
         columns={sectionConfig.columns}
-        rows={rows}
+        rows={displayedRows}
         loading={loading}
         addLabel={sectionConfig.addLabel}
+        onSearchChange={usesApi ? handleSearch : null}
         onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}
@@ -40,11 +111,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         <ConfirmDialog
           message={`Delete "${deleting.name || deleting.title || deleting.receipt || deleting.number || deleting.subject || "this record"}"? This action cannot be undone.`}
           onCancel={() => setDeleting(null)}
-          onConfirm={() => {
-            deleteRow(slug, secondary, deleting.id, config);
-            setDeleting(null);
-            onToast("Record deleted successfully");
-          }}
+          onConfirm={confirmDelete}
         />
       ) : null}
 

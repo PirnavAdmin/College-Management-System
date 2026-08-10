@@ -41,7 +41,7 @@ export default function DashboardPage() {
 
       <div className="cms-grid-2" style={{ marginBottom: 16 }}>
         <div className="cms-card">
-          <div className="cms-card-head"><h2>Admissions Trend</h2><span className="cms-badge cms-badge-info">2024-2025</span></div>
+          <div className="cms-card-head"><h2>Admissions</h2><span className="cms-badge cms-badge-info">2024-2025</span></div>
           <div className="cms-card-body" style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={admissionTrend}>

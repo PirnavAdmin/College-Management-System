@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
 import { ConfirmDialog, Modal, Toast, StatusBadge } from "@/components/common/Ui.jsx";
-import { configFor, deleteRow, useRows } from "@/data/store.js";
+import { configFor, deleteRow, setRows, useRows } from "@/data/store.js";
+import { getApiErrorMessage } from "@/api/axios.js";
 
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
@@ -15,9 +16,26 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
 
   useEffect(() => {
     setLoading(true);
-    const timer = setTimeout(() => setLoading(false), 450);
-    return () => clearTimeout(timer);
-  }, [slug, secondary]);
+    let active = true;
+
+    if (!sectionConfig.api?.getAll || (sectionConfig.preserveLocalRows && rows.length > 0)) {
+      const timer = setTimeout(() => setLoading(false), 450);
+      return () => clearTimeout(timer);
+    }
+
+    sectionConfig.api.getAll()
+      .then((response) => {
+        if (active) setRows(slug, secondary, sectionConfig.api.toRows(response.data));
+      })
+      .catch((error) => {
+        if (active) onToast(getApiErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [slug, secondary, sectionConfig, onToast, rows.length]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
 
@@ -40,10 +58,16 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         <ConfirmDialog
           message={`Delete "${deleting.name || deleting.title || deleting.receipt || deleting.number || deleting.subject || "this record"}"? This action cannot be undone.`}
           onCancel={() => setDeleting(null)}
-          onConfirm={() => {
-            deleteRow(slug, secondary, deleting.id, config);
-            setDeleting(null);
-            onToast("Record deleted successfully");
+          onConfirm={async () => {
+            try {
+              if (sectionConfig.api?.delete) await sectionConfig.api.delete(deleting.id);
+              deleteRow(slug, secondary, deleting.id, config);
+              onToast("Record deleted successfully");
+            } catch (error) {
+              onToast(getApiErrorMessage(error));
+            } finally {
+              setDeleting(null);
+            }
           }}
         />
       ) : null}

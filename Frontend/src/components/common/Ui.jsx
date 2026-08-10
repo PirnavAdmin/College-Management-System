@@ -91,7 +91,9 @@ export function Field({ field, value, error, onChange }) {
         <select id={id} value={value ?? ""} onChange={(e) => onChange(name, e.target.value)}>
           <option value="">Select {label}</option>
           {options.map((o) => (
-            <option key={o} value={o}>{o}</option>
+            <option key={typeof o === "object" ? o.value : o} value={typeof o === "object" ? o.value : o}>
+              {typeof o === "object" ? o.label : o}
+            </option>
           ))}
         </select>
       ) : type === "textarea" ? (

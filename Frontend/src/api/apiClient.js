@@ -39,6 +39,12 @@ apiClient.interceptors.response.use(
     if (isHtmlResponse(error.response?.data)) {
       error.response.data = { message: "Backend returned HTML instead of JSON. Check API base URL or proxy." };
     }
+    if (error.response?.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("role");
+      if (window.location.pathname !== "/login") window.location.assign("/login");
+    }
     return Promise.reject(error);
   },
 );

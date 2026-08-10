@@ -87,17 +87,17 @@ export default function DataTable({
                     <td>
                       <div className="cms-actions" style={{ justifyContent: "flex-end" }}>
                         {onView ? (
-                          <button className="cms-action-btn" title="View" onClick={() => onView(row)}>
+                          <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
                             <Eye size={15} />
                           </button>
                         ) : null}
                         {onEdit ? (
-                          <button className="cms-action-btn" title="Edit" onClick={() => onEdit(row)}>
+                          <button className="cms-action-btn edit" title="Edit" aria-label="Edit record" onClick={() => onEdit(row)}>
                             <Pencil size={15} />
                           </button>
                         ) : null}
                         {onDelete ? (
-                          <button className="cms-action-btn danger" title="Delete" onClick={() => onDelete(row)}>
+                          <button className="cms-action-btn danger" title="Delete" aria-label="Delete record" onClick={() => onDelete(row)}>
                             <Trash2 size={15} />
                           </button>
                         ) : null}

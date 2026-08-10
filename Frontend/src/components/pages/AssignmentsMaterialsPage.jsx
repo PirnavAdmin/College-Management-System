@@ -1,36 +1,622 @@
-import * as data from "@/data/mockData.js";
-import ListPage from "@/components/pages/ListPage.jsx";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, RefreshCcw } from "lucide-react";
+import apiClient from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
+import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import DataTable from "@/components/common/DataTable.jsx";
+import { ConfirmDialog, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import "./AssignmentsMaterialsPage.css";
 
-const o = data.options;
-const MODULE_SLUG = "assignments";
+const MODULE_TITLE = "Assignment & Study Materials";
+const REQUIRED_FIELDS = ["title", "academicYearId", "academicLevel", "groupId", "subjectId", "facultyId", "dueDate", "maximumMarks"];
+
+const columns = [
+  { key: "title", label: "Assignment Title", strong: true },
+  { key: "academicYear", label: "Academic Year" },
+  { key: "academicLevel", label: "Academic Level" },
+  { key: "group", label: "Group" },
+  { key: "subject", label: "Subject" },
+  { key: "faculty", label: "Faculty" },
+  { key: "due", label: "Due Date" },
+  { key: "max", label: "Maximum Marks" },
+];
 
 export const pageConfig = {
-    title: "Assignment & Study Materials",
-    subtitle: "Publish assignments, attachments and due dates.",
-    breadcrumb: ["Operations"],
-    addLabel: "Create Assignment",
-    rows: data.assignments,
-    columns: [
-      { key: "title", label: "Title", strong: true },
-      { key: "subject", label: "Subject" },
-      { key: "faculty", label: "Faculty" },
-      { key: "due", label: "Due Date" },
-      { key: "max", label: "Maximum Marks" },
-      { key: "status", label: "Status", badge: true },
-    ],
-    fields: [
-      { name: "title", label: "Title", required: true },
-      { name: "subject", label: "Subject", type: "select", options: o.subject, required: true },
-      { name: "faculty", label: "Faculty", type: "select", options: o.faculty, required: true },
-      { name: "description", label: "Description", type: "textarea", full: true },
-      { name: "due", label: "Due Date", type: "date", required: true },
-      { name: "attachment", label: "Attachment", type: "file" },
-      { name: "max", label: "Maximum Marks", type: "number", required: true },
-      { name: "status", label: "Status", type: "select", options: o.status, required: true },
-    ],
+  title: MODULE_TITLE,
+  subtitle: "Publish assignments, attachments and due dates.",
+  breadcrumb: ["Operations"],
+  addLabel: "Add Assignment",
+  rows: [],
+  columns,
+  fields: [],
+};
+
+function getPayloadData(payload) {
+  return payload?.data ?? payload?.Data ?? payload;
+}
+
+function getCollection(payload) {
+  const dataNode = getPayloadData(payload);
+  if (Array.isArray(dataNode)) return dataNode;
+  if (Array.isArray(dataNode?.data)) return dataNode.data;
+  if (Array.isArray(dataNode?.Data)) return dataNode.Data;
+  if (Array.isArray(dataNode?.items)) return dataNode.items;
+  if (Array.isArray(dataNode?.Items)) return dataNode.Items;
+  if (Array.isArray(dataNode?.content)) return dataNode.content;
+  if (Array.isArray(dataNode?.Content)) return dataNode.Content;
+  if (Array.isArray(dataNode?.$values)) return dataNode.$values;
+  return [];
+}
+
+function getApiMessage(error, fallback) {
+  const payload = error?.response?.data;
+  if (typeof payload === "string") return payload;
+  return payload?.message || payload?.Message || payload?.error || payload?.Error || error?.message || fallback;
+}
+
+function getMasterDataMessage(error, fallback) {
+  if (error?.response?.status === 401) return "Unauthorized. Please login again or check admin permissions.";
+  return getApiMessage(error, fallback);
+}
+
+// Vite 502/TLS failures usually mean the backend/ngrok tunnel is down; never auto-retry this endpoint.
+function getAssignmentsLoadMessage(error) {
+  const status = error?.response?.status;
+  if (import.meta.env.DEV) console.log("Assignments API status:", status || "network-error");
+  if (status === 500) return "Assignments API failed on server. Please check backend logs for GET /api/v1/assignments.";
+  if (status === 502) return "Assignments API is temporarily unavailable. Please check backend/ngrok server and try again.";
+  if (!error?.response) return "Unable to connect to assignments API. Please check internet, backend server, or ngrok tunnel.";
+  return getApiMessage(error, "Failed to load assignments.");
+}
+
+function firstValue(item, keys) {
+  return keys.map((key) => item?.[key]).find((entry) => entry !== undefined && entry !== null && entry !== "");
+}
+
+function makeLookup(options) {
+  return options.reduce((lookup, option) => {
+    lookup[String(option.value)] = option;
+    return lookup;
+  }, {});
+}
+
+function normalizeAcademicYear(item = {}) {
+  const value = firstValue(item, ["academicYearId", "AcademicYearId", "id", "Id", "yearId", "YearId"]);
+  const label = firstValue(item, ["academicYearName", "AcademicYearName", "name", "Name", "yearName", "YearName"]);
+  if (value === undefined || value === null || value === "") return null;
+  return { value: String(value), label: String(label || value) };
+}
+
+function normalizeGroup(item = {}) {
+  const value = firstValue(item, ["groupId", "GroupId", "id", "Id"]);
+  const groupName = firstValue(item, ["groupName", "GroupName", "name", "Name"]);
+  const groupCode = firstValue(item, ["groupCode", "GroupCode", "code", "Code"]);
+  if (value === undefined || value === null || value === "") return null;
+  return {
+    value: String(value),
+    label: String(groupName || groupCode || value),
+    groupCode: groupCode ? String(groupCode) : "",
+    academicLevel: firstValue(item, ["academicLevel", "AcademicLevel"]) || "",
+    academicYearId: firstValue(item, ["academicYearId", "AcademicYearId"]) || "",
   };
+}
+
+function normalizeFaculty(item = {}) {
+  const value = firstValue(item, ["facultyId", "FacultyId", "id", "Id"]);
+  const fullName = firstValue(item, ["facultyName", "FacultyName", "fullName", "FullName", "name", "Name"]);
+  const firstName = firstValue(item, ["firstName", "FirstName"]) || "";
+  const lastName = firstValue(item, ["lastName", "LastName"]) || "";
+  const employeeId = firstValue(item, ["employeeId", "EmployeeId", "employeeCode", "EmployeeCode"]);
+  const status = firstValue(item, ["status", "Status"]);
+  if (status && String(status).toLowerCase() !== "active") return null;
+  if (value === undefined || value === null || value === "") return null;
+  const joinedName = `${firstName} ${lastName}`.trim();
+  return {
+    value: String(value),
+    label: String(fullName || joinedName || employeeId || value),
+    employeeId: employeeId ? String(employeeId) : "",
+    status: status ? String(status) : "",
+  };
+}
+
+function normalizeSubject(item = {}) {
+  const value = firstValue(item, ["subjectId", "SubjectId", "id", "Id"]);
+  const label = firstValue(item, ["subjectName", "SubjectName", "name", "Name"]);
+  if (value === undefined || value === null || value === "") return null;
+  return { value: String(value), label: String(label || value) };
+}
+
+function normalizeAssignment(item = {}, lookups = {}) {
+  const id = item.assignmentId ?? item.AssignmentId ?? item.id ?? item.Id;
+  const academicYearId = item.academicYearId ?? item.AcademicYearId ?? item.yearId ?? item.YearId ?? "";
+  const academicYearName = item.academicYearName ?? item.AcademicYearName ?? item.yearName ?? item.YearName ?? "";
+  const groupId = item.groupId ?? item.GroupId ?? "";
+  const groupName = item.groupName ?? item.GroupName ?? "";
+  const subjectId = item.subjectId ?? item.SubjectId ?? "";
+  const subjectName = item.subjectName ?? item.SubjectName ?? "";
+  const facultyId = item.facultyId ?? item.FacultyId ?? "";
+  const facultyName = item.facultyName ?? item.FacultyName ?? "";
+  const dueDate = item.dueDate ?? item.DueDate ?? item.due ?? "";
+  const maximumMarks = item.maximumMarks ?? item.MaximumMarks ?? item.max ?? "";
+  const academicYearDisplay = academicYearName || lookups.academicYears?.[String(academicYearId)]?.label || academicYearId || "-";
+  const groupDisplay = groupName || lookups.groups?.[String(groupId)]?.label || groupId || "-";
+  const facultyDisplay = facultyName || lookups.faculty?.[String(facultyId)]?.label || facultyId || "-";
+  const subjectDisplay = subjectName || subjectId || "-";
+
+  return {
+    id,
+    assignmentId: id,
+    title: item.title ?? item.Title ?? "-",
+    academicYearId,
+    academicYearName,
+    academicYear: academicYearDisplay,
+    academicLevel: item.academicLevel ?? item.AcademicLevel ?? "-",
+    groupId,
+    groupName,
+    group: groupDisplay,
+    subjectId,
+    subjectName,
+    subject: subjectDisplay,
+    facultyId,
+    facultyName,
+    faculty: facultyDisplay,
+    description: item.description ?? item.Description ?? "",
+    dueDate,
+    due: dueDate ? String(dueDate).slice(0, 10) : "-",
+    attachmentPath: item.attachmentPath ?? item.AttachmentPath ?? item.attachment ?? "",
+    max: maximumMarks,
+    maximumMarks,
+  };
+}
+
+function formatDate(value) {
+  if (!value || value === "-") return "";
+  return String(value).slice(0, 10);
+}
+
+function createInitialValues(row) {
+  return {
+    title: row?.title || "",
+    academicYearId: row?.academicYearId ? String(row.academicYearId) : "",
+    academicLevel: row?.academicLevel && row.academicLevel !== "-" ? row.academicLevel : "",
+    groupId: row?.groupId ? String(row.groupId) : "",
+    subjectId: row?.subjectId ? String(row.subjectId) : "",
+    facultyId: row?.facultyId ? String(row.facultyId) : "",
+    dueDate: formatDate(row?.dueDate || row?.due),
+    attachmentPath: row?.attachmentPath || "",
+    maximumMarks: row?.maximumMarks ?? row?.max ?? "",
+    description: row?.description || "",
+  };
+}
+
+function buildAssignmentFormData(values, file) {
+  const formData = new FormData();
+  formData.append("Title", values.title || "");
+  formData.append("SubjectId", values.subjectId || "");
+  formData.append("FacultyId", values.facultyId || "");
+  formData.append("AcademicYearId", values.academicYearId || "");
+  formData.append("AcademicLevel", values.academicLevel || "");
+  formData.append("Description", values.description || "");
+  formData.append("DueDate", values.dueDate || "");
+  formData.append("GroupId", values.groupId || "");
+  formData.append("AttachmentPath", values.attachmentPath || "");
+  formData.append("MaximumMarks", values.maximumMarks || "");
+  if (file) formData.append("Attachment", file);
+  return formData;
+}
 
 export default function AssignmentsMaterialsPage() {
-  return <ListPage slug={MODULE_SLUG} config={pageConfig} />;
+  const { id } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isFormRoute = location.pathname.endsWith("/add") || Boolean(id);
+  const isEditMode = Boolean(id);
+
+  const [academicYearOptions, setAcademicYearOptions] = useState([]);
+  const [academicYearError, setAcademicYearError] = useState("");
+  const [groupOptions, setGroupOptions] = useState([]);
+  const [groupError, setGroupError] = useState("");
+  const [facultyOptions, setFacultyOptions] = useState([]);
+  const [facultyError, setFacultyError] = useState("");
+  const [masterLoading, setMasterLoading] = useState(false);
+
+  const academicYearMap = useMemo(() => makeLookup(academicYearOptions), [academicYearOptions]);
+  const groupMap = useMemo(() => makeLookup(groupOptions), [groupOptions]);
+  const facultyMap = useMemo(() => makeLookup(facultyOptions), [facultyOptions]);
+  const levelOptions = useMemo(() => {
+    const levels = [...new Set(groupOptions.map((group) => group.academicLevel).filter(Boolean))];
+    const source = levels.length ? levels : ["First Year", "Second Year"];
+    return source.map((level) => ({ value: level, label: level }));
+  }, [groupOptions]);
+
+  const [rawAssignments, setRawAssignments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [deleting, setDeleting] = useState(null);
+  const [viewing, setViewing] = useState(null);
+
+  const [subjectOptions, setSubjectOptions] = useState([]);
+  const [subjectLoading, setSubjectLoading] = useState(false);
+  const [subjectError, setSubjectError] = useState("");
+
+  const [formValues, setFormValues] = useState(createInitialValues());
+  const [formErrors, setFormErrors] = useState({});
+  const [attachmentFile, setAttachmentFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState("");
+  const assignmentsLoadingRef = useRef(false);
+  const masterLoadingRef = useRef(false);
+
+  const assignmentRows = useMemo(() => rawAssignments.map((assignment) => normalizeAssignment(assignment, {
+    academicYears: academicYearMap,
+    groups: groupMap,
+    faculty: facultyMap,
+  })), [academicYearMap, facultyMap, groupMap, rawAssignments]);
+
+  const loadMasterData = useCallback(async () => {
+    if (masterLoadingRef.current) return null;
+    masterLoadingRef.current = true;
+    setMasterLoading(true);
+    setAcademicYearError("");
+    setGroupError("");
+    setFacultyError("");
+
+    if (import.meta.env.DEV) {
+      console.log("Assignments selected endpoints:", {
+        faculty: apiEndpoints.faculty.list,
+        academicYears: apiEndpoints.academicYears.list,
+        groups: apiEndpoints.groups.list,
+      });
+    }
+
+    const [academicYearsResult, groupsResult, facultyResult] = await Promise.allSettled([
+      apiClient.get(apiEndpoints.academicYears.list),
+      apiClient.get(apiEndpoints.groups.list),
+      apiClient.get(apiEndpoints.faculty.list),
+    ]);
+
+    let nextAcademicYears = [];
+    let nextGroups = [];
+    let nextFaculty = [];
+
+    if (academicYearsResult.status === "fulfilled") {
+      nextAcademicYears = getCollection(academicYearsResult.value.data).map(normalizeAcademicYear).filter(Boolean);
+      setAcademicYearOptions(nextAcademicYears);
+    } else {
+      setAcademicYearOptions([]);
+      setAcademicYearError(getMasterDataMessage(academicYearsResult.reason, "Failed to load academic years."));
+    }
+
+    if (groupsResult.status === "fulfilled") {
+      nextGroups = getCollection(groupsResult.value.data).map(normalizeGroup).filter(Boolean);
+      setGroupOptions(nextGroups);
+    } else {
+      setGroupOptions([]);
+      setGroupError(getMasterDataMessage(groupsResult.reason, "Failed to load groups."));
+    }
+
+    if (facultyResult.status === "fulfilled") {
+      nextFaculty = getCollection(facultyResult.value.data).map(normalizeFaculty).filter(Boolean);
+      setFacultyOptions(nextFaculty);
+    } else {
+      if (import.meta.env.DEV) {
+        console.error("Faculty master data failed:", {
+          status: facultyResult.reason.response?.status,
+          data: facultyResult.reason.response?.data,
+        });
+      }
+      setFacultyOptions([]);
+      setFacultyError(getMasterDataMessage(facultyResult.reason, "Failed to load faculty."));
+    }
+
+    if (import.meta.env.DEV) {
+      console.log("Assignments master data loaded:", {
+        academicYears: nextAcademicYears.length,
+        groups: nextGroups.length,
+        faculty: nextFaculty.length,
+      });
+    }
+
+    setMasterLoading(false);
+    masterLoadingRef.current = false;
+    return {
+      academicYearMap: makeLookup(nextAcademicYears),
+      groupMap: makeLookup(nextGroups),
+      facultyMap: makeLookup(nextFaculty),
+    };
+  }, []);
+
+  const loadAssignments = useCallback(async () => {
+    if (assignmentsLoadingRef.current) return;
+    assignmentsLoadingRef.current = true;
+    setLoading(true);
+    setError("");
+    try {
+      if (import.meta.env.DEV) console.log("Loading assignments once");
+      const response = await apiClient.get(apiEndpoints.assignments.list);
+      setRawAssignments(getCollection(response.data));
+    } catch (loadError) {
+      setRawAssignments([]);
+      setError(getAssignmentsLoadMessage(loadError));
+    } finally {
+      assignmentsLoadingRef.current = false;
+      setLoading(false);
+    }
+  }, []);
+
+  const loadListPageData = useCallback(() => {
+    if (import.meta.env.DEV) {
+      console.log("Assignments auth/debug:", {
+        hasToken: Boolean(localStorage.getItem("token")),
+        role: localStorage.getItem("role"),
+        endpoints: {
+          assignments: apiEndpoints.assignments.list,
+          academicYears: apiEndpoints.academicYears.list,
+          groups: apiEndpoints.groups.list,
+          faculty: apiEndpoints.faculty.list,
+        },
+      });
+    }
+    loadMasterData();
+    loadAssignments();
+  }, [loadAssignments, loadMasterData]);
+
+  const loadSubjectsByGroup = useCallback(async (groupId, selectedSubjectId = "") => {
+    if (!groupId) {
+      setSubjectOptions([]);
+      setSubjectError("");
+      return;
+    }
+    setSubjectLoading(true);
+    setSubjectError("");
+    try {
+      const response = await apiClient.get(apiEndpoints.assignments.subjectsByGroup(groupId));
+      const nextOptions = getCollection(response.data).map(normalizeSubject).filter(Boolean);
+      setSubjectOptions(nextOptions);
+      if (selectedSubjectId && !nextOptions.some((option) => option.value === String(selectedSubjectId))) {
+        setFormValues((current) => ({ ...current, subjectId: "" }));
+      }
+    } catch (loadError) {
+      setSubjectError(getApiMessage(loadError, "Failed to load subjects."));
+      setSubjectOptions([]);
+    } finally {
+      setSubjectLoading(false);
+    }
+  }, []);
+
+  const loadAssignmentDetails = useCallback(async (assignmentId) => {
+    setFormLoading(true);
+    setFormError("");
+    try {
+      const response = await apiClient.get(apiEndpoints.assignments.details(assignmentId));
+      const normalized = normalizeAssignment(getPayloadData(response.data));
+      const nextValues = createInitialValues(normalized);
+      setFormValues(nextValues);
+      await loadSubjectsByGroup(nextValues.groupId, nextValues.subjectId);
+    } catch (loadError) {
+      setFormError(getApiMessage(loadError, "Failed to load assignment details."));
+    } finally {
+      setFormLoading(false);
+    }
+  }, [loadSubjectsByGroup]);
+
+  useEffect(() => {
+    if (!isFormRoute) loadListPageData();
+  }, [isFormRoute, loadListPageData]);
+
+  useEffect(() => {
+    if (!isFormRoute) return;
+    setAttachmentFile(null);
+    setFormErrors({});
+    loadMasterData();
+    if (id) loadAssignmentDetails(id);
+    else {
+      setFormValues(createInitialValues());
+      setSubjectOptions([]);
+      setSubjectError("");
+      setFormError("");
+    }
+  }, [id, isFormRoute, loadAssignmentDetails, loadMasterData]);
+
+  const setFieldValue = (name, value) => {
+    setFormValues((current) => {
+      const next = { ...current, [name]: value };
+      if (name === "groupId") {
+        const selectedGroup = groupOptions.find((group) => group.value === String(value));
+        next.subjectId = "";
+        if (selectedGroup?.academicLevel) next.academicLevel = selectedGroup.academicLevel;
+      }
+      return next;
+    });
+    setFormErrors((current) => ({ ...current, [name]: undefined }));
+    if (name === "groupId") loadSubjectsByGroup(value);
+  };
+
+  const validateForm = () => {
+    const nextErrors = {};
+    REQUIRED_FIELDS.forEach((field) => {
+      if (formValues[field] === undefined || formValues[field] === null || String(formValues[field]).trim() === "") {
+        nextErrors[field] = "This field is required";
+      }
+    });
+    if (formValues.maximumMarks && Number.isNaN(Number(formValues.maximumMarks))) {
+      nextErrors.maximumMarks = "Enter a valid number";
+    }
+    setFormErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const submitForm = async (event) => {
+    event.preventDefault();
+    setFormError("");
+    if (!validateForm()) return;
+
+    setSaving(true);
+    try {
+      const formData = buildAssignmentFormData(formValues, attachmentFile);
+      if (isEditMode) await apiClient.put(apiEndpoints.assignments.update(id), formData);
+      else await apiClient.post(apiEndpoints.assignments.create, formData);
+      setToast(isEditMode ? "Assignment updated successfully" : "Assignment created successfully");
+      navigate("/dashboard/assignments");
+    } catch (saveError) {
+      setFormError(getApiMessage(saveError, "Failed to save assignment."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteAssignment = async () => {
+    if (!deleting) return;
+    try {
+      await apiClient.delete(apiEndpoints.assignments.delete(deleting.id));
+      setToast("Assignment deleted successfully");
+      setDeleting(null);
+      await loadAssignments();
+    } catch (deleteError) {
+      setToast(getApiMessage(deleteError, "Failed to delete assignment."));
+      setDeleting(null);
+    }
+  };
+
+  const viewAssignment = async (row) => {
+    try {
+      const response = await apiClient.get(apiEndpoints.assignments.details(row.id));
+      setViewing(normalizeAssignment(getPayloadData(response.data), {
+        academicYears: academicYearMap,
+        groups: groupMap,
+        faculty: facultyMap,
+      }));
+    } catch {
+      setViewing(row);
+    }
+  };
+
+  if (isFormRoute) {
+    return (
+      <DashboardLayout title={`${isEditMode ? "Edit" : "Add"} Assignment`} subtitle={`Fill in the details below and save to ${isEditMode ? "update this" : "create a new"} record.`} breadcrumb={[MODULE_TITLE]}>
+        <div className="cms-form-page">
+          <Link to="/dashboard/assignments" className="cms-back-link"><ArrowLeft size={15} /> Back to Assignment & Study Materials</Link>
+          <form className="cms-card" onSubmit={submitForm} noValidate>
+            <div className="cms-card-body">
+              {formLoading ? <Loader label="Loading assignment..." /> : null}
+              {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
+              <div className="cms-form-grid cols-3">
+                <TextField name="title" label="Assignment Title" value={formValues.title} error={formErrors.title} onChange={setFieldValue} required />
+                <SelectField name="academicYearId" label={masterLoading ? "Academic Year (loading...)" : "Academic Year"} value={formValues.academicYearId} error={formErrors.academicYearId || academicYearError} options={academicYearOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(academicYearError) || academicYearOptions.length === 0} emptyLabel={academicYearError ? "Academic years unavailable" : "No academic years found"} action={academicYearError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry academic years</button> : null} />
+                <SelectField name="academicLevel" label="Academic Level" value={formValues.academicLevel} error={formErrors.academicLevel} options={levelOptions} onChange={setFieldValue} required />
+                <SelectField name="groupId" label={masterLoading ? "Group (loading...)" : "Group"} value={formValues.groupId} error={formErrors.groupId || groupError} options={groupOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(groupError) || groupOptions.length === 0} emptyLabel={groupError ? "Groups unavailable" : "No groups found"} action={groupError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry groups</button> : null} />
+                <SelectField name="subjectId" label={subjectLoading ? "Subject (loading...)" : "Subject"} value={formValues.subjectId} error={formErrors.subjectId || subjectError} options={subjectOptions} onChange={setFieldValue} required disabled={!formValues.groupId || subjectLoading || Boolean(subjectError)} emptyLabel={subjectError ? "Subjects unavailable" : formValues.groupId ? "No subjects found" : "Select group first"} action={subjectError && formValues.groupId ? <button type="button" className="cms-btn cms-btn-ghost" onClick={() => loadSubjectsByGroup(formValues.groupId)}>Retry subjects</button> : null} />
+                <SelectField name="facultyId" label={masterLoading ? "Faculty (loading...)" : "Faculty"} value={formValues.facultyId} error={formErrors.facultyId || facultyError} options={facultyOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(facultyError) || facultyOptions.length === 0} emptyLabel={facultyError ? "Failed to load faculty." : "No faculty found"} action={facultyError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry faculty</button> : null} />
+                <TextField name="dueDate" label="Due Date" type="date" value={formValues.dueDate} error={formErrors.dueDate} onChange={setFieldValue} required />
+                <FileField label="Attachment" file={attachmentFile} attachmentPath={formValues.attachmentPath} onChange={setAttachmentFile} />
+                <TextField name="maximumMarks" label="Maximum Marks" type="number" value={formValues.maximumMarks} error={formErrors.maximumMarks} onChange={setFieldValue} required />
+                <TextareaField name="description" label="Description" value={formValues.description} onChange={setFieldValue} />
+              </div>
+              <div className="cms-form-actions">
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate("/dashboard/assignments")}>Cancel</button>
+                <button type="submit" className="cms-btn cms-btn-primary" disabled={saving || formLoading}>{saving ? "Saving..." : isEditMode ? "Update Assignment" : "Save Assignment"}</button>
+              </div>
+            </div>
+          </form>
+        </div>
+        <Toast message={toast} onClose={() => setToast("")} />
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout title={MODULE_TITLE} subtitle="Publish assignments, attachments and due dates." breadcrumb={["Operations"]}>
+      {error ? (
+        <div className="cms-card" style={{ marginBottom: 16 }}>
+          <div className="cms-card-body" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--cms-red)", fontWeight: 700 }}>{error}</span>
+            <button type="button" className="cms-btn cms-btn-ghost" onClick={loadAssignments}><RefreshCcw size={15} /> Retry</button>
+          </div>
+        </div>
+      ) : null}
+      <DataTable
+        title={MODULE_TITLE}
+        columns={columns}
+        rows={assignmentRows}
+        loading={loading}
+        addLabel="Add Assignment"
+        onAdd={() => navigate("/dashboard/assignments/add")}
+        onEdit={(row) => navigate(`/dashboard/assignments/${row.id}/edit`)}
+        onDelete={(row) => setDeleting(row)}
+        onView={viewAssignment}
+      />
+      {deleting ? (
+        <ConfirmDialog
+          title="Delete assignment"
+          message={`Delete "${deleting.title || "this assignment"}"? This action cannot be undone.`}
+          onCancel={() => setDeleting(null)}
+          onConfirm={deleteAssignment}
+        />
+      ) : null}
+      {viewing ? (
+        <Modal title="Assignment details" onClose={() => setViewing(null)} footer={<button className="cms-btn cms-btn-ghost" onClick={() => setViewing(null)}>Close</button>}>
+          <div className="cms-kv">
+            {columns.map((column) => (
+              <div key={column.key}><span>{column.label}</span><strong>{String(viewing[column.key] ?? "-")}</strong></div>
+            ))}
+            <div><span>Description</span><strong>{viewing.description || "-"}</strong></div>
+            <div><span>Attachment</span><strong>{viewing.attachmentPath || "-"}</strong></div>
+          </div>
+        </Modal>
+      ) : null}
+      <Toast message={toast} onClose={() => setToast("")} />
+    </DashboardLayout>
+  );
 }
+
+function TextField({ name, label, value, error, onChange, type = "text", required }) {
+  return (
+    <div className={`cms-field ${error ? "has-error" : ""}`}>
+      <label htmlFor={`assignment-${name}`}>{label} {required ? <span className="req">*</span> : null}</label>
+      <input id={`assignment-${name}`} type={type} value={value ?? ""} onChange={(event) => onChange(name, event.target.value)} />
+      {error ? <span className="cms-error">{error}</span> : null}
+    </div>
+  );
+}
+
+function SelectField({ name, label, value, error, options, onChange, required, disabled, emptyLabel, action }) {
+  const cleanLabel = label.replace(" (loading...)", "");
+
+  return (
+    <div className={`cms-field ${error ? "has-error" : ""}`}>
+      <label htmlFor={`assignment-${name}`}>{label} {required ? <span className="req">*</span> : null}</label>
+      <select id={`assignment-${name}`} value={value ?? ""} disabled={disabled} onChange={(event) => onChange(name, event.target.value)}>
+        <option value="">{options.length ? `Select ${cleanLabel}` : emptyLabel || `Select ${cleanLabel}`}</option>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      {error ? <span className="cms-error">{error}</span> : null}
+      {action ? <div style={{ marginTop: 6 }}>{action}</div> : null}
+    </div>
+  );
+}
+
+function FileField({ label, file, attachmentPath, onChange }) {
+  return (
+    <div className="cms-field">
+      <label htmlFor="assignment-attachment">{label}</label>
+      <input id="assignment-attachment" type="file" onChange={(event) => onChange(event.target.files?.[0] || null)} />
+      {file ? <span className="cms-error" style={{ color: "var(--cms-muted)" }}>{file.name}</span> : attachmentPath ? <span className="cms-error" style={{ color: "var(--cms-muted)" }}>Current: {attachmentPath}</span> : null}
+    </div>
+  );
+}
+
+function TextareaField({ name, label, value, onChange }) {
+  return (
+    <div className="cms-field full">
+      <label htmlFor={`assignment-${name}`}>{label}</label>
+      <textarea id={`assignment-${name}`} value={value ?? ""} onChange={(event) => onChange(name, event.target.value)} />
+    </div>
+  );
+}
+
+
+
+

@@ -1,73 +1,105 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
-import { ConfirmDialog, Modal, Toast, StatusBadge } from "@/components/common/Ui.jsx";
-import { configFor, deleteRow, setRows, useRows } from "@/data/store.js";
-import { getApiErrorMessage } from "@/api/apiClient.js";
+import { ConfirmDialog, FilterBar, Modal, Toast, StatusBadge } from "@/components/common/Ui.jsx";
+import { getApiErrorMessage } from "@/api/axios.js";
+import { configFor, deleteRow, useRows } from "@/data/store.js";
 
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
-  const isApiBacked = Boolean(config.api && !secondary);
-
+  const storeRows = useRows(slug, secondary, config);
+  const usesApi = Boolean(sectionConfig?.api?.fetchRows || sectionConfig?.api?.getAll);
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState({});
   const navigate = useNavigate();
 
-  const rows = useRows(slug, secondary, config);
-
-  const fetchFromApi = useCallback(async () => {
-    if (!isApiBacked) return;
+  const loadRows = useCallback(async (nextSearch = "", nextFilters = {}) => {
+    if (!usesApi) return;
     setLoading(true);
+    setError("");
     try {
-      const response = await config.api.getAll();
-      const list = Array.isArray(response.data)
-        ? response.data
-        : response.data?.data || response.data?.items || [];
-      const mapped = config.api.mapRow ? list.map(config.api.mapRow) : list;
-      setRows(slug, secondary, mapped);
+      const loadedRows = sectionConfig.api.fetchRows
+        ? await sectionConfig.api.fetchRows({ search: nextSearch, filters: nextFilters })
+        : sectionConfig.api.toRows((await sectionConfig.api.getAll()).data);
+      setRows(loadedRows);
     } catch (err) {
-      onToast(getApiErrorMessage(err));
-      setRows(slug, secondary, []);
+      setRows([]);
+      setError(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  }, [isApiBacked, config.api, onToast, slug, secondary]);
+  }, [sectionConfig, usesApi]);
 
   useEffect(() => {
-    if (isApiBacked) {
-      fetchFromApi();
-    } else {
-      setLoading(true);
-      const timer = setTimeout(() => setLoading(false), 450);
-      return () => clearTimeout(timer);
+    setLoading(true);
+    if (usesApi && !(sectionConfig.preserveLocalRows && storeRows.length > 0)) {
+      loadRows("", {});
+      return undefined;
     }
-  }, [slug, secondary, isApiBacked, fetchFromApi]);
+    const timer = setTimeout(() => setLoading(false), 450);
+    return () => clearTimeout(timer);
+  }, [slug, secondary, usesApi, loadRows, sectionConfig.preserveLocalRows, storeRows.length]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
+  const displayedRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
 
-  const handleDeleteConfirm = async () => {
+  const setFilter = (name, value) => {
+    if (name === "__reset__") {
+      setFilters({});
+      loadRows(search, {});
+      return;
+    }
+    setFilters((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleSearch = useCallback((value) => {
+    setSearch(value);
+    loadRows(value, filters);
+  }, [filters, loadRows]);
+
+  const confirmDelete = async () => {
+    if (!deleting) return;
     try {
-      await deleteRow(slug, secondary, deleting.id, config);
+      if (usesApi && (sectionConfig.api.deleteRow || sectionConfig.api.delete)) {
+        await (sectionConfig.api.deleteRow || sectionConfig.api.delete)(deleting.id);
+        await loadRows(search, filters);
+      } else {
+        deleteRow(slug, secondary, deleting.id, config);
+      }
+      setDeleting(null);
       onToast("Record deleted successfully");
-      if (isApiBacked) fetchFromApi();
     } catch (err) {
       onToast(getApiErrorMessage(err));
-    } finally {
-      setDeleting(null);
     }
   };
 
   return (
     <>
       {heading ? <h2 style={{ fontSize: 16, margin: "22px 0 12px" }}>{heading}</h2> : null}
+      {usesApi && sectionConfig.filters?.length ? (
+        <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
+      ) : null}
+      {error ? (
+        <div className="cms-card" style={{ marginBottom: 16 }}>
+          <div className="cms-card-body">
+            <div className="cms-empty">{error}</div>
+            <button className="cms-btn cms-btn-ghost" onClick={() => loadRows(search, filters)}>Retry</button>
+          </div>
+        </div>
+      ) : null}
       <DataTable
         title={sectionConfig.title}
         columns={sectionConfig.columns}
-        rows={rows}
+        rows={displayedRows}
         loading={loading}
         addLabel={sectionConfig.addLabel}
+        onSearchChange={usesApi ? handleSearch : null}
         onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}
@@ -78,7 +110,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         <ConfirmDialog
           message={`Delete "${deleting.name || deleting.title || deleting.receipt || deleting.number || deleting.subject || "this record"}"? This action cannot be undone.`}
           onCancel={() => setDeleting(null)}
-          onConfirm={handleDeleteConfirm}
+          onConfirm={confirmDelete}
         />
       ) : null}
 

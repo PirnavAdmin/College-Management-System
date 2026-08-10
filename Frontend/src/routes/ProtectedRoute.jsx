@@ -4,7 +4,7 @@ export default function ProtectedRoute({ children, requireAdmin = false, require
   const token = localStorage.getItem("token");
   const user = readStoredUser();
   const role = localStorage.getItem("role") || user?.role;
-  const isAdmin = user?.isAdmin || role === "admin";
+  const isAdmin = user?.isAdmin || isAdminRole(role);
 
   if (!token) return <Navigate to="/login" replace />;
   if (requireAdmin && !isAdmin) return <Navigate to="/student-dashboard" replace />;
@@ -17,7 +17,7 @@ export function PublicOnlyRoute({ children }) {
   const token = localStorage.getItem("token");
   const user = readStoredUser();
   const role = localStorage.getItem("role") || user?.role;
-  const isAdmin = user?.isAdmin || role === "admin";
+  const isAdmin = user?.isAdmin || isAdminRole(role);
 
   if (token) return <Navigate to={isAdmin ? "/dashboard" : "/student-dashboard"} replace />;
   return children || <Outlet />;
@@ -30,6 +30,11 @@ function readStoredUser() {
   } catch {
     return null;
   }
+}
+
+function isAdminRole(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  return normalized === "admin" || normalized === "super admin";
 }
 
 

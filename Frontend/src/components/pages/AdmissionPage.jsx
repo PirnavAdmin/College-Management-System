@@ -60,10 +60,8 @@ const steps = [
     fields: [
       { name: "prevSchool", label: "Previous School Name", required: true },
       { name: "prevBoard", label: "Previous Board", type: "select", options: options.board },
-      { name: "hallTicket", label: "Hall Ticket Number" },
       { name: "passYear", label: "Year of Passing", type: "number" },
       { name: "prevMarks", label: "Marks / GPA Obtained" },
-      { name: "tcNumber", label: "TC Number" },
     ],
   },
   {
@@ -74,7 +72,6 @@ const steps = [
       { name: "section", label: "Section", type: "select", options: options.section, required: true },
       { name: "medium", label: "Medium", type: "select", options: ["English", "Telugu", "Hindi"] },
       { name: "secondLanguage", label: "Second Language", type: "select", options: ["Sanskrit", "Telugu", "Hindi", "French"] },
-      { name: "rollNumber", label: "Roll Number" },
     ],
   },
   {

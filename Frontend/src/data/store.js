@@ -94,3 +94,7 @@ export async function deleteRow(slug, secondary, id, config) {
   }
   set(slug, secondary, getRows(slug, secondary, config).filter((r) => String(r.id) !== String(id)));
 }
+
+export function setRows(slug, secondary, rows) {
+  set(slug, secondary, rows);
+}

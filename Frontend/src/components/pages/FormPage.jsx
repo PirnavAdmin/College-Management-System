@@ -37,7 +37,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
               : null,
         ]);
         const loadedFields = await Promise.all(baseFields.map(async (field) => {
-          if (!field.loadOptions) return field;
+          if (!field.loadOptions || field.dependsOn) return field;
           try {
             const response = await field.loadOptions();
             const options = field.getOptions ? field.getOptions(response) : response.data;
@@ -60,6 +60,41 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
     loadFormData();
     return () => { ignore = true; };
   }, [id, sectionConfig, setValues, usesApi]);
+
+  // Reload select options that depend on another form field, such as State
+  // after Country changes. These are intentionally separate from the first
+  // lookup load because the parent field must resolve first.
+  const dependentFieldValues = (sectionConfig.fields || [])
+    .filter((field) => field.dependsOn)
+    .map((field) => values[field.dependsOn] ?? "")
+    .join("\u0000");
+
+  useEffect(() => {
+    const dependentFields = (sectionConfig.fields || []).filter((field) => field.dependsOn);
+    if (!dependentFields.length) return undefined;
+
+    let ignore = false;
+    Promise.all(dependentFields.map(async (field) => {
+      if (!values[field.dependsOn]) return { name: field.name, options: [] };
+      try {
+        const response = await field.loadOptions(values);
+        const options = field.getOptions ? field.getOptions(response) : response.data;
+        return { name: field.name, options: Array.isArray(options) ? options : [] };
+      } catch {
+        return { name: field.name, options: [] };
+      }
+    })).then((results) => {
+      if (ignore) return;
+      const optionsByField = Object.fromEntries(results.map(({ name, options }) => [name, options]));
+      setFields((current) => current.map((field) => (
+        Object.prototype.hasOwnProperty.call(optionsByField, field.name)
+          ? { ...field, options: optionsByField[field.name] }
+          : field
+      )));
+    });
+
+    return () => { ignore = true; };
+  }, [dependentFieldValues, sectionConfig, values]);
 
   const submit = async (e) => {
     e.preventDefault();

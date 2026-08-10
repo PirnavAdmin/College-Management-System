@@ -1,10 +1,22 @@
 /* Attendance marking controls moved from src/cms.css. */
-.cms-radio-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.cms-attendance-table td:last-child,
+.cms-attendance-table th:last-child {
+  width: 310px;
+  min-width: 310px;
+}
+
+.cms-attendance-table .cms-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
 .cms-radio {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 5px 9px;
   border-radius: 999px;
   border: 1px solid var(--cms-border);
   cursor: pointer;

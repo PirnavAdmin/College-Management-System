@@ -193,7 +193,7 @@ export default function AttendancePage() {
           <Loader label="Loading students..." />
         ) : (
           <div className="cms-table-wrap">
-            <table className="cms-table">
+            <table className="cms-table cms-attendance-table">
               <thead>
                 <tr>
                   <th>Roll Number</th>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
-import { FiCheck, FiEdit2, FiSave, FiTrash2 } from "react-icons/fi";
+import { Check as FiCheck, Pencil as FiEdit2, Save as FiSave, Trash2 as FiTrash2 } from "lucide-react";
 import DashboardLayout from "../layout/DashboardLayout";
 import "./MarksEntryPage.css";
 

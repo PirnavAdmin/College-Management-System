@@ -1,5 +1,7 @@
 import * as data from "@/data/mockData.js";
 import ListPage from "@/components/pages/ListPage.jsx";
+import apiClient from "@/api/apiClient.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./SectionManagementPage.css";
 
 const o = data.options;
@@ -31,6 +33,21 @@ export const pageConfig = {
       { name: "strength", label: "Maximum Strength", type: "number", required: true },
       { name: "status", label: "Status", type: "select", options: o.status, required: true },
     ],
+    api: {
+      getAll: () => apiClient.get(apiEndpoints.sections.getAll),
+      getById: (sectionId) => apiClient.get(apiEndpoints.sections.getById(sectionId)),
+      delete: (sectionId) => apiClient.delete(apiEndpoints.sections.delete(sectionId)),
+     mapRow: (r) => ({
+        id: r.sectionId ?? r.id,
+        name: r.sectionName ?? r.name,
+        group: r.group ?? r.groupName ?? r.group,
+        level: r.academicLevel ?? r.academicLevelName ?? r.level,
+        room: r.roomNumber ?? r.room,
+        teacher: r.classTeacherName ?? r.teacher,
+        strength: r.maximumStrength ?? r.maxStrength ?? r.strength,
+        status: r.isActive === false ? "Inactive" : "Active",
+      }),
+    },
   };
 
 export default function SectionManagementPage() {

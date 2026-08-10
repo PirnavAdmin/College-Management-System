@@ -1,5 +1,7 @@
 import * as data from "@/data/mockData.js";
 import ListPage from "@/components/pages/ListPage.jsx";
+import apiClient from "@/api/apiClient.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./AcademicYearPage.css";
 
 const o = data.options;
@@ -27,6 +29,19 @@ export const pageConfig = {
       { name: "admissionEnd", label: "Admission End Date", type: "date", required: true },
       { name: "status", label: "Active", type: "select", options: o.status, required: true },
     ],
+    api: {
+      getAll: () => apiClient.get(apiEndpoints.academicYears.getAll),
+      delete: (id) => apiClient.delete(apiEndpoints.academicYears.delete(id)),
+      mapRow: (r) => ({
+        id: r.id ?? r.academicYearId,
+        name: r.name ?? r.academicYearName,
+        start: r.startDate ?? r.start,
+        end: r.endDate ?? r.end,
+        admissionStart: r.admissionStartDate ?? r.admissionStart,
+        admissionEnd: r.admissionEndDate ?? r.admissionEnd,
+        status: r.isActive === false ? "Inactive" : "Active",
+      }),
+    },
   };
 
 export default function AcademicYearPage() {

@@ -82,6 +82,11 @@ export function Field({ field, value, error, onChange }) {
   const id = `f-${name}`;
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
+  const normalizedOptions = options.map((option) => (
+    option && typeof option === "object"
+      ? { value: option.value, label: option.label ?? option.value }
+      : { value: option, label: option }
+  ));
   return (
     <div className={`cms-field ${full ? "full" : ""} ${error ? "has-error" : ""}`}>
       <label htmlFor={id}>
@@ -90,10 +95,8 @@ export function Field({ field, value, error, onChange }) {
       {type === "select" ? (
         <select id={id} value={value ?? ""} onChange={(e) => onChange(name, e.target.value)}>
           <option value="">Select {label}</option>
-          {options.map((o) => (
-            <option key={typeof o === "object" ? o.value : o} value={typeof o === "object" ? o.value : o}>
-              {typeof o === "object" ? o.label : o}
-            </option>
+          {normalizedOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
       ) : type === "textarea" ? (
@@ -160,7 +163,7 @@ export function useForm(fields, initial) {
     setErrors(next);
     return Object.keys(next).length === 0;
   };
-  return { values, errors, setValue, validate, setValues };
+  return { values, errors, setValue, validate, setValues, setErrors };
 }
 
 export function FormModal({ title, fields, initial, columns = 2, onCancel, onSave }) {

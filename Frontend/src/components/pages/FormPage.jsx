@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Toast, useForm } from "@/components/common/Ui.jsx";
+import { getApiErrorMessage } from "@/api/axios.js";
 import { addRow, configFor, getRow, updateRow } from "@/data/store.js";
 import { getApiErrorMessage } from "@/api/axios.js";
 
@@ -13,6 +15,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   const { values, errors, setValue, setValues, validate } = useForm(sectionConfig.fields, existing || {});
   const [fields, setFields] = useState(sectionConfig.fields);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(usesApi && Boolean(id));
   const [toast, setToast] = useState("");
 
   const mode = id ? "Edit" : "Add";
@@ -83,7 +86,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   return (
     <DashboardLayout title={`${mode} ${label}`} subtitle={`Fill in the details below and save to ${id ? "update this" : "create a new"} record.`} breadcrumb={[sectionConfig.title]}>
       <div className="cms-form-page">
-        <Link to={listPath} className="cms-back-link"><ArrowLeft size={15} /> Back to {sectionConfig.title}</Link>
+        <Link to={listPath} className="cms-back-link"><ArrowLeft size={15} /> Back to {backLabel}</Link>
         <form className="cms-card" onSubmit={submit} noValidate>
           <div className="cms-card-body">
             <div className="cms-form-grid">
@@ -91,7 +94,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
             </div>
             <div className="cms-form-actions">
               <button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate(listPath)}>Cancel</button>
-              <button type="submit" className="cms-btn cms-btn-primary" disabled={saving}>{saving ? "Saving..." : `Save ${label}`}</button>
+              <button type="submit" className="cms-btn cms-btn-primary" disabled={saving || loading}>{saving ? "Saving..." : submitLabel}</button>
             </div>
           </div>
         </form>
@@ -100,3 +103,4 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
     </DashboardLayout>
   );
 }
+

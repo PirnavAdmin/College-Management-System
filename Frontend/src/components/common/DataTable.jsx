@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Plus, Pencil, Trash2, Eye, Download } from "lucide-react";
 import { StatusBadge, Loader } from "./Ui.jsx";
 
@@ -12,19 +12,26 @@ export default function DataTable({
   onEdit,
   onDelete,
   onView,
+  onSearchChange,
   addLabel = "Add New",
   title,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
+  useEffect(() => {
+    if (!onSearchChange) return undefined;
+    const timer = setTimeout(() => onSearchChange(query), 300);
+    return () => clearTimeout(timer);
+  }, [onSearchChange, query]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
+    if (onSearchChange || !q) return rows;
     return rows.filter((r) =>
       Object.values(r).some((v) => String(v).toLowerCase().includes(q)),
     );
-  }, [rows, query]);
+  }, [rows, query, onSearchChange]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, totalPages);

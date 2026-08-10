@@ -1,4 +1,4 @@
-export const apiEndpoints = {
+﻿export const apiEndpoints = {
   admin: {
     login: "/api/Admin/login",
     create: "/api/Admin",
@@ -6,6 +6,32 @@ export const apiEndpoints = {
     getById: (adminId) => `/api/Admin/${adminId}`,
     changePassword: "/api/Admin/change-password",
     updateStatus: (adminId) => `/api/Admin/${adminId}/status`,
+  },
+  assignments: {
+    list: "/api/v1/assignments",
+    create: "/api/v1/assignments",
+    details: (id) => `/api/v1/assignments/${id}`,
+    update: (id) => `/api/v1/assignments/${id}`,
+    delete: (id) => `/api/v1/assignments/${id}`,
+    submit: (id) => `/api/v1/assignments/${id}/submit`,
+    subjectsByGroup: (groupId) => `/api/v1/assignments/groups/${groupId}/subjects`,
+    submissions: (id) => `/api/v1/assignments/${id}/submissions`,
+  },
+  faculty: {
+    list: "/api/v1/faculty",
+  },
+  academicYears: {
+    list: "/api/v1/academic-years",
+  },
+  groups: {
+    getAll: "/api/v1/groups",
+    create: "/api/v1/groups",
+    getById: (groupId) => `/api/v1/groups/${groupId}`,
+    update: (groupId) => `/api/v1/groups/${groupId}`,
+    delete: (groupId) => `/api/v1/groups/${groupId}`,
+    getByBoard: (board) => `/api/v1/groups/board/${board}`,
+    validateCode: "/api/v1/groups/validate-code",
+    list: "/api/v1/groups",
   },
   auth: {
     login: "/api/Auth/login",
@@ -90,5 +116,3 @@ export const apiEndpoints = {
     publishSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/publish`,
   },
 };
-
-

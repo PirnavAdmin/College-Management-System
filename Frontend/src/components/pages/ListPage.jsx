@@ -1,25 +1,63 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
 import { ConfirmDialog, Modal, Toast, StatusBadge } from "@/components/common/Ui.jsx";
-import { configFor, deleteRow, useRows } from "@/data/store.js";
+import { configFor, deleteRow, setRows, useRows } from "@/data/store.js";
+import { getApiErrorMessage } from "@/api/apiClient.js";
 
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
-  const rows = useRows(slug, secondary, config);
+  const isApiBacked = Boolean(config.api && !secondary);
+
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
   const [viewing, setViewing] = useState(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const rows = useRows(slug, secondary, config);
+
+  const fetchFromApi = useCallback(async () => {
+    if (!isApiBacked) return;
     setLoading(true);
-    const timer = setTimeout(() => setLoading(false), 450);
-    return () => clearTimeout(timer);
-  }, [slug, secondary]);
+    try {
+      const response = await config.api.getAll();
+      const list = Array.isArray(response.data)
+        ? response.data
+        : response.data?.data || response.data?.items || [];
+      const mapped = config.api.mapRow ? list.map(config.api.mapRow) : list;
+      setRows(slug, secondary, mapped);
+    } catch (err) {
+      onToast(getApiErrorMessage(err));
+      setRows(slug, secondary, []);
+    } finally {
+      setLoading(false);
+    }
+  }, [isApiBacked, config.api, onToast, slug, secondary]);
+
+  useEffect(() => {
+    if (isApiBacked) {
+      fetchFromApi();
+    } else {
+      setLoading(true);
+      const timer = setTimeout(() => setLoading(false), 450);
+      return () => clearTimeout(timer);
+    }
+  }, [slug, secondary, isApiBacked, fetchFromApi]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
+
+  const handleDeleteConfirm = async () => {
+    try {
+      await deleteRow(slug, secondary, deleting.id, config);
+      onToast("Record deleted successfully");
+      if (isApiBacked) fetchFromApi();
+    } catch (err) {
+      onToast(getApiErrorMessage(err));
+    } finally {
+      setDeleting(null);
+    }
+  };
 
   return (
     <>
@@ -40,11 +78,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         <ConfirmDialog
           message={`Delete "${deleting.name || deleting.title || deleting.receipt || deleting.number || deleting.subject || "this record"}"? This action cannot be undone.`}
           onCancel={() => setDeleting(null)}
-          onConfirm={() => {
-            deleteRow(slug, secondary, deleting.id, config);
-            setDeleting(null);
-            onToast("Record deleted successfully");
-          }}
+          onConfirm={handleDeleteConfirm}
         />
       ) : null}
 

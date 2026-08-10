@@ -1,5 +1,7 @@
 import * as data from "@/data/mockData.js";
 import ListPage from "@/components/pages/ListPage.jsx";
+import apiClient from "@/api/apiClient.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./BoardManagementPage.css";
 
 const o = data.options;
@@ -36,6 +38,20 @@ export const pageConfig = {
       { name: "rank", label: "Rank Calculation", type: "select", options: ["Total Marks", "Percentage", "Grade Points"] },
       { name: "status", label: "Status", type: "select", options: o.status, required: true },
     ],
+    api: {
+      getAll: () => apiClient.get(apiEndpoints.boards.getAll),
+      getById: (boardId) => apiClient.get(apiEndpoints.boards.getById(boardId)),
+      delete: (boardId) => apiClient.delete(apiEndpoints.boards.delete(boardId)),
+      mapRow: (r) => ({
+        id: r.boardId ?? r.id,
+        name: r.boardName ?? r.name,
+        code: r.boardCode ?? r.code,
+        country: r.countryName ?? r.country,
+        state: r.stateName ?? r.state,
+structure: r.academicPatternName ?? r.structure ?? "",        status: r.status === true || String(r.status).toLowerCase() === "active" ? "Active" : "Inactive",
+        created: r.createdDate ? String(r.createdDate).split("T")[0] : r.created,
+      }),
+    },
   };
 
 export default function BoardManagementPage() {

@@ -13,7 +13,7 @@ import StudentAdmissionPage from "@/components/pages/StudentAdmissionPage.jsx";
 import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/components/pages/StudentManagementPage.jsx";
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
 import AttendancePage from "@/components/pages/AttendancePage.jsx";
-import AssignmentsMaterialsPage from "@/components/pages/AssignmentsMaterialsPage.jsx";
+import AssignmentsMaterialsPage, { pageConfig as assignmentsMaterialsConfig } from "@/components/pages/AssignmentsMaterialsPage.jsx";
 import ExaminationPage, { pageConfig as examinationConfig } from "@/components/pages/ExaminationPage.jsx";
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
 import ResultProcessingPage from "@/components/pages/ResultProcessingPage.jsx";

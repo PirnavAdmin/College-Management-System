@@ -19,9 +19,21 @@
   },
   faculty: {
     list: "/api/v1/faculty",
+    getAll: "/api/v1/faculty",
+    create: "/api/v1/faculty",
+    getById: (id) => `/api/v1/faculty/${id}`,
+    update: (id) => `/api/v1/faculty/${id}`,
+    delete: (id) => `/api/v1/faculty/${id}`,
+    uploadPhoto: "/api/v1/faculty/upload-photo",
+    getPhoto: (id) => `/api/v1/faculty/photo/${id}`,
+    assignSubject: "/api/v1/faculty/assign-subject",
+    updateSubjectAssignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
+    deleteSubjectAssignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
+    getWorkload: (facultyId) => `/api/v1/faculty/workload/${facultyId}`,
   },
   academicYears: {
     list: "/api/v1/academic-years",
+    getAll: "/api/v1/academic-years",
   },
   groups: {
     getAll: "/api/v1/groups",
@@ -50,9 +62,6 @@
     delete: (id) => `/api/Subjects/${id}`,
     getByGroup: (group) => `/api/Subjects/group/${encodeURIComponent(group)}`,
   },
-  groups: {
-    getAll: "/api/v1/groups",
-  },
   boards: {
     getAll: "/api/v1/boards",
     getAcademicLevels: "/api/v1/boards/academic-levels",
@@ -60,9 +69,7 @@
   departments: {
     getAll: "/api/v1/departments",
   },
-  academicYears: {
-    getAll: "/api/v1/academic-years",
-  },
+  // The list endpoint is also used by components expecting getAll.
   sections: {
     getAll: "/api/v1/Sections",
   },
@@ -87,19 +94,6 @@
     activate: (studentId) => `/api/v1/students/${studentId}/activate`,
     resetPassword: (studentId) => `/api/v1/students/${studentId}/reset-password`,
     getDashboard: (studentId) => `/api/v1/students/${studentId}/dashboard`,
-  },
-  faculty: {
-    getAll: "/api/v1/faculty",
-    create: "/api/v1/faculty",
-    getById: (id) => `/api/v1/faculty/${id}`,
-    update: (id) => `/api/v1/faculty/${id}`,
-    delete: (id) => `/api/v1/faculty/${id}`,
-    uploadPhoto: "/api/v1/faculty/upload-photo",
-    getPhoto: (id) => `/api/v1/faculty/photo/${id}`,
-    assignSubject: "/api/v1/faculty/assign-subject",
-    updateSubjectAssignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
-    deleteSubjectAssignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
-    getWorkload: (facultyId) => `/api/v1/faculty/workload/${facultyId}`,
   },
   timetable: {
     getAll: "/api/v1/timetable",

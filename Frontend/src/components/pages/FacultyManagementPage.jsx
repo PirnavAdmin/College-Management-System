@@ -9,9 +9,14 @@ const MODULE_SLUG = "faculty";
 
 const extractItems = (payload) => {
   if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.$values)) return payload.$values;
   if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.Items)) return payload.Items;
   if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.Data)) return payload.Data;
   if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  if (Array.isArray(payload?.data?.Items)) return payload.data.Items;
+  if (Array.isArray(payload?.data?.$values)) return payload.data.$values;
   return [];
 };
 
@@ -39,11 +44,41 @@ const getDepartments = () => apiClient.get(apiEndpoints.departments.getAll);
 const getAcademicYears = () => apiClient.get(apiEndpoints.academicYears.getAll);
 const getSections = () => apiClient.get(apiEndpoints.sections.getAll);
 
+const extractAllocations = (payload) => {
+  const dataNode = payload?.data ?? payload?.Data ?? payload;
+  return extractItems(
+    dataNode?.allocations
+    ?? dataNode?.Allocations
+    ?? dataNode?.facultyAllocations
+    ?? dataNode?.FacultyAllocations
+    ?? dataNode?.subjectAllocations
+    ?? dataNode?.SubjectAllocations
+    ?? dataNode?.subjectAssignments
+    ?? dataNode?.SubjectAssignments
+    ?? dataNode?.teachingAssignments
+    ?? dataNode?.TeachingAssignments
+    ?? dataNode?.assignedSubjects
+    ?? dataNode?.AssignedSubjects
+    ?? dataNode?.assignments
+    ?? dataNode?.Assignments
+    ?? dataNode?.data
+    ?? dataNode?.Data
+    ?? dataNode,
+  );
+};
+
 const getFacultyAllocations = async () => {
   const facultyResponse = await getFaculty();
   const faculty = extractItems(facultyResponse.data);
-  const workloads = await Promise.all(faculty.map((item) => getFacultyWorkload(item.facultyId ?? item.id)));
-  return { data: workloads.flatMap((response) => response.data?.allocations || []) };
+  const workloads = await Promise.all(faculty.map(async (item) => {
+    const response = await getFacultyWorkload(item.facultyId ?? item.id);
+    return extractAllocations(response.data).map((allocation) => ({
+      ...allocation,
+      facultyName: allocation.facultyName ?? facultyName(item),
+      facultyId: allocation.facultyId ?? item.facultyId ?? item.id,
+    }));
+  }));
+  return { data: workloads.flat() };
 };
 
 const pageConfig = {
@@ -143,9 +178,12 @@ const toFacultyPayload = (faculty) => ({
 const toAssignmentRow = (assignment) => ({
   ...assignment,
   id: assignment.assignmentId ?? assignment.id,
-  faculty: assignment.facultyName ?? assignment.faculty,
-  year: assignment.academicYear ?? assignment.year,
-  level: assignment.academicLevel ?? assignment.level,
+  faculty: assignment.facultyName ?? assignment.faculty?.fullName ?? assignment.faculty,
+  year: assignment.academicYearName ?? assignment.academicYear ?? assignment.year,
+  group: assignment.groupName ?? assignment.group,
+  level: assignment.academicLevelName ?? assignment.academicLevel ?? assignment.level,
+  section: assignment.sectionName ?? assignment.section,
+  subject: assignment.subjectName ?? assignment.subject,
   status: assignment.status || "Active",
 });
 

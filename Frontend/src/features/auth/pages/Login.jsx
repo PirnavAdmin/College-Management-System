@@ -54,7 +54,7 @@ export default function Login() {
       localStorage.setItem("token", result.token);
       localStorage.setItem("user", JSON.stringify(result.user));
       localStorage.setItem("role", result.user.role);
-      navigate(result.user.isAdmin || result.user.role === "admin" ? "/dashboard" : "/student-dashboard", { replace: true });
+      navigate(result.user.isAdmin ? "/dashboard" : "/student-dashboard", { replace: true });
     } catch (error) {
       setFormError(getApiErrorMessage(error));
     } finally {

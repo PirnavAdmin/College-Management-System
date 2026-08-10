@@ -25,7 +25,7 @@ export const loginUser = async (credentials) => {
     try {
       const response = await adminLogin({ email: emailOrMobile, password });
       logLoginResponse(response.status);
-      return normalizeAdminLoginResponse(response.data, emailOrMobile);
+      return normalizeLoginResponse(response.data, emailOrMobile, "admin");
     } catch (error) {
       throw buildLoginError(error, apiEndpoints.admin.login);
     }
@@ -35,7 +35,7 @@ export const loginUser = async (credentials) => {
   try {
     const response = await userLogin({ emailOrMobile, password });
     logLoginResponse(response.status);
-    return normalizeStudentLoginResponse(response.data, emailOrMobile);
+    return normalizeLoginResponse(response.data, emailOrMobile);
   } catch (error) {
     throw buildLoginError(error, apiEndpoints.auth.login);
   }
@@ -48,39 +48,19 @@ export const resetPassword = (data) => apiClient.post(apiEndpoints.auth.resetPas
 export const getUsers = () => apiClient.get(apiEndpoints.auth.users);
 export const getUserById = (id) => apiClient.get(apiEndpoints.auth.userById(id));
 
-function normalizeAdminLoginResponse(payload = {}, enteredEmail) {
+function normalizeLoginResponse(payload = {}, enteredEmail, fallbackRole = "student") {
   const data = getData(payload);
   assertSuccessful(payload, data);
 
-  const token = getToken(payload, data);
+  const token = normalizeToken(getToken(payload, data));
+  const role = data.Role || data.role || payload.Role || payload.role || fallbackRole;
+  const normalizedRole = String(role).trim().toLowerCase();
   const user = {
-    id: data.adminId || data.AdminId || data.id || data.Id || payload.adminId || payload.AdminId || payload.id || payload.Id || "admin",
-    name: data.name || data.Name || payload.name || payload.Name || "CMS Admin",
-    email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
-    role: "admin",
-    isAdmin: true,
-  };
-
-  return {
-    token,
-    user,
-    roleType: "admin",
-    message: getMessage(payload, data, "Login successful."),
-  };
-}
-
-function normalizeStudentLoginResponse(payload = {}, enteredEmail) {
-  const data = getData(payload);
-  assertSuccessful(payload, data);
-
-  const token = getToken(payload, data);
-  const role = data.Role || data.role || payload.Role || payload.role || "student";
-  const user = {
-    id: data.UserId || data.userId || data.id || data.Id || payload.UserId || payload.userId || payload.id || payload.Id,
+    id: data.AdminId || data.adminId || data.UserId || data.userId || data.id || data.Id || payload.AdminId || payload.adminId || payload.UserId || payload.userId || payload.id || payload.Id,
     name: data.Name || data.name || data.fullName || payload.Name || payload.name || payload.fullName || "CMS User",
     email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
     role,
-    isAdmin: role === "admin",
+    isAdmin: normalizedRole === "admin" || normalizedRole === "super admin",
   };
 
   return {
@@ -119,6 +99,10 @@ function getToken(payload, data) {
     data?.token ||
     data?.jwt
   );
+}
+
+function normalizeToken(token) {
+  return token ? String(token).replace(/^Bearer\s+/i, "").trim() : "";
 }
 
 function buildLoginError(error, endpoint) {

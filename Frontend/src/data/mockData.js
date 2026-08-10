@@ -78,10 +78,10 @@ export const admissions = [
 ];
 
 export const assignments = [
-  { id: 1, title: "Integration Practice Set", subject: "Mathematics IA", faculty: "Dr. Anitha Rao", due: "2025-01-20", max: 25, status: "Active" },
-  { id: 2, title: "Semiconductor Physics Report", subject: "Physics", faculty: "Mr. Suresh Kumar", due: "2025-01-25", max: 20, status: "Active" },
-  { id: 3, title: "Organic Chemistry Worksheet", subject: "Chemistry", faculty: "Mrs. Lakshmi Devi", due: "2025-01-18", max: 15, status: "Inactive" },
-  { id: 4, title: "Essay: Modern Literature", subject: "English", faculty: "Ms. Priya Sharma", due: "2025-02-02", max: 10, status: "Active" },
+  { id: 1, title: "Integration Practice Set", academicYear: "2025-2026", academicLevel: "First Year", group: "MPC", subject: "Mathematics IA", faculty: "Dr. Anitha Rao", due: "2025-01-20", attachment: "integration-practice.pdf", max: 25, description: "Practice problems covering integration methods." },
+  { id: 2, title: "Semiconductor Physics Report", academicYear: "2025-2026", academicLevel: "First Year", group: "MPC", subject: "Physics", faculty: "Mr. Suresh Kumar", due: "2025-01-25", attachment: "semiconductor-report.docx", max: 20, description: "Submit a short report on semiconductor applications." },
+  { id: 3, title: "Organic Chemistry Worksheet", academicYear: "2025-2026", academicLevel: "First Year", group: "BiPC", subject: "Chemistry", faculty: "Mrs. Lakshmi Devi", due: "2025-01-18", attachment: "organic-worksheet.pdf", max: 15, description: "Worksheet for organic chemistry fundamentals." },
+  { id: 4, title: "Essay: Modern Literature", academicYear: "2024-2025", academicLevel: "Second Year", group: "CEC", subject: "English", faculty: "Ms. Priya Sharma", due: "2025-02-02", attachment: "", max: 10, description: "Write an essay on modern literature themes." },
 ];
 
 export const examinations = [
@@ -204,8 +204,11 @@ export const notifications = [
 export const options = {
   board: boards.map((b) => b.code),
   year: academicYears.map((y) => y.name),
+  assignmentAcademicYear: ["2024-2025", "2025-2026", "2026-2027"],
   level: ["1st Year", "2nd Year", "Class XI", "Class XII"],
+  assignmentAcademicLevel: ["First Year", "Second Year"],
   group: courses.map((c) => c.code),
+  assignmentGroup: ["MPC", "BiPC", "CEC", "MEC", "HEC"],
   section: ["Section A", "Section B", "Section C"],
   subject: subjects.map((s) => s.name),
   faculty: faculty.map((f) => f.name),
@@ -220,5 +223,6 @@ export const options = {
   department: ["Mathematics", "Physics", "Chemistry", "Biology", "Commerce", "English"],
   bloodGroup: ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"],
 };
+
 
 

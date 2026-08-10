@@ -4,6 +4,25 @@ import { env } from "@/config/env.js";
 const isHtmlResponse = (data) =>
   typeof data === "string" && /^\s*(<!doctype html|<html)/i.test(data);
 
+const getStoredAccessToken = () => {
+  const stored = localStorage.getItem("token");
+  if (!stored) return "";
+  return stored.replace(/^Bearer\s+/i, "").trim();
+};
+
+const getJwtExpiryState = (token) => {
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return { isJwt: false };
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=")));
+    if (!decoded.exp) return { isJwt: true, isExpired: false };
+    return { isJwt: true, isExpired: decoded.exp * 1000 <= Date.now() };
+  } catch {
+    return { isJwt: false };
+  }
+};
+
 export const getApiErrorMessage = (error) => {
   const data = error?.response?.data;
   if (typeof data === "string") return data;
@@ -28,13 +47,17 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  const token = getStoredAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   if (import.meta.env.DEV) {
+    const expiry = token ? getJwtExpiryState(token) : {};
     console.log("API request:", {
       url: config.url,
       method: config.method,
       hasToken: Boolean(token),
+      tokenLength: token.length || 0,
+      hasBearer: Boolean(config.headers?.Authorization?.startsWith("Bearer ")),
+      tokenExpired: expiry.isJwt ? expiry.isExpired : undefined,
     });
   }
   return config;

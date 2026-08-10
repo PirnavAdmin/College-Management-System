@@ -1,62 +1,258 @@
-import * as data from "@/data/mockData.js";
+import apiClient from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import ListPage from "@/components/pages/ListPage.jsx";
 import "./FeeManagementPage.css";
 
-const o = data.options;
 const MODULE_SLUG = "fee-structure";
+const FEE_TYPES = ["Tuition Fee", "Laboratory Fee", "Hostel Fee", "Transport Fee", "Exam Fee"];
+const PAYMENT_MODES = ["Cash", "UPI", "Card", "Net Banking", "Cheque"];
+
+const getDataNode = (payload) => payload?.data ?? payload?.Data ?? payload;
+
+const getCollection = (payload) => {
+  const data = getDataNode(payload);
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.Data)) return data.Data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.Items)) return data.Items;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.Results)) return data.Results;
+  if (Array.isArray(data?.$values)) return data.$values;
+  return [];
+};
+
+const read = (item, ...keys) => {
+  const key = keys.find((candidate) => item?.[candidate] !== undefined && item?.[candidate] !== null && item?.[candidate] !== "");
+  return key ? item[key] : undefined;
+};
+
+const makeLookup = (options) => options.reduce((lookup, option) => {
+  lookup[String(option.value)] = option.label;
+  return lookup;
+}, {});
+
+const toOption = (item, idKeys, labelKeys) => {
+  const value = read(item, ...idKeys);
+  const label = read(item, ...labelKeys) || value;
+  if (value === undefined || value === null || value === "") return null;
+  return { value: String(value), label: String(label) };
+};
+
+const loadMasterOptions = async () => {
+  const [boardsResult, yearsResult, groupsResult] = await Promise.allSettled([
+    apiClient.get(apiEndpoints.boards.list),
+    apiClient.get(apiEndpoints.academicYears.list),
+    apiClient.get(apiEndpoints.groups.getAll),
+  ]);
+
+  const boards = boardsResult.status === "fulfilled"
+    ? getCollection(boardsResult.value.data)
+      .map((item) => toOption(item, ["boardId", "BoardId", "id", "Id"], ["boardCode", "BoardCode", "boardName", "BoardName", "name", "Name"]))
+      .filter(Boolean)
+    : [];
+
+  const years = yearsResult.status === "fulfilled"
+    ? getCollection(yearsResult.value.data)
+      .map((item) => toOption(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]))
+      .filter(Boolean)
+    : [];
+
+  const groups = groupsResult.status === "fulfilled"
+    ? getCollection(groupsResult.value.data)
+      .map((item) => toOption(item, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"]))
+      .filter(Boolean)
+    : [];
+
+  return {
+    boards,
+    years,
+    groups,
+    boardLookup: makeLookup(boards),
+    yearLookup: makeLookup(years),
+    groupLookup: makeLookup(groups),
+  };
+};
+
+const formatDate = (value) => {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+};
+
+const normalizeStructure = (item, lookups = {}) => {
+  const id = read(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId", "id", "Id");
+  const boardId = read(item, "boardId", "BoardId");
+  const academicYearId = read(item, "academicYearId", "AcademicYearId", "yearId", "YearId");
+  const groupId = read(item, "groupId", "GroupId");
+
+  return {
+    id,
+    boardId: boardId ? String(boardId) : "",
+    academicYearId: academicYearId ? String(academicYearId) : "",
+    groupId: groupId ? String(groupId) : "",
+    board: read(item, "boardName", "BoardName", "board", "Board") || lookups.boardLookup?.[String(boardId)] || boardId || "-",
+    year: read(item, "academicYearName", "AcademicYearName", "year", "Year") || lookups.yearLookup?.[String(academicYearId)] || academicYearId || "-",
+    group: read(item, "groupName", "GroupName", "group", "Group") || lookups.groupLookup?.[String(groupId)] || groupId || "-",
+    type: read(item, "feeType", "FeeType", "type", "Type") || "-",
+    amount: read(item, "amount", "Amount") ?? 0,
+    due: formatDate(read(item, "dueDate", "DueDate", "due", "Due")),
+    isActive: read(item, "isActive", "IsActive") ?? true,
+  };
+};
+
+const normalizeStructureForm = (item) => {
+  const row = normalizeStructure(item);
+  return {
+    board: row.boardId,
+    year: row.academicYearId,
+    group: row.groupId,
+    type: row.type === "-" ? "" : row.type,
+    amount: row.amount,
+    due: row.due,
+  };
+};
+
+const normalizeCollection = (item) => ({
+  id: read(item, "feeCollectionId", "FeeCollectionId", "paymentId", "PaymentId", "id", "Id"),
+  receipt: read(item, "receiptNumber", "ReceiptNumber", "receiptNo", "ReceiptNo", "receipt", "Receipt") || "-",
+  student: read(item, "studentName", "StudentName", "student", "Student", "studentId", "StudentId") || "-",
+  date: formatDate(read(item, "paymentDate", "PaymentDate", "date", "Date", "createdAt", "CreatedAt")),
+  amount: read(item, "amount", "Amount") ?? 0,
+  discount: read(item, "discount", "Discount", "discountAmount", "DiscountAmount") ?? 0,
+  fine: read(item, "fine", "Fine", "fineAmount", "FineAmount") ?? 0,
+  mode: read(item, "paymentMode", "PaymentMode", "mode", "Mode") || "-",
+  txn: read(item, "transactionNumber", "TransactionNumber", "txn", "Txn") || "-",
+});
+
+const structurePayload = (values, includeStatus = false) => ({
+  boardId: Number(values.board),
+  academicYearId: Number(values.year),
+  groupId: Number(values.group),
+  feeType: values.type,
+  amount: Number(values.amount),
+  dueDate: values.due,
+  ...(includeStatus ? { isActive: true } : {}),
+});
+
+const collectionPayload = (values) => ({
+  studentId: Number(values.student),
+  feeStructureId: Number(values.feeStructure),
+  amount: Number(values.amount),
+  paymentMode: values.mode,
+  discount: Number(values.discount || 0),
+  fine: Number(values.fine || 0),
+  transactionNumber: values.txn || "",
+});
+
+const feeStructureApi = {
+  fetchRows: async () => {
+    const master = await loadMasterOptions();
+    const response = await apiClient.get(apiEndpoints.fee.getStructures);
+    return getCollection(response.data)
+      .map((item) => normalizeStructure(item, master))
+      .filter((row) => row.id);
+  },
+  fetchRow: async (id) => {
+    const response = await apiClient.get(apiEndpoints.fee.getStructures);
+    const item = getCollection(response.data).find((row) => {
+      const rowId = read(row, "feeStructureId", "FeeStructureId", "structureId", "StructureId", "id", "Id");
+      return String(rowId) === String(id);
+    });
+    return item ? normalizeStructureForm(item) : {};
+  },
+  saveRow: (values, id) => {
+    const payload = structurePayload(values, Boolean(id));
+    if (id) return apiClient.put(apiEndpoints.fee.updateStructure(id), payload);
+    return apiClient.post(apiEndpoints.fee.createStructure, payload);
+  },
+  loadFields: async (fields) => {
+    const master = await loadMasterOptions();
+    return fields.map((field) => {
+      if (field.name === "board") return { ...field, options: master.boards };
+      if (field.name === "year") return { ...field, options: master.years };
+      if (field.name === "group") return { ...field, options: master.groups };
+      return field;
+    });
+  },
+};
+
+const feeCollectionApi = {
+  fetchRows: async () => [],
+  saveRow: (values, id) => {
+    if (id) {
+      return apiClient.put(apiEndpoints.fee.updatePayment(id), {
+        amount: Number(values.amount),
+        paymentMode: values.mode,
+      });
+    }
+    return apiClient.post(apiEndpoints.fee.collect, collectionPayload(values));
+  },
+  deleteRow: (id) => apiClient.delete(apiEndpoints.fee.deletePayment(id)),
+  loadFields: async (fields) => {
+    const response = await apiClient.get(apiEndpoints.fee.getStructures);
+    const structures = getCollection(response.data)
+      .map((item) => {
+        const row = normalizeStructure(item);
+        return row.id ? { value: String(row.id), label: `${row.type} - ${row.group} - \u20b9${Number(row.amount || 0).toLocaleString("en-IN")}` } : null;
+      })
+      .filter(Boolean);
+
+    return fields.map((field) => {
+      if (field.name === "feeStructure") return { ...field, options: structures };
+      return field;
+    });
+  },
+};
 
 export const pageConfig = {
-    title: "Fee Management",
-    subtitle: "Fee structures and day-to-day fee collection.",
-    breadcrumb: ["Administration"],
-    addLabel: "Add Fee Structure",
-    rows: data.fees,
+  title: "Fee Management",
+  subtitle: "Fee structures and day-to-day fee collection.",
+  breadcrumb: ["Administration"],
+  addLabel: "Add Fee Structure",
+  rows: [],
+  api: feeStructureApi,
+  columns: [
+    { key: "board", label: "Board", strong: true },
+    { key: "year", label: "Academic Year" },
+    { key: "group", label: "Group" },
+    { key: "type", label: "Fee Type" },
+    { key: "amount", label: "Amount", render: (r) => `\u20b9${Number(r.amount).toLocaleString("en-IN")}` },
+    { key: "due", label: "Due Date" },
+  ],
+  fields: [
+    { name: "board", label: "Board", type: "select", options: [], required: true },
+    { name: "year", label: "Academic Year", type: "select", options: [], required: true },
+    { name: "group", label: "Group", type: "select", options: [], required: true },
+    { name: "type", label: "Fee Type", type: "select", options: FEE_TYPES, required: true },
+    { name: "amount", label: "Amount", type: "number", required: true },
+    { name: "due", label: "Due Date", type: "date", required: true },
+  ],
+  secondary: {
+    title: "Fee Collection",
+    addLabel: "Collect Fee",
+    rows: [],
+    api: feeCollectionApi,
     columns: [
-      { key: "board", label: "Board", strong: true },
-      { key: "year", label: "Academic Year" },
-      { key: "group", label: "Group" },
-      { key: "type", label: "Fee Type" },
-      { key: "amount", label: "Amount", render: (r) => `₹${Number(r.amount).toLocaleString("en-IN")}` },
-      { key: "due", label: "Due Date" },
-      { key: "status", label: "Status", badge: true },
+      { key: "receipt", label: "Receipt Number", strong: true },
+      { key: "student", label: "Student" },
+      { key: "date", label: "Payment Date" },
+      { key: "amount", label: "Amount", render: (r) => `\u20b9${Number(r.amount).toLocaleString("en-IN")}` },
+      { key: "discount", label: "Discount" },
+      { key: "fine", label: "Fine" },
+      { key: "mode", label: "Payment Mode" },
+      { key: "txn", label: "Transaction No." },
     ],
     fields: [
-      { name: "board", label: "Board", type: "select", options: o.board, required: true },
-      { name: "year", label: "Academic Year", type: "select", options: o.year, required: true },
-      { name: "group", label: "Group", type: "select", options: o.group, required: true },
-      { name: "type", label: "Fee Type", type: "select", options: o.feeType, required: true },
+      { name: "student", label: "Student", type: "select", options: [], required: true },
+      { name: "feeStructure", label: "Fee Structure", type: "select", options: [], required: true },
       { name: "amount", label: "Amount", type: "number", required: true },
-      { name: "due", label: "Due Date", type: "date", required: true },
-      { name: "status", label: "Status", type: "select", options: o.status, required: true },
+      { name: "discount", label: "Discount", type: "number" },
+      { name: "fine", label: "Fine", type: "number" },
+      { name: "mode", label: "Payment Mode", type: "select", options: PAYMENT_MODES, required: true },
+      { name: "txn", label: "Transaction Number" },
     ],
-    secondary: {
-      title: "Fee Collection",
-      addLabel: "Collect Fee",
-      rows: data.feeCollections,
-      columns: [
-        { key: "receipt", label: "Receipt Number", strong: true },
-        { key: "student", label: "Student" },
-        { key: "date", label: "Payment Date" },
-        { key: "amount", label: "Amount", render: (r) => `₹${Number(r.amount).toLocaleString("en-IN")}` },
-        { key: "discount", label: "Discount" },
-        { key: "fine", label: "Fine" },
-        { key: "mode", label: "Payment Mode" },
-        { key: "txn", label: "Transaction No." },
-        { key: "status", label: "Status", badge: true },
-      ],
-      fields: [
-        { name: "student", label: "Student", type: "select", options: o.student, required: true },
-        { name: "receipt", label: "Receipt Number", required: true },
-        { name: "date", label: "Payment Date", type: "date", required: true },
-        { name: "amount", label: "Amount", type: "number", required: true },
-        { name: "discount", label: "Discount", type: "number" },
-        { name: "fine", label: "Fine", type: "number" },
-        { name: "mode", label: "Payment Mode", type: "select", options: o.paymentMode, required: true },
-        { name: "txn", label: "Transaction Number" },
-        { name: "status", label: "Status", type: "select", options: o.status, required: true },
-      ],
-    },
-  };
+  },
+};
 
 export default function FeeManagementPage() {
   return <ListPage slug={MODULE_SLUG} config={pageConfig} />;

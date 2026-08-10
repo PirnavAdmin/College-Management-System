@@ -20,6 +20,9 @@
   faculty: {
     list: "/api/v1/faculty",
   },
+  boards: {
+    list: "/api/v1/boards",
+  },
   academicYears: {
     list: "/api/v1/academic-years",
   },
@@ -32,6 +35,28 @@
     getByBoard: (board) => `/api/v1/groups/board/${board}`,
     validateCode: "/api/v1/groups/validate-code",
     list: "/api/v1/groups",
+  },
+  fee: {
+    createStructure: "/api/Fee/structure",
+    getStructures: "/api/Fee/structure",
+    updateStructure: (id) => `/api/Fee/structure/${id}`,
+    assign: "/api/Fee/assign",
+    collect: "/api/Fee/collect",
+    getStudentFees: (studentId) => `/api/Fee/student/${studentId}`,
+    updatePayment: (id) => `/api/Fee/payment/${id}`,
+    deletePayment: (id) => `/api/Fee/payment/${id}`,
+    addDiscount: "/api/Fee/discount",
+    addFine: "/api/Fee/fine",
+    waiveFine: (id) => `/api/Fee/fine/${id}/waive`,
+    getReceipt: (receiptId) => `/api/Fee/receipt/${receiptId}`,
+    addScholarship: "/api/Fee/scholarship",
+    refund: "/api/Fee/refund",
+    getDue: "/api/Fee/due",
+    getHistory: (studentId) => `/api/Fee/history/${studentId}`,
+    downloadReceipt: (feeCollectionId) => `/api/Fee/receipt/download/${feeCollectionId}`,
+    dailyReport: "/api/Fee/report/daily",
+    monthlyReport: "/api/Fee/report/monthly",
+    outstandingReport: "/api/Fee/report/outstanding",
   },
   auth: {
     login: "/api/Auth/login",

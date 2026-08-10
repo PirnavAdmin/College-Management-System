@@ -17,6 +17,20 @@
 .cms-pagination {
   flex-wrap: wrap;
 }
+.cms-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.cms-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .cms-search {
   display: flex;
   align-items: center;
@@ -53,6 +67,12 @@
   border-bottom: 1px solid var(--cms-border);
   font-size: 13.5px;
   vertical-align: middle;
+}
+.cms-table th:last-child,
+.cms-table td:last-child {
+  width: 128px;
+  min-width: 128px;
+  white-space: nowrap;
 }
 .cms-table tbody tr { transition: background 0.15s ease; }
 .cms-table tbody tr:hover { background: var(--cms-hover); }

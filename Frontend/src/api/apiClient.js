@@ -73,15 +73,13 @@ apiClient.interceptors.response.use(
       error.response.data = { message: "Backend returned HTML instead of JSON. Check API base URL or proxy." };
     }
     if (error.response?.status === 401) {
-      const currentData = error.response.data;
-      error.response.data = {
-        ...(currentData && typeof currentData === "object" ? currentData : {}),
-        message: getApiErrorMessage(error) || "Session expired or unauthorized. Please login again.",
-      };
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("role");
+      if (window.location.pathname !== "/login") window.location.assign("/login");
     }
     return Promise.reject(error);
   },
 );
 
 export default apiClient;
-

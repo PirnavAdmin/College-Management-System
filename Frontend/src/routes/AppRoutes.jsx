@@ -6,14 +6,14 @@ import FormPage from "@/components/pages/FormPage.jsx";
 import BoardManagementPage, { pageConfig as boardManagementConfig } from "@/components/pages/BoardManagementPage.jsx";
 import AcademicYearPage, { pageConfig as academicYearConfig } from "@/components/pages/AcademicYearPage.jsx";
 import CourseGroupPage, { pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
-import SubjectManagementPage, { pageConfig as subjectManagementConfig } from "@/components/pages/SubjectManagementPage.jsx";
+import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
-import FacultyManagementPage, { facultySubjectAllocationConfig, pageConfig as facultyManagementConfig } from "@/components/pages/FacultyManagementPage.jsx";
+import FacultyManagementPage from "@/components/pages/FacultyManagementPage.jsx";
 import StudentAdmissionPage from "@/components/pages/StudentAdmissionPage.jsx";
 import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/components/pages/StudentManagementPage.jsx";
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
 import AttendancePage from "@/components/pages/AttendancePage.jsx";
-import AssignmentsMaterialsPage from "@/components/pages/AssignmentsMaterialsPage.jsx";
+import AssignmentsMaterialsPage, { pageConfig as assignmentsMaterialsConfig } from "@/components/pages/AssignmentsMaterialsPage.jsx";
 import ExaminationPage, { pageConfig as examinationConfig } from "@/components/pages/ExaminationPage.jsx";
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
 import ResultProcessingPage from "@/components/pages/ResultProcessingPage.jsx";
@@ -34,10 +34,11 @@ const moduleConfigs = {
   boards: boardManagementConfig,
   "academic-years": academicYearConfig,
   courses: courseGroupConfig,
-  subjects: subjectManagementConfig,
+  subjects: SubjectManagementPage.pageConfig,
   sections: sectionManagementConfig,
-  faculty: facultyManagementConfig,
-  "faculty-allocation": facultySubjectAllocationConfig,
+  faculty: FacultyManagementPage.pageConfig,
+  "faculty-allocation": FacultyManagementPage.facultySubjectAllocationConfig,
+  assignments: assignmentsMaterialsConfig,
   examinations: examinationConfig,
   "fee-structure": feeManagementConfig,
   certificates: certificatesConfig,
@@ -126,4 +127,3 @@ export default function AppRoutes() {
     </Routes>
   );
 }
-

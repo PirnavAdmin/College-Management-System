@@ -13,7 +13,6 @@
   min-width: 0;
 }
 .cms-toolbar-right,
-.cms-actions,
 .cms-pagination {
   flex-wrap: wrap;
 }
@@ -77,6 +76,38 @@
 .cms-table tbody tr { transition: background 0.15s ease; }
 .cms-table tbody tr:hover { background: var(--cms-hover); }
 .cms-table td.cms-strong { font-weight: 600; }
+.cms-table th:last-child,
+.cms-table td:last-child { min-width: 134px; }
+.cms-table td:last-child .cms-actions {
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.cms-table td:last-child .cms-action-btn {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+.cms-table td:last-child .cms-action-btn.view {
+  color: #2563eb;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.cms-table td:last-child .cms-action-btn.edit {
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+.cms-table td:last-child .cms-action-btn.danger {
+  color: #dc2626;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.cms-table td:last-child .cms-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 10px rgba(15, 23, 42, 0.1);
+}
 .cms-pagination {
   display: flex;
   align-items: center;

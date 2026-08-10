@@ -9,7 +9,7 @@ import { configFor, deleteRow, useRows } from "@/data/store.js";
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
   const storeRows = useRows(slug, secondary, config);
-  const usesApi = Boolean(sectionConfig?.api?.fetchRows);
+  const usesApi = Boolean(sectionConfig?.api?.fetchRows || sectionConfig?.api?.getAll);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -24,10 +24,9 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     setLoading(true);
     setError("");
     try {
-      const loadedRows = await sectionConfig.api.fetchRows({
-        search: nextSearch,
-        filters: nextFilters,
-      });
+      const loadedRows = sectionConfig.api.fetchRows
+        ? await sectionConfig.api.fetchRows({ search: nextSearch, filters: nextFilters })
+        : sectionConfig.api.toRows((await sectionConfig.api.getAll()).data);
       setRows(loadedRows);
     } catch (err) {
       setRows([]);
@@ -39,16 +38,16 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
 
   useEffect(() => {
     setLoading(true);
-    if (usesApi) {
+    if (usesApi && !(sectionConfig.preserveLocalRows && storeRows.length > 0)) {
       loadRows("", {});
       return undefined;
     }
     const timer = setTimeout(() => setLoading(false), 450);
     return () => clearTimeout(timer);
-  }, [slug, secondary, usesApi]);
+  }, [slug, secondary, usesApi, loadRows, sectionConfig.preserveLocalRows, storeRows.length]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
-  const displayedRows = usesApi ? rows : storeRows;
+  const displayedRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
 
   const setFilter = (name, value) => {
     if (name === "__reset__") {
@@ -67,8 +66,8 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   const confirmDelete = async () => {
     if (!deleting) return;
     try {
-      if (usesApi && sectionConfig.api.deleteRow) {
-        await sectionConfig.api.deleteRow(deleting.id);
+      if (usesApi && (sectionConfig.api.deleteRow || sectionConfig.api.delete)) {
+        await (sectionConfig.api.deleteRow || sectionConfig.api.delete)(deleting.id);
         await loadRows(search, filters);
       } else {
         deleteRow(slug, secondary, deleting.id, config);

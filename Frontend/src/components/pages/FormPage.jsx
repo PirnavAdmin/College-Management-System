@@ -26,27 +26,39 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
     let ignore = false;
 
     const loadFormData = async () => {
-      if (!usesApi) return;
       setLoading(Boolean(id));
       try {
-        const [loadedFields, loadedRecord] = await Promise.all([
-          sectionConfig.api.loadFields ? sectionConfig.api.loadFields(sectionConfig.fields) : sectionConfig.fields,
-          id && sectionConfig.api.fetchRow ? sectionConfig.api.fetchRow(id) : null,
+        const [baseFields, loadedRecord] = await Promise.all([
+          usesApi && sectionConfig.api.loadFields ? sectionConfig.api.loadFields(sectionConfig.fields) : sectionConfig.fields,
+          usesApi && id && sectionConfig.api.fetchRow
+            ? sectionConfig.api.fetchRow(id)
+            : usesApi && id && sectionConfig.api.getById
+              ? sectionConfig.api.getById(id).then((response) => sectionConfig.api.toRow ? sectionConfig.api.toRow(response.data) : response.data)
+              : null,
         ]);
+        const loadedFields = await Promise.all(baseFields.map(async (field) => {
+          if (!field.loadOptions) return field;
+          try {
+            const response = await field.loadOptions();
+            const options = field.getOptions ? field.getOptions(response) : response.data;
+            return Array.isArray(options) ? { ...field, options } : field;
+          } catch {
+            // Keep the form usable if one dynamic option source is unavailable.
+            return field;
+          }
+        }));
         if (ignore) return;
         setFields(loadedFields);
         if (loadedRecord) setValues(loadedRecord);
-      } catch (err) {
-        if (!ignore) setToast(getApiErrorMessage(err));
+      } catch (error) {
+        if (!ignore) setToast(getApiErrorMessage(error));
       } finally {
         if (!ignore) setLoading(false);
       }
     };
 
     loadFormData();
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, [id, sectionConfig, setValues, usesApi]);
 
   const submit = async (e) => {
@@ -62,7 +74,13 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
             return;
           }
         }
-        await sectionConfig.api.saveRow(values, id);
+        if (sectionConfig.api.saveRow) {
+          await sectionConfig.api.saveRow(values, id);
+        } else {
+          const payload = sectionConfig.api.toPayload ? sectionConfig.api.toPayload(values) : values;
+          if (id && sectionConfig.api.update) await sectionConfig.api.update(id, payload);
+          else if (sectionConfig.api.create) await sectionConfig.api.create(payload);
+        }
       } else if (id) {
         updateRow(slug, secondary, id, values, config);
       } else {
@@ -70,8 +88,8 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
       }
       setToast(`${label} ${id ? "updated" : "created"} successfully`);
       navigate(listPath);
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
+    } catch (error) {
+      setToast(getApiErrorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -87,7 +105,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
               <div className="cms-empty">Loading record...</div>
             ) : (
               <div className="cms-form-grid">
-                {fields.map((f) => <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />)}
+                {fields.map((field) => <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={setValue} />)}
               </div>
             )}
             <div className="cms-form-actions">

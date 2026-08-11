@@ -1,27 +1,132 @@
-import React, { useMemo, useState } from "react";
-import { createPortal } from "react-dom";
-import { FiCheckCircle, FiEdit2, FiSave, FiShield, FiX, FiXCircle } from "react-icons/fi";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ToastContainer, toast } from "react-toastify";
+import { Check as FiCheck, Pencil as FiEdit2, Save as FiSave, Trash2 as FiTrash2 } from "lucide-react";
 import DashboardLayout from "../layout/DashboardLayout";
 import "./MarksEntryPage.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://sterile-retorted-tightness.ngrok-free.dev";
-// TODO: Replace TEMP data with API response when the evaluation backend is ready.
-const TEMP_EVALUATIONS = [{ evaluationId: 1, subjectName: "English", facultyName: "Lakshmi", studentsCount: 60, status: "SUBMITTED" }, { evaluationId: 2, subjectName: "Sanskrit", facultyName: "Suresh", studentsCount: 60, status: "SUBMITTED" }, { evaluationId: 3, subjectName: "Mathematics", facultyName: "Ravi Kumar", studentsCount: 60, status: "VERIFIED" }, { evaluationId: 4, subjectName: "Physics", facultyName: "Naresh", studentsCount: 60, status: "APPROVED" }, { evaluationId: 5, subjectName: "Chemistry", facultyName: "Kiran", studentsCount: 60, status: "SUBMITTED" }];
-const TEMP_RESULTS = [{ studentId: 1, rollNo: "MPC001", studentName: "Rahul", group: "MPC", totalMarks: 438, percentage: 87.6, grade: "A", result: "PASS" }, { studentId: 2, rollNo: "MPC002", studentName: "Ramesh", group: "MPC", totalMarks: 418, percentage: 83.6, grade: "A", result: "PASS" }];
-const TEMP_STUDENT_MARKS = [{ studentId: 1, rollNo: "MPC001", studentName: "Rahul", subjects: { English: 85, Sanskrit: 78, Mathematics: 92, Physics: 88, Chemistry: 95 }, total: 438, grade: "A" }, { studentId: 2, rollNo: "MPC002", studentName: "Ramesh", subjects: { English: 80, Sanskrit: 76, Mathematics: 88, Physics: 84, Chemistry: 90 }, total: 418, grade: "A" }];
-const GROUP_SUBJECTS = { MPC: ["English", "Sanskrit", "Mathematics", "Physics", "Chemistry"], BIPC: ["English", "Sanskrit", "Biology", "Physics", "Chemistry"], CEC: ["English", "Sanskrit", "Civics", "Economics", "Commerce"], HEC: ["English", "Sanskrit", "History", "Economics", "Civics"] };
-const flow = { board: ["BIE Telangana", "BIE Andhra Pradesh", "CBSE"], academicYear: ["2025-2026", "2026-2027"], academicLevel: ["Intermediate 1st Year", "Intermediate 2nd Year"], group: Object.keys(GROUP_SUBJECTS), section: ["A", "B"], examination: ["Semester I", "Semester II"] };
-const blank = { board: "", academicYear: "", academicLevel: "", group: "", section: "", examination: "" };
-const PRACTICAL_SUBJECTS = ["Physics", "Chemistry", "Botany", "Zoology"];
-const MAX_MARKS_PER_SUBJECT = 100;
-const totalOf = (m) => Number(m.internal || 0) + Number(m.theory || 0) + Number(m.practical || 0);
-const gradeOf = (n) => n >= 90 ? "A+" : n >= 80 ? "A" : n >= 70 ? "B+" : n >= 60 ? "B" : n >= 50 ? "C" : n >= 40 ? "D" : "F";
-const normalizedStatus = (status) => String(status || "SUBMITTED").toUpperCase();
-async function request(path, options = {}) { const response = await fetch(`${API_BASE_URL}${path}`, options); if (!response.ok) throw new Error("Request failed"); return response.json(); }
-function Badge({ status }) { const x = normalizedStatus(status); return <span className={`cms-badge-status cms-status-${x.toLowerCase()}`}><span className="cms-badge-dot" />{x}</span>; }
-function Select({ label, value, disabled, onChange }) { return <div className="cms-field-group"><label className="cms-field-label">{label}</label><select className="cms-select-input" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}><option value="">Select {label}</option>{flow[label === "Academic Year" ? "academicYear" : label === "Academic Level" ? "academicLevel" : label.toLowerCase()].map((x) => <option key={x}>{x}</option>)}</select></div>; }
-function Summary({ evaluations }) { const c = (x) => evaluations.filter((e) => e.status === x).length; return <div className="cms-summary-grid">{[["Total Subjects", evaluations.length], ["Submitted", c("SUBMITTED")], ["Verified", c("VERIFIED")], ["Approved", c("APPROVED")], ["Rejected", c("REJECTED")]].map(([a, b]) => <div className="cms-stat-card" key={a}><span>{a}</span><strong>{b}</strong></div>)}</div>; }
-function Modal({ title, close, children, className = "cms-evaluation-modal" }) { return createPortal(<div className="cms-modal-overlay"><div className={`cms-modal-content ${className}`} role="dialog" aria-modal="true"><div className="cms-section-heading"><h2>{title}</h2><button className="cms-btn-icon" title="Close" aria-label="Close" onClick={close}><FiX /></button></div>{children}</div></div>, document.body); }
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || " ";
+
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("token");
+  return {
+    Accept: "application/json",
+    Authorization: token ? `Bearer ${token}` : "",
+    "ngrok-skip-browser-warning": "true"
+  };
+};
+
+const apiRequest = async (path, options = {}) => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: { ...getAuthHeaders(), ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers }
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  if (!response.ok) {
+    const message = data?.message ?? data?.title ?? (typeof data === "string" ? data : "API request failed");
+    throw new Error(message);
+  }
+  return data;
+};
+
+const normalized = (value) => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+
+// Fallback Data definitions
+const FALLBACK_ACADEMIC_YEARS = [
+  { id: 1, year: "2025-2026" },
+  { id: 2, year: "2026-2027" }
+];
+const FALLBACK_SECTIONS = [
+  { id: 1, sectionName: "Section A" },
+  { id: 2, sectionName: "Section B" }
+];
+const FALLBACK_SUBJECTS = [
+  { subjectId: 1, subjectName: "Mathematics", subjectCode: "MATH101", passingMarks: 35 },
+  { subjectId: 2, subjectName: "Physics", subjectCode: "PHY101", passingMarks: 35 },
+  { subjectId: 3, subjectName: "Chemistry", subjectCode: "CHEM101", passingMarks: 35 }
+];
+const FALLBACK_STUDENTS = [
+  { studentId: 101, rollNo: "UG2026001", studentName: "Rahul Kumar" },
+  { studentId: 102, rollNo: "UG2026002", studentName: "Sai Kiran" },
+  { studentId: 103, rollNo: "UG2026003", studentName: "Ananya Reddy" }
+].map((s) => ({
+  ...s,
+  markId: null,
+  internalMarks: "",
+  practicalMarks: "",
+  theoryMarks: "",
+  passingMarks: 35,
+  verified: false
+}));
+
+const blankFilters = {
+  board: "",
+  academicYearId: "",
+  academicLevel: "",
+  groupId: "",
+  sectionId: "",
+  examinationId: "",
+  subjectId: ""
+};
+const fieldLabels = {
+  board: "Board",
+  academicYearId: "Academic Year",
+  academicLevel: "Academic Level",
+  groupId: "Group",
+  sectionId: "Section",
+  examinationId: "Examination",
+  subjectId: "Subject"
+};
+
+const totalOf = (s) =>
+  (Number(s.internalMarks) || 0) + (Number(s.practicalMarks) || 0) + (Number(s.theoryMarks) || 0);
+const isComplete = (s) => s.internalMarks !== "" && s.practicalMarks !== "" && s.theoryMarks !== "";
+const gradeOf = (total) =>
+  total >= 90 ? "A+" : total >= 80 ? "A" : total >= 70 ? "B+" : total >= 60 ? "B" : total >= 50 ? "C" : total >= 40 ? "D" : "F";
+const validateMark = (value, maximum) =>
+  value === "" || value === null || value === undefined
+    ? "Required"
+    : !/^\d+$/.test(String(value))
+    ? "Whole numbers only"
+    : Number(value) > maximum
+    ? `0-${maximum} max`
+    : "";
+const markErrors = (s) => ({
+  internalMarks: s.internalMarks === "" ? "" : validateMark(s.internalMarks, 30),
+  practicalMarks: s.practicalMarks === "" ? "" : validateMark(s.practicalMarks, 30),
+  theoryMarks: s.theoryMarks === "" ? "" : validateMark(s.theoryMarks, 40)
+});
+const isStudentValid = (s) => Object.values(markErrors(s)).every((error) => !error);
+const extractArray = (response) =>
+  Array.isArray(response)
+    ? response
+    : ["data", "items", "result", "records"].find((key) => Array.isArray(response?.[key]))
+    ? response[["data", "items", "result", "records"].find((key) => Array.isArray(response?.[key]))]
+    : null;
+const asValue = (value) => (value === null || value === undefined ? "" : String(value));
+
+function GradeBadge({ total, complete }) {
+  const grade = complete ? gradeOf(total) : "—";
+  return (
+    <span className={`cms-badge-grade ${complete ? `cms-grade-${grade.toLowerCase().replace("+", "-plus")}` : "cms-is-empty"}`}>
+      {grade}
+    </span>
+  );
+}
+
+function StatusBadge({ verified }) {
+  return (
+    <span className={`cms-badge-status ${verified ? "cms-status-verified" : "cms-status-pending"}`}>
+      <span className="cms-badge-dot" />
+      {verified ? "Verified" : "Pending"}
+    </span>
+  );
+}
 
 export default function MarksEntry() {
   const [filters, setFilters] = useState(blank), [ready, setReady] = useState(false), [tab, setTab] = useState("evaluations"), [evaluations, setEvaluations] = useState(TEMP_EVALUATIONS), [evaluation, setEvaluation] = useState(null), [editing, setEditing] = useState(false), [rows, setRows] = useState([]);

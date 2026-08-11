@@ -99,7 +99,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         rows={displayedRows}
         loading={loading}
         addLabel={sectionConfig.addLabel}
-        onSearchChange={usesApi ? handleSearch : null}
+        onSearchChange={sectionConfig.api?.fetchRows ? handleSearch : null}
         onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}

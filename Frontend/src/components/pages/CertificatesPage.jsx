@@ -2,8 +2,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Ban, FilePenLine, Printer, RotateCcw, Search, X } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Field, Toast } from "@/components/common/Ui.jsx";
-import { academicYears, certificates as seedCertificates, options, students } from "@/data/mockData.js";
+import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { academicYears, options, students } from "@/data/mockData.js";
 import "./CertificatesPage.css";
 
 export const pageConfig = {
@@ -12,12 +14,112 @@ export const pageConfig = {
 };
 
 const PAGE_SIZE = 5;
-const CERT_STORAGE_KEY = "cms.certificates.rows.v1";
 const MAX_PURPOSE_LENGTH = 160;
 const MAX_REMARKS_LENGTH = 240;
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const workflowSteps = ["Generated", "Reviewed", "Approved", "Issued"];
 const statusChoices = ["All", "Generated", "Reviewed", "Approved", "Issued", "Cancelled"];
+
+const unwrapListPayload = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  return [];
+};
+
+const unwrapSinglePayload = (payload) => {
+  if (Array.isArray(payload)) return payload[0] || null;
+  if (payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data)) return payload.data;
+  if (payload?.item && typeof payload.item === "object") return payload.item;
+  if (payload && typeof payload === "object") return payload;
+  return null;
+};
+
+const toDisplayStatus = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "Generated";
+  const key = raw.toLowerCase();
+  if (["generated", "draft", "pending", "requested"].includes(key)) return "Generated";
+  if (["reviewed", "inreview", "in-review", "review"].includes(key)) return "Reviewed";
+  if (["approved", "authorize", "authorized"].includes(key)) return "Approved";
+  if (["issued", "completed", "active"].includes(key)) return "Issued";
+  if (["cancelled", "canceled", "rejected", "inactive"].includes(key)) return "Cancelled";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+};
+
+const pick = (obj, keys) => keys.map((key) => obj?.[key]).find((value) => value !== undefined && value !== null && value !== "");
+
+const maybeIsoDate = (value) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toISOString().slice(0, 10);
+};
+
+const normalizeCertificate = (raw) => {
+  const id = pick(raw, ["id", "certificateId"]);
+  const studentId = Number(pick(raw, ["studentId", "studentID", "student_id"])) || null;
+  const admissionNo = String(pick(raw, ["admissionNo", "admissionNumber", "admission_no"]) || "").trim();
+  const studentName = pick(raw, ["studentName", "student", "name"]);
+  const matchedStudent = studentId
+    ? students.find((student) => Number(student.id) === Number(studentId))
+    : students.find((student) => student.admissionNo === admissionNo || student.name === studentName);
+  const requestDate = maybeIsoDate(
+    pick(raw, ["requestDate", "requestedDate", "requestedOn", "appliedDate", "createdAt", "generatedAt", "requestOn"]),
+  );
+  const issueDate = maybeIsoDate(pick(raw, ["issueDate", "issuedDate", "issuedAt"]));
+  const status = toDisplayStatus(pick(raw, ["status", "certificateStatus"]));
+
+  return {
+    id,
+    studentId: studentId || matchedStudent?.id || null,
+    number: pick(raw, ["certificateNo", "certificateNumber", "number"]) || "-",
+    student: studentName || matchedStudent?.name || "-",
+    admissionNo: admissionNo || matchedStudent?.admissionNo || "-",
+    group: pick(raw, ["group", "groupName"]) || matchedStudent?.group || "-",
+    level: pick(raw, ["level", "year", "academicLevel", "academicLevelName"]) || matchedStudent?.level || "-",
+    academicYear:
+      pick(raw, ["academicYear", "academicYearName"]) ||
+      academicYears.find((year) => year.status === "Active")?.name ||
+      "-",
+    type: pick(raw, ["certificateType", "type"]) || "-",
+    purpose: pick(raw, ["purpose"]) || "",
+    requestDate: requestDate || todayIso(),
+    issue: issueDate || "-",
+    status,
+    remarks: pick(raw, ["remarks", "comment", "note"]) || "",
+    generatedAt: maybeIsoDate(pick(raw, ["generatedAt"])) || requestDate || "",
+    reviewedAt: maybeIsoDate(pick(raw, ["reviewedAt"])) || "",
+    approvedAt: maybeIsoDate(pick(raw, ["approvedAt"])) || "",
+    issuedAt: maybeIsoDate(pick(raw, ["issuedAt"])) || issueDate || "",
+    cancelledAt: maybeIsoDate(pick(raw, ["cancelledAt", "canceledAt"])) || "",
+    generatedBy: pick(raw, ["generatedBy", "createdBy"]) || "",
+    reviewedBy: pick(raw, ["reviewedBy"]) || "",
+    approvedBy: pick(raw, ["approvedBy"]) || "",
+    issuedBy: pick(raw, ["issuedBy"]) || "",
+  };
+};
+
+const hasCertificateShape = (value) => {
+  if (!value || typeof value !== "object") return false;
+  return ["id", "certificateId", "certificateNo", "certificateNumber", "certificateType"].some((key) => key in value);
+};
+
+const getFriendlyErrorMessage = (error, fallback) => {
+  const base = getApiErrorMessage(error);
+  const statusCode = Number(error?.response?.status);
+  if (base && !["Something went wrong. Please try again."].includes(base)) return base;
+
+  if (statusCode === 400) return fallback || "Invalid request data. Please review and try again.";
+  if (statusCode === 401) return "Session expired or unauthorized. Please login again.";
+  if (statusCode === 403) return "You do not have permission to perform this action.";
+  if (statusCode === 404) return fallback || "Requested certificate was not found.";
+  if (statusCode === 409) return fallback || "Certificate conflict detected. Please refresh and retry.";
+  if (statusCode >= 500) return "Server error while processing certificate request. Please try again.";
+
+  return fallback || "Something went wrong. Please try again.";
+};
 
 const CERT_PAGE_STYLES = `
   .cert-page {
@@ -396,76 +498,6 @@ function isValidDateInput(value) {
   return !Number.isNaN(parsed.getTime());
 }
 
-function readOperator() {
-  try {
-    const user = JSON.parse(localStorage.getItem("user") || "null");
-    return user?.name || user?.email || "Admin";
-  } catch {
-    return "Admin";
-  }
-}
-
-function normalizeSeed(rows) {
-  return rows.map((row) => {
-    const issued = row.status === "Active";
-    const matchedStudent = students.find((student) => student.name === row.student);
-    const activeYear = academicYears.find((year) => year.status === "Active")?.name || "-";
-    return {
-      id: row.id,
-      number: row.number,
-      student: row.student || matchedStudent?.name || "-",
-      admissionNo: row.admissionNo || matchedStudent?.admissionNo || "-",
-      group: row.group || matchedStudent?.group || "-",
-      level: row.level || matchedStudent?.level || "-",
-      academicYear: row.academicYear || activeYear,
-      type: row.type,
-      purpose: row.purpose,
-      requestDate: row.issue,
-      issue: issued ? row.issue : "-",
-      status: issued ? "Issued" : "Cancelled",
-      remarks: "",
-      generatedAt: row.issue,
-      reviewedAt: issued ? row.issue : "",
-      approvedAt: issued ? row.issue : "",
-      issuedAt: issued ? row.issue : "",
-      cancelledAt: issued ? "" : row.issue,
-      generatedBy: "System Migration",
-      reviewedBy: issued ? "System Migration" : "",
-      approvedBy: issued ? "System Migration" : "",
-      issuedBy: issued ? "System Migration" : "",
-    };
-  });
-}
-
-function hydrateStoredRows(rows) {
-  const activeYear = academicYears.find((year) => year.status === "Active")?.name || "-";
-  return rows.map((row) => {
-    const matchedStudent = students.find((student) => student.admissionNo === row.admissionNo || student.name === row.student);
-    return {
-      ...row,
-      student: row.student || matchedStudent?.name || "-",
-      admissionNo: row.admissionNo || matchedStudent?.admissionNo || "-",
-      group: row.group || matchedStudent?.group || "-",
-      level: row.level || matchedStudent?.level || "-",
-      academicYear: row.academicYear || activeYear,
-      remarks: row.remarks || "",
-    };
-  });
-}
-
-function getInitialRows() {
-  try {
-    const raw = localStorage.getItem(CERT_STORAGE_KEY);
-    if (!raw) return normalizeSeed(seedCertificates);
-
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return normalizeSeed(seedCertificates);
-    return hydrateStoredRows(parsed);
-  } catch {
-    return normalizeSeed(seedCertificates);
-  }
-}
-
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -754,7 +786,12 @@ function buildPrintHtml(record) {
 }
 
 export default function CertificatesPage() {
-  const [rows, setRows] = useState(() => getInitialRows());
+  const [rows, setRows] = useState([]);
+  const [loadingList, setLoadingList] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [busyAction, setBusyAction] = useState({ id: null, type: "" });
+  const [printingId, setPrintingId] = useState(null);
   const activeAcademicYear = useMemo(
     () => academicYears.find((year) => year.status === "Active")?.name || academicYears[0]?.name || "-",
     [],
@@ -788,34 +825,72 @@ export default function CertificatesPage() {
   });
   const [editErrors, setEditErrors] = useState({});
   const [toast, setToast] = useState("");
-  const operator = useMemo(() => readOperator(), []);
+
+  const isRowBusy = (rowId, action = "") => {
+    if (!busyAction.id) return false;
+    if (busyAction.id !== rowId) return false;
+    return action ? busyAction.type === action : true;
+  };
+
+  const loadCertificates = async ({ showLoader = true } = {}) => {
+    if (showLoader) setLoadingList(true);
+    try {
+      const response = await apiClient.get(apiEndpoints.certificates.list);
+      const mapped = unwrapListPayload(response?.data).map(normalizeCertificate);
+      setRows(mapped);
+      return true;
+    } catch (error) {
+      setRows([]);
+      const message = getFriendlyErrorMessage(error, "Failed to load certificates. Please try again.");
+      setToast(message);
+      return false;
+    } finally {
+      if (showLoader) setLoadingList(false);
+    }
+  };
 
   useEffect(() => {
-    try {
-      localStorage.setItem(CERT_STORAGE_KEY, JSON.stringify(rows));
-    } catch {
-      // Ignore storage failures (private mode/quota issues).
-    }
-  }, [rows]);
+    loadCertificates();
+  }, []);
 
   const findStudentByAdmission = (admissionNo) =>
     students.find((student) => student.admissionNo === admissionNo) || null;
 
-  const nextNumber = () => {
-    const year = new Date().getFullYear();
-    const prefix = `CERT-${year}-`;
-    const current = rows
-      .map((row) => (String(row.number || "").startsWith(prefix) ? Number(String(row.number).slice(prefix.length)) : 0))
-      .filter((n) => Number.isFinite(n));
-    const sequence = Math.max(0, ...current) + 1;
-    return `${prefix}${String(sequence).padStart(4, "0")}`;
-  };
+  const upsertFromApiResponse = async (id, responseData) => {
+    const single = unwrapSinglePayload(responseData);
+    if (hasCertificateShape(single)) {
+      const normalized = normalizeCertificate(single);
+      setRows((prev) => {
+        const index = prev.findIndex((row) => String(row.id) === String(normalized.id));
+        if (index === -1) return [normalized, ...prev];
+        const next = [...prev];
+        next[index] = { ...next[index], ...normalized };
+        return next;
+      });
+      return;
+    }
 
-  const updateRow = (id, patch) => {
-    setRows((prev) => prev.map((row) => {
-      if (row.id !== id) return row;
-      return { ...row, ...patch };
-    }));
+    if (id !== undefined && id !== null) {
+      try {
+        const byIdResponse = await apiClient.get(apiEndpoints.certificates.getById(id));
+        const byIdData = unwrapSinglePayload(byIdResponse.data);
+        if (hasCertificateShape(byIdData)) {
+          const normalizedById = normalizeCertificate(byIdData);
+          setRows((prev) => {
+            const index = prev.findIndex((row) => String(row.id) === String(normalizedById.id));
+            if (index === -1) return [normalizedById, ...prev];
+            const next = [...prev];
+            next[index] = { ...next[index], ...normalizedById };
+            return next;
+          });
+          return;
+        }
+      } catch {
+        // Fallback to list refresh when by-id is not available.
+      }
+    }
+
+    await loadCertificates({ showLoader: false });
   };
 
   const validate = () => {
@@ -888,29 +963,21 @@ export default function CertificatesPage() {
     setErrors({});
   };
 
-  const clearSavedCertificates = () => {
-    const ok = window.confirm("This will clear all saved certificate records and reset defaults. Continue?");
-    if (!ok) return;
-
-    try {
-      localStorage.removeItem(CERT_STORAGE_KEY);
-    } catch {
-      // Ignore storage failures.
-    }
-
-    setRows(normalizeSeed(seedCertificates));
+  const refreshCertificates = async () => {
+    const ok = await loadCertificates();
+    setPage(1);
     setPrintPreview(null);
     setEditRow(null);
-    setPage(1);
-    setToast("Saved certificates cleared and defaults restored");
+    if (ok) setToast("Certificates refreshed from server");
   };
 
-  const generateCertificate = () => {
+  const generateCertificate = async () => {
     if (!validate()) return;
+    if (creating) return;
+
     const admissionNo = String(form.admissionNo || "").trim();
     const type = String(form.type || "").trim();
     const purpose = normalizeText(form.purpose);
-    const requestDate = String(form.requestDate || "").trim();
     const remarks = normalizeText(form.remarks);
     const selectedStudent = findStudentByAdmission(admissionNo);
     if (!selectedStudent) {
@@ -918,91 +985,113 @@ export default function CertificatesPage() {
       return;
     }
 
-    const number = nextNumber();
-    const draft = {
-      id: Date.now(),
-      number,
-      student: selectedStudent.name,
-      admissionNo,
-      group: selectedStudent.group,
-      level: selectedStudent.level,
-      academicYear: form.academicYear,
-      type,
+    const payload = {
+      studentId: Number(selectedStudent.id),
+      certificateType: type,
       purpose,
-      requestDate,
-      issue: "-",
-      status: "Generated",
-      remarks,
-      generatedAt: todayIso(),
-      reviewedAt: "",
-      approvedAt: "",
-      issuedAt: "",
-      cancelledAt: "",
-      generatedBy: operator,
-      reviewedBy: "",
-      approvedBy: "",
-      issuedBy: "",
+      remarks: remarks || null,
     };
-    setRows((prev) => [draft, ...prev]);
-    resetForm();
-    setToast(`Certificate draft ${number} generated`);
+
+    setCreating(true);
+    try {
+      const response = await apiClient.post(apiEndpoints.certificates.create, payload);
+      await upsertFromApiResponse(undefined, response.data);
+      resetForm();
+      setToast("Certificate generated successfully.");
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to generate certificate. Please try again."));
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleWorkflowChange = (row, action) => {
-    if (action === "review") moveToReviewed(row);
-    if (action === "approve") approveCertificate(row);
-    if (action === "issue") issueCertificate(row);
-  };
+  const handleWorkflowChange = async (row, action) => {
+    if (!row?.id) return;
+    if (busyAction.id) return;
 
-  const moveToReviewed = (row) => {
-    if (!canMoveTo(row.status, "Reviewed")) return;
-    const patch = { status: "Reviewed", reviewedAt: todayIso(), reviewedBy: operator };
-    updateRow(row.id, patch);
-    setToast(`Certificate ${row.number} moved to reviewed`);
-  };
-
-  const approveCertificate = (row) => {
-    if (!canMoveTo(row.status, "Approved")) return;
-    const patch = { status: "Approved", approvedAt: todayIso(), approvedBy: operator };
-    updateRow(row.id, patch);
-    setToast(`Certificate ${row.number} approved`);
-  };
-
-  const issueCertificate = (row) => {
-    if (!canMoveTo(row.status, "Issued")) return;
-    const issueDate = todayIso();
-    const patch = { status: "Issued", issue: issueDate, issuedAt: issueDate, issuedBy: operator };
-    updateRow(row.id, patch);
-    setToast(`Certificate ${row.number} issued`);
-  };
-
-  const cancelCertificate = (row) => {
-    const patch = { status: "Cancelled", cancelledAt: todayIso() };
-    updateRow(row.id, patch);
-    setToast(`Certificate ${row.number} cancelled`);
-  };
-
-  const regenerateCertificate = (row) => {
-    const patch = {
-      status: "Generated",
-      generatedAt: todayIso(),
-      reviewedAt: "",
-      approvedAt: "",
-      issuedAt: "",
-      cancelledAt: "",
-      issue: "-",
-      reviewedBy: "",
-      approvedBy: "",
-      issuedBy: "",
-      generatedBy: operator,
+    const actionMap = {
+      review: { endpoint: apiEndpoints.certificates.review, nextStatus: "Reviewed", success: "moved to reviewed" },
+      approve: { endpoint: apiEndpoints.certificates.approve, nextStatus: "Approved", success: "approved" },
+      issue: { endpoint: apiEndpoints.certificates.issue, nextStatus: "Issued", success: "issued" },
     };
-    updateRow(row.id, patch);
-    setToast(`Certificate ${row.number} moved back to generated state`);
+    const selected = actionMap[action];
+    if (!selected) return;
+    if (!canMoveTo(row.status, selected.nextStatus)) return;
+
+    setBusyAction({ id: row.id, type: action });
+    try {
+      const response = await apiClient.patch(selected.endpoint(row.id));
+      await upsertFromApiResponse(row.id, response.data);
+      setToast(`Certificate ${row.number} ${selected.success}`);
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, `Failed to ${action} certificate. Please try again.`));
+    } finally {
+      setBusyAction({ id: null, type: "" });
+    }
   };
 
-  const printCertificate = (record) => {
+  const cancelCertificate = async (row) => {
+    if (!row?.id || busyAction.id) return;
+    const ok = window.confirm(`Cancel certificate ${row.number}?`);
+    if (!ok) return;
+
+    setBusyAction({ id: row.id, type: "cancel" });
+    try {
+      const response = await apiClient.patch(apiEndpoints.certificates.cancel(row.id));
+      await upsertFromApiResponse(row.id, response.data);
+      setToast(`Certificate ${row.number} cancelled`);
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to cancel certificate. Please try again."));
+    } finally {
+      setBusyAction({ id: null, type: "" });
+    }
+  };
+
+  const regenerateCertificate = async (row) => {
+    if (!row?.id || busyAction.id) return;
+    setBusyAction({ id: row.id, type: "reissue" });
+    try {
+      const response = await apiClient.post(apiEndpoints.certificates.reissue, {
+        certificateId: Number(row.id),
+        remarks: row.remarks || null,
+      });
+      await upsertFromApiResponse(row.id, response.data);
+      setToast(`Certificate ${row.number} reissued`);
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to reissue certificate. Please try again."));
+    } finally {
+      setBusyAction({ id: null, type: "" });
+    }
+  };
+
+  const printCertificate = async (record) => {
     const target = record;
     if (!target) return;
+
+    if (printingId) return;
+    setPrintingId(target.id);
+
+    try {
+      const response = await apiClient.get(apiEndpoints.certificates.download(target.id), { responseType: "blob" });
+      const contentType = String(response?.headers?.["content-type"] || "").toLowerCase();
+      if (contentType.includes("pdf") || contentType.includes("application/octet-stream")) {
+        const blob = new Blob([response.data], { type: contentType || "application/pdf" });
+        const url = window.URL.createObjectURL(blob);
+        const popup = window.open(url, "_blank", "noopener,noreferrer");
+        if (!popup) {
+          setToast("Please allow popups to print certificate");
+        } else {
+          popup.focus();
+        }
+        setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+        return;
+      }
+    } catch {
+      // Fallback to existing preview template print.
+    } finally {
+      setPrintingId(null);
+    }
+
     const popup = window.open("", "_blank", "width=1000,height=760");
     if (!popup) {
       setToast("Please allow popups to print certificate");
@@ -1054,7 +1143,7 @@ export default function CertificatesPage() {
     setEditErrors({});
   };
 
-  const saveEditDialog = () => {
+  const saveEditDialog = async () => {
     if (!editRow) return;
 
     const nextErrors = {};
@@ -1078,17 +1167,24 @@ export default function CertificatesPage() {
     setEditErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
-    updateRow(editRow.id, {
-      admissionNo: editForm.admissionNo.trim(),
-      student: selectedStudent.name,
-      group: selectedStudent.group,
-      level: selectedStudent.level,
-      academicYear: editForm.academicYear.trim(),
-      purpose: normalizeText(editForm.purpose),
-      remarks: normalizeText(editForm.remarks),
-    });
-    setToast(`Certificate ${editRow.number} updated`);
-    closeEditDialog();
+    if (savingEdit) return;
+    setSavingEdit(true);
+    try {
+      const payload = {
+        studentId: Number(selectedStudent.id),
+        certificateType: editRow.type,
+        purpose: normalizeText(editForm.purpose),
+        remarks: normalizeText(editForm.remarks) || null,
+      };
+      const response = await apiClient.put(apiEndpoints.certificates.update(editRow.id), payload);
+      await upsertFromApiResponse(editRow.id, response.data);
+      setToast(`Certificate ${editRow.number} updated`);
+      closeEditDialog();
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to update certificate. Please try again."));
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   const filtered = useMemo(() => {
@@ -1174,8 +1270,10 @@ export default function CertificatesPage() {
               </div>
               <div className="cms-form-actions">
                 <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm}>Reset</button>
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={clearSavedCertificates}>Clear Saved Certificates</button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate}>Generate Draft</button>
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating}>Refresh Certificates</button>
+                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating}>
+                  {creating ? "Generating..." : "Generate Draft"}
+                </button>
               </div>
             </div>
           </div>
@@ -1222,7 +1320,11 @@ export default function CertificatesPage() {
                 </tr>
               </thead>
               <tbody>
-                {!pageRows.length ? (
+                {loadingList ? (
+                  <tr>
+                    <td colSpan={7}><Loader label="Loading certificates..." /></td>
+                  </tr>
+                ) : !pageRows.length ? (
                   <tr>
                     <td colSpan={7}><div className="cms-empty">No certificate records found.</div></td>
                   </tr>
@@ -1239,8 +1341,8 @@ export default function CertificatesPage() {
                         <select
                           className="cert-workflow-select"
                           value=""
-                          disabled={row.status === "Issued" || row.status === "Cancelled"}
-                          onChange={(e) => {
+                          disabled={row.status === "Issued" || row.status === "Cancelled" || isRowBusy(row.id)}
+                          onChange={async (e) => {
                             handleWorkflowChange(row, e.target.value);
                             e.target.value = "";
                           }}
@@ -1252,21 +1354,21 @@ export default function CertificatesPage() {
                         </select>
 
                         {row.status === "Issued" ? (
-                          <button className="cms-action-btn" title="Print Certificate" onClick={() => openPrintPreview(row)}>
+                          <button className="cms-action-btn" title="Print Certificate" onClick={() => openPrintPreview(row)} disabled={isRowBusy(row.id)}>
                             <Printer size={15} />
                           </button>
                         ) : null}
 
-                        <button className="cms-action-btn" title="Edit Certificate" onClick={() => openEditDialog(row)}>
+                        <button className="cms-action-btn" title="Edit Certificate" onClick={() => openEditDialog(row)} disabled={isRowBusy(row.id)}>
                           <FilePenLine size={15} />
                         </button>
 
                         {row.status !== "Cancelled" ? (
-                          <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)}>
+                          <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id)}>
                             <Ban size={15} />
                           </button>
                         ) : (
-                          <button className="cms-action-btn" title="Regenerate" onClick={() => regenerateCertificate(row)}>
+                          <button className="cms-action-btn" title="Regenerate" onClick={() => regenerateCertificate(row)} disabled={isRowBusy(row.id)}>
                             <RotateCcw size={15} />
                           </button>
                         )}
@@ -1309,8 +1411,8 @@ export default function CertificatesPage() {
             <div className="cert-print-topbar">
               <strong>Print Preview - {printPreview.number}</strong>
               <div className="cert-print-actions">
-                <button type="button" className="cms-btn cms-btn-primary" onClick={() => printCertificate(printPreview)}>
-                  <Printer size={15} /> Print
+                <button type="button" className="cms-btn cms-btn-primary" onClick={() => printCertificate(printPreview)} disabled={printingId === printPreview.id}>
+                  <Printer size={15} /> {printingId === printPreview.id ? "Preparing..." : "Print"}
                 </button>
                 <button type="button" className="cms-action-btn" aria-label="Close print preview" onClick={() => setPrintPreview(null)}>
                   <X size={16} />
@@ -1452,7 +1554,9 @@ export default function CertificatesPage() {
 
             <div className="cms-modal-foot">
               <button type="button" className="cms-btn cms-btn-ghost" onClick={closeEditDialog}>Cancel</button>
-              <button type="button" className="cms-btn cms-btn-primary" onClick={saveEditDialog}>Save Changes</button>
+              <button type="button" className="cms-btn cms-btn-primary" onClick={saveEditDialog} disabled={savingEdit}>
+                {savingEdit ? "Saving..." : "Save Changes"}
+              </button>
             </div>
           </div>
         </div>

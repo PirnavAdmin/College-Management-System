@@ -4,7 +4,7 @@ import { Check as FiCheck, Pencil as FiEdit2, Save as FiSave, Trash2 as FiTrash2
 import DashboardLayout from "../layout/DashboardLayout";
 import "./MarksEntryPage.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://sterile-retorted-tightness.ngrok-free.dev";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || " ";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");

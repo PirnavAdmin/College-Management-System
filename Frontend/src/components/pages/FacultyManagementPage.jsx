@@ -122,7 +122,6 @@ const facultySubjectAllocationConfig = {
     breadcrumb: ["People"],
     addLabel: "Allocate Subject",
     rows: [],
-    preserveLocalRows: true,
     columns: [
       { key: "faculty", label: "Faculty", strong: true },
       { key: "board", label: "Board" },

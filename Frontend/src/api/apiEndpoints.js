@@ -33,6 +33,8 @@
   },
   boards: {
     list: "/api/v1/boards",
+    getAll: "/api/v1/boards",
+    getAcademicLevels: "/api/v1/boards/academic-levels",
   },
   academicYears: {
     list: "/api/v1/academic-years",
@@ -86,10 +88,6 @@
     update: (id) => `/api/Subjects/${id}`,
     delete: (id) => `/api/Subjects/${id}`,
     getByGroup: (group) => `/api/Subjects/group/${encodeURIComponent(group)}`,
-  },
-  boards: {
-    getAll: "/api/v1/boards",
-    getAcademicLevels: "/api/v1/boards/academic-levels",
   },
   departments: {
     getAll: "/api/v1/departments",

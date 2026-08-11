@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
-import { FiCheck, FiEdit2, FiSave, FiTrash2 } from "react-icons/fi";
+import { Check as FiCheck, Pencil as FiEdit2, Save as FiSave, Trash2 as FiTrash2 } from "lucide-react";
 import DashboardLayout from "../layout/DashboardLayout";
 import "./MarksEntryPage.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://sterile-retorted-tightness.ngrok-free.dev";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || " ";
 
 const getAuthHeaders = () => {
   const token = localStorage.getItem("token");

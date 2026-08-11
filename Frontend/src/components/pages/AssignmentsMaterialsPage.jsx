@@ -52,7 +52,28 @@ function getCollection(payload) {
 function getApiMessage(error, fallback) {
   const payload = error?.response?.data;
   if (typeof payload === "string") return payload;
-  return payload?.message || payload?.Message || payload?.error || payload?.Error || error?.message || fallback;
+  const validationMessages = getValidationMessages(payload);
+  return validationMessages.length
+    ? validationMessages.join(" ")
+    : payload?.message || payload?.Message || payload?.error || payload?.Error || error?.message || fallback;
+}
+
+function getValidationMessages(payload) {
+  const errors = payload?.errors ?? payload?.Errors;
+  if (!errors || typeof errors !== "object") return [];
+  return Object.values(errors).flatMap((messages) => (Array.isArray(messages) ? messages : [messages]))
+    .filter((message) => typeof message === "string" && message.trim())
+    .map((message) => message.trim());
+}
+
+function getTomorrowDate() {
+  const tomorrow = new Date();
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const year = tomorrow.getFullYear();
+  const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+  const day = String(tomorrow.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getMasterDataMessage(error, fallback) {
@@ -192,19 +213,22 @@ function createInitialValues(row) {
 
 function buildAssignmentFormData(values, file) {
   const formData = new FormData();
-  formData.append("Title", values.title || "");
-  formData.append("SubjectId", values.subjectId || "");
-  formData.append("FacultyId", values.facultyId || "");
-  formData.append("AcademicYearId", values.academicYearId || "");
-  formData.append("AcademicLevel", values.academicLevel || "");
-  formData.append("Description", values.description || "");
-  formData.append("DueDate", values.dueDate || "");
-  formData.append("GroupId", values.groupId || "");
-  formData.append("AttachmentPath", values.attachmentPath || "");
-  formData.append("MaximumMarks", values.maximumMarks || "");
-  if (file) formData.append("Attachment", file);
+  formData.append("Title", values.title.trim());
+  formData.append("AcademicYearId", String(values.academicYearId));
+  formData.append("AcademicLevel", values.academicLevel);
+  formData.append("GroupId", String(values.groupId));
+  formData.append("SubjectId", String(values.subjectId));
+  formData.append("FacultyId", String(values.facultyId));
+  formData.append("DueDate", values.dueDate);
+  formData.append("MaximumMarks", String(Number(values.maximumMarks)));
+  if (values.description?.trim()) formData.append("Description", values.description.trim());
+  if (file instanceof File) formData.append("Attachment", file);
   return formData;
 }
+
+// The shared client defaults to application/json, which makes Axios serialize FormData as JSON.
+// Null removes that inherited header; the browser then sets multipart/form-data with its boundary.
+const multipartRequestConfig = { headers: { "Content-Type": null } };
 
 export default function AssignmentsMaterialsPage() {
   const { id } = useParams();
@@ -442,8 +466,13 @@ export default function AssignmentsMaterialsPage() {
         nextErrors[field] = "This field is required";
       }
     });
-    if (formValues.maximumMarks && Number.isNaN(Number(formValues.maximumMarks))) {
-      nextErrors.maximumMarks = "Enter a valid number";
+    const maximumMarks = Number(formValues.maximumMarks);
+    if (formValues.maximumMarks && (!Number.isInteger(maximumMarks) || maximumMarks <= 0)) {
+      nextErrors.maximumMarks = "Enter a positive whole number";
+    }
+    const minimumDueDate = getTomorrowDate();
+    if (formValues.dueDate && formValues.dueDate < minimumDueDate) {
+      nextErrors.dueDate = "Due date must be tomorrow or a future date.";
     }
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -452,13 +481,21 @@ export default function AssignmentsMaterialsPage() {
   const submitForm = async (event) => {
     event.preventDefault();
     setFormError("");
+    if (!formValues.title?.trim()) {
+      setFormErrors((current) => ({ ...current, title: "Title is required." }));
+      setFormError("Title is required.");
+      return;
+    }
     if (!validateForm()) return;
 
     setSaving(true);
     try {
       const formData = buildAssignmentFormData(formValues, attachmentFile);
-      if (isEditMode) await apiClient.put(apiEndpoints.assignments.update(id), formData);
-      else await apiClient.post(apiEndpoints.assignments.create, formData);
+      if (import.meta.env.DEV) {
+        console.log("Assignment form data:", [...formData.entries()].map(([key, value]) => [key, value instanceof File ? value.name : value]));
+      }
+      if (isEditMode) await apiClient.put(apiEndpoints.assignments.update(id), formData, multipartRequestConfig);
+      else await apiClient.post(apiEndpoints.assignments.create, formData, multipartRequestConfig);
       setToast(isEditMode ? "Assignment updated successfully" : "Assignment created successfully");
       navigate("/dashboard/assignments");
     } catch (saveError) {
@@ -498,19 +535,19 @@ export default function AssignmentsMaterialsPage() {
     return (
       <DashboardLayout title={`${isEditMode ? "Edit" : "Add"} Assignment`} subtitle={`Fill in the details below and save to ${isEditMode ? "update this" : "create a new"} record.`} breadcrumb={[MODULE_TITLE]}>
         <div className="cms-form-page">
-          <Link to="/dashboard/assignments" className="cms-back-link"><ArrowLeft size={15} /> Back to Assignment & Study Materials</Link>
+          <Link to="/dashboard/assignments" className="cms-back-link"><ArrowLeft size={15} /> Back to Assignment </Link>
           <form className="cms-card" onSubmit={submitForm} noValidate>
             <div className="cms-card-body">
               {formLoading ? <Loader label="Loading assignment..." /> : null}
               {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
               <div className="cms-form-grid cols-3">
-                <TextField name="title" label="Assignment Title" value={formValues.title} error={formErrors.title} onChange={setFieldValue} required />
+                <TextField name="title" label="Title" value={formValues.title} error={formErrors.title} onChange={setFieldValue} required />
                 <SelectField name="academicYearId" label={masterLoading ? "Academic Year (loading...)" : "Academic Year"} value={formValues.academicYearId} error={formErrors.academicYearId || academicYearError} options={academicYearOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(academicYearError) || academicYearOptions.length === 0} emptyLabel={academicYearError ? "Academic years unavailable" : "No academic years found"} action={academicYearError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry academic years</button> : null} />
                 <SelectField name="academicLevel" label="Academic Level" value={formValues.academicLevel} error={formErrors.academicLevel} options={levelOptions} onChange={setFieldValue} required />
                 <SelectField name="groupId" label={masterLoading ? "Group (loading...)" : "Group"} value={formValues.groupId} error={formErrors.groupId || groupError} options={groupOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(groupError) || groupOptions.length === 0} emptyLabel={groupError ? "Groups unavailable" : "No groups found"} action={groupError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry groups</button> : null} />
                 <SelectField name="subjectId" label={subjectLoading ? "Subject (loading...)" : "Subject"} value={formValues.subjectId} error={formErrors.subjectId || subjectError} options={subjectOptions} onChange={setFieldValue} required disabled={!formValues.groupId || subjectLoading || Boolean(subjectError)} emptyLabel={subjectError ? "Subjects unavailable" : formValues.groupId ? "No subjects found" : "Select group first"} action={subjectError && formValues.groupId ? <button type="button" className="cms-btn cms-btn-ghost" onClick={() => loadSubjectsByGroup(formValues.groupId)}>Retry subjects</button> : null} />
                 <SelectField name="facultyId" label={masterLoading ? "Faculty (loading...)" : "Faculty"} value={formValues.facultyId} error={formErrors.facultyId || facultyError} options={facultyOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(facultyError) || facultyOptions.length === 0} emptyLabel={facultyError ? "Failed to load faculty." : "No faculty found"} action={facultyError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry faculty</button> : null} />
-                <TextField name="dueDate" label="Due Date" type="date" value={formValues.dueDate} error={formErrors.dueDate} onChange={setFieldValue} required />
+                <TextField name="dueDate" label="Due Date" type="date" min={getTomorrowDate()} value={formValues.dueDate} error={formErrors.dueDate} onChange={setFieldValue} required />
                 <FileField label="Attachment" file={attachmentFile} attachmentPath={formValues.attachmentPath} onChange={setAttachmentFile} />
                 <TextField name="maximumMarks" label="Maximum Marks" type="number" value={formValues.maximumMarks} error={formErrors.maximumMarks} onChange={setFieldValue} required />
                 <TextareaField name="description" label="Description" value={formValues.description} onChange={setFieldValue} />
@@ -572,11 +609,11 @@ export default function AssignmentsMaterialsPage() {
   );
 }
 
-function TextField({ name, label, value, error, onChange, type = "text", required }) {
+function TextField({ name, label, value, error, onChange, type = "text", required, min }) {
   return (
     <div className={`cms-field ${error ? "has-error" : ""}`}>
       <label htmlFor={`assignment-${name}`}>{label} {required ? <span className="req">*</span> : null}</label>
-      <input id={`assignment-${name}`} type={type} value={value ?? ""} onChange={(event) => onChange(name, event.target.value)} />
+      <input id={`assignment-${name}`} type={type} min={min} value={value ?? ""} onChange={(event) => onChange(name, event.target.value)} />
       {error ? <span className="cms-error">{error}</span> : null}
     </div>
   );
@@ -616,7 +653,3 @@ function TextareaField({ name, label, value, onChange }) {
     </div>
   );
 }
-
-
-
-

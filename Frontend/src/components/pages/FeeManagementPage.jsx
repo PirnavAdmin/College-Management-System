@@ -6,6 +6,8 @@ import "./FeeManagementPage.css";
 const MODULE_SLUG = "fee-structure";
 const FEE_TYPES = ["Tuition Fee", "Laboratory Fee", "Hostel Fee", "Transport Fee", "Exam Fee"];
 const PAYMENT_MODES = ["Cash", "UPI", "Card", "Net Banking", "Cheque"];
+const HISTORY_REQUEST_TIMEOUT = 8000;
+const recentCollections = [];
 
 const getDataNode = (payload) => payload?.data ?? payload?.Data ?? payload;
 
@@ -113,16 +115,71 @@ const normalizeStructureForm = (item) => {
 };
 
 const normalizeCollection = (item) => ({
-  id: read(item, "feeCollectionId", "FeeCollectionId", "paymentId", "PaymentId", "id", "Id"),
-  receipt: read(item, "receiptNumber", "ReceiptNumber", "receiptNo", "ReceiptNo", "receipt", "Receipt") || "-",
+  id: read(item, "feeCollectionId", "FeeCollectionId", "paymentId", "PaymentId", "receiptId", "ReceiptId", "id", "Id"),
+  receipt: read(item, "receiptNumber", "ReceiptNumber", "receiptNo", "ReceiptNo", "receiptId", "ReceiptId", "receipt", "Receipt") || "-",
   student: read(item, "studentName", "StudentName", "student", "Student", "studentId", "StudentId") || "-",
   date: formatDate(read(item, "paymentDate", "PaymentDate", "date", "Date", "createdAt", "CreatedAt")),
   amount: read(item, "amount", "Amount") ?? 0,
   discount: read(item, "discount", "Discount", "discountAmount", "DiscountAmount") ?? 0,
   fine: read(item, "fine", "Fine", "fineAmount", "FineAmount") ?? 0,
-  mode: read(item, "paymentMode", "PaymentMode", "mode", "Mode") || "-",
+  mode: read(item, "paymentMode", "PaymentMode", "mode", "Mode", "feeType", "FeeType") || "-",
   txn: read(item, "transactionNumber", "TransactionNumber", "txn", "Txn") || "-",
 });
+
+const uniqueCollections = (rows) => {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = [row.id, row.receipt, row.student, row.date, row.amount, row.mode].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const normalizeStudentOption = (item) => {
+  const value = read(item, "studentId", "StudentId", "id", "Id");
+  const name = read(item, "studentName", "StudentName", "name", "Name");
+  const admissionNo = read(item, "admissionNo", "AdmissionNo");
+  const rollNo = read(item, "rollNo", "RollNo");
+  if (value === undefined || value === null || value === "") return null;
+
+  const meta = [admissionNo, rollNo].filter(Boolean).join(" / ");
+  return {
+    value: String(value),
+    label: meta ? `ID ${value} - ${name || value} (${meta})` : `ID ${value} - ${name || value}`,
+  };
+};
+
+const getStudentOptions = (response) => getCollection(response.data)
+  .map(normalizeStudentOption)
+  .filter(Boolean);
+
+const loadStudentOptions = async () => {
+  const response = await apiClient.get(apiEndpoints.students.getAll);
+  return getStudentOptions(response);
+};
+
+const normalizeHistoryCollection = (item, student) => {
+  const row = normalizeCollection({
+    ...item,
+    studentId: student.value,
+    studentName: student.label,
+  });
+  return {
+    ...row,
+    id: row.id && row.id !== "-" ? row.id : `${student.value}-${row.receipt}-${row.date}-${row.amount}`,
+  };
+};
+
+const loadCollectionRows = async () => {
+  const students = await loadStudentOptions();
+  const historyResults = await Promise.allSettled(students.map((student) =>
+    apiClient.get(apiEndpoints.fee.getHistory(student.value), { timeout: HISTORY_REQUEST_TIMEOUT })
+      .then((response) => getCollection(response.data).map((item) => normalizeHistoryCollection(item, student))),
+  ));
+  const historyRows = historyResults.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  return uniqueCollections([...recentCollections, ...historyRows]);
+};
 
 const structurePayload = (values, includeStatus = false) => ({
   boardId: Number(values.board),
@@ -177,27 +234,51 @@ const feeStructureApi = {
 };
 
 const feeCollectionApi = {
-  fetchRows: async () => [],
-  saveRow: (values, id) => {
+  fetchRows: loadCollectionRows,
+  saveRow: async (values, id) => {
     if (id) {
       return apiClient.put(apiEndpoints.fee.updatePayment(id), {
         amount: Number(values.amount),
         paymentMode: values.mode,
       });
     }
-    return apiClient.post(apiEndpoints.fee.collect, collectionPayload(values));
+    const response = await apiClient.post(apiEndpoints.fee.collect, collectionPayload(values));
+    const saved = normalizeCollection({
+      ...response.data,
+      studentId: values.student,
+      studentName: values.student,
+      amount: values.amount,
+      discount: values.discount,
+      fine: values.fine,
+      paymentMode: values.mode,
+      transactionNumber: values.txn,
+      paymentDate: new Date().toISOString(),
+    });
+    recentCollections.unshift({
+      ...saved,
+      id: saved.id && saved.id !== "-" ? saved.id : `saved-${Date.now()}`,
+    });
+    return response;
   },
   deleteRow: (id) => apiClient.delete(apiEndpoints.fee.deletePayment(id)),
   loadFields: async (fields) => {
-    const response = await apiClient.get(apiEndpoints.fee.getStructures);
-    const structures = getCollection(response.data)
-      .map((item) => {
-        const row = normalizeStructure(item);
-        return row.id ? { value: String(row.id), label: `${row.type} - ${row.group} - \u20b9${Number(row.amount || 0).toLocaleString("en-IN")}` } : null;
-      })
-      .filter(Boolean);
+    const [studentsResult, structuresResult] = await Promise.allSettled([
+      loadStudentOptions(),
+      apiClient.get(apiEndpoints.fee.getStructures),
+    ]);
+
+    const students = studentsResult.status === "fulfilled" ? studentsResult.value : [];
+    const structures = structuresResult.status === "fulfilled"
+      ? getCollection(structuresResult.value.data)
+        .map((item) => {
+          const row = normalizeStructure(item);
+          return row.id ? { value: String(row.id), label: `${row.type} - ${row.group} - \u20b9${Number(row.amount || 0).toLocaleString("en-IN")}` } : null;
+        })
+        .filter(Boolean)
+      : [];
 
     return fields.map((field) => {
+      if (field.name === "student") return { ...field, options: students };
       if (field.name === "feeStructure") return { ...field, options: structures };
       return field;
     });
@@ -243,7 +324,15 @@ export const pageConfig = {
       { key: "txn", label: "Transaction No." },
     ],
     fields: [
-      { name: "student", label: "Student", type: "select", options: [], required: true },
+      {
+        name: "student",
+        label: "Student",
+        type: "select",
+        options: [],
+        required: true,
+        loadOptions: () => apiClient.get(apiEndpoints.students.getAll),
+        getOptions: getStudentOptions,
+      },
       { name: "feeStructure", label: "Fee Structure", type: "select", options: [], required: true },
       { name: "amount", label: "Amount", type: "number", required: true },
       { name: "discount", label: "Discount", type: "number" },

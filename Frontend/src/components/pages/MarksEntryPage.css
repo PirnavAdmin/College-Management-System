@@ -9,6 +9,43 @@
   width: 100%;
 }
 
+/* Compact Academic Evaluation Module refinements */
+.cms-evaluation-modal { width: min(92vw, 1050px); max-height: 88vh; padding: 18px; overflow: hidden; }
+.cms-evaluation-modal .cms-section-heading { margin-bottom: 14px; }
+.cms-evaluation-modal .cms-section-heading h2 { font-size: 1rem; font-weight: 700; }
+.cms-evaluation-modal .cms-section-heading p { font-size: 0.8rem;}
+.cms-detail-grid > div { padding: 10px; }
+.cms-detail-grid strong { font-size: 0.72rem; }
+.cms-detail-grid p { margin-top: 3px; font-size: 0.85rem; }
+.cms-stat-card { padding: 12px 14px; }
+.cms-stat-card span { font-size: 0.72rem; }
+.cms-stat-card strong { font-size: 1.15rem; }
+.cms-marks-entry > .cms-summary-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.cms-badge-status { padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.cms-status-submitted { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.25); color: #d97706; }
+.cms-status-verified { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.25); color: #2563eb; }
+.cms-status-approved { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.25); color: #16a34a; }
+.cms-status-rejected { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.25); color: #dc2626; }
+.cms-table th { padding: 10px 12px; font-size: 0.7rem; }
+.cms-table td { padding: 10px 12px; }
+.cms-btn-icon, .cms-row-actions .cms-btn-icon { width: 30px; height: 30px; }
+.cms-row-actions { gap: 4px; }
+.cms-modal-actions .cms-btn { height: 34px; padding: 0 14px; font-size: 0.78rem; }
+.cms-evaluation-modal .cms-mark-input { width: 54px; height: 30px; font-size: 0.8rem; }
+.cms-evaluation-modal .cms-table td:nth-last-child(-n + 2), .cms-evaluation-modal .cms-table th:nth-last-child(-n + 2) { text-align: center; }
+.cms-evaluation-modal .cms-table-wrap { max-height: 52vh; overflow: auto; }
+
+@media (max-width: 1200px) {
+  .cms-marks-entry > .cms-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 768px) {
+  .cms-evaluation-modal { width: 100%; height: 100%; max-height: 100vh; border-radius: 0; padding: 14px; }
+  .cms-marks-entry > .cms-summary-grid { grid-template-columns: 1fr; }
+  .cms-modal-actions .cms-btn { width: 100%; }
+}
+
 /* Card Wrappers */
 .cms-card {
   background: var(--cms-surface);
@@ -301,6 +338,12 @@
   text-transform: uppercase;
 }
 
+.cms-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 .cms-table td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--cms-border);
@@ -404,8 +447,23 @@
 }
 
 .cms-status-verified {
-  background: var(--cms-green-soft);
-  color: var(--cms-green);
+  background: var(--cms-primary);
+  color: var(--cms-surface);
+}
+
+.cms-status-submitted {
+  background: var(--cms-warning);
+  color: var(--cms-text);
+}
+
+.cms-status-approved {
+  background: var(--cms-success);
+  color: var(--cms-surface);
+}
+
+.cms-status-rejected {
+  background: var(--cms-danger);
+  color: var(--cms-surface);
 }
 
 .cms-badge-dot {
@@ -500,6 +558,113 @@
   border: 1px solid var(--cms-border);
 }
 
+.cms-evaluation-modal {
+  width: min(96vw, 1200px);
+  max-width: none;
+  max-height: 94vh;
+  overflow-y: auto;
+}
+
+.cms-evaluation-grid,
+.cms-analysis-grid,
+.cms-summary-grid,
+.cms-detail-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.cms-evaluation-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 20px;
+}
+
+.cms-analysis-grid {
+  grid-template-columns: minmax(220px, 320px) 1fr;
+}
+
+.cms-analysis-grid > .cms-field-group,
+.cms-analysis-grid > .cms-empty-table {
+  grid-column: 1 / -1;
+}
+
+.cms-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-bottom: 20px;
+}
+
+.cms-detail-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 20px;
+}
+
+.cms-detail-grid > div {
+  border: 1px solid var(--cms-border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.cms-detail-grid strong {
+  font-size: 0.78rem;
+  color: var(--cms-muted);
+}
+
+.cms-detail-grid p {
+  margin: 5px 0 0;
+  color: var(--cms-text);
+  font-weight: 600;
+}
+
+.cms-subject-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cms-subject-badges .cms-badge-grade {
+  white-space: nowrap;
+}
+
+.cms-subject-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.cms-subject-header h2 {
+  margin: 0 0 4px;
+  color: var(--cms-text);
+  font-size: 1.15rem;
+}
+
+.cms-subject-header p {
+  margin: 0;
+  color: var(--cms-muted);
+  font-size: 0.85rem;
+}
+
+.cms-subject-stats-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  margin-bottom: 8px;
+  color: var(--cms-text);
+}
+
+.cms-sticky-actions {
+  position: sticky;
+  bottom: 0;
+  padding-top: 16px;
+  background: var(--cms-surface);
+}
+
+.cms-table-wrap {
+  overflow-x: auto;
+}
+
 .cms-modal-content h2 {
   margin: 0 0 8px 0;
   font-size: 1.25rem;
@@ -542,5 +707,222 @@
 
   .cms-search-wrap {
     max-width: 100%;
+  }
+
+  .cms-evaluation-grid,
+  .cms-analysis-grid,
+  .cms-summary-grid,
+  .cms-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cms-table-wrap {
+    overflow-x: auto;
+  }
+
+  .cms-stat-card,
+  .cms-stat {
+    min-width: 220px;
+  }
+
+  .cms-subject-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cms-subject-stats-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .cms-evaluation-modal {
+    width: 100%;
+    height: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .cms-sticky-actions {
+    flex-wrap: wrap;
+  }
+
+  .cms-sticky-actions .cms-btn {
+    flex: 1 1 100%;
+  }
+
+  .cms-table-container .cms-table {
+    min-width: 680px;
+  }
+
+  .cms-responsive-cards {
+    border: 0;
+    overflow: visible;
+  }
+
+  .cms-responsive-cards .cms-table,
+  .cms-responsive-cards .cms-table tbody,
+  .cms-responsive-cards .cms-table tr,
+  .cms-responsive-cards .cms-table td {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .cms-responsive-cards .cms-table thead {
+    display: none;
+  }
+
+  .cms-responsive-cards .cms-table tr {
+    margin-bottom: 14px;
+    border: 1px solid var(--cms-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .cms-responsive-cards .cms-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border-bottom: 1px solid var(--cms-border);
+  }
+
+  .cms-responsive-cards .cms-table td::before {
+    content: attr(data-label);
+    color: var(--cms-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+}
+
+/* Final compact overrides for the Academic Evaluation Module. */
+.cms-evaluation-modal { width: min(92vw, 1050px); max-height: 88vh; padding: 18px; overflow: hidden; }
+.cms-evaluation-modal .cms-section-heading { margin-bottom: 14px; }
+.cms-evaluation-modal .cms-section-heading h2 { font-size: 1rem; font-weight: 700; }
+.cms-evaluation-modal .cms-section-heading p { font-size: 0.8rem; }
+.cms-detail-grid > div { padding: 10px; }
+.cms-detail-grid strong { font-size: 0.72rem; }
+.cms-detail-grid p { margin-top: 3px; font-size: 0.85rem; }
+.cms-stat-card { padding: 12px 14px; }
+.cms-stat-card span { font-size: 0.72rem; }
+.cms-stat-card strong { font-size: 1.15rem; }
+.cms-marks-entry > .cms-summary-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.cms-badge-status { padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.cms-status-submitted { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.25); color: #d97706; }
+.cms-status-verified { background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.25); color: #2563eb; }
+.cms-status-approved { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.25); color: #16a34a; }
+.cms-status-rejected { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.25); color: #dc2626; }
+.cms-table th { padding: 10px 12px; font-size: 0.7rem; }
+.cms-table td { padding: 10px 12px; }
+.cms-btn-icon, .cms-row-actions .cms-btn-icon { width: 30px; height: 30px; }
+.cms-row-actions { gap: 4px; }
+.cms-modal-actions .cms-btn { height: 34px; padding: 0 14px; font-size: 0.78rem; }
+.cms-evaluation-modal .cms-mark-input { width: 54px; height: 30px; font-size: 0.8rem; }
+.cms-evaluation-modal .cms-table td:nth-last-child(-n + 2), .cms-evaluation-modal .cms-table th:nth-last-child(-n + 2) { text-align: center; }
+.cms-evaluation-modal .cms-table-wrap { max-height: 52vh; overflow: auto; }
+
+@media (max-width: 1200px) { .cms-marks-entry > .cms-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cms-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 768px) { .cms-evaluation-modal { width: 100%; height: 100%; max-height: 100vh; border-radius: 0; padding: 14px; } .cms-marks-entry > .cms-summary-grid { grid-template-columns: 1fr; } .cms-modal-actions .cms-btn { width: 100%; } }
+
+/* Natural overlay scrolling and compact modal variants */
+.cms-modal-overlay {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.cms-modal-content { margin: auto 0; }
+
+.cms-evaluation-modal {
+  width: min(92vw, 980px);
+  max-height: none;
+  overflow: visible;
+  padding: 16px;
+}
+
+.cms-detail-grid { gap: 12px; }
+.cms-detail-grid > div { padding: 8px; }
+.cms-table td, .cms-table th { padding: 8px 10px; }
+.cms-evaluation-modal .cms-mark-input { width: 50px; height: 28px; font-size: 0.78rem; }
+.cms-evaluation-modal .cms-table-wrap { max-height: none; overflow: visible; }
+
+.cms-result-modal,
+.cms-marksheet-modal {
+  width: min(90vw, 760px);
+  padding: 16px;
+  max-height: none;
+  overflow: visible;
+}
+
+.cms-result-modal .cms-stat-card,
+.cms-marksheet-modal .cms-stat-card { padding: 10px 12px; }
+.cms-result-modal .cms-stat-card span,
+.cms-marksheet-modal .cms-stat-card span { font-size: 0.68rem; }
+.cms-result-modal .cms-stat-card strong,
+.cms-marksheet-modal .cms-stat-card strong { font-size: 1rem; }
+.cms-result-modal .cms-table td,
+.cms-result-modal .cms-table th,
+.cms-marksheet-modal .cms-table td,
+.cms-marksheet-modal .cms-table th { padding: 8px 10px; }
+
+.cms-modal-content h2 { font-size: 1rem; }
+.cms-modal-content p { font-size: 0.8rem; }
+.cms-modal-actions .cms-btn { height: 30px; padding: 0 12px; font-size: 0.75rem; font-weight: 600; }
+.cms-modal-actions .cms-btn-secondary { background: rgba(59, 130, 246, 0.10); color: #2563eb; border: 1px solid rgba(59, 130, 246, 0.20); }
+.cms-modal-actions .cms-btn-success,
+.cms-modal-actions .cms-btn-primary { background: rgba(34, 197, 94, 0.10); color: #16a34a; border: 1px solid rgba(34, 197, 94, 0.20); }
+.cms-modal-actions .cms-btn-danger { background: rgba(239, 68, 68, 0.10); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.20); }
+.cms-modal-actions .cms-btn:hover:not(:disabled) { filter: brightness(0.96); }
+
+@media (max-width: 768px) {
+  .cms-modal-overlay { padding: 0; }
+  .cms-evaluation-modal,
+  .cms-result-modal,
+  .cms-marksheet-modal { width: 100%; min-height: 100%; margin: 0; border-radius: 0; padding: 14px; }
+  .cms-modal-actions { flex-wrap: wrap; }
+}
+
+/* Evaluation-only interaction refinement */
+.cms-clickable-row {
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.cms-clickable-row:hover {
+  background: var(--cms-hover);
+}
+
+.cms-modal-overlay {
+  overflow-y: auto;
+}
+
+.cms-modal-content {
+  width: min(95vw, 1000px);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+
+.cms-evaluation-modal {
+  width: min(95vw, 1000px);
+}
+
+@media (max-width: 1024px) {
+  .cms-modal-content,
+  .cms-evaluation-modal { width: 96vw; }
+}
+
+@media (max-width: 768px) {
+  .cms-modal-content,
+  .cms-evaluation-modal {
+    width: 100%;
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    border-radius: 0;
   }
 }

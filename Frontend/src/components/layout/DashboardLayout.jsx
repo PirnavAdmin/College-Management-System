@@ -41,7 +41,7 @@ export const menu = [
     items: [
       { to: "/dashboard/timetable", label: "Timetable", icon: CalendarClock },
       { to: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck },
-      { to: "/dashboard/assignments", label: "Assignments & Materials", icon: FileText },
+      { to: "/dashboard/assignments", label: "Assignments", icon: FileText },
     ],
   },
   {

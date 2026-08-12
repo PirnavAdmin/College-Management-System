@@ -9,6 +9,8 @@
   },
   assignments: {
     list: "/api/v1/assignments",
+    adminList: "/api/admin/assignments",
+    adminCreate: "/api/admin/assignments",
     create: "/api/v1/assignments",
     details: (id) => `/api/v1/assignments/${id}`,
     update: (id) => `/api/v1/assignments/${id}`,
@@ -35,6 +37,15 @@
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
     getAcademicLevels: "/api/v1/boards/academic-levels",
+
+
+    academicLevels: "/api/v1/boards/academic-levels",
+    gradingSystems: "/api/v1/boards/grading-systems",
+    validateBoardCode: "/api/v1/boards/validate-board-code",
+    formData: "/api/v1/boards/form-data",
+    history: (boardId) => `/api/v1/boards/${boardId}/history`,
+    summary: "/api/v1/boards/summary",
+
   },
   academicYears: {
     list: "/api/v1/academic-years",
@@ -48,6 +59,7 @@
   groups: {
     getAll: "/api/v1/groups",
     list: "/api/v1/groups",
+    listPage: "/api/v1/groups",
     create: "/api/v1/groups",
     getById: (groupId) => `/api/v1/groups/${groupId}`,
     update: (groupId) => `/api/v1/groups/${groupId}`,

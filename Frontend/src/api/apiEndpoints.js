@@ -9,6 +9,8 @@
   },
   assignments: {
     list: "/api/v1/assignments",
+    adminList: "/api/admin/assignments",
+    adminCreate: "/api/admin/assignments",
     create: "/api/v1/assignments",
     details: (id) => `/api/v1/assignments/${id}`,
     update: (id) => `/api/v1/assignments/${id}`,
@@ -59,6 +61,7 @@
   groups: {
     getAll: "/api/v1/groups",
     list: "/api/v1/groups",
+    listPage: "/api/v1/groups",
     create: "/api/v1/groups",
     getById: (groupId) => `/api/v1/groups/${groupId}`,
     update: (groupId) => `/api/v1/groups/${groupId}`,

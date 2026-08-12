@@ -7,19 +7,35 @@ import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./AttendancePage.css";
 
 const marksList = ["Present", "Absent", "Late", "Leave"];
+const defaultSectionNames = ["Section A", "Section B"];
 
-const unwrapList = (data) => (Array.isArray(data) ? data : data?.data || data?.items || []);
+// Maps UI labels to the numeric status codes the backend expects.
+// Confirm against the AttendanceStatus enum in Swagger's "Schemas" section.
+const statusMap = { Present: 1, Absent: 2, Late: 3, Leave: 4 };
+const reverseStatusMap = { 1: "Present", 2: "Absent", 3: "Late", 4: "Leave" };
+
+const unwrapList = (data) => {
+  if (Array.isArray(data)) return data;
+  return data?.data || data?.Data || data?.items || data?.Items || [];
+};
 
 const mapNameId = (items, idKeys, nameKeys) => {
   const names = [];
   const map = {};
   (items || []).forEach((it) => {
-    const id = idKeys.map((k) => it[k]).find((v) => v !== undefined);
-    const name = nameKeys.map((k) => it[k]).find((v) => v !== undefined && v !== "");
+    const id = idKeys.map((k) => it[k]).find((v) => v !== undefined && v !== null);
+    const name = nameKeys.map((k) => it[k]).find((v) => v !== undefined && v !== null && v !== "");
     if (name) names.push(name);
     if (name && id !== undefined) map[name] = id;
   });
   return { names, map };
+};
+
+const getFallbackSections = (groupName) => {
+  const matchingSections = mockSections
+    .filter((section) => section.group === groupName)
+    .map((section) => section.name);
+  return matchingSections.length ? matchingSections : defaultSectionNames;
 };
 
 export default function AttendancePage() {
@@ -47,10 +63,10 @@ export default function AttendancePage() {
 
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
+    const loadLookups = async () => {
       setLookupsLoading(true);
       try {
-        const [b, y, l, g, s, f] = await Promise.all([
+        const results = await Promise.allSettled([
           apiClient.get(apiEndpoints.boards.getAll),
           apiClient.get(apiEndpoints.academicYears.getAll),
           apiClient.get(apiEndpoints.boards.academicLevels),
@@ -60,36 +76,33 @@ export default function AttendancePage() {
         ]);
         if (!mounted) return;
 
-        const bMapped = mapNameId(unwrapList(b.data), ["boardId", "id"], ["boardName", "name"]);
-        setBoards(bMapped.names);
-        setBoardMap(bMapped.map);
+        const loadOptions = (index, setNames, setMap, idKeys, nameKeys) => {
+          const result = results[index];
+          if (result.status !== "fulfilled") return false;
+          const mapped = mapNameId(unwrapList(result.value.data), idKeys, nameKeys);
+          setNames(mapped.names);
+          setMap(mapped.map);
+          return true;
+        };
 
-        const yMapped = mapNameId(unwrapList(y.data), ["academicYearId", "id"], ["academicYearName", "name"]);
-        setYears(yMapped.names);
-        setYearMap(yMapped.map);
-
-        const lMapped = mapNameId(unwrapList(l.data), ["academicLevelId", "id"], ["levelName", "name"]);
-        setLevels(lMapped.names);
-        setLevelMap(lMapped.map);
-
-        const gMapped = mapNameId(unwrapList(g.data), ["groupId", "id"], ["groupName", "name"]);
-        setGroups(gMapped.names);
-        setGroupMap(gMapped.map);
-
-        const sMapped = mapNameId(unwrapList(s.data), ["subjectId", "id"], ["subjectName", "name"]);
-        setSubjects(sMapped.names);
-        setSubjectMap(sMapped.map);
-
-        const fMapped = mapNameId(unwrapList(f.data), ["id", "facultyId"], ["fullName", "name"]);
-        setFaculty(fMapped.names);
-        setFacultyMap(fMapped.map);
-      } catch (err) {
+        const succeeded = [
+          loadOptions(0, setBoards, setBoardMap, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]),
+          loadOptions(1, setYears, setYearMap, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
+          loadOptions(2, setLevels, setLevelMap, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "name", "Name"]),
+          loadOptions(3, setGroups, setGroupMap, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name"]),
+          loadOptions(4, setSubjects, setSubjectMap, ["subjectId", "SubjectId", "id", "Id"], ["subjectName", "SubjectName", "name", "Name"]),
+          loadOptions(5, setFaculty, setFacultyMap, ["id", "Id", "facultyId", "FacultyId"], ["fullName", "FullName", "name", "Name"]),
+        ];
+        if (succeeded.some((success) => !success)) {
+          setToast("Some filter options could not be loaded. The available dropdowns can still be used.");
+        }
+      } catch {
         setToast("Failed to load filter options. Please refresh and try again.");
       } finally {
         if (mounted) setLookupsLoading(false);
       }
     };
-    load();
+    loadLookups();
     return () => (mounted = false);
   }, []);
 
@@ -105,12 +118,12 @@ export default function AttendancePage() {
       .get(apiEndpoints.sections.byGroup(groupId))
       .then((res) => {
         if (!mounted) return;
-        const mapped = mapNameId(unwrapList(res.data), ["sectionId", "id"], ["sectionName", "name"]);
+        const mapped = mapNameId(res.data, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
         if (mapped.names.length) {
           setSections(mapped.names);
           setSectionMap(mapped.map);
         } else {
-          const fallback = mockSections.filter((s) => s.group === filters.group).map((s) => s.name);
+          const fallback = getFallbackSections(filters.group);
           const fallbackMap = {};
           fallback.forEach((name, index) => (fallbackMap[name] = index + 1));
           setSections(fallback);
@@ -119,7 +132,7 @@ export default function AttendancePage() {
       })
       .catch(() => {
         if (!mounted) return;
-        const fallback = mockSections.filter((s) => s.group === filters.group).map((s) => s.name);
+        const fallback = getFallbackSections(filters.group);
         const fallbackMap = {};
         fallback.forEach((name, index) => (fallbackMap[name] = index + 1));
         setSections(fallback);
@@ -145,16 +158,62 @@ export default function AttendancePage() {
     setToast("All students marked present");
   };
 
-  const load = () => {
+  const load = async () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 600);
+    try {
+      const payload = {
+        boardId: boardMap[filters.board] || 0,
+        academicYearId: yearMap[filters.year] || 0,
+        academicLevelId: levelMap[filters.level] || 0,
+        groupId: groupMap[filters.group] || 0,
+        sectionId: sectionMap[filters.section] || 0,
+        subjectId: subjectMap[filters.subject] || 0,
+        facultyId: facultyMap[filters.faculty] || 0,
+        fromDate: filters.date,
+        toDate: filters.date,
+        pageNumber: 1,
+        pageSize: 200,
+      };
+      const res = await apiClient.post(apiEndpoints.attendance.students, payload);
+      const list = unwrapList(res.data).map((s) => ({
+        id: s.studentId,
+        roll: s.rollNumber,
+        name: s.studentName,
+        mark: s.isAttendanceMarked ? (reverseStatusMap[s.status] || "Present") : "Present",
+      }));
+      setRows(list);
+    } catch (err) {
+      setToast("Failed to load students. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
-  const save = () => {
+
+  const save = async () => {
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      const payload = {
+        attendanceDate: filters.date,
+        boardId: boardMap[filters.board] || 0,
+        academicYearId: yearMap[filters.year] || 0,
+        academicLevelId: levelMap[filters.level] || 0,
+        groupId: groupMap[filters.group] || 0,
+        sectionId: sectionMap[filters.section] || 0,
+        subjectId: subjectMap[filters.subject] || 0,
+        facultyId: facultyMap[filters.faculty] || 0,
+        students: rows.map((r) => ({
+          studentId: r.id,
+          status: statusMap[r.mark],
+          remarks: "",
+        })),
+      };
+      await apiClient.post(apiEndpoints.attendance.bulk, payload);
       setToast("Attendance saved successfully");
-    }, 600);
+    } catch (err) {
+      setToast("Failed to save attendance. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const summary = marksList.map((m) => ({ m, n: rows.filter((r) => r.mark === m).length }));
@@ -168,7 +227,16 @@ export default function AttendancePage() {
           ) : (
             <div className="cms-filters">
               {filterFields.map((f) => (
-                <Field key={f.name} field={f} value={filters[f.name]} onChange={(n, v) => setFilters((p) => ({ ...p, [n]: v }))} />
+                <Field
+                  key={f.name}
+                  field={f}
+                  value={filters[f.name]}
+                  onChange={(name, value) => setFilters((previous) => (
+                    name === "group"
+                      ? { ...previous, group: value, section: "" }
+                      : { ...previous, [name]: value }
+                  ))}
+                />
               ))}
             </div>
           )}

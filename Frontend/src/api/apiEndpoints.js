@@ -9,6 +9,8 @@
   },
   assignments: {
     list: "/api/v1/assignments",
+    adminList: "/api/admin/assignments",
+    adminCreate: "/api/admin/assignments",
     create: "/api/v1/assignments",
     details: (id) => `/api/v1/assignments/${id}`,
     update: (id) => `/api/v1/assignments/${id}`,
@@ -35,6 +37,15 @@
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
     getAcademicLevels: "/api/v1/boards/academic-levels",
+
+
+    academicLevels: "/api/v1/boards/academic-levels",
+    gradingSystems: "/api/v1/boards/grading-systems",
+    validateBoardCode: "/api/v1/boards/validate-board-code",
+    formData: "/api/v1/boards/form-data",
+    history: (boardId) => `/api/v1/boards/${boardId}/history`,
+    summary: "/api/v1/boards/summary",
+
   },
   academicYears: {
     list: "/api/v1/academic-years",
@@ -48,6 +59,7 @@
   groups: {
     getAll: "/api/v1/groups",
     list: "/api/v1/groups",
+    listPage: "/api/v1/groups",
     create: "/api/v1/groups",
     getById: (groupId) => `/api/v1/groups/${groupId}`,
     update: (groupId) => `/api/v1/groups/${groupId}`,
@@ -85,6 +97,25 @@
     resetPassword: "/api/Auth/reset-password",
     users: "/api/Auth/users",
     userById: (id) => `/api/Auth/user/${id}`,
+  },
+  results: {
+    list: "/api/v1/results",
+    process: "/api/v1/results/process",
+    publish: "/api/v1/results/publish",
+    byStudent: (studentId) => `/api/v1/results/students/${studentId}`,
+    rankList: "/api/v1/results/rank-list",
+    failedStudents: "/api/v1/results/failed-students",
+    statistics: "/api/v1/results/statistics",
+    analysis: "/api/v1/results/analysis",
+    memo: (studentId) => `/api/v1/results/memo/${studentId}`,
+    revaluation: "/api/v1/results/revaluation",
+    revaluationById: (revaluationId) => `/api/v1/results/revaluation/${revaluationId}`,
+  },
+  boards: {
+    list: "/api/v1/boards",
+  },
+  groups: {
+    list: "/api/v1/groups",
   },
   subjects: {
     getAll: "/api/Subjects",
@@ -140,11 +171,23 @@
     resetPassword: (studentId) => `/api/v1/students/${studentId}/reset-password`,
     getDashboard: (studentId) => `/api/v1/students/${studentId}/dashboard`,
   },
+  admissions: {
+    getAll: "/api/v1/admissions",
+    create: "/api/v1/admissions",
+    getById: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    update: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    delete: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    verify: (admissionId) => `/api/v1/admissions/${admissionId}/verify`,
+    approve: (admissionId) => `/api/v1/admissions/${admissionId}/approve`,
+    reject: (admissionId) => `/api/v1/admissions/${admissionId}/reject`,
+    generateNumber: "/api/v1/admissions/generate-number",
+  },
   certificates: {
     list: "/api/certificates",
     create: "/api/certificates",
     getById: (id) => `/api/certificates/${id}`,
     update: (id) => `/api/certificates/${id}`,
+    delete: (id) => `/api/certificates/${id}`,
     bonafide: "/api/certificates/bonafide",
     study: "/api/certificates/study",
     conduct: "/api/certificates/conduct",

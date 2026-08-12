@@ -140,6 +140,17 @@
     resetPassword: (studentId) => `/api/v1/students/${studentId}/reset-password`,
     getDashboard: (studentId) => `/api/v1/students/${studentId}/dashboard`,
   },
+  admissions: {
+    getAll: "/api/v1/admissions",
+    create: "/api/v1/admissions",
+    getById: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    update: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    delete: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    verify: (admissionId) => `/api/v1/admissions/${admissionId}/verify`,
+    approve: (admissionId) => `/api/v1/admissions/${admissionId}/approve`,
+    reject: (admissionId) => `/api/v1/admissions/${admissionId}/reject`,
+    generateNumber: "/api/v1/admissions/generate-number",
+  },
   certificates: {
     list: "/api/certificates",
     create: "/api/certificates",

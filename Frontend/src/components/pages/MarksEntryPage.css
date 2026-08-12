@@ -125,8 +125,10 @@
 /* Toast Banner */
 .cms-toast-banner {
   position: fixed;
-  top: 20px;
+  bottom: 0px;
   right: 20px;
+  left: auto;
+  corner-top-right-shape: auto;
   padding: 10px 16px;
   border-radius: 8px;
   font-size: 0.82rem;
@@ -151,6 +153,18 @@
   background: var(--cms-status-rejected-bg);
   color: var(--cms-status-rejected-text);
   border: 1px solid var(--cms-status-rejected-border);
+}
+
+.cms-toast-info {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.cms-toast-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 /* Cards */
@@ -760,6 +774,61 @@
   border: 1px solid var(--cms-border);
 }
 
+/* Dedicated evaluation details screen */
+.cms-evaluation-details {
+  min-width: 0;
+}
+
+.cms-details-header {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--cms-border);
+}
+
+.cms-back-btn {
+  border: 0;
+  background: transparent;
+  color: var(--cms-primary);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0;
+  margin: 0 0 8px;
+}
+
+.cms-back-btn:hover {
+  color: var(--cms-primary-hover);
+}
+
+.cms-details-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--cms-text);
+  margin: 0;
+}
+
+.cms-details-subtitle {
+  font-size: 0.78rem;
+  color: var(--cms-text-muted);
+  margin-top: 2px;
+  display: block;
+}
+
+.cms-details-table-wrap {
+  margin-bottom: 14px;
+}
+
+.cms-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--cms-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .cms-mark-input {
   width: 55px;
   height: 30px;
@@ -834,6 +903,10 @@
 
   .cms-modal-actions .cms-btn {
     flex: 1 1 auto;
+  }
+
+  .cms-pagination {
+    justify-content: space-between;
   }
 }
 

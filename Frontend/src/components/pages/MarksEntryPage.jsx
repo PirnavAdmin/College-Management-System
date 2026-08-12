@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useCallback } from "react";
-import { createPortal } from "react-dom";
 import DashboardLayout from "../layout/DashboardLayout";
 import "./MarksEntryPage.css";
 
@@ -23,19 +22,6 @@ const IconSave = () => (
 const IconCheck = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12"/>
-  </svg>
-);
-
-const IconShield = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-  </svg>
-);
-
-const IconX = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18"/>
-    <line x1="6" y1="6" x2="18" y2="18"/>
   </svg>
 );
 
@@ -89,6 +75,7 @@ const GROUP_SUBJECTS = {
   MEC: ["English", "Sanskrit", "Mathematics", "Economics", "Commerce"]
 };
 
+
 // Subject Faculty Mapping
 const SUBJECT_FACULTY = {
   English: "Lakshmi",
@@ -101,6 +88,50 @@ const SUBJECT_FACULTY = {
   Civics: "M. Narayana",
   Economics: "K. Swamy",
   Commerce: "V. Rao"
+};
+
+const SUBJECT_CODES = {
+  English: "ENG101",
+  Sanskrit: "SAN101",
+  Mathematics: "MAT101",
+  Physics: "PHY101",
+  Chemistry: "CHE101",
+  Botany: "BOT101",
+  Zoology: "ZOO101",
+  Civics: "CIV101",
+  Economics: "ECO101",
+  Commerce: "COM101"
+};
+
+const FACULTY_IDS = {
+  Lakshmi: "FAC1001",
+  Suresh: "FAC1002",
+  "Ravi Kumar": "FAC1003",
+  Naresh: "FAC1004",
+  Kiran: "FAC1005",
+  "Dr. S. Reddy": "FAC1006",
+  "Dr. P. Varma": "FAC1007",
+  "M. Narayana": "FAC1008",
+  "K. Swamy": "FAC1009",
+  "V. Rao": "FAC1010"
+};
+
+const STUDENTS_PER_PAGE = 10;
+const MARK_LIMITS = { internal: 30, theory: 70, practical: 30 };
+
+const TOAST_MESSAGES = {
+  FETCH_SUCCESS: (group, section) =>
+    `Evaluation data loaded successfully for ${group} - ${section}`,
+  FETCH_ERROR: "Failed to load evaluation data.",
+  EDIT_STARTED: (subject) => `${subject} evaluation opened in edit mode.`,
+  EDIT_CANCELLED: (subject) => `Changes discarded for ${subject}.`,
+  MARKS_SAVED: (subject) => `${subject} marks updated successfully.`,
+  VERIFIED: (subject) => `${subject} evaluation verified successfully.`,
+  APPROVED: (subject) => `${subject} evaluation approved successfully.`,
+  REJECTED: (subject) => `${subject} evaluation rejected.`,
+  STATUS_UPDATED: (subject, status) =>
+    `${subject} status changed to ${status}.`,
+  INVALID_MARK: (field, limit) => `${field} marks cannot exceed ${limit}.`
 };
 
 // PRACTICAL SUBJECTS RULE:
@@ -127,13 +158,13 @@ const INITIAL_STUDENTS_BASE = [
 const DEFAULT_SUBJECT_STATUSES = {
   English: "SUBMITTED",
   Sanskrit: "SUBMITTED",
-  Mathematics: "VERIFIED",
-  Physics: "APPROVED",
+  Mathematics: "SUBMITTED",
+  Physics: "SUBMITTED",
   Chemistry: "SUBMITTED",
   Botany: "SUBMITTED",
-  Zoology: "VERIFIED",
+  Zoology: "SUBMITTED",
   Civics: "SUBMITTED",
-  Economics: "APPROVED",
+  Economics: "SUBMITTED",
   Commerce: "SUBMITTED"
 };
 
@@ -180,15 +211,19 @@ export default function MarksEntryPage() {
   const [selectedEvaluation, setSelectedEvaluation] = useState(null);
   const [modalRows, setModalRows] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [viewMode, setViewMode] = useState("list");
+  const [currentPage, setCurrentPage] = useState(1);
 
-  const showToast = useCallback((msg, type = "success") => {
-    setToastMessage({ msg, type });
+  const showToast = useCallback((message, type = "success") => {
+    const id = Date.now();
+    setToastMessage({ id, msg: message, type });
     setTimeout(() => setToastMessage(null), 3500);
   }, []);
 
   const handleFilterChange = (key, value) => {
     setReady(false);
     setSelectedEvaluation(null);
+    setViewMode("list");
     setFilters((prev) => {
       const next = { ...prev, [key]: value };
       if (key === "board") {
@@ -234,13 +269,18 @@ export default function MarksEntryPage() {
     const subjects = GROUP_SUBJECTS[group] || GROUP_SUBJECTS.MPC;
     const sectionShort = filters.section.replace(/Section\s*/i, "").trim() || "A";
 
-    const newEvaluations = subjects.map((subj, index) => ({
-      evaluationId: `EV-${1000 + index + 1}`,
-      subjectName: subj,
-      facultyName: SUBJECT_FACULTY[subj] || "Faculty Instructor",
-      studentsCount: INITIAL_STUDENTS_BASE.length * 10,
-      status: DEFAULT_SUBJECT_STATUSES[subj] || "SUBMITTED"
-    }));
+    const newEvaluations = subjects.map((subj, index) => {
+      const facultyName = SUBJECT_FACULTY[subj] || "Faculty Instructor";
+      return {
+        evaluationId: `EV-${1000 + index + 1}`,
+        subjectName: subj,
+        subjectCode: SUBJECT_CODES[subj],
+        facultyName,
+        facultyId: FACULTY_IDS[facultyName],
+        studentsCount: INITIAL_STUDENTS_BASE.length * 10,
+        status: DEFAULT_SUBJECT_STATUSES[subj] || "SUBMITTED"
+      };
+    });
 
     const newSubjectMarksData = {};
 
@@ -267,7 +307,7 @@ export default function MarksEntryPage() {
     setEvaluations(newEvaluations);
     setSubjectMarksData(newSubjectMarksData);
     setReady(true);
-    showToast(`Loaded evaluation data for ${filters.group} (${filters.section})`, "success");
+    showToast(TOAST_MESSAGES.FETCH_SUCCESS(filters.group, filters.section), "success");
   };
 
   const summaryStats = useMemo(() => {
@@ -279,30 +319,40 @@ export default function MarksEntryPage() {
     return { total, submitted, verified, approved, rejected };
   }, [evaluations]);
 
-  const handleOpenEvaluationModal = (item) => {
+  const handleOpenEvaluationDetails = (item) => {
     const subjName = item.subjectName;
     const rowsForSubject = subjectMarksData[subjName] || [];
 
     setSelectedEvaluation(item);
     setModalRows(JSON.parse(JSON.stringify(rowsForSubject)));
     setIsEditing(false);
+    setCurrentPage(1);
+    setViewMode("details");
   };
 
-  const handleCloseModal = () => {
+  const handleBackToEvaluations = () => {
     setSelectedEvaluation(null);
     setModalRows([]);
     setIsEditing(false);
+    setCurrentPage(1);
+    setViewMode("list");
   };
 
   const handleUpdateMarkInModal = (index, field, value) => {
     if (value !== "" && !/^\d+$/.test(value)) return;
+
+    const parsedValue = value === "" ? "" : Math.max(0, parseInt(value, 10));
+    const limit = MARK_LIMITS[field];
+    if (parsedValue !== "" && limit !== undefined && parsedValue > limit) {
+      showToast(TOAST_MESSAGES.INVALID_MARK(field, limit), "error");
+    }
 
     setModalRows((prev) =>
       prev.map((row, i) => {
         if (i !== index) return row;
         return {
           ...row,
-          [field]: value === "" ? "" : Math.max(0, parseInt(value, 10))
+          [field]: parsedValue === "" ? "" : Math.min(parsedValue, limit ?? parsedValue)
         };
       })
     );
@@ -319,7 +369,7 @@ export default function MarksEntryPage() {
     }));
 
     setIsEditing(false);
-    showToast(`${subjName} evaluation marks updated successfully!`, "success");
+    showToast(TOAST_MESSAGES.MARKS_SAVED(subjName), "success");
   };
 
   const handleUpdateStatus = (newStatus) => {
@@ -338,21 +388,15 @@ export default function MarksEntryPage() {
       prev ? { ...prev, status: newStatus } : null
     );
 
-    let msg = "";
-    let toastType = "success";
-
     if (newStatus === "VERIFIED") {
-      msg = `${subjName} evaluation verified successfully.`;
+      showToast(TOAST_MESSAGES.VERIFIED(subjName), "success");
     } else if (newStatus === "APPROVED") {
-      msg = `${subjName} evaluation approved successfully.`;
+      showToast(TOAST_MESSAGES.APPROVED(subjName), "success");
     } else if (newStatus === "REJECTED") {
-      msg = `${subjName} evaluation rejected.`;
-      toastType = "error";
+      showToast(TOAST_MESSAGES.REJECTED(subjName), "error");
     } else {
-      msg = `${subjName} status updated to ${newStatus}.`;
+      showToast(TOAST_MESSAGES.STATUS_UPDATED(subjName, newStatus), "success");
     }
-
-    showToast(msg, toastType);
   };
 
   const filteredEvaluations = useMemo(() => {
@@ -407,6 +451,25 @@ export default function MarksEntryPage() {
     });
   }, [ready, subjectMarksData, currentGroupSubjects, filters.group, filters.section]);
 
+  const filteredStudentMarks = useMemo(() => {
+    if (!searchTerm.trim()) return studentSubjectMarksList;
+
+    const term = searchTerm.toLowerCase().trim();
+    return studentSubjectMarksList.filter((student) =>
+      student.rollNo.toLowerCase().includes(term) ||
+      student.studentName.toLowerCase().includes(term) ||
+      String(student.total).includes(term) ||
+      student.grade.toLowerCase().includes(term)
+    );
+  }, [studentSubjectMarksList, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(modalRows.length / STUDENTS_PER_PAGE));
+  const pageStart = (currentPage - 1) * STUDENTS_PER_PAGE;
+  const paginatedRows = useMemo(
+    () => modalRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE),
+    [modalRows, pageStart]
+  );
+
   return (
     <DashboardLayout
       title="Academic Evaluation"
@@ -415,7 +478,7 @@ export default function MarksEntryPage() {
     >
       <div className="cms-marks-entry cms-anim-up">
         {toastMessage && (
-          <div className={`cms-toast-banner cms-toast-${toastMessage.type}`}>
+          <div key={toastMessage.id} className={`cms-toast-banner cms-toast-${toastMessage.type}`}>
             <span>{toastMessage.msg}</span>
           </div>
         )}
@@ -483,6 +546,7 @@ export default function MarksEntryPage() {
 
         {/* Content Section */}
         {ready ? (
+          viewMode === "list" ? (
           <>
             <div className="cms-stats-grid">
               <div className="cms-stat-card cms-stat-total">
@@ -524,18 +588,16 @@ export default function MarksEntryPage() {
                   </button>
                 </div>
 
-                {activeTab === "evaluations" && (
-                  <div className="cms-search-wrap">
-                    <span className="cms-search-icon"><IconSearch /></span>
-                    <input
-                      type="text"
-                      className="cms-search-input"
-                      placeholder="Search subject, faculty, status..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                )}
+                <div className="cms-search-wrap">
+                  <span className="cms-search-icon"><IconSearch /></span>
+                  <input
+                    type="text"
+                    className="cms-search-input"
+                    placeholder={activeTab === "evaluations" ? "Search subject, faculty, status..." : "Search roll no, student, total, grade..."}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
               </div>
 
               {/* Tab 1: Evaluations */}
@@ -556,10 +618,10 @@ export default function MarksEntryPage() {
                           <tr
                             key={item.evaluationId}
                             className="cms-clickable-row"
-                            onClick={() => handleOpenEvaluationModal(item)}
+                            onClick={() => handleOpenEvaluationDetails(item)}
                           >
-                            <td className="cms-font-semibold">{item.subjectName}</td>
-                            <td className="cms-text-muted">{item.facultyName}</td>
+                            <td className="cms-font-semibold">{item.subjectCode} - {item.subjectName}</td>
+                            <td className="cms-text-muted">{item.facultyId} - {item.facultyName}</td>
                             <td>{item.studentsCount}</td>
                             <td>
                               <StatusBadge status={item.status} />
@@ -594,7 +656,7 @@ export default function MarksEntryPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {studentSubjectMarksList.map((stu) => (
+                      {filteredStudentMarks.length > 0 ? filteredStudentMarks.map((stu) => (
                         <tr key={stu.studentId} className="cms-idle-row">
                           <td className="cms-font-semibold">{stu.rollNo}</td>
                           <td>{stu.studentName}</td>
@@ -610,229 +672,52 @@ export default function MarksEntryPage() {
                             </span>
                           </td>
                         </tr>
-                      ))}
+                      )) : (
+                        <tr>
+                          <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td">
+                            No student marks found matching search.
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
               )}
+
             </div>
           </>
+          ) : selectedEvaluation ? (
+            <EvaluationDetails
+              selectedEvaluation={selectedEvaluation}
+              filters={filters}
+              rows={paginatedRows}
+              rowOffset={pageStart}
+              isEditing={isEditing}
+              totalPages={totalPages}
+              currentPage={currentPage}
+              onBack={handleBackToEvaluations}
+              onEdit={() => {
+                setIsEditing(true);
+                showToast(TOAST_MESSAGES.EDIT_STARTED(selectedEvaluation.subjectName), "info");
+              }}
+              onCancel={() => {
+                setModalRows(JSON.parse(JSON.stringify(subjectMarksData[selectedEvaluation.subjectName] || [])));
+                setIsEditing(false);
+                showToast(TOAST_MESSAGES.EDIT_CANCELLED(selectedEvaluation.subjectName), "warning");
+              }}
+              onSave={handleSaveModal}
+              onUpdateMark={handleUpdateMarkInModal}
+              onUpdateStatus={handleUpdateStatus}
+              onPreviousPage={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onNextPage={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            />
+          ) : null
         ) : (
           <div className="cms-card cms-empty-table">
             <p>Select all evaluation filters and click <strong>Fetch Evaluation Data</strong> to view evaluation status &amp; student marks.</p>
           </div>
         )}
 
-        {/* Modal Popup */}
-        {selectedEvaluation && createPortal(
-          <div className="cms-modal-overlay" onClick={handleCloseModal}>
-            <div
-              className="cms-modal-content cms-evaluation-modal"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="cms-modal-header">
-                <div>
-                  <h2 className="cms-modal-title">{selectedEvaluation.subjectName} Evaluation</h2>
-                  <span className="cms-modal-subtitle">Review, edit, and approve marks evaluation</span>
-                </div>
-                <button
-                  className="cms-modal-close-btn"
-                  title="Close Modal"
-                  aria-label="Close Modal"
-                  onClick={handleCloseModal}
-                >
-                  <IconX />
-                </button>
-              </div>
-
-              <div className="cms-detail-grid">
-                <div className="cms-detail-card">
-                  <span className="cms-detail-label">Faculty</span>
-                  <span className="cms-detail-value">{selectedEvaluation.facultyName}</span>
-                </div>
-                <div className="cms-detail-card">
-                  <span className="cms-detail-label">Group</span>
-                  <span className="cms-detail-value">{filters.group || "MPC"}</span>
-                </div>
-                <div className="cms-detail-card">
-                  <span className="cms-detail-label">Section</span>
-                  <span className="cms-detail-value">{(filters.section || "Section A").replace(/Section\s*/i, "")}</span>
-                </div>
-                <div className="cms-detail-card">
-                  <span className="cms-detail-label">Examination</span>
-                  <span className="cms-detail-value">{filters.examination || "Semester I"}</span>
-                </div>
-              </div>
-
-              {(() => {
-                const practical = isPracticalSubject(selectedEvaluation.subjectName);
-                return (
-                  <div className="cms-table-container cms-modal-table-wrap">
-                    <table className="cms-table">
-                      <thead>
-                        <tr>
-                          <th>ROLL NO</th>
-                          <th>STUDENT NAME</th>
-                          <th>INTERNAL</th>
-                          <th>THEORY</th>
-                          {practical && <th>PRACTICAL</th>}
-                          <th>TOTAL</th>
-                          <th>GRADE</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {modalRows.map((row, idx) => {
-                          const totalMarks = calculateTotal(row, practical);
-                          const maxMarks = 100;
-                          const grade = getGrade(totalMarks, maxMarks);
-
-                          return (
-                            <tr key={row.studentId || idx}>
-                              <td className="cms-font-semibold">{row.rollNo}</td>
-                              <td>{row.studentName}</td>
-                              <td>
-                                {isEditing ? (
-                                  <input
-                                    type="text"
-                                    className="cms-mark-input"
-                                    value={row.internal}
-                                    onChange={(e) =>
-                                      handleUpdateMarkInModal(idx, "internal", e.target.value)
-                                    }
-                                  />
-                                ) : (
-                                  row.internal
-                                )}
-                              </td>
-                              <td>
-                                {isEditing ? (
-                                  <input
-                                    type="text"
-                                    className="cms-mark-input"
-                                    value={row.theory}
-                                    onChange={(e) =>
-                                      handleUpdateMarkInModal(idx, "theory", e.target.value)
-                                    }
-                                  />
-                                ) : (
-                                  row.theory
-                                )}
-                              </td>
-                              {practical && (
-                                <td>
-                                  {isEditing ? (
-                                    <input
-                                      type="text"
-                                      className="cms-mark-input"
-                                      value={row.practical}
-                                      onChange={(e) =>
-                                        handleUpdateMarkInModal(idx, "practical", e.target.value)
-                                      }
-                                    />
-                                  ) : (
-                                    row.practical
-                                  )}
-                                </td>
-                              )}
-                              <td className="cms-font-semibold">
-                                {totalMarks} / {maxMarks}
-                              </td>
-                              <td>
-                                <span className={`cms-badge-grade cms-grade-${grade.toLowerCase().replace("+", "-plus")}`}>
-                                  {grade}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()}
-
-              <div className="cms-modal-actions">
-                {isEditing ? (
-                  <>
-                    <button
-                      className="cms-btn cms-btn-secondary"
-                      onClick={() => {
-                        const subjName = selectedEvaluation.subjectName;
-                        const originalRows = subjectMarksData[subjName] || [];
-                        setModalRows(JSON.parse(JSON.stringify(originalRows)));
-                        setIsEditing(false);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="cms-btn cms-btn-primary"
-                      onClick={handleSaveModal}
-                    >
-                      <IconSave /> Save Changes
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      className="cms-btn cms-btn-edit-outline"
-                      onClick={() => setIsEditing(true)}
-                    >
-                      <IconPencil /> Edit
-                    </button>
-
-                    {selectedEvaluation.status === "SUBMITTED" && (
-                      <>
-                        <button
-                          className="cms-btn cms-btn-info"
-                          onClick={() => handleUpdateStatus("VERIFIED")}
-                        >
-                          <IconShield /> Verify
-                        </button>
-                        <button
-                          className="cms-btn cms-btn-danger"
-                          onClick={() => handleUpdateStatus("REJECTED")}
-                        >
-                          <IconXCircle /> Reject
-                        </button>
-                      </>
-                    )}
-
-                    {selectedEvaluation.status === "VERIFIED" && (
-                      <>
-                        <button
-                          className="cms-btn cms-btn-success"
-                          onClick={() => handleUpdateStatus("APPROVED")}
-                        >
-                          <IconCheck /> Approve
-                        </button>
-                        <button
-                          className="cms-btn cms-btn-danger"
-                          onClick={() => handleUpdateStatus("REJECTED")}
-                        >
-                          <IconXCircle /> Reject
-                        </button>
-                      </>
-                    )}
-
-                    {selectedEvaluation.status === "APPROVED" && (
-                      <span className="cms-status-pill cms-status-approved">
-                        <IconCheck /> Approved
-                      </span>
-                    )}
-
-                    {selectedEvaluation.status === "REJECTED" && (
-                      <span className="cms-status-pill cms-status-rejected">
-                        <IconXCircle /> Rejected
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
       </div>
     </DashboardLayout>
   );
@@ -855,6 +740,115 @@ function SelectFilter({ label, value, options, disabled, onChange }) {
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function EvaluationDetails({
+  selectedEvaluation,
+  filters,
+  rows,
+  rowOffset,
+  isEditing,
+  totalPages,
+  currentPage,
+  onBack,
+  onEdit,
+  onCancel,
+  onSave,
+  onUpdateMark,
+  onUpdateStatus,
+  onPreviousPage,
+  onNextPage
+}) {
+  const practical = isPracticalSubject(selectedEvaluation.subjectName);
+
+  return (
+    <div className="cms-card cms-main-card cms-evaluation-details">
+      <div className="cms-details-header">
+        <div>
+          <button className="cms-back-btn" onClick={onBack}>← Back to Evaluations</button>
+          <h2 className="cms-details-title">{selectedEvaluation.subjectCode} - {selectedEvaluation.subjectName} Evaluation</h2>
+          <span className="cms-details-subtitle">Review, edit, and approve marks evaluation</span>
+        </div>
+      </div>
+
+      <div className="cms-detail-grid">
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Faculty</span>
+          <span className="cms-detail-value">{selectedEvaluation.facultyId} - {selectedEvaluation.facultyName}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Group</span>
+          <span className="cms-detail-value">{filters.group || "MPC"}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Section</span>
+          <span className="cms-detail-value">{(filters.section || "Section A").replace(/Section\s*/i, "")}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Examination</span>
+          <span className="cms-detail-value">{filters.examination || "Semester I"}</span>
+        </div>
+      </div>
+
+      <div className="cms-table-container cms-details-table-wrap">
+        <table className="cms-table">
+          <thead>
+            <tr>
+              <th>ROLL NO</th><th>STUDENT NAME</th><th>INTERNAL</th><th>THEORY</th>
+              {practical && <th>PRACTICAL</th>}
+              <th>TOTAL</th><th>GRADE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, pageIndex) => {
+              const totalMarks = calculateTotal(row, practical);
+              const grade = getGrade(totalMarks);
+              const index = rowOffset + pageIndex;
+              const markCell = (field) => isEditing ? (
+                <input type="text" inputMode="numeric" className="cms-mark-input" value={row[field]}
+                  onChange={(event) => onUpdateMark(index, field, event.target.value)} />
+              ) : row[field];
+
+              return (
+                <tr key={row.studentId || index}>
+                  <td className="cms-font-semibold">{row.rollNo}</td>
+                  <td>{row.studentName}</td>
+                  <td>{markCell("internal")}</td>
+                  <td>{markCell("theory")}</td>
+                  {practical && <td>{markCell("practical")}</td>}
+                  <td className="cms-font-semibold">{totalMarks} / 100</td>
+                  <td><span className={`cms-badge-grade cms-grade-${grade.toLowerCase().replace("+", "-plus")}`}>{grade}</span></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="cms-pagination" aria-label="Student records pagination">
+        <button className="cms-btn cms-btn-secondary" disabled={currentPage === 1} onClick={onPreviousPage}>Previous</button>
+        <span>Page {currentPage} of {totalPages}</span>
+        <button className="cms-btn cms-btn-secondary" disabled={currentPage === totalPages} onClick={onNextPage}>Next</button>
+      </div>
+
+      <div className="cms-modal-actions">
+        {isEditing ? (
+          <><button className="cms-btn cms-btn-secondary" onClick={onCancel}>Cancel</button>
+          <button className="cms-btn cms-btn-primary" onClick={onSave}><IconSave /> Save Changes</button></>
+        ) : (
+          <>
+            <button className="cms-btn cms-btn-edit-outline" onClick={onEdit}><IconPencil /> Edit</button>
+            {(selectedEvaluation.status === "SUBMITTED" || selectedEvaluation.status === "VERIFIED") && <>
+              <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus("APPROVED")}><IconCheck /> Approve</button>
+              <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus("REJECTED")}><IconXCircle /> Reject</button>
+            </>}
+            {selectedEvaluation.status === "APPROVED" && <span className="cms-status-pill cms-status-approved"><IconCheck /> Approved</span>}
+            {selectedEvaluation.status === "REJECTED" && <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span>}
+          </>
+        )}
+      </div>
     </div>
   );
 }

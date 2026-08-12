@@ -48,7 +48,7 @@ export const menu = [
     section: "Examinations",
     items: [
       { to: "/dashboard/examinations", label: "Examination", icon: FileSpreadsheet },
-      { to: "/dashboard/marks-entry", label: "Marks Entry", icon: PenLine },
+      { to: "/dashboard/marks-entry", label: "Marks Evalution", icon: PenLine },
       { to: "/dashboard/results", label: "Result Processing", icon: Award },
       { to: "/dashboard/promotion", label: "Promotion", icon: ArrowUpRight },
     ],

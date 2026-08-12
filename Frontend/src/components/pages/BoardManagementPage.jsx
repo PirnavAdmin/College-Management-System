@@ -41,16 +41,34 @@ let cachedCountries = null;
 let cachedStates = null;
 let cachedPatterns = null;
 let cachedGradings = null;
+let cachedLevels = null;
+let formDataPromise = null; // ensures /boards/form-data is only called once per form open, even though 4 fields need it
+
+const loadFormData = () => {
+  if (!formDataPromise) {
+    formDataPromise = apiClient.get(apiEndpoints.boards.formData);
+  }
+  return formDataPromise;
+};
 
 const mapRow = (r) => ({
   id: r.boardId ?? r.id,
   name: r.boardName ?? r.name,
   code: r.boardCode ?? r.code,
+  description: r.description ?? "",
   country: r.countryName ?? r.country,
   state: r.stateName ?? r.state,
+  pattern: r.academicPatternName ?? r.pattern ?? "",
   structure: r.academicPatternName ?? r.structure ?? "",
+  internal: !!r.internalAssessment,
+  practical: !!r.practicalExams,
+  boardExams: !!r.boardExams,
+  passPercentage: r.passPercentage ?? "",
+  grading: r.gradingSystemName ?? r.grading ?? "",
+  rank: r.rankCalculation ?? false,
   status: r.status === true || String(r.status).toLowerCase() === "active" ? "Active" : "Inactive",
   created: r.createdDate ? String(r.createdDate).split("T")[0] : r.created,
+  rowVersion: r.rowVersion ?? null,
 });
 
 export const pageConfig = {
@@ -58,6 +76,14 @@ export const pageConfig = {
   subtitle: "Configure examination boards, academic patterns and grading rules.",
   breadcrumb: ["Academics"],
   addLabel: "Add Board",
+  summary: {
+    fetch: () => apiClient.get(apiEndpoints.boards.summary),
+    map: (data) => ([
+      { label: "Total", value: data?.totalBoards ?? 0 },
+      { label: "Active", value: data?.activeBoards ?? 0 },
+      { label: "Inactive", value: data?.inactiveBoards ?? 0 },
+    ]),
+  },
   rows: data.boards,
   columns: [
     { key: "name", label: "Board Name", strong: true },
@@ -77,10 +103,10 @@ export const pageConfig = {
       label: "Country",
       type: "select",
       required: true,
-      loadOptions: () => apiClient.get(apiEndpoints.boards.countries),
+      loadOptions: () => loadFormData(),
       getOptions: (res) => {
         cachedCountries = nameMap(
-          unwrapList(res.data),
+          unwrapList(res.data.countries),
           ["id", "countryId", "CountryId", "CountryID"],
           ["name", "countryName", "CountryName"],
         );
@@ -93,7 +119,7 @@ export const pageConfig = {
       type: "select",
       options: [],
       required: true,
-      dependsOn: "country",
+      dependsOn: ["country", "name"],
       loadOptions: (values) => {
         const countryId = cachedCountries?.map[values.country];
         return countryId
@@ -108,23 +134,42 @@ export const pageConfig = {
         );
         return cachedStates.names;
       },
+      autoSelect: (values, options) => {
+        const boardName = String(values.name || "").toLowerCase();
+        const match = options.find((stateName) => boardName.includes(String(stateName).toLowerCase()));
+        return match;
+      },
     },
     {
       name: "pattern",
       label: "Academic Pattern",
       type: "select",
       required: true,
-      loadOptions: () => apiClient.get(apiEndpoints.boards.academicPatterns),
+      loadOptions: () => loadFormData(),
       getOptions: (res) => {
         cachedPatterns = nameMap(
-          unwrapList(res.data),
+          unwrapList(res.data.academicPatterns),
           ["academicPatternId", "AcademicPatternId", "id", "Id"],
           ["patternName", "PatternName", "name", "Name"],
         );
         return cachedPatterns.names;
       },
     },
-    { name: "structure", label: "Academic Levels", type: "select", options: ["Intermediate", "10+2", "PUC", "Higher Secondary"], required: true },
+    {
+      name: "structure",
+      label: "Academic Levels",
+      type: "select",
+      required: true,
+      loadOptions: () => loadFormData(),
+      getOptions: (res) => {
+        cachedLevels = nameMap(
+          unwrapList(res.data.academicLevels),
+          ["academicLevelId", "AcademicLevelId", "id", "Id"],
+          ["levelName", "LevelName", "name", "Name"],
+        );
+        return cachedLevels.names;
+      },
+    },
     { name: "internal", label: "Internal Assessment", type: "checkbox", placeholder: "Enabled" },
     { name: "practical", label: "Practical Exams", type: "checkbox", placeholder: "Enabled" },
     { name: "boardExams", label: "Board Exams", type: "checkbox", placeholder: "Enabled" },
@@ -134,9 +179,9 @@ export const pageConfig = {
       label: "Grading System",
       type: "select",
       required: true,
-      loadOptions: () => apiClient.get(apiEndpoints.boards.gradingSystems),
+      loadOptions: () => loadFormData(),
       getOptions: (res) => {
-        cachedGradings = nameMap(unwrapList(res.data), ["gradingSystemId", "id"], ["gradingSystemName", "name"]);
+        cachedGradings = nameMap(unwrapList(res.data.gradingSystems), ["gradingSystemId", "id"], ["gradingSystemName", "name"]);
         return cachedGradings.names;
       },
     },
@@ -158,7 +203,7 @@ export const pageConfig = {
       const stateId = cachedStates?.map[values.state] ?? null;
       const patternId = cachedPatterns?.map[values.pattern] ?? 0;
       const gradingId = cachedGradings?.map[values.grading] ?? 0;
-      const structureIds = { Intermediate: 1, "10+2": 2, PUC: 3, "Higher Secondary": 4 };
+      const levelId = cachedLevels?.map[values.structure] ?? 0;
       const payload = {
         boardName: values.name,
         boardCode: values.code,
@@ -166,7 +211,7 @@ export const pageConfig = {
         countryId,
         stateId,
         academicPatternId: patternId,
-        academicLevelIds: values.structure ? [structureIds[values.structure] ?? 0] : [],
+        academicLevelIds: levelId ? [levelId] : [],
         internalAssessment: !!values.internal,
         practicalExams: !!values.practical,
         boardExams: !!values.boardExams,
@@ -175,7 +220,10 @@ export const pageConfig = {
         rankCalculation: !!values.rank,
         status: values.status === "Active" || values.status === true,
       };
-      if (id) return apiClient.put(apiEndpoints.boards.getById(id), payload);
+      if (id) {
+        payload.rowVersion = values.rowVersion ?? null;
+        return apiClient.put(apiEndpoints.boards.getById(id), payload);
+      }
       return apiClient.post(apiEndpoints.boards.create, payload);
     },
   },

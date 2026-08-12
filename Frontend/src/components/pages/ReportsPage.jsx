@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  Activity,
   Award,
   BriefcaseBusiness,
   CalendarCheck,
+  Download,
   FileSpreadsheet,
   GraduationCap,
+  Eye,
+  Search,
+  ShieldCheck,
+  ShieldX,
   Percent,
   Trophy,
   Users,
@@ -31,11 +37,10 @@ import {
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
+import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import "./ReportsAnalyticsPage.css";
 
 const EMPTY_REPORTS = {
-  dashboard: {},
   summary: {},
   admissions: {},
   studentStrength: {},
@@ -48,10 +53,10 @@ const EMPTY_REPORTS = {
   toppers: {},
   facultyWorkload: {},
   studentPerformance: {},
+  auditLogs: {},
 };
 
 const reportRequests = [
-  ["dashboard", apiEndpoints.reports.dashboard],
   ["summary", apiEndpoints.reports.summary],
   ["admissions", apiEndpoints.reports.admissions],
   ["studentStrength", apiEndpoints.reports.studentStrength],
@@ -65,6 +70,16 @@ const reportRequests = [
   ["facultyWorkload", apiEndpoints.reports.facultyWorkload],
   ["studentPerformance", apiEndpoints.reports.studentPerformance],
 ];
+
+const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
+const AUDIT_SAMPLE_OPTIONS = {
+  user: ["Super Admin", "College Admin", "Faculty User", "Staff User", "Student User"],
+  role: ["Super Admin", "Admin", "Faculty", "Staff", "Student"],
+  module: ["Student Management", "Fee Management", "Attendance", "Admissions", "Faculty", "Examinations", "Results", "Reports", "Users", "Settings", "Authentication"],
+  action: ["Create", "Update", "Delete", "View", "Login", "Logout", "Approve", "Reject", "Export", "Import", "Assign", "Role Change"],
+  status: ["Success", "Failed"],
+};
+const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
 
 const summaryCardConfig = [
   { key: "admissions", label: "Admissions", icon: GraduationCap, tone: "blue" },
@@ -221,6 +236,71 @@ function mapToppers(payload) {
     .slice(0, 5);
 }
 
+function mapAuditLogs(payload) {
+  return collection(payload, ["auditLogs", "AuditLogs", "logs", "Logs"])
+    .map((item, index) => ({
+      id: read(item, "auditLogId", "AuditLogId", "logId", "LogId", "id", "Id") ?? index,
+      timestamp: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "createdDate", "CreatedDate", "dateTime", "DateTime", "auditDate", "AuditDate", "actionDate", "ActionDate"),
+      user: String(read(item, "userName", "UserName", "fullName", "FullName", "performedBy", "PerformedBy", "actorName", "ActorName", "createdBy", "CreatedBy", "modifiedBy", "ModifiedBy") ?? "—"),
+      role: String(read(item, "roleName", "RoleName", "role", "Role", "userRole", "UserRole") ?? "—"),
+      module: String(read(item, "module", "Module", "moduleName", "ModuleName", "entityName", "EntityName", "tableName", "TableName") ?? "—"),
+      action: String(read(item, "action", "Action", "actionType", "ActionType", "eventType", "EventType", "operation", "Operation", "activity", "Activity") ?? "—"),
+      description: String(read(item, "description", "Description", "details", "Details", "message", "Message", "changes", "Changes") ?? "—"),
+      recordId: read(item, "recordId", "RecordId", "entityId", "EntityId", "entityKey", "EntityKey", "referenceId", "ReferenceId", "studentId", "StudentId", "userId", "UserId", "feeId", "FeeId"),
+      status: String(read(item, "status", "Status", "result", "Result", "outcome", "Outcome", "isSuccess", "IsSuccess", "success", "Success") ?? "—"),
+      previousValue: read(item, "oldValue", "OldValue", "previousValue", "PreviousValue", "beforeValue", "BeforeValue"),
+      newValue: read(item, "newValue", "NewValue", "updatedValue", "UpdatedValue", "afterValue", "AfterValue"),
+      ipAddress: read(item, "ipAddress", "IpAddress", "IPAddress", "clientIp", "ClientIp"),
+      device: read(item, "userAgent", "UserAgent", "device", "Device", "browser", "Browser"),
+      raw: item,
+    }))
+    .filter((item) => [item.timestamp, item.user, item.module, item.action, item.description, item.recordId]
+      .some((value) => value !== undefined && value !== null && value !== "" && value !== "—"));
+}
+
+function auditStatus(value) {
+  const normalized = String(value ?? "").toLowerCase();
+  if (["true", "success", "successful", "succeeded", "completed"].includes(normalized)) return "success";
+  if (["false", "fail", "failed", "failure", "error"].includes(normalized)) return "failed";
+  return normalized;
+}
+
+function formatAuditDate(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.getFullYear() <= 1) return "—";
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(date);
+}
+
+function displayAuditValue(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "object") return JSON.stringify(value, null, 2);
+  const text = String(value);
+  try {
+    const parsed = JSON.parse(text);
+    return typeof parsed === "object" ? JSON.stringify(parsed, null, 2) : text;
+  } catch {
+    return text;
+  }
+}
+
+function uniqueOptions(rows, key) {
+  return [...new Set(rows.map((row) => row[key]).filter((value) => value && value !== "—"))]
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .map((value) => ({ value, label: value }));
+}
+
+function auditOptions(rows, key) {
+  const apiOptions = uniqueOptions(rows, key);
+  const apiValues = new Set(apiOptions.map((option) => option.value));
+  const sampleOptions = AUDIT_SAMPLE_OPTIONS[key]
+    .filter((value) => !apiValues.has(value))
+    .map((value) => ({ value, label: `${value} (Sample)` }));
+  return [...apiOptions, ...sampleOptions];
+}
+
 function formatMetric(value, { currency = false, suffix = "" } = {}) {
   if (value === undefined || value === null || Number.isNaN(value)) return "—";
   if (currency) {
@@ -228,6 +308,31 @@ function formatMetric(value, { currency = false, suffix = "" } = {}) {
   }
   const formatted = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 }).format(value);
   return `${formatted}${suffix}`;
+}
+
+function getDownloadFilename(contentDisposition, fallback) {
+  if (!contentDisposition) return fallback;
+  const encoded = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.replace(/["']/g, ""));
+    } catch {
+      return encoded.replace(/["']/g, "");
+    }
+  }
+  return contentDisposition.match(/filename="?([^";]+)"?/i)?.[1]?.trim() || fallback;
+}
+
+async function getExportErrorMessage(error) {
+  const payload = error?.response?.data;
+  if (!(payload instanceof Blob)) return getApiErrorMessage(error);
+  try {
+    const text = await payload.text();
+    const parsed = JSON.parse(text);
+    return parsed?.message || parsed?.Message || parsed?.title || "Report export failed.";
+  } catch {
+    return "Report export failed. Please try again.";
+  }
 }
 
 function EmptyChart() {
@@ -253,6 +358,15 @@ export default function ReportsPage() {
   const [masterLoading, setMasterLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
+  const [exporting, setExporting] = useState("");
+  const [auditFilters, setAuditFilters] = useState({});
+  const [auditData, setAuditData] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
+  const [auditFetched, setAuditFetched] = useState(false);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(10);
+  const [selectedAuditLog, setSelectedAuditLog] = useState(null);
   const initialized = useRef(false);
 
   const loadMasterOptions = useCallback(async () => {
@@ -290,9 +404,12 @@ export default function ReportsPage() {
       else failures.push(result.reason);
     });
     setReports(nextReports);
+    setAuditPage(1);
     if (failures.length) {
       const unavailable = failures.length === reportRequests.length;
-      setError(unavailable ? getApiErrorMessage(failures[0]) : `${failures.length} report sections could not be loaded. Available sections are shown below.`);
+      setError(unavailable
+        ? "Reports data is currently unavailable. Please verify that the Reports database procedures are installed on the backend."
+        : `${failures.length} report sections could not be loaded. Available sections are shown below.`);
     }
     setLoading(false);
   }, []);
@@ -327,6 +444,34 @@ export default function ReportsPage() {
   const feeData = useMemo(() => mapFees(reports.feeCollection, reports.feeOutstanding), [reports.feeCollection, reports.feeOutstanding]);
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
+  const auditRows = useMemo(() => mapAuditLogs(auditData), [auditData]);
+  const auditFilterFields = useMemo(() => [
+    { name: "user", label: "User", type: "select", options: auditOptions(auditRows, "user") },
+    { name: "role", label: "Role", type: "select", options: auditOptions(auditRows, "role") },
+    { name: "module", label: "Module", type: "select", options: auditOptions(auditRows, "module") },
+    { name: "action", label: "Action Type", type: "select", options: auditOptions(auditRows, "action") },
+    { name: "status", label: "Status", type: "select", options: auditOptions(auditRows, "status") },
+  ], [auditRows]);
+  const filteredAuditRows = useMemo(() => {
+    const search = String(auditFilters.search ?? "").trim().toLowerCase();
+    return auditRows.filter((row) => {
+      if (["user", "role", "module", "action", "status"].some((key) => auditFilters[key] && row[key] !== auditFilters[key])) return false;
+      if (!search) return true;
+      return [row.user, row.role, row.module, row.action, row.description, row.recordId]
+        .some((value) => String(value ?? "").toLowerCase().includes(search));
+    });
+  }, [auditFilters, auditRows]);
+  const auditPageCount = Math.max(1, Math.ceil(filteredAuditRows.length / auditPageSize));
+  const visibleAuditRows = useMemo(() => {
+    const start = (auditPage - 1) * auditPageSize;
+    return filteredAuditRows.slice(start, start + auditPageSize);
+  }, [auditPage, auditPageSize, filteredAuditRows]);
+  const auditSummary = useMemo(() => {
+    const successful = auditRows.filter((row) => auditStatus(row.status) === "success").length;
+    const failed = auditRows.filter((row) => auditStatus(row.status) === "failed").length;
+    const activeUsers = new Set(auditRows.map((row) => row.user).filter((user) => user && user !== "—")).size;
+    return { total: auditRows.length, successful, failed, activeUsers };
+  }, [auditRows]);
 
   const passRate = metric(reports.passPercentage, ["passPercentage", "PassPercentage", "percentage", "Percentage", "passRate", "PassRate"]);
   const failRate = metric(reports.passPercentage, ["failPercentage", "FailPercentage", "failRate", "FailRate"]);
@@ -338,22 +483,21 @@ export default function ReportsPage() {
       ];
 
   const summaryValues = useMemo(() => {
-    const dashboard = reports.dashboard;
     const summary = reports.summary;
     const admissionCount = collection(reports.admissions).length || undefined;
     const examinationCount = collection(reports.examinations).length || undefined;
     const resultCount = collection(reports.results).length || undefined;
     return {
-      admissions: metric(summary, ["totalAdmissions", "TotalAdmissions", "admissionsCount", "AdmissionsCount"]) ?? metric(dashboard, ["totalAdmissions", "TotalAdmissions"]) ?? admissionCount,
-      attendance: metric(summary, ["attendancePercentage", "AttendancePercentage", "averageAttendance", "AverageAttendance"]) ?? metric(dashboard, ["attendancePercentage", "AttendancePercentage"]) ?? metric(reports.attendance, ["attendancePercentage", "AttendancePercentage", "averageAttendance", "AverageAttendance"]),
-      feeCollection: metric(summary, ["feeCollected", "FeeCollected", "totalFeeCollected", "TotalFeeCollected"]) ?? metric(dashboard, ["feeCollected", "FeeCollected"]) ?? metric(reports.feeCollection, ["totalCollected", "TotalCollected", "collectedAmount", "CollectedAmount"]),
-      dueFees: metric(summary, ["dueFees", "DueFees", "outstandingFees", "OutstandingFees"]) ?? metric(dashboard, ["dueFees", "DueFees"]) ?? metric(reports.feeOutstanding, ["totalOutstanding", "TotalOutstanding", "outstandingAmount", "OutstandingAmount"]),
-      examinations: metric(summary, ["totalExaminations", "TotalExaminations", "examinationCount", "ExaminationCount"]) ?? metric(dashboard, ["totalExaminations", "TotalExaminations"]) ?? examinationCount,
-      results: metric(summary, ["resultsPublished", "ResultsPublished", "publishedResults", "PublishedResults"]) ?? metric(dashboard, ["resultsPublished", "ResultsPublished"]) ?? resultCount,
-      facultyWorkload: metric(summary, ["facultyWorkload", "FacultyWorkload", "averageFacultyWorkload", "AverageFacultyWorkload"]) ?? metric(dashboard, ["facultyWorkload", "FacultyWorkload"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) / workloadData.length : undefined),
-      studentStrength: metric(summary, ["studentStrength", "StudentStrength", "totalStudents", "TotalStudents"]) ?? metric(dashboard, ["studentStrength", "StudentStrength", "totalStudents", "TotalStudents"]) ?? metric(reports.studentStrength, ["totalStudents", "TotalStudents", "studentStrength", "StudentStrength"]),
-      passPercentage: passRate ?? metric(summary, ["passPercentage", "PassPercentage"]) ?? metric(dashboard, ["passPercentage", "PassPercentage"]),
-      toppers: metric(summary, ["toppersIdentified", "ToppersIdentified", "topperCount", "TopperCount"]) ?? metric(dashboard, ["toppersIdentified", "ToppersIdentified"]) ?? (topperRows.length || undefined),
+      admissions: metric(summary, ["totalAdmissions", "TotalAdmissions", "admissionsCount", "AdmissionsCount"]) ?? admissionCount,
+      attendance: metric(summary, ["attendancePercentage", "AttendancePercentage", "averageAttendance", "AverageAttendance"]) ?? metric(reports.attendance, ["attendancePercentage", "AttendancePercentage", "averageAttendance", "AverageAttendance"]),
+      feeCollection: metric(summary, ["feeCollected", "FeeCollected", "totalFeeCollected", "TotalFeeCollected"]) ?? metric(reports.feeCollection, ["totalCollected", "TotalCollected", "collectedAmount", "CollectedAmount"]),
+      dueFees: metric(summary, ["dueFees", "DueFees", "outstandingFees", "OutstandingFees"]) ?? metric(reports.feeOutstanding, ["totalOutstanding", "TotalOutstanding", "outstandingAmount", "OutstandingAmount"]),
+      examinations: metric(summary, ["totalExaminations", "TotalExaminations", "examinationCount", "ExaminationCount"]) ?? examinationCount,
+      results: metric(summary, ["resultsPublished", "ResultsPublished", "publishedResults", "PublishedResults"]) ?? resultCount,
+      facultyWorkload: metric(summary, ["facultyWorkload", "FacultyWorkload", "averageFacultyWorkload", "AverageFacultyWorkload"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) / workloadData.length : undefined),
+      studentStrength: metric(summary, ["studentStrength", "StudentStrength", "totalStudents", "TotalStudents"]) ?? metric(reports.studentStrength, ["totalStudents", "TotalStudents", "studentStrength", "StudentStrength"]),
+      passPercentage: passRate ?? metric(summary, ["passPercentage", "PassPercentage"]),
+      toppers: metric(summary, ["toppersIdentified", "ToppersIdentified", "topperCount", "TopperCount"]) ?? (topperRows.length || undefined),
     };
   }, [passRate, reports, topperRows.length, workloadData]);
 
@@ -380,11 +524,97 @@ export default function ReportsPage() {
     loadReports({});
   };
 
+  const handleAuditFilterChange = (name, value) => {
+    setAuditFilters((current) => ({ ...current, [name]: value }));
+    setAuditPage(1);
+  };
+
+  const resetAuditFilters = () => {
+    setAuditFilters({});
+    setAuditPage(1);
+  };
+
+  const fetchAuditLogs = async () => {
+    if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
+      setAuditError("From Date must be earlier than or equal to To Date.");
+      return;
+    }
+    setAuditLoading(true);
+    setAuditError("");
+    setAuditFetched(false);
+    try {
+      const response = await apiClient.get(apiEndpoints.reports.auditLogs, { params: buildQuery(filters) });
+      setAuditData(response.data);
+      setAuditFetched(true);
+      setAuditPage(1);
+    } catch (auditRequestError) {
+      setAuditData(null);
+      setAuditError(getApiErrorMessage(auditRequestError));
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const exportReport = async (format) => {
+    if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
+      setToast("From Date must be earlier than or equal to To Date.");
+      return;
+    }
+
+    const isPdf = format === "pdf";
+    const endpoint = isPdf ? apiEndpoints.reports.exportPdf : apiEndpoints.reports.exportExcel;
+    const extension = isPdf ? "pdf" : "xlsx";
+    const fallbackFilename = `reports-dashboard-${new Date().toISOString().slice(0, 10)}.${extension}`;
+    setExporting(format);
+    try {
+      const response = await apiClient.get(endpoint, {
+        params: { reportType: "dashboard", ...buildQuery(filters) },
+        responseType: "blob",
+      });
+      const contentType = response.headers?.["content-type"] || (isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      if (!response.data?.size) throw new Error("The export API returned an empty file.");
+      if (contentType.includes("application/json") || contentType.includes("text/")) {
+        const text = await response.data.text();
+        let message = text;
+        try {
+          const parsed = JSON.parse(text);
+          message = parsed?.message || parsed?.Message || parsed?.title || message;
+        } catch {
+          // Keep the server text when it is not JSON.
+        }
+        throw new Error(message || "The export API did not return a file.");
+      }
+
+      const filename = getDownloadFilename(response.headers?.["content-disposition"], fallbackFilename);
+      const objectUrl = URL.createObjectURL(new Blob([response.data], { type: contentType }));
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      setToast(`${isPdf ? "PDF" : "Excel"} report downloaded successfully.`);
+    } catch (exportError) {
+      setToast(await getExportErrorMessage(exportError));
+    } finally {
+      setExporting("");
+    }
+  };
+
   return (
     <DashboardLayout title="Reports & Analytics" subtitle="Institution-wide insights across academics, fees and attendance." breadcrumb={["Administration"]}>
       <Toast message={toast} onClose={() => setToast("")} />
       <section className="cms-card reports-filter-card">
         <div className="cms-card-body">
+          <div className="reports-export-actions" aria-label="Export report">
+            <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportReport("pdf")} disabled={Boolean(exporting)}>
+              <Download size={16} />{exporting === "pdf" ? "Exporting PDF..." : "Export PDF"}
+            </button>
+            <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportReport("excel")} disabled={Boolean(exporting)}>
+              <Download size={16} />{exporting === "excel" ? "Exporting Excel..." : "Export Excel"}
+            </button>
+          </div>
           <div className="cms-filters">
             {filterFields.map((field) => <Field key={field.name} field={field} value={filters[field.name]} onChange={handleFilterChange} />)}
           </div>
@@ -470,8 +700,79 @@ export default function ReportsPage() {
               </table></div>
             </section>
           </div>
+
+          <section className="reports-audit-section" aria-labelledby="audit-logs-title">
+            <div className="reports-chart-head reports-audit-head">
+              <div><h2 id="audit-logs-title">Audit Logs</h2><p>System activity recorded for the selected report period</p></div>
+            </div>
+
+            <div className="reports-audit-filters">
+              <div className="cms-filters">
+                {auditFilterFields.map((field) => <Field key={field.name} field={field} value={auditFilters[field.name]} onChange={handleAuditFilterChange} />)}
+                <div className="cms-field reports-audit-search-field">
+                  <label htmlFor="audit-search">Search</label>
+                  <span className="reports-audit-search"><Search size={16} aria-hidden="true" /><input id="audit-search" type="search" list="audit-search-samples" value={auditFilters.search ?? ""} placeholder="User, module, action, record ID..." onChange={(event) => handleAuditFilterChange("search", event.target.value)} /></span>
+                  <datalist id="audit-search-samples">{AUDIT_SEARCH_SAMPLES.map((value) => <option key={value} value={value} />)}</datalist>
+                </div>
+              </div>
+              <div className="reports-filter-actions">
+                <button className="cms-btn cms-btn-ghost" type="button" onClick={resetAuditFilters} disabled={auditLoading}>Reset Filters</button>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={fetchAuditLogs} disabled={auditLoading}>{auditLoading ? "Fetching..." : "Fetch Data"}</button>
+              </div>
+            </div>
+
+            {auditLoading ? <div className="reports-audit-loader"><Loader label="Fetching audit logs..." /></div> : null}
+            {auditError ? <div className="reports-error-banner reports-audit-error" role="alert">{auditError}</div> : null}
+            {auditFetched && !auditLoading ? <>
+            <div className="reports-audit-summary" aria-label="Audit log summary">
+              {[
+                { label: "Total Activities", value: auditSummary.total, icon: Activity, tone: "blue" },
+                { label: "Successful Actions", value: auditSummary.successful, icon: ShieldCheck, tone: "green" },
+                { label: "Failed Actions", value: auditSummary.failed, icon: ShieldX, tone: "amber" },
+                { label: "Active Users", value: auditSummary.activeUsers, icon: Users, tone: "violet" },
+              ].map(({ label, value, icon: Icon, tone }) => (
+                <article className="reports-summary-card" key={label}>
+                  <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} /></span>
+                  <div className="reports-summary-content"><span>{label}</span><strong>{value}</strong></div>
+                </article>
+              ))}
+            </div>
+            <div className="reports-table-wrap reports-audit-table-wrap">
+              <table className="reports-top-students reports-audit-table">
+                <thead><tr><th>Date & Time</th><th>User</th><th>Role</th><th>Module</th><th>Action</th><th>Description</th><th>Record ID</th><th>Status</th><th>Details</th></tr></thead>
+                <tbody>{visibleAuditRows.length ? visibleAuditRows.map((log) => {
+                  const status = auditStatus(log.status);
+                  return <tr key={log.id}>
+                    <td>{formatAuditDate(log.timestamp)}</td><td><strong>{log.user}</strong></td><td>{log.role}</td><td>{log.module}</td><td>{log.action}</td>
+                    <td className="reports-audit-description" title={log.description}>{log.description}</td><td>{log.recordId ?? "—"}</td>
+                    <td><span className={`cms-badge ${status === "success" ? "cms-badge-active" : status === "failed" ? "cms-badge-danger" : "cms-badge-inactive"}`}>{log.status}</span></td>
+                    <td><button className="cms-btn cms-btn-ghost reports-view-btn" type="button" onClick={() => setSelectedAuditLog(log)}><Eye size={15} />View</button></td>
+                  </tr>;
+                }) : <tr><td colSpan={9}><div className="cms-empty">No audit logs available for the selected filters.</div></td></tr>}</tbody>
+              </table>
+            </div>
+
+            {filteredAuditRows.length ? <div className="cms-pagination reports-audit-pagination">
+              <span className="cms-page-info">Showing {(auditPage - 1) * auditPageSize + 1}–{Math.min(auditPage * auditPageSize, filteredAuditRows.length)} of {filteredAuditRows.length}</span>
+              <label className="reports-page-size">Rows <select value={auditPageSize} onChange={(event) => { setAuditPageSize(Number(event.target.value)); setAuditPage(1); }}>{AUDIT_PAGE_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+              <button className="cms-page-btn" type="button" disabled={auditPage === 1} onClick={() => setAuditPage((page) => page - 1)}>Previous</button>
+              <span className="reports-page-number">Page {auditPage} of {auditPageCount}</span>
+              <button className="cms-page-btn" type="button" disabled={auditPage === auditPageCount} onClick={() => setAuditPage((page) => page + 1)}>Next</button>
+            </div> : null}
+            </> : !auditLoading && !auditError ? <div className="reports-audit-prompt">Choose the required report filters, then select <strong>Fetch Data</strong> to load audit logs.</div> : null}
+          </section>
         </>
       )}
+      {selectedAuditLog ? <Modal title="Audit Log Details" onClose={() => setSelectedAuditLog(null)} footer={<button className="cms-btn cms-btn-primary" type="button" onClick={() => setSelectedAuditLog(null)}>Close</button>}>
+        <dl className="reports-audit-details">
+          {[
+            ["Date & Time", formatAuditDate(selectedAuditLog.timestamp)], ["User", selectedAuditLog.user], ["Role", selectedAuditLog.role],
+            ["Module", selectedAuditLog.module], ["Action", selectedAuditLog.action], ["Description", selectedAuditLog.description],
+            ["Record ID / Entity", selectedAuditLog.recordId], ["Status", selectedAuditLog.status], ["IP Address", selectedAuditLog.ipAddress],
+            ["Device / Browser", selectedAuditLog.device], ["Previous Value", selectedAuditLog.previousValue], ["New Value", selectedAuditLog.newValue],
+          ].filter(([, value]) => value !== undefined && value !== null && value !== "" && value !== "—").map(([label, value]) => <div className={label.includes("Value") || label === "Description" || label === "Device / Browser" ? "full" : ""} key={label}><dt>{label}</dt><dd>{label.includes("Value") ? <pre>{displayAuditValue(value)}</pre> : displayAuditValue(value)}</dd></div>)}
+        </dl>
+      </Modal> : null}
     </DashboardLayout>
   );
 }

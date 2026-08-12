@@ -78,27 +78,32 @@ export function ConfirmDialog({ title = "Delete record", message, onCancel, onCo
 }
 
 export function Field({ field, value, error, onChange }) {
-  const { name, label, type = "text", options = [], required, placeholder, full } = field;
+  const { name, label, type = "text", options = [], required, placeholder, full, disabled = false } = field;
   const id = `f-${name}`;
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
+  const normalizedOptions = options.map((option) => (
+    option && typeof option === "object"
+      ? { value: option.value, label: option.label ?? option.value }
+      : { value: option, label: option }
+  ));
   return (
     <div className={`cms-field ${full ? "full" : ""} ${error ? "has-error" : ""}`}>
       <label htmlFor={id}>
         {label} {required ? <span className="req">*</span> : null}
       </label>
       {type === "select" ? (
-        <select id={id} value={value ?? ""} onChange={(e) => onChange(name, e.target.value)}>
+        <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)}>
           <option value="">Select {label}</option>
-          {options.map((o) => (
-            <option key={o} value={o}>{o}</option>
+          {normalizedOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
       ) : type === "textarea" ? (
-        <textarea id={id} value={value ?? ""} placeholder={placeholder} onChange={(e) => onChange(name, e.target.value)} />
+        <textarea id={id} value={value ?? ""} disabled={disabled} placeholder={placeholder} onChange={(e) => onChange(name, e.target.value)} />
       ) : type === "checkbox" ? (
         <span className="cms-check">
-          <input id={id} type="checkbox" checked={!!value} onChange={(e) => onChange(name, e.target.checked)} />
+          <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => onChange(name, e.target.checked)} />
           <span>{placeholder || "Yes"}</span>
         </span>
       ) : isPassword ? (
@@ -107,6 +112,7 @@ export function Field({ field, value, error, onChange }) {
             id={id}
             type={reveal ? "text" : "password"}
             value={value ?? ""}
+            disabled={disabled}
             placeholder={placeholder || label}
             onChange={(e) => onChange(name, e.target.value)}
           />
@@ -125,6 +131,7 @@ export function Field({ field, value, error, onChange }) {
           id={id}
           type={type}
           value={value ?? ""}
+          disabled={disabled}
           placeholder={placeholder || label}
           onChange={(e) => onChange(name, e.target.value)}
         />
@@ -158,7 +165,7 @@ export function useForm(fields, initial) {
     setErrors(next);
     return Object.keys(next).length === 0;
   };
-  return { values, errors, setValue, validate, setValues };
+  return { values, errors, setValue, validate, setValues, setErrors };
 }
 
 export function FormModal({ title, fields, initial, columns = 2, onCancel, onSave }) {

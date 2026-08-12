@@ -145,6 +145,7 @@
     create: "/api/certificates",
     getById: (id) => `/api/certificates/${id}`,
     update: (id) => `/api/certificates/${id}`,
+    delete: (id) => `/api/certificates/${id}`,
     bonafide: "/api/certificates/bonafide",
     study: "/api/certificates/study",
     conduct: "/api/certificates/conduct",

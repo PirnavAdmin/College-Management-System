@@ -18,6 +18,8 @@ export const apiEndpoints = {
   },
   results: {
     list: "/api/v1/results",
+    process: "/api/v1/results/process",
+    publish: "/api/v1/results/publish",
     byStudent: (studentId) => `/api/v1/results/students/${studentId}`,
     rankList: "/api/v1/results/rank-list",
     failedStudents: "/api/v1/results/failed-students",

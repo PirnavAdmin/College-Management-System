@@ -6,6 +6,16 @@ export const getResults = async () => {
   return toResultRecords(response.data);
 };
 
+export const processResults = async (data) => {
+  const response = await apiClient.post(apiEndpoints.results.process, data);
+  return unwrapPayload(response.data);
+};
+
+export const publishResults = async (data) => {
+  const response = await apiClient.post(apiEndpoints.results.publish, data);
+  return unwrapPayload(response.data);
+};
+
 export const getBoards = async () => {
   const response = await apiClient.get(apiEndpoints.boards.list);
   return unwrapRecords(response.data);
@@ -77,6 +87,11 @@ function toResultRecord(result) {
     id: result.resultId,
     resultId: result.resultId,
     studentId: result.studentId,
+    boardId: result.boardId,
+    academicYearId: result.academicYearId,
+    academicLevelId: result.academicLevelId,
+    groupId: result.groupId,
+    examId: result.examId,
     name: result.studentName,
     roll: result.rollNumber,
     subject: result.subjectName,

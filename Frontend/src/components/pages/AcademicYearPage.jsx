@@ -48,7 +48,7 @@ export const pageConfig = {
     },
     fetchRow: async (id) => {
       const res = await apiClient.get(apiEndpoints.academicYears.getById(id));
-      return mapRow(res.data);
+      return mapRow(res.data?.data ?? res.data); // unwrap nested "data" from API envelope
     },
     deleteRow: (id) => apiClient.delete(apiEndpoints.academicYears.delete(id)),
     saveRow: async (values, id) => {

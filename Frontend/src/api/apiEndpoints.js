@@ -37,6 +37,15 @@
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
     getAcademicLevels: "/api/v1/boards/academic-levels",
+
+
+    academicLevels: "/api/v1/boards/academic-levels",
+    gradingSystems: "/api/v1/boards/grading-systems",
+    validateBoardCode: "/api/v1/boards/validate-board-code",
+    formData: "/api/v1/boards/form-data",
+    history: (boardId) => `/api/v1/boards/${boardId}/history`,
+    summary: "/api/v1/boards/summary",
+
   },
   academicYears: {
     list: "/api/v1/academic-years",

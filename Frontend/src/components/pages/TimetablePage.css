@@ -1,20 +1,6 @@
-/* Timetable matrix styles moved from src/cms.css. */
-.cms-tt { width: 100%; border-collapse: separate; border-spacing: 6px; min-width: 880px; }
-.cms-tt th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--cms-muted); padding: 6px; }
-.cms-tt td {
-  background: var(--cms-primary-soft);
-  border: 1px solid var(--cms-primary-border);
-  border-radius: 10px;
-  padding: 10px;
-  font-size: 12.5px;
-  vertical-align: top;
-  transition: transform 0.18s ease;
-}
-.cms-tt td:hover { transform: translateY(-2px); }
-.cms-tt td.empty { background: var(--cms-subtle); border-color: var(--cms-border); color: var(--cms-muted); }
-.cms-tt td strong { display: block; font-size: 13px; color: var(--cms-primary-dark); }
-.cms-tt td span { color: var(--cms-muted); font-size: 11.5px; }
-.cms-tt .cms-tt-day { background: #0d1b33; color: #fff; border: 0; font-weight: 600; }
-[data-theme="dark"] .cms-tt td strong { color: #93c5fd; }
-[data-theme="dark"] .cms-tt .cms-tt-day { background: #16233c; }
-[data-theme="dark"] .cms-tt td { background: var(--cms-primary-soft); border-color: var(--cms-primary-border); }
+.tt-panel { background: var(--cms-card); border: 1px solid var(--cms-border); border-radius: 18px; padding: 20px; margin-bottom: 16px; box-shadow: var(--cms-shadow-sm); }
+.tt-panel-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 18px; }.tt-panel-title h2 { margin: 0; font-size: 17px; }.tt-panel-title p { margin: 5px 0 0; color: var(--cms-muted); font-size: 13px; }
+.tt-filter-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 14px; }.tt-filter-actions { display: flex; gap: 10px; margin-top: 16px; }.tt-segment { display: inline-flex; padding: 3px; border: 1px solid var(--cms-border); border-radius: 9px; background: var(--cms-subtle); }.tt-segment button { border: 0; padding: 7px 10px; background: transparent; color: var(--cms-muted); border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }.tt-segment button.active { background: var(--cms-card); color: var(--cms-primary); box-shadow: var(--cms-shadow-sm); font-weight: 700; }
+.tt-grid-wrap { overflow-x: auto; }.tt-grid { width: 100%; min-width: 1120px; table-layout: fixed; border-collapse: separate; border-spacing: 0; }.tt-grid th, .tt-grid td { border-right: 1px solid var(--cms-border); border-bottom: 1px solid var(--cms-border); }.tt-grid thead th { background: var(--cms-subtle); padding: 12px; color: var(--cms-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }.tt-grid thead th:first-child, .tt-grid tbody th { position: sticky; left: 0; z-index: 3; width: 145px; min-width: 145px; }.tt-grid thead th:first-child { z-index: 4; }.tt-grid tbody th { padding: 12px; background: var(--cms-card); color: var(--cms-muted); font-size: 12px; text-align: left; }.tt-grid td { height: 112px; padding: 7px; vertical-align: top; background: var(--cms-card); }.tt-entry { position: relative; display: flex; flex-direction: column; gap: 3px; min-height: 86px; padding: 9px; border-left: 3px solid var(--cms-primary); border-radius: 8px; background: var(--cms-primary-soft); font-size: 11px; color: var(--cms-muted); }.tt-entry strong { color: var(--cms-text); font-size: 13px; padding-right: 54px; line-height: 1.25; }.tt-entry-actions { position: absolute; top: 5px; right: 5px; display: none; gap: 2px; }.tt-entry:hover .tt-entry-actions { display: flex; }.tt-entry-actions button { width: 21px; height: 21px; display: grid; place-items: center; border: 0; border-radius: 4px; background: var(--cms-card); color: var(--cms-primary); cursor: pointer; padding: 0; }.tt-entry-actions button:last-child { color: var(--cms-red); }.tt-free { color: var(--cms-muted); font-size: 12px; }.tt-list button { margin-right: 5px; }
+@media (max-width: 850px) { .tt-filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.tt-panel-title { flex-direction: column; }.tt-segment { align-self: flex-start; } }
+@media (max-width: 500px) { .tt-panel { padding: 14px; }.tt-filter-grid { grid-template-columns: 1fr; } }

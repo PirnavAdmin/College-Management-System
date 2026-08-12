@@ -299,6 +299,8 @@
 
 .cms-tab-bar {
   display: inline-flex;
+  flex-wrap: nowrap;
+  width: fit-content;
   background: var(--cms-surface-alt);
   padding: 3px;
   border-radius: 8px;

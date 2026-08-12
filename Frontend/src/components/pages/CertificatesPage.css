@@ -17,3 +17,382 @@
 .cert-actions-right {
 	justify-content: flex-end;
 }
+
+.cert-page {
+	display: grid;
+	gap: 16px;
+}
+
+.cert-section-gap {
+	margin-bottom: 0;
+}
+
+.cert-form-card .cms-card-head {
+	align-items: flex-start;
+}
+
+.cert-form-card .cms-card-head p {
+	margin: 6px 0 0;
+	color: var(--cms-muted);
+	font-size: 13px;
+}
+
+.cert-student-fields {
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	margin-top: 12px;
+}
+
+.cert-readonly input {
+	background: var(--cms-subtle);
+	color: var(--cms-muted);
+}
+
+.cert-toolbar-select,
+.cert-workflow-select {
+	border: 1px solid var(--cms-border);
+	border-radius: 10px;
+	background: var(--cms-surface);
+	color: var(--cms-text);
+	font: inherit;
+	min-height: 40px;
+	padding: 9px 12px;
+	outline: none;
+}
+
+.cert-toolbar-select:focus,
+.cert-workflow-select:focus {
+	border-color: var(--cms-primary);
+	box-shadow: 0 0 0 3px var(--cms-primary-soft);
+}
+
+.cert-table-fit {
+	min-width: 980px;
+}
+
+.cert-actions-header {
+	text-align: right;
+}
+
+.cert-actions-right {
+	justify-content: flex-end;
+	gap: 8px;
+}
+
+.cert-workflow-select {
+	min-width: 124px;
+}
+
+.cert-status-pill {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 92px;
+	padding: 6px 10px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	border: 1px solid transparent;
+}
+
+.cert-status-success {
+	color: var(--cms-green);
+	background: var(--cms-green-soft);
+	border-color: color-mix(in srgb, var(--cms-green) 18%, transparent);
+}
+
+.cert-status-info {
+	color: var(--cms-primary);
+	background: var(--cms-primary-soft);
+	border-color: color-mix(in srgb, var(--cms-primary) 18%, transparent);
+}
+
+.cert-status-warn {
+	color: var(--cms-amber);
+	background: var(--cms-amber-soft);
+	border-color: color-mix(in srgb, var(--cms-amber) 18%, transparent);
+}
+
+.cert-status-pending {
+	color: var(--cms-violet);
+	background: var(--cms-violet-soft);
+	border-color: color-mix(in srgb, var(--cms-violet) 18%, transparent);
+}
+
+.cert-status-danger {
+	color: var(--cms-red);
+	background: var(--cms-red-soft);
+	border-color: color-mix(in srgb, var(--cms-red) 18%, transparent);
+}
+
+.cert-status-neutral {
+	color: var(--cms-muted);
+	background: var(--cms-subtle);
+	border-color: var(--cms-border);
+}
+
+.cert-print-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 80;
+	display: grid;
+	place-items: center;
+	padding: 18px;
+	background: rgba(15, 23, 42, 0.55);
+}
+
+.cert-print-shell {
+	width: min(100%, 1120px);
+	max-height: calc(100vh - 36px);
+	background: var(--cms-surface);
+	border: 1px solid var(--cms-border);
+	border-radius: 16px;
+	box-shadow: var(--cms-shadow-lg);
+	overflow: hidden;
+}
+
+.cert-print-topbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 14px 18px;
+	border-bottom: 1px solid var(--cms-border);
+}
+
+.cert-print-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.cert-print-body {
+	max-height: calc(100vh - 128px);
+	overflow: auto;
+	padding: 18px;
+	background: var(--cms-bg);
+}
+
+.cert-preview-paper {
+	position: relative;
+	width: 100%;
+	max-width: 820px;
+	min-height: 1080px;
+	margin: 0 auto;
+	padding: 42px 44px;
+	background: #fff;
+	color: #18253f;
+	border: 1px solid #c5d3ec;
+	border-radius: 8px;
+	box-shadow: 0 14px 36px rgba(17, 38, 74, 0.14);
+	overflow: hidden;
+}
+
+.cert-preview-paper::before,
+.cert-preview-paper::after {
+	content: "";
+	position: absolute;
+	border: 2px solid #d5e0f5;
+	pointer-events: none;
+}
+
+.cert-preview-paper::before {
+	inset: 14px;
+}
+
+.cert-preview-paper::after {
+	inset: 24px;
+}
+
+.cert-preview-paper .watermark {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	pointer-events: none;
+	opacity: 0.06;
+	font-size: 120px;
+	letter-spacing: 4px;
+	font-weight: 700;
+	color: #21437f;
+	text-transform: uppercase;
+}
+
+.cert-doc-head,
+.cert-preview-meta,
+.cert-doc-subject,
+.cert-doc-body,
+.cert-remarks,
+.cert-issue-note,
+.cert-preview-paper footer {
+	position: relative;
+	z-index: 1;
+}
+
+.cert-doc-head {
+	text-align: center;
+	border-bottom: 1px solid #cdd9ef;
+	padding-bottom: 14px;
+}
+
+.cert-doc-college-row {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	margin: 0 auto 10px;
+}
+
+.cert-doc-mark {
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	border: 1px solid #b9cbec;
+	background: #edf3ff;
+	color: #2954a8;
+	display: grid;
+	place-items: center;
+	font-size: 12px;
+	font-weight: 800;
+	letter-spacing: 0.8px;
+}
+
+.cert-doc-college {
+	margin: 0;
+	font-size: 16px;
+	letter-spacing: 0.3px;
+	color: #37527f;
+	font-weight: 700;
+}
+
+.cert-doc-title {
+	margin: 0;
+	font-size: 34px;
+	letter-spacing: 0.3px;
+	font-weight: 800;
+	color: #14366e;
+	text-transform: uppercase;
+	line-height: 1.05;
+}
+
+.cert-doc-motto {
+	display: block;
+	margin-top: 10px;
+	font-size: 12px;
+	color: #5a6f93;
+	letter-spacing: 0.3px;
+	font-style: italic;
+}
+
+.cert-preview-meta {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 16px;
+	font-size: 13px;
+	color: #2e4269;
+}
+
+.cert-doc-subject {
+	margin-top: 22px;
+	text-align: center;
+	font-size: 14px;
+	letter-spacing: 0.8px;
+	text-transform: uppercase;
+	color: #304c7d;
+	font-weight: 700;
+}
+
+.cert-doc-body {
+	margin-top: 28px;
+	font-size: 20px;
+	line-height: 1.8;
+	text-align: justify;
+	color: #1d3156;
+}
+
+.cert-doc-body p,
+.cert-remarks {
+	margin: 0 0 16px;
+}
+
+.cert-doc-body strong,
+.cert-preview-paper footer strong {
+	color: #13284c;
+}
+
+.cert-issue-note {
+	margin-top: 36px;
+	font-size: 12px;
+	color: #4f6388;
+	line-height: 1.5;
+}
+
+.cert-preview-paper footer {
+	margin-top: 52px;
+	display: grid;
+	justify-content: end;
+	text-align: center;
+}
+
+.cert-preview-paper footer span {
+	display: block;
+	font-size: 12px;
+	color: #4f6388;
+}
+
+.cert-preview-paper footer strong {
+	display: block;
+	margin-top: 42px;
+	border-top: 1px solid #354f7f;
+	padding-top: 10px;
+	min-width: 250px;
+	font-size: 15px;
+}
+
+@media (max-width: 960px) {
+	.cert-student-fields {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.cert-preview-paper {
+		padding: 28px 26px;
+		min-height: auto;
+	}
+}
+
+@media (max-width: 720px) {
+	.cert-student-fields,
+	.cert-preview-meta {
+		grid-template-columns: 1fr;
+	}
+
+	.cert-preview-meta {
+		display: grid;
+	}
+
+	.cert-actions-right {
+		justify-content: flex-start;
+	}
+
+	.cert-workflow-select {
+		min-width: 100%;
+	}
+
+	.cert-print-topbar {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.cert-print-actions {
+		width: 100%;
+		justify-content: space-between;
+	}
+
+	.cert-preview-paper footer {
+		justify-content: stretch;
+	}
+
+	.cert-preview-paper footer strong {
+		min-width: 0;
+	}
+}

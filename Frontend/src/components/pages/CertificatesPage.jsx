@@ -1,11 +1,10 @@
-
 import { useEffect, useMemo, useState } from "react";
-import { Ban, FilePenLine, Printer, RotateCcw, Search, X } from "lucide-react";
+import { Ban, FilePenLine, Printer, RotateCcw, Search, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
-import { academicYears, options, students } from "@/data/mockData.js";
+import { options } from "@/data/mockData.js";
 import "./CertificatesPage.css";
 
 export const pageConfig = {
@@ -20,7 +19,63 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const workflowSteps = ["Generated", "Reviewed", "Approved", "Issued"];
 const statusChoices = ["All", "Generated", "Reviewed", "Approved", "Issued", "Cancelled"];
 
+const CERTIFICATE_API = {
+  list: "/api/certificates",
+  getById: (id) => `/api/certificates/${id}`,
+  delete: (id) => `/api/certificates/${id}`,
+  bonafide: "/api/certificates/bonafide",
+  study: "/api/certificates/study",
+  conduct: "/api/certificates/conduct",
+  fee: "/api/certificates/fee",
+  tc: "/api/certificates/tc",
+  updateAdmission: (admissionNo) => `/api/certificates/admission/${admissionNo}`,
+  history: "/api/certificates/history",
+  verify: (certificateNo) => `/api/certificates/verify/${encodeURIComponent(certificateNo)}`,
+  reissue: "/api/certificates/reissue",
+  review: (id) => `/api/certificates/${id}/review`,
+  approve: (id) => `/api/certificates/${id}/approve`,
+  issue: (id) => `/api/certificates/${id}/issue`,
+  cancel: (id) => `/api/certificates/${id}/cancel`,
+  status: (id) => `/api/certificates/${id}/status`,
+};
+
 const unwrapListPayload = (payload) => {
+  const candidates = [
+    payload,
+    payload?.data,
+    payload?.Data,
+    payload?.items,
+    payload?.Items,
+    payload?.results,
+    payload?.Results,
+    payload?.result,
+    payload?.Result,
+    payload?.value,
+    payload?.Value,
+    payload?.records,
+    payload?.Records,
+    payload?.data?.items,
+    payload?.data?.Items,
+    payload?.data?.results,
+    payload?.data?.Results,
+    payload?.data?.value,
+    payload?.data?.Value,
+    payload?.data?.records,
+    payload?.data?.Records,
+    payload?.certificates,
+    payload?.Certificates,
+    payload?.data?.certificates,
+    payload?.data?.Certificates,
+    payload?.result?.certificates,
+    payload?.result?.Certificates,
+    payload?.$values,
+    payload?.data?.$values,
+    payload?.result?.$values,
+    payload?.value?.$values,
+  ];
+  const firstArray = candidates.find((item) => Array.isArray(item));
+  if (firstArray) return firstArray;
+
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.data)) return payload.data;
@@ -29,6 +84,22 @@ const unwrapListPayload = (payload) => {
 };
 
 const unwrapSinglePayload = (payload) => {
+  const singleCandidates = [
+    payload,
+    payload?.data,
+    payload?.Data,
+    payload?.item,
+    payload?.Item,
+    payload?.result,
+    payload?.Result,
+    payload?.value,
+    payload?.Value,
+    payload?.record,
+    payload?.Record,
+  ];
+  const single = singleCandidates.find((item) => item && typeof item === "object" && !Array.isArray(item));
+  if (single) return single;
+
   if (Array.isArray(payload)) return payload[0] || null;
   if (payload?.data && typeof payload.data === "object" && !Array.isArray(payload.data)) return payload.data;
   if (payload?.item && typeof payload.item === "object") return payload.item;
@@ -48,7 +119,46 @@ const toDisplayStatus = (value) => {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 };
 
-const pick = (obj, keys) => keys.map((key) => obj?.[key]).find((value) => value !== undefined && value !== null && value !== "");
+const pick = (obj, keys) => {
+  if (!obj || typeof obj !== "object") return undefined;
+  const objectKeys = Object.keys(obj);
+  for (const key of keys) {
+    const exact = obj[key];
+    if (exact !== undefined && exact !== null && exact !== "") return exact;
+    const matchedKey = objectKeys.find((k) => k.toLowerCase() === String(key).toLowerCase());
+    if (matchedKey) {
+      const value = obj[matchedKey];
+      if (value !== undefined && value !== null && value !== "") return value;
+    }
+  }
+  return undefined;
+};
+
+const getCertificateBackendId = (raw) => {
+  const numericId = Number(pick(raw, ["id", "Id", "certificateId", "CertificateId", "certificateID"]));
+  return Number.isFinite(numericId) && numericId > 0 ? numericId : null;
+};
+
+const buildFallbackRowId = (raw, matchedStudent) => {
+  const parts = [
+    pick(raw, ["certificateNo", "CertificateNo", "certificateNumber", "CertificateNumber", "number", "Number"]),
+    pick(raw, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no"]),
+    pick(raw, ["certificateType", "CertificateType", "type", "Type"]),
+    pick(raw, ["requestDate", "RequestDate", "requestedDate", "RequestedDate", "requestOn", "RequestOn", "createdAt", "CreatedAt"]),
+    matchedStudent?.admissionNo,
+    matchedStudent?.name,
+  ].filter((value) => value !== undefined && value !== null && value !== "");
+
+  if (!parts.length) return "certificate-fallback";
+
+  const seed = parts.map(String).join("::");
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(index);
+    hash |= 0;
+  }
+  return `certificate-${hash.toString(36)}`;
+};
 
 const maybeIsoDate = (value) => {
   if (!value) return "";
@@ -57,53 +167,69 @@ const maybeIsoDate = (value) => {
   return parsed.toISOString().slice(0, 10);
 };
 
-const normalizeCertificate = (raw) => {
-  const id = pick(raw, ["id", "certificateId"]);
-  const studentId = Number(pick(raw, ["studentId", "studentID", "student_id"])) || null;
-  const admissionNo = String(pick(raw, ["admissionNo", "admissionNumber", "admission_no"]) || "").trim();
-  const studentName = pick(raw, ["studentName", "student", "name"]);
+const normalizeStudentRecord = (raw) => ({
+  id: Number(pick(raw, ["id", "Id", "studentId", "StudentId", "studentID"])) || null,
+  admissionNo: String(pick(raw, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no"]) || "").trim(),
+  name: pick(raw, ["fullName", "FullName", "studentName", "StudentName", "name", "Name", "firstName", "FirstName"]) || "",
+  group: pick(raw, ["groupName", "GroupName", "groupCode", "GroupCode", "group", "Group", "courseGroup", "CourseGroup"]) || "",
+  level: pick(raw, ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "level", "Level", "year", "Year"]) || "",
+  academicYear: pick(raw, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "yearName", "YearName"]) || "",
+});
+
+const fallbackStudents = [];
+
+const normalizeCertificate = (raw, studentLookup = fallbackStudents) => {
+  const backendId = getCertificateBackendId(raw);
+  const studentId = Number(pick(raw, ["studentId", "StudentId", "studentID", "student_id"])) || null;
+  const admissionNo = String(pick(raw, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no"]) || "").trim();
+  const studentValue = pick(raw, ["student", "Student"]);
+  const studentName = typeof studentValue === "object"
+    ? pick(studentValue, ["name", "Name", "fullName", "FullName", "studentName", "StudentName"])
+    : (pick(raw, ["studentName", "StudentName", "student", "Student", "name", "Name"]));
   const matchedStudent = studentId
-    ? students.find((student) => Number(student.id) === Number(studentId))
-    : students.find((student) => student.admissionNo === admissionNo || student.name === studentName);
+    ? studentLookup.find((student) => Number(student.id) === Number(studentId))
+    : studentLookup.find((student) => student.admissionNo === admissionNo || student.name === studentName);
   const requestDate = maybeIsoDate(
-    pick(raw, ["requestDate", "requestedDate", "requestedOn", "appliedDate", "createdAt", "generatedAt", "requestOn"]),
+    pick(raw, ["requestDate", "RequestDate", "requestedDate", "RequestedDate", "requestedOn", "RequestedOn", "appliedDate", "AppliedDate", "createdAt", "CreatedAt", "generatedAt", "GeneratedAt", "requestOn", "RequestOn"]),
   );
-  const issueDate = maybeIsoDate(pick(raw, ["issueDate", "issuedDate", "issuedAt"]));
-  const status = toDisplayStatus(pick(raw, ["status", "certificateStatus"]));
+  const issueDate = maybeIsoDate(pick(raw, ["issueDate", "IssueDate", "issuedDate", "IssuedDate", "issuedAt", "IssuedAt"]));
+  const status = toDisplayStatus(pick(raw, ["status", "Status", "certificateStatus", "CertificateStatus"]));
+  const rowId = backendId ? backendId : buildFallbackRowId(raw, matchedStudent);
 
   return {
-    id,
+    id: rowId,
+    backendId,
     studentId: studentId || matchedStudent?.id || null,
-    number: pick(raw, ["certificateNo", "certificateNumber", "number"]) || "-",
+    number: pick(raw, ["certificateNo", "CertificateNo", "certificateNumber", "CertificateNumber", "number", "Number"]) || "-",
     student: studentName || matchedStudent?.name || "-",
     admissionNo: admissionNo || matchedStudent?.admissionNo || "-",
-    group: pick(raw, ["group", "groupName"]) || matchedStudent?.group || "-",
-    level: pick(raw, ["level", "year", "academicLevel", "academicLevelName"]) || matchedStudent?.level || "-",
+    group: pick(raw, ["group", "Group", "groupName", "GroupName"]) || matchedStudent?.group || "-",
+    level: pick(raw, ["level", "Level", "year", "Year", "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName"]) || matchedStudent?.level || "-",
     academicYear:
-      pick(raw, ["academicYear", "academicYearName"]) ||
-      academicYears.find((year) => year.status === "Active")?.name ||
+      pick(raw, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName"]) ||
+      matchedStudent?.academicYear ||
       "-",
-    type: pick(raw, ["certificateType", "type"]) || "-",
-    purpose: pick(raw, ["purpose"]) || "",
+    type: pick(raw, ["certificateType", "CertificateType", "type", "Type"]) || "-",
+    purpose: pick(raw, ["purpose", "Purpose"]) || "",
     requestDate: requestDate || todayIso(),
     issue: issueDate || "-",
     status,
-    remarks: pick(raw, ["remarks", "comment", "note"]) || "",
-    generatedAt: maybeIsoDate(pick(raw, ["generatedAt"])) || requestDate || "",
-    reviewedAt: maybeIsoDate(pick(raw, ["reviewedAt"])) || "",
-    approvedAt: maybeIsoDate(pick(raw, ["approvedAt"])) || "",
-    issuedAt: maybeIsoDate(pick(raw, ["issuedAt"])) || issueDate || "",
-    cancelledAt: maybeIsoDate(pick(raw, ["cancelledAt", "canceledAt"])) || "",
-    generatedBy: pick(raw, ["generatedBy", "createdBy"]) || "",
-    reviewedBy: pick(raw, ["reviewedBy"]) || "",
-    approvedBy: pick(raw, ["approvedBy"]) || "",
-    issuedBy: pick(raw, ["issuedBy"]) || "",
+    remarks: pick(raw, ["remarks", "Remarks", "comment", "Comment", "note", "Note"]) || "",
+    generatedAt: maybeIsoDate(pick(raw, ["generatedAt", "GeneratedAt"])) || requestDate || "",
+    reviewedAt: maybeIsoDate(pick(raw, ["reviewedAt", "ReviewedAt"])) || "",
+    approvedAt: maybeIsoDate(pick(raw, ["approvedAt", "ApprovedAt"])) || "",
+    issuedAt: maybeIsoDate(pick(raw, ["issuedAt", "IssuedAt"])) || issueDate || "",
+    cancelledAt: maybeIsoDate(pick(raw, ["cancelledAt", "CancelledAt", "canceledAt", "CanceledAt"])) || "",
+    generatedBy: pick(raw, ["generatedBy", "GeneratedBy", "createdBy", "CreatedBy"]) || "",
+    reviewedBy: pick(raw, ["reviewedBy", "ReviewedBy"]) || "",
+    approvedBy: pick(raw, ["approvedBy", "ApprovedBy"]) || "",
+    issuedBy: pick(raw, ["issuedBy", "IssuedBy"]) || "",
   };
 };
 
 const hasCertificateShape = (value) => {
   if (!value || typeof value !== "object") return false;
-  return ["id", "certificateId", "certificateNo", "certificateNumber", "certificateType"].some((key) => key in value);
+  return ["id", "Id", "certificateId", "CertificateId", "certificateNo", "CertificateNo", "certificateNumber", "CertificateNumber", "certificateType", "CertificateType"].some((key) => key in value);
 };
 
 const getFriendlyErrorMessage = (error, fallback) => {
@@ -120,329 +246,6 @@ const getFriendlyErrorMessage = (error, fallback) => {
 
   return fallback || "Something went wrong. Please try again.";
 };
-
-const CERT_PAGE_STYLES = `
-  .cert-page {
-    display: grid;
-    gap: 16px;
-  }
-  .cert-section-gap {
-    margin-bottom: 0;
-  }
-  .cert-form-card .cms-card-head {
-    align-items: flex-start;
-  }
-  .cert-form-card .cms-card-head p {
-    margin: 6px 0 0;
-    color: var(--cms-muted);
-    font-size: 13px;
-  }
-  .cert-student-fields {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    margin-top: 12px;
-  }
-  .cert-readonly input {
-    background: var(--cms-subtle);
-    color: var(--cms-muted);
-  }
-  .cert-toolbar-select,
-  .cert-workflow-select {
-    border: 1px solid var(--cms-border);
-    border-radius: 10px;
-    background: var(--cms-surface);
-    color: var(--cms-text);
-    font: inherit;
-    min-height: 40px;
-    padding: 9px 12px;
-    outline: none;
-  }
-  .cert-toolbar-select:focus,
-  .cert-workflow-select:focus {
-    border-color: var(--cms-primary);
-    box-shadow: 0 0 0 3px var(--cms-primary-soft);
-  }
-  .cert-table-fit {
-    min-width: 980px;
-  }
-  .cert-actions-header {
-    text-align: right;
-  }
-  .cert-actions-right {
-    justify-content: flex-end;
-    gap: 8px;
-  }
-  .cert-workflow-select {
-    min-width: 124px;
-  }
-  .cert-status-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 92px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 600;
-    border: 1px solid transparent;
-  }
-  .cert-status-success {
-    color: var(--cms-green);
-    background: var(--cms-green-soft);
-    border-color: color-mix(in srgb, var(--cms-green) 18%, transparent);
-  }
-  .cert-status-info {
-    color: var(--cms-primary);
-    background: var(--cms-primary-soft);
-    border-color: color-mix(in srgb, var(--cms-primary) 18%, transparent);
-  }
-  .cert-status-warn {
-    color: var(--cms-amber);
-    background: var(--cms-amber-soft);
-    border-color: color-mix(in srgb, var(--cms-amber) 18%, transparent);
-  }
-  .cert-status-pending {
-    color: var(--cms-violet);
-    background: var(--cms-violet-soft);
-    border-color: color-mix(in srgb, var(--cms-violet) 18%, transparent);
-  }
-  .cert-status-danger {
-    color: var(--cms-red);
-    background: var(--cms-red-soft);
-    border-color: color-mix(in srgb, var(--cms-red) 18%, transparent);
-  }
-  .cert-status-neutral {
-    color: var(--cms-muted);
-    background: var(--cms-subtle);
-    border-color: var(--cms-border);
-  }
-  .cert-print-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    display: grid;
-    place-items: center;
-    padding: 18px;
-    background: rgba(15, 23, 42, 0.55);
-  }
-  .cert-print-shell {
-    width: min(100%, 1120px);
-    max-height: calc(100vh - 36px);
-    background: var(--cms-surface);
-    border: 1px solid var(--cms-border);
-    border-radius: 16px;
-    box-shadow: var(--cms-shadow-lg);
-    overflow: hidden;
-  }
-  .cert-print-topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--cms-border);
-  }
-  .cert-print-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .cert-print-body {
-    max-height: calc(100vh - 128px);
-    overflow: auto;
-    padding: 18px;
-    background: var(--cms-bg);
-  }
-  .cert-preview-paper {
-    position: relative;
-    width: 100%;
-    max-width: 820px;
-    min-height: 1080px;
-    margin: 0 auto;
-    padding: 42px 44px;
-    background: #fff;
-    color: #18253f;
-    border: 1px solid #c5d3ec;
-    border-radius: 8px;
-    box-shadow: 0 14px 36px rgba(17, 38, 74, 0.14);
-    overflow: hidden;
-  }
-  .cert-preview-paper::before,
-  .cert-preview-paper::after {
-    content: "";
-    position: absolute;
-    border: 2px solid #d5e0f5;
-    pointer-events: none;
-  }
-  .cert-preview-paper::before { inset: 14px; }
-  .cert-preview-paper::after { inset: 24px; }
-  .cert-preview-paper .watermark {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    pointer-events: none;
-    opacity: 0.06;
-    font-size: 120px;
-    letter-spacing: 4px;
-    font-weight: 700;
-    color: #21437f;
-    text-transform: uppercase;
-  }
-  .cert-doc-head,
-  .cert-preview-meta,
-  .cert-doc-subject,
-  .cert-doc-body,
-  .cert-remarks,
-  .cert-issue-note,
-  .cert-preview-paper footer {
-    position: relative;
-    z-index: 1;
-  }
-  .cert-doc-head {
-    text-align: center;
-    border-bottom: 1px solid #cdd9ef;
-    padding-bottom: 14px;
-  }
-  .cert-doc-college-row {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    margin: 0 auto 10px;
-  }
-  .cert-doc-mark {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 1px solid #b9cbec;
-    background: #edf3ff;
-    color: #2954a8;
-    display: grid;
-    place-items: center;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.8px;
-  }
-  .cert-doc-college {
-    margin: 0;
-    font-size: 16px;
-    letter-spacing: 0.3px;
-    color: #37527f;
-    font-weight: 700;
-  }
-  .cert-doc-title {
-    margin: 0;
-    font-size: 34px;
-    letter-spacing: 0.3px;
-    font-weight: 800;
-    color: #14366e;
-    text-transform: uppercase;
-    line-height: 1.05;
-  }
-  .cert-doc-motto {
-    display: block;
-    margin-top: 10px;
-    font-size: 12px;
-    color: #5a6f93;
-    letter-spacing: 0.3px;
-    font-style: italic;
-  }
-  .cert-preview-meta {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 16px;
-    font-size: 13px;
-    color: #2e4269;
-  }
-  .cert-doc-subject {
-    margin-top: 22px;
-    text-align: center;
-    font-size: 14px;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: #304c7d;
-    font-weight: 700;
-  }
-  .cert-doc-body {
-    margin-top: 28px;
-    font-size: 20px;
-    line-height: 1.8;
-    text-align: justify;
-    color: #1d3156;
-  }
-  .cert-doc-body p,
-  .cert-remarks {
-    margin: 0 0 16px;
-  }
-  .cert-doc-body strong,
-  .cert-preview-paper footer strong {
-    color: #13284c;
-  }
-  .cert-issue-note {
-    margin-top: 36px;
-    font-size: 12px;
-    color: #4f6388;
-    line-height: 1.5;
-  }
-  .cert-preview-paper footer {
-    margin-top: 52px;
-    display: grid;
-    justify-content: end;
-    text-align: center;
-  }
-  .cert-preview-paper footer span {
-    display: block;
-    font-size: 12px;
-    color: #4f6388;
-  }
-  .cert-preview-paper footer strong {
-    display: block;
-    margin-top: 42px;
-    border-top: 1px solid #354f7f;
-    padding-top: 10px;
-    min-width: 250px;
-    font-size: 15px;
-  }
-  @media (max-width: 960px) {
-    .cert-student-fields {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-    .cert-preview-paper {
-      padding: 28px 26px;
-      min-height: auto;
-    }
-  }
-  @media (max-width: 720px) {
-    .cert-student-fields,
-    .cert-preview-meta {
-      grid-template-columns: 1fr;
-    }
-    .cert-preview-meta {
-      display: grid;
-    }
-    .cert-actions-right {
-      justify-content: flex-start;
-    }
-    .cert-workflow-select {
-      min-width: 100%;
-    }
-    .cert-print-topbar {
-      align-items: stretch;
-      flex-direction: column;
-    }
-    .cert-print-actions {
-      width: 100%;
-      justify-content: space-between;
-    }
-    .cert-preview-paper footer {
-      justify-content: stretch;
-    }
-    .cert-preview-paper footer strong {
-      min-width: 0;
-    }
-  }
-`;
 
 function formatDateDdMmYyyy(value) {
   const raw = String(value || "").trim();
@@ -463,9 +266,9 @@ function formatDateDdMmYyyy(value) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
-const formFields = [
-  { name: "admissionNo", label: "Admission No.", type: "select", options: students.map((s) => s.admissionNo), required: true },
-  { name: "type", label: "Certificate Type", type: "select", options: options.certificateType, required: true },
+const baseFormFields = [
+  { name: "admissionNo", label: "Admission No.", type: "text", placeholder: "Enter admission number", required: true },
+  { name: "type", label: "Certificate Type", type: "select", required: true },
   { name: "purpose", label: "Purpose", required: true },
   { name: "requestDate", label: "Request Date", type: "date", required: true },
   { name: "remarks", label: "Remarks" },
@@ -498,6 +301,21 @@ function isValidDateInput(value) {
   return !Number.isNaN(parsed.getTime());
 }
 
+function withOptionalRemarks(payload, remarksValue) {
+  const remarks = normalizeText(remarksValue);
+  return { ...payload, remarks: remarks || "" };
+}
+
+function getGenerationEndpoint(certificateType) {
+  const type = String(certificateType || "").trim().toLowerCase();
+  if (type.includes("bonafide")) return CERTIFICATE_API.bonafide;
+  if (type.includes("study")) return CERTIFICATE_API.study;
+  if (type.includes("conduct")) return CERTIFICATE_API.conduct;
+  if (type.includes("fee")) return CERTIFICATE_API.fee;
+  if (type.includes("transfer") || type === "tc" || type.includes("tc")) return CERTIFICATE_API.tc;
+  return CERTIFICATE_API.bonafide;
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -514,42 +332,43 @@ function getCertificateTemplate(type, record) {
   const year = record.year || record.level || "-";
   const group = record.group || "-";
   const academicYear = record.academicYear || "-";
+  const studyInfo = `with Admission No. ${admissionNo}, currently studying in ${year} (${group}) during the academic year ${academicYear}`;
 
   switch (String(type || "").toLowerCase()) {
     case "bonafide certificate":
       return {
         heading: "Bonafide Certificate",
-        paragraphOne: `, Admission No. ${admissionNo}, is a bonafide student of ${institutionName} studying in ${year} (${group}) during the academic year ${academicYear}.`,
+        paragraphOne: `${studyInfo}, and is a bonafide student of ${institutionName}.`,
         paragraphTwo: `This certificate is issued on the student's request for the purpose of ${safePurpose}.`,
       };
     case "study certificate":
       return {
         heading: "Study Certificate",
-        paragraphOne: `has pursued studies at ${institutionName} as per institutional academic records.`,
+        paragraphOne: `${studyInfo}, and has pursued studies at ${institutionName} as per institutional academic records.`,
         paragraphTwo: `This study certificate is issued for the purpose of ${safePurpose}.`,
       };
     case "transfer certificate":
       return {
         heading: "Transfer Certificate",
-        paragraphOne: `has completed/withdrawn from studies at ${institutionName} and is eligible for transfer processing.`,
+        paragraphOne: `${studyInfo}, and has completed/withdrawn from studies at ${institutionName} and is eligible for transfer processing.`,
         paragraphTwo: `This transfer certificate is issued for the purpose of ${safePurpose}.`,
       };
     case "conduct certificate":
       return {
         heading: "Conduct Certificate",
-        paragraphOne: `has maintained satisfactory conduct and discipline during the period of study at ${institutionName}.`,
+        paragraphOne: `${studyInfo}, and has maintained satisfactory conduct and discipline during the period of study at ${institutionName}.`,
         paragraphTwo: `This conduct certificate is issued for the purpose of ${safePurpose}.`,
       };
     case "migration certificate":
       return {
         heading: "Migration Certificate",
-        paragraphOne: `is permitted to migrate from ${institutionName} as per academic regulations and records.`,
+        paragraphOne: `${studyInfo}, and is permitted to migrate from ${institutionName} as per academic regulations and records.`,
         paragraphTwo: `This migration certificate is issued for the purpose of ${safePurpose}.`,
       };
     default:
       return {
-        heading: "Official Student Certificate",
-        paragraphOne: `is/was a bonafide student of ${institutionName}.`,
+        heading: "Conduct Certificate",
+        paragraphOne: `${studyInfo}, and is/was a bonafide student of ${institutionName}.`,
         paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
       };
   }
@@ -787,22 +606,20 @@ function buildPrintHtml(record) {
 
 export default function CertificatesPage() {
   const [rows, setRows] = useState([]);
+  const [studentRows, setStudentRows] = useState(fallbackStudents);
+  const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingList, setLoadingList] = useState(true);
   const [creating, setCreating] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [busyAction, setBusyAction] = useState({ id: null, type: "" });
   const [printingId, setPrintingId] = useState(null);
-  const activeAcademicYear = useMemo(
-    () => academicYears.find((year) => year.status === "Active")?.name || academicYears[0]?.name || "-",
-    [],
-  );
 
   const [form, setForm] = useState({
     admissionNo: "",
     student: "",
     group: "",
     level: "",
-    academicYear: activeAcademicYear,
+    academicYear: "",
     type: "",
     purpose: "",
     requestDate: todayIso(),
@@ -819,12 +636,21 @@ export default function CertificatesPage() {
     student: "",
     group: "",
     level: "",
-    academicYear: activeAcademicYear,
+    academicYear: "",
     purpose: "",
     remarks: "",
   });
   const [editErrors, setEditErrors] = useState({});
   const [toast, setToast] = useState("");
+
+  const formFields = useMemo(
+    () => baseFormFields.map((field) => {
+      if (field.name === "admissionNo") return { ...field, disabled: loadingStudents };
+      if (field.name === "type") return { ...field, options: options.certificateType };
+      return field;
+    }),
+    [loadingStudents],
+  );
 
   const isRowBusy = (rowId, action = "") => {
     if (!busyAction.id) return false;
@@ -832,12 +658,59 @@ export default function CertificatesPage() {
     return action ? busyAction.type === action : true;
   };
 
-  const loadCertificates = async ({ showLoader = true } = {}) => {
+  const canResolveStudentIdFromRow = (row) => {
+    if (Number(row?.studentId)) return true;
+    const matchedStudent = findStudentByAdmission(row?.admissionNo);
+    return Number(matchedStudent?.id) > 0;
+  };
+
+  const hasServerCertificateId = (row) => {
+    const numericId = Number(row?.backendId ?? row?.id);
+    return Number.isFinite(numericId) && numericId > 0;
+  };
+
+  const resolveServerCertificateId = async (row) => {
+    if (!row) return null;
+    if (hasServerCertificateId(row)) {
+      return Number(row.backendId ?? row.id);
+    }
+
+    const certificateNumber = String(row?.number || "").trim();
+    if (!certificateNumber || certificateNumber === "-") return null;
+
+    try {
+      const response = await apiClient.get(CERTIFICATE_API.verify(certificateNumber));
+      const details = unwrapSinglePayload(response.data);
+      if (!hasCertificateShape(details)) return null;
+
+      const normalized = normalizeCertificate(details, studentRows);
+      const resolvedId = Number(normalized.backendId ?? normalized.id);
+      if (!resolvedId) return null;
+
+      setRows((prev) => prev.map((item) => (String(item.id) === String(row.id) ? { ...item, ...normalized, backendId: resolvedId } : item)));
+      return resolvedId;
+    } catch {
+      return null;
+    }
+  };
+
+  const loadCertificates = async ({ showLoader = true, studentLookup = studentRows } = {}) => {
     if (showLoader) setLoadingList(true);
     try {
-      const response = await apiClient.get(apiEndpoints.certificates.list);
-      const mapped = unwrapListPayload(response?.data).map(normalizeCertificate);
-      setRows(mapped);
+      const response = await apiClient.get(CERTIFICATE_API.list);
+      const mapped = unwrapListPayload(response?.data).map((item) => normalizeCertificate(item, studentLookup));
+      if (mapped.length > 0) {
+        setRows(mapped);
+        return true;
+      }
+
+      try {
+        const historyResponse = await apiClient.get(CERTIFICATE_API.history);
+        const historyMapped = unwrapListPayload(historyResponse?.data).map((item) => normalizeCertificate(item, studentLookup));
+        setRows(historyMapped);
+      } catch {
+        setRows(mapped);
+      }
       return true;
     } catch (error) {
       setRows([]);
@@ -849,17 +722,39 @@ export default function CertificatesPage() {
     }
   };
 
+  const loadStudents = async () => {
+    setLoadingStudents(true);
+    try {
+      const response = await apiClient.get(apiEndpoints.students.getAll);
+      const mapped = unwrapListPayload(response?.data)
+        .map(normalizeStudentRecord)
+        .filter((student) => student.id && student.admissionNo);
+      setStudentRows(mapped.length ? mapped : fallbackStudents);
+      return mapped.length ? mapped : fallbackStudents;
+    } catch (error) {
+      setStudentRows(fallbackStudents);
+      setToast(getFriendlyErrorMessage(error, "Failed to load students."));
+      return fallbackStudents;
+    } finally {
+      setLoadingStudents(false);
+    }
+  };
+
   useEffect(() => {
-    loadCertificates();
+    (async () => {
+      const studentLookup = await loadStudents();
+      await loadCertificates({ studentLookup });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const findStudentByAdmission = (admissionNo) =>
-    students.find((student) => student.admissionNo === admissionNo) || null;
+    studentRows.find((student) => student.admissionNo === admissionNo) || null;
 
   const upsertFromApiResponse = async (id, responseData) => {
     const single = unwrapSinglePayload(responseData);
     if (hasCertificateShape(single)) {
-      const normalized = normalizeCertificate(single);
+      const normalized = normalizeCertificate(single, studentRows);
       setRows((prev) => {
         const index = prev.findIndex((row) => String(row.id) === String(normalized.id));
         if (index === -1) return [normalized, ...prev];
@@ -872,10 +767,11 @@ export default function CertificatesPage() {
 
     if (id !== undefined && id !== null) {
       try {
-        const byIdResponse = await apiClient.get(apiEndpoints.certificates.getById(id));
+        const byIdResponse = await apiClient.get(CERTIFICATE_API.getById(id));
+        
         const byIdData = unwrapSinglePayload(byIdResponse.data);
         if (hasCertificateShape(byIdData)) {
-          const normalizedById = normalizeCertificate(byIdData);
+          const normalizedById = normalizeCertificate(byIdData, studentRows);
           setRows((prev) => {
             const index = prev.findIndex((row) => String(row.id) === String(normalizedById.id));
             if (index === -1) return [normalizedById, ...prev];
@@ -954,7 +850,7 @@ export default function CertificatesPage() {
       student: "",
       group: "",
       level: "",
-      academicYear: activeAcademicYear,
+      academicYear: "",
       type: "",
       purpose: "",
       requestDate: todayIso(),
@@ -978,6 +874,7 @@ export default function CertificatesPage() {
     const admissionNo = String(form.admissionNo || "").trim();
     const type = String(form.type || "").trim();
     const purpose = normalizeText(form.purpose);
+    const requestDate = String(form.requestDate || "").trim();
     const remarks = normalizeText(form.remarks);
     const selectedStudent = findStudentByAdmission(admissionNo);
     if (!selectedStudent) {
@@ -985,16 +882,18 @@ export default function CertificatesPage() {
       return;
     }
 
-    const payload = {
-      studentId: Number(selectedStudent.id),
-      certificateType: type,
-      purpose,
-      remarks: remarks || null,
-    };
-
     setCreating(true);
     try {
-      const response = await apiClient.post(apiEndpoints.certificates.create, payload);
+      const endpoint = getGenerationEndpoint(type);
+      const specializedPayload = withOptionalRemarks({
+        admissionNo,
+        studentId: Number(selectedStudent.id),
+        certificateType: type,
+        purpose,
+        requestDate,
+        issueDate: requestDate,
+      }, remarks);
+      const response = await apiClient.post(endpoint, specializedPayload);
       await upsertFromApiResponse(undefined, response.data);
       resetForm();
       setToast("Certificate generated successfully.");
@@ -1006,13 +905,14 @@ export default function CertificatesPage() {
   };
 
   const handleWorkflowChange = async (row, action) => {
-    if (!row?.id) return;
     if (busyAction.id) return;
+    const actionId = await resolveServerCertificateId(row);
+    if (!actionId) return;
 
     const actionMap = {
-      review: { endpoint: apiEndpoints.certificates.review, nextStatus: "Reviewed", success: "moved to reviewed" },
-      approve: { endpoint: apiEndpoints.certificates.approve, nextStatus: "Approved", success: "approved" },
-      issue: { endpoint: apiEndpoints.certificates.issue, nextStatus: "Issued", success: "issued" },
+      review: { endpoint: CERTIFICATE_API.review, method: "post", nextStatus: "Reviewed", success: "moved to reviewed" },
+      approve: { endpoint: CERTIFICATE_API.approve, method: "post", nextStatus: "Approved", success: "approved" },
+      issue: { endpoint: CERTIFICATE_API.issue, method: "post", nextStatus: "Issued", success: "issued" },
     };
     const selected = actionMap[action];
     if (!selected) return;
@@ -1020,8 +920,8 @@ export default function CertificatesPage() {
 
     setBusyAction({ id: row.id, type: action });
     try {
-      const response = await apiClient.patch(selected.endpoint(row.id));
-      await upsertFromApiResponse(row.id, response.data);
+      const response = await apiClient[selected.method](selected.endpoint(actionId));
+      await upsertFromApiResponse(actionId, response.data);
       setToast(`Certificate ${row.number} ${selected.success}`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, `Failed to ${action} certificate. Please try again.`));
@@ -1031,14 +931,16 @@ export default function CertificatesPage() {
   };
 
   const cancelCertificate = async (row) => {
-    if (!row?.id || busyAction.id) return;
+    if (busyAction.id) return;
+    const actionId = await resolveServerCertificateId(row);
+    if (!actionId) return;
     const ok = window.confirm(`Cancel certificate ${row.number}?`);
     if (!ok) return;
 
     setBusyAction({ id: row.id, type: "cancel" });
     try {
-      const response = await apiClient.patch(apiEndpoints.certificates.cancel(row.id));
-      await upsertFromApiResponse(row.id, response.data);
+      const response = await apiClient.patch(CERTIFICATE_API.cancel(actionId));
+      await upsertFromApiResponse(actionId, response.data);
       setToast(`Certificate ${row.number} cancelled`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Failed to cancel certificate. Please try again."));
@@ -1048,13 +950,41 @@ export default function CertificatesPage() {
   };
 
   const regenerateCertificate = async (row) => {
-    if (!row?.id || busyAction.id) return;
+    if (busyAction.id) return;
+    const actionId = await resolveServerCertificateId(row);
+    if (!actionId) return;
     setBusyAction({ id: row.id, type: "reissue" });
     try {
-      const response = await apiClient.post(apiEndpoints.certificates.reissue, {
-        certificateId: Number(row.id),
-        remarks: row.remarks || null,
-      });
+      let resolvedStudentId = Number(row.studentId) || null;
+      if (!resolvedStudentId) {
+        const matchedStudent = findStudentByAdmission(row.admissionNo);
+        resolvedStudentId = Number(matchedStudent?.id) || null;
+      }
+
+      if (!resolvedStudentId) {
+        try {
+          const byIdResponse = await apiClient.get(CERTIFICATE_API.getById(row.id));
+          const byIdData = unwrapSinglePayload(byIdResponse.data);
+          const normalizedById = normalizeCertificate(byIdData || {}, studentRows);
+          resolvedStudentId = Number(normalizedById.studentId) || null;
+        } catch {
+          // Keep graceful error below if student id still cannot be resolved.
+        }
+      }
+
+      if (!resolvedStudentId) {
+        setToast("Unable to reissue certificate because student ID is missing.");
+        return;
+      }
+
+      const response = await apiClient.post(CERTIFICATE_API.reissue, withOptionalRemarks({
+        certificateId: actionId,
+        studentId: resolvedStudentId,
+        admissionNo: String(row.admissionNo || findStudentByAdmission(row.admissionNo)?.admissionNo || "").trim(),
+        certificateType: String(row.type || "").trim(),
+        purpose: String(row.purpose || "").trim(),
+        requestDate: String(row.requestDate || todayIso()).trim(),
+      }, row.remarks));
       await upsertFromApiResponse(row.id, response.data);
       setToast(`Certificate ${row.number} reissued`);
     } catch (error) {
@@ -1064,15 +994,51 @@ export default function CertificatesPage() {
     }
   };
 
+  const deleteCertificate = async (row) => {
+    if (busyAction.id) return;
+    const actionId = await resolveServerCertificateId(row);
+    if (!actionId) return;
+    const ok = window.confirm(`Delete certificate ${row.number}? This cannot be undone.`);
+    if (!ok) return;
+
+    setBusyAction({ id: row.id, type: "delete" });
+    try {
+      await apiClient.delete(CERTIFICATE_API.delete(actionId));
+      setRows((prev) => prev.filter((item) => String(item.id) !== String(row.id)));
+      setToast(`Certificate ${row.number} deleted`);
+      if (printPreview?.id === row.id) setPrintPreview(null);
+      if (editRow?.id === row.id) closeEditDialog();
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to delete certificate. Please try again."));
+    } finally {
+      setBusyAction({ id: null, type: "" });
+    }
+  };
+
   const printCertificate = async (record) => {
     const target = record;
     if (!target) return;
+
+    const resolvedId = await resolveServerCertificateId(target);
+    if (!resolvedId) {
+      const popup = window.open("", "_blank", "width=1000,height=760");
+      if (!popup) {
+        setToast("Please allow popups to print certificate");
+        return;
+      }
+      popup.document.open();
+      popup.document.write(buildPrintHtml(target));
+      popup.document.close();
+      popup.focus();
+      popup.onload = () => popup.print();
+      return;
+    }
 
     if (printingId) return;
     setPrintingId(target.id);
 
     try {
-      const response = await apiClient.get(apiEndpoints.certificates.download(target.id), { responseType: "blob" });
+      const response = await apiClient.get(apiEndpoints.certificates.download(resolvedId), { responseType: "blob" });
       const contentType = String(response?.headers?.["content-type"] || "").toLowerCase();
       if (contentType.includes("pdf") || contentType.includes("application/octet-stream")) {
         const blob = new Blob([response.data], { type: contentType || "application/pdf" });
@@ -1107,22 +1073,66 @@ export default function CertificatesPage() {
 
   const openPrintPreview = (record) => {
     if (!record) return;
-    setPrintPreview(record);
+    (async () => {
+      const resolvedId = await resolveServerCertificateId(record);
+      if (!resolvedId) {
+        setPrintPreview(record);
+        return;
+      }
+      try {
+        const response = await apiClient.get(CERTIFICATE_API.getById(resolvedId));
+        const details = unwrapSinglePayload(response.data);
+        if (hasCertificateShape(details)) {
+          setPrintPreview(normalizeCertificate(details, studentRows));
+          return;
+        }
+      } catch {
+        // keep fallback below
+      }
+      setPrintPreview(record);
+    })();
   };
 
   const openEditDialog = (row) => {
-    setEditRow(row);
-    const selectedStudent = findStudentByAdmission(row.admissionNo || "");
-    setEditForm({
-      admissionNo: row.admissionNo || "",
-      student: row.student || selectedStudent?.name || "",
-      group: row.group || selectedStudent?.group || "",
-      level: row.level || selectedStudent?.level || "",
-      academicYear: row.academicYear || activeAcademicYear,
-      purpose: row.purpose || "",
-      remarks: row.remarks || "",
-    });
-    setEditErrors({});
+    if (!row) return;
+    (async () => {
+      let source = row;
+      const resolvedId = await resolveServerCertificateId(row);
+      if (!resolvedId) {
+        setEditRow(source);
+        const selectedStudent = findStudentByAdmission(source.admissionNo || "");
+        setEditForm({
+          admissionNo: source.admissionNo || "",
+          student: source.student || selectedStudent?.name || "",
+          group: source.group || selectedStudent?.group || "",
+          level: source.level || selectedStudent?.level || "",
+          academicYear: source.academicYear || selectedStudent?.academicYear || "",
+          purpose: source.purpose || "",
+          remarks: source.remarks || "",
+        });
+        setEditErrors({});
+        return;
+      }
+      try {
+        const response = await apiClient.get(CERTIFICATE_API.getById(resolvedId));
+        const details = unwrapSinglePayload(response.data);
+        if (hasCertificateShape(details)) source = normalizeCertificate(details, studentRows);
+      } catch {
+        // Keep row fallback
+      }
+      setEditRow(source);
+      const selectedStudent = findStudentByAdmission(source.admissionNo || "");
+      setEditForm({
+        admissionNo: source.admissionNo || "",
+        student: source.student || selectedStudent?.name || "",
+        group: source.group || selectedStudent?.group || "",
+        level: source.level || selectedStudent?.level || "",
+        academicYear: source.academicYear || selectedStudent?.academicYear || "",
+        purpose: source.purpose || "",
+        remarks: source.remarks || "",
+      });
+      setEditErrors({});
+    })();
   };
 
   const handleEditAdmissionChange = (value) => {
@@ -1133,7 +1143,7 @@ export default function CertificatesPage() {
       student: selectedStudent?.name || "",
       group: selectedStudent?.group || "",
       level: selectedStudent?.level || "",
-      academicYear: prev.academicYear || activeAcademicYear,
+      academicYear: selectedStudent?.academicYear || "",
     }));
     setEditErrors((prev) => ({ ...prev, admissionNo: undefined }));
   };
@@ -1170,13 +1180,12 @@ export default function CertificatesPage() {
     if (savingEdit) return;
     setSavingEdit(true);
     try {
-      const payload = {
+      const payload = withOptionalRemarks({
         studentId: Number(selectedStudent.id),
         certificateType: editRow.type,
         purpose: normalizeText(editForm.purpose),
-        remarks: normalizeText(editForm.remarks) || null,
-      };
-      const response = await apiClient.put(apiEndpoints.certificates.update(editRow.id), payload);
+      }, editForm.remarks);
+      const response = await apiClient.put(CERTIFICATE_API.updateAdmission(selectedStudent.admissionNo), payload);
       await upsertFromApiResponse(editRow.id, response.data);
       setToast(`Certificate ${editRow.number} updated`);
       closeEditDialog();
@@ -1210,7 +1219,6 @@ export default function CertificatesPage() {
       subtitle="Generate, review, issue, and print certificates with a real-time preview."
       breadcrumb={["Administration"]}
     >
-      <style>{CERT_PAGE_STYLES}</style>
       <div className="cert-page">
         <div className="cert-section-gap">
           <div className="cms-card cert-form-card">
@@ -1237,7 +1245,7 @@ export default function CertificatesPage() {
                           student: selectedStudent?.name || "",
                           group: selectedStudent?.group || "",
                           level: selectedStudent?.level || "",
-                          academicYear: activeAcademicYear,
+                          academicYear: selectedStudent?.academicYear || "",
                         }));
                         setErrors((prev) => ({ ...prev, admissionNo: undefined }));
                         return;
@@ -1271,8 +1279,8 @@ export default function CertificatesPage() {
               <div className="cms-form-actions">
                 <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm}>Reset</button>
                 <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating}>Refresh Certificates</button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating}>
-                  {creating ? "Generating..." : "Generate Draft"}
+                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents}>
+                  {creating ? "Generating..." : loadingStudents ? "Loading Students..." : "Generate Draft"}
                 </button>
               </div>
             </div>
@@ -1341,7 +1349,7 @@ export default function CertificatesPage() {
                         <select
                           className="cert-workflow-select"
                           value=""
-                          disabled={row.status === "Issued" || row.status === "Cancelled" || isRowBusy(row.id)}
+                          disabled={row.status === "Issued" || row.status === "Cancelled" || !hasServerCertificateId(row) || isRowBusy(row.id)}
                           onChange={async (e) => {
                             handleWorkflowChange(row, e.target.value);
                             e.target.value = "";
@@ -1364,14 +1372,23 @@ export default function CertificatesPage() {
                         </button>
 
                         {row.status !== "Cancelled" ? (
-                          <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id)}>
+                          <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}>
                             <Ban size={15} />
                           </button>
                         ) : (
-                          <button className="cms-action-btn" title="Regenerate" onClick={() => regenerateCertificate(row)} disabled={isRowBusy(row.id)}>
+                          <button
+                            className="cms-action-btn"
+                            title={canResolveStudentIdFromRow(row) ? "Regenerate" : "Regenerate unavailable: student ID missing"}
+                            onClick={() => regenerateCertificate(row)}
+                            disabled={isRowBusy(row.id) || !hasServerCertificateId(row) || !canResolveStudentIdFromRow(row)}
+                          >
                             <RotateCcw size={15} />
                           </button>
                         )}
+
+                        <button className="cms-action-btn danger" title="Delete Certificate" onClick={() => deleteCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}>
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1489,18 +1506,15 @@ export default function CertificatesPage() {
               <div className="cms-form-grid cols-2 cert-space-bottom-12">
                 <div className={`cms-field ${editErrors.admissionNo ? "has-error" : ""}`}>
                   <label>Admission No.</label>
-                  <select
+                  <input
+                    type="text"
                     value={editForm.admissionNo}
+                    placeholder="Enter admission number"
                     onChange={(e) => {
                       const value = e.target.value;
                       handleEditAdmissionChange(value);
                     }}
-                  >
-                    <option value="">Select admission number</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.admissionNo}>{student.admissionNo}</option>
-                    ))}
-                  </select>
+                  />
                   {editErrors.admissionNo ? <small className="cms-error">{editErrors.admissionNo}</small> : null}
                 </div>
 

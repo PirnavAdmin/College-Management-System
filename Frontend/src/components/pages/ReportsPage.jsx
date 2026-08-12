@@ -17,23 +17,6 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
@@ -80,21 +63,66 @@ const AUDIT_SAMPLE_OPTIONS = {
   status: ["Success", "Failed"],
 };
 const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
-
-const summaryCardConfig = [
-  { key: "admissions", label: "Admissions", icon: GraduationCap, tone: "blue" },
-  { key: "attendance", label: "Attendance", icon: CalendarCheck, tone: "green", suffix: "%" },
-  { key: "feeCollection", label: "Fee Collection", icon: WalletCards, tone: "violet", currency: true },
-  { key: "dueFees", label: "Due Fees", icon: AlertCircle, tone: "amber", currency: true },
-  { key: "examinations", label: "Examinations", icon: FileSpreadsheet, tone: "blue" },
-  { key: "results", label: "Results Published", icon: Award, tone: "green" },
-  { key: "facultyWorkload", label: "Faculty Workload", icon: BriefcaseBusiness, tone: "violet", suffix: " hrs/wk" },
-  { key: "studentStrength", label: "Student Strength", icon: Users, tone: "blue" },
-  { key: "passPercentage", label: "Pass Percentage", icon: Percent, tone: "green", suffix: "%" },
-  { key: "toppers", label: "Toppers Identified", icon: Trophy, tone: "amber" },
+const AUDIT_SAMPLE_ROWS = [
+  { id: "sample-1", timestamp: "2026-08-12T09:15:00+05:30", user: "Super Admin", role: "Super Admin", module: "Authentication", action: "Login", description: "User signed in to the College Management System.", recordId: "USR-0001", status: "Success", ipAddress: "192.168.0.25", device: "Chrome on Windows", isSample: true },
+  { id: "sample-2", timestamp: "2026-08-12T09:42:00+05:30", user: "College Admin", role: "Admin", module: "Student Management", action: "Create", description: "Created a new student admission record.", recordId: "STU-1001", status: "Success", previousValue: null, newValue: { admissionStatus: "Active", academicYear: "2026-27" }, isSample: true },
+  { id: "sample-3", timestamp: "2026-08-12T10:20:00+05:30", user: "Super Admin", role: "Super Admin", module: "Attendance", action: "Update", description: "Updated daily attendance for MPC first year.", recordId: "ATT-2048", status: "Success", previousValue: { present: 42, absent: 3 }, newValue: { present: 43, absent: 2 }, isSample: true },
+  { id: "sample-4", timestamp: "2026-08-12T11:05:00+05:30", user: "Staff User", role: "Staff", module: "Fee Management", action: "Update", description: "Fee receipt update failed because the transaction reference was invalid.", recordId: "FEE-3512", status: "Failed", isSample: true },
+  { id: "sample-5", timestamp: "2026-08-12T12:10:00+05:30", user: "College Admin", role: "Admin", module: "Reports", action: "Export", description: "Exported the Reports & Analytics summary in PDF format.", recordId: "RPT-0826", status: "Success", isSample: true },
+  { id: "sample-6", timestamp: "2026-08-12T14:30:00+05:30", user: "Student User", role: "Student", module: "Results", action: "View", description: "Viewed the published semester examination result.", recordId: "RES-7814", status: "Success", isSample: true },
 ];
 
-const chartMargin = { top: 8, right: 10, left: -14, bottom: 0 };
+const summaryCardConfig = [
+  { key: "admissions", sourceKey: "admissions", reportType: "admissions", label: "Admissions", icon: GraduationCap, tone: "blue" },
+  { key: "attendance", sourceKey: "attendance", reportType: "attendance", label: "Attendance", icon: CalendarCheck, tone: "green", suffix: "%" },
+  { key: "feeCollection", sourceKey: "feeCollection", reportType: "fees/collection", label: "Fee Collection", icon: WalletCards, tone: "violet", currency: true },
+  { key: "dueFees", sourceKey: "feeOutstanding", reportType: "fees/outstanding", label: "Due Fees", icon: AlertCircle, tone: "amber", currency: true },
+  { key: "examinations", sourceKey: "examinations", reportType: "examinations", label: "Examinations", icon: FileSpreadsheet, tone: "blue" },
+  { key: "results", sourceKey: "results", reportType: "results", label: "Results Published", icon: Award, tone: "green" },
+  { key: "facultyWorkload", sourceKey: "facultyWorkload", reportType: "faculty-workload", label: "Faculty Workload", icon: BriefcaseBusiness, tone: "violet", suffix: " hrs/wk" },
+  { key: "studentStrength", sourceKey: "studentStrength", reportType: "student-strength", label: "Student Strength", icon: Users, tone: "blue" },
+  { key: "passPercentage", sourceKey: "passPercentage", reportType: "pass-percentage", label: "Pass Percentage", icon: Percent, tone: "green", suffix: "%" },
+  { key: "toppers", sourceKey: "toppers", reportType: "toppers", label: "Toppers Identified", icon: Trophy, tone: "amber" },
+];
+
+const DETAIL_LABELS = {
+  count: "Records", total: "Total", male: "Male", female: "Female", present: "Present", absent: "Absent",
+  workingDays: "Working days", totalStudents: "Students", totalFaculty: "Faculty", totalExaminations: "Examinations",
+  totalCollected: "Collected", collectedAmount: "Collected", totalOutstanding: "Outstanding", outstandingAmount: "Outstanding",
+  passCount: "Passed", failCount: "Failed", appearedStudents: "Appeared", publishedResults: "Published",
+  averageAttendance: "Average attendance", attendancePercentage: "Attendance", averageWorkload: "Average workload",
+};
+
+function readableLabel(key) {
+  const normalized = String(key).replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+  return DETAIL_LABELS[normalized] ?? normalized.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function reportDetails(payload, mainValue, { currency = false } = {}) {
+  const node = dataNode(payload);
+  const details = [];
+  const add = (label, value, format = {}) => {
+    if (value === undefined || value === null || value === "" || typeof value === "object") return;
+    if (Number(value) === Number(mainValue) && details.length === 0) return;
+    const numeric = typeof value === "number" || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+    const display = numeric ? formatMetric(Number(value), format) : String(value);
+    if (!details.some((item) => item.label === label && item.value === display)) details.push({ label, value: display });
+  };
+
+  if (node && !Array.isArray(node) && typeof node === "object") {
+    Object.entries(node).forEach(([key, value]) => {
+      const lowerKey = key.toLowerCase();
+      const valueFormat = { currency: currency || /amount|fee|collection|outstanding|due|paid/i.test(key), suffix: /percentage|rate/i.test(key) ? "%" : "" };
+      if (/id$|date|created|updated|message|status/i.test(lowerKey)) return;
+      if (Array.isArray(value)) add(readableLabel(key), value.length);
+      else add(readableLabel(key), value, valueFormat);
+    });
+  }
+
+  const rows = collection(payload);
+  if (rows.length) add("Records", rows.length);
+  return details.slice(0, 3);
+}
 
 function dataNode(payload) {
   return payload?.data ?? payload?.Data ?? payload?.result ?? payload?.Result ?? payload;
@@ -128,6 +156,38 @@ function metric(payload, keys) {
   return numberValue(dataNode(payload), ...keys);
 }
 
+function hasReportData(payload) {
+  const node = dataNode(payload);
+  if (Array.isArray(node)) return node.length > 0;
+  if (!node || typeof node !== "object") return node !== undefined && node !== null && node !== "";
+  return Object.values(node).some((value) => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === "object") return Object.keys(value).length > 0;
+    return value !== undefined && value !== null && value !== "";
+  });
+}
+
+function reportFailureMessage(failures) {
+  if (!failures.length) return "";
+  const reasons = failures.map(({ reason }) => reason);
+  const messages = [...new Set(reasons.map(getApiErrorMessage).filter(Boolean))];
+  const statuses = reasons.map((reason) => reason?.response?.status).filter(Boolean);
+  const allUnavailable = failures.length === reportRequests.length;
+  const affected = failures.map(({ key }) => key.replace(/([A-Z])/g, " $1").toLowerCase()).join(", ");
+  const firstMessage = messages[0] || "Unknown Reports API error.";
+
+  if (reasons.every((reason) => !reason?.response || reason?.message === "Network Error") || messages.some((message) => /backend is not reachable|network error|ngrok.*offline|err_ngrok/i.test(message))) {
+    return "Reports API is unreachable. The configured backend server or ngrok tunnel is offline. Start the backend/tunnel and select Retry.";
+  }
+  if (statuses.includes(401)) return "Your Reports API session is unauthorized or expired. Please sign in again.";
+  if (statuses.every((status) => status === 404)) return "The configured backend does not expose the Reports API routes. Verify that the Reports controller is deployed.";
+  if (messages.some((message) => /procedure.+does not exist|stored procedure/i.test(message))) {
+    return `The backend database is missing a Reports stored procedure. Backend response: ${firstMessage}`;
+  }
+  if (allUnavailable) return `All Reports API requests failed. Backend response: ${firstMessage}`;
+  return `${failures.length} report sections could not be loaded (${affected}). Backend response: ${firstMessage}`;
+}
+
 function optionFrom(item, idKeys, labelKeys, metadata = {}) {
   const value = read(item, ...idKeys);
   if (value === undefined || value === null || value === "") return null;
@@ -154,62 +214,6 @@ function buildQuery(filters) {
     params[queryKey] = ["from", "to"].includes(filterKey) ? new Date(value).toISOString() : Number(value);
     return params;
   }, {});
-}
-
-function labelFor(item) {
-  const value = read(item, "label", "Label", "month", "Month", "period", "Period", "date", "Date", "name", "Name");
-  return value === undefined ? "" : String(value).slice(0, 10);
-}
-
-function mapAdmissions(payload) {
-  return collection(payload, ["monthlyAdmissions", "MonthlyAdmissions", "trend", "Trend", "admissions", "Admissions"])
-    .map((item) => ({
-      month: labelFor(item),
-      admissions: numberValue(item, "admissions", "Admissions", "admissionCount", "AdmissionCount", "count", "Count", "actual", "Actual"),
-      target: numberValue(item, "target", "Target", "targetAdmissions", "TargetAdmissions"),
-    }))
-    .filter((item) => item.month && item.admissions !== undefined);
-}
-
-function mapAttendance(payload) {
-  return collection(payload, ["attendanceTrend", "AttendanceTrend", "trend", "Trend", "attendance", "Attendance"])
-    .map((item) => ({
-      month: labelFor(item),
-      attendance: numberValue(item, "attendancePercentage", "AttendancePercentage", "percentage", "Percentage", "rate", "Rate", "attendance", "Attendance"),
-    }))
-    .filter((item) => item.month && item.attendance !== undefined);
-}
-
-function mapStudentStrength(payload) {
-  return collection(payload, ["studentStrength", "StudentStrength", "classWise", "ClassWise", "groups", "Groups", "sections", "Sections"])
-    .map((item) => ({
-      className: String(read(item, "className", "ClassName", "groupName", "GroupName", "sectionName", "SectionName", "label", "Label") ?? ""),
-      students: numberValue(item, "studentCount", "StudentCount", "totalStudents", "TotalStudents", "strength", "Strength", "count", "Count"),
-    }))
-    .filter((item) => item.className && item.students !== undefined);
-}
-
-function mapFees(collectionPayload, outstandingPayload) {
-  const collectedRows = collection(collectionPayload, ["monthlyCollection", "MonthlyCollection", "collectionTrend", "CollectionTrend", "fees", "Fees"]);
-  const dueRows = collection(outstandingPayload, ["monthlyOutstanding", "MonthlyOutstanding", "outstandingTrend", "OutstandingTrend", "fees", "Fees"]);
-  const rows = new Map();
-  collectedRows.forEach((item) => {
-    const month = labelFor(item);
-    if (!month) return;
-    rows.set(month, {
-      month,
-      collected: numberValue(item, "collected", "Collected", "collectedAmount", "CollectedAmount", "amount", "Amount"),
-      due: numberValue(item, "due", "Due", "dueAmount", "DueAmount", "outstandingAmount", "OutstandingAmount"),
-    });
-  });
-  dueRows.forEach((item) => {
-    const month = labelFor(item);
-    if (!month) return;
-    const current = rows.get(month) ?? { month };
-    current.due = numberValue(item, "due", "Due", "dueAmount", "DueAmount", "outstandingAmount", "OutstandingAmount", "amount", "Amount");
-    rows.set(month, current);
-  });
-  return [...rows.values()].filter((item) => item.collected !== undefined || item.due !== undefined);
 }
 
 function mapFacultyWorkload(payload) {
@@ -335,22 +339,19 @@ async function getExportErrorMessage(error) {
   }
 }
 
-function EmptyChart() {
-  return <div className="reports-empty">No data available for the selected filters.</div>;
-}
-
-function ChartCard({ title, subtitle, children, className = "" }) {
-  return (
-    <section className={`reports-chart-card ${className}`}>
-      <div className="reports-chart-head">
-        <div><h2>{title}</h2>{subtitle ? <p>{subtitle}</p> : null}</div>
-      </div>
-      <div className="reports-chart-body">{children}</div>
-    </section>
-  );
+function downloadBlob(blob, filename) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
 export default function ReportsPage() {
+  const [activeTab, setActiveTab] = useState("reports");
   const [filters, setFilters] = useState({});
   const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [], groups: [], sections: [] });
   const [reports, setReports] = useState(EMPTY_REPORTS);
@@ -358,12 +359,15 @@ export default function ReportsPage() {
   const [masterLoading, setMasterLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
-  const [exporting, setExporting] = useState("");
+  const [previewing, setPreviewing] = useState("");
+  const [exportingCards, setExportingCards] = useState({});
+  const [previewFile, setPreviewFile] = useState(null);
+  const [pdfPreviewLoaded, setPdfPreviewLoaded] = useState(false);
+  const [reportGenerated, setReportGenerated] = useState(false);
   const [auditFilters, setAuditFilters] = useState({});
   const [auditData, setAuditData] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState("");
-  const [auditFetched, setAuditFetched] = useState(false);
   const [auditPage, setAuditPage] = useState(1);
   const [auditPageSize, setAuditPageSize] = useState(10);
   const [selectedAuditLog, setSelectedAuditLog] = useState(null);
@@ -391,7 +395,7 @@ export default function ReportsPage() {
     setMasterLoading(false);
   }, []);
 
-  const loadReports = useCallback(async (selectedFilters) => {
+  const loadReports = useCallback(async (selectedFilters, markAsGenerated = false) => {
     setLoading(true);
     setError("");
     const params = buildQuery(selectedFilters);
@@ -401,16 +405,14 @@ export default function ReportsPage() {
     results.forEach((result, index) => {
       const [key] = reportRequests[index];
       if (result.status === "fulfilled") nextReports[key] = result.value.data;
-      else failures.push(result.reason);
+      else failures.push({ key, reason: result.reason });
     });
     setReports(nextReports);
-    setAuditPage(1);
-    if (failures.length) {
-      const unavailable = failures.length === reportRequests.length;
-      setError(unavailable
-        ? "Reports data is currently unavailable. Please verify that the Reports database procedures are installed on the backend."
-        : `${failures.length} report sections could not be loaded. Available sections are shown below.`);
+    if (markAsGenerated) {
+      setReportGenerated(results.some((result) => result.status === "fulfilled" && hasReportData(result.value.data)));
     }
+    setAuditPage(1);
+    setError(reportFailureMessage(failures));
     setLoading(false);
   }, []);
 
@@ -438,13 +440,11 @@ export default function ReportsPage() {
     ];
   }, [filters.board, filters.group, filters.level, masterOptions]);
 
-  const admissionsData = useMemo(() => mapAdmissions(reports.admissions), [reports.admissions]);
-  const attendanceData = useMemo(() => mapAttendance(reports.attendance), [reports.attendance]);
-  const strengthData = useMemo(() => mapStudentStrength(reports.studentStrength), [reports.studentStrength]);
-  const feeData = useMemo(() => mapFees(reports.feeCollection, reports.feeOutstanding), [reports.feeCollection, reports.feeOutstanding]);
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
-  const auditRows = useMemo(() => mapAuditLogs(auditData), [auditData]);
+  const apiAuditRows = useMemo(() => mapAuditLogs(auditData), [auditData]);
+  const showingSampleAuditRows = !apiAuditRows.length;
+  const auditRows = showingSampleAuditRows ? AUDIT_SAMPLE_ROWS : apiAuditRows;
   const auditFilterFields = useMemo(() => [
     { name: "user", label: "User", type: "select", options: auditOptions(auditRows, "user") },
     { name: "role", label: "Role", type: "select", options: auditOptions(auditRows, "role") },
@@ -474,14 +474,6 @@ export default function ReportsPage() {
   }, [auditRows]);
 
   const passRate = metric(reports.passPercentage, ["passPercentage", "PassPercentage", "percentage", "Percentage", "passRate", "PassRate"]);
-  const failRate = metric(reports.passPercentage, ["failPercentage", "FailPercentage", "failRate", "FailRate"]);
-  const resultBreakdown = passRate === undefined
-    ? []
-    : [
-        { name: "Pass", value: passRate, color: "#16a36a" },
-        { name: "Fail", value: failRate ?? Math.max(0, 100 - passRate), color: "#ef6675" },
-      ];
-
   const summaryValues = useMemo(() => {
     const summary = reports.summary;
     const admissionCount = collection(reports.admissions).length || undefined;
@@ -502,6 +494,7 @@ export default function ReportsPage() {
   }, [passRate, reports, topperRows.length, workloadData]);
 
   const handleFilterChange = (name, value) => {
+    setReportGenerated(false);
     setFilters((current) => {
       const next = { ...current, [name]: value };
       if (name === "board") Object.assign(next, { level: "", group: "", section: "" });
@@ -516,11 +509,13 @@ export default function ReportsPage() {
       setToast("From Date must be earlier than or equal to To Date.");
       return;
     }
-    loadReports(filters);
+    setReportGenerated(false);
+    loadReports(filters, true);
   };
 
   const resetReports = () => {
     setFilters({});
+    setReportGenerated(false);
     loadReports({});
   };
 
@@ -541,11 +536,9 @@ export default function ReportsPage() {
     }
     setAuditLoading(true);
     setAuditError("");
-    setAuditFetched(false);
     try {
       const response = await apiClient.get(apiEndpoints.reports.auditLogs, { params: buildQuery(filters) });
       setAuditData(response.data);
-      setAuditFetched(true);
       setAuditPage(1);
     } catch (auditRequestError) {
       setAuditData(null);
@@ -555,66 +548,90 @@ export default function ReportsPage() {
     }
   };
 
-  const exportReport = async (format) => {
+  const requestReportFile = async (format, reportType = "dashboard", fallbackBase = "reports-dashboard") => {
     if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
-      setToast("From Date must be earlier than or equal to To Date.");
-      return;
+      throw new Error("From Date must be earlier than or equal to To Date.");
     }
-
     const isPdf = format === "pdf";
     const endpoint = isPdf ? apiEndpoints.reports.exportPdf : apiEndpoints.reports.exportExcel;
     const extension = isPdf ? "pdf" : "xlsx";
-    const fallbackFilename = `reports-dashboard-${new Date().toISOString().slice(0, 10)}.${extension}`;
-    setExporting(format);
-    try {
-      const response = await apiClient.get(endpoint, {
-        params: { reportType: "dashboard", ...buildQuery(filters) },
-        responseType: "blob",
-      });
-      const contentType = response.headers?.["content-type"] || (isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      if (!response.data?.size) throw new Error("The export API returned an empty file.");
-      if (contentType.includes("application/json") || contentType.includes("text/")) {
-        const text = await response.data.text();
-        let message = text;
-        try {
-          const parsed = JSON.parse(text);
-          message = parsed?.message || parsed?.Message || parsed?.title || message;
-        } catch {
-          // Keep the server text when it is not JSON.
-        }
-        throw new Error(message || "The export API did not return a file.");
+    const fallbackFilename = `${fallbackBase}-${new Date().toISOString().slice(0, 10)}.${extension}`;
+    const response = await apiClient.get(endpoint, {
+      params: { reportType, ...buildQuery(filters) },
+      responseType: "blob",
+    });
+    const contentType = response.headers?.["content-type"] || (isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    if (!response.data?.size) throw new Error("The export API returned an empty file.");
+    if (contentType.includes("application/json") || contentType.includes("text/")) {
+      const text = await response.data.text();
+      let message = text;
+      try {
+        const parsed = JSON.parse(text);
+        message = parsed?.message || parsed?.Message || parsed?.title || message;
+      } catch {
+        // Keep the server text when it is not JSON.
       }
+      throw new Error(message || "The export API did not return a file.");
+    }
+    return {
+      blob: new Blob([response.data], { type: contentType }),
+      filename: getDownloadFilename(response.headers?.["content-disposition"], fallbackFilename),
+      contentType,
+      format,
+    };
+  };
 
-      const filename = getDownloadFilename(response.headers?.["content-disposition"], fallbackFilename);
-      const objectUrl = URL.createObjectURL(new Blob([response.data], { type: contentType }));
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-      setToast(`${isPdf ? "PDF" : "Excel"} report downloaded successfully.`);
-    } catch (exportError) {
-      setToast(await getExportErrorMessage(exportError));
+  const previewReport = async (format) => {
+    setPreviewing(format);
+    setPdfPreviewLoaded(false);
+    try {
+      const file = await requestReportFile(format);
+      setPreviewFile({ ...file, url: format === "pdf" ? URL.createObjectURL(file.blob) : "" });
+    } catch (previewError) {
+      setPreviewFile(null);
+      setToast(await getExportErrorMessage(previewError));
     } finally {
-      setExporting("");
+      setPreviewing("");
     }
   };
 
+  const exportCardReport = async (card, format) => {
+    const requestKey = `${card.key}-${format}`;
+    if (exportingCards[requestKey]) return;
+    setExportingCards((current) => ({ ...current, [requestKey]: true }));
+    try {
+      const file = await requestReportFile(format, card.reportType, card.key);
+      downloadBlob(file.blob, file.filename);
+      setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} downloaded successfully.`);
+    } catch (exportError) {
+      setToast(await getExportErrorMessage(exportError));
+    } finally {
+      setExportingCards((current) => {
+        const next = { ...current };
+        delete next[requestKey];
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => () => {
+    if (previewFile?.url) URL.revokeObjectURL(previewFile.url);
+  }, [previewFile]);
+
   return (
-    <DashboardLayout title="Reports & Analytics" subtitle="Institution-wide insights across academics, fees and attendance." breadcrumb={["Administration"]}>
+    <DashboardLayout
+      title={activeTab === "reports" ? "Reports & Analytics" : "Audit Logs"}
+      subtitle={activeTab === "reports" ? "Institution-wide insights across academics, fees and attendance." : "System activity recorded for the selected report period."}
+      breadcrumb={["Administration"]}
+    >
       <Toast message={toast} onClose={() => setToast("")} />
+      <div className="reports-tabs" role="tablist" aria-label="Reports sections">
+        <button className={`reports-tab ${activeTab === "reports" ? "is-active" : ""}`} type="button" role="tab" aria-selected={activeTab === "reports"} onClick={() => { setActiveTab("reports"); setSelectedAuditLog(null); }}>Reports & Analytics</button>
+        <button className={`reports-tab ${activeTab === "audit" ? "is-active" : ""}`} type="button" role="tab" aria-selected={activeTab === "audit"} onClick={() => { setActiveTab("audit"); setPreviewFile(null); }}>Audit Logs</button>
+      </div>
+      {activeTab === "reports" ? <>
       <section className="cms-card reports-filter-card">
         <div className="cms-card-body">
-          <div className="reports-export-actions" aria-label="Export report">
-            <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportReport("pdf")} disabled={Boolean(exporting)}>
-              <Download size={16} />{exporting === "pdf" ? "Exporting PDF..." : "Export PDF"}
-            </button>
-            <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportReport("excel")} disabled={Boolean(exporting)}>
-              <Download size={16} />{exporting === "excel" ? "Exporting Excel..." : "Export Excel"}
-            </button>
-          </div>
           <div className="cms-filters">
             {filterFields.map((field) => <Field key={field.name} field={field} value={filters[field.name]} onChange={handleFilterChange} />)}
           </div>
@@ -629,78 +646,41 @@ export default function ReportsPage() {
         <div className="cms-card reports-loader"><Loader label="Loading report analytics..." /></div>
       ) : (
         <>
-          {error ? <div className="reports-error-banner" role="alert">{error}</div> : null}
-          <div className="reports-summary-grid" aria-label="Report summary">
-            {summaryCardConfig.map(({ key, label, icon: Icon, tone, ...format }) => (
-              <article className="reports-summary-card" key={key}>
-                <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} strokeWidth={2} /></span>
-                <div className="reports-summary-content"><span>{label}</span><strong>{formatMetric(summaryValues[key], format)}</strong></div>
-              </article>
-            ))}
-          </div>
-
-          <div className="reports-analytics-grid">
-            <ChartCard title="Admissions vs Target" subtitle="Monthly admissions performance against planned intake">
-              {admissionsData.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionsData} margin={chartMargin}>
-                <defs><linearGradient id="admissionsFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#315ee8" stopOpacity={0.3} /><stop offset="95%" stopColor="#315ee8" stopOpacity={0.03} /></linearGradient></defs>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} /><XAxis dataKey="month" /><YAxis /><Tooltip /><Legend />
-                <Area type="monotone" dataKey="admissions" stroke="#315ee8" strokeWidth={3} fill="url(#admissionsFill)" activeDot={{ r: 5 }} />
-                <Area type="monotone" dataKey="target" stroke="#8b9ab6" strokeWidth={2} fill="transparent" strokeDasharray="6 5" />
-              </AreaChart></ResponsiveContainer> : <EmptyChart />}
-            </ChartCard>
-
-            <ChartCard title="Attendance Trend (%)" subtitle="Average monthly student attendance">
-              {attendanceData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={attendanceData} margin={chartMargin}>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} /><XAxis dataKey="month" /><YAxis domain={[0, 100]} /><Tooltip formatter={(value) => [`${value}%`, "Attendance"]} />
-                <Line type="monotone" dataKey="attendance" stroke="#16a36a" strokeWidth={3} dot={{ r: 4, fill: "#ffffff", strokeWidth: 3 }} activeDot={{ r: 6 }} />
-              </LineChart></ResponsiveContainer> : <EmptyChart />}
-            </ChartCard>
-
-            <ChartCard title="Fee Collected vs Due" subtitle="Monthly fee amounts">
-              {feeData.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={feeData} margin={chartMargin} barGap={6}>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} /><XAxis dataKey="month" /><YAxis /><Tooltip formatter={(value) => formatMetric(value, { currency: true })} /><Legend />
-                <Bar dataKey="collected" fill="#315ee8" radius={[7, 7, 0, 0]} /><Bar dataKey="due" fill="#f3b94f" radius={[7, 7, 0, 0]} />
-              </BarChart></ResponsiveContainer> : <EmptyChart />}
-            </ChartCard>
-
-            <ChartCard title="Student Strength by Class" subtitle="Current enrolled students across classes">
-              {strengthData.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={strengthData} margin={chartMargin}>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} /><XAxis dataKey="className" /><YAxis /><Tooltip />
-                <Bar dataKey="students" name="Students" fill="#7567e8" radius={[7, 7, 0, 0]} maxBarSize={48} />
-              </BarChart></ResponsiveContainer> : <EmptyChart />}
-            </ChartCard>
-
-            <ChartCard title="Monthly Admissions Trend" subtitle="New admissions recorded each month">
-              {admissionsData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={admissionsData} margin={chartMargin}>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} /><XAxis dataKey="month" /><YAxis /><Tooltip />
-                <Line type="monotone" dataKey="admissions" name="Admissions" stroke="#e1793f" strokeWidth={3} dot={{ r: 4, fill: "#ffffff", strokeWidth: 3 }} activeDot={{ r: 6 }} />
-              </LineChart></ResponsiveContainer> : <EmptyChart />}
-            </ChartCard>
-
-            <ChartCard title="Pass vs Fail Percentage" subtitle="Overall examination result distribution" className="reports-result-card">
-              {resultBreakdown.length ? <div className="reports-donut-wrap"><ResponsiveContainer width="100%" height="100%"><PieChart>
-                <Pie data={resultBreakdown} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="80%" paddingAngle={4} stroke="none">{resultBreakdown.map((entry) => <Cell key={entry.name} fill={entry.color} />)}</Pie>
-                <Tooltip formatter={(value) => [`${value}%`]} /><Legend verticalAlign="bottom" iconType="circle" />
-              </PieChart></ResponsiveContainer><div className="reports-donut-label"><strong>{formatMetric(passRate, { suffix: "%" })}</strong><span>Pass rate</span></div></div> : <EmptyChart />}
-            </ChartCard>
-
-            <ChartCard title="Faculty Workload Overview" subtitle="Assigned teaching hours per week">
-              {workloadData.length ? <ResponsiveContainer width="100%" height="100%"><BarChart data={workloadData} margin={chartMargin}>
-                <CartesianGrid strokeDasharray="4 4" vertical={false} /><XAxis dataKey="faculty" /><YAxis /><Tooltip formatter={(value) => [`${value} hrs`, "Weekly workload"]} />
-                <Bar dataKey="hours" name="Hours / week" fill="#21a7a1" radius={[7, 7, 0, 0]} maxBarSize={48} />
-              </BarChart></ResponsiveContainer> : <EmptyChart />}
-            </ChartCard>
-
-            <section className="reports-chart-card reports-table-card">
-              <div className="reports-chart-head"><div><h2>Top Performing Students</h2><p>Highest overall academic percentages</p></div></div>
-              <div className="reports-table-wrap"><table className="reports-top-students"><thead><tr><th>Rank</th><th>Student</th><th>Roll No.</th><th>Class</th><th>Score</th></tr></thead>
-                <tbody>{topperRows.length ? topperRows.map((student) => <tr key={student.id}>
-                  <td><span className={`reports-rank rank-${student.rank}`}>{student.rank}</span></td><td><strong>{student.name}</strong></td><td>{student.roll}</td><td>{student.group}{student.level ? ` · ${student.level}` : ""}</td><td><span className="reports-score">{formatMetric(student.percentage, { suffix: "%" })}</span></td>
-                </tr>) : <tr><td colSpan={5}><div className="cms-empty">No top-performing student data available.</div></td></tr>}</tbody>
-              </table></div>
-            </section>
-          </div>
-
+          {error ? <div className="reports-error-banner" role="alert"><span>{error}</span><button className="cms-btn cms-btn-ghost" type="button" onClick={() => loadReports(filters, true)} disabled={loading}>Retry</button></div> : null}
+          <section className="reports-summary-panel" aria-labelledby="reports-summary-title">
+            <div className="reports-summary-panel-head">
+              <div><h2 id="reports-summary-title">Reports Overview</h2><p>Key institution-wide report metrics</p></div>
+              {reportGenerated ? <div className="reports-summary-actions" aria-label="Report file actions">
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("pdf")} disabled={previewing === "pdf"}><Eye size={14} />{previewing === "pdf" ? "Loading..." : "Preview PDF"}</button>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("excel")} disabled={previewing === "excel"}><Eye size={14} />{previewing === "excel" ? "Loading..." : "Preview Excel"}</button>
+              </div> : null}
+            </div>
+            <div className="reports-summary-grid" aria-label="Report summary">
+              {summaryCardConfig.map((card) => {
+                const { key, sourceKey, label, icon: Icon, tone, currency, suffix } = card;
+                const format = { currency, suffix };
+                const source = reports[sourceKey];
+                const details = reportDetails(source, summaryValues[key], format);
+                const canExport = reportGenerated && hasReportData(source);
+                return <article className="reports-summary-card reports-summary-card-expanded" key={key}>
+                  <div className="reports-summary-card-head">
+                    <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} strokeWidth={2} /></span>
+                    <div className="reports-summary-content"><span>{label}</span><strong>{formatMetric(summaryValues[key], format)}</strong></div>
+                  </div>
+                  <dl className="reports-summary-details">
+                    {details.length ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>) : <div><dt>Details</dt><dd>{hasReportData(source) ? "No additional summary available" : "No data available"}</dd></div>}
+                  </dl>
+                  {canExport ? <div className="reports-card-actions">
+                    <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportCardReport(card, "pdf")} disabled={Boolean(exportingCards[`${key}-pdf`])}><Download size={13} />{exportingCards[`${key}-pdf`] ? "Exporting..." : "Export PDF"}</button>
+                    <button className="cms-btn cms-btn-ghost" type="button" onClick={() => exportCardReport(card, "excel")} disabled={Boolean(exportingCards[`${key}-excel`])}><FileSpreadsheet size={13} />{exportingCards[`${key}-excel`] ? "Exporting..." : "Export Excel"}</button>
+                  </div> : null}
+                </article>;
+              })}
+            </div>
+          </section>
+        </>
+      )}
+      </> :
           <section className="reports-audit-section" aria-labelledby="audit-logs-title">
             <div className="reports-chart-head reports-audit-head">
               <div><h2 id="audit-logs-title">Audit Logs</h2><p>System activity recorded for the selected report period</p></div>
@@ -723,7 +703,8 @@ export default function ReportsPage() {
 
             {auditLoading ? <div className="reports-audit-loader"><Loader label="Fetching audit logs..." /></div> : null}
             {auditError ? <div className="reports-error-banner reports-audit-error" role="alert">{auditError}</div> : null}
-            {auditFetched && !auditLoading ? <>
+            {!auditLoading ? <>
+            {showingSampleAuditRows ? <div className="reports-audit-sample-note" role="note"><strong>Sample data:</strong> These example records demonstrate the expected Audit Logs API fields. Real API records will replace them after a successful fetch.</div> : null}
             <div className="reports-audit-summary" aria-label="Audit log summary">
               {[
                 { label: "Total Activities", value: auditSummary.total, icon: Activity, tone: "blue" },
@@ -759,10 +740,23 @@ export default function ReportsPage() {
               <span className="reports-page-number">Page {auditPage} of {auditPageCount}</span>
               <button className="cms-page-btn" type="button" disabled={auditPage === auditPageCount} onClick={() => setAuditPage((page) => page + 1)}>Next</button>
             </div> : null}
-            </> : !auditLoading && !auditError ? <div className="reports-audit-prompt">Choose the required report filters, then select <strong>Fetch Data</strong> to load audit logs.</div> : null}
+            </> : null}
           </section>
-        </>
-      )}
+      }
+      {previewFile?.format === "pdf" ? <Modal title="PDF Preview" onClose={() => setPreviewFile(null)} footer={<>
+        {pdfPreviewLoaded ? <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download PDF</button> : null}
+        <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
+      </>}>
+        <div className="reports-pdf-preview"><iframe src={previewFile.url} title="Generated report PDF preview" onLoad={() => setPdfPreviewLoaded(true)} /></div>
+      </Modal> : null}
+      {previewFile?.format === "excel" ? <Modal title="Excel Preview" onClose={() => setPreviewFile(null)} footer={<>
+        <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download Excel</button>
+        <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
+      </>}>
+        <div className="reports-excel-preview"><table className="reports-top-students"><thead><tr><th>Report Metric</th><th>Value</th></tr></thead><tbody>
+          {summaryCardConfig.map(({ key, label, currency, suffix }) => <tr key={key}><td><strong>{label}</strong></td><td>{formatMetric(summaryValues[key], { currency, suffix })}</td></tr>)}
+        </tbody></table></div>
+      </Modal> : null}
       {selectedAuditLog ? <Modal title="Audit Log Details" onClose={() => setSelectedAuditLog(null)} footer={<button className="cms-btn cms-btn-primary" type="button" onClick={() => setSelectedAuditLog(null)}>Close</button>}>
         <dl className="reports-audit-details">
           {[

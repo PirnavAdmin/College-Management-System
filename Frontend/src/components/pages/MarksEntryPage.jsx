@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
 import "./MarksEntryPage.css";
 
@@ -7,36 +7,36 @@ import "./MarksEntryPage.css";
    ============================================================ */
 const IconPencil = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
   </svg>
 );
 
 const IconSave = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-    <polyline points="17 21 17 13 7 13 7 21"/>
-    <polyline points="7 3 7 8 15 8"/>
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <polyline points="17 21 17 13 7 13 7 21" />
+    <polyline points="7 3 7 8 15 8" />
   </svg>
 );
 
 const IconCheck = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
+    <polyline points="20 6 9 17 4 12" />
   </svg>
 );
 
 const IconXCircle = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/>
-    <line x1="15" y1="9" x2="9" y2="15"/>
-    <line x1="9" y1="9" x2="15" y2="15"/>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="15" y1="9" x2="9" y2="15" />
+    <line x1="9" y1="9" x2="15" y2="15" />
   </svg>
 );
 
 const IconSearch = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8"/>
-    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
   </svg>
 );
 
@@ -117,6 +117,7 @@ const FACULTY_IDS = {
 };
 
 const STUDENTS_PER_PAGE = 10;
+const STUDENT_MARKS_PER_PAGE = 10;
 const MARK_LIMITS = { internal: 30, theory: 70, practical: 30 };
 
 const TOAST_MESSAGES = {
@@ -213,6 +214,9 @@ export default function MarksEntryPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [viewMode, setViewMode] = useState("list");
   const [currentPage, setCurrentPage] = useState(1);
+  const [studentMarksPage, setStudentMarksPage] = useState(1);
+
+
 
   const showToast = useCallback((message, type = "success") => {
     const id = Date.now();
@@ -254,11 +258,11 @@ export default function MarksEntryPage() {
   const isAllFiltersSelected = useMemo(() => {
     return Boolean(
       filters.board &&
-        filters.academicYear &&
-        filters.academicLevel &&
-        filters.group &&
-        filters.section &&
-        filters.examination
+      filters.academicYear &&
+      filters.academicLevel &&
+      filters.group &&
+      filters.section &&
+      filters.examination
     );
   }, [filters]);
 
@@ -306,8 +310,9 @@ export default function MarksEntryPage() {
 
     setEvaluations(newEvaluations);
     setSubjectMarksData(newSubjectMarksData);
+    setStudentMarksPage(1);
     setReady(true);
-    showToast(TOAST_MESSAGES.FETCH_SUCCESS(filters.group, filters.section), "success");
+    // showToast(TOAST_MESSAGES.FETCH_SUCCESS(filters.group, filters.section), "success");
   };
 
   const summaryStats = useMemo(() => {
@@ -411,7 +416,7 @@ export default function MarksEntryPage() {
   }, [evaluations, searchTerm]);
 
   const currentGroupSubjects = GROUP_SUBJECTS[filters.group || "MPC"] || [];
-  
+
   const studentSubjectMarksList = useMemo(() => {
     if (!ready || INITIAL_STUDENTS_BASE.length === 0) return [];
 
@@ -425,7 +430,7 @@ export default function MarksEntryPage() {
       currentGroupSubjects.forEach((subj) => {
         const subjRows = subjectMarksData[subj] || [];
         const match = subjRows.find((r) => r.studentId === student.id) || subjRows[idx];
-        
+
         if (match) {
           const isPractical = isPracticalSubject(subj);
           const total = calculateTotal(match, isPractical);
@@ -469,6 +474,27 @@ export default function MarksEntryPage() {
     () => modalRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE),
     [modalRows, pageStart]
   );
+
+  const studentMarksTotalPages = Math.max(
+    1,
+    Math.ceil(filteredStudentMarks.length / STUDENT_MARKS_PER_PAGE)
+  );
+
+  const studentMarksPageStart =
+    (studentMarksPage - 1) * STUDENT_MARKS_PER_PAGE;
+
+  const paginatedStudentMarks = useMemo(
+    () =>
+      filteredStudentMarks.slice(
+        studentMarksPageStart,
+        studentMarksPageStart + STUDENT_MARKS_PER_PAGE
+      ),
+    [filteredStudentMarks, studentMarksPageStart]
+  );
+
+  React.useEffect(() => {
+    setStudentMarksPage(1);
+  }, [searchTerm]);
 
   return (
     <DashboardLayout
@@ -547,145 +573,177 @@ export default function MarksEntryPage() {
         {/* Content Section */}
         {ready ? (
           viewMode === "list" ? (
-          <>
-            <div className="cms-stats-grid">
-              <div className="cms-stat-card cms-stat-total">
-                <span>Total Subjects</span>
-                <strong>{summaryStats.total}</strong>
-              </div>
-              <div className="cms-stat-card cms-stat-submitted">
-                <span>Submitted</span>
-                <strong>{summaryStats.submitted}</strong>
-              </div>
-              <div className="cms-stat-card cms-stat-verified">
-                <span>Verified</span>
-                <strong>{summaryStats.verified}</strong>
-              </div>
-              <div className="cms-stat-card cms-stat-approved">
-                <span>Approved</span>
-                <strong>{summaryStats.approved}</strong>
-              </div>
-              <div className="cms-stat-card cms-stat-rejected">
-                <span>Rejected</span>
-                <strong>{summaryStats.rejected}</strong>
-              </div>
-            </div>
-
-            <div className="cms-card cms-main-card">
-              <div className="cms-table-toolbar">
-                <div className="cms-tab-bar">
-                  <button
-                    className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`}
-                    onClick={() => setActiveTab("evaluations")}
-                  >
-                    Evaluations
-                  </button>
-                  <button
-                    className={`cms-tab-btn ${activeTab === "studentMarks" ? "cms-active" : ""}`}
-                    onClick={() => setActiveTab("studentMarks")}
-                  >
-                    Student Subject Marks
-                  </button>
+            <>
+              <div className="cms-stats-grid">
+                <div className="cms-stat-card cms-stat-total">
+                  <span>Total Subjects</span>
+                  <strong>{summaryStats.total}</strong>
                 </div>
-
-                <div className="cms-search-wrap">
-                  <span className="cms-search-icon"><IconSearch /></span>
-                  <input
-                    type="text"
-                    className="cms-search-input"
-                    placeholder={activeTab === "evaluations" ? "Search subject, faculty, status..." : "Search roll no, student, total, grade..."}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+                <div className="cms-stat-card cms-stat-submitted">
+                  <span>Submitted</span>
+                  <strong>{summaryStats.submitted}</strong>
+                </div>
+                <div className="cms-stat-card cms-stat-verified">
+                  <span>Verified</span>
+                  <strong>{summaryStats.verified}</strong>
+                </div>
+                <div className="cms-stat-card cms-stat-approved">
+                  <span>Approved</span>
+                  <strong>{summaryStats.approved}</strong>
+                </div>
+                <div className="cms-stat-card cms-stat-rejected">
+                  <span>Rejected</span>
+                  <strong>{summaryStats.rejected}</strong>
                 </div>
               </div>
 
-              {/* Tab 1: Evaluations */}
-              {activeTab === "evaluations" && (
-                <div className="cms-table-container">
-                  <table className="cms-table">
-                    <thead>
-                      <tr>
-                        <th>SUBJECT</th>
-                        <th>FACULTY</th>
-                        <th>STUDENTS</th>
-                        <th>STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEvaluations.length > 0 ? (
-                        filteredEvaluations.map((item) => (
-                          <tr
-                            key={item.evaluationId}
-                            className="cms-clickable-row"
-                            onClick={() => handleOpenEvaluationDetails(item)}
-                          >
-                            <td className="cms-font-semibold">{item.subjectCode} - {item.subjectName}</td>
-                            <td className="cms-text-muted">{item.facultyId} - {item.facultyName}</td>
-                            <td>{item.studentsCount}</td>
-                            <td>
-                              <StatusBadge status={item.status} />
+              <div className="cms-card cms-main-card">
+                <div className="cms-table-toolbar">
+                  <div className="cms-tab-bar">
+                    <button
+                      className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`}
+                      onClick={() => setActiveTab("evaluations")}
+                    >
+                      Evaluations
+                    </button>
+                    <button
+                      className={`cms-tab-btn ${activeTab === "studentMarks" ? "cms-active" : ""}`}
+                      onClick={() => setActiveTab("studentMarks")}
+                    >
+                      Student Subject Marks
+                    </button>
+                  </div>
+
+                  <div className="cms-search-wrap">
+                    <span className="cms-search-icon"><IconSearch /></span>
+                    <input
+                      type="text"
+                      className="cms-search-input"
+                      placeholder={activeTab === "evaluations" ? "Search subject, faculty, status..." : "Search roll no, student, total, grade..."}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Tab 1: Evaluations */}
+                {activeTab === "evaluations" && (
+                  <div className="cms-table-container">
+                    <table className="cms-table">
+                      <thead>
+                        <tr>
+                          <th>SUBJECT</th>
+                          <th>FACULTY</th>
+                          <th>STUDENTS</th>
+                          <th>STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredEvaluations.length > 0 ? (
+                          filteredEvaluations.map((item) => (
+                            <tr
+                              key={item.evaluationId}
+                              className="cms-clickable-row"
+                              onClick={() => handleOpenEvaluationDetails(item)}
+                            >
+                              <td className="cms-font-semibold">{item.subjectCode} - {item.subjectName}</td>
+                              <td className="cms-text-muted">{item.facultyId} - {item.facultyName}</td>
+                              <td>{item.studentsCount}</td>
+                              <td>
+                                <StatusBadge status={item.status} />
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="cms-empty-td">
+                              No evaluations found matching search.
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={4} className="cms-empty-td">
-                            No evaluations found matching search.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-              {/* Tab 2: Student Subject Marks (Read-Only) */}
-              {activeTab === "studentMarks" && (
-                <div className="cms-table-container">
-                  <table className="cms-table">
-                    <thead>
-                      <tr>
-                        <th>ROLL NO</th>
-                        <th>STUDENT NAME</th>
-                        {currentGroupSubjects.map((subj) => (
-                          <th key={subj}>{subj.toUpperCase()}</th>
-                        ))}
-                        <th>TOTAL</th>
-                        <th>GRADE</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredStudentMarks.length > 0 ? filteredStudentMarks.map((stu) => (
-                        <tr key={stu.studentId} className="cms-idle-row">
-                          <td className="cms-font-semibold">{stu.rollNo}</td>
-                          <td>{stu.studentName}</td>
+                {/* Tab 2: Student Subject Marks (Read-Only) */}
+                {activeTab === "studentMarks" && (<>
+                  <div className="cms-table-container">
+                    <table className="cms-table">
+                      <thead>
+                        <tr>
+                          <th>ROLL NO</th>
+                          <th>STUDENT NAME</th>
                           {currentGroupSubjects.map((subj) => (
-                            <td key={subj}>{stu.marks[subj] ?? "—"}</td>
+                            <th key={subj}>{subj.toUpperCase()}</th>
                           ))}
-                          <td className="cms-font-semibold">
-                            {stu.total} / {stu.maxTotal}
-                          </td>
-                          <td>
-                            <span className={`cms-badge-grade cms-grade-${stu.grade.toLowerCase().replace("+", "-plus")}`}>
-                              {stu.grade}
-                            </span>
-                          </td>
+                          <th>TOTAL</th>
+                          <th>GRADE</th>
                         </tr>
-                      )) : (
-                        <tr>
-                          <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td">
-                            No student marks found matching search.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {filteredStudentMarks.length > 0 ? paginatedStudentMarks.map((stu) => (
+                          <tr key={stu.studentId} className="cms-idle-row">
+                            <td className="cms-font-semibold">{stu.rollNo}</td>
+                            <td>{stu.studentName}</td>
+                            {currentGroupSubjects.map((subj) => (
+                              <td key={subj}>{stu.marks[subj] ?? "—"}</td>
+                            ))}
+                            <td className="cms-font-semibold">
+                              {stu.total} / {stu.maxTotal}
+                            </td>
+                            <td>
+                              <span className={`cms-badge-grade cms-grade-${stu.grade.toLowerCase().replace("+", "-plus")}`}>
+                                {stu.grade}
+                              </span>
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td">
+                              No student marks found matching search.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
 
-            </div>
-          </>
+                  <div
+                    className="cms-pagination"
+                    aria-label="Student subject marks pagination"
+                  >
+                    <button
+                      className="cms-btn cms-btn-secondary"
+                      disabled={studentMarksPage === 1}
+                      onClick={() =>
+                        setStudentMarksPage((page) => Math.max(1, page - 1))
+                      }
+                    >
+                      Previous
+                    </button>
+
+                    <span>
+                      Page {studentMarksPage} of {studentMarksTotalPages}
+                    </span>
+
+                    <button
+                      className="cms-btn cms-btn-secondary"
+                      disabled={studentMarksPage === studentMarksTotalPages}
+                      onClick={() =>
+                        setStudentMarksPage((page) =>
+                          Math.min(studentMarksTotalPages, page + 1)
+                        )
+                      }
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+                )}
+
+              </div>
+            </>
           ) : selectedEvaluation ? (
             <EvaluationDetails
               selectedEvaluation={selectedEvaluation}
@@ -836,7 +894,7 @@ function EvaluationDetails({
       <div className="cms-modal-actions">
         {isEditing ? (
           <><button className="cms-btn cms-btn-secondary" onClick={onCancel}>Cancel</button>
-          <button className="cms-btn cms-btn-primary" onClick={onSave}><IconSave /> Save Changes</button></>
+            <button className="cms-btn cms-btn-primary" onClick={onSave}><IconSave /> Save Changes</button></>
         ) : (
           <>
             <button className="cms-btn cms-btn-edit-outline" onClick={onEdit}><IconPencil /> Edit</button>

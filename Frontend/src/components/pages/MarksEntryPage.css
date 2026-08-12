@@ -125,9 +125,10 @@
 /* Toast Banner */
 .cms-toast-banner {
   position: fixed;
-  bottom: 0px;
+  top:0px;
   right: 20px;
   left: auto;
+  bottom:auto;
   corner-top-right-shape: auto;
   padding: 10px 16px;
   border-radius: 8px;

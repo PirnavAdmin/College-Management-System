@@ -16,6 +16,23 @@ export const apiEndpoints = {
     users: "/api/Auth/users",
     userById: (id) => `/api/Auth/user/${id}`,
   },
+  results: {
+    list: "/api/v1/results",
+    byStudent: (studentId) => `/api/v1/results/students/${studentId}`,
+    rankList: "/api/v1/results/rank-list",
+    failedStudents: "/api/v1/results/failed-students",
+    statistics: "/api/v1/results/statistics",
+    analysis: "/api/v1/results/analysis",
+    memo: (studentId) => `/api/v1/results/memo/${studentId}`,
+    revaluation: "/api/v1/results/revaluation",
+    revaluationById: (revaluationId) => `/api/v1/results/revaluation/${revaluationId}`,
+  },
+  boards: {
+    list: "/api/v1/boards",
+  },
+  groups: {
+    list: "/api/v1/groups",
+  },
 };
 
 

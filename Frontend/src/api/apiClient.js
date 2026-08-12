@@ -10,6 +10,9 @@ export const getApiErrorMessage = (error) => {
   if (data?.Message) return data.Message;
   if (data?.message) return data.message;
   if (data?.title) return data.title;
+  if (error?.response?.status === 401) return "Your session has expired. Please sign in again.";
+  if (error?.response?.status === 403) return "Your account is not permitted to access this resource.";
+  if (error?.response?.status) return `Request failed (HTTP ${error.response.status}).`;
   if (error?.message === "Network Error") return "Backend is not reachable. Please check API connection or Vite proxy.";
   if (error?.message) return error.message;
   return "Something went wrong. Please try again.";

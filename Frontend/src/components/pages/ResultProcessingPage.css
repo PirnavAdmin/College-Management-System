@@ -1,1 +1,265 @@
-/* Result Processing page-specific styles can be added here during module API integration. */
+
+/* Modern Compact Styles for Results Management */
+.cms-card {
+  background-color: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.cms-card-body {
+  padding: 16px 18px;
+}
+.cms-card-title {
+  margin: 0 0 2px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.cms-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 6px 0;
+}
+/* Compact Control Heights & Field Groups */
+.cms-field-group {
+  display: flex;
+  flex-direction: column;
+}
+.cms-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #64748b;
+}
+.cms-input,
+.cms-select {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  font-size: 12px;
+  background-color: #ffffff;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+.cms-input:focus,
+.cms-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+/* Button Styling */
+.cms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  font-weight: 600;
+  font-size: 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  border: 1px solid transparent;
+  outline: none;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.cms-btn-primary {
+  background-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2);
+}
+.cms-btn-primary:hover {
+  background-color: #1d4ed8;
+}
+.cms-btn-secondary {
+  background-color: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+.cms-btn-secondary:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+.cms-btn-ghost {
+  background-color: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.cms-btn-ghost:hover {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+.cms-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* Status Badges */
+.cms-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.cms-badge-active {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+/* Minimizing Table Row Padding */
+.cms-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.cms-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+.cms-table th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 5px 10px; /* Minimized vertical padding */
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+.cms-table td {
+  padding: 5px 10px; /* Minimized vertical padding */
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cms-table tr:hover {
+  background-color: #f8fafc;
+}
+.cms-strong {
+  font-weight: 600;
+  color: #0f172a;
+}
+/* Marks Summary Box */
+.cms-memo-summary {
+  margin-top: 14px;
+  padding: 12px 16px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+.cms-summary-label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.cms-summary-val {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 2px;
+}
+/* Modal Overlay Layout */
+.cms-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(3px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.cms-modal-content {
+  background-color: #ffffff;
+  border-radius: 10px;
+  width: 100%;
+  box-shadow: 0 15px 20px -5px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+.cms-modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.cms-modal-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.cms-modal-close {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 13px;
+}
+.cms-modal-close:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+.cms-modal-body {
+  padding: 14px 16px;
+}
+.cms-modal-footer {
+  padding: 10px 16px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* Media Query Print Styling */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  .cms-card, .cms-card * {
+    visibility: visible !important;
+  }
+  .cms-card {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 8px !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
+
+
+
+
+

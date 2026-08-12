@@ -500,7 +500,7 @@ export default function MarksEntryPage() {
     <DashboardLayout
       title="Academic Evaluation"
       subtitle="Review, verify and approve faculty submitted evaluations."
-      breadcrumb={["Examinations", "Marks Entry"]}
+      breadcrumb={["Examinations", "Marks Evalution"]}
     >
       <div className="cms-marks-entry cms-anim-up">
         {toastMessage && (

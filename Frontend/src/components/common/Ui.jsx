@@ -95,8 +95,8 @@ export function Field({ field, value, error, onChange }) {
       {type === "select" ? (
         <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)}>
           <option value="">Select {label}</option>
-          {normalizedOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+          {normalizedOptions.map((o, index) => (
+            <option key={`${o.value}-${index}`} value={o.value}>{o.label}</option>
           ))}
         </select>
       ) : type === "textarea" ? (

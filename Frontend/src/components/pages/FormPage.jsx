@@ -37,7 +37,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
               : null,
         ]);
         const loadedFields = await Promise.all(baseFields.map(async (field) => {
-          if (!field.loadOptions) return field;
+          if (!field.loadOptions || field.dependsOn) return field;
           try {
             const response = await field.loadOptions();
             const options = field.getOptions ? field.getOptions(response) : response.data;
@@ -60,6 +60,49 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
     loadFormData();
     return () => { ignore = true; };
   }, [id, sectionConfig, setValues, usesApi]);
+
+  // Reload select options that depend on another form field, such as State
+  // after Country changes. These are intentionally separate from the first
+  // lookup load because the parent field must resolve first.
+ const getDependsOnKeys = (field) => (Array.isArray(field.dependsOn) ? field.dependsOn : [field.dependsOn]);
+
+  const dependentFieldValues = (sectionConfig.fields || [])
+    .filter((field) => field.dependsOn)
+    .map((field) => getDependsOnKeys(field).map((key) => values[key] ?? "").join("\u0001"))
+    .join("\u0000");
+
+  useEffect(() => {
+    const dependentFields = (sectionConfig.fields || []).filter((field) => field.dependsOn);
+    if (!dependentFields.length) return undefined;
+
+    let ignore = false;
+    Promise.all(dependentFields.map(async (field) => {
+      const keys = getDependsOnKeys(field);
+      const hasAllValues = keys.every((key) => values[key]);
+      if (!hasAllValues) return { name: field.name, options: [], autoValue: undefined };
+      try {
+        const response = await field.loadOptions(values);
+        const options = field.getOptions ? field.getOptions(response) : response.data;
+        const autoValue = field.autoSelect ? field.autoSelect(values, options) : undefined;
+        return { name: field.name, options: Array.isArray(options) ? options : [], autoValue };
+      } catch {
+        return { name: field.name, options: [], autoValue: undefined };
+      }
+    })).then((results) => {
+      if (ignore) return;
+      const optionsByField = Object.fromEntries(results.map(({ name, options }) => [name, options]));
+      setFields((current) => current.map((field) => (
+        Object.prototype.hasOwnProperty.call(optionsByField, field.name)
+          ? { ...field, options: optionsByField[field.name] }
+          : field
+      )));
+      results.forEach(({ name, autoValue }) => {
+        if (autoValue !== undefined) setValue(name, autoValue);
+      });
+    });
+
+    return () => { ignore = true; };
+  }, [dependentFieldValues, sectionConfig, values]);
 
   const submit = async (e) => {
     e.preventDefault();

@@ -410,8 +410,27 @@
 .auth-submit-btn {
   display: flex;
   justify-content: center;
-  width: min(160px, 100%);
+  width: 100%;
   min-height: 40px;
   margin: 14px auto 0;
   padding: 0 18px;
+}
+
+.cms-auth-card .cms-auth-links.auth-secondary-actions {
+  align-items: center;
+  margin-top: 16px;
+}
+
+.cms-auth-card .auth-resend-btn {
+  width: auto;
+  min-width: 132px;
+  color: var(--cms-primary);
+  border-color: var(--cms-primary-border);
+  background: var(--cms-primary-soft);
+}
+
+.cms-auth-card .auth-resend-btn:hover:not(:disabled) {
+  color: #fff;
+  background: var(--cms-primary);
+  border-color: var(--cms-primary);
 }

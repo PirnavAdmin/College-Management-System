@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { GraduationCap, CalendarClock, Wallet, BarChart3, ArrowRight } from "lucide-react";
+import { GraduationCap, CalendarClock, Wallet, BarChart3 } from "lucide-react";
 import HeroSlider from "@/components/common/HeroSlider.jsx";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
 import { heroCopy } from "@/data/heroSlides.js";
@@ -42,7 +42,6 @@ export default function LandingPage() {
           <h1>Join Pirnav Junior College</h1>
           <p>Manage academics, students, faculty, examinations, and administration from one centralized platform.</p>
           <div className="cms-hero-actions landing-hero-actions">
-            <Link to="/login" className="cms-btn landing-login-btn">Login <ArrowRight size={15} /></Link>
             <Link to="/register" className="cms-btn landing-start-btn">Get Started</Link>
           </div>
         </div>

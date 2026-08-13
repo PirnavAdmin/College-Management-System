@@ -6,7 +6,6 @@ import { resetPassword } from "@/features/auth/services/authService.js";
 import { getApiErrorMessage } from "@/api/axios.js";
 
 const fields = [
-  { name: "email", label: "Email Address", type: "email", required: true, full: true },
   { name: "password", label: "New Password", type: "password", required: true, full: true },
   { name: "confirmPassword", label: "Confirm Password", type: "password", required: true, full: true },
 ];
@@ -16,18 +15,24 @@ export default function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
   const navigate = useNavigate();
+  const email = sessionStorage.getItem("password-reset-email") || "";
 
   const submit = async (e) => {
     e.preventDefault();
     setFormError("");
     if (!validate()) return;
+    if (!email) {
+      setFormError("Please verify your OTP before resetting your password.");
+      return;
+    }
     if (values.password !== values.confirmPassword) {
       setFormError("Password and Confirm Password must match.");
       return;
     }
     setBusy(true);
     try {
-      await resetPassword({ email: values.email, password: values.password, confirmPassword: values.confirmPassword });
+      await resetPassword({ email, password: values.password, confirmPassword: values.confirmPassword });
+      sessionStorage.removeItem("password-reset-email");
       navigate("/login", { replace: true });
     } catch (error) {
       setFormError(getApiErrorMessage(error));

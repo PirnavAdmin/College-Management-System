@@ -6,6 +6,72 @@ import { ConfirmDialog, FilterBar, Modal, Toast, StatusBadge } from "@/component
 import { getApiErrorMessage } from "@/api/axios.js";
 import { configFor, deleteRow, useRows } from "@/data/store.js";
 
+function SummaryCards({ config }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!config.summary?.fetch) return;
+    let mounted = true;
+    config.summary
+      .fetch()
+      .then((res) => {
+        if (!mounted) return;
+        setSummary(config.summary.map(res.data));
+      })
+      .catch(() => {
+        if (mounted) setSummary(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => (mounted = false);
+  }, [config.summary]);
+
+  if (!config.summary?.fetch || loading || !summary) return null;
+
+  const colorFor = (label) => {
+    const l = label.toLowerCase();
+    if (l === "active") return { text: "#16a34a", bg: "#dcfce7" };
+    if (l === "inactive") return { text: "#dc2626", bg: "#fee2e2" };
+    return { text: "#2563eb", bg: "#dbeafe" };
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+      {summary.map((card) => {
+        const c = colorFor(card.label);
+        return (
+          <div
+            key={card.label}
+            className="cms-card"
+            style={{ flex: "1 1 0", padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}
+          >
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                background: c.bg,
+                color: c.text,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+                fontWeight: 700,
+                flexShrink: 0,
+              }}
+            >
+              {card.value}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: "var(--cms-muted)" }}>{card.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
   const storeRows = useRows(slug, secondary, config);
@@ -82,6 +148,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   return (
     <>
       {heading ? <h2 style={{ fontSize: 16, margin: "22px 0 12px" }}>{heading}</h2> : null}
+      {!secondary ? <SummaryCards config={sectionConfig} /> : null}
       {usesApi && sectionConfig.filters?.length ? (
         <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
       ) : null}
@@ -99,7 +166,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         rows={displayedRows}
         loading={loading}
         addLabel={sectionConfig.addLabel}
-        onSearchChange={usesApi ? handleSearch : null}
+        onSearchChange={sectionConfig.api?.fetchRows ? handleSearch : null}
         onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}

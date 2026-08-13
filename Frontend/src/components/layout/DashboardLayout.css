@@ -1,6 +1,7 @@
 :root {
   --cms-sidebar-w: 228px;
   --cms-sidebar-collapsed-w: 72px;
+   --cms-header-height: 64px;
 }
 
 .cms-shell {
@@ -36,10 +37,16 @@
 }
 
 .cms-brand {
+  height: var(--cms-header-height);
+  min-height: var(--cms-header-height);
+  box-sizing: border-box;
+
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 16px 18px;
+
+  padding: 0 18px;
+
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -171,13 +178,21 @@
   position: sticky;
   top: 0;
   z-index: 40;
+
+  height: var(--cms-header-height);
+  min-height: var(--cms-header-height);
+  box-sizing: border-box;
+
   background: var(--cms-header);
   backdrop-filter: blur(8px);
+
   border-bottom: 1px solid var(--cms-border);
+
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 22px;
+
+  padding: 0 22px;
 }
 
 .cms-search-wrap {

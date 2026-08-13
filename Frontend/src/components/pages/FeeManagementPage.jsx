@@ -29,6 +29,105 @@ const read = (item, ...keys) => {
   return key ? item[key] : undefined;
 };
 
+const isSchemaPlaceholder = (value) => {
+  if (typeof value !== "string") return false;
+  return ["string", "number", "integer", "object", "array", "boolean"].includes(value.trim().toLowerCase());
+};
+
+const readText = (item, ...keys) => {
+  const value = read(item, ...keys);
+  if (value === undefined || value === null || value === "" || isSchemaPlaceholder(value)) return "";
+  if (typeof value === "object") return "";
+  return String(value);
+};
+
+const readNumber = (item, ...keys) => {
+  const value = read(item, ...keys);
+  if (value === undefined || value === null || value === "" || isSchemaPlaceholder(value)) return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+};
+
+const getFeeTypeName = (item) => {
+  const directName = readText(
+    item,
+    "feeTypeName",
+    "FeeTypeName",
+    "feeName",
+    "FeeName",
+    "name",
+    "Name",
+    "displayName",
+    "DisplayName",
+    "label",
+    "Label",
+  );
+  if (directName) return directName;
+
+  const feeType = read(item, "feeType", "FeeType", "type", "Type");
+  if (typeof feeType === "string") return isSchemaPlaceholder(feeType) ? "" : feeType;
+  if (!feeType || typeof feeType !== "object") return "";
+
+  return readText(
+    feeType,
+    "feeTypeName",
+    "FeeTypeName",
+    "name",
+    "Name",
+    "displayName",
+    "DisplayName",
+    "label",
+    "Label",
+    "title",
+    "Title",
+  );
+};
+
+const getNestedRows = (item, ...keys) => {
+  const value = read(item, ...keys);
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.$values)) return value.$values;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.Data)) return value.Data;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.Items)) return value.Items;
+  return [];
+};
+
+const expandFeeStructureItems = (item) => {
+  const components = getNestedRows(
+    item,
+    "feeComponents",
+    "FeeComponents",
+    "components",
+    "Components",
+    "feeDetails",
+    "FeeDetails",
+    "details",
+    "Details",
+  );
+  if (!components.length) return [item];
+
+  return components.map((component) => {
+    const structureId = read(
+      component,
+      "feeStructureId",
+      "FeeStructureId",
+      "structureId",
+      "StructureId",
+      "feeComponentId",
+      "FeeComponentId",
+      "id",
+      "Id",
+    );
+    return {
+      ...item,
+      ...component,
+      ...(structureId !== undefined && structureId !== null && structureId !== "" ? { feeStructureId: structureId } : {}),
+    };
+  });
+};
+
 const makeLookup = (options) => options.reduce((lookup, option) => {
   lookup[String(option.value)] = option.label;
   return lookup;
@@ -77,8 +176,14 @@ const loadMasterOptions = async () => {
 };
 
 const formatDate = (value) => {
-  if (!value) return "";
+  if (!value || isSchemaPlaceholder(value)) return "";
   return String(value).slice(0, 10);
+};
+
+const formatAmount = (value) => {
+  if (value === undefined || value === null || value === "") return "-";
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `\u20b9${amount.toLocaleString("en-IN")}` : "-";
 };
 
 const normalizeStructure = (item, lookups = {}) => {
@@ -95,8 +200,8 @@ const normalizeStructure = (item, lookups = {}) => {
     board: read(item, "boardName", "BoardName", "board", "Board") || lookups.boardLookup?.[String(boardId)] || boardId || "-",
     year: read(item, "academicYearName", "AcademicYearName", "year", "Year") || lookups.yearLookup?.[String(academicYearId)] || academicYearId || "-",
     group: read(item, "groupName", "GroupName", "group", "Group") || lookups.groupLookup?.[String(groupId)] || groupId || "-",
-    type: read(item, "feeType", "FeeType", "type", "Type") || "-",
-    amount: read(item, "amount", "Amount") ?? 0,
+    type: getFeeTypeName(item) || "-",
+    amount: readNumber(item, "amount", "Amount", "feeAmount", "FeeAmount", "totalAmount", "TotalAmount"),
     due: formatDate(read(item, "dueDate", "DueDate", "due", "Due")),
     isActive: read(item, "isActive", "IsActive") ?? true,
   };
@@ -206,12 +311,13 @@ const feeStructureApi = {
     const master = await loadMasterOptions();
     const response = await apiClient.get(apiEndpoints.fee.getStructures);
     return getCollection(response.data)
+      .flatMap(expandFeeStructureItems)
       .map((item) => normalizeStructure(item, master))
       .filter((row) => row.id);
   },
   fetchRow: async (id) => {
     const response = await apiClient.get(apiEndpoints.fee.getStructures);
-    const item = getCollection(response.data).find((row) => {
+    const item = getCollection(response.data).flatMap(expandFeeStructureItems).find((row) => {
       const rowId = read(row, "feeStructureId", "FeeStructureId", "structureId", "StructureId", "id", "Id");
       return String(rowId) === String(id);
     });
@@ -270,9 +376,10 @@ const feeCollectionApi = {
     const students = studentsResult.status === "fulfilled" ? studentsResult.value : [];
     const structures = structuresResult.status === "fulfilled"
       ? getCollection(structuresResult.value.data)
+        .flatMap(expandFeeStructureItems)
         .map((item) => {
           const row = normalizeStructure(item);
-          return row.id ? { value: String(row.id), label: `${row.type} - ${row.group} - \u20b9${Number(row.amount || 0).toLocaleString("en-IN")}` } : null;
+          return row.id ? { value: String(row.id), label: `${row.type} - ${row.group} - ${formatAmount(row.amount)}` } : null;
         })
         .filter(Boolean)
       : [];
@@ -297,7 +404,7 @@ export const pageConfig = {
     { key: "year", label: "Academic Year" },
     { key: "group", label: "Group" },
     { key: "type", label: "Fee Type" },
-    { key: "amount", label: "Amount", render: (r) => `\u20b9${Number(r.amount).toLocaleString("en-IN")}` },
+    { key: "amount", label: "Amount", render: (r) => formatAmount(r.amount) },
     { key: "due", label: "Due Date" },
   ],
   fields: [
@@ -317,7 +424,7 @@ export const pageConfig = {
       { key: "receipt", label: "Receipt Number", strong: true },
       { key: "student", label: "Student" },
       { key: "date", label: "Payment Date" },
-      { key: "amount", label: "Amount", render: (r) => `\u20b9${Number(r.amount).toLocaleString("en-IN")}` },
+      { key: "amount", label: "Amount", render: (r) => formatAmount(r.amount) },
       { key: "discount", label: "Discount" },
       { key: "fine", label: "Fine" },
       { key: "mode", label: "Payment Mode" },

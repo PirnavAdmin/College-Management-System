@@ -35,9 +35,6 @@ function set(slug, secondary, rows) {
 
 // Lets a page (e.g. ListPage after an API fetch) push rows into the shared
 // store, so getRow()/edit forms can find them too.
-export function setRows(slug, secondary, rows) {
-  set(slug, secondary, rows);
-}
 
 export function subscribe(fn) {
   listeners.add(fn);
@@ -94,3 +91,5 @@ export async function deleteRow(slug, secondary, id, config) {
   }
   set(slug, secondary, getRows(slug, secondary, config).filter((r) => String(r.id) !== String(id)));
 }
+
+

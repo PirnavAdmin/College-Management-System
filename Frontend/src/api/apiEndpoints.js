@@ -37,15 +37,13 @@
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
     getAcademicLevels: "/api/v1/boards/academic-levels",
-
-
     academicLevels: "/api/v1/boards/academic-levels",
     gradingSystems: "/api/v1/boards/grading-systems",
     validateBoardCode: "/api/v1/boards/validate-board-code",
     formData: "/api/v1/boards/form-data",
+    states: (countryId) => `/api/v1/boards/states/${countryId}`,
     history: (boardId) => `/api/v1/boards/${boardId}/history`,
     summary: "/api/v1/boards/summary",
-
   },
   academicYears: {
     list: "/api/v1/academic-years",
@@ -110,12 +108,6 @@
     memo: (studentId) => `/api/v1/results/memo/${studentId}`,
     revaluation: "/api/v1/results/revaluation",
     revaluationById: (revaluationId) => `/api/v1/results/revaluation/${revaluationId}`,
-  },
-  boards: {
-    list: "/api/v1/boards",
-  },
-  groups: {
-    list: "/api/v1/groups",
   },
   subjects: {
     getAll: "/api/Subjects",
@@ -186,13 +178,12 @@
     list: "/api/certificates",
     create: "/api/certificates",
     getById: (id) => `/api/certificates/${id}`,
-    update: (id) => `/api/certificates/${id}`,
-    delete: (id) => `/api/certificates/${id}`,
     bonafide: "/api/certificates/bonafide",
     study: "/api/certificates/study",
     conduct: "/api/certificates/conduct",
     fee: "/api/certificates/fee",
     tc: "/api/certificates/tc",
+    admissionNo: "/api/certificates/admission-no",
     history: "/api/certificates/history",
     download: (id) => `/api/certificates/download/${id}`,
     verify: (certificateNo) => `/api/certificates/verify/${encodeURIComponent(certificateNo)}`,

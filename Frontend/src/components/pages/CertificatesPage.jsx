@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Ban, FilePenLine, Printer, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { Ban, Download, FilePenLine, RotateCcw, Search, X } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
@@ -19,25 +19,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const workflowSteps = ["Generated", "Reviewed", "Approved", "Issued"];
 const statusChoices = ["All", "Generated", "Reviewed", "Approved", "Issued", "Cancelled"];
 
-const CERTIFICATE_API = {
-  list: "/api/certificates",
-  getById: (id) => `/api/certificates/${id}`,
-  delete: (id) => `/api/certificates/${id}`,
-  bonafide: "/api/certificates/bonafide",
-  study: "/api/certificates/study",
-  conduct: "/api/certificates/conduct",
-  fee: "/api/certificates/fee",
-  tc: "/api/certificates/tc",
-  updateAdmission: (admissionNo) => `/api/certificates/admission/${admissionNo}`,
-  history: "/api/certificates/history",
-  verify: (certificateNo) => `/api/certificates/verify/${encodeURIComponent(certificateNo)}`,
-  reissue: "/api/certificates/reissue",
-  review: (id) => `/api/certificates/${id}/review`,
-  approve: (id) => `/api/certificates/${id}/approve`,
-  issue: (id) => `/api/certificates/${id}/issue`,
-  cancel: (id) => `/api/certificates/${id}/cancel`,
-  status: (id) => `/api/certificates/${id}/status`,
-};
+const CERTIFICATE_API = apiEndpoints.certificates;
 
 const unwrapListPayload = (payload) => {
   const candidates = [
@@ -631,6 +613,9 @@ export default function CertificatesPage() {
   const [page, setPage] = useState(1);
   const [printPreview, setPrintPreview] = useState(null);
   const [editRow, setEditRow] = useState(null);
+  const [viewMode, setViewMode] = useState("list");
+  const [verifyNumber, setVerifyNumber] = useState("");
+  const [verifying, setVerifying] = useState(false);
   const [editForm, setEditForm] = useState({
     admissionNo: "",
     student: "",
@@ -692,6 +677,30 @@ export default function CertificatesPage() {
     } catch {
       return null;
     }
+  };
+
+  const loadCertificateHistory = async ({ showLoader = true, studentLookup = studentRows } = {}) => {
+    if (showLoader) setLoadingList(true);
+    try {
+      const response = await apiClient.get(CERTIFICATE_API.history);
+      const mapped = unwrapListPayload(response?.data).map((item) => normalizeCertificate(item, studentLookup));
+      setRows(mapped);
+      return true;
+    } catch (error) {
+      setRows([]);
+      setToast(getFriendlyErrorMessage(error, "Failed to load certificate history. Please try again."));
+      return false;
+    } finally {
+      if (showLoader) setLoadingList(false);
+    }
+  };
+
+  const reloadCurrentView = async () => {
+    if (viewMode === "history") {
+      await loadCertificateHistory({ showLoader: false });
+      return;
+    }
+    await loadCertificates({ showLoader: false });
   };
 
   const loadCertificates = async ({ showLoader = true, studentLookup = studentRows } = {}) => {
@@ -860,11 +869,11 @@ export default function CertificatesPage() {
   };
 
   const refreshCertificates = async () => {
-    const ok = await loadCertificates();
+    const ok = viewMode === "history" ? await loadCertificateHistory() : await loadCertificates();
     setPage(1);
     setPrintPreview(null);
     setEditRow(null);
-    if (ok) setToast("Certificates refreshed from server");
+    if (ok) setToast(viewMode === "history" ? "Certificate history refreshed from server" : "Certificates refreshed from server");
   };
 
   const generateCertificate = async () => {
@@ -895,6 +904,7 @@ export default function CertificatesPage() {
       }, remarks);
       const response = await apiClient.post(endpoint, specializedPayload);
       await upsertFromApiResponse(undefined, response.data);
+      await reloadCurrentView();
       resetForm();
       setToast("Certificate generated successfully.");
     } catch (error) {
@@ -910,9 +920,9 @@ export default function CertificatesPage() {
     if (!actionId) return;
 
     const actionMap = {
-      review: { endpoint: CERTIFICATE_API.review, method: "post", nextStatus: "Reviewed", success: "moved to reviewed" },
-      approve: { endpoint: CERTIFICATE_API.approve, method: "post", nextStatus: "Approved", success: "approved" },
-      issue: { endpoint: CERTIFICATE_API.issue, method: "post", nextStatus: "Issued", success: "issued" },
+      review: { endpoint: CERTIFICATE_API.review, method: "patch", nextStatus: "Reviewed", success: "moved to reviewed" },
+      approve: { endpoint: CERTIFICATE_API.approve, method: "patch", nextStatus: "Approved", success: "approved" },
+      issue: { endpoint: CERTIFICATE_API.issue, method: "patch", nextStatus: "Issued", success: "issued" },
     };
     const selected = actionMap[action];
     if (!selected) return;
@@ -922,6 +932,7 @@ export default function CertificatesPage() {
     try {
       const response = await apiClient[selected.method](selected.endpoint(actionId));
       await upsertFromApiResponse(actionId, response.data);
+      await reloadCurrentView();
       setToast(`Certificate ${row.number} ${selected.success}`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, `Failed to ${action} certificate. Please try again.`));
@@ -941,6 +952,7 @@ export default function CertificatesPage() {
     try {
       const response = await apiClient.patch(CERTIFICATE_API.cancel(actionId));
       await upsertFromApiResponse(actionId, response.data);
+      await reloadCurrentView();
       setToast(`Certificate ${row.number} cancelled`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Failed to cancel certificate. Please try again."));
@@ -986,6 +998,7 @@ export default function CertificatesPage() {
         requestDate: String(row.requestDate || todayIso()).trim(),
       }, row.remarks));
       await upsertFromApiResponse(row.id, response.data);
+      await reloadCurrentView();
       setToast(`Certificate ${row.number} reissued`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Failed to reissue certificate. Please try again."));
@@ -994,24 +1007,95 @@ export default function CertificatesPage() {
     }
   };
 
-  const deleteCertificate = async (row) => {
+  const downloadCertificate = async (row) => {
     if (busyAction.id) return;
     const actionId = await resolveServerCertificateId(row);
-    if (!actionId) return;
-    const ok = window.confirm(`Delete certificate ${row.number}? This cannot be undone.`);
-    if (!ok) return;
+    if (!actionId) {
+      setToast("Unable to resolve certificate ID for download.");
+      return;
+    }
 
-    setBusyAction({ id: row.id, type: "delete" });
+    setBusyAction({ id: row.id, type: "download" });
     try {
-      await apiClient.delete(CERTIFICATE_API.delete(actionId));
-      setRows((prev) => prev.filter((item) => String(item.id) !== String(row.id)));
-      setToast(`Certificate ${row.number} deleted`);
-      if (printPreview?.id === row.id) setPrintPreview(null);
-      if (editRow?.id === row.id) closeEditDialog();
+      const response = await apiClient.get(CERTIFICATE_API.download(actionId), { responseType: "blob" });
+      const contentType = String(response?.headers?.["content-type"] || "").toLowerCase();
+      const contentDisposition = String(response?.headers?.["content-disposition"] || "");
+
+      const blob = response?.data instanceof Blob
+        ? response.data
+        : new Blob([response?.data], { type: contentType || "application/octet-stream" });
+
+      if (contentType.includes("application/json") || contentType.includes("text/plain")) {
+        const text = await blob.text();
+        try {
+          const parsed = JSON.parse(text);
+          const downloadUrl = parsed?.url || parsed?.downloadUrl || parsed?.fileUrl || parsed?.data?.url;
+          const base64 = parsed?.base64 || parsed?.fileBase64 || parsed?.data?.base64;
+          if (downloadUrl) {
+            window.open(String(downloadUrl), "_blank", "noopener,noreferrer");
+            setToast("Certificate download started.");
+            return;
+          }
+          if (base64) {
+            const base64Text = String(base64).split(",").pop();
+            const bytes = window.atob(base64Text);
+            const array = new Uint8Array(bytes.length);
+            for (let index = 0; index < bytes.length; index += 1) array[index] = bytes.charCodeAt(index);
+            const base64Blob = new Blob([array], { type: "application/pdf" });
+            const base64Url = window.URL.createObjectURL(base64Blob);
+            const base64Link = document.createElement("a");
+            base64Link.href = base64Url;
+            base64Link.download = `${row.number || "certificate"}.pdf`;
+            document.body.appendChild(base64Link);
+            base64Link.click();
+            base64Link.remove();
+            window.URL.revokeObjectURL(base64Url);
+            setToast("Certificate downloaded successfully.");
+            return;
+          }
+        } catch {
+          // Continue with generic download fallback.
+        }
+      }
+
+      const filenameMatch = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(contentDisposition);
+      const filename = decodeURIComponent(filenameMatch?.[1] || filenameMatch?.[2] || `${row.number || "certificate"}.pdf`);
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      setToast("Certificate downloaded successfully.");
     } catch (error) {
-      setToast(getFriendlyErrorMessage(error, "Failed to delete certificate. Please try again."));
+      setToast(getFriendlyErrorMessage(error, "Unable to download certificate. Please try again."));
     } finally {
       setBusyAction({ id: null, type: "" });
+    }
+  };
+
+  const verifyCertificateNo = async () => {
+    const certificateNo = String(verifyNumber || "").trim();
+    if (!certificateNo) {
+      setToast("Enter a certificate number to verify.");
+      return;
+    }
+    if (verifying) return;
+    setVerifying(true);
+    try {
+      const response = await apiClient.get(CERTIFICATE_API.verify(certificateNo));
+      const payload = unwrapSinglePayload(response?.data) || {};
+      const rawValid = payload?.isValid ?? payload?.valid ?? payload?.verified ?? payload?.status;
+      const valid = typeof rawValid === "string"
+        ? ["valid", "verified", "true", "active", "issued"].includes(rawValid.toLowerCase())
+        : Boolean(rawValid);
+      setToast(valid ? "Certificate verified successfully." : "Certificate verification failed.");
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Unable to verify certificate. Please try again."));
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -1185,8 +1269,9 @@ export default function CertificatesPage() {
         certificateType: editRow.type,
         purpose: normalizeText(editForm.purpose),
       }, editForm.remarks);
-      const response = await apiClient.put(CERTIFICATE_API.updateAdmission(selectedStudent.admissionNo), payload);
+      const response = await apiClient.put(CERTIFICATE_API.admissionNo, payload);
       await upsertFromApiResponse(editRow.id, response.data);
+      await reloadCurrentView();
       setToast(`Certificate ${editRow.number} updated`);
       closeEditDialog();
     } catch (error) {
@@ -1216,7 +1301,7 @@ export default function CertificatesPage() {
   return (
     <DashboardLayout
       title="Certificate Management"
-      subtitle="Generate, review, issue, and print certificates with a real-time preview."
+      subtitle="Generate, review, and issue certificates with a controlled workflow."
       breadcrumb={["Administration"]}
     >
       <div className="cert-page">
@@ -1277,9 +1362,11 @@ export default function CertificatesPage() {
                 </div>
               </div>
               <div className="cms-form-actions">
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm}>Reset</button>
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating}>Refresh Certificates</button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents}>
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} title="Reset form">Reset</button>
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating} title="Refresh certificate list">
+                  Refresh Certificates
+                </button>
+                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents} title="Generate certificate draft">
                   {creating ? "Generating..." : loadingStudents ? "Loading Students..." : "Generate Draft"}
                 </button>
               </div>
@@ -1287,138 +1374,183 @@ export default function CertificatesPage() {
           </div>
         </div>
 
-        <div className="cms-card">
-          <div className="cms-toolbar">
-            <div className="cms-search">
-              <Search size={16} />
-              <input
-                value={query}
-                placeholder="Search certificate number, student, type, purpose..."
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-            <div className="cms-toolbar-right">
-              <select
-                className="cert-toolbar-select"
-                value={status}
-                onChange={(e) => {
-                  setStatus(e.target.value);
-                  setPage(1);
-                }}
-              >
-                {statusChoices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-              </select>
-            </div>
+        <div className="cms-toolbar cert-toolbar-modern">
+          <div className="cms-search cert-search-box">
+            <Search size={16} />
+            <input
+              value={query}
+              placeholder="Search Certificate Number, Student, Type, Purpose..."
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(1);
+              }}
+            />
           </div>
-
-          <div className="cms-table-wrap">
-            <table className="cms-table cert-table-fit">
-              <thead>
-                <tr>
-                  <th>Certificate Number</th>
-                  <th>Student</th>
-                  <th>Type</th>
-                  <th>Request Date</th>
-                  <th>Issue Date</th>
-                  <th>Status</th>
-                  <th className="cert-actions-header">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loadingList ? (
-                  <tr>
-                    <td colSpan={7}><Loader label="Loading certificates..." /></td>
-                  </tr>
-                ) : !pageRows.length ? (
-                  <tr>
-                    <td colSpan={7}><div className="cms-empty">No certificate records found.</div></td>
-                  </tr>
-                ) : pageRows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="cms-strong">{row.number}</td>
-                    <td>{row.student}</td>
-                    <td>{row.type}</td>
-                    <td>{formatDateDdMmYyyy(row.requestDate)}</td>
-                    <td>{formatDateDdMmYyyy(row.issue)}</td>
-                    <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
-                    <td>
-                      <div className="cms-actions cert-actions-right">
-                        <select
-                          className="cert-workflow-select"
-                          value=""
-                          disabled={row.status === "Issued" || row.status === "Cancelled" || !hasServerCertificateId(row) || isRowBusy(row.id)}
-                          onChange={async (e) => {
-                            handleWorkflowChange(row, e.target.value);
-                            e.target.value = "";
-                          }}
-                        >
-                          <option value="">Workflow</option>
-                          <option value="review" disabled={row.status !== "Generated"}>Review</option>
-                          <option value="approve" disabled={row.status !== "Reviewed"}>Approve</option>
-                          <option value="issue" disabled={row.status !== "Approved"}>Issue</option>
-                        </select>
-
-                        {row.status === "Issued" ? (
-                          <button className="cms-action-btn" title="Print Certificate" onClick={() => openPrintPreview(row)} disabled={isRowBusy(row.id)}>
-                            <Printer size={15} />
-                          </button>
-                        ) : null}
-
-                        <button className="cms-action-btn" title="Edit Certificate" onClick={() => openEditDialog(row)} disabled={isRowBusy(row.id)}>
-                          <FilePenLine size={15} />
-                        </button>
-
-                        {row.status !== "Cancelled" ? (
-                          <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}>
-                            <Ban size={15} />
-                          </button>
-                        ) : (
-                          <button
-                            className="cms-action-btn"
-                            title={canResolveStudentIdFromRow(row) ? "Regenerate" : "Regenerate unavailable: student ID missing"}
-                            onClick={() => regenerateCertificate(row)}
-                            disabled={isRowBusy(row.id) || !hasServerCertificateId(row) || !canResolveStudentIdFromRow(row)}
-                          >
-                            <RotateCcw size={15} />
-                          </button>
-                        )}
-
-                        <button className="cms-action-btn danger" title="Delete Certificate" onClick={() => deleteCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}>
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="cms-pagination">
-            <span className="cms-page-info">
-              Showing {filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}-
-              {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} records
-            </span>
-            <button className="cms-page-btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
-              Prev
+          <div className="cms-toolbar-right cert-toolbar-right">
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              onClick={async () => {
+                setViewMode("list");
+                await loadCertificates();
+                setPage(1);
+              }}
+              disabled={loadingList || creating || viewMode === "list"}
+              title="Show current certificates"
+            >
+              Certificates
             </button>
-            {Array.from({ length: totalPages }).map((_, i) => (
-              <button
-                key={i}
-                className={`cms-page-btn ${currentPage === i + 1 ? "is-active" : ""}`}
-                onClick={() => setPage(i + 1)}
-              >
-                {i + 1}
-              </button>
-            ))}
-            <button className="cms-page-btn" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>
-              Next
+
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              onClick={async () => {
+                setViewMode("history");
+                await loadCertificateHistory();
+                setPage(1);
+              }}
+              disabled={loadingList || creating || viewMode === "history"}
+              title="Show certificate history"
+            >
+              History
             </button>
+
+            <input
+              type="text"
+              className="cert-toolbar-select"
+              value={verifyNumber}
+              placeholder="Verify certificate no."
+              onChange={(e) => setVerifyNumber(e.target.value)}
+              aria-label="Certificate number for verification"
+            />
+
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              onClick={verifyCertificateNo}
+              disabled={verifying || loadingList}
+              title="Verify certificate"
+            >
+              {verifying ? "Verifying..." : "Verify"}
+            </button>
+
+            <select
+              className="cert-toolbar-select"
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              aria-label="Filter certificates by status"
+            >
+              {statusChoices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
+            </select>
           </div>
         </div>
+
+        <div className="cms-table-wrap cert-table-wrap-modern">
+          <table className="cms-table cert-table-fit">
+            <thead>
+              <tr>
+                <th>Certificate Number</th>
+                <th>Student</th>
+                <th>Type</th>
+                <th>Request Date</th>
+                <th>Issue Date</th>
+                <th>Status</th>
+                <th className="cert-actions-header">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingList ? (
+                <tr>
+                  <td colSpan={7}><Loader label="Loading certificates..." /></td>
+                </tr>
+              ) : !pageRows.length ? (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="cert-empty-state">
+                      <div className="cert-empty-icon">✦</div>
+                      <h4>No certificates found</h4>
+                      <p>Try changing the search criteria or generate a new certificate request.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : pageRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="cms-strong">{row.number}</td>
+                  <td>{row.student}</td>
+                  <td>{row.type}</td>
+                  <td>{formatDateDdMmYyyy(row.requestDate)}</td>
+                  <td>{formatDateDdMmYyyy(row.issue)}</td>
+                  <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
+                  <td>
+                    <div className="cms-actions cert-actions-right">
+                      <select
+                        className="cert-workflow-select"
+                        value=""
+                        disabled={row.status === "Issued" || row.status === "Cancelled" || !hasServerCertificateId(row) || isRowBusy(row.id)}
+                        onChange={async (e) => {
+                          handleWorkflowChange(row, e.target.value);
+                          e.target.value = "";
+                        }}
+                      >
+                        <option value="">Workflow</option>
+                        <option value="review" disabled={row.status !== "Generated"}>Review</option>
+                        <option value="approve" disabled={row.status !== "Reviewed"}>Approve</option>
+                        <option value="issue" disabled={row.status !== "Approved"}>Issue</option>
+                      </select>
+
+                      <button
+                        className="cms-action-btn"
+                        title="Download Certificate"
+                        onClick={() => downloadCertificate(row)}
+                        disabled={row.status !== "Issued" || isRowBusy(row.id)}
+                      >
+                        <Download size={15} />
+                      </button>
+
+                      <button className="cms-action-btn" title="Edit Certificate" onClick={() => openEditDialog(row)} disabled={isRowBusy(row.id)}>
+                        <FilePenLine size={15} />
+                      </button>
+
+                      {row.status !== "Cancelled" ? (
+                        <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}>
+                          <Ban size={15} />
+                        </button>
+                      ) : (
+                        <button
+                          className="cms-action-btn"
+                          title={canResolveStudentIdFromRow(row) ? "Regenerate" : "Regenerate unavailable: student ID missing"}
+                          onClick={() => regenerateCertificate(row)}
+                          disabled={isRowBusy(row.id) || !hasServerCertificateId(row) || !canResolveStudentIdFromRow(row)}
+                        >
+                          <RotateCcw size={15} />
+                        </button>
+                      )}
+
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="cms-pagination">
+          <button className="cms-page-btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+            Prev
+          </button>
+
+          
+            <span>Page</span>
+            <strong>{currentPage}</strong>
+            <span>of {totalPages}</span>
+        
+
+          <button className="cms-page-btn" disabled={currentPage === totalPages} onClick={() => setPage(currentPage +1)}>      Next    </button>
+        </div>
+      </div>
 
       {printPreview ? (
         <div className="cert-print-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => {
@@ -1575,8 +1707,6 @@ export default function CertificatesPage() {
           </div>
         </div>
       ) : null}
-
-      </div>
 
       <Toast message={toast} onClose={() => setToast("")} />
     </DashboardLayout>

@@ -1,247 +1,59 @@
-import * as data from "@/data/mockData.js";
-import apiClient from "@/api/axios.js";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, BriefcaseBusiness, Check, Eye, GraduationCap, Mail, Pencil, Plus, Trash2, UserRound, X } from "lucide-react";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
-import ListPage from "@/components/pages/ListPage.jsx";
+import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import DataTable from "@/components/common/DataTable.jsx";
+import { ConfirmDialog, Field, Modal, StatusBadge, Toast, useForm } from "@/components/common/Ui.jsx";
 import "./FacultyManagementPage.css";
 
-const o = data.options;
-const MODULE_SLUG = "faculty";
+const fields = [
+  { name: "empId", label: "Employee ID", required: true }, { name: "firstName", label: "First Name", required: true }, { name: "lastName", label: "Last Name", required: true },
+  { name: "gender", label: "Gender", type: "select", options: [], required: true }, { name: "dob", label: "Date of Birth", type: "date", required: true }, { name: "aadhaar", label: "Aadhaar Number" },
+  { name: "mobile", label: "Mobile", type: "tel", required: true }, { name: "email", label: "Email", type: "email", required: true }, { name: "bloodGroup", label: "Blood Group" },
+  { name: "qualification", label: "Qualification", required: true }, { name: "designation", label: "Designation", required: true }, { name: "facultyType", label: "Faculty Type", type: "select", options: ["Teaching Staff", "Non-Teaching Staff"], required: true },
+  { name: "department", label: "Department", type: "select", options: [], required: true }, { name: "joining", label: "Joining Date", type: "date", required: true }, { name: "experience", label: "Experience (years)", type: "number" },
+];
+const extractItems = (payload) => Array.isArray(payload) ? payload : payload?.$values || payload?.items || payload?.Items || payload?.data?.$values || payload?.data?.items || payload?.data?.Items || payload?.data || [];
+const facultyName = (item = {}) => item.fullName || item.name || [item.firstName, item.lastName].filter(Boolean).join(" ");
+const facultyId = (item = {}) => item.facultyId ?? item.id ?? item.FacultyId ?? item.Id;
+const subjectId = (item = {}) => item.subjectId ?? item.id ?? item.SubjectId ?? item.Id;
+const subjectName = (item = {}) => item.subjectName || item.name || item.SubjectName || "Unnamed subject";
+const allocationId = (item = {}) => item.assignmentId ?? item.allocationId ?? item.id ?? item.AssignmentId ?? item.AllocationId;
+const payloadFor = (values) => ({ employeeId: values.empId, firstName: values.firstName, lastName: values.lastName, gender: values.gender, dateOfBirth: values.dob, aadhaar: values.aadhaar, mobile: values.mobile, email: values.email, bloodGroup: values.bloodGroup, qualification: values.qualification, designation: values.designation, facultyType: values.facultyType, department: values.department, joiningDate: values.joining, experience: Number(values.experience) || 0, status: values.status || "Active" });
+const rowFor = (item) => ({ ...item, id: facultyId(item), empId: item.employeeId ?? item.employeeCode ?? item.empId, name: facultyName(item), mobile: item.mobile ?? item.phoneNumber, status: typeof item.status === "boolean" ? (item.status ? "Active" : "Inactive") : item.status || "Active", department: item.department, designation: item.designation });
+const valuesFor = (item) => ({ empId: item.employeeId ?? item.employeeCode ?? item.empId, firstName: item.firstName, lastName: item.lastName, gender: item.gender, dob: item.dateOfBirth ?? item.dob, aadhaar: item.aadhaar, mobile: item.mobile ?? item.phoneNumber, email: item.email, bloodGroup: item.bloodGroup, qualification: item.qualification, designation: item.designation, facultyType: item.facultyType, department: item.department, joining: item.joiningDate ?? item.joining, experience: item.experience, status: item.status || "Active" });
 
-const extractItems = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.$values)) return payload.$values;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.Items)) return payload.Items;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.Data)) return payload.Data;
-  if (Array.isArray(payload?.data?.items)) return payload.data.items;
-  if (Array.isArray(payload?.data?.Items)) return payload.data.Items;
-  if (Array.isArray(payload?.data?.$values)) return payload.data.$values;
-  return [];
-};
+function Steps({ step }) { return <div className="faculty-steps">{[["Details", UserRound], ["Preview", Eye], ["Save & Next", Check], ["Subjects", GraduationCap]].map(([label, Icon], index) => <div className={index <= step ? "is-active" : ""} key={label}><span><Icon size={15} /></span><small>Step {index + 1}</small><strong>{label}</strong></div>)}</div>; }
+function Preview({ values }) { const groups = [["Personal Information", UserRound, ["firstName", "lastName", "gender", "dob"]], ["Contact Information", Mail, ["mobile", "email", "aadhaar", "bloodGroup"]], ["Professional Information", BriefcaseBusiness, ["empId", "department", "designation", "qualification", "facultyType", "experience", "joining"]]]; return <div className="faculty-preview">{groups.map(([title, Icon, names]) => <section key={title} className={`faculty-preview-section ${title.split(" ")[0].toLowerCase()}`}><h3><Icon size={18} />{title}</h3><div>{names.map((name) => <p key={name}><span>{fields.find((f) => f.name === name)?.label}</span><strong>{name === "firstName" ? `${values.firstName || ""} ${values.lastName || ""}` : values[name] || "—"}</strong></p>)}</div></section>)}</div>; }
 
-const getFaculty = () => apiClient.get(apiEndpoints.faculty.getAll);
-const createFaculty = (faculty) => apiClient.post(apiEndpoints.faculty.create, faculty);
-const getFacultyById = (id) => apiClient.get(apiEndpoints.faculty.getById(id));
-const updateFaculty = (id, faculty) => apiClient.put(apiEndpoints.faculty.update(id), faculty);
-const deleteFaculty = (id) => apiClient.delete(apiEndpoints.faculty.delete(id));
-const uploadFacultyPhoto = (file) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  return apiClient.post(apiEndpoints.faculty.uploadPhoto, formData, { headers: { "Content-Type": "multipart/form-data" } });
-};
-const getFacultyPhoto = (id) => apiClient.get(apiEndpoints.faculty.getPhoto(id), { responseType: "blob" });
-const assignSubject = (assignment) => apiClient.post(apiEndpoints.faculty.assignSubject, assignment);
-const updateSubjectAssignment = (id, assignment) => apiClient.put(apiEndpoints.faculty.updateSubjectAssignment(id), assignment);
-const deleteSubjectAssignment = (id) => apiClient.delete(apiEndpoints.faculty.deleteSubjectAssignment(id));
-const getFacultyWorkload = (facultyId) => apiClient.get(apiEndpoints.faculty.getWorkload(facultyId));
-
-const getBoards = () => apiClient.get(apiEndpoints.boards.getAll);
-const getGroups = () => apiClient.get(apiEndpoints.groups.getAll, { params: { pageNumber: 1, pageSize: 20 } });
-const getAcademicLevels = () => apiClient.get(apiEndpoints.boards.getAcademicLevels);
-const getSubjects = () => apiClient.get(apiEndpoints.subjects.getAll);
-const getDepartments = () => apiClient.get(apiEndpoints.departments.getAll);
-const getAcademicYears = () => apiClient.get(apiEndpoints.academicYears.getAll);
-const getSections = () => apiClient.get(apiEndpoints.sections.getAll);
-
-const extractAllocations = (payload) => {
-  const dataNode = payload?.data ?? payload?.Data ?? payload;
-  return extractItems(
-    dataNode?.allocations
-    ?? dataNode?.Allocations
-    ?? dataNode?.facultyAllocations
-    ?? dataNode?.FacultyAllocations
-    ?? dataNode?.subjectAllocations
-    ?? dataNode?.SubjectAllocations
-    ?? dataNode?.subjectAssignments
-    ?? dataNode?.SubjectAssignments
-    ?? dataNode?.teachingAssignments
-    ?? dataNode?.TeachingAssignments
-    ?? dataNode?.assignedSubjects
-    ?? dataNode?.AssignedSubjects
-    ?? dataNode?.assignments
-    ?? dataNode?.Assignments
-    ?? dataNode?.data
-    ?? dataNode?.Data
-    ?? dataNode,
-  );
-};
-
-const getFacultyAllocations = async () => {
-  const facultyResponse = await getFaculty();
-  const faculty = extractItems(facultyResponse.data);
-  const workloads = await Promise.all(faculty.map(async (item) => {
-    const response = await getFacultyWorkload(item.facultyId ?? item.id);
-    return extractAllocations(response.data).map((allocation) => ({
-      ...allocation,
-      facultyName: allocation.facultyName ?? facultyName(item),
-      facultyId: allocation.facultyId ?? item.facultyId ?? item.id,
-    }));
-  }));
-  return { data: workloads.flat() };
-};
-
-const pageConfig = {
-    title: "Faculty Management",
-    subtitle: "Faculty master records, credentials and departments.",
-    breadcrumb: ["People"],
-    addLabel: "Add Faculty",
-    rows: [],
-    columns: [
-      { key: "empId", label: "Employee ID", strong: true },
-      { key: "name", label: "Faculty Name" },
-      { key: "mobile", label: "Mobile" },
-      { key: "email", label: "Email" },
-      { key: "department", label: "Department" },
-      { key: "designation", label: "Designation" },
-      { key: "status", label: "Status", badge: true },
-    ],
-    fields: [
-      { name: "empId", label: "Employee ID", required: true },
-      { name: "firstName", label: "First Name", required: true },
-      { name: "lastName", label: "Last Name", required: true },
-      { name: "gender", label: "Gender", type: "select", options: [], loadOptions: getFaculty, required: true },
-      { name: "dob", label: "Date of Birth", type: "date", required: true },
-      { name: "aadhaar", label: "Aadhaar Number" },
-      { name: "mobile", label: "Mobile", type: "tel", required: true },
-      { name: "email", label: "Email", type: "email", required: true },
-      { name: "bloodGroup", label: "Blood Group" },
-      { name: "qualification", label: "Qualification", required: true },
-      { name: "designation", label: "Designation", required: true },
-      { name: "department", label: "Department", type: "select", options: [], loadOptions: getDepartments, required: true },
-      { name: "joining", label: "Joining Date", type: "date", required: true },
-      { name: "experience", label: "Experience (years)", type: "number" },
-      { name: "username", label: "Username", required: true },
-      { name: "password", label: "Password", type: "password", required: true },
-    ],
-  };
-
-const facultySubjectAllocationConfig = {
-    title: "Faculty Subject Allocation",
-    subtitle: "Map faculty to groups, sections and subjects.",
-    breadcrumb: ["People"],
-    addLabel: "Allocate Subject",
-    rows: [],
-    columns: [
-      { key: "faculty", label: "Faculty", strong: true },
-      { key: "board", label: "Board" },
-      { key: "year", label: "Academic Year" },
-      { key: "group", label: "Group" },
-      { key: "level", label: "Academic Level" },
-      { key: "section", label: "Section" },
-      { key: "subject", label: "Subject" },
-      { key: "status", label: "Status", badge: true },
-    ],
-    fields: [
-      { name: "facultyId", label: "Faculty", type: "select", options: [], loadOptions: getFaculty, required: true },
-      { name: "board", label: "Board", type: "select", options: [], loadOptions: getBoards, required: true },
-      { name: "academicYear", label: "Academic Year", type: "select", options: [], loadOptions: getAcademicYears, required: true },
-      { name: "group", label: "Group", type: "select", options: [], loadOptions: getGroups, required: true },
-      { name: "academicLevel", label: "Academic Level", type: "select", options: [], loadOptions: getAcademicLevels, required: true },
-      { name: "section", label: "Section", type: "select", options: [], loadOptions: getSections, required: true },
-      { name: "subject", label: "Subject", type: "select", options: [], loadOptions: getSubjects, required: true },
-    ],
-  };
-
-const facultyName = (faculty) => faculty.fullName || faculty.name || [faculty.firstName, faculty.lastName].filter(Boolean).join(" ");
-const toFacultyRow = (faculty) => ({
-  ...faculty,
-  id: faculty.facultyId ?? faculty.id,
-  empId: faculty.employeeId ?? faculty.employeeCode ?? faculty.empId,
-  dob: faculty.dateOfBirth ?? faculty.dob,
-  joining: faculty.joiningDate ?? faculty.joining,
-  name: facultyName(faculty),
-  mobile: faculty.mobile ?? faculty.phoneNumber,
-  status: typeof faculty.status === "boolean" ? (faculty.status ? "Active" : "Inactive") : faculty.status,
-});
-
-const toFacultyPayload = (faculty) => ({
-  employeeId: faculty.empId,
-  firstName: faculty.firstName,
-  lastName: faculty.lastName,
-  gender: faculty.gender,
-  dateOfBirth: faculty.dob,
-  aadhaar: faculty.aadhaar,
-  mobile: faculty.mobile,
-  email: faculty.email,
-  bloodGroup: faculty.bloodGroup,
-  qualification: faculty.qualification,
-  designation: faculty.designation,
-  department: faculty.department,
-  joiningDate: faculty.joining,
-  experience: Number(faculty.experience) || 0,
-  username: faculty.username,
-  password: faculty.password,
-  status: faculty.status || "Active",
-});
-const toAssignmentRow = (assignment) => ({
-  ...assignment,
-  id: assignment.assignmentId ?? assignment.id,
-  faculty: assignment.facultyName ?? assignment.faculty?.fullName ?? assignment.faculty,
-  year: assignment.academicYearName ?? assignment.academicYear ?? assignment.year,
-  group: assignment.groupName ?? assignment.group,
-  level: assignment.academicLevelName ?? assignment.academicLevel ?? assignment.level,
-  section: assignment.sectionName ?? assignment.section,
-  subject: assignment.subjectName ?? assignment.subject,
-  status: assignment.status || "Active",
-});
-
-const toAssignmentPayload = (assignment) => ({
-  facultyId: Number(assignment.facultyId),
-  board: assignment.board,
-  academicYear: assignment.academicYear,
-  group: assignment.group,
-  academicLevel: assignment.academicLevel,
-  section: assignment.section,
-  subject: assignment.subject,
-});
-
-pageConfig.api = {
-  getAll: getFaculty,
-  create: createFaculty,
-  getById: getFacultyById,
-  update: updateFaculty,
-  delete: deleteFaculty,
-  uploadPhoto: uploadFacultyPhoto,
-  getPhoto: getFacultyPhoto,
-  getWorkload: getFacultyWorkload,
-  toRow: toFacultyRow,
-  toRows: (payload) => extractItems(payload).map(toFacultyRow),
-  toPayload: toFacultyPayload,
-};
-
-facultySubjectAllocationConfig.api = {
-  getAll: getFacultyAllocations,
-  create: assignSubject,
-  update: updateSubjectAssignment,
-  delete: deleteSubjectAssignment,
-  toRow: toAssignmentRow,
-  toRows: (payload) => extractItems(payload).map(toAssignmentRow),
-  toPayload: toAssignmentPayload,
-};
-
-facultySubjectAllocationConfig.fields.find((field) => field.name === "facultyId").getOptions = (response) => extractItems(response.data)
-  .map((faculty) => ({ value: faculty.facultyId ?? faculty.id, label: facultyName(faculty) }))
-  .filter((faculty) => faculty.value != null && faculty.label);
-facultySubjectAllocationConfig.fields.find((field) => field.name === "board").getOptions = (response) => extractItems(response.data).map((board) => board.boardCode || board.boardName).filter(Boolean);
-facultySubjectAllocationConfig.fields.find((field) => field.name === "academicYear").getOptions = (response) => extractItems(response.data)
-  .map((year) => year.academicYearName)
-  .filter(Boolean);
-facultySubjectAllocationConfig.fields.find((field) => field.name === "group").getOptions = (response) => extractItems(response.data).map((group) => group.groupCode || group.groupName).filter(Boolean);
-facultySubjectAllocationConfig.fields.find((field) => field.name === "academicLevel").getOptions = (response) => extractItems(response.data).map((level) => level.levelName).filter(Boolean);
-facultySubjectAllocationConfig.fields.find((field) => field.name === "section").getOptions = (response) => extractItems(response.data)
-  .map((section) => section.sectionName || section.name)
-  .filter(Boolean);
-facultySubjectAllocationConfig.fields.find((field) => field.name === "subject").getOptions = (response) => extractItems(response.data).map((subject) => subject.subjectName || subject.name).filter(Boolean);
-pageConfig.fields.find((field) => field.name === "gender").getOptions = (response) => [...new Set(extractItems(response.data).map((faculty) => faculty.gender).filter(Boolean))];
-pageConfig.fields.find((field) => field.name === "department").getOptions = (response) => extractItems(response.data)
-  .filter((department) => department.isActive !== false)
-  .map((department) => department.departmentName || department.departmentCode)
-  .filter(Boolean);
-
-export default function FacultyManagementPage() {
-  return <ListPage slug={MODULE_SLUG} config={pageConfig} />;
+function Workflow({ existingId }) {
+  const navigate = useNavigate(); const [step, setStep] = useState(0); const [saved, setSaved] = useState(null); const [saving, setSaving] = useState(false); const [toast, setToast] = useState(""); const [departments, setDepartments] = useState([]); const [genders, setGenders] = useState([]); const [subjects, setSubjects] = useState([]); const [allocations, setAllocations] = useState([]); const [removing, setRemoving] = useState(null); const [selectedSubject, setSelectedSubject] = useState("");
+  const formFields = useMemo(() => fields.map((field) => field.name === "department" ? { ...field, options: departments } : field.name === "gender" ? { ...field, options: genders } : field), [departments, genders]);
+  const { values, errors, setValue, setValues, validate } = useForm(formFields, {});
+  useEffect(() => { apiClient.get(apiEndpoints.departments.getAll).then((departmentResponse) => { setDepartments(extractItems(departmentResponse.data).filter((d) => d.isActive !== false).map((d) => d.departmentName || d.departmentCode).filter(Boolean)); setGenders(["Male", "Female", "Other"]); }).catch((e) => setToast(getApiErrorMessage(e))); }, []);
+  useEffect(() => { if (!existingId) return; apiClient.get(apiEndpoints.faculty.getById(existingId)).then((r) => { setValues(valuesFor(r.data)); setSaved(r.data); }).catch((e) => setToast(getApiErrorMessage(e))); }, [existingId, setValues]);
+  const loadAllocation = async (faculty) => { try { const [subjectResponse, workloadResponse] = await Promise.all([apiClient.get(apiEndpoints.subjects.getAll), apiClient.get(apiEndpoints.faculty.getWorkload(facultyId(faculty)))]); setSubjects(extractItems(subjectResponse.data)); const data = workloadResponse.data; const list = extractItems(data?.allocations ?? data?.Allocations ?? data?.subjectAssignments ?? data?.SubjectAssignments ?? data?.assignedSubjects ?? data?.AssignedSubjects ?? data); setAllocations(list); } catch (e) { setToast(getApiErrorMessage(e)); } };
+  useEffect(() => { if (step === 3 && saved) loadAllocation(saved); }, [step, saved]);
+  const preview = (e) => { e.preventDefault(); if (validate()) setStep(1); };
+  const confirm = async () => { setSaving(true); try { const response = existingId ? await apiClient.put(apiEndpoints.faculty.update(existingId), payloadFor(values)) : await apiClient.post(apiEndpoints.faculty.create, payloadFor(values)); const record = response.data?.data ?? response.data; const next = { ...record, ...valuesFor(record), id: facultyId(record) ?? existingId, facultyId: facultyId(record) ?? existingId }; setSaved(next); setStep(2); setToast("Faculty saved successfully."); } catch (e) { setToast(getApiErrorMessage(e)); } finally { setSaving(false); } };
+  const allocate = async (subject) => { if (!saved) return; if (allocations.some((a) => String(a.subjectId ?? a.subject?.subjectId ?? a.subject) === String(subjectId(subject)) || subjectName(a) === subjectName(subject))) return setToast("This subject is already allocated."); try { await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: Number(facultyId(saved)), subject: subjectId(subject) ?? subjectName(subject) }); await loadAllocation(saved); setToast(`${subjectName(subject)} allocated successfully.`); } catch (e) { setToast(getApiErrorMessage(e)); } };
+  const remove = async () => { try { await apiClient.delete(apiEndpoints.faculty.deleteSubjectAssignment(allocationId(removing))); setRemoving(null); await loadAllocation(saved); setToast("Subject allocation removed."); } catch (e) { setToast(getApiErrorMessage(e)); } };
+  const allocatedIds = new Set(allocations.map((a) => String(a.subjectId ?? a.subject?.subjectId ?? a.subjectId))); const available = subjects.filter((s) => !allocatedIds.has(String(subjectId(s))) && !allocations.some((a) => subjectName(a) === subjectName(s))); const selectedAvailableSubject = available.find((subject) => String(subjectId(subject)) === selectedSubject);
+  return <DashboardLayout title="Faculty Management" subtitle="Faculty details and subject allocation." breadcrumb={["People"]}><main className="faculty-workflow"><Steps step={step} />{step === 0 && <form className="faculty-form" onSubmit={preview}><header><UserRound /> <div><h2>Faculty Details</h2><p>Enter the faculty profile details below.</p></div></header><div className="faculty-form-grid">{formFields.map((field) => <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={setValue} />)}</div><footer><button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate("/dashboard/faculty")}>Cancel</button><button className="cms-btn cms-btn-primary">Next</button></footer></form>}{step === 1 && <section className="faculty-stage"><header><Eye /> <div><h2>Review Faculty Details</h2><p>Check the information before saving it.</p></div></header><Preview values={values} /><footer><button className="cms-btn cms-btn-ghost" onClick={() => setStep(0)}><ArrowLeft size={16} /> Back</button><button className="cms-btn cms-btn-primary" disabled={saving} onClick={confirm}>{saving ? "Saving..." : "Confirm & Save"}</button></footer></section>}{step === 2 && <section className="faculty-stage faculty-saved"><span className="faculty-success"><Check size={28} /></span><h2>Faculty Saved Successfully</h2><p>{facultyName(saved)} · {saved?.employeeId ?? saved?.empId ?? values.empId}</p><div className="faculty-summary"><span>Department<strong>{saved?.department ?? values.department}</strong></span><span>Designation<strong>{saved?.designation ?? values.designation}</strong></span></div><footer><button className="cms-btn cms-btn-primary" onClick={() => setStep(3)}>Allocate Subject</button></footer></section>}{step === 3 && <section className="faculty-allocation"><header><GraduationCap /> <div><h2>Subject Allocation</h2><p>{facultyName(saved)} · {saved?.employeeId ?? values.empId} · {saved?.department ?? values.department}</p></div></header><div className="faculty-subject-columns"><section className="faculty-subject-list available"><h3>Available Subjects <small>{available.length}</small></h3>{available.map((subject) => <article key={subjectId(subject) ?? `${subjectName(subject)}-available`}><span>{subjectName(subject)}</span><button className="cms-btn" onClick={() => allocate(subject)}><Plus size={15} /> Allocate</button></article>)}{!available.length && <p className="faculty-empty">No subjects available.</p>}</section><section className="faculty-subject-list allocated"><h3>Allocated Subjects <small>{allocations.length}</small></h3>{allocations.map((allocation, index) => <article key={allocationId(allocation) ?? `${subjectId(allocation) ?? subjectName(allocation)}-${index}`}><span>{subjectName(allocation)}</span><button className="cms-btn" onClick={() => setRemoving(allocation)}><X size={15} /> Remove</button></article>)}{!allocations.length && <p className="faculty-empty">No subjects allocated yet.</p>}</section></div><footer><button className="cms-btn cms-btn-ghost" onClick={() => setStep(2)}><ArrowLeft size={16} /> Back</button><button className="cms-btn cms-btn-primary" onClick={() => navigate("/dashboard/faculty")}>Finish</button></footer></section>}</main>{removing && <ConfirmDialog message={`Remove ${subjectName(removing)} from this faculty member?`} onCancel={() => setRemoving(null)} onConfirm={remove} />}<Toast message={toast} onClose={() => setToast("")} /></DashboardLayout>;
 }
 
-FacultyManagementPage.pageConfig = pageConfig;
-FacultyManagementPage.facultySubjectAllocationConfig = facultySubjectAllocationConfig;
+export default function FacultyManagementPage() {
+  const navigate = useNavigate(); const location = useLocation(); const { id } = useParams();
+  const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true); const [deleting, setDeleting] = useState(null); const [viewing, setViewing] = useState(null); const [viewLoading, setViewLoading] = useState(false); const [toast, setToast] = useState("");
+  const isWorkflow = location.pathname !== "/dashboard/faculty";
+  const load = async () => { setLoading(true); try { const response = await apiClient.get(apiEndpoints.faculty.getAll); setRows(extractItems(response.data).map(rowFor)); } catch (e) { setToast(getApiErrorMessage(e)); } finally { setLoading(false); } };
+  const viewFaculty = async (row) => { setViewing(row); setViewLoading(true); try { const response = await apiClient.get(apiEndpoints.faculty.getById(row.id)); setViewing({ ...row, ...response.data }); } catch (e) { setViewing(null); setToast(getApiErrorMessage(e)); } finally { setViewLoading(false); } };
+  useEffect(() => { if (!isWorkflow) load(); }, [isWorkflow]);
+  if (isWorkflow) return <Workflow existingId={id} />;
+  return <DashboardLayout title="Faculty Management" subtitle="Faculty directory, credentials and departments." breadcrumb={["People"]}><div className="faculty-list"><DataTable title="Faculty List" addLabel="Add Faculty" columns={[{ key: "empId", label: "Employee ID", strong: true }, { key: "name", label: "Faculty Name" }, { key: "mobile", label: "Mobile" }, { key: "email", label: "Email" }, { key: "department", label: "Department" }, { key: "designation", label: "Designation" }, { key: "status", label: "Status", badge: true }]} rows={rows} loading={loading} onAdd={() => navigate("/dashboard/faculty/add")} onView={viewFaculty} onEdit={(row) => navigate(`/dashboard/faculty/${row.id}/edit`)} onDelete={setDeleting} />{viewing && <Modal title="Faculty Details" onClose={() => setViewing(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setViewing(null)}>Close</button><button className="cms-btn cms-btn-primary" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit`)}><Pencil size={15} /> Edit</button></>}><div className="cms-kv">{viewLoading ? <div className="cms-empty">Loading faculty details...</div> : <>{[["Employee ID", viewing.employeeId ?? viewing.empId], ["Faculty Name", facultyName(viewing)], ["Mobile", viewing.mobile ?? viewing.phoneNumber], ["Email", viewing.email], ["Department", viewing.department], ["Designation", viewing.designation], ["Qualification", viewing.qualification], ["Faculty Type", viewing.facultyType], ["Joining Date", viewing.joiningDate ?? viewing.joining], ["Status", viewing.status]].map(([label, value]) => <div key={label}><span>{label}</span>{label === "Status" ? <StatusBadge value={typeof value === "boolean" ? (value ? "Active" : "Inactive") : value || "Active"} /> : <strong>{value || "-"}</strong>}</div>)}</>}</div></Modal>}{deleting && <ConfirmDialog message={`Delete ${deleting.name}? This action cannot be undone.`} onCancel={() => setDeleting(null)} onConfirm={async () => { try { await apiClient.delete(apiEndpoints.faculty.delete(deleting.id)); setDeleting(null); await load(); setToast("Faculty deleted successfully."); } catch (e) { setToast(getApiErrorMessage(e)); } }} />}</div><Toast message={toast} onClose={() => setToast("")} /></DashboardLayout>;
+}
+
+FacultyManagementPage.pageConfig = { title: "Faculty Management" };
+FacultyManagementPage.facultySubjectAllocationConfig = { title: "Faculty Subject Allocation" };

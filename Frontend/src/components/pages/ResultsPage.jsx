@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import { getApiErrorMessage } from "@/api/axios.js";
@@ -122,7 +122,6 @@ export default function ResultsPage() {
     }
     setLoading(true);
     try {
-      // Step 1: POST /api/v1/results/process
       await processResults({
         boardId: filters.board,
         academicYearId: filters.year,
@@ -132,7 +131,6 @@ export default function ResultsPage() {
         processDate: new Date().toISOString(),
       });
 
-      // Step 2: Processing successful -> GET /api/v1/results with parameters
       const fetchedData = await getResults({
         boardId: filters.board,
         academicYearId: filters.year,
@@ -149,11 +147,9 @@ export default function ResultsPage() {
 
       setToast("Results processed and fetched successfully!");
     } catch (error) {
-      // Fallback to default mock data if API call fails in development environment
       setResultsData(defaultResults);
       setToast("Results processed and loaded successfully.");
     } finally {
-      // Step 3: Display results table
       setResultsGenerated(true);
       setPageStudentResults(1);
       setPageRankResults(1);
@@ -333,12 +329,14 @@ export default function ResultsPage() {
     }, 400);
   };
 
+  const parsePercent = (val) => parseFloat(String(val).replace("%", "")) || 0;
+
   // Analytics Calculations
   const totalStudents = resultsData.length;
   const passStudents = resultsData.filter((r) => r.result === "PASS").length;
   const failStudents = totalStudents - passStudents;
   const overallAvgPercentage = totalStudents > 0 
-    ? (resultsData.reduce((acc, r) => acc + parseFloat(r.percentage), 0) / totalStudents).toFixed(2) 
+    ? (resultsData.reduce((acc, r) => acc + parsePercent(r.percentage), 0) / totalStudents).toFixed(2) 
     : "0.00";
 
   const subjectsList = ["English", "Sanskrit", "Mathematics", "Physics", "Chemistry"];
@@ -361,24 +359,58 @@ export default function ResultsPage() {
       subtitle="Process, review, and publish student academic examination results."
       breadcrumb={["Examinations", "Results Management"]}
     >
-      {/* Theme Font Style Override: Black text on light theme, White text on dark theme */}
+      {/* Dynamic Theme Color Integration matching Project CSS Design Tokens */}
       <style>{`
-        body, .cms-card, .cms-table, .cms-modal-content {
-          color: var(--text-main, #000000);
+        .cms-card, .cms-table, .cms-modal-content {
+          color: var(--cms-text, var(--text-main, #10203c));
+          background-color: var(--cms-surface, #ffffff);
+          border-color: var(--cms-border, #cbd5e1);
         }
-        .dark body, .dark .cms-card, .dark .cms-table, .dark .cms-modal-content,
-        [data-theme="dark"] body, [data-theme="dark"] .cms-card, [data-theme="dark"] .cms-table {
-          color: #ffffff !important;
+        [data-theme="dark"] .cms-card, 
+        [data-theme="dark"] .cms-table, 
+        [data-theme="dark"] .cms-modal-content {
+          color: var(--cms-text, #e2e8f0) !important;
+          background-color: var(--cms-surface, #1e293b) !important;
+          border-color: var(--cms-border, #3d4d68) !important;
         }
-        .cms-table th, .cms-table td, .cms-card-title, .cms-label, .cms-subtitle {
-          color: inherit;
+        .cms-table th {
+          background-color: var(--cms-subtle, #f8fafc);
+          color: var(--cms-muted, #64748b);
+          border-bottom-color: var(--cms-border, #e2e8f0);
+        }
+        [data-theme="dark"] .cms-table th {
+          background-color: var(--cms-subtle, #182338) !important;
+          color: var(--cms-muted, #94a3b8) !important;
+        }
+        .cms-table td {
+          border-bottom-color: var(--cms-border, #f1f5f9);
+        }
+
+        /* Compact Row Spacing & Minimized Width Utilities */
+        .cms-compact-card {
+          max-width: 880px;
+          margin: 0 auto 20px auto;
+        }
+
+        .cms-table-compact th {
+          padding: 6px 10px !important;
+          font-size: 11px !important;
+        }
+
+        .cms-table-compact td {
+          padding: 5px 10px !important;
+          font-size: 12px !important;
+        }
+
+        .cms-table-compact tr {
+          height: 34px !important;
         }
       `}</style>
 
       {/* 1. Sequential Filter Card */}
       <div className="cms-card">
-        <div className="cms-card-body">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div className="cms-card-body" style={{ padding: "16px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <h3 className="cms-card-title">Evaluation Filters</h3>
             <button
               type="button"
@@ -389,11 +421,11 @@ export default function ResultsPage() {
               {loading ? "Generating..." : "Generate Data"}
             </button>
           </div>
-          <p className="cms-subtitle" style={{ marginBottom: 14 }}>
+          <p className="cms-subtitle" style={{ marginBottom: 12 }}>
             Choose the academic context sequentially before reviewing faculty submissions and generating results.
           </p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
             <div className="cms-field-group">
               <label className="cms-label">Board *</label>
               <select
@@ -473,8 +505,8 @@ export default function ResultsPage() {
 
       {/* 2. Instructional Message */}
       {!resultsGenerated && !selectedViewStudent && viewMode === "table" && (
-        <div className="cms-card">
-          <div className="cms-card-body" style={{ textAlign: "center", padding: "28px 20px" }}>
+        <div className="cms-card cms-compact-card">
+          <div className="cms-card-body" style={{ textAlign: "center", padding: "20px 16px" }}>
             <p className="cms-subtitle" style={{ margin: 0, fontWeight: 500 }}>
               {!isAllFiltersSelected
                 ? "Select all required filter fields in order (Board → Academic Year → Academic Level → Group → Examination) to unlock evaluation data."
@@ -486,21 +518,21 @@ export default function ResultsPage() {
 
       {/* 3. Detailed Individual Student Marks Memo View */}
       {selectedViewStudent && (
-        <div className="cms-card">
-          <div className="cms-card-body">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid var(--border-color)", paddingBottom: 12 }}>
+        <div className="cms-card cms-compact-card">
+          <div className="cms-card-body" style={{ padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "1px solid var(--cms-border, #cbd5e1)", paddingBottom: 10 }}>
               <div>
                 <button
                   className="cms-btn cms-btn-ghost"
-                  style={{ marginBottom: 8 }}
+                  style={{ marginBottom: 6, height: "30px", padding: "0 10px", fontSize: "12px" }}
                   onClick={() => setSelectedViewStudent(null)}
                 >
                   <FaArrowLeft /> Back to Results Table
                 </button>
-                <h3 className="cms-card-title" style={{ fontSize: "16px" }}>
+                <h3 className="cms-card-title" style={{ fontSize: "15px" }}>
                   Official Marks Memo - {selectedViewStudent.name}
                 </h3>
-                <span className="cms-subtitle" style={{ marginTop: 2 }}>
+                <span className="cms-subtitle" style={{ marginTop: 2, fontSize: "12px" }}>
                   Roll Number: <strong style={{ color: "inherit" }}>{selectedViewStudent.roll}</strong> | Group: {selectedViewStudent.group} - Section {selectedViewStudent.section}
                 </span>
               </div>
@@ -509,6 +541,7 @@ export default function ResultsPage() {
                 <button
                   type="button"
                   className="cms-btn cms-btn-primary"
+                  style={{ height: "32px", padding: "0 12px", fontSize: "12px" }}
                   onClick={() => handlePrintStudentMemo(selectedViewStudent)}
                 >
                   <FaPrint /> Print Marks Memo
@@ -516,6 +549,7 @@ export default function ResultsPage() {
                 <button
                   type="button"
                   className="cms-btn cms-btn-secondary"
+                  style={{ height: "32px", padding: "0 12px", fontSize: "12px" }}
                   onClick={() => {
                     setResultsData((prev) =>
                       prev.map((r) => (r.id === selectedViewStudent.id ? { ...r, status: "Published", isPublished: true } : r))
@@ -530,15 +564,15 @@ export default function ResultsPage() {
             </div>
 
             <div className="cms-table-wrap">
-              <table className="cms-table">
+              <table className="cms-table cms-table-compact">
                 <thead>
                   <tr>
-                    <th>SUBJECT</th>
-                    <th>THEORY</th>
-                    <th>PRACTICAL</th>
-                    <th>INTERNAL</th>
-                    <th>TOTAL MARKS</th>
-                    <th>GRADE</th>
+                    <th style={{ width: "160px" }}>SUBJECT</th>
+                    <th style={{ width: "80px", textAlign: "center" }}>THEORY</th>
+                    <th style={{ width: "90px", textAlign: "center" }}>PRACTICAL</th>
+                    <th style={{ width: "80px", textAlign: "center" }}>INTERNAL</th>
+                    <th style={{ width: "110px", textAlign: "center" }}>TOTAL MARKS</th>
+                    <th style={{ width: "70px", textAlign: "center" }}>GRADE</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -552,16 +586,16 @@ export default function ResultsPage() {
                         <td className="cms-strong">
                           {subKey}
                           {isPrac && (
-                            <span style={{ fontSize: "9px", marginLeft: 6, color: "#0284c7", background: "rgba(2, 132, 199, 0.1)", padding: "1px 5px", borderRadius: 3, fontWeight: 600 }}>
+                            <span style={{ fontSize: "9px", marginLeft: 6, color: "#0284c7", background: "rgba(2, 132, 199, 0.1)", padding: "1px 4px", borderRadius: 3, fontWeight: 600 }}>
                               Practical
                             </span>
                           )}
                         </td>
-                        <td style={{ fontWeight: 600 }}>{breakdown.theory}</td>
-                        <td>{breakdown.practical}</td>
-                        <td>{breakdown.internal}</td>
-                        <td style={{ fontWeight: 700 }}>{breakdown.total} / 100</td>
-                        <td>
+                        <td style={{ fontWeight: 600, textAlign: "center" }}>{breakdown.theory}</td>
+                        <td style={{ textAlign: "center" }}>{breakdown.practical}</td>
+                        <td style={{ textAlign: "center" }}>{breakdown.internal}</td>
+                        <td style={{ fontWeight: 700, textAlign: "center" }}>{breakdown.total} / 100</td>
+                        <td style={{ textAlign: "center" }}>
                           <span style={{ fontWeight: 700, color: calculateGrade(breakdown.total) === "F" ? "#dc2626" : "#16a34a" }}>
                             {calculateGrade(breakdown.total)}
                           </span>
@@ -573,33 +607,34 @@ export default function ResultsPage() {
               </table>
             </div>
 
-            <div className="cms-memo-summary">
+            <div className="cms-memo-summary" style={{ marginTop: 14, padding: "12px 16px", gap: 12 }}>
               <div>
                 <div className="cms-summary-label">GRAND TOTAL</div>
-                <div className="cms-summary-val">
+                <div className="cms-summary-val" style={{ fontSize: "18px" }}>
                   {selectedViewStudent.total}{" "}
-                  <span style={{ fontSize: "12px", fontWeight: 500, color: "inherit" }}>/ 500</span>
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: "inherit" }}>/ 500</span>
                 </div>
               </div>
               <div>
                 <div className="cms-summary-label">PERCENTAGE</div>
-                <div className="cms-summary-val">{selectedViewStudent.percentage}</div>
+                <div className="cms-summary-val" style={{ fontSize: "18px" }}>{selectedViewStudent.percentage}</div>
               </div>
               <div>
                 <div className="cms-summary-label">OVERALL GRADE</div>
-                <div className="cms-summary-val">{selectedViewStudent.grade}</div>
+                <div className="cms-summary-val" style={{ fontSize: "18px" }}>{selectedViewStudent.grade}</div>
               </div>
 
               <div>
                 <div className="cms-summary-label">FINAL RESULT</div>
-                <div style={{ marginTop: 4 }}>
+                <div style={{ marginTop: 2 }}>
                   <span
                     className="cms-badge"
                     style={{
                       background: selectedViewStudent.result === "PASS" ? "#dcfce7" : "#fee2e2",
                       color: selectedViewStudent.result === "PASS" ? "#15803d" : "#b91c1c",
                       fontWeight: 700,
-                      padding: "4px 10px",
+                      padding: "3px 8px",
+                      fontSize: "11px",
                     }}
                   >
                     {selectedViewStudent.result === "PASS" ? (
@@ -617,8 +652,8 @@ export default function ResultsPage() {
 
               <div>
                 <div className="cms-summary-label">CLASS RANK</div>
-                <div className="cms-summary-val" style={{ color: "#d97706", display: "flex", alignItems: "center", gap: 6 }}>
-                  <FaTrophy style={{ fontSize: "16px" }} />
+                <div className="cms-summary-val" style={{ fontSize: "18px", color: "#d97706", display: "flex", alignItems: "center", gap: 4 }}>
+                  <FaTrophy style={{ fontSize: "14px" }} />
                   #{getStudentRank(selectedViewStudent.id)}
                 </div>
               </div>
@@ -627,35 +662,35 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* 4. INLINE RANK LIST VIEW */}
+      {/* 4. INLINE RANK LIST VIEW (TOTAL MARKS AND MAX MARKS SEPARATED) */}
       {resultsGenerated && !selectedViewStudent && viewMode === "rankList" && (
-        <div className="cms-card">
-          <div className="cms-card-body">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid var(--border-color)", paddingBottom: 12 }}>
+        <div className="cms-card cms-compact-card">
+          <div className="cms-card-body" style={{ padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "1px solid var(--cms-border, #cbd5e1)", paddingBottom: 10 }}>
               <div>
                 <button
                   type="button"
                   className="cms-btn cms-btn-ghost"
-                  style={{ marginBottom: 8 }}
+                  style={{ marginBottom: 6, height: "30px", padding: "0 10px", fontSize: "12px" }}
                   onClick={() => setViewMode("table")}
                 >
                   <FaArrowLeft /> Back to Results Table
                 </button>
-                <h3 className="cms-card-title" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "16px" }}>
+                <h3 className="cms-card-title" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "15px" }}>
                   <FaTrophy style={{ color: "#f59e0b" }} /> Group Class Rank List
                 </h3>
-                <span className="cms-subtitle">
+                <span className="cms-subtitle" style={{ fontSize: "12px" }}>
                   Academic Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong> | Total Evaluated Students: {rankedStudentsWithRanks.length}
                 </span>
               </div>
             </div>
 
-            <div style={{ marginBottom: 12, maxWidth: 320, position: "relative" }}>
-              <FaSearch style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "inherit", fontSize: "12px", opacity: 0.6 }} />
+            <div style={{ marginBottom: 10, maxWidth: 280, position: "relative" }}>
+              <FaSearch style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "inherit", fontSize: "11px", opacity: 0.6 }} />
               <input
                 type="text"
                 className="cms-input"
-                style={{ paddingLeft: 30 }}
+                style={{ paddingLeft: 28, height: "32px", fontSize: "12px" }}
                 placeholder="Search student name or roll to check rank..."
                 value={rankSearchQuery}
                 onChange={(e) => {
@@ -665,17 +700,19 @@ export default function ResultsPage() {
               />
             </div>
 
+            {/* SEPARATED TOTAL MARKS AND MAX MARKS COLUMNS */}
             <div className="cms-table-wrap">
-              <table className="cms-table">
+              <table className="cms-table cms-table-compact">
                 <thead>
                   <tr>
-                    <th style={{ width: "60px", textAlign: "center" }}>RANK</th>
-                    <th style={{ width: "110px" }}>ROLL NUMBER</th>
-                    <th>STUDENT NAME</th>
-                    <th style={{ width: "110px" }}>TOTAL MARKS</th>
-                    <th style={{ width: "100px" }}>PERCENTAGE</th>
-                    <th style={{ width: "70px" }}>GRADE</th>
-                    <th style={{ width: "80px" }}>RESULT</th>
+                    <th style={{ width: "50px", textAlign: "center" }}>RANK</th>
+                    <th style={{ width: "100px" }}>ROLL NUMBER</th>
+                    <th style={{ width: "160px" }}>STUDENT NAME</th>
+                    <th style={{ width: "90px", textAlign: "center" }}>TOTAL MARKS</th>
+                    <th style={{ width: "80px", textAlign: "center" }}>MAX MARKS</th>
+                    <th style={{ width: "85px", textAlign: "center" }}>PERCENTAGE</th>
+                    <th style={{ width: "60px", textAlign: "center" }}>GRADE</th>
+                    <th style={{ width: "70px", textAlign: "center" }}>RESULT</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -693,7 +730,7 @@ export default function ResultsPage() {
                               background: "none",
                               border: "none",
                               padding: 0,
-                              color: "var(--primary-color)",
+                              color: "var(--cms-primary, #2563eb)",
                               cursor: "pointer",
                               fontWeight: 600,
                               fontSize: "12px",
@@ -706,16 +743,19 @@ export default function ResultsPage() {
                             {st.name}
                           </button>
                         </td>
-                        <td style={{ fontWeight: 700 }}>{st.total} / 500</td>
-                        <td style={{ fontWeight: 600 }}>{st.percentage}</td>
-                        <td style={{ fontWeight: 700, color: st.grade === "F" ? "#dc2626" : "#16a34a" }}>{st.grade}</td>
-                        <td>
+                        <td style={{ fontWeight: 700, textAlign: "center" }}>{st.total}</td>
+                        <td style={{ opacity: 0.8, textAlign: "center" }}>{st.maximum || 500}</td>
+                        <td style={{ fontWeight: 600, textAlign: "center" }}>{st.percentage}</td>
+                        <td style={{ fontWeight: 700, textAlign: "center", color: st.grade === "F" ? "#dc2626" : "#16a34a" }}>{st.grade}</td>
+                        <td style={{ textAlign: "center" }}>
                           <span
                             className="cms-badge"
                             style={{
                               background: st.result === "PASS" ? "#dcfce7" : "#fee2e2",
                               color: st.result === "PASS" ? "#15803d" : "#b91c1c",
                               fontWeight: 700,
+                              padding: "2px 8px",
+                              fontSize: "11px",
                             }}
                           >
                             {st.result}
@@ -725,7 +765,7 @@ export default function ResultsPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} style={{ textAlign: "center", padding: 16, color: "inherit", opacity: 0.7 }}>
+                      <td colSpan={8} style={{ textAlign: "center", padding: 12, color: "inherit", opacity: 0.7 }}>
                         No student found matching "{rankSearchQuery}".
                       </td>
                     </tr>
@@ -734,14 +774,15 @@ export default function ResultsPage() {
               </table>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-              <span className="cms-subtitle" style={{ fontSize: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+              <span className="cms-subtitle" style={{ fontSize: "11px" }}>
                 Showing {filteredRankList.length ? (pageRankResults - 1) * pageSize + 1 : 0} to{" "}
                 {Math.min(pageRankResults * pageSize, filteredRankList.length)} of {filteredRankList.length} entries
               </span>
-              <div style={{ display: "flex", gap: 4 }}>
+              <div style={{ display: "flex", gap: 3 }}>
                 <button
                   className="cms-btn cms-btn-ghost"
+                  style={{ height: "28px", padding: "0 8px", fontSize: "11px" }}
                   disabled={pageRankResults === 1}
                   onClick={() => setPageRankResults((p) => Math.max(1, p - 1))}
                 >
@@ -751,7 +792,7 @@ export default function ResultsPage() {
                   <button
                     key={p}
                     className={`cms-btn ${pageRankResults === p ? "cms-btn-primary" : "cms-btn-ghost"}`}
-                    style={{ minWidth: 28, padding: "4px 8px", fontSize: "12px" }}
+                    style={{ minWidth: 24, height: "28px", padding: "0 6px", fontSize: "11px" }}
                     onClick={() => setPageRankResults(p)}
                   >
                     {p}
@@ -759,6 +800,7 @@ export default function ResultsPage() {
                 ))}
                 <button
                   className="cms-btn cms-btn-ghost"
+                  style={{ height: "28px", padding: "0 8px", fontSize: "11px" }}
                   disabled={pageRankResults === totalPagesRankResults}
                   onClick={() => setPageRankResults((p) => Math.min(totalPagesRankResults, p + 1))}
                 >
@@ -770,66 +812,70 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* 5. INLINE ANALYTICS VIEW */}
+      {/* 5. INLINE ANALYTICS VIEW (TOTAL STUDENTS AND PASSED STUDENTS SEPARATED) */}
       {resultsGenerated && !selectedViewStudent && viewMode === "analytics" && (
-        <div className="cms-card">
-          <div className="cms-card-body">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, borderBottom: "1px solid var(--border-color)", paddingBottom: 12 }}>
+        <div className="cms-card cms-compact-card">
+          <div className="cms-card-body" style={{ padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, borderBottom: "1px solid var(--cms-border, #cbd5e1)", paddingBottom: 10 }}>
               <div>
                 <button
                   type="button"
                   className="cms-btn cms-btn-ghost"
-                  style={{ marginBottom: 8 }}
+                  style={{ marginBottom: 6, height: "30px", padding: "0 10px", fontSize: "12px" }}
                   onClick={() => setViewMode("table")}
                 >
                   <FaArrowLeft /> Back to Results Table
                 </button>
-                <h3 className="cms-card-title" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "16px" }}>
+                <h3 className="cms-card-title" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "15px" }}>
                   <FaChartBar style={{ color: "#2563eb" }} /> Examination Analytics Summary
                 </h3>
-                <span className="cms-subtitle">
+                <span className="cms-subtitle" style={{ fontSize: "12px" }}>
                   Academic Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong> | Performance Metrics Overview
                 </span>
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 18 }}>
-              <div className="cms-card" style={{ padding: 12, borderRadius: 6, textAlign: "center", margin: 0 }}>
-                <div style={{ fontSize: "10px", color: "inherit", fontWeight: 700, opacity: 0.8 }}>TOTAL STUDENTS</div>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: "inherit", marginTop: 2 }}>{totalStudents}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+              <div className="cms-card" style={{ padding: 10, borderRadius: 6, textAlign: "center", margin: 0 }}>
+                <div style={{ fontSize: "9px", color: "inherit", fontWeight: 700, opacity: 0.8 }}>TOTAL STUDENTS</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "inherit", marginTop: 2 }}>{totalStudents}</div>
               </div>
-              <div className="cms-card" style={{ padding: 12, borderRadius: 6, textAlign: "center", margin: 0 }}>
-                <div style={{ fontSize: "10px", color: "#166534", fontWeight: 700 }}>PASSED</div>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: "#15803d", marginTop: 2 }}>{passStudents}</div>
+              <div className="cms-card" style={{ padding: 10, borderRadius: 6, textAlign: "center", margin: 0 }}>
+                <div style={{ fontSize: "9px", color: "#166534", fontWeight: 700 }}>PASSED</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#15803d", marginTop: 2 }}>{passStudents}</div>
               </div>
-              <div className="cms-card" style={{ padding: 12, borderRadius: 6, textAlign: "center", margin: 0 }}>
-                <div style={{ fontSize: "10px", color: "#991b1b", fontWeight: 700 }}>FAILED</div>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: "#dc2626", marginTop: 2 }}>{failStudents}</div>
+              <div className="cms-card" style={{ padding: 10, borderRadius: 6, textAlign: "center", margin: 0 }}>
+                <div style={{ fontSize: "9px", color: "#991b1b", fontWeight: 700 }}>FAILED</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#dc2626", marginTop: 2 }}>{failStudents}</div>
               </div>
-              <div className="cms-card" style={{ padding: 12, borderRadius: 6, textAlign: "center", margin: 0 }}>
-                <div style={{ fontSize: "10px", color: "#1e40af", fontWeight: 700 }}>OVERALL AVG %</div>
-                <div style={{ fontSize: "18px", fontWeight: 700, color: "#2563eb", marginTop: 2 }}>{overallAvgPercentage}%</div>
+              <div className="cms-card" style={{ padding: 10, borderRadius: 6, textAlign: "center", margin: 0 }}>
+                <div style={{ fontSize: "9px", color: "#1e40af", fontWeight: 700 }}>OVERALL AVG %</div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#2563eb", marginTop: 2 }}>{overallAvgPercentage}%</div>
               </div>
             </div>
 
-            <h4 style={{ fontSize: "13px", fontWeight: 700, marginBottom: 10 }}>Subject Wise Breakdown</h4>
+            <h4 style={{ fontSize: "12px", fontWeight: 700, marginBottom: 8 }}>Subject Wise Breakdown</h4>
+            
+            {/* SEPARATED TOTAL STUDENTS AND PASSED STUDENTS COLUMNS */}
             <div className="cms-table-wrap">
-              <table className="cms-table">
+              <table className="cms-table cms-table-compact">
                 <thead>
                   <tr>
-                    <th>SUBJECT</th>
-                    <th>AVERAGE SCORE</th>
-                    <th>PASSED STUDENTS</th>
-                    <th>SUBJECT PASS %</th>
+                    <th style={{ width: "150px" }}>SUBJECT</th>
+                    <th style={{ width: "120px", textAlign: "center" }}>AVERAGE SCORE</th>
+                    <th style={{ width: "120px", textAlign: "center" }}>TOTAL STUDENTS</th>
+                    <th style={{ width: "120px", textAlign: "center" }}>PASSED STUDENTS</th>
+                    <th style={{ width: "120px", textAlign: "center" }}>SUBJECT PASS %</th>
                   </tr>
                 </thead>
                 <tbody>
                   {subjectAnalytics.map((sa) => (
                     <tr key={sa.subject}>
                       <td className="cms-strong">{sa.subject}</td>
-                      <td style={{ fontWeight: 600 }}>{sa.average} / 100</td>
-                      <td>{sa.passCount} / {totalStudents}</td>
-                      <td style={{ fontWeight: 700, color: parseFloat(sa.passRate) >= 75 ? "#16a34a" : "#dc2626" }}>
+                      <td style={{ fontWeight: 600, textAlign: "center" }}>{sa.average} / 100</td>
+                      <td style={{ textAlign: "center" }}>{totalStudents}</td>
+                      <td style={{ fontWeight: 600, textAlign: "center" }}>{sa.passCount}</td>
+                      <td style={{ fontWeight: 700, textAlign: "center", color: parseFloat(sa.passRate) >= 75 ? "#16a34a" : "#dc2626" }}>
                         {sa.passRate}%
                       </td>
                     </tr>
@@ -844,15 +890,14 @@ export default function ResultsPage() {
       {/* 6. MAIN RESULTS TABLE VIEW */}
       {resultsGenerated && !selectedViewStudent && viewMode === "table" && (
         <div className="cms-card">
-          <div className="cms-card-body">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 12, flexWrap: "nowrap" }}>
-              {/* EXPANDED SEARCH BAR TO COVER AVAILABLE SPACE */}
+          <div className="cms-card-body" style={{ padding: "16px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 10, flexWrap: "nowrap" }}>
               <div style={{ position: "relative", flex: "1", width: "100%" }}>
-                <FaSearch style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "inherit", fontSize: "12px", opacity: 0.6 }} />
+                <FaSearch style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "inherit", fontSize: "11px", opacity: 0.6 }} />
                 <input
                   type="text"
                   className="cms-input"
-                  style={{ paddingLeft: 30, width: "100%" }}
+                  style={{ paddingLeft: 28, height: "34px", fontSize: "12px", width: "100%" }}
                   value={query}
                   placeholder="Search student or roll number..."
                   onChange={(e) => {
@@ -862,21 +907,21 @@ export default function ResultsPage() {
                 />
               </div>
 
-              {/* ACTION BUTTONS */}
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={() => setConfirm(true)}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                <button type="button" className="cms-btn cms-btn-primary" style={{ height: "34px", padding: "0 12px", fontSize: "12px" }} onClick={() => setConfirm(true)}>
                   Publish
                 </button>
 
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={handleDownloadPDF}>
+                <button type="button" className="cms-btn cms-btn-ghost" style={{ height: "34px", padding: "0 10px", fontSize: "12px" }} onClick={handleDownloadPDF}>
                   <FaFilePdf style={{ color: "#ef4444" }} /> Download
                 </button>
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={handleExportExcel}>
+                <button type="button" className="cms-btn cms-btn-ghost" style={{ height: "34px", padding: "0 10px", fontSize: "12px" }} onClick={handleExportExcel}>
                   <FaFileExcel style={{ color: "#16a34a" }} /> Export
                 </button>
                 <button
                   type="button"
                   className="cms-btn cms-btn-ghost"
+                  style={{ height: "34px", padding: "0 10px", fontSize: "12px" }}
                   onClick={() => {
                     setRankSearchQuery("");
                     setPageRankResults(1);
@@ -888,6 +933,7 @@ export default function ResultsPage() {
                 <button
                   type="button"
                   className="cms-btn cms-btn-ghost"
+                  style={{ height: "34px", padding: "0 10px", fontSize: "12px" }}
                   onClick={() => setViewMode("analytics")}
                 >
                   <FaChartBar style={{ color: "#2563eb" }} /> Analytics
@@ -895,22 +941,21 @@ export default function ResultsPage() {
               </div>
             </div>
 
-            {/* Minimized & Compact Table */}
             <div className="cms-table-wrap">
-              <table className="cms-table">
+              <table className="cms-table cms-table-compact">
                 <thead>
                   <tr>
-                    <th style={{ width: "45px" }}>SL.NO</th>
-                    <th>STUDENT NAME</th>
-                    <th style={{ width: "95px" }}>ROLL NO</th>
-                    <th style={{ width: "50px" }}>GRP</th>
-                    <th style={{ width: "45px" }}>SEC</th>
-                    <th style={{ width: "65px" }}>TOTAL</th>
-                    <th style={{ width: "65px" }}>MAX</th>
-                    <th style={{ width: "75px" }}>PERC</th>
-                    <th style={{ width: "55px" }}>GRADE</th>
-                    <th style={{ width: "70px" }}>RESULT</th>
-                    <th style={{ width: "85px" }}>STATUS</th>
+                    <th style={{ width: "40px" }}>SL.NO</th>
+                    <th style={{ width: "160px" }}>STUDENT NAME</th>
+                    <th style={{ width: "90px" }}>ROLL NO</th>
+                    <th style={{ width: "45px" }}>GRP</th>
+                    <th style={{ width: "40px" }}>SEC</th>
+                    <th style={{ width: "60px", textAlign: "center" }}>TOTAL</th>
+                    <th style={{ width: "50px", textAlign: "center" }}>MAX</th>
+                    <th style={{ width: "65px", textAlign: "center" }}>PERC</th>
+                    <th style={{ width: "50px", textAlign: "center" }}>GRADE</th>
+                    <th style={{ width: "65px", textAlign: "center" }}>RESULT</th>
+                    <th style={{ width: "80px", textAlign: "center" }}>STATUS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -925,7 +970,7 @@ export default function ResultsPage() {
                               background: "none",
                               border: "none",
                               padding: 0,
-                              color: "var(--primary-color)",
+                              color: "var(--cms-primary, #2563eb)",
                               cursor: "pointer",
                               fontWeight: 600,
                               fontSize: "12px",
@@ -942,45 +987,47 @@ export default function ResultsPage() {
                         <td className="cms-strong">{r.roll}</td>
                         <td>{r.group}</td>
                         <td>{r.section}</td>
-                        <td style={{ fontWeight: 700 }}>{r.total}</td>
-                        <td style={{ opacity: 0.7 }}>{r.maximum || 500}</td>
-                        <td style={{ fontWeight: 600 }}>{r.percentage}</td>
-                        <td style={{ fontWeight: 700, color: r.grade === "F" ? "#dc2626" : "#16a34a" }}>
+                        <td style={{ fontWeight: 700, textAlign: "center" }}>{r.total}</td>
+                        <td style={{ opacity: 0.7, textAlign: "center" }}>{r.maximum || 500}</td>
+                        <td style={{ fontWeight: 600, textAlign: "center" }}>{r.percentage}</td>
+                        <td style={{ fontWeight: 700, textAlign: "center", color: r.grade === "F" ? "#dc2626" : "#16a34a" }}>
                           {r.grade}
                         </td>
 
-                        <td>
+                        <td style={{ textAlign: "center" }}>
                           <span
                             className="cms-badge"
                             style={{
                               background: r.result === "PASS" ? "#dcfce7" : "#fee2e2",
                               color: r.result === "PASS" ? "#15803d" : "#b91c1c",
                               fontWeight: 700,
+                              padding: "2px 6px",
+                              fontSize: "10px",
                             }}
                           >
                             {r.result === "PASS" ? (
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaCheck style={{ fontSize: "9px", color: "#15803d" }} /> PASS
+                                <FaCheck style={{ fontSize: "8px", color: "#15803d" }} /> PASS
                               </span>
                             ) : (
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaTimes style={{ fontSize: "9px", color: "#b91c1c" }} /> FAIL
+                                <FaTimes style={{ fontSize: "8px", color: "#b91c1c" }} /> FAIL
                               </span>
                             )}
                           </span>
                         </td>
 
-                        <td>
+                        <td style={{ textAlign: "center" }}>
                           {r.status === "Published" || r.isPublished ? (
-                            <span className="cms-badge cms-badge-active">
+                            <span className="cms-badge cms-badge-active" style={{ padding: "2px 6px", fontSize: "10px" }}>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaCheckCircle style={{ fontSize: "9px", color: "#15803d" }} /> Published
+                                <FaCheckCircle style={{ fontSize: "8px", color: "#15803d" }} /> Published
                               </span>
                             </span>
                           ) : (
-                            <span className="cms-badge" style={{ background: "#fef3c7", color: "#b45309" }}>
+                            <span className="cms-badge" style={{ background: "#fef3c7", color: "#b45309", padding: "2px 6px", fontSize: "10px" }}>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaClock style={{ fontSize: "9px", color: "#b45309" }} /> Draft
+                                <FaClock style={{ fontSize: "8px", color: "#b45309" }} /> Draft
                               </span>
                             </span>
                           )}
@@ -989,7 +1036,7 @@ export default function ResultsPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: "center", padding: 16, opacity: 0.7 }}>
+                      <td colSpan={11} style={{ textAlign: "center", padding: 12, opacity: 0.7 }}>
                         No student records match search.
                       </td>
                     </tr>
@@ -998,14 +1045,15 @@ export default function ResultsPage() {
               </table>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-              <span className="cms-subtitle" style={{ fontSize: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+              <span className="cms-subtitle" style={{ fontSize: "11px" }}>
                 Showing {filteredStudentResults.length ? (pageStudentResults - 1) * pageSize + 1 : 0} to{" "}
                 {Math.min(pageStudentResults * pageSize, filteredStudentResults.length)} of {filteredStudentResults.length} entries
               </span>
-              <div style={{ display: "flex", gap: 4 }}>
+              <div style={{ display: "flex", gap: 3 }}>
                 <button
                   className="cms-btn cms-btn-ghost"
+                  style={{ height: "28px", padding: "0 8px", fontSize: "11px" }}
                   disabled={pageStudentResults === 1}
                   onClick={() => setPageStudentResults((p) => Math.max(1, p - 1))}
                 >
@@ -1015,7 +1063,7 @@ export default function ResultsPage() {
                   <button
                     key={p}
                     className={`cms-btn ${pageStudentResults === p ? "cms-btn-primary" : "cms-btn-ghost"}`}
-                    style={{ minWidth: 28, padding: "4px 8px", fontSize: "12px" }}
+                    style={{ minWidth: 24, height: "28px", padding: "0 6px", fontSize: "11px" }}
                     onClick={() => setPageStudentResults(p)}
                   >
                     {p}
@@ -1023,6 +1071,7 @@ export default function ResultsPage() {
                 ))}
                 <button
                   className="cms-btn cms-btn-ghost"
+                  style={{ height: "28px", padding: "0 8px", fontSize: "11px" }}
                   disabled={pageStudentResults === totalPagesStudentResults}
                   onClick={() => setPageStudentResults((p) => Math.min(totalPagesStudentResults, p + 1))}
                 >
@@ -1037,23 +1086,23 @@ export default function ResultsPage() {
       {/* CONFIRM PUBLISH DIALOG */}
       {confirm && (
         <div className="cms-modal-overlay" onClick={() => setConfirm(false)}>
-          <div className="cms-modal-content" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="cms-modal-header">
-              <h3 className="cms-modal-title">Publish Group Results</h3>
+          <div className="cms-modal-content" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cms-modal-header" style={{ padding: "12px 16px" }}>
+              <h3 className="cms-modal-title" style={{ fontSize: "15px" }}>Publish Group Results</h3>
               <button type="button" className="cms-modal-close" onClick={() => setConfirm(false)}>✕</button>
             </div>
 
-            <div className="cms-modal-body">
-              <p className="cms-subtitle" style={{ margin: 0, fontSize: "13px", lineHeight: 1.6 }}>
+            <div className="cms-modal-body" style={{ padding: "16px" }}>
+              <p className="cms-subtitle" style={{ margin: 0, fontSize: "12px", lineHeight: 1.5 }}>
                 Published results will become immediately visible to students and parents on the Student Portal. Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong>. Continue?
               </p>
             </div>
 
-            <div className="cms-modal-footer">
-              <button type="button" className="cms-btn cms-btn-secondary" onClick={() => setConfirm(false)}>
+            <div className="cms-modal-footer" style={{ padding: "10px 16px" }}>
+              <button type="button" className="cms-btn cms-btn-secondary" style={{ height: "32px", padding: "0 12px", fontSize: "12px" }} onClick={() => setConfirm(false)}>
                 Cancel
               </button>
-              <button type="button" className="cms-btn cms-btn-primary" disabled={loading} onClick={handlePublishResults}>
+              <button type="button" className="cms-btn cms-btn-primary" style={{ height: "32px", padding: "0 12px", fontSize: "12px" }} disabled={loading} onClick={handlePublishResults}>
                 {loading ? "Publishing..." : "Publish Results"}
               </button>
             </div>

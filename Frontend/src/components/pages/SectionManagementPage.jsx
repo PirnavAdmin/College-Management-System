@@ -23,13 +23,30 @@ const nameMap = (items, idKeys, nameKeys) => {
 
 let cachedYears = null;
 let cachedFaculty = null;
+let cachedRooms = null;
+let cachedRoomCodes = {}; // roomName -> roomCode, used to reconcile legacy "101" style values
+
+// Finds the dropdown room name that matches a legacy stored value like "101"
+// by comparing against each room's code (e.g. "Room 101" -> code might be "101").
+const resolveRoomName = (storedValue) => {
+  if (!storedValue) return storedValue;
+  const raw = String(storedValue).trim();
+  const directMatch = Object.keys(cachedRoomCodes).find((name) => name === raw);
+  if (directMatch) return directMatch;
+  const codeMatch = Object.keys(cachedRoomCodes).find((name) => cachedRoomCodes[name] === raw);
+  if (codeMatch) return codeMatch;
+  const looseMatch = Object.keys(cachedRoomCodes).find((name) => name.toLowerCase().endsWith(raw.toLowerCase()));
+  return looseMatch || raw;
+};
 
 const mapRow = (r) => ({
   id: r.sectionId ?? r.id,
+  board: r.board ?? r.boardName ?? "",
+  year: r.academicYearName ?? r.year ?? "",
   name: r.sectionName ?? r.name,
   group: r.group ?? r.groupName,
   level: r.academicLevel ?? r.academicLevelName ?? r.level,
-  room: r.roomNumber ?? r.room,
+  room: resolveRoomName(r.roomNumber ?? r.room),
   teacher: r.classTeacherName ?? r.teacher,
   strength: r.maximumStrength ?? r.strength,
   status: r.isActive === false ? "Inactive" : "Active",
@@ -66,7 +83,24 @@ export const pageConfig = {
     { name: "group", label: "Group", type: "select", options: o.group, required: true },
     { name: "level", label: "Academic Level", type: "select", options: o.level, required: true },
     { name: "name", label: "Section Name", required: true },
-    { name: "room", label: "Room Number", required: true },
+    {
+      name: "room",
+      label: "Room Number",
+      type: "select",
+      required: true,
+      loadOptions: () => apiClient.get(apiEndpoints.rooms.getAll),
+      getOptions: (res) => {
+        const rooms = unwrapList(res.data);
+        cachedRooms = nameMap(rooms, ["roomId", "id"], ["roomName", "name"]);
+        cachedRoomCodes = {};
+        rooms.forEach((r) => {
+          const name = r.roomName ?? r.name;
+          const code = r.roomCode ?? r.code ?? "";
+          if (name) cachedRoomCodes[name] = code;
+        });
+        return cachedRooms.names;
+      },
+    },
     {
       name: "teacher",
       label: "Class Teacher",

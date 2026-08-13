@@ -1,1019 +1,1030 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ToastContainer, toast } from "react-toastify";
-import { Check as FiCheck, Pencil as FiEdit2, Save as FiSave, Trash2 as FiTrash2 } from "lucide-react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import axios from "axios";
 import DashboardLayout from "../layout/DashboardLayout";
+import { env } from "@/config/env.js";
 import "./MarksEntryPage.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || " ";
+/* ============================================================
+   SVG ICON COMPONENTS (Clean inline rendering & zero dependency errors)
+   ============================================================ */
+const IconPencil = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+  </svg>
+);
 
-const getAuthHeaders = () => {
-  const token = localStorage.getItem("token");
-  return {
-    Accept: "application/json",
-    Authorization: token ? `Bearer ${token}` : "",
-    "ngrok-skip-browser-warning": "true"
-  };
+const IconSave = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+    <polyline points="17 21 17 13 7 13 7 21" />
+    <polyline points="7 3 7 8 15 8" />
+  </svg>
+);
+
+const IconCheck = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+const IconXCircle = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <line x1="15" y1="9" x2="9" y2="15" />
+    <line x1="9" y1="9" x2="15" y2="15" />
+  </svg>
+);
+
+const IconSearch = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+
+const API_BASE_URL = env.useDevProxy ? "" : env.apiBaseUrl;
+
+const FALLBACK_SECTIONS = ["Section A", "Section B", "Section C"];
+
+const FALLBACK_EXAMINATIONS = [
+  "Semester I",
+  "Midterm Examination 2025",
+  "Quarterly Assessment 1",
+  "Annual Pre-Board Exam"
+];
+
+// Group to Subjects mapping
+const GROUP_SUBJECTS = {
+  MPC: ["English", "Sanskrit", "Mathematics", "Physics", "Chemistry"],
+  BiPC: ["English", "Sanskrit", "Botany", "Zoology", "Physics", "Chemistry"],
+  CEC: ["English", "Sanskrit", "Civics", "Economics", "Commerce"],
+  MEC: ["English", "Sanskrit", "Mathematics", "Economics", "Commerce"]
 };
 
-const apiRequest = async (path, options = {}) => {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: { ...getAuthHeaders(), ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers }
+
+// Subject Faculty Mapping
+const SUBJECT_FACULTY = {
+  English: "Lakshmi",
+  Sanskrit: "Suresh",
+  Mathematics: "Ravi Kumar",
+  Physics: "Naresh",
+  Chemistry: "Kiran",
+  Botany: "Dr. S. Reddy",
+  Zoology: "Dr. P. Varma",
+  Civics: "M. Narayana",
+  Economics: "K. Swamy",
+  Commerce: "V. Rao"
+};
+
+const SUBJECT_CODES = {
+  English: "ENG101",
+  Sanskrit: "SAN101",
+  Mathematics: "MAT101",
+  Physics: "PHY101",
+  Chemistry: "CHE101",
+  Botany: "BOT101",
+  Zoology: "ZOO101",
+  Civics: "CIV101",
+  Economics: "ECO101",
+  Commerce: "COM101"
+};
+
+const FACULTY_IDS = {
+  Lakshmi: "FAC1001",
+  Suresh: "FAC1002",
+  "Ravi Kumar": "FAC1003",
+  Naresh: "FAC1004",
+  Kiran: "FAC1005",
+  "Dr. S. Reddy": "FAC1006",
+  "Dr. P. Varma": "FAC1007",
+  "M. Narayana": "FAC1008",
+  "K. Swamy": "FAC1009",
+  "V. Rao": "FAC1010"
+};
+
+const STUDENTS_PER_PAGE = 10;
+const STUDENT_MARKS_PER_PAGE = 10;
+const MARK_LIMITS = { internal: 30, theory: 70, practical: 30 };
+
+const TOAST_MESSAGES = {
+  FETCH_SUCCESS: (group, section) =>
+    `Evaluation data loaded successfully for ${group} - ${section}`,
+  FETCH_ERROR: "Failed to load evaluation data.",
+  EDIT_STARTED: (subject) => `${subject} evaluation opened in edit mode.`,
+  EDIT_CANCELLED: (subject) => `Changes discarded for ${subject}.`,
+  MARKS_SAVED: (subject) => `${subject} marks updated successfully.`,
+  VERIFIED: (subject) => `${subject} evaluation verified successfully.`,
+  APPROVED: (subject) => `${subject} evaluation approved successfully.`,
+  REJECTED: (subject) => `${subject} evaluation rejected.`,
+  STATUS_UPDATED: (subject, status) =>
+    `${subject} status changed to ${status}.`,
+  INVALID_MARK: (field, limit) => `${field} marks cannot exceed ${limit}.`
+};
+
+// PRACTICAL SUBJECTS RULE:
+// Physics, Chemistry, Zoology, Botany have practical marks.
+// All other subjects have Theory & Internal ONLY!
+const PRACTICAL_SUBJECT_NAMES = ["physics", "chemistry", "zoology", "botany"];
+
+const isPracticalSubject = (subjectName) => {
+  if (!subjectName) return false;
+  const name = String(subjectName).toLowerCase().trim();
+  return PRACTICAL_SUBJECT_NAMES.some((p) => name.includes(p));
+};
+
+// Student list template
+const INITIAL_STUDENTS_BASE = [
+  { id: 101, rollNo: "MPC001", studentName: "Rahul" },
+  { id: 102, rollNo: "MPC002", studentName: "Ramesh" },
+  { id: 103, rollNo: "MPC003", studentName: "Sai Kiran" },
+  { id: 104, rollNo: "MPC004", studentName: "Ananya Reddy" },
+  { id: 105, rollNo: "MPC005", studentName: "Venkatesh" },
+  { id: 106, rollNo: "MPC006", studentName: "Priyanka" }
+];
+
+const DEFAULT_SUBJECT_STATUSES = {
+  English: "SUBMITTED",
+  Sanskrit: "SUBMITTED",
+  Mathematics: "SUBMITTED",
+  Physics: "SUBMITTED",
+  Chemistry: "SUBMITTED",
+  Botany: "SUBMITTED",
+  Zoology: "SUBMITTED",
+  Civics: "SUBMITTED",
+  Economics: "SUBMITTED",
+  Commerce: "SUBMITTED"
+};
+
+// Helpers
+const calculateTotal = (row, isPractical) => {
+  const internal = Number(row.internal) || 0;
+  const theory = Number(row.theory) || 0;
+  const practical = isPractical ? Number(row.practical) || 0 : 0;
+  return internal + theory + practical;
+};
+
+const getGrade = (totalMarks, maxMarks = 100) => {
+  const pct = (totalMarks / maxMarks) * 100;
+  if (pct >= 90) return "A+";
+  if (pct >= 80) return "A";
+  if (pct >= 70) return "B+";
+  if (pct >= 60) return "B";
+  if (pct >= 50) return "C";
+  if (pct >= 40) return "D";
+  return "F";
+};
+
+/* ============================================================
+   MAIN MARKS ENTRY COMPONENT
+   ============================================================ */
+export default function MarksEntryPage() {
+  const [filters, setFilters] = useState({
+    board: "",
+    academicYear: "",
+    academicLevel: "",
+    group: "",
+    section: "",
+    examination: ""
   });
-  const text = await response.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = text;
-  }
-  if (!response.ok) {
-    const message = data?.message ?? data?.title ?? (typeof data === "string" ? data : "API request failed");
-    throw new Error(message);
-  }
-  return data;
-};
 
-const normalized = (value) => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const [ready, setReady] = useState(false);
+  const [activeTab, setActiveTab] = useState("evaluations");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
 
-// Fallback Data definitions
-const FALLBACK_ACADEMIC_YEARS = [
-  { id: 1, year: "2025-2026" },
-  { id: 2, year: "2026-2027" }
-];
-const FALLBACK_SECTIONS = [
-  { id: 1, sectionName: "Section A" },
-  { id: 2, sectionName: "Section B" }
-];
-const FALLBACK_SUBJECTS = [
-  { subjectId: 1, subjectName: "Mathematics", subjectCode: "MATH101", passingMarks: 35 },
-  { subjectId: 2, subjectName: "Physics", subjectCode: "PHY101", passingMarks: 35 },
-  { subjectId: 3, subjectName: "Chemistry", subjectCode: "CHEM101", passingMarks: 35 }
-];
-const FALLBACK_STUDENTS = [
-  { studentId: 101, rollNo: "UG2026001", studentName: "Rahul Kumar" },
-  { studentId: 102, rollNo: "UG2026002", studentName: "Sai Kiran" },
-  { studentId: 103, rollNo: "UG2026003", studentName: "Ananya Reddy" }
-].map((s) => ({
-  ...s,
-  markId: null,
-  internalMarks: "",
-  practicalMarks: "",
-  theoryMarks: "",
-  passingMarks: 35,
-  verified: false
-}));
+  const [evaluations, setEvaluations] = useState([]);
+  const [subjectMarksData, setSubjectMarksData] = useState({});
 
-const blankFilters = {
-  board: "",
-  academicYearId: "",
-  academicLevel: "",
-  groupId: "",
-  sectionId: "",
-  examinationId: "",
-  subjectId: ""
-};
-const fieldLabels = {
-  board: "Board",
-  academicYearId: "Academic Year",
-  academicLevel: "Academic Level",
-  groupId: "Group",
-  sectionId: "Section",
-  examinationId: "Examination",
-  subjectId: "Subject"
-};
-
-const totalOf = (s) =>
-  (Number(s.internalMarks) || 0) + (Number(s.practicalMarks) || 0) + (Number(s.theoryMarks) || 0);
-const isComplete = (s) => s.internalMarks !== "" && s.practicalMarks !== "" && s.theoryMarks !== "";
-const gradeOf = (total) =>
-  total >= 90 ? "A+" : total >= 80 ? "A" : total >= 70 ? "B+" : total >= 60 ? "B" : total >= 50 ? "C" : total >= 40 ? "D" : "F";
-const validateMark = (value, maximum) =>
-  value === "" || value === null || value === undefined
-    ? "Required"
-    : !/^\d+$/.test(String(value))
-    ? "Whole numbers only"
-    : Number(value) > maximum
-    ? `0-${maximum} max`
-    : "";
-const markErrors = (s) => ({
-  internalMarks: s.internalMarks === "" ? "" : validateMark(s.internalMarks, 30),
-  practicalMarks: s.practicalMarks === "" ? "" : validateMark(s.practicalMarks, 30),
-  theoryMarks: s.theoryMarks === "" ? "" : validateMark(s.theoryMarks, 40)
-});
-const isStudentValid = (s) => Object.values(markErrors(s)).every((error) => !error);
-const extractArray = (response) =>
-  Array.isArray(response)
-    ? response
-    : ["data", "items", "result", "records"].find((key) => Array.isArray(response?.[key]))
-    ? response[["data", "items", "result", "records"].find((key) => Array.isArray(response?.[key]))]
-    : null;
-const asValue = (value) => (value === null || value === undefined ? "" : String(value));
-
-function GradeBadge({ total, complete }) {
-  const grade = complete ? gradeOf(total) : "—";
-  return (
-    <span className={`cms-badge-grade ${complete ? `cms-grade-${grade.toLowerCase().replace("+", "-plus")}` : "cms-is-empty"}`}>
-      {grade}
-    </span>
-  );
-}
-
-function StatusBadge({ verified }) {
-  return (
-    <span className={`cms-badge-status ${verified ? "cms-status-verified" : "cms-status-pending"}`}>
-      <span className="cms-badge-dot" />
-      {verified ? "Verified" : "Pending"}
-    </span>
-  );
-}
-
-export default function MarksEntry() {
-  const [boards, setBoards] = useState([]);
+  const [selectedEvaluation, setSelectedEvaluation] = useState(null);
+  const [modalRows, setModalRows] = useState([]);
+  const [isEditing, setIsEditing] = useState(false);
+  const [viewMode, setViewMode] = useState("list");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [studentMarksPage, setStudentMarksPage] = useState(1);
   const [academicYears, setAcademicYears] = useState([]);
+  const [boards, setBoards] = useState([]);
   const [academicLevels, setAcademicLevels] = useState([]);
   const [groups, setGroups] = useState([]);
-  const [sections, setSections] = useState([]);
-  const [exams, setExams] = useState([]);
-  const [subjects, setSubjects] = useState([]);
-  const [filters, setFilters] = useState(blankFilters);
-  const [filterErrors, setFilterErrors] = useState({});
-  const [apiFieldErrors, setApiFieldErrors] = useState({});
-  const [students, setStudents] = useState([]);
-  const [rowErrors, setRowErrors] = useState({});
-  const [editingIds, setEditingIds] = useState(new Set());
-  const [selectedVerifyIds, setSelectedVerifyIds] = useState(new Set());
-  const [activeTab, setActiveTab] = useState("entry");
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [boardInfoOpen, setBoardInfoOpen] = useState(false);
+  const [dropdownErrors, setDropdownErrors] = useState({});
 
-  const loadOptions = useCallback(async (url, fallback, setOptions, errorField, errorMessage) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}${url}`, { headers: getAuthHeaders() });
-      const items = response.ok ? extractArray(await response.json()) : null;
-      if (!items?.length) throw new Error("No usable data");
-      setOptions(items);
-      setApiFieldErrors((previous) => ({ ...previous, [errorField]: undefined }));
-    } catch {
-      setOptions(fallback);
-      setApiFieldErrors((previous) => ({ ...previous, [errorField]: errorMessage }));
-    }
-  }, []);
+  const getRequestConfig = () => {
+    const token = localStorage.getItem("token");
 
-  useEffect(() => {
-    loadOptions("/api/v1/boards", [], setBoards, "board", "Unable to load boards. Please try again.");
-    loadOptions("/api/v1/academic-years", FALLBACK_ACADEMIC_YEARS, setAcademicYears, "academicYearId", "Unable to load academic years. Please try again.");
-    loadOptions("/api/v1/boards/academic-levels", [], setAcademicLevels, "academicLevel", "Unable to load academic levels. Please try again.");
-    loadOptions("/api/v1/groups?pageNumber=1&pageSize=20", [], setGroups, "groupId", "Unable to load groups. Please try again.");
-    loadOptions("/api/v1/examinations", [], setExams, "examinationId", "Unable to load examinations. Please try again.");
-    loadOptions("/api/v1/Sections", FALLBACK_SECTIONS, setSections, "sectionId", "Unable to load sections. Using temporary sections.");
-  }, [loadOptions]);
-
-  useEffect(() => {
-    if (!filters.groupId) {
-      setSubjects([]);
-      return;
-    }
-    loadOptions(`/api/v1/subjects/group/${filters.groupId}`, FALLBACK_SUBJECTS, setSubjects, "subjectId", "Unable to load subjects. Please try again.");
-  }, [filters.groupId, loadOptions]);
-
-  const allFiltersSelected = useMemo(() => Object.values(filters).every(Boolean), [filters]);
-  const selectedBoard = useMemo(
-    () => boards.find((board) => String(board.boardId ?? board.id) === String(filters.board)),
-    [boards, filters.board]
-  );
-  const selectedBoardLabel = selectedBoard
-    ? [selectedBoard.boardCode ?? selectedBoard.code, selectedBoard.boardName ?? selectedBoard.name].filter(Boolean).join(" — ")
-    : "";
-  const selectedGroup = useMemo(
-    () => groups.find((group) => String(group.groupId ?? group.id) === String(filters.groupId)),
-    [filters.groupId, groups]
-  );
-  const availableSections = useMemo(() => {
-    if (!selectedGroup) return [];
-    const groupName = normalized(selectedGroup.groupName ?? selectedGroup.name);
-    return sections.filter((section) => {
-      const sectionGroup = normalized(section.group ?? section.groupName);
-      return !sectionGroup || sectionGroup === groupName;
-    });
-  }, [sections, selectedGroup]);
-  const fieldError = useCallback((name) => apiFieldErrors[name] ?? filterErrors[name], [apiFieldErrors, filterErrors]);
-  const visibleStudents = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return term
-      ? students.filter((s) => s.rollNo.toLowerCase().includes(term) || s.studentName.toLowerCase().includes(term))
-      : students;
-  }, [search, students]);
-
-  const stats = useMemo(() => {
-    const entered = students.filter(isComplete);
-    const totals = entered.map(totalOf);
-    return {
-      total: students.length,
-      entered: entered.length,
-      verified: students.filter((s) => s.verified).length,
-      pending: students.filter((s) => !s.verified).length,
-      average: totals.length ? Math.round(totals.reduce((sum, value) => sum + value, 0) / totals.length) : 0,
-      highest: totals.length ? Math.max(...totals, 0) : 0
-    };
-  }, [students]);
-
-  const submitBlocker = useMemo(
-    () =>
-      !students.length
-        ? "Load student records before submitting."
-        : !students.some((student) => student.verified && !student.submitted)
-        ? "Verify at least one student before submission."
-        : "",
-    [students]
-  );
-
-  const mapStudent = useCallback(
-    (student, mark = {}) => ({
-      studentId: student.studentId ?? student.student_id ?? student.id ?? mark.studentId ?? mark.student_id,
-      rollNo: student.rollNo ?? student.roll_no ?? mark.rollNo ?? mark.roll_no ?? "—",
-      studentName: student.studentName ?? student.student_name ?? student.name ?? mark.studentName ?? mark.student_name ?? "Student",
-      markId: mark.markId ?? mark.mark_id ?? mark.id ?? null,
-      internalMarks: asValue(mark.internalMarks ?? mark.internal_marks ?? student.internalMarks ?? student.internal_marks),
-      practicalMarks: asValue(mark.practicalMarks ?? mark.practical_marks ?? student.practicalMarks ?? student.practical_marks),
-      theoryMarks: asValue(mark.theoryMarks ?? mark.theory_marks ?? student.theoryMarks ?? student.theory_marks),
-      passingMarks: Number(mark.passingMarks ?? mark.passing_marks ?? student.passingMarks ?? student.passing_marks) || 35,
-      verified: Boolean(mark.verified ?? mark.isVerified ?? mark.is_verified ?? student.verified),
-      submitted: Boolean(mark.submitted ?? mark.isSubmitted ?? mark.is_submitted ?? student.submitted)
-    }),
-    []
-  );
-
-  const changeFilter = useCallback((name, value) => {
-    setFilters((previous) => ({
-      ...previous,
-      [name]: value,
-      ...(name === "groupId" ? { subjectId: "", sectionId: "" } : {})
-    }));
-    setFilterErrors((previous) => ({ ...previous, [name]: undefined }));
-  }, []);
-
-  const validateFilter = useCallback(
-    (name) =>
-      setFilterErrors((previous) => ({
-        ...previous,
-        [name]: filters[name] ? undefined : `Select ${fieldLabels[name]}`
-      })),
-    [filters]
-  );
-
-  const checkStudents = useCallback(async () => {
-    const errors = Object.fromEntries(
-      Object.entries(filters)
-        .filter(([, value]) => !value)
-        .map(([name]) => [name, `Select ${fieldLabels[name]}`])
-    );
-    setFilterErrors(errors);
-    if (Object.keys(errors).length) {
-      toast.error("Please complete all assessment filters.");
-      return;
-    }
-    setLoading(true);
-    setRowErrors({});
-    setSelectedVerifyIds(new Set());
-    setSearch("");
-    setActiveTab("entry");
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/students`, { headers: getAuthHeaders() });
-      const records = response.ok ? extractArray(await response.json()) : null;
-      if (!records?.length) throw new Error("No usable data");
-      const loaded = records.map((record) => mapStudent(record, record)).filter((student) => student.studentId !== undefined);
-      if (!loaded.length) throw new Error("Missing student fields");
-      setStudents(loaded);
-      setEditingIds(new Set(loaded.filter((student) => !student.markId && !student.verified).map((student) => student.studentId)));
-      toast.success("Students loaded successfully.");
-    } catch(error){
-      console.error("Failed to load students:", error);
-
-    // Do NOT load fallback/mock students
-    setStudents([]);
-    setEditingIds(new Set());
-    setSelectedVerifyIds(new Set());
-    setRowErrors({});
-
-    toast.error(
-      error?.message ||
-        "Unable to load students. Please check your connection and try again."
-    );
-      
-    } finally {
-      setLoading(false);
-    }
-  }, [filters, mapStudent]);
-
-  const changeMark = useCallback((studentId, field, value) => {
-    if (value !== "" && !/^\d*$/.test(value)) return;
-    setStudents((previous) =>
-      previous.map((student) =>
-        student.studentId === studentId && !student.verified && !student.submitted
-          ? { ...student, [field]: value, verified: false }
-          : student
-      )
-    );
-    setRowErrors((previous) => ({
-      ...previous,
-      [studentId]: {
-        ...previous[studentId],
-        [field]: value === "" ? "" : validateMark(value, field === "theoryMarks" ? 40 : 30)
-      }
-    }));
-  }, []);
-
-  const payloadFor = useCallback(
-    (records) => ({
-      marks: records.map((student) => ({
-        board: String(filters.board),
-        academicYearId: Number(filters.academicYearId),
-        academicLevel: String(filters.academicLevel),
-        groupId: Number(filters.groupId),
-        sectionId: Number(filters.sectionId),
-        examinationId: Number(filters.examinationId),
-        subjectId: Number(filters.subjectId),
-        studentId: Number(student.studentId),
-        rollNo: String(student.rollNo),
-        studentName: String(student.studentName),
-        internalMarks: Number(student.internalMarks) || 0,
-        practicalMarks: Number(student.practicalMarks) || 0,
-        theoryMarks: Number(student.theoryMarks) || 0,
-        passingMarks: Number(student.passingMarks) || 35
-      }))
-    }),
-    [filters]
-  );
-
-  const saveMarks = useCallback(
-    async (ids) => {
-      const records = students.filter((student) => ids.includes(student.studentId));
-      if (records.length !== 1) {
-        toast.error("Save marks one student at a time.");
-        return false;
-      }
-      const [student] = records;
-      const errors = { [student.studentId]: markErrors(student) };
-      setRowErrors((previous) => ({ ...previous, ...errors }));
-      if (Object.values(errors).some((row) => Object.values(row).some(Boolean))) {
-        toast.error("Please fix all mark validation errors.");
-        return false;
-      }
-      try {
-        const updatePayload = {
-          internalMarks: Number(student.internalMarks),
-          practicalMarks: Number(student.practicalMarks),
-          theoryMarks: Number(student.theoryMarks),
-          passingMarks: Number(student.passingMarks) || 35
-        };
-        const response = student.markId
-          ? await apiRequest(`/api/v1/marks/${student.markId}`, { method: "PUT", body: JSON.stringify(updatePayload) })
-          : await apiRequest("/api/v1/marks", { method: "POST", body: JSON.stringify(payloadFor([student]).marks[0]) });
-        const savedMark = response?.data ?? response?.result ?? response;
-        const savedMarkId = savedMark?.markId ?? savedMark?.mark_id ?? savedMark?.id ?? student.markId;
-
-        if (!savedMarkId) {
-          throw new Error("Marks were saved, but the server did not return a mark ID.");
+    return token
+      ? {
+          headers: {
+            Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}`
+          }
         }
-        setStudents((previous) =>
-          previous.map((item) => (item.studentId === student.studentId ? { ...item, markId: savedMarkId } : item))
-        );
-        setEditingIds((previous) => {
-          const next = new Set(previous);
-          next.delete(student.studentId);
-          return next;
-        });
-        toast.success(student.markId ? "Marks updated successfully." : "Marks saved successfully.");
-        return true;
-      } catch (error) {
-        console.error("Failed to save marks:", error);
-        toast.error(error.message || "Unable to save marks. Please try again.");
-        return false;
-      }
-    },
-    [payloadFor, students]
-  );
+      : {};
+  };
 
-  const editRow = useCallback((id) => setEditingIds((previous) => new Set([...previous, id])), []);
-
-  const deleteMark = useCallback(
-    async (studentId) => {
-      const student = students.find((item) => item.studentId === studentId);
-      if (!student?.markId) {
-        toast.error("This student's marks have not been saved yet.");
-        return;
-      }
-      if (!window.confirm(`Delete marks for ${student.studentName}?`)) return;
-
-      try {
-        await apiRequest(`/api/v1/marks/${student.markId}`, { method: "DELETE" });
-        setStudents((previous) =>
-          previous.map((item) =>
-            item.studentId === studentId
-              ? { ...item, markId: null, internalMarks: "", practicalMarks: "", theoryMarks: "", verified: false, submitted: false }
-              : item
-          )
-        );
-        setEditingIds((previous) => new Set([...previous, studentId]));
-        setSelectedVerifyIds((previous) => {
-          const next = new Set(previous);
-          next.delete(studentId);
-          return next;
-        });
-        setRowErrors((previous) => {
-          const next = { ...previous };
-          delete next[studentId];
-          return next;
-        });
-        toast.success("Marks deleted successfully.");
-      } catch (error) {
-        console.error("Failed to delete marks:", error);
-        toast.error(error.message || "Unable to delete marks. Please try again.");
-      }
-    },
-    [students]
-  );
-
-  const verifyStudent = useCallback(
-    async (studentId) => {
-      const student = students.find((item) => item.studentId === studentId);
-      const eligible =
-        student &&
-        !student.verified &&
-        !student.submitted &&
-        isComplete(student) &&
-        isStudentValid(student) &&
-        Boolean(student.markId) &&
-        !editingIds.has(studentId);
-      if (!eligible) {
-        toast.error("Save complete marks before verifying this student.");
-        return;
-      }
-
-      try {
-        await apiRequest("/api/v1/marks/verify", {
-          method: "POST",
-          body: JSON.stringify({
-            examinationId: Number(filters.examinationId),
-            subjectId: Number(filters.subjectId),
-            sectionId: Number(filters.sectionId),
-            verifiedBy: "Evaluator"
-          })
-        });
-        setStudents((previous) =>
-          previous.map((item) => (item.studentId === studentId ? { ...item, verified: true } : item))
-        );
-        setSelectedVerifyIds((previous) => {
-          const next = new Set(previous);
-          next.delete(studentId);
-          return next;
-        });
-        toast.success(`${student.studentName}'s marks verified successfully.`);
-      } catch (error) {
-        console.error("Failed to verify marks:", error);
-        toast.error(error.message || "Unable to verify marks. Please try again.");
-      }
-    },
-    [editingIds, filters, students]
-  );
-
-  const verifyAllEligible = useCallback(async () => {
-    const eligible = students.filter(
-      (student) =>
-        selectedVerifyIds.has(student.studentId) &&
-        !student.verified &&
-        isComplete(student) &&
-        isStudentValid(student) &&
-        student.markId &&
-        !editingIds.has(student.studentId)
-    );
-    const skipped = students.filter((student) => !student.verified).length - eligible.length;
-    if (!eligible.length) {
-      toast.error("No eligible saved students are ready for verification.");
-      return;
-    }
-    const verifyPayload = {
-      examinationId: Number(filters.examinationId),
-      subjectId: Number(filters.subjectId),
-      sectionId: Number(filters.sectionId),
-      verifiedBy: "Evaluator"
-    };
+  const fetchAcademicYears = async () => {
     try {
-      await apiRequest("/api/v1/marks/verify", {
-        method: "POST",
-        body: JSON.stringify(verifyPayload)
-      });
-    } catch (error) {
-      console.error("Failed to verify marks:", error);
-      toast.error(error.message || "Unable to verify marks. Please try again.");
-      return;
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/academic-years`,
+        getRequestConfig()
+      );
+      setAcademicYears(
+        Array.isArray(response.data?.data)
+          ? response.data.data.map((item) => ({
+              label: item.academicYearName,
+              value: item.academicYearId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, academicYear: false }));
+    } catch {
+      setAcademicYears([]);
+      setDropdownErrors((prev) => ({ ...prev, academicYear: true }));
     }
-    const eligibleIds = new Set(eligible.map((student) => student.studentId));
-    setStudents((previous) => previous.map((student) => (eligibleIds.has(student.studentId) ? { ...student, verified: true } : student)));
-    setSelectedVerifyIds(new Set());
-    toast.success(`Verified: ${eligible.length}. Skipped: ${skipped}.`);
-  }, [editingIds, filters, selectedVerifyIds, students]);
+  };
 
-  const eligibleVerifyIds = useMemo(
-    () =>
-      students
-        .filter(
-          (student) =>
-            !student.verified &&
-            isComplete(student) &&
-            isStudentValid(student) &&
-            student.markId &&
-            !editingIds.has(student.studentId)
-        )
-        .map((student) => student.studentId),
-    [editingIds, students]
-  );
+  const fetchBoards = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/boards`, getRequestConfig());
+      setBoards(
+        Array.isArray(response.data?.items)
+          ? response.data.items.map((item) => ({
+              label: item.boardName,
+              value: item.boardId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, board: false }));
+    } catch {
+      setBoards([]);
+      setDropdownErrors((prev) => ({ ...prev, board: true }));
+    }
+  };
+
+  const fetchAcademicLevels = async () => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/boards/academic-levels`,
+        getRequestConfig()
+      );
+      setAcademicLevels(
+        Array.isArray(response.data)
+          ? response.data.map((item) => ({
+              label: item.levelName,
+              value: item.academicLevelId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, academicLevel: false }));
+    } catch {
+      setAcademicLevels([]);
+      setDropdownErrors((prev) => ({ ...prev, academicLevel: true }));
+    }
+  };
+
+  const fetchGroups = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/groups`, getRequestConfig());
+      setGroups(
+        Array.isArray(response.data)
+          ? response.data.map((item) => ({
+              label: item.groupName,
+              value: item.groupId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, group: false }));
+    } catch {
+      setGroups([]);
+      setDropdownErrors((prev) => ({ ...prev, group: true }));
+    }
+  };
 
   useEffect(() => {
-    if (activeTab === "verify") setSelectedVerifyIds(new Set(eligibleVerifyIds));
-  }, [activeTab, eligibleVerifyIds]);
+    fetchAcademicYears();
+    fetchBoards();
+    fetchAcademicLevels();
+    fetchGroups();
+  }, []);
 
-  const toggleVerifyStudent = useCallback(
-    (id) =>
-      setSelectedVerifyIds((previous) => {
-        const next = new Set(previous);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      }),
-    []
-  );
 
-  const submitEvaluation = useCallback(async () => {
-    if (submitBlocker) {
-      toast.error(submitBlocker);
-      return;
-    }
-    const verifiedStudents = students.filter((student) => student.verified && !student.submitted);
-    const isSingleStudentSubmission = verifiedStudents.length === 1;
-    const bulkPayload = payloadFor(verifiedStudents);
-    const endpoint = isSingleStudentSubmission ? "/api/v1/marks" : "/api/v1/marks/bulk";
-    const requestBody = isSingleStudentSubmission ? bulkPayload.marks[0] : bulkPayload;
 
-    try {
-      await apiRequest(endpoint, {
-        method: "POST",
-        body: JSON.stringify(requestBody)
+  const showToast = useCallback((message, type = "success") => {
+    const id = Date.now();
+    setToastMessage({ id, msg: message, type });
+    setTimeout(() => setToastMessage(null), 3500);
+  }, []);
+
+  const handleFilterChange = (key, value) => {
+    setReady(false);
+    setSelectedEvaluation(null);
+    setViewMode("list");
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === "board") {
+        next.academicYear = "";
+        next.academicLevel = "";
+        next.group = "";
+        next.section = "";
+        next.examination = "";
+      } else if (key === "academicYear") {
+        next.academicLevel = "";
+        next.group = "";
+        next.section = "";
+        next.examination = "";
+      } else if (key === "academicLevel") {
+        next.group = "";
+        next.section = "";
+        next.examination = "";
+      } else if (key === "group") {
+        next.section = "";
+        next.examination = "";
+      } else if (key === "section") {
+        next.examination = "";
+      }
+      return next;
+    });
+  };
+
+  const isAllFiltersSelected = useMemo(() => {
+    return Boolean(
+      filters.board &&
+      filters.academicYear &&
+      filters.academicLevel &&
+      filters.group &&
+      filters.section &&
+      filters.examination
+    );
+  }, [filters]);
+
+  const handleFetchData = () => {
+    if (!isAllFiltersSelected) return;
+
+    const group = filters.group || "MPC";
+    const subjects = GROUP_SUBJECTS[group] || GROUP_SUBJECTS.MPC;
+    const sectionShort = filters.section.replace(/Section\s*/i, "").trim() || "A";
+
+    const newEvaluations = subjects.map((subj, index) => {
+      const facultyName = SUBJECT_FACULTY[subj] || "Faculty Instructor";
+      return {
+        evaluationId: `EV-${1000 + index + 1}`,
+        subjectName: subj,
+        subjectCode: SUBJECT_CODES[subj],
+        facultyName,
+        facultyId: FACULTY_IDS[facultyName],
+        studentsCount: INITIAL_STUDENTS_BASE.length * 10,
+        status: DEFAULT_SUBJECT_STATUSES[subj] || "SUBMITTED"
+      };
+    });
+
+    const newSubjectMarksData = {};
+
+    subjects.forEach((subj) => {
+      const isPractical = isPracticalSubject(subj);
+
+      newSubjectMarksData[subj] = INITIAL_STUDENTS_BASE.map((stu, idx) => {
+        const rollNo = `${group}${sectionShort}00${idx + 1}`;
+        const internal = 20 + (idx % 3);
+        const theory = isPractical ? 60 + idx * 2 : 65 + idx * 3;
+        const practical = isPractical ? 18 + (idx % 3) : 0;
+
+        return {
+          studentId: stu.id,
+          rollNo: rollNo,
+          studentName: stu.studentName,
+          internal: internal,
+          theory: theory,
+          practical: practical
+        };
       });
-      setStudents((previous) =>
-        previous.map((student) => (student.verified && !student.submitted ? { ...student, submitted: true } : student))
-      );
-      toast.success(isSingleStudentSubmission ? "Evaluation submitted for 1 student." : `Evaluation submitted for ${verifiedStudents.length} students.`);
-    } catch (error) {
-      console.error("Failed to submit evaluation:", error);
-      toast.error(error.message || "Unable to submit evaluation. Please try again.");
-    }
-  }, [payloadFor, students, submitBlocker]);
+    });
 
-  const clearMarks = useCallback(() => {
-    setStudents((previous) =>
-      previous.map((student) =>
-        student.submitted ? student : { ...student, markId: null, internalMarks: "", practicalMarks: "", theoryMarks: "", verified: false }
+    setEvaluations(newEvaluations);
+    setSubjectMarksData(newSubjectMarksData);
+    setStudentMarksPage(1);
+    setReady(true);
+    // showToast(TOAST_MESSAGES.FETCH_SUCCESS(filters.group, filters.section), "success");
+  };
+
+  const summaryStats = useMemo(() => {
+    const total = evaluations.length;
+    const submitted = evaluations.filter((e) => e.status === "SUBMITTED").length;
+    const verified = evaluations.filter((e) => e.status === "VERIFIED").length;
+    const approved = evaluations.filter((e) => e.status === "APPROVED").length;
+    const rejected = evaluations.filter((e) => e.status === "REJECTED").length;
+    return { total, submitted, verified, approved, rejected };
+  }, [evaluations]);
+
+  const handleOpenEvaluationDetails = (item) => {
+    const subjName = item.subjectName;
+    const rowsForSubject = subjectMarksData[subjName] || [];
+
+    setSelectedEvaluation(item);
+    setModalRows(JSON.parse(JSON.stringify(rowsForSubject)));
+    setIsEditing(false);
+    setCurrentPage(1);
+    setViewMode("details");
+  };
+
+  const handleBackToEvaluations = () => {
+    setSelectedEvaluation(null);
+    setModalRows([]);
+    setIsEditing(false);
+    setCurrentPage(1);
+    setViewMode("list");
+  };
+
+  const handleUpdateMarkInModal = (index, field, value) => {
+    if (value !== "" && !/^\d+$/.test(value)) return;
+
+    const parsedValue = value === "" ? "" : Math.max(0, parseInt(value, 10));
+    const limit = MARK_LIMITS[field];
+    if (parsedValue !== "" && limit !== undefined && parsedValue > limit) {
+      showToast(TOAST_MESSAGES.INVALID_MARK(field, limit), "error");
+    }
+
+    setModalRows((prev) =>
+      prev.map((row, i) => {
+        if (i !== index) return row;
+        return {
+          ...row,
+          [field]: parsedValue === "" ? "" : Math.min(parsedValue, limit ?? parsedValue)
+        };
+      })
+    );
+  };
+
+  const handleSaveModal = () => {
+    if (!selectedEvaluation) return;
+
+    const subjName = selectedEvaluation.subjectName;
+
+    setSubjectMarksData((prev) => ({
+      ...prev,
+      [subjName]: modalRows
+    }));
+
+    setIsEditing(false);
+    showToast(TOAST_MESSAGES.MARKS_SAVED(subjName), "success");
+  };
+
+  const handleUpdateStatus = (newStatus) => {
+    if (!selectedEvaluation) return;
+
+    const targetId = selectedEvaluation.evaluationId;
+    const subjName = selectedEvaluation.subjectName;
+
+    setEvaluations((prev) =>
+      prev.map((item) =>
+        item.evaluationId === targetId ? { ...item, status: newStatus } : item
       )
     );
-    setEditingIds(new Set(students.filter((student) => !student.submitted).map((student) => student.studentId)));
-    setRowErrors({});
-    setDeleteOpen(false);
-    toast.warning("All editable marks cleared.");
-  }, [students]);
+
+    setSelectedEvaluation((prev) =>
+      prev ? { ...prev, status: newStatus } : null
+    );
+
+    if (newStatus === "VERIFIED") {
+      showToast(TOAST_MESSAGES.VERIFIED(subjName), "success");
+    } else if (newStatus === "APPROVED") {
+      showToast(TOAST_MESSAGES.APPROVED(subjName), "success");
+    } else if (newStatus === "REJECTED") {
+      showToast(TOAST_MESSAGES.REJECTED(subjName), "error");
+    } else {
+      showToast(TOAST_MESSAGES.STATUS_UPDATED(subjName, newStatus), "success");
+    }
+  };
+
+  const filteredEvaluations = useMemo(() => {
+    if (!searchTerm.trim()) return evaluations;
+    const term = searchTerm.toLowerCase();
+    return evaluations.filter(
+      (item) =>
+        item.subjectName.toLowerCase().includes(term) ||
+        item.facultyName.toLowerCase().includes(term) ||
+        item.status.toLowerCase().includes(term)
+    );
+  }, [evaluations, searchTerm]);
+
+  const currentGroupSubjects = GROUP_SUBJECTS[filters.group || "MPC"] || [];
+
+  const studentSubjectMarksList = useMemo(() => {
+    if (!ready || INITIAL_STUDENTS_BASE.length === 0) return [];
+
+    const sectionShort = (filters.section || "A").replace(/Section\s*/i, "").trim();
+
+    return INITIAL_STUDENTS_BASE.map((student, idx) => {
+      const rollNo = `${filters.group || "MPC"}${sectionShort}00${idx + 1}`;
+      let studentTotal = 0;
+      const marksPerSubject = {};
+
+      currentGroupSubjects.forEach((subj) => {
+        const subjRows = subjectMarksData[subj] || [];
+        const match = subjRows.find((r) => r.studentId === student.id) || subjRows[idx];
+
+        if (match) {
+          const isPractical = isPracticalSubject(subj);
+          const total = calculateTotal(match, isPractical);
+          marksPerSubject[subj] = total;
+          studentTotal += total;
+        } else {
+          marksPerSubject[subj] = 0;
+        }
+      });
+
+      const maxPossible = currentGroupSubjects.length * 100;
+      const overallGrade = getGrade(studentTotal, maxPossible);
+
+      return {
+        studentId: student.id,
+        rollNo: rollNo,
+        studentName: student.studentName,
+        marks: marksPerSubject,
+        total: studentTotal,
+        maxTotal: maxPossible,
+        grade: overallGrade
+      };
+    });
+  }, [ready, subjectMarksData, currentGroupSubjects, filters.group, filters.section]);
+
+  const filteredStudentMarks = useMemo(() => {
+    if (!searchTerm.trim()) return studentSubjectMarksList;
+
+    const term = searchTerm.toLowerCase().trim();
+    return studentSubjectMarksList.filter((student) =>
+      student.rollNo.toLowerCase().includes(term) ||
+      student.studentName.toLowerCase().includes(term) ||
+      String(student.total).includes(term) ||
+      student.grade.toLowerCase().includes(term)
+    );
+  }, [studentSubjectMarksList, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(modalRows.length / STUDENTS_PER_PAGE));
+  const pageStart = (currentPage - 1) * STUDENTS_PER_PAGE;
+  const paginatedRows = useMemo(
+    () => modalRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE),
+    [modalRows, pageStart]
+  );
+
+  const studentMarksTotalPages = Math.max(
+    1,
+    Math.ceil(filteredStudentMarks.length / STUDENT_MARKS_PER_PAGE)
+  );
+
+  const studentMarksPageStart =
+    (studentMarksPage - 1) * STUDENT_MARKS_PER_PAGE;
+
+  const paginatedStudentMarks = useMemo(
+    () =>
+      filteredStudentMarks.slice(
+        studentMarksPageStart,
+        studentMarksPageStart + STUDENT_MARKS_PER_PAGE
+      ),
+    [filteredStudentMarks, studentMarksPageStart]
+  );
+
+  React.useEffect(() => {
+    setStudentMarksPage(1);
+  }, [searchTerm]);
 
   return (
-    <DashboardLayout title="Marks Entry" subtitle="Enter internal, practical and theory marks." breadcrumb={["Examinations"]}>
-      <section className="cms-marks-entry cms-anim-up" aria-label="Marks entry module">
+    <DashboardLayout
+      title="Academic Evaluation"
+      subtitle="Review, verify and approve faculty submitted evaluations."
+      breadcrumb={["Examinations", "Marks Evalution"]}
+    >
+      <div className="cms-marks-entry cms-anim-up">
+        {toastMessage && (
+          <div key={toastMessage.id} className={`cms-toast-banner cms-toast-${toastMessage.type}`}>
+            <span>{toastMessage.msg}</span>
+          </div>
+        )}
+
+        {/* Filters Grid */}
         <div className="cms-card cms-card-filter">
           <div className="cms-section-heading">
             <div>
-              <h2>Assessment Details</h2>
-              <p>All filter selections are required before loading student records.</p>
+              <h2>Evaluation Filters</h2>
+              <p>Choose the academic context before reviewing faculty submissions.</p>
             </div>
             <button
               className="cms-btn cms-btn-primary"
-              type="button"
-              disabled={!allFiltersSelected || loading}
-              onClick={checkStudents}
+              disabled={!isAllFiltersSelected}
+              onClick={handleFetchData}
             >
-              {loading ? "Loading..." : "Check Students"}
+              Fetch Evaluation Data
             </button>
           </div>
 
           <div className="cms-filter-grid">
-            <div className="cms-board-select-wrap">
-              <SelectField
-                label="Board"
-                name="board"
-                value={filters.board}
-                onChange={changeFilter}
-                onBlur={validateFilter}
-                error={fieldError("board")}
-              >
-                <option value="">Select Board</option>
-                {boards.map((board) => (
-                  <option key={board.boardId ?? board.id} value={board.boardId ?? board.id}>
-                    {[board.boardCode ?? board.code, board.boardName ?? board.name].filter(Boolean).join(" — ")}
-                  </option>
-                ))}
-              </SelectField>
-              {selectedBoardLabel.length > 34 && (
-                <button
-                  type="button"
-                  className="cms-board-overflow-btn"
-                  aria-label="Show full board name"
-                  title="Show full board name"
-                  onClick={() => setBoardInfoOpen(true)}
-                >
-                  …
-                </button>
-              )}
-            </div>
-
-            <SelectField
+            <SelectFilter
+              label="Board"
+              value={filters.board}
+              options={boards}
+              error={dropdownErrors.board && "unable to load boards"}
+              onChange={(v) => handleFilterChange("board", v)}
+            />
+            <SelectFilter
               label="Academic Year"
-              name="academicYearId"
-              value={filters.academicYearId}
-              onChange={changeFilter}
-              onBlur={validateFilter}
-              error={fieldError("academicYearId")}
-            >
-              <option value="">Select Academic Year</option>
-              {academicYears.map((year) => (
-                <option key={year.id ?? year.academicYearId} value={year.id ?? year.academicYearId}>
-                  {year.year ?? year.name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField
+              value={filters.academicYear}
+              disabled={!filters.board}
+              options={academicYears}
+              error={dropdownErrors.academicYear && "unable to load academic years"}
+              onChange={(v) => handleFilterChange("academicYear", v)}
+            />
+            <SelectFilter
               label="Academic Level"
-              name="academicLevel"
               value={filters.academicLevel}
-              onChange={changeFilter}
-              onBlur={validateFilter}
-              error={fieldError("academicLevel")}
-            >
-              <option value="">Select Academic Level</option>
-              {academicLevels.map((level) => (
-                <option key={level.academicLevelId ?? level.id} value={level.levelName ?? level.name}>
-                  {level.levelName ?? level.name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField
+              disabled={!filters.academicYear}
+              options={academicLevels}
+              error={dropdownErrors.academicLevel && "unable to load academic levels"}
+              onChange={(v) => handleFilterChange("academicLevel", v)}
+            />
+            <SelectFilter
               label="Group"
-              name="groupId"
-              value={filters.groupId}
-              onChange={changeFilter}
-              onBlur={validateFilter}
-              error={fieldError("groupId")}
-            >
-              <option value="">Select Group</option>
-              {groups.map((group) => (
-                <option key={group.id ?? group.groupId} value={group.id ?? group.groupId}>
-                  {group.groupName ?? group.name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField
+              value={filters.group}
+              disabled={!filters.academicLevel}
+              options={groups}
+              error={dropdownErrors.group && "unable to load groups"}
+              onChange={(v) => handleFilterChange("group", v)}
+            />
+            <SelectFilter
               label="Section"
-              name="sectionId"
-              value={filters.sectionId}
-              onChange={changeFilter}
-              onBlur={validateFilter}
-              error={fieldError("sectionId")}
-              disabled={!filters.groupId}
-            >
-              <option value="">Select Section</option>
-              {availableSections.map((section) => (
-                <option key={section.id ?? section.sectionId} value={section.id ?? section.sectionId}>
-                  {section.sectionName ?? section.name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField
+              value={filters.section}
+              disabled={!filters.group}
+              options={FALLBACK_SECTIONS}
+              onChange={(v) => handleFilterChange("section", v)}
+            />
+            <SelectFilter
               label="Examination"
-              name="examinationId"
-              value={filters.examinationId}
-              onChange={changeFilter}
-              onBlur={validateFilter}
-              error={fieldError("examinationId")}
-            >
-              <option value="">Select Examination</option>
-              {exams.map((exam) => (
-                <option key={exam.id ?? exam.examinationId} value={exam.id ?? exam.examinationId}>
-                  {exam.examName ?? exam.name}
-                </option>
-              ))}
-            </SelectField>
-
-            <SelectField
-              label="Subject"
-              name="subjectId"
-              value={filters.subjectId}
-              onChange={changeFilter}
-              onBlur={validateFilter}
-              error={fieldError("subjectId")}
-              disabled={!filters.groupId}
-            >
-              <option value="">Select Subject</option>
-              {subjects.map((subject) => (
-                <option key={subject.subjectId ?? subject.id} value={subject.subjectId ?? subject.id}>
-                  {subject.subjectName ?? subject.name} ({subject.subjectCode ?? subject.code ?? "—"})
-                </option>
-              ))}
-            </SelectField>
+              value={filters.examination}
+              disabled={!filters.section}
+              options={FALLBACK_EXAMINATIONS}
+              onChange={(v) => handleFilterChange("examination", v)}
+            />
           </div>
         </div>
 
-        {students.length > 0 && (
-          <>
-            <div className="cms-stats-grid">
-              {[
-                ["Total Students", stats.total],
-                ["Marks Entered", stats.entered],
-                ["Verified Students", stats.verified],
-                ["Pending Students", stats.pending],
-                ["Average Marks", stats.average],
-                ["Highest Marks", stats.highest]
-              ].map(([label, value]) => (
-                <div className="cms-stat-card" key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
+        {/* Content Section */}
+        {ready ? (
+          viewMode === "list" ? (
+            <>
+              <div className="cms-stats-grid">
+                <div className="cms-stat-card cms-stat-total">
+                  <span>Total Subjects</span>
+                  <strong>{summaryStats.total}</strong>
                 </div>
-              ))}
-            </div>
-
-            <div className="cms-card">
-              <div className="cms-table-toolbar">
-                <div className="cms-tab-bar">
-                  <button
-                    className={`cms-tab-btn ${activeTab === "entry" ? "cms-active" : ""}`}
-                    onClick={() => setActiveTab("entry")}
-                    type="button"
-                  >
-                    Marks Entry
-                  </button>
-                  <button
-                    className={`cms-tab-btn ${activeTab === "verify" ? "cms-active" : ""}`}
-                    onClick={() => setActiveTab("verify")}
-                    type="button"
-                  >
-                    Verification{" "}
-                    <span className="cms-tab-badge">
-                      {stats.verified}/{stats.total}
-                    </span>
-                  </button>
+                <div className="cms-stat-card cms-stat-submitted">
+                  <span>Submitted</span>
+                  <strong>{summaryStats.submitted}</strong>
                 </div>
-
-                <div className="cms-search-wrap">
-                  <input
-                    className="cms-search-input"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search by roll number or student name"
-                  />
+                <div className="cms-stat-card cms-stat-verified">
+                  <span>Verified</span>
+                  <strong>{summaryStats.verified}</strong>
                 </div>
+                <div className="cms-stat-card cms-stat-approved">
+                  <span>Approved</span>
+                  <strong>{summaryStats.approved}</strong>
+                </div>
+                <div className="cms-stat-card cms-stat-rejected">
+                  <span>Rejected</span>
+                  <strong>{summaryStats.rejected}</strong>
+                </div>
+              </div>
 
-                {activeTab === "verify" && (
-                  <div className="cms-toolbar-actions">
-                    <button type="button" className="cms-btn cms-btn-success" onClick={verifyAllEligible}>
-                      Verify Eligible Students
+              <div className="cms-card cms-main-card">
+                <div className="cms-table-toolbar">
+                  <div className="cms-tab-bar">
+                    <button
+                      className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`}
+                      onClick={() => setActiveTab("evaluations")}
+                    >
+                      Evaluations
+                    </button>
+                    <button
+                      className={`cms-tab-btn ${activeTab === "studentMarks" ? "cms-active" : ""}`}
+                      onClick={() => setActiveTab("studentMarks")}
+                    >
+                      Student Subject Marks
                     </button>
                   </div>
+
+                  <div className="cms-search-wrap">
+                    <span className="cms-search-icon"><IconSearch /></span>
+                    <input
+                      type="text"
+                      className="cms-search-input"
+                      placeholder={activeTab === "evaluations" ? "Search subject, faculty, status..." : "Search roll no, student, total, grade..."}
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Tab 1: Evaluations */}
+                {activeTab === "evaluations" && (
+                  <div className="cms-table-container">
+                    <table className="cms-table">
+                      <thead>
+                        <tr>
+                          <th>SUBJECT</th>
+                          <th>FACULTY</th>
+                          <th>STUDENTS</th>
+                          <th>STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredEvaluations.length > 0 ? (
+                          filteredEvaluations.map((item) => (
+                            <tr
+                              key={item.evaluationId}
+                              className="cms-clickable-row"
+                              onClick={() => handleOpenEvaluationDetails(item)}
+                            >
+                              <td className="cms-font-semibold">{item.subjectCode} - {item.subjectName}</td>
+                              <td className="cms-text-muted">{item.facultyId} - {item.facultyName}</td>
+                              <td>{item.studentsCount}</td>
+                              <td>
+                                <StatusBadge status={item.status} />
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="cms-empty-td">
+                              No evaluations found matching search.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </div>
 
-              <StudentTable
-                students={visibleStudents}
-                editingIds={editingIds}
-                rowErrors={rowErrors}
-                changeMark={changeMark}
-                editRow={editRow}
-                saveRow={(id) => saveMarks([id])}
-                deleteRow={deleteMark}
-                verifyRow={verifyStudent}
-                activeTab={activeTab}
-                selectedVerifyIds={selectedVerifyIds}
-                toggleVerifyStudent={toggleVerifyStudent}
-              />
-            </div>
+                {/* Tab 2: Student Subject Marks (Read-Only) */}
+                {activeTab === "studentMarks" && (<>
+                  <div className="cms-table-container">
+                    <table className="cms-table">
+                      <thead>
+                        <tr>
+                          <th>ROLL NO</th>
+                          <th>STUDENT NAME</th>
+                          {currentGroupSubjects.map((subj) => (
+                            <th key={subj}>{subj.toUpperCase()}</th>
+                          ))}
+                          <th>TOTAL</th>
+                          <th>GRADE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudentMarks.length > 0 ? paginatedStudentMarks.map((stu) => (
+                          <tr key={stu.studentId} className="cms-idle-row">
+                            <td className="cms-font-semibold">{stu.rollNo}</td>
+                            <td>{stu.studentName}</td>
+                            {currentGroupSubjects.map((subj) => (
+                              <td key={subj}>{stu.marks[subj] ?? "—"}</td>
+                            ))}
+                            <td className="cms-font-semibold">
+                              {stu.total} / {stu.maxTotal}
+                            </td>
+                            <td>
+                              <span className={`cms-badge-grade cms-grade-${stu.grade.toLowerCase().replace("+", "-plus")}`}>
+                                {stu.grade}
+                              </span>
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td">
+                              No student marks found matching search.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
 
-            <div className="cms-card cms-footer-actions">
-              <p>{submitBlocker || "Only complete and verified marks can be submitted."}</p>
-              <div className="cms-footer-btn-group">
-                <button type="button" className="cms-btn cms-btn-danger-outline" onClick={() => setDeleteOpen(true)}>
-                  Clear All Marks
-                </button>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-primary"
-                  disabled={Boolean(submitBlocker)}
-                  title={submitBlocker}
-                  onClick={submitEvaluation}
-                >
-                  Submit Evaluation
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+                  <div
+                    className="cms-pagination"
+                    aria-label="Student subject marks pagination"
+                  >
+                    <button
+                      className="cms-btn cms-btn-secondary"
+                      disabled={studentMarksPage === 1}
+                      onClick={() =>
+                        setStudentMarksPage((page) => Math.max(1, page - 1))
+                      }
+                    >
+                      Previous
+                    </button>
 
-        {deleteOpen && (
-          <div className="cms-modal-overlay" role="presentation">
-            <div className="cms-modal-content" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-              <h2 id="delete-title">Clear all marks?</h2>
-              <p>Are you sure you want to clear all entered marks? This action cannot be undone.</p>
-              <div className="cms-modal-actions">
-                <button type="button" className="cms-btn cms-btn-secondary" onClick={() => setDeleteOpen(false)}>
-                  Cancel
-                </button>
-                <button type="button" className="cms-btn cms-btn-danger" onClick={clearMarks}>
-                  Clear
-                </button>
+                    <span>
+                      Page {studentMarksPage} of {studentMarksTotalPages}
+                    </span>
+
+                    <button
+                      className="cms-btn cms-btn-secondary"
+                      disabled={studentMarksPage === studentMarksTotalPages}
+                      onClick={() =>
+                        setStudentMarksPage((page) =>
+                          Math.min(studentMarksTotalPages, page + 1)
+                        )
+                      }
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+                )}
+
               </div>
-            </div>
+            </>
+          ) : selectedEvaluation ? (
+            <EvaluationDetails
+              selectedEvaluation={selectedEvaluation}
+              filters={filters}
+              rows={paginatedRows}
+              rowOffset={pageStart}
+              isEditing={isEditing}
+              totalPages={totalPages}
+              currentPage={currentPage}
+              onBack={handleBackToEvaluations}
+              onEdit={() => {
+                setIsEditing(true);
+                showToast(TOAST_MESSAGES.EDIT_STARTED(selectedEvaluation.subjectName), "info");
+              }}
+              onCancel={() => {
+                setModalRows(JSON.parse(JSON.stringify(subjectMarksData[selectedEvaluation.subjectName] || [])));
+                setIsEditing(false);
+                showToast(TOAST_MESSAGES.EDIT_CANCELLED(selectedEvaluation.subjectName), "warning");
+              }}
+              onSave={handleSaveModal}
+              onUpdateMark={handleUpdateMarkInModal}
+              onUpdateStatus={handleUpdateStatus}
+              onPreviousPage={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onNextPage={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            />
+          ) : null
+        ) : (
+          <div className="cms-card cms-empty-table">
+            <p>Select all evaluation filters and click <strong>Fetch Evaluation Data</strong> to view evaluation status &amp; student marks.</p>
           </div>
         )}
 
-        {boardInfoOpen && selectedBoard && (
-          <div className="cms-modal-overlay" role="presentation">
-            <div className="cms-modal-content" role="dialog" aria-modal="true" aria-labelledby="board-info-title">
-              <h2 id="board-info-title">Board</h2>
-              <p>{selectedBoardLabel}</p>
-              <div className="cms-modal-actions">
-                <button type="button" className="cms-btn cms-btn-primary" onClick={() => setBoardInfoOpen(false)}>
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <ToastContainer position={students.length ? "bottom-right" : "top-right"} theme="colored" newestOnTop closeOnClick />
-      </section>
+      </div>
     </DashboardLayout>
   );
 }
 
-function SelectField({ label, name, value, onChange, onBlur, error, children, disabled = false }) {
+function SelectFilter({ label, value, options, disabled, error, onChange }) {
+  const normalizedOptions = options.map((option) =>
+    typeof option === "object" ? option : { label: option, value: option }
+  );
+
   return (
-    <div className={`cms-field-group ${error ? "cms-has-error" : ""}`}>
+    <div className="cms-field-group">
       <label className="cms-field-label">{label}</label>
       <select
         className="cms-select-input"
         value={value}
         disabled={disabled}
-        onBlur={() => onBlur(name)}
-        onChange={(event) => onChange(name, event.target.value)}
+        onChange={(e) => {
+          const selectedOption = options.find(
+            (option) => String(option.value) === e.target.value
+          );
+          onChange(selectedOption ? selectedOption.value : e.target.value);
+        }}
       >
-        {children}
+        <option value="">Select {label}</option>
+        {normalizedOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
       </select>
-      {error && <small className="cms-field-error">{error}</small>}
+      {error && <p className="cms-field-error">{error}</p>}
     </div>
   );
 }
 
-function StudentTable({ students, editingIds, rowErrors, changeMark, editRow, saveRow, deleteRow, verifyRow, activeTab, selectedVerifyIds, toggleVerifyStudent }) {
+function EvaluationDetails({
+  selectedEvaluation,
+  filters,
+  rows,
+  rowOffset,
+  isEditing,
+  totalPages,
+  currentPage,
+  onBack,
+  onEdit,
+  onCancel,
+  onSave,
+  onUpdateMark,
+  onUpdateStatus,
+  onPreviousPage,
+  onNextPage
+}) {
+  const practical = isPracticalSubject(selectedEvaluation.subjectName);
+
   return (
-    <div className="cms-table-container">
-      <table className="cms-table">
-        <thead>
-          <tr>
-            <th className="cms-th-select">{activeTab === "verify" ? "SELECT" : "SELECT"}</th>
-            <th className="cms-th-student">STUDENT</th>
-            <th className="cms-th-marks">INTERNAL</th>
-            <th className="cms-th-marks">PRACTICAL</th>
-            <th className="cms-th-marks">THEORY</th>
-            <th className="cms-th-total">TOTAL</th>
-            <th className="cms-th-grade">GRADE</th>
-            <th className="cms-th-status">STATUS</th>
-            <th className="cms-th-actions">ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {students.length ? (
-            students.map((student) => {
-              const editing = editingIds.has(student.studentId);
-              const complete = isComplete(student);
-              const eligible =
-                !student.verified && complete && isStudentValid(student) && Boolean(student.markId) && !editing && !student.submitted;
+    <div className="cms-card cms-main-card cms-evaluation-details">
+      <div className="cms-details-header">
+        <div>
+          <button className="cms-back-btn" onClick={onBack}>← Back to Evaluations</button>
+          <h2 className="cms-details-title">{selectedEvaluation.subjectCode} - {selectedEvaluation.subjectName} Evaluation</h2>
+          <span className="cms-details-subtitle">Review, edit, and approve marks evaluation</span>
+        </div>
+      </div>
+
+      <div className="cms-detail-grid">
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Faculty</span>
+          <span className="cms-detail-value">{selectedEvaluation.facultyId} - {selectedEvaluation.facultyName}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Group</span>
+          <span className="cms-detail-value">{filters.group || "MPC"}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Section</span>
+          <span className="cms-detail-value">{(filters.section || "Section A").replace(/Section\s*/i, "")}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Examination</span>
+          <span className="cms-detail-value">{filters.examination || "Semester I"}</span>
+        </div>
+      </div>
+
+      <div className="cms-table-container cms-details-table-wrap">
+        <table className="cms-table">
+          <thead>
+            <tr>
+              <th>ROLL NO</th><th>STUDENT NAME</th><th>INTERNAL</th><th>THEORY</th>
+              {practical && <th>PRACTICAL</th>}
+              <th>TOTAL</th><th>GRADE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, pageIndex) => {
+              const totalMarks = calculateTotal(row, practical);
+              const grade = getGrade(totalMarks);
+              const index = rowOffset + pageIndex;
+              const markCell = (field) => isEditing ? (
+                <input type="text" inputMode="numeric" className="cms-mark-input" value={row[field]}
+                  onChange={(event) => onUpdateMark(index, field, event.target.value)} />
+              ) : row[field];
+
               return (
-                <tr key={student.studentId} className={editing ? "cms-row-editing" : ""}>
-                  <td className="cms-td-select">
-                    <input
-                      aria-label={`${student.studentName} ${activeTab === "verify" ? "verification selection" : "completion status"}`}
-                      type="checkbox"
-                      className="cms-checkbox"
-                      checked={activeTab === "verify" ? selectedVerifyIds.has(student.studentId) : complete}
-                      disabled={activeTab === "verify" ? !eligible : false}
-                      readOnly={activeTab !== "verify"}
-                      onChange={activeTab === "verify" ? () => toggleVerifyStudent(student.studentId) : undefined}
-                      tabIndex={activeTab === "verify" ? 0 : -1}
-                    />
-                  </td>
-                  <td className="cms-td-student">
-                    <div className="cms-student-info">
-                      <strong className="cms-student-name">{student.studentName}</strong>
-                      <span className="cms-student-roll">{student.rollNo}</span>
-                    </div>
-                  </td>
-                  {["internalMarks", "practicalMarks", "theoryMarks"].map((key) => (
-                    <td key={key} className="cms-td-mark-input">
-                      <div className="cms-input-wrap">
-                        <input
-                          className={`cms-mark-input ${rowErrors[student.studentId]?.[key] ? "cms-invalid" : ""}`}
-                          disabled={!editing || student.verified || student.submitted}
-                          inputMode="numeric"
-                          value={student[key]}
-                          onChange={(event) => changeMark(student.studentId, key, event.target.value)}
-                        />
-                        {rowErrors[student.studentId]?.[key] && (
-                          <small className="cms-mark-error">{rowErrors[student.studentId][key]}</small>
-                        )}
-                      </div>
-                    </td>
-                  ))}
-                  <td className="cms-td-total">
-                    <span className="cms-total-val">{complete ? totalOf(student) : "0"}</span>
-                  </td>
-                  <td className="cms-td-grade">
-                    <GradeBadge complete={complete} total={totalOf(student)} />
-                  </td>
-                  <td className="cms-td-status">
-                    <StatusBadge verified={student.verified} />
-                  </td>
-                  {activeTab === "entry" ? (
-                    <td className="cms-td-actions">
-                      <div className="cms-row-actions">
-                        <button
-                          type="button"
-                          className="cms-btn-icon"
-                          disabled={student.verified || student.submitted}
-                          aria-label={student.submitted ? "Submitted" : student.verified ? "Verified" : editing ? "Save marks" : "Edit marks"}
-                          title={student.submitted ? "Submitted" : student.verified ? "Verified" : editing ? "Save marks" : "Edit marks"}
-                          onClick={() => (editing ? saveRow(student.studentId) : editRow(student.studentId))}
-                        >
-                          {student.verified ? <FiCheck /> : editing ? <FiSave /> : <FiEdit2 />}
-                        </button>
-                        <button
-                          type="button"
-                          className="cms-btn-icon cms-btn-icon-delete"
-                          disabled={!student.markId || student.submitted}
-                          aria-label={student.submitted ? "Submitted marks cannot be deleted" : "Delete marks"}
-                          title={student.submitted ? "Submitted marks cannot be deleted" : "Delete marks"}
-                          onClick={() => deleteRow(student.studentId)}
-                        >
-                          <FiTrash2 />
-                        </button>
-                      </div>
-                    </td>
-                  ) : (
-                    <td className="cms-td-actions">
-                      <div className="cms-row-actions">
-                        <button
-                          type="button"
-                          className="cms-btn-icon"
-                          disabled={student.verified || student.submitted}
-                          aria-label={student.submitted ? "Submitted" : student.verified ? "Verified" : editing ? "Save marks" : "Edit marks"}
-                          title={student.submitted ? "Submitted" : student.verified ? "Verified" : editing ? "Save marks" : "Edit marks"}
-                          onClick={() => (editing ? saveRow(student.studentId) : editRow(student.studentId))}
-                        >
-                          {student.verified ? <FiCheck /> : editing ? <FiSave /> : <FiEdit2 />}
-                        </button>
-                        <button
-                          type="button"
-                          className="cms-btn-icon cms-btn-icon-verify"
-                          disabled={!eligible}
-                          aria-label={student.verified ? "Verified" : "Verify marks"}
-                          title={student.verified ? "Verified" : "Verify marks"}
-                          onClick={() => verifyRow(student.studentId)}
-                        >
-                          <FiCheck />
-                        </button>
-                      </div>
-                    </td>
-                  )}
+                <tr key={row.studentId || index}>
+                  <td className="cms-font-semibold">{row.rollNo}</td>
+                  <td>{row.studentName}</td>
+                  <td>{markCell("internal")}</td>
+                  <td>{markCell("theory")}</td>
+                  {practical && <td>{markCell("practical")}</td>}
+                  <td className="cms-font-semibold">{totalMarks} / 100</td>
+                  <td><span className={`cms-badge-grade cms-grade-${grade.toLowerCase().replace("+", "-plus")}`}>{grade}</span></td>
                 </tr>
               );
-            })
-          ) : (
-            <tr>
-              <td colSpan={9} className="cms-empty-table">
-                No students match your search criteria.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="cms-pagination" aria-label="Student records pagination">
+        <button className="cms-btn cms-btn-secondary" disabled={currentPage === 1} onClick={onPreviousPage}>Previous</button>
+        <span>Page {currentPage} of {totalPages}</span>
+        <button className="cms-btn cms-btn-secondary" disabled={currentPage === totalPages} onClick={onNextPage}>Next</button>
+      </div>
+
+      <div className="cms-modal-actions">
+        {isEditing ? (
+          <><button className="cms-btn cms-btn-secondary" onClick={onCancel}>Cancel</button>
+            <button className="cms-btn cms-btn-primary" onClick={onSave}><IconSave /> Save Changes</button></>
+        ) : (
+          <>
+            <button className="cms-btn cms-btn-edit-outline" onClick={onEdit}><IconPencil /> Edit</button>
+            {(selectedEvaluation.status === "SUBMITTED" || selectedEvaluation.status === "VERIFIED") && <>
+              <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus("APPROVED")}><IconCheck /> Approve</button>
+              <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus("REJECTED")}><IconXCircle /> Reject</button>
+            </>}
+            {selectedEvaluation.status === "APPROVED" && <span className="cms-status-pill cms-status-approved"><IconCheck /> Approved</span>}
+            {selectedEvaluation.status === "REJECTED" && <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span>}
+          </>
+        )}
+      </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const s = String(status || "").toUpperCase();
+  let badgeClass = "cms-status-submitted";
+
+  if (s === "VERIFIED") badgeClass = "cms-status-verified";
+  else if (s === "APPROVED") badgeClass = "cms-status-approved";
+  else if (s === "REJECTED") badgeClass = "cms-status-rejected";
+
+  return (
+    <span className={`cms-badge-status ${badgeClass}`}>
+      <span className="cms-badge-dot" />
+      {s}
+    </span>
   );
 }

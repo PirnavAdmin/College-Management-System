@@ -59,6 +59,9 @@ export const downloadResultsExcel = (params) =>
 export const downloadResultsPdf = (params) =>
   apiClient.get(apiEndpoints.results.downloadPdf, { params, responseType: "blob" });
 
+export const downloadStudentResultMemo = (params) =>
+  apiClient.get(apiEndpoints.results.studentMemo, { params, responseType: "blob" });
+
 export const downloadResultMemo = (studentId) =>
   apiClient.get(apiEndpoints.results.memo(studentId), { responseType: "blob" });
 

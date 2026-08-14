@@ -702,26 +702,11 @@ body {
 @keyframes cms-shine { to { background-position: -200% 0; } }
 
 /* ---------- Steps ---------- */
-.cms-steps {
-  display: flex;
-  gap: 8px;
-  flex-wrap: nowrap;
-  margin-bottom: 20px;
-  max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  -webkit-overflow-scrolling: touch;
-}
-.cms-steps::-webkit-scrollbar { display: none; }
+.cms-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
 .cms-step {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 0 0 auto;
-  min-height: 38px;
   padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid var(--cms-border);
@@ -731,20 +716,8 @@ body {
 }
 .cms-step.is-active { border-color: var(--cms-primary); color: var(--cms-primary); background: var(--cms-primary-soft); font-weight: 600; }
 .cms-step.is-done { border-color: #bbf7d0; color: var(--cms-green); background: var(--cms-green-soft); }
-.cms-step-num {
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  border-radius: 50%;
-  background: #fff;
-  color: currentColor;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
-}
-.cms-step-label { line-height: 1; }
-.cms-step.is-active .cms-step-num, .cms-step.is-done .cms-step-num { background: #fff; color: currentColor; }
+.cms-step-num { width: 20px; height: 20px; border-radius: 50%; background: currentColor; color: #fff; display: grid; place-items: center; font-size: 11px; }
+.cms-step.is-active .cms-step-num, .cms-step.is-done .cms-step-num { color: #fff; }
 
 /* ---------- Timetable ---------- */
 .cms-tt { width: 100%; border-collapse: separate; border-spacing: 6px; min-width: 880px; }

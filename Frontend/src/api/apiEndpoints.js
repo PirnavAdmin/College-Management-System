@@ -37,15 +37,13 @@
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
     getAcademicLevels: "/api/v1/boards/academic-levels",
-
-
     academicLevels: "/api/v1/boards/academic-levels",
     gradingSystems: "/api/v1/boards/grading-systems",
     validateBoardCode: "/api/v1/boards/validate-board-code",
     formData: "/api/v1/boards/form-data",
+    states: (countryId) => `/api/v1/boards/states/${countryId}`,
     history: (boardId) => `/api/v1/boards/${boardId}/history`,
     summary: "/api/v1/boards/summary",
-
   },
   academicYears: {
     list: "/api/v1/academic-years",
@@ -111,12 +109,6 @@
     revaluation: "/api/v1/results/revaluation",
     revaluationById: (revaluationId) => `/api/v1/results/revaluation/${revaluationId}`,
   },
-  boards: {
-    list: "/api/v1/boards",
-  },
-  groups: {
-    list: "/api/v1/groups",
-  },
   subjects: {
     getAll: "/api/Subjects",
     create: "/api/Subjects",
@@ -170,17 +162,6 @@
     activate: (studentId) => `/api/v1/students/${studentId}/activate`,
     resetPassword: (studentId) => `/api/v1/students/${studentId}/reset-password`,
     getDashboard: (studentId) => `/api/v1/students/${studentId}/dashboard`,
-  },
-  admissions: {
-    getAll: "/api/v1/admissions",
-    create: "/api/v1/admissions",
-    getById: (admissionId) => `/api/v1/admissions/${admissionId}`,
-    update: (admissionId) => `/api/v1/admissions/${admissionId}`,
-    delete: (admissionId) => `/api/v1/admissions/${admissionId}`,
-    verify: (admissionId) => `/api/v1/admissions/${admissionId}/verify`,
-    approve: (admissionId) => `/api/v1/admissions/${admissionId}/approve`,
-    reject: (admissionId) => `/api/v1/admissions/${admissionId}/reject`,
-    generateNumber: "/api/v1/admissions/generate-number",
   },
   certificates: {
     list: "/api/certificates",

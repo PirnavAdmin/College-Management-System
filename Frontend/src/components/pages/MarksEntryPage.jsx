@@ -256,10 +256,6 @@ export default function MarksEntryPage() {
   const [sections, setSections] = useState([]);
   const [examinations, setExaminations] = useState([]);
   const [dropdownErrors, setDropdownErrors] = useState({});
-<<<<<<< HEAD
-=======
-
->>>>>>> 2cb455648ff7c1b0a51e42015d6798c8a5b1c95e
   const showToast = useCallback((message, type = "success") => {
     const id = Date.now();
     setToastMessage({ id, msg: message, type });
@@ -924,10 +920,6 @@ export default function MarksEntryPage() {
         String(item.status || "").toLowerCase().includes(term)
     );
   }, [evaluations, searchTerm]);
-<<<<<<< HEAD
-=======
-
->>>>>>> 2cb455648ff7c1b0a51e42015d6798c8a5b1c95e
   const dynamicSubjectColumns = useMemo(() => {
     if (!studentMatrix || studentMatrix.length === 0) return currentGroupSubjects;
     const firstItem = studentMatrix[0];

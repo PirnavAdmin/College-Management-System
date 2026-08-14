@@ -395,9 +395,9 @@ export default function MarksEntryPage() {
         }))
       );
 
-      showToast("Subject REJECTED successfully.", "success"); 
+      showToast("Subject REJECTED successfully.", "error"); 
     } else {
-      const statusMap = { 2: "VERIFIED", 3: "APPROVED" };
+      const statusMap = { 2: "VERIFIED", 3: "APPROVED", edit: "SUBMITTED" };
       const newStatusStr = statusMap[targetStatusNum] || "VERIFIED";
       if (newStatusStr === "APPROVED" && currentStatus !== "SUBMITTED" && currentStatus !== "VERIFIED") return;
 
@@ -406,7 +406,12 @@ export default function MarksEntryPage() {
       setEvaluations((prev) =>
         prev.map((item) => (item.subjectId === targetSid ? { ...item, status: newStatusStr } : item))
       );
-      showToast(`Subject status updated to ${newStatusStr} successfully`, "success");
+      showToast(
+        newStatusStr === "SUBMITTED"
+          ? "Subject reverted to Submitted successfully"
+          : `Subject status updated to ${newStatusStr} successfully`,
+        "success"
+      );
     }
   };
 
@@ -709,6 +714,7 @@ export default function MarksEntryPage() {
                               <td className="cms-text-center"> 
                                 <StatusBadge status={statusStr} /> 
                               </td> 
+
                             </tr> 
                           ); 
                         }) 
@@ -971,19 +977,24 @@ function EvaluationDetailsView({
           <> 
             <button className="cms-btn cms-btn-info" onClick={() => onUpdateStatus(2)}><IconCheck /> Verify</button> 
             <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button> 
+            <button className="cms-btn" disabled>Edit</button>
           </> 
         )} 
         {currentStatus === "VERIFIED" && ( 
           <> 
             <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus(3)}><IconCheck /> Approve</button> 
             <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button> 
+            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
           </> 
         )} 
         {currentStatus === "APPROVED" && ( 
           <span className="cms-status-pill cms-status-approved"><IconCheck /> Approved</span> 
         )} 
         {currentStatus === "REJECTED" && ( 
-          <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span> 
+          <>
+            <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span> 
+            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
+          </>
         )} 
       </div> 
     </div> 

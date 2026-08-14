@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import "./MarksEntryPage.css";
 
 /* ============================================================
@@ -26,45 +27,6 @@ const IconSearch = () => (
   </svg>
 );
 
-/* ============================================================ 
-   STATIC MASTER DATA (100% Offline & Pure Static Data) 
-   ============================================================ */ 
-const BOARDS_OPTIONS = [ 
-  { label: "State Board of Intermediate Education (TSBIE)", value: "BOARD_TSBIE" }, 
-  { label: "Central Board of Secondary Education (CBSE)", value: "BOARD_CBSE" }, 
-  { label: "Indian Certificate of Secondary Education (ICSE)", value: "BOARD_ICSE" } 
-]; 
- 
-const ACADEMIC_YEARS_OPTIONS = [ 
-  { label: "2024 - 2025", value: "AY_2024_2025" }, 
-  { label: "2025 - 2026", value: "AY_2025_2026" } 
-]; 
- 
-const ACADEMIC_LEVELS_OPTIONS = [ 
-  { label: "Senior Secondary (11th & 12th)", value: "LEVEL_SR_SEC" }, 
-  { label: "Higher Secondary", value: "LEVEL_HR_SEC" } 
-]; 
- 
-const GROUP_OPTIONS = [ 
-  { label: "MPC", value: "MPC" }, 
-  { label: "BiPC", value: "BiPC" }, 
-  { label: "CEC", value: "CEC" }, 
-  { label: "MEC", value: "MEC" } 
-]; 
- 
-const SECTION_OPTIONS = [ 
-  { label: "Section A", value: "Section A" }, 
-  { label: "Section B", value: "Section B" }, 
-  { label: "Section C", value: "Section C" } 
-]; 
- 
-const EXAMINATIONS_OPTIONS = [ 
-  { label: "Semester I", value: "Semester I" }, 
-  { label: "Midterm Examination 2025", value: "Midterm Examination 2025" }, 
-  { label: "Quarterly Assessment 1", value: "Quarterly Assessment 1" }, 
-  { label: "Annual Pre-Board Exam", value: "Annual Pre-Board Exam" } 
-]; 
- 
 const GROUP_SUBJECTS = { 
   MPC: { 
     firstYear: ["English", "Sanskrit", "Mathematics 1A", "Mathematics 1B", "Physics I", "Chemistry I"], 
@@ -181,6 +143,45 @@ const getGrade = (totalMarks, maxMarks = 100) => {
   return "F"; 
 }; 
 
+const getResponseItems = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  return payload?.items ?? payload?.data ?? payload?.results ?? [];
+};
+
+const normalizeStatus = (status) => {
+  const value = String(status ?? "SUBMITTED").toUpperCase();
+  return ({ 0: "DRAFT", 1: "SUBMITTED", 2: "VERIFIED", 3: "APPROVED", 4: "REJECTED" })[value] ?? value;
+};
+
+const toEvaluationRow = (item) => ({
+  ...item,
+  evaluationId: item.evaluationId ?? item.id,
+  subjectId: item.subjectId ?? item.subject?.subjectId ?? item.evaluationId ?? item.id,
+  subjectName: item.subjectName ?? item.subject?.subjectName ?? item.subject?.name ?? "—",
+  subjectCode: item.subjectCode ?? item.subject?.subjectCode ?? item.subject?.code ?? "—",
+  facultyName: item.facultyName ?? item.faculty?.facultyName ?? item.faculty?.name ?? "—",
+  facultyCode: item.facultyCode ?? item.faculty?.facultyCode ?? item.faculty?.code ?? "—",
+  obtainedMarks: item.obtainedMarks ?? item.averageMarks ?? item.average ?? 0,
+  totalMarks: item.totalMarks ?? item.maximumMarks ?? item.maxMarks ?? 0,
+  totalStudents: item.totalStudents ?? item.studentCount ?? 0,
+  averageMarks: item.averageMarks ?? item.average ?? 0,
+  highestMarks: item.highestMarks ?? item.highest ?? 0,
+  lowestMarks: item.lowestMarks ?? item.lowest ?? 0,
+  status: normalizeStatus(item.status ?? item.evaluationStatus),
+});
+
+const toStudentMarksRow = (item) => ({
+  ...item,
+  studentId: item.studentId ?? item.id,
+  rollNo: item.rollNo ?? item.rollNumber ?? "—",
+  studentName: item.studentName ?? item.name ?? item.fullName ?? "—",
+  internal: item.internal ?? item.internalMarks ?? 0,
+  practical: item.practical ?? item.practicalMarks ?? 0,
+  theory: item.theory ?? item.theoryMarks ?? 0,
+  remarks: item.remarks ?? "",
+  isAbsent: Boolean(item.isAbsent ?? item.absent),
+});
+
 /* ============================================================ 
    MAIN COMPONENT 
    ============================================================ */ 
@@ -201,6 +202,12 @@ export default function MarksEntryPage() {
   const [studentAnalysisSearchTerm, setStudentAnalysisSearchTerm] = useState(""); 
   const [toastMessage, setToastMessage] = useState(null); 
   const toastTimeoutRef = useRef(null);
+  const [boards, setBoards] = useState([]);
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicLevels, setAcademicLevels] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [examinations, setExaminations] = useState([]);
  
   // Data States 
   const [evaluations, setEvaluations] = useState([]); 
@@ -231,6 +238,103 @@ export default function MarksEntryPage() {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFilterData = async () => {
+      try {
+        const [boardsResponse, yearsResponse, levelsResponse, groupsResponse, examsResponse] = await Promise.all([
+          apiClient.get("/api/v1/boards"),
+          apiClient.get("/api/v1/academic-years"),
+          apiClient.get("/api/v1/boards/academic-levels"),
+          apiClient.get("/api/v1/groups"),
+          apiClient.get("/api/v1/examinations"),
+        ]);
+        if (cancelled) return;
+
+        setBoards(getResponseItems(boardsResponse.data));
+        setAcademicYears(getResponseItems(yearsResponse.data));
+        setAcademicLevels(getResponseItems(levelsResponse.data));
+        setGroups(getResponseItems(groupsResponse.data));
+        setExaminations(getResponseItems(examsResponse.data));
+      } catch (error) {
+        if (!cancelled) showToast(getApiErrorMessage(error), "error");
+      }
+    };
+
+    loadFilterData();
+    return () => { cancelled = true; };
+  }, [showToast]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!filters.group) {
+      setSections([]);
+      return undefined;
+    }
+
+    const loadSections = async () => {
+      try {
+        const response = await apiClient.get(`/api/v1/Sections/group/${filters.group}`);
+        if (!cancelled) setSections(getResponseItems(response.data));
+      } catch (error) {
+        if (!cancelled) {
+          setSections([]);
+          showToast(getApiErrorMessage(error), "error");
+        }
+      }
+    };
+
+    loadSections();
+    return () => { cancelled = true; };
+  }, [filters.group, showToast]);
+
+  const boardOptions = useMemo(
+    () => boards.map((board) => ({ label: board.boardName, value: String(board.boardId) })),
+    [boards]
+  );
+  const academicYearOptions = useMemo(
+    () => academicYears.map((year) => ({ label: year.academicYearName, value: String(year.academicYearId) })),
+    [academicYears]
+  );
+  const academicLevelOptions = useMemo(
+    () => academicLevels.map((level) => ({ label: level.levelName, value: String(level.academicLevelId) })),
+    [academicLevels]
+  );
+  const groupOptions = useMemo(() => {
+    const selectedLevel = academicLevels.find((level) => String(level.academicLevelId) === filters.academicLevel)?.levelName;
+    return groups
+      .filter((group) =>
+        (!filters.board || String(group.boardId) === filters.board) &&
+        (!filters.academicYear || String(group.academicYearId) === filters.academicYear) &&
+        (!selectedLevel || group.academicLevel === selectedLevel)
+      )
+      .map((group) => ({ label: group.groupName, value: String(group.groupId) }));
+  }, [academicLevels, filters.academicLevel, filters.academicYear, filters.board, groups]);
+  const sectionOptions = useMemo(
+    () => sections.map((section) => ({ label: section.sectionName, value: String(section.sectionId) })),
+    [sections]
+  );
+  const examinationOptions = useMemo(() => {
+    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
+    const selectedYear = academicYears.find((year) => String(year.academicYearId) === filters.academicYear);
+    return examinations
+      .filter((exam) =>
+        (!selectedGroup || exam.groupName === selectedGroup.groupName) &&
+        (!selectedYear || exam.academicYear === selectedYear.academicYearName)
+      )
+      .map((exam) => ({ label: exam.examName, value: String(exam.examinationId) }));
+  }, [academicYears, examinations, filters.academicYear, filters.group, groups]);
+  const displayFilters = useMemo(() => ({
+    ...filters,
+    board: boardOptions.find((option) => option.value === filters.board)?.label || filters.board,
+    academicYear: academicYearOptions.find((option) => option.value === filters.academicYear)?.label || filters.academicYear,
+    academicLevel: academicLevelOptions.find((option) => option.value === filters.academicLevel)?.label || filters.academicLevel,
+    group: groupOptions.find((option) => option.value === filters.group)?.label || filters.group,
+    section: sectionOptions.find((option) => option.value === filters.section)?.label || filters.section,
+    examination: examinationOptions.find((option) => option.value === filters.examination)?.label || filters.examination,
+  }), [academicLevelOptions, academicYearOptions, boardOptions, examinationOptions, filters, groupOptions, sectionOptions]);
+
   const getCurrentStatus = useCallback( 
     (subjectId, fallbackStatus) => 
       subjectStatuses[subjectId] ?? fallbackStatus ?? "SUBMITTED", 
@@ -238,18 +342,23 @@ export default function MarksEntryPage() {
   ); 
 
   const currentGroupSubjects = useMemo(() => { 
-    const grp = filters.group || "MPC";
+    if (evaluations.length) return evaluations.map((evaluation) => evaluation.subjectName);
+    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
+    const grp = selectedGroup?.groupName?.split("-")[0].trim() || "MPC";
     const groupSubjects = GROUP_SUBJECTS[grp] || GROUP_SUBJECTS.MPC; 
-    return isSecondYearExam(filters.examination) 
+    const selectedExam = examinations.find((exam) => String(exam.examinationId) === filters.examination);
+    return isSecondYearExam(selectedExam?.examName)
       ? groupSubjects.secondYear 
       : groupSubjects.firstYear; 
-  }, [filters.group, filters.examination]); 
+  }, [evaluations, examinations, filters.examination, filters.group, groups]);
 
   // Generate Fallback Static Marks Data for a Subject
   const createStaticMarksForSubject = useCallback((subjectName) => { 
-    const sectionShort = (filters.section || "A").replace(/Section\s*/i, "").trim() || "A"; 
-    const practicalSubject = isPracticalSubject(subjectName); 
-    const grp = filters.group || "MPC";
+    const selectedSection = sections.find((section) => String(section.sectionId) === filters.section);
+    const sectionShort = (selectedSection?.sectionName || "A").replace(/Section\s*/i, "").trim() || "A";
+    const practicalSubject = isPracticalSubject(subjectName);
+    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
+    const grp = selectedGroup?.groupCode || selectedGroup?.groupName?.split("-")[0].trim() || "MPC";
     return INITIAL_STUDENTS_BASE.map((student, index) => ({ 
       studentId: student.id, 
       rollNo: `${grp}${sectionShort}${student.rollNo}`, 
@@ -260,62 +369,40 @@ export default function MarksEntryPage() {
       remarks: "Good Performance", 
       isAbsent: false 
     })); 
-  }, [filters.group, filters.section]); 
+  }, [filters.group, filters.section, groups, sections]);
 
-  // Static Data Generator on Click "Fetch Evaluation Data"
-  const handleFetchData = () => { 
-    const subjects = currentGroupSubjects; 
-    const newEvaluations = subjects.map((subj, index) => { 
-      const baseSubj = getBaseSubjectName(subj); 
-      const facultyName = SUBJECT_FACULTY[baseSubj] || "Faculty Instructor"; 
-      const facultyCode = FACULTY_CODES[facultyName] || `FAC100${index + 1}`;
-      const subjectCode = SUBJECT_CODES[baseSubj] || `SUBJ${100 + index + 1}`;
-      const isPrac = isPracticalSubject(subj);
-      
-      const avgTheory = 65 + index * 2;
-      const avgPractical = isPrac ? 20 : 0;
-      const totalAvg = avgTheory + avgPractical;
+  // Fetch evaluation data for the selected academic context.
+  const handleFetchData = async () => {
+    try {
+      const response = await apiClient.post("/api/v1/evaluations/search", {
+        boardId: Number(filters.board),
+        academicYearId: Number(filters.academicYear),
+        academicLevelId: Number(filters.academicLevel),
+        groupId: Number(filters.group),
+        sectionId: Number(filters.section),
+        examinationId: Number(filters.examination),
+      });
+      const newEvaluations = getResponseItems(response.data).map(toEvaluationRow);
 
-      return { 
-        evaluationId: `EV-${1000 + index + 1}`, 
-        subjectId: `SUBJ-${100 + index + 1}`, 
-        subjectName: subj, 
-        subjectCode,
-        facultyName, 
-        facultyCode,
-        theoryMarks: avgTheory,
-        practicalMarks: avgPractical,
-        obtainedMarks: totalAvg,
-        totalMarks: 100,
-        totalStudents: INITIAL_STUDENTS_BASE.length, 
-        averageMarks: totalAvg, 
-        highestMarks: isPrac ? 95 : 98, 
-        lowestMarks: 45, 
-        status: index % 2 === 0 ? "SUBMITTED" : "VERIFIED"
-      }; 
-    }); 
-
-    const newSubjectMarksData = {}; 
-    newEvaluations.forEach((evaluation) => { 
-      newSubjectMarksData[evaluation.subjectId] = createStaticMarksForSubject(evaluation.subjectName); 
-    }); 
-
-    setEvaluations(newEvaluations); 
+      setEvaluations(newEvaluations);
     setSubjectStatuses( 
       newEvaluations.reduce((statuses, item) => { 
         statuses[item.subjectId] = item.status; 
         return statuses; 
       }, {}) 
     ); 
-    setSubjectMarksData(newSubjectMarksData); 
+      setSubjectMarksData({});
     setEvaluationSearchTerm("");
     setStudentAnalysisSearchTerm("");
     setSelectedEvaluationId(null);
     setModalRows([]);
     setCurrentPage(1);
     setStudentMarksPage(1); 
-    setReady(true); 
-    setViewMode("list");
+      setReady(true);
+      setViewMode("list");
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    }
   }; 
 
   // Handle Cascading Filter Changes
@@ -362,12 +449,19 @@ export default function MarksEntryPage() {
   }, [filters]); 
 
   // Row Click: Open Subject Evaluation Details
-  const handleRowClick = (item) => {
+  const handleRowClick = async (item) => {
     setSelectedEvaluationId(item.subjectId);
-    const rows = subjectMarksData[item.subjectId] || createStaticMarksForSubject(item.subjectName);
-    setModalRows(rows);
     setCurrentPage(1);
     setViewMode("details");
+    try {
+      const response = await apiClient.get(`/api/v1/evaluations/${item.evaluationId}/students`);
+      const rows = getResponseItems(response.data).map(toStudentMarksRow);
+      setSubjectMarksData((previous) => ({ ...previous, [item.subjectId]: rows }));
+      setModalRows(rows);
+    } catch (error) {
+      setModalRows([]);
+      showToast(getApiErrorMessage(error), "error");
+    }
   };
 
   const handleBackToEvaluations = () => { 
@@ -378,65 +472,57 @@ export default function MarksEntryPage() {
   }; 
 
   // Single Evaluation Status Change Action (Verify / Approve / Reject)
-  const handleUpdateStatus = (targetStatusNum) => {
+  const handleUpdateStatus = async (targetStatusNum) => {
     if (!selectedEvaluation) return;
     const targetSid = selectedEvaluation.subjectId;
     const currentStatus = getCurrentStatus(targetSid, selectedEvaluation.status);
 
-    if (targetStatusNum === 4) { 
-      // Rejection is isolated to the selected subject.
-      const updatedStatuses = { ...subjectStatuses, [targetSid]: "REJECTED" };
-
+    if (targetStatusNum === "edit") {
+      const updatedStatuses = { ...subjectStatuses, [targetSid]: "SUBMITTED" };
       setSubjectStatuses(updatedStatuses);
-      setEvaluations((prev) =>
-        prev.map((item) => ({
-          ...item,
-          status: updatedStatuses[item.subjectId] ?? item.status
-        }))
-      );
+      setEvaluations((prev) => prev.map((item) => item.subjectId === targetSid ? { ...item, status: "SUBMITTED" } : item));
+      showToast("Subject reverted to Submitted successfully", "success");
+      return;
+    }
 
-      showToast("Subject REJECTED successfully.", "error"); 
-    } else {
-      const statusMap = { 2: "VERIFIED", 3: "APPROVED", edit: "SUBMITTED" };
-      const newStatusStr = statusMap[targetStatusNum] || "VERIFIED";
-      if (newStatusStr === "APPROVED" && currentStatus !== "SUBMITTED" && currentStatus !== "VERIFIED") return;
+    const action = ({ 2: "verify", 3: "approve", 4: "reject" })[targetStatusNum];
+    if (!action || !selectedEvaluation.evaluationId) return;
+    if (targetStatusNum === 3 && currentStatus !== "SUBMITTED" && currentStatus !== "VERIFIED") return;
 
+    try {
+      await apiClient.patch(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/${action}`);
+      const newStatusStr = ({ 2: "VERIFIED", 3: "APPROVED", 4: "REJECTED" })[targetStatusNum];
       const updatedStatuses = { ...subjectStatuses, [targetSid]: newStatusStr };
       setSubjectStatuses(updatedStatuses);
       setEvaluations((prev) =>
         prev.map((item) => (item.subjectId === targetSid ? { ...item, status: newStatusStr } : item))
       );
-      showToast(
-        newStatusStr === "SUBMITTED"
-          ? "Subject reverted to Submitted successfully"
-          : `Subject status updated to ${newStatusStr} successfully`,
-        "success"
-      );
+      showToast(`Subject ${newStatusStr.toLowerCase()} successfully`, "success");
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
     }
   };
 
   // Global Approval Action ("Approve All")
   // Approves any subject that is currently SUBMITTED or VERIFIED to APPROVED, keeping REJECTED subjects intact.
-  const handleGlobalApproval = () => { 
+  const handleGlobalApproval = async () => {
     if (!isAllFiltersSelected || evaluations.length === 0) return; 
 
-    const updatedStatuses = { ...subjectStatuses };
-    evaluations.forEach((item) => {
-      const currentSubjStatus = updatedStatuses[item.subjectId] ?? item.status ?? "SUBMITTED";
-      if (currentSubjStatus === "SUBMITTED" || currentSubjStatus === "VERIFIED") {
-        updatedStatuses[item.subjectId] = "APPROVED";
-      }
+    const eligibleEvaluations = evaluations.filter((item) => {
+      const status = getCurrentStatus(item.subjectId, item.status);
+      return item.evaluationId && (status === "SUBMITTED" || status === "VERIFIED");
     });
+    if (!eligibleEvaluations.length) return;
 
-    setSubjectStatuses(updatedStatuses);
-    setEvaluations((prevEvaluations) =>
-      prevEvaluations.map((item) => ({
-        ...item,
-        status: updatedStatuses[item.subjectId] ?? item.status
-      }))
-    );
-
-    showToast("All eligible subjects (Submitted / Verified) approved successfully", "success"); 
+    try {
+      await Promise.all(eligibleEvaluations.map((item) => apiClient.patch(`/api/v1/evaluations/${item.evaluationId}/approve`)));
+      const updatedStatuses = eligibleEvaluations.reduce((statuses, item) => ({ ...statuses, [item.subjectId]: "APPROVED" }), { ...subjectStatuses });
+      setSubjectStatuses(updatedStatuses);
+      setEvaluations((previous) => previous.map((item) => ({ ...item, status: updatedStatuses[item.subjectId] ?? item.status })));
+      showToast("All eligible subjects (Submitted / Verified) approved successfully", "success");
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    }
   }; 
 
   const filteredEvaluations = useMemo(() => { 
@@ -456,16 +542,23 @@ export default function MarksEntryPage() {
 
   // Student Analysis Dynamic Marks & Grade List
   const studentSubjectMarksList = useMemo(() => { 
-    const sectionShort = (filters.section || "A").replace(/Section\s*/i, "").trim() || "A"; 
-    const grp = filters.group || "MPC";
-    return INITIAL_STUDENTS_BASE.map((student, idx) => { 
-      const rollNo = `${grp}${sectionShort}${student.rollNo}`; 
+    const selectedSection = sections.find((section) => String(section.sectionId) === filters.section);
+    const sectionShort = (selectedSection?.sectionName || "A").replace(/Section\s*/i, "").trim() || "A";
+    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
+    const grp = selectedGroup?.groupCode || selectedGroup?.groupName?.split("-")[0].trim() || "MPC";
+    const loadedStudents = Object.values(subjectMarksData).flat();
+    const hasLoadedStudents = loadedStudents.length > 0;
+    const students = hasLoadedStudents
+      ? Array.from(new Map(loadedStudents.map((student) => [String(student.studentId), student])).values())
+      : INITIAL_STUDENTS_BASE;
+    return students.map((student, idx) => {
+      const rollNo = hasLoadedStudents ? student.rollNo : `${grp}${sectionShort}${student.rollNo}`;
       let studentTotal = 0; 
       const marksPerSubject = {}; 
       currentGroupSubjects.forEach((subj, subjectIndex) => { 
         const subjectId = evaluations[subjectIndex]?.subjectId;
         const subjRows = subjectId ? subjectMarksData[subjectId] || [] : []; 
-        const match = subjRows.find((r) => r.studentId === student.id) || subjRows[idx]; 
+        const match = subjRows.find((r) => String(r.studentId) === String(student.studentId ?? student.id)) || subjRows[idx];
         if (match) { 
           const isPractical = isPracticalSubject(subj); 
           const total = calculateTotal(match, isPractical); 
@@ -478,7 +571,7 @@ export default function MarksEntryPage() {
       const maxPossible = currentGroupSubjects.length * 100; 
       const overallGrade = getGrade(studentTotal, maxPossible); 
       return { 
-        studentId: student.id, 
+        studentId: student.studentId ?? student.id,
         rollNo, 
         studentName: student.studentName, 
         subjectMarks: marksPerSubject, 
@@ -487,7 +580,7 @@ export default function MarksEntryPage() {
         grade: overallGrade 
       }; 
     }); 
-  }, [subjectMarksData, currentGroupSubjects, evaluations, filters.group, filters.section]); 
+  }, [subjectMarksData, currentGroupSubjects, evaluations, filters.group, filters.section, groups, sections]);
 
   const filteredStudentMarks = useMemo(() => { 
     if (!studentAnalysisSearchTerm.trim()) return studentSubjectMarksList; 
@@ -574,42 +667,42 @@ export default function MarksEntryPage() {
             <SelectFilter 
               label="Board" 
               value={filters.board} 
-              options={BOARDS_OPTIONS} 
+              options={boardOptions}
               onChange={(v) => handleFilterChange("board", v)} 
             /> 
             <SelectFilter 
               label="Academic Year" 
               value={filters.academicYear} 
               disabled={!filters.board} 
-              options={ACADEMIC_YEARS_OPTIONS} 
+              options={academicYearOptions}
               onChange={(v) => handleFilterChange("academicYear", v)} 
             /> 
             <SelectFilter 
               label="Academic Level" 
               value={filters.academicLevel} 
               disabled={!filters.board || !filters.academicYear} 
-              options={ACADEMIC_LEVELS_OPTIONS} 
+              options={academicLevelOptions}
               onChange={(v) => handleFilterChange("academicLevel", v)} 
             /> 
             <SelectFilter 
               label="Group" 
               value={filters.group} 
               disabled={!filters.academicLevel} 
-              options={GROUP_OPTIONS} 
+              options={groupOptions}
               onChange={(v) => handleFilterChange("group", v)} 
             /> 
             <SelectFilter 
               label="Section" 
               value={filters.section} 
               disabled={!filters.group} 
-              options={SECTION_OPTIONS} 
+              options={sectionOptions}
               onChange={(v) => handleFilterChange("section", v)} 
             /> 
             <SelectFilter 
               label="Examination" 
               value={filters.examination} 
               disabled={!filters.section} 
-              options={EXAMINATIONS_OPTIONS} 
+              options={examinationOptions}
               onChange={(v) => handleFilterChange("examination", v)} 
             /> 
           </div> 
@@ -817,7 +910,7 @@ export default function MarksEntryPage() {
             <EvaluationDetailsView 
               selectedEvaluation={selectedEvaluation} 
               currentStatus={getCurrentStatus(selectedEvaluation.subjectId, selectedEvaluation.status)} 
-              filters={filters} 
+              filters={displayFilters}
               rows={paginatedRows} 
               totalPages={totalPages} 
               currentPage={safeCurrentPage} 

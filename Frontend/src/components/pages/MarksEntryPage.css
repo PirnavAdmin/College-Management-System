@@ -635,13 +635,3 @@
     justify-content: center;
   }
 }
-<<<<<<< HEAD
-
-@media (max-width: 480px) {
-  .cms-stats-grid,
-  .cms-stat-grid {
-    grid-template-columns: 1fr;
-  }
-}
-=======
->>>>>>> a908cdab8a2cb085419133d929d7739ca55713e3

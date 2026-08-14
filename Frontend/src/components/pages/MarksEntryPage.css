@@ -1,6 +1,6 @@
 /* ============================================================
    ACADEMIC EVALUATION (MARKS ENTRY) CSS - THEME AWARE ERP DESIGN
-   Merged Theme Design System & Marks Entry CSS for MarksEntryPage
+   Complete Theme-Aware & Responsive CSS for MarksEntryPage Component
    ============================================================ */
 
 :root {
@@ -176,7 +176,7 @@
   --cms-status-rejected-border: rgba(248, 113, 113, 0.3);
 }
 
-/* Animations */
+/* Base Wrapper & Animations */
 .cms-anim-up {
   animation: cmsFadeUp 0.35s ease both;
 }
@@ -251,6 +251,11 @@
   box-shadow: var(--cms-shadow);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   overflow: hidden;
+}
+
+.cms-card-filter,
+.cms-main-card {
+  margin-bottom: 0;
 }
 
 .cms-card-head {
@@ -1160,6 +1165,13 @@
 }
 
 /* Responsive Media Queries */
+@media (max-width: 1200px) {
+  .cms-filter-grid,
+  .cms-filters {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @media (max-width: 1024px) {
   .cms-filter-grid,
   .cms-filters {

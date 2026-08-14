@@ -30,17 +30,6 @@ export default defineConfig(({ mode }) => {
           headers: {
             "ngrok-skip-browser-warning": "true",
           },
-          configure: (proxy) => {
-            proxy.on("error", (error, _request, response) => {
-              if (!response || response.headersSent) return;
-
-              response.writeHead(502, { "Content-Type": "application/json" });
-              response.end(JSON.stringify({
-                message: "The API server is unavailable. Check VITE_API_BASE_URL and confirm the backend/ngrok tunnel is running.",
-                detail: error.code || error.message,
-              }));
-            });
-          },
         },
       },
     },

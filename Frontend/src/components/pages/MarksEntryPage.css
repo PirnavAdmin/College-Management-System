@@ -9,11 +9,7 @@
   box-sizing: border-box;
 }
 
-<<<<<<< HEAD
-/* Toast Banner */
-=======
 /* ---------- Toast Banners ---------- */
->>>>>>> a908cdab8a2cb085419133d929d7739ca55713e3
 .cms-toast-banner {
   position: fixed;
   top: 20px;

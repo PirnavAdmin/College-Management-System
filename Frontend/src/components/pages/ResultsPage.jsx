@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
+  getStudentResult,
+  getRankList,
+  getFailedStudents,
+  getResultAnalysis,
+  downloadResultsExcel,
+  downloadResultsPdf,
   processResults,
   publishResults,
 } from "@/features/results/services/resultsService.js";
@@ -72,6 +78,10 @@ export default function ResultsPage() {
 
   const [resultsGenerated, setResultsGenerated] = useState(false);
   const [resultsData, setResultsData] = useState(defaultResults);
+  const [scopeResults, setScopeResults] = useState([]);
+  const [rankResults, setRankResults] = useState([]);
+  const [analysis, setAnalysis] = useState(null);
+  const [failedResults, setFailedResults] = useState([]);
   const [selectedViewStudent, setSelectedViewStudent] = useState(null);
   const [viewMode, setViewMode] = useState("table"); // 'table' | 'rankList' | 'analytics'
 
@@ -79,15 +89,27 @@ export default function ResultsPage() {
   const [pageStudentResults, setPageStudentResults] = useState(1);
   const [pageRankResults, setPageRankResults] = useState(1);
 
-  const availableBoards = ["BIE Telangana", "CBSE", "ICSE"];
-  const availableYears = filters.board ? ["2025-2026", "2024-2025"] : [];
-  const availableLevels = filters.year ? ["Intermediate 1st Year", "Intermediate 2nd Year"] : [];
-  const availableGroups = filters.level ? ["MPC", "BiPC", "CEC", "MEC"] : [];
-  const availableExams = filters.group ? ["Semester I", "Annual Examination", "Quarterly Exam"] : [];
+  useEffect(() => {
+    getResults({ PageNumber: 1, PageSize: 100 })
+      .then(setScopeResults)
+      .catch((error) => setToast(getApiErrorMessage(error)));
+  }, []);
+
+  const uniqueScopes = (records, idKey, nameKey) =>
+    [...new Map(records.filter((record) => record[idKey] && record[nameKey]).map((record) => [record[idKey], { id: record[idKey], name: record[nameKey] }])).values()];
+  const availableBoards = uniqueScopes(scopeResults, "boardId", "board");
+  const availableYears = filters.board ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board), "academicYearId", "year") : [];
+  const availableLevels = filters.year ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year), "academicLevelId", "academicLevel") : [];
+  const availableGroups = filters.level ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year && String(r.academicLevelId) === filters.level), "groupId", "group") : [];
+  const availableExams = filters.group ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year && String(r.academicLevelId) === filters.level && String(r.groupId) === filters.group), "examId", "exam") : [];
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
   );
+
+  const selectedScope = useMemo(() => ({
+    boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group), examId: Number(filters.exam),
+  }), [filters]);
 
   const handleFilterChange = (field, value) => {
     setResultsGenerated(false);
@@ -123,21 +145,14 @@ export default function ResultsPage() {
     setLoading(true);
     try {
       await processResults({
-        boardId: filters.board,
-        academicYearId: filters.year,
-        academicLevelId: filters.level,
-        groupId: filters.group,
-        examId: filters.exam,
+        ...selectedScope,
         processDate: new Date().toISOString(),
       });
 
-      const fetchedData = await getResults({
-        boardId: filters.board,
-        academicYearId: filters.year,
-        academicLevelId: filters.level,
-        groupId: filters.group,
-        examId: filters.exam,
-      });
+      const [fetchedData, failedData] = await Promise.all([
+        getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
+        getFailedStudents(),
+      ]);
 
       if (Array.isArray(fetchedData) && fetchedData.length > 0) {
         setResultsData(fetchedData);
@@ -145,10 +160,11 @@ export default function ResultsPage() {
         setResultsData(defaultResults);
       }
 
+      setFailedResults(failedData);
       setToast("Results processed and fetched successfully!");
     } catch (error) {
+      setToast(getApiErrorMessage(error));
       setResultsData(defaultResults);
-      setToast("Results processed and loaded successfully.");
     } finally {
       setResultsGenerated(true);
       setPageStudentResults(1);
@@ -160,13 +176,16 @@ export default function ResultsPage() {
   };
 
   const handlePublishResults = async () => {
+    if (!isAllFiltersSelected) {
+      setToast("Select the complete result scope before publishing.");
+      return;
+    }
     setLoading(true);
     try {
-      await publishResults({ ...filters });
-      setResultsData((prev) =>
-        prev.map((item) => ({ ...item, status: "Published", isPublished: true }))
-      );
-      setToast(`All results published successfully for Group: ${filters.group || "MPC"}!`);
+      const message = await publishResults({ ...selectedScope, publishDate: new Date().toISOString() });
+      const refreshed = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
+      setResultsData(refreshed);
+      setToast(typeof message === "string" ? message : "Results published successfully.");
       setConfirm(false);
     } catch (error) {
       setToast(getApiErrorMessage(error));
@@ -199,9 +218,11 @@ export default function ResultsPage() {
   };
 
   // Rank Mapping & Calculation
-  const rankedStudentsWithRanks = [...resultsData]
-    .sort((a, b) => b.total - a.total)
-    .map((st, idx) => ({ ...st, rank: idx + 1 }));
+  const rankedStudentsWithRanks = rankResults.length
+    ? rankResults
+    : [...resultsData]
+        .sort((a, b) => b.total - a.total)
+        .map((st, idx) => ({ ...st, rank: idx + 1 }));
 
   const filteredRankList = rankedStudentsWithRanks.filter((st) =>
     `${st.name} ${st.roll}`.toLowerCase().includes(rankSearchQuery.toLowerCase())
@@ -214,12 +235,35 @@ export default function ResultsPage() {
   );
 
   const getStudentRank = (studentId) => {
-    const found = rankedStudentsWithRanks.find((s) => s.id === studentId);
+    const found = rankedStudentsWithRanks.find((s) => s.id === studentId || s.studentId === studentId);
     return found ? found.rank : "-";
   };
 
   // PDF Export
-  const handleDownloadPDF = () => {
+  const downloadBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!isAllFiltersSelected) {
+      handleLocalDownloadPDF();
+      return;
+    }
+    try {
+      const response = await downloadResultsPdf(selectedScope);
+      downloadBlob(response.data, "Results.pdf");
+      setToast("Results PDF downloaded successfully.");
+    } catch (error) {
+      handleLocalDownloadPDF();
+    }
+  };
+
+  const handleLocalDownloadPDF = () => {
     try {
       const doc = new jsPDF({ orientation: "landscape" });
       doc.setFontSize(14);
@@ -291,7 +335,21 @@ export default function ResultsPage() {
   };
 
   // Excel Export
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+    if (!isAllFiltersSelected) {
+      handleLocalExportExcel();
+      return;
+    }
+    try {
+      const response = await downloadResultsExcel(selectedScope);
+      downloadBlob(response.data, "Results.xlsx");
+      setToast("Results Excel file downloaded successfully.");
+    } catch (error) {
+      handleLocalExportExcel();
+    }
+  };
+
+  const handleLocalExportExcel = () => {
     try {
       const exportData = filteredStudentResults.map((r, idx) => ({
         "SL NO": idx + 1,
@@ -329,18 +387,94 @@ export default function ResultsPage() {
     }, 400);
   };
 
+  const handleViewStudentResult = async (student) => {
+    if (!isAllFiltersSelected) {
+      setSelectedViewStudent(student);
+      return;
+    }
+    setLoading(true);
+    try {
+      const memo = await getStudentResult({ studentId: student.studentId || student.id, ...selectedScope });
+      setSelectedViewStudent({
+        ...student,
+        name: memo.studentName || student.name,
+        roll: memo.rollNumber || student.roll,
+        group: memo.groupName || student.group,
+        exam: memo.examName || student.exam,
+        total: memo.grandTotal || student.total,
+        maximum: memo.maximumMarks || student.maximum || 500,
+        percentage: memo.percentage ? `${memo.percentage}%` : student.percentage,
+        grade: memo.overallGrade || student.grade,
+        result: memo.finalResult || student.result,
+        status: memo.resultStatus || student.status,
+        rank: memo.classRank || getStudentRank(student.id),
+        subjects: memo.subjects ?? [],
+      });
+    } catch (error) {
+      setSelectedViewStudent(student);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRankList = async () => {
+    if (isAllFiltersSelected) {
+      try {
+        const ranks = await getRankList(selectedScope);
+        if (Array.isArray(ranks) && ranks.length > 0) {
+          setRankResults(ranks.map((item) => ({
+            id: item.studentId,
+            studentId: item.studentId,
+            name: item.studentName,
+            roll: item.rollNumber,
+            group: item.groupName,
+            exam: item.examName,
+            total: item.totalMarks,
+            maximum: item.maximumMarks || 500,
+            percentage: `${item.percentage}%`,
+            grade: item.grade,
+            rank: item.rank,
+            result: item.result || "PASS",
+          })));
+        }
+      } catch (error) {
+        // Fallback to computed ranks
+      }
+    }
+    setRankSearchQuery("");
+    setPageRankResults(1);
+    setViewMode("rankList");
+  };
+
+  const handleAnalytics = async () => {
+    if (isAllFiltersSelected) {
+      try {
+        const resAnalysis = await getResultAnalysis(selectedScope);
+        if (resAnalysis) setAnalysis(resAnalysis);
+      } catch (error) {
+        // Fallback to local calculations
+      }
+    }
+    setViewMode("analytics");
+  };
+
   const parsePercent = (val) => parseFloat(String(val).replace("%", "")) || 0;
 
   // Analytics Calculations
-  const totalStudents = resultsData.length;
-  const passStudents = resultsData.filter((r) => r.result === "PASS").length;
-  const failStudents = totalStudents - passStudents;
+  const totalStudents = analysis?.totalStudents ?? resultsData.length;
+  const passStudents = analysis?.passedStudents ?? resultsData.filter((r) => String(r.result).toUpperCase() === "PASS").length;
+  const failStudents = analysis?.failedStudents ?? resultsData.filter((r) => String(r.result).toUpperCase() === "FAIL").length;
   const overallAvgPercentage = totalStudents > 0 
     ? (resultsData.reduce((acc, r) => acc + parsePercent(r.percentage), 0) / totalStudents).toFixed(2) 
     : "0.00";
 
   const subjectsList = ["English", "Sanskrit", "Mathematics", "Physics", "Chemistry"];
-  const subjectAnalytics = subjectsList.map((sub) => {
+  const subjectAnalytics = analysis?.subjects?.map((subject) => ({
+    subject: subject.subjectName,
+    average: subject.averageScore,
+    passCount: subject.passedStudents,
+    passRate: subject.subjectPassPercentage,
+  })) ?? subjectsList.map((sub) => {
     const key = sub.toLowerCase();
     const scores = resultsData.map((r) => r[key] || 0);
     const avgScore = totalStudents > 0 ? (scores.reduce((a, b) => a + b, 0) / totalStudents).toFixed(1) : 0;
@@ -411,7 +545,7 @@ export default function ResultsPage() {
       <div className="cms-card">
         <div className="cms-card-body" style={{ padding: "16px 20px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h3 className="cms-card-title">Evaluation Filters</h3>
+            <h3 className="cms-card-title">Academic Context</h3>
             <button
               type="button"
               className="cms-btn cms-btn-primary"
@@ -422,7 +556,7 @@ export default function ResultsPage() {
             </button>
           </div>
           <p className="cms-subtitle" style={{ marginBottom: 12 }}>
-            Choose the academic context sequentially before reviewing faculty submissions and generating results.
+Choose the academic context sequentially before reviewing faculty submissions.
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
@@ -434,9 +568,15 @@ export default function ResultsPage() {
                 onChange={(e) => handleFilterChange("board", e.target.value)}
               >
                 <option value="">Select Board</option>
-                {availableBoards.map((b) => (
-                  <option key={b} value={b}>{b}</option>
-                ))}
+                {availableBoards.length ? (
+                  availableBoards.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))
+                ) : (
+                  ["BIE Telangana", "CBSE", "ICSE"].map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -449,9 +589,15 @@ export default function ResultsPage() {
                 onChange={(e) => handleFilterChange("year", e.target.value)}
               >
                 <option value="">Select Year</option>
-                {availableYears.map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
+                {availableYears.length ? (
+                  availableYears.map((y) => (
+                    <option key={y.id} value={y.id}>{y.name}</option>
+                  ))
+                ) : (
+                  filters.board && ["2025-2026", "2024-2025"].map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -464,9 +610,15 @@ export default function ResultsPage() {
                 onChange={(e) => handleFilterChange("level", e.target.value)}
               >
                 <option value="">Select Level</option>
-                {availableLevels.map((l) => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
+                {availableLevels.length ? (
+                  availableLevels.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))
+                ) : (
+                  filters.year && ["Intermediate 1st Year", "Intermediate 2nd Year"].map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -479,9 +631,15 @@ export default function ResultsPage() {
                 onChange={(e) => handleFilterChange("group", e.target.value)}
               >
                 <option value="">Select Group</option>
-                {availableGroups.map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
+                {availableGroups.length ? (
+                  availableGroups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))
+                ) : (
+                  filters.level && ["MPC", "BiPC", "CEC", "MEC"].map((g) => (
+                    <option key={g} value={g}>{g}</option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -494,9 +652,15 @@ export default function ResultsPage() {
                 onChange={(e) => handleFilterChange("exam", e.target.value)}
               >
                 <option value="">Select Exam</option>
-                {availableExams.map((ex) => (
-                  <option key={ex} value={ex}>{ex}</option>
-                ))}
+                {availableExams.length ? (
+                  availableExams.map((ex) => (
+                    <option key={ex.id} value={ex.id}>{ex.name}</option>
+                  ))
+                ) : (
+                  filters.group && ["Semester I", "Annual Examination", "Quarterly Exam"].map((ex) => (
+                    <option key={ex} value={ex}>{ex}</option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -718,7 +882,7 @@ export default function ResultsPage() {
                 <tbody>
                   {pagedRankResults.length ? (
                     pagedRankResults.map((st) => (
-                      <tr key={st.id}>
+                      <tr key={st.id || st.studentId}>
                         <td style={{ textAlign: "center", fontWeight: 700, color: st.rank === 1 ? "#d97706" : st.rank === 2 ? "inherit" : st.rank === 3 ? "#b45309" : "inherit" }}>
                           #{st.rank}
                         </td>
@@ -738,7 +902,7 @@ export default function ResultsPage() {
                               textDecoration: "underline",
                             }}
                             title="Click to view student marks memo"
-                            onClick={() => setSelectedViewStudent(st)}
+                            onClick={() => handleViewStudentResult(st)}
                           >
                             {st.name}
                           </button>
@@ -922,11 +1086,7 @@ export default function ResultsPage() {
                   type="button"
                   className="cms-btn cms-btn-ghost"
                   style={{ height: "34px", padding: "0 10px", fontSize: "12px" }}
-                  onClick={() => {
-                    setRankSearchQuery("");
-                    setPageRankResults(1);
-                    setViewMode("rankList");
-                  }}
+                  onClick={handleRankList}
                 >
                   <FaTrophy style={{ color: "#d97706" }} /> Rank List
                 </button>
@@ -934,7 +1094,7 @@ export default function ResultsPage() {
                   type="button"
                   className="cms-btn cms-btn-ghost"
                   style={{ height: "34px", padding: "0 10px", fontSize: "12px" }}
-                  onClick={() => setViewMode("analytics")}
+                  onClick={handleAnalytics}
                 >
                   <FaChartBar style={{ color: "#2563eb" }} /> Analytics
                 </button>
@@ -961,7 +1121,7 @@ export default function ResultsPage() {
                 <tbody>
                   {pagedStudentResults.length ? (
                     pagedStudentResults.map((r, idx) => (
-                      <tr key={r.id}>
+                      <tr key={r.id || r.studentId}>
                         <td style={{ opacity: 0.7 }}>{(pageStudentResults - 1) * pageSize + idx + 1}</td>
                         <td>
                           <button
@@ -978,7 +1138,7 @@ export default function ResultsPage() {
                               textDecoration: "underline",
                             }}
                             title="Click to view student marks memo"
-                            onClick={() => setSelectedViewStudent(r)}
+                            onClick={() => handleViewStudentResult(r)}
                           >
                             {r.name}
                           </button>

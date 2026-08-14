@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
+import axios from "axios";
 import DashboardLayout from "../layout/DashboardLayout";
+import { env } from "@/config/env.js";
 import "./MarksEntryPage.css";
 
 /* ============================================================
@@ -40,23 +42,7 @@ const IconSearch = () => (
   </svg>
 );
 
-/* ============================================================
-   FALLBACK DATA DEFINITIONS
-   ============================================================ */
-const FALLBACK_BOARDS = [
-  "BIE Telangana (BIETS)",
-  "BIE Andhra Pradesh (BIEAP)",
-  "CBSE Senior Secondary"
-];
-
-const FALLBACK_ACADEMIC_YEARS = ["2025-2026", "2026-2027"];
-
-const FALLBACK_ACADEMIC_LEVELS = [
-  "Intermediate 1st Year",
-  "Intermediate 2nd Year"
-];
-
-const FALLBACK_GROUPS = ["MPC", "BiPC", "CEC", "MEC"];
+const API_BASE_URL = env.useDevProxy ? "" : env.apiBaseUrl;
 
 const FALLBACK_SECTIONS = ["Section A", "Section B", "Section C"];
 
@@ -215,6 +201,108 @@ export default function MarksEntryPage() {
   const [viewMode, setViewMode] = useState("list");
   const [currentPage, setCurrentPage] = useState(1);
   const [studentMarksPage, setStudentMarksPage] = useState(1);
+  const [academicYears, setAcademicYears] = useState([]);
+  const [boards, setBoards] = useState([]);
+  const [academicLevels, setAcademicLevels] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [dropdownErrors, setDropdownErrors] = useState({});
+
+  const getRequestConfig = () => {
+    const token = localStorage.getItem("token");
+
+    return token
+      ? {
+          headers: {
+            Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}`
+          }
+        }
+      : {};
+  };
+
+  const fetchAcademicYears = async () => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/academic-years`,
+        getRequestConfig()
+      );
+      setAcademicYears(
+        Array.isArray(response.data?.data)
+          ? response.data.data.map((item) => ({
+              label: item.academicYearName,
+              value: item.academicYearId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, academicYear: false }));
+    } catch {
+      setAcademicYears([]);
+      setDropdownErrors((prev) => ({ ...prev, academicYear: true }));
+    }
+  };
+
+  const fetchBoards = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/boards`, getRequestConfig());
+      setBoards(
+        Array.isArray(response.data?.items)
+          ? response.data.items.map((item) => ({
+              label: item.boardName,
+              value: item.boardId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, board: false }));
+    } catch {
+      setBoards([]);
+      setDropdownErrors((prev) => ({ ...prev, board: true }));
+    }
+  };
+
+  const fetchAcademicLevels = async () => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/v1/boards/academic-levels`,
+        getRequestConfig()
+      );
+      setAcademicLevels(
+        Array.isArray(response.data)
+          ? response.data.map((item) => ({
+              label: item.levelName,
+              value: item.academicLevelId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, academicLevel: false }));
+    } catch {
+      setAcademicLevels([]);
+      setDropdownErrors((prev) => ({ ...prev, academicLevel: true }));
+    }
+  };
+
+  const fetchGroups = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/groups`, getRequestConfig());
+      setGroups(
+        Array.isArray(response.data)
+          ? response.data.map((item) => ({
+              label: item.groupName,
+              value: item.groupId
+            }))
+          : []
+      );
+      setDropdownErrors((prev) => ({ ...prev, group: false }));
+    } catch {
+      setGroups([]);
+      setDropdownErrors((prev) => ({ ...prev, group: true }));
+    }
+  };
+
+  useEffect(() => {
+    fetchAcademicYears();
+    fetchBoards();
+    fetchAcademicLevels();
+    fetchGroups();
+  }, []);
 
 
 
@@ -529,28 +617,32 @@ export default function MarksEntryPage() {
             <SelectFilter
               label="Board"
               value={filters.board}
-              options={FALLBACK_BOARDS}
+              options={boards}
+              error={dropdownErrors.board && "unable to load boards"}
               onChange={(v) => handleFilterChange("board", v)}
             />
             <SelectFilter
               label="Academic Year"
               value={filters.academicYear}
               disabled={!filters.board}
-              options={FALLBACK_ACADEMIC_YEARS}
+              options={academicYears}
+              error={dropdownErrors.academicYear && "unable to load academic years"}
               onChange={(v) => handleFilterChange("academicYear", v)}
             />
             <SelectFilter
               label="Academic Level"
               value={filters.academicLevel}
               disabled={!filters.academicYear}
-              options={FALLBACK_ACADEMIC_LEVELS}
+              options={academicLevels}
+              error={dropdownErrors.academicLevel && "unable to load academic levels"}
               onChange={(v) => handleFilterChange("academicLevel", v)}
             />
             <SelectFilter
               label="Group"
               value={filters.group}
               disabled={!filters.academicLevel}
-              options={FALLBACK_GROUPS}
+              options={groups}
+              error={dropdownErrors.group && "unable to load groups"}
               onChange={(v) => handleFilterChange("group", v)}
             />
             <SelectFilter
@@ -781,7 +873,11 @@ export default function MarksEntryPage() {
   );
 }
 
-function SelectFilter({ label, value, options, disabled, onChange }) {
+function SelectFilter({ label, value, options, disabled, error, onChange }) {
+  const normalizedOptions = options.map((option) =>
+    typeof option === "object" ? option : { label: option, value: option }
+  );
+
   return (
     <div className="cms-field-group">
       <label className="cms-field-label">{label}</label>
@@ -789,15 +885,21 @@ function SelectFilter({ label, value, options, disabled, onChange }) {
         className="cms-select-input"
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const selectedOption = options.find(
+            (option) => String(option.value) === e.target.value
+          );
+          onChange(selectedOption ? selectedOption.value : e.target.value);
+        }}
       >
         <option value="">Select {label}</option>
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
+        {normalizedOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
           </option>
         ))}
       </select>
+      {error && <p className="cms-field-error">{error}</p>}
     </div>
   );
 }

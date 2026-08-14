@@ -1,16 +1,17 @@
-import * as data from "@/data/mockData.js";
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import ListPage from "@/components/pages/ListPage.jsx";
 import "./StudentManagementPage.css";
 
-const o = data.options;
 const MODULE_SLUG = "students";
 
 const extractItems = (payload) => {
   if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.$values)) return payload.$values;
   if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.Items)) return payload.Items;
   if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.data?.$values)) return payload.data.$values;
   if (Array.isArray(payload?.data?.items)) return payload.data.items;
   return [];
 };
@@ -29,6 +30,9 @@ const suspendStudent = (studentId, data) => apiClient.patch(apiEndpoints.student
 const activateStudent = (studentId, data) => apiClient.patch(apiEndpoints.students.activate(studentId), data);
 const resetStudentPassword = (studentId, data) => apiClient.post(apiEndpoints.students.resetPassword(studentId), data);
 const getStudentDashboard = (studentId) => apiClient.get(apiEndpoints.students.getDashboard(studentId));
+const getGroups = () => apiClient.get(apiEndpoints.groups.getAll, { params: { pageNumber: 1, pageSize: 100 } });
+const getAcademicLevels = () => apiClient.get(apiEndpoints.boards.getAcademicLevels);
+const getSections = () => apiClient.get(apiEndpoints.sections.getAll);
 
 const studentName = (student) => student.fullName || student.studentName || student.name || [student.firstName, student.lastName].filter(Boolean).join(" ");
 const toStudentRow = (student) => ({
@@ -65,13 +69,13 @@ export const pageConfig = {
       { name: "admissionNo", label: "Admission Number", required: true },
       { name: "name", label: "Student Name", required: true },
       { name: "roll", label: "Roll Number", required: true },
-      { name: "group", label: "Group", type: "select", options: o.group, required: true },
-      { name: "level", label: "Academic Level", type: "select", options: o.level, required: true },
-      { name: "section", label: "Section", type: "select", options: ["A", "B", "C"], required: true },
-      { name: "gender", label: "Gender", type: "select", options: o.gender, required: true },
+      { name: "group", label: "Group", type: "select", options: [], loadOptions: getGroups, required: true },
+      { name: "level", label: "Academic Level", type: "select", options: [], loadOptions: getAcademicLevels, required: true },
+      { name: "section", label: "Section", type: "select", options: [], loadOptions: getSections, required: true },
+      { name: "gender", label: "Gender", type: "select", options: ["Male", "Female", "Other"], required: true },
       { name: "father", label: "Father Name", required: true },
       { name: "mobile", label: "Mobile", type: "tel", required: true },
-      { name: "status", label: "Status", type: "select", options: o.status, required: true },
+      { name: "status", label: "Status", type: "select", options: ["Active", "Inactive"], required: true },
     ],
   };
 
@@ -94,6 +98,18 @@ pageConfig.api = {
   toRows: (payload) => extractItems(payload).map(toStudentRow),
   toPayload: (student) => student,
 };
+
+pageConfig.fields.find((field) => field.name === "group").getOptions = (response) => extractItems(response.data)
+  .filter((group) => group.isActive !== false)
+  .map((group) => group.groupCode || group.groupName || group.name)
+  .filter(Boolean);
+pageConfig.fields.find((field) => field.name === "level").getOptions = (response) => extractItems(response.data)
+  .map((level) => level.levelName || level.academicLevel || level.name)
+  .filter(Boolean);
+pageConfig.fields.find((field) => field.name === "section").getOptions = (response) => extractItems(response.data)
+  .filter((section) => section.isActive !== false)
+  .map((section) => section.sectionName || section.sectionCode || section.name)
+  .filter(Boolean);
 
 export default function StudentManagementPage() {
   return <ListPage slug={MODULE_SLUG} config={pageConfig} />;

@@ -30,7 +30,6 @@ export const menu = [
         to: "/dashboard/faculty",
         label: "Faculty Management",
         icon: Users,
-        children: [{ to: "/dashboard/faculty-allocation", label: "Subject Allocation", icon: ClipboardCheck }],
       },
       { to: "/dashboard/admission", label: "Student Admission", icon: UserPlus },
       { to: "/dashboard/students", label: "Student Management", icon: GraduationCap },

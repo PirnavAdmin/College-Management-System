@@ -312,7 +312,6 @@ export default function MarksEntryPage() {
   const [sections, setSections] = useState(STATIC_SECTION_OPTIONS);
   const [examinations, setExaminations] = useState(FALLBACK_EXAMINATIONS_OPTIONS);
   const [dropdownErrors, setDropdownErrors] = useState({});
-
   const showToast = useCallback((message, type = "success") => {
     const id = Date.now();
     setToastMessage({ id, msg: message, type });

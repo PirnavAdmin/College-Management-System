@@ -56,19 +56,21 @@ const option = (value, label) => ({ value: asString(value), label: asString(labe
 
 const normalizeStudent = (item) => {
   const id = read(item, "studentId", "StudentId", "id", "Id");
-  const eligibility = asString(read(item, "eligibilityStatus", "EligibilityStatus", "eligibility", "status", "Status") || "Eligible");
+  const eligibleFlag = read(item, "isEligible", "IsEligible", "eligible", "Eligible");
+  const eligibility = asString(read(item, "eligibilityStatus", "EligibilityStatus", "eligibility", "status", "Status"));
   return {
     raw: item,
     id: numericId(id) ?? id,
-    admissionNo: read(item, "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo", "studentCode", "StudentCode") || "-",
+    admissionNo: read(item, "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo", "admissionNumberNo", "AdmissionNumberNo", "studentCode", "StudentCode") || "-",
     name: read(item, "studentName", "StudentName", "fullName", "FullName", "name", "Name") || "-",
-    academicYear: read(item, "academicYearName", "AcademicYearName", "currentAcademicYear", "CurrentAcademicYear") || "-",
-    board: read(item, "boardName", "BoardName", "board", "Board") || "-",
-    level: read(item, "academicLevel", "AcademicLevel", "level", "Level") || "-",
-    group: read(item, "groupName", "GroupName", "group", "Group") || "-",
-    section: read(item, "sectionName", "SectionName", "section", "Section") || "-",
-    medium: read(item, "medium", "Medium") || "-",
-    eligibility,
+    academicYear: read(item, "academicYearName", "AcademicYearName", "sourceAcademicYearName", "SourceAcademicYearName", "currentAcademicYear", "CurrentAcademicYear") || "-",
+    board: read(item, "boardName", "BoardName", "sourceBoardName", "SourceBoardName", "board", "Board") || "-",
+    level: read(item, "academicLevel", "AcademicLevel", "sourceAcademicLevel", "SourceAcademicLevel", "level", "Level") || "-",
+    group: read(item, "groupName", "GroupName", "sourceGroupName", "SourceGroupName", "group", "Group") || "-",
+    section: read(item, "sectionName", "SectionName", "sourceSection", "SourceSection", "section", "Section") || "-",
+    medium: read(item, "medium", "Medium", "sourceMedium", "SourceMedium") || "-",
+    eligibility: eligibility || (eligibleFlag === false ? "Not Eligible" : "-"),
+    eligibleFlag,
     reason: read(item, "eligibilityReason", "EligibilityReason", "reason", "Reason", "remarks", "Remarks") || "",
   };
 };
@@ -93,7 +95,7 @@ const normalizeHistory = (item) => ({
   canRollback: read(item, "canRollback", "CanRollback") !== false,
 });
 
-const isEligible = (student) => !/not\s*eligible|ineligible|failed|blocked/i.test(student.eligibility);
+const isEligible = (student) => student.eligibleFlag !== false && !/not\s*eligible|ineligible|failed|blocked/i.test(student.eligibility);
 
 export default function PromotionPage() {
   const [activeTab, setActiveTab] = useState("promotion");
@@ -131,16 +133,20 @@ export default function PromotionPage() {
     setMasterLoading(true);
     setMasterError("");
     try {
-      const [yearsResponse, boardsResponse, levelsResponse, groupsResponse, sectionsResponse] = await Promise.all([
+      const responses = await Promise.allSettled([
         apiClient.get(apiEndpoints.academicYears.getAll), apiClient.get(apiEndpoints.boards.list),
-        apiClient.get("/api/v1/boards/academic-levels"), apiClient.get(apiEndpoints.groups.list),
+        apiClient.get(apiEndpoints.boards.academicLevels), apiClient.get(apiEndpoints.groups.list),
         apiClient.get(apiEndpoints.sections.list),
       ]);
-      const years = unwrap(yearsResponse.data).map((item) => option(read(item, "academicYearId", "AcademicYearId", "id", "Id"), read(item, "academicYearName", "AcademicYearName", "name", "Name"))).filter((item) => numericId(item.value));
-      const boards = unwrap(boardsResponse.data).map((item) => option(read(item, "boardId", "BoardId", "id", "Id"), read(item, "boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"))).filter((item) => numericId(item.value));
-      const levelItems = unwrap(levelsResponse.data, ["academicLevels", "AcademicLevels"]);
-      const groupItems = unwrap(groupsResponse.data);
-      const sectionItems = unwrap(sectionsResponse.data);
+      const responseData = (index) => responses[index].status === "fulfilled" ? responses[index].value.data : [];
+      const [yearsData, boardsData, levelsData, groupsData, sectionsData] = responses.map((_, index) => responseData(index));
+      const failedMasters = ["academic years", "boards", "academic levels", "groups", "sections"]
+        .filter((_, index) => responses[index].status === "rejected");
+      const years = unwrap(yearsData).map((item) => option(read(item, "academicYearId", "AcademicYearId", "id", "Id"), read(item, "academicYearName", "AcademicYearName", "name", "Name"))).filter((item) => numericId(item.value));
+      const boards = unwrap(boardsData).map((item) => option(read(item, "boardId", "BoardId", "id", "Id"), read(item, "boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"))).filter((item) => numericId(item.value));
+      const levelItems = unwrap(levelsData, ["academicLevels", "AcademicLevels"]);
+      const groupItems = unwrap(groupsData);
+      const sectionItems = unwrap(sectionsData);
       const levels = unique(levelItems.map((item) => typeof item === "string" ? item : read(item, "academicLevel", "AcademicLevel", "levelName", "LevelName", "name", "Name")));
       const groups = groupItems.map((item) => ({
         ...option(read(item, "groupId", "GroupId", "id", "Id"), read(item, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")),
@@ -158,6 +164,7 @@ export default function PromotionPage() {
       const derivedLevels = unique([...levels, ...groupItems.map((item) => read(item, "academicLevel", "AcademicLevel")), ...sectionItems.map((item) => read(item, "academicLevel", "AcademicLevel"))]);
       const mediums = unique(sectionItems.map((item) => read(item, "medium", "Medium")));
       setMasters({ years, boards, levels: derivedLevels.map((item) => option(item)), groups, sections, mediums: mediums.map((item) => option(item)) });
+      if (failedMasters.length) setMasterError(`Unable to load ${failedMasters.join(", ")}. Other live master data remains available.`);
     } catch (requestError) {
       setMasterError(getApiErrorMessage(requestError));
     } finally {
@@ -239,7 +246,7 @@ export default function PromotionPage() {
     setError("");
     try {
       const response = await apiClient.get(promotionApi.eligible, { params: eligibleParams(), signal: controller.signal });
-      const rows = unwrap(response.data, ["students", "Students", "eligibleStudents", "EligibleStudents"])
+      const rows = unwrap(response.data, ["students", "Students", "eligibleStudents", "EligibleStudents", "results", "Results"])
         .map(normalizeStudent).filter((student) => isPresent(student.id));
       setStudents(rows);
       setStudentsLoaded(true);
@@ -304,9 +311,11 @@ export default function PromotionPage() {
 
   const promoteIndividual = async () => {
     if (!individualStudent || submitting || !validateFields(targetFields)) return;
+    const studentId = numericId(individualStudent.id);
+    if (!studentId) { setError("This student does not contain a valid backend ID."); return; }
     setSubmitting(true);
     try {
-      await apiClient.post(promotionApi.student(individualStudent.id), {
+      await apiClient.post(promotionApi.student(studentId), {
         targetAcademicYearId: numericId(setup.toYear), targetBoardId: numericId(setup.toBoard), targetAcademicLevel: setup.toLevel,
         targetGroupId: numericId(setup.toGroup), targetSection: setup.toSection, targetMedium: setup.toMedium,
       });
@@ -319,6 +328,7 @@ export default function PromotionPage() {
     if (!validatePromotion() || submitting) return;
     setSubmitting(true);
     const isSection = type === "section";
+    if (isSection && !setup.toSection) { setFieldErrors((current) => ({ ...current, toSection: "To Section is required." })); setError("Select a target section before section allocation."); setSubmitting(false); return; }
     try {
       await apiClient.patch(isSection ? promotionApi.sectionAllocation : promotionApi.groupAllocation, compactParams({
         studentIds: buildPayload().studentIds, targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel: setup.toLevel,
@@ -340,7 +350,7 @@ export default function PromotionPage() {
         Search: historyFilters.search.trim(), PromotionStatus: historyFilters.promotionStatus,
         FromDate: historyFilters.fromDate, ToDate: historyFilters.toDate,
       }) });
-      setHistory(unwrap(response.data, ["history", "History", "records", "Records"]).map(normalizeHistory).filter((row) => isPresent(row.id)));
+      setHistory(unwrap(response.data, ["history", "History", "promotions", "Promotions", "records", "Records"]).map(normalizeHistory).filter((row) => isPresent(row.id)));
       setHistoryLoaded(true);
     } catch (requestError) { setError(getApiErrorMessage(requestError)); setHistory([]); setHistoryLoaded(true); }
     finally { setHistoryLoading(false); }
@@ -350,9 +360,11 @@ export default function PromotionPage() {
 
   const rollback = async () => {
     if (!rollbackReason.trim()) { setError("Enter a reason for rollback."); return; }
+    const promotionId = numericId(rollbackRecord?.id);
+    if (!promotionId) { setError("This record does not contain a valid backend Promotion ID."); return; }
     setRollbackLoading(true);
     try {
-      await apiClient.post(promotionApi.rollback, { promotionId: numericId(rollbackRecord.id), reason: rollbackReason.trim() });
+      await apiClient.post(promotionApi.rollback, { promotionId, reason: rollbackReason.trim() });
       setRollbackRecord(null); setRollbackReason(""); setToast("Promotion rolled back successfully.");
       await Promise.all([fetchHistory(), studentsLoaded ? fetchEligibleStudents() : Promise.resolve()]);
     } catch (requestError) { setError(getApiErrorMessage(requestError)); }
@@ -367,7 +379,7 @@ export default function PromotionPage() {
         AcademicLevel: setup.fromLevel, TargetAcademicLevel: setup.toLevel, GroupId: numericId(setup.group),
         TargetGroupId: numericId(setup.toGroup), Section: setup.fromSection, TargetSection: setup.toSection,
       }) });
-      setReportRows(unwrap(response.data, ["report", "Report", "records", "Records"]).map(normalizeHistory));
+      setReportRows(unwrap(response.data, ["report", "Report", "promotions", "Promotions", "records", "Records"]).map(normalizeHistory));
       setReportLoaded(true);
     } catch (requestError) { setError(getApiErrorMessage(requestError)); setReportRows([]); setReportLoaded(true); }
     finally { setReportLoading(false); }
@@ -418,7 +430,7 @@ export default function PromotionPage() {
         {activeTab === "report" ? <section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Promotion Report</h2><p>The report uses the Source and Target selections from Promotion Setup.</p></div><button className="cms-btn cms-btn-primary" onClick={fetchReport} disabled={reportLoading}>{reportLoading ? "Loading..." : "Load Report"}</button></div>{reportLoading ? <div className="promotion-empty">Loading promotion report...</div> : reportLoaded ? <HistoryTable rows={reportRows} /> : <div className="promotion-empty">Load the report to view backend promotion records.</div>}</section> : null}
       </div>
 
-      {previewData ? <Modal title="Promotion Preview" onClose={() => setPreviewData(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setPreviewData(null)}>Back</button><button className="cms-btn cms-btn-primary" onClick={() => setConfirmOpen(true)}>Continue</button></>}><div className="promotion-preview-details"><div><span>From</span><strong>{[masters.years.find((item) => item.value === setup.fromYear)?.label, setup.fromLevel, masters.groups.find((item) => item.value === setup.group)?.label, setup.fromSection, setup.fromMedium].filter(Boolean).join(" • ")}</strong></div><div><span>To</span><strong>{[masters.years.find((item) => item.value === setup.toYear)?.label, setup.toLevel, masters.groups.find((item) => item.value === setup.toGroup)?.label, setup.toSection, setup.toMedium].filter(Boolean).join(" • ")}</strong></div><div><span>Selected Students</span><strong>{selectedStudents.length}</strong></div><div><span>Preview Students</span><strong>{previewStudents.length || read(previewData, "studentCount", "StudentCount", "eligibleCount", "EligibleCount") || selectedStudents.length}</strong></div></div>{previewStudents.length ? <ul className="promotion-preview-list">{previewStudents.map((student, index) => <li key={read(student, "studentId", "StudentId", "id", "Id") ?? index}>{read(student, "studentName", "StudentName", "name", "Name") || read(student, "admissionNumber", "AdmissionNumber") || `Student ${index + 1}`}{read(student, "eligibilityStatus", "EligibilityStatus", "reason", "Reason") ? ` — ${read(student, "eligibilityStatus", "EligibilityStatus", "reason", "Reason")}` : ""}</li>)}</ul> : <p className="promotion-preview-copy">The backend preview completed successfully for the selected students.</p>}</Modal> : null}
+      {previewData ? <Modal title="Promotion Preview" onClose={() => setPreviewData(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setPreviewData(null)}>Back</button><button className="cms-btn cms-btn-primary" onClick={() => setConfirmOpen(true)}>Continue</button></>}><div className="promotion-preview-details"><div><span>From</span><strong>{[masters.years.find((item) => item.value === setup.fromYear)?.label, masters.boards.find((item) => item.value === setup.board)?.label, setup.fromLevel, masters.groups.find((item) => item.value === setup.group)?.label, setup.fromSection, setup.fromMedium].filter(Boolean).join(" • ")}</strong></div><div><span>To</span><strong>{[masters.years.find((item) => item.value === setup.toYear)?.label, masters.boards.find((item) => item.value === setup.toBoard)?.label, setup.toLevel, masters.groups.find((item) => item.value === setup.toGroup)?.label, setup.toSection, setup.toMedium].filter(Boolean).join(" • ")}</strong></div><div><span>Selected Students</span><strong>{selectedStudents.length}</strong></div><div><span>Preview Students</span><strong>{previewStudents.length || read(previewData, "studentCount", "StudentCount", "eligibleCount", "EligibleCount") || selectedStudents.length}</strong></div></div>{previewStudents.length ? <ul className="promotion-preview-list">{previewStudents.map((student, index) => <li key={read(student, "studentId", "StudentId", "id", "Id") ?? index}>{read(student, "studentName", "StudentName", "name", "Name") || read(student, "admissionNumber", "AdmissionNumber") || `Student ${index + 1}`}{read(student, "eligibilityStatus", "EligibilityStatus", "reason", "Reason") ? ` — ${read(student, "eligibilityStatus", "EligibilityStatus", "reason", "Reason")}` : ""}</li>)}</ul> : <p className="promotion-preview-copy">The backend preview completed successfully for the selected students.</p>}</Modal> : null}
       {confirmOpen ? <Modal title="Confirm Promotion" size="sm" onClose={() => setConfirmOpen(false)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setConfirmOpen(false)} disabled={submitting}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={confirmPromotion} disabled={submitting}>{submitting ? "Promoting..." : "Confirm Promotion"}</button></>}><div className="promotion-confirm-copy"><p>You are about to promote:</p><strong>{selectedStudents.length} student{selectedStudents.length === 1 ? "" : "s"}</strong><p>Promotion is submitted only after this confirmation.</p></div></Modal> : null}
       {individualStudent ? <Modal title="Promote Student" size="sm" onClose={() => setIndividualStudent(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setIndividualStudent(null)} disabled={submitting}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={promoteIndividual} disabled={submitting}>{submitting ? "Promoting..." : "Promote Student"}</button></>}><div className="promotion-confirm-copy"><p>Promote this student to the selected Target configuration?</p><strong>{individualStudent.name}</strong><p>{individualStudent.admissionNo}</p></div></Modal> : null}
       {rollbackRecord ? <Modal title="Rollback Promotion" size="sm" onClose={() => setRollbackRecord(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setRollbackRecord(null)} disabled={rollbackLoading}>Cancel</button><button className="cms-btn cms-btn-danger" onClick={rollback} disabled={rollbackLoading || !rollbackReason.trim()}>{rollbackLoading ? "Rolling Back..." : "Rollback"}</button></>}><div className="cms-field"><label htmlFor="rollback-reason">Rollback reason <span className="req">*</span></label><textarea id="rollback-reason" value={rollbackReason} onChange={(event) => setRollbackReason(event.target.value)} placeholder="Enter the reason for rollback" /></div></Modal> : null}

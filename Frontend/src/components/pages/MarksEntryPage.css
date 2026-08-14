@@ -196,8 +196,7 @@
 }
 
 /* Toast Banner */
-.cms-toast-banner,
-.cms-toast {
+.cms-toast-banner {
   position: fixed;
   top: 20px;
   right: 20px;

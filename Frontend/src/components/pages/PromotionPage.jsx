@@ -54,6 +54,20 @@ const compactParams = (values) => Object.fromEntries(Object.entries(values).filt
 const unique = (values) => [...new Set(values.filter(Boolean).map(String))];
 const option = (value, label) => ({ value: asString(value), label: asString(label ?? value) });
 
+const getMasterFailureMessage = (responses, names) => {
+  const failures = responses
+    .map((result, index) => result.status === "rejected" ? { name: names[index], error: result.reason } : null)
+    .filter(Boolean);
+  if (!failures.length) return "";
+  const statuses = failures.map(({ error }) => error?.response?.status);
+  if (statuses.some((status) => status === 502) || failures.some(({ error }) => !error?.response)) {
+    return "The backend API is unavailable. Start the API service on localhost:5167, then retry master data.";
+  }
+  if (statuses.some((status) => status === 401)) return "Your session has expired. Please sign in again.";
+  if (statuses.some((status) => status === 403)) return "Your account is not permitted to load Promotion master data.";
+  return `Unable to load ${failures.map(({ name }) => name).join(", ")}. Other live master data remains available.`;
+};
+
 const normalizeStudent = (item) => {
   const id = read(item, "studentId", "StudentId", "id", "Id");
   const eligibleFlag = read(item, "isEligible", "IsEligible", "eligible", "Eligible");
@@ -140,8 +154,7 @@ export default function PromotionPage() {
       ]);
       const responseData = (index) => responses[index].status === "fulfilled" ? responses[index].value.data : [];
       const [yearsData, boardsData, levelsData, groupsData, sectionsData] = responses.map((_, index) => responseData(index));
-      const failedMasters = ["academic years", "boards", "academic levels", "groups", "sections"]
-        .filter((_, index) => responses[index].status === "rejected");
+      const masterNames = ["academic years", "boards", "academic levels", "groups", "sections"];
       const years = unwrap(yearsData).map((item) => option(read(item, "academicYearId", "AcademicYearId", "id", "Id"), read(item, "academicYearName", "AcademicYearName", "name", "Name"))).filter((item) => numericId(item.value));
       const boards = unwrap(boardsData).map((item) => option(read(item, "boardId", "BoardId", "id", "Id"), read(item, "boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"))).filter((item) => numericId(item.value));
       const levelItems = unwrap(levelsData, ["academicLevels", "AcademicLevels"]);
@@ -164,7 +177,7 @@ export default function PromotionPage() {
       const derivedLevels = unique([...levels, ...groupItems.map((item) => read(item, "academicLevel", "AcademicLevel")), ...sectionItems.map((item) => read(item, "academicLevel", "AcademicLevel"))]);
       const mediums = unique(sectionItems.map((item) => read(item, "medium", "Medium")));
       setMasters({ years, boards, levels: derivedLevels.map((item) => option(item)), groups, sections, mediums: mediums.map((item) => option(item)) });
-      if (failedMasters.length) setMasterError(`Unable to load ${failedMasters.join(", ")}. Other live master data remains available.`);
+      setMasterError(getMasterFailureMessage(responses, masterNames));
     } catch (requestError) {
       setMasterError(getApiErrorMessage(requestError));
     } finally {

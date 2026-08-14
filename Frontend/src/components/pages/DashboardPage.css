@@ -9,6 +9,39 @@
 .dashboard-loader { min-height: 300px; display: grid; place-items: center; }
 .dashboard-warning { margin-bottom: 16px; padding: 10px 13px; border: 1px solid #f0d098; border-radius: 10px; color: #925c08; background: #fff8e8; font-size: 12px; }
 .dashboard-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.dashboard-kpi-grid .cms-stat {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 14px;
+}
+.dashboard-kpi-grid .cms-stat > .cms-stat-icon {
+  align-self: center;
+  justify-self: start;
+}
+.dashboard-kpi-grid .cms-stat > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 5px;
+}
+.dashboard-kpi-grid .cms-stat-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  line-height: 1.3;
+}
+.dashboard-kpi-grid .dashboard-demo-badge { flex: 0 0 auto; }
+.dashboard-kpi-grid .cms-stat-value {
+  max-width: 100%;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
 .dashboard-unavailable { margin-top: 3px; color: var(--cms-muted); font-size: 11px; }
 .dashboard-demo-badge { display: inline-flex; align-items: center; padding: 2px 6px; border: 1px solid #e8c986; border-radius: 999px; color: #8a5a08; background: #fff8e8; font-size: 9px; font-weight: 750; line-height: 1.2; vertical-align: middle; }
 .dashboard-grid { display: grid; gap: 16px; margin-bottom: 16px; }
@@ -43,4 +76,8 @@
 @media (max-width: 900px) { .dashboard-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-grid-2, .dashboard-grid-3 { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .dashboard-header-actions { align-items: stretch; flex-direction: column; width: 100%; } .dashboard-live-meta { justify-content: space-between; } }
 @media (max-width: 460px) { .dashboard-kpi-grid { grid-template-columns: 1fr; } .dashboard-live-meta { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 360px) {
+  .dashboard-kpi-grid .cms-stat { grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; }
+  .dashboard-kpi-grid .cms-stat > .cms-stat-icon { width: 40px; height: 40px; }
+}
 @media (max-width: 560px) { .dashboard-group-body { grid-template-columns: 1fr; } .dashboard-group-chart { height: 200px; } .dashboard-group-legend { max-height: 160px; } }

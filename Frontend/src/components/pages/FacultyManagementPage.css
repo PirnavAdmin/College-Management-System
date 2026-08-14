@@ -5,24 +5,69 @@
 }
 
 .faculty-list .cms-toolbar {
+  padding: 44px 56px 20px;
   border-bottom: 0;
 }
 
 .faculty-list .cms-table-wrap {
   overflow-x: auto;
   overflow-y: hidden;
-  border: 1px solid var(--cms-primary-border);
-  border-radius: 18px;
-  box-shadow: 0 14px 30px rgba(53, 35, 92, 0.09);
+  margin: 0 30px;
+  border-top: 1px solid #cbd5e1;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.faculty-list .cms-table thead { background: linear-gradient(100deg, var(--cms-primary-dark), #0d1b33); }
-.faculty-list .cms-table th { color: #fff; border: 0; }
-.faculty-list .cms-table tbody tr:nth-child(even) { background: var(--cms-primary-soft); }
-.faculty-list .cms-table tbody tr:hover { background: color-mix(in srgb, var(--cms-primary) 10%, var(--cms-surface)); }
+.faculty-list .cms-card {
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
+}
+
+.faculty-list .cms-search {
+  min-width: 320px;
+  max-width: 510px;
+  min-height: 52px;
+  border-color: #cbd5e1;
+  border-radius: 14px;
+  color: #64748b;
+}
+
+.faculty-list .cms-search input { font-size: 16px; }
+.faculty-list .cms-toolbar-right { gap: 12px; }
+.faculty-list .cms-toolbar-right .cms-btn {
+  min-height: 52px;
+  padding: 0 22px;
+  border-radius: 14px;
+  font-size: 16px;
+}
+
+.faculty-list .cms-table th {
+  padding: 18px 24px;
+  color: #64748b;
+  background: #f8fafc !important;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.faculty-list .cms-table td {
+  padding: 20px 24px;
+  color: #27364d;
+  font-size: 15px;
+}
+
+.faculty-list .cms-table tbody tr:nth-child(even) { background: #fff; }
+.faculty-list .cms-table tbody tr:hover { background: #f8fbff; }
 .faculty-list .cms-table th:last-child,
-.faculty-list .cms-table td:last-child { width: 150px; min-width: 150px; }
+.faculty-list .cms-table td:last-child { width: 160px; min-width: 160px; }
 .faculty-list .cms-actions { justify-content: flex-end; }
+.faculty-list .cms-pagination { padding: 26px 56px 62px; }
+.faculty-list .cms-page-btn { min-width: 42px; height: 42px; border-radius: 12px; font-size: 15px; }
 
 .faculty-steps {
   display: grid;
@@ -60,7 +105,7 @@
   border: 1px solid var(--cms-border);
   border-radius: 20px;
   background: var(--cms-surface);
-  box-shadow: 0 18px 36px rgba(22, 32, 62, 0.08);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06);
 }
 
 .faculty-stage > header,
@@ -104,6 +149,8 @@
 .faculty-subject-list .cms-btn { min-width: 94px; justify-content: center; }
 .faculty-subject-list.available .cms-btn { border-color: var(--cms-border); color: var(--cms-primary); }
 .faculty-subject-list.allocated .cms-btn { border-color: var(--cms-border); color: var(--cms-red); }
+.faculty-subject-list.available .cms-btn:hover { border-color: var(--cms-primary-border); background: var(--cms-primary-soft); }
+.faculty-subject-list.allocated .cms-btn:hover { border-color: #fecaca; background: #fef2f2; }
 
 /* The available-subject selector uses the same neutral form-control styling as the rest of the CMS. */
 .faculty-subject-list.available select {
@@ -115,12 +162,23 @@
   background: var(--cms-surface);
   color: var(--cms-text);
 }
+.faculty-subject-selector { display: grid; gap: 8px; }
+.faculty-subject-selector label { color: var(--cms-muted); font-size: 13px; font-weight: 600; }
+.faculty-subject-selector > div { display: flex; align-items: center; gap: 10px; }
+.faculty-subject-selector select { flex: 1; }
+.faculty-subject-selector select:disabled { cursor: not-allowed; opacity: 0.7; }
+.faculty-subject-selector .cms-btn:disabled { cursor: not-allowed; opacity: 0.55; }
 .faculty-empty { padding: 14px; color: var(--cms-muted); font-size: 13px; text-align: center; }
 
 @media (max-width: 800px) {
+  .faculty-list .cms-toolbar { padding: 24px 20px 16px; }
+  .faculty-list .cms-table-wrap { margin: 0 16px; }
+  .faculty-list .cms-pagination { padding: 20px; }
   .faculty-form-grid, .faculty-preview, .faculty-subject-columns { grid-template-columns: 1fr; }
   .faculty-steps { grid-template-columns: repeat(2, 1fr); }
   .faculty-form, .faculty-stage, .faculty-allocation { padding: 18px; }
+  .faculty-subject-selector > div { align-items: stretch; flex-direction: column; }
+  .faculty-subject-selector .cms-btn { width: 100%; }
 }
 
 @media (max-width: 480px) {

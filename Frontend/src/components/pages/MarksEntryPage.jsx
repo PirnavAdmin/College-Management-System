@@ -256,109 +256,6 @@ export default function MarksEntryPage() {
   const [sections, setSections] = useState([]);
   const [examinations, setExaminations] = useState([]);
   const [dropdownErrors, setDropdownErrors] = useState({});
-<<<<<<< HEAD
-
-  const getRequestConfig = useCallback(() => {
-    const token = localStorage.getItem("token");
-
-    return token
-      ? {
-          headers: {
-            Authorization: token.startsWith("Bearer ") ? token : `Bearer ${token}`
-          }
-        }
-      : {};
-  }, []);
-
-  const fetchAcademicYears = useCallback(async () => {
-    try {
-      const response = await axios.get(
-        `${API_BASE_URL}/api/v1/academic-years`,
-        getRequestConfig()
-      );
-      setAcademicYears(
-        Array.isArray(response.data?.data)
-          ? response.data.data.map((item) => ({
-              label: item.academicYearName,
-              value: item.academicYearId
-            }))
-          : []
-      );
-      setDropdownErrors((prev) => ({ ...prev, academicYear: false }));
-    } catch {
-      setAcademicYears([]);
-      setDropdownErrors((prev) => ({ ...prev, academicYear: true }));
-    }
-  }, [getRequestConfig]);
-
-  const fetchBoards = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/v1/boards`, getRequestConfig());
-      setBoards(
-        Array.isArray(response.data?.items)
-          ? response.data.items.map((item) => ({
-              label: item.boardName,
-              value: item.boardId
-            }))
-          : []
-      );
-      setDropdownErrors((prev) => ({ ...prev, board: false }));
-    } catch {
-      setBoards([]);
-      setDropdownErrors((prev) => ({ ...prev, board: true }));
-    }
-  }, [getRequestConfig]);
-
-  const fetchAcademicLevels = useCallback(async () => {
-    try {
-      const response = await axios.get(
-        `${API_BASE_URL}/api/v1/boards/academic-levels`,
-        getRequestConfig()
-      );
-      setAcademicLevels(
-        Array.isArray(response.data)
-          ? response.data.map((item) => ({
-              label: item.levelName,
-              value: item.academicLevelId
-            }))
-          : []
-      );
-      setDropdownErrors((prev) => ({ ...prev, academicLevel: false }));
-    } catch {
-      setAcademicLevels([]);
-      setDropdownErrors((prev) => ({ ...prev, academicLevel: true }));
-    }
-  }, [getRequestConfig]);
-
-  const fetchGroups = useCallback(async () => {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/v1/groups`, getRequestConfig());
-      setGroups(
-        Array.isArray(response.data)
-          ? response.data.map((item) => ({
-              label: item.groupName,
-              value: item.groupId
-            }))
-          : []
-      );
-      setDropdownErrors((prev) => ({ ...prev, group: false }));
-    } catch {
-      setGroups([]);
-      setDropdownErrors((prev) => ({ ...prev, group: true }));
-    }
-  }, [getRequestConfig]);
-
-  useEffect(() => {
-    fetchAcademicYears();
-    fetchBoards();
-    fetchAcademicLevels();
-    fetchGroups();
-  }, [fetchAcademicLevels, fetchAcademicYears, fetchBoards, fetchGroups]);
-
-
-
-=======
->>>>>>> 154df3b5182af3d3266dfe79a0578128e099d938
   const showToast = useCallback((message, type = "success") => {
     const id = Date.now();
     setToastMessage({ id, msg: message, type });
@@ -1023,11 +920,6 @@ export default function MarksEntryPage() {
         String(item.status || "").toLowerCase().includes(term)
     );
   }, [evaluations, searchTerm]);
-<<<<<<< HEAD
-
-  const currentGroupSubjects = useMemo(() => GROUP_SUBJECTS[filters.group || "MPC"] || [], [filters.group]);
-
-=======
   const dynamicSubjectColumns = useMemo(() => {
     if (!studentMatrix || studentMatrix.length === 0) return currentGroupSubjects;
     const firstItem = studentMatrix[0];
@@ -1036,7 +928,6 @@ export default function MarksEntryPage() {
     }
     return currentGroupSubjects;
   }, [studentMatrix, currentGroupSubjects]);
->>>>>>> 154df3b5182af3d3266dfe79a0578128e099d938
   const studentSubjectMarksList = useMemo(() => {
     if (studentMatrix && studentMatrix.length > 0) {
       return studentMatrix;

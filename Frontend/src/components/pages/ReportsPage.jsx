@@ -19,6 +19,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import "./ReportsAnalyticsPage.css";
@@ -36,30 +37,30 @@ const EMPTY_REPORTS = {
   facultyWorkload: {},
 };
 
-const module18ReportsApi = {
+const reportsApi = {
   filters: {
-    boards: "/api/module18-reports/filters/boards",
-    years: "/api/module18-reports/filters/academic-years",
-    levels: "/api/module18-reports/filters/academic-levels",
-    groups: "/api/module18-reports/filters/groups",
-    sections: "/api/module18-reports/filters/sections",
+    boards: apiEndpoints.boards.getAll,
+    years: apiEndpoints.academicYears.getAll,
+    levels: apiEndpoints.boards.academicLevels,
+    groups: apiEndpoints.reports.groups,
+    sections: apiEndpoints.reports.sections,
   },
-  auditLogs: "/api/module18-reports/audit-logs",
-  generate: (reportType) => `/api/module18-reports/generate/${encodeURIComponent(reportType)}`,
-  print: (reportType) => `/api/module18-reports/print/${encodeURIComponent(reportType)}`,
+  auditLogs: apiEndpoints.reports.auditLogs,
+  generate: apiEndpoints.reports.exportExcel,
+  print: apiEndpoints.reports.exportPdf,
 };
 
 const reportRequests = [
-  { key: "admissions", endpoint: "/api/module18-reports/details/admissions", casing: "lower" },
-  { key: "attendance", endpoint: "/api/module18-reports/details/attendance", casing: "lower" },
-  { key: "feeCollection", endpoint: "/api/module18-reports/details/fee-collection", casing: "lower" },
-  { key: "feeOutstanding", endpoint: "/api/module18-reports/details/due-fees", casing: "lower", omitDates: true },
-  { key: "examinations", endpoint: "/api/module18-reports/details/examinations", casing: "lower", omitSection: true },
-  { key: "results", endpoint: "/api/module18-reports/details/results", casing: "lower", omitSection: true },
-  { key: "facultyWorkload", endpoint: "/api/module18-reports/details/faculty-workload", casing: "upper" },
-  { key: "studentStrength", endpoint: "/api/module18-reports/details/student-strength", casing: "lower", omitDates: true },
-  { key: "passPercentage", endpoint: "/api/module18-reports/details/pass-percentage", casing: "upper" },
-  { key: "toppers", endpoint: "/api/module18-reports/details/toppers", casing: "upper" },
+  { key: "admissions", endpoint: apiEndpoints.reports.admissions },
+  { key: "attendance", endpoint: apiEndpoints.reports.attendance },
+  { key: "feeCollection", endpoint: apiEndpoints.reports.feeCollection },
+  { key: "feeOutstanding", endpoint: apiEndpoints.reports.feeOutstanding, omitDates: true },
+  { key: "examinations", endpoint: apiEndpoints.reports.examinations, omitSection: true },
+  { key: "results", endpoint: apiEndpoints.reports.results, omitSection: true },
+  { key: "facultyWorkload", endpoint: apiEndpoints.reports.facultyWorkload },
+  { key: "studentStrength", endpoint: apiEndpoints.reports.studentStrength, omitDates: true },
+  { key: "passPercentage", endpoint: apiEndpoints.reports.passPercentage },
+  { key: "toppers", endpoint: apiEndpoints.reports.toppers },
 ];
 
 const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
@@ -467,8 +468,8 @@ export default function ReportsPage() {
   const loadMasterOptions = useCallback(async () => {
     setMasterLoading(true);
     const results = await Promise.allSettled([
-      apiClient.get(module18ReportsApi.filters.boards),
-      apiClient.get(module18ReportsApi.filters.years),
+      apiClient.get(reportsApi.filters.boards),
+      apiClient.get(reportsApi.filters.years),
     ]);
     setMasterOptions((current) => ({
       ...current,
@@ -511,7 +512,7 @@ export default function ReportsPage() {
     if (!filters.board) return;
     let active = true;
     setMasterLoading(true);
-    apiClient.get(module18ReportsApi.filters.levels, { params: { boardId: Number(filters.board) } })
+    apiClient.get(reportsApi.filters.levels, { params: { boardId: Number(filters.board) } })
       .then((response) => {
         if (!active) return;
         const levels = collection(response.data, ["academicLevels", "AcademicLevels", "levels", "Levels"]).map((item) => optionFrom(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"])).filter(Boolean);
@@ -526,7 +527,7 @@ export default function ReportsPage() {
     if (!filters.board || !filters.year || !filters.level) return;
     let active = true;
     setMasterLoading(true);
-    apiClient.get(module18ReportsApi.filters.groups, { params: {
+    apiClient.get(reportsApi.filters.groups, { params: {
       boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level),
     } }).then((response) => {
       if (!active) return;
@@ -541,7 +542,7 @@ export default function ReportsPage() {
     if (!filters.board || !filters.year || !filters.level || !filters.group) return;
     let active = true;
     setMasterLoading(true);
-    apiClient.get(module18ReportsApi.filters.sections, { params: {
+    apiClient.get(reportsApi.filters.sections, { params: {
       boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group),
     } }).then((response) => {
       if (!active) return;
@@ -671,7 +672,7 @@ export default function ReportsPage() {
     setAuditLoading(true);
     setAuditError("");
     try {
-      const response = await apiClient.get(module18ReportsApi.auditLogs, { params: buildQuery(filters) });
+      const response = await apiClient.get(reportsApi.auditLogs, { params: buildQuery(filters) });
       setAuditData(response.data);
       setAuditPage(1);
     } catch (auditRequestError) {
@@ -687,11 +688,11 @@ export default function ReportsPage() {
       throw new Error("From Date must be earlier than or equal to To Date.");
     }
     const isPdf = format === "pdf";
-    const endpoint = isPdf ? module18ReportsApi.print(reportType) : module18ReportsApi.generate(reportType);
+    const endpoint = isPdf ? reportsApi.print : reportsApi.generate;
     const extension = isPdf ? "pdf" : "xlsx";
     const fallbackFilename = `${fallbackBase}-${new Date().toISOString().slice(0, 10)}.${extension}`;
     const response = await apiClient.get(endpoint, {
-      params: buildQuery(filters),
+      params: { ...buildQuery(filters), ReportType: reportType },
       responseType: "blob",
     });
     const contentType = response.headers?.["content-type"] || (isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

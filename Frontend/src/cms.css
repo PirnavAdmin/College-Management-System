@@ -572,7 +572,13 @@ body {
   color: var(--cms-text);
   transition: all 0.18s ease;
 }
-.cms-page-btn:hover:not(:disabled) { border-color: var(--cms-primary-border); color: var(--cms-primary); }
+.cms-page-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  border-color: #60a5fa;
+  color: var(--cms-primary);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
+}
 .cms-page-btn.is-active { background: var(--cms-primary); border-color: var(--cms-primary); color: #fff; }
 .cms-page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 

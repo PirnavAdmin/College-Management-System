@@ -31,11 +31,9 @@ const IconSearch = () => (
   </svg>
 );
 
-// Fallback to active Ngrok URL if VITE_API_BASE_URL is missing or empty
-const API_BASE_URL =
-  env.VITE_API_BASE_URL ||
-  env.apiBaseUrl ||
-  "https://willfully-external-disinfect.ngrok-free.dev";
+// Keep browser calls same-origin in development; Vite forwards `/api` to the
+// configured backend. This avoids CORS errors for this page's direct axios calls.
+const API_BASE_URL = env.useDevProxy ? "" : env.apiBaseUrl;
 
 const getStatusLabel = (status) => {
   switch (status) {

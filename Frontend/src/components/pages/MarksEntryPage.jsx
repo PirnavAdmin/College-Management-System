@@ -207,7 +207,7 @@ export default function MarksEntryPage() {
   const [groups, setGroups] = useState([]);
   const [dropdownErrors, setDropdownErrors] = useState({});
 
-  const getRequestConfig = () => {
+  const getRequestConfig = useCallback(() => {
     const token = localStorage.getItem("token");
 
     return token
@@ -217,9 +217,9 @@ export default function MarksEntryPage() {
           }
         }
       : {};
-  };
+  }, []);
 
-  const fetchAcademicYears = async () => {
+  const fetchAcademicYears = useCallback(async () => {
     try {
       const response = await axios.get(
         `${API_BASE_URL}/api/v1/academic-years`,
@@ -238,9 +238,9 @@ export default function MarksEntryPage() {
       setAcademicYears([]);
       setDropdownErrors((prev) => ({ ...prev, academicYear: true }));
     }
-  };
+  }, [getRequestConfig]);
 
-  const fetchBoards = async () => {
+  const fetchBoards = useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/v1/boards`, getRequestConfig());
       setBoards(
@@ -256,9 +256,9 @@ export default function MarksEntryPage() {
       setBoards([]);
       setDropdownErrors((prev) => ({ ...prev, board: true }));
     }
-  };
+  }, [getRequestConfig]);
 
-  const fetchAcademicLevels = async () => {
+  const fetchAcademicLevels = useCallback(async () => {
     try {
       const response = await axios.get(
         `${API_BASE_URL}/api/v1/boards/academic-levels`,
@@ -277,9 +277,9 @@ export default function MarksEntryPage() {
       setAcademicLevels([]);
       setDropdownErrors((prev) => ({ ...prev, academicLevel: true }));
     }
-  };
+  }, [getRequestConfig]);
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/v1/groups`, getRequestConfig());
       setGroups(
@@ -295,14 +295,14 @@ export default function MarksEntryPage() {
       setGroups([]);
       setDropdownErrors((prev) => ({ ...prev, group: true }));
     }
-  };
+  }, [getRequestConfig]);
 
   useEffect(() => {
     fetchAcademicYears();
     fetchBoards();
     fetchAcademicLevels();
     fetchGroups();
-  }, []);
+  }, [fetchAcademicLevels, fetchAcademicYears, fetchBoards, fetchGroups]);
 
 
 
@@ -503,7 +503,7 @@ export default function MarksEntryPage() {
     );
   }, [evaluations, searchTerm]);
 
-  const currentGroupSubjects = GROUP_SUBJECTS[filters.group || "MPC"] || [];
+  const currentGroupSubjects = useMemo(() => GROUP_SUBJECTS[filters.group || "MPC"] || [], [filters.group]);
 
   const studentSubjectMarksList = useMemo(() => {
     if (!ready || INITIAL_STUDENTS_BASE.length === 0) return [];

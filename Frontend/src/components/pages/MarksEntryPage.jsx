@@ -27,33 +27,33 @@ const IconSearch = () => (
   </svg>
 );
 
-const STUDENTS_PER_PAGE = 10; 
-const STUDENT_MARKS_PER_PAGE = 10; 
+const STUDENTS_PER_PAGE = 10;
+const STUDENT_MARKS_PER_PAGE = 10;
 
-const STATUS_META = { 
-  DRAFT: { label: "DRAFT", badgeClass: "cms-status-submitted" }, 
-  SUBMITTED: { label: "SUBMITTED", badgeClass: "cms-status-submitted" }, 
-  VERIFIED: { label: "VERIFIED", badgeClass: "cms-status-verified" }, 
-  APPROVED: { label: "APPROVED", badgeClass: "cms-status-approved" }, 
-  REJECTED: { label: "REJECTED", badgeClass: "cms-status-rejected" } 
-}; 
- 
-const PRACTICAL_SUBJECT_NAMES = ["physics", "chemistry", "zoology", "botany"]; 
- 
-const isPracticalSubject = (subjectName) => { 
-  if (!subjectName) return false; 
-  const name = String(subjectName).toLowerCase().trim(); 
-  return PRACTICAL_SUBJECT_NAMES.some((p) => name.includes(p)); 
-}; 
- 
-const calculateTotal = (row, isPractical) => { 
+const STATUS_META = {
+  DRAFT: { label: "DRAFT", badgeClass: "cms-status-submitted" },
+  SUBMITTED: { label: "SUBMITTED", badgeClass: "cms-status-submitted" },
+  VERIFIED: { label: "VERIFIED", badgeClass: "cms-status-verified" },
+  APPROVED: { label: "APPROVED", badgeClass: "cms-status-approved" },
+  REJECTED: { label: "REJECTED", badgeClass: "cms-status-rejected" }
+};
+
+const PRACTICAL_SUBJECT_NAMES = ["physics", "chemistry", "zoology", "botany"];
+
+const isPracticalSubject = (subjectName) => {
+  if (!subjectName) return false;
+  const name = String(subjectName).toLowerCase().trim();
+  return PRACTICAL_SUBJECT_NAMES.some((p) => name.includes(p));
+};
+
+const calculateTotal = (row, isPractical) => {
   if (row.totalMarks !== undefined && row.totalMarks !== null) return row.totalMarks;
-  const internal = Number(row.internalMarks || row.internal) || 0; 
-  const theory = Number(row.theoryMarks || row.theory) || 0; 
-  const practical = isPractical ? Number(row.practicalMarks || row.practical) || 0 : 0; 
-  return internal + theory + practical; 
-}; 
- 
+  const internal = Number(row.internalMarks || row.internal) || 0;
+  const theory = Number(row.theoryMarks || row.theory) || 0;
+  const practical = isPractical ? Number(row.practicalMarks || row.practical) || 0 : 0;
+  return internal + theory + practical;
+};
+
 const getResponseItems = (payload) => {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
@@ -92,41 +92,41 @@ const toStudentMarksRow = (item) => ({
   practical: item.practical ?? item.practicalMarks ?? 0,
   theory: item.theory ?? item.theoryMarks ?? 0,
   totalMarks: item.totalMarks ?? (Number(item.internal ?? item.internalMarks ?? 0) + Number(item.theory ?? item.theoryMarks ?? 0) + Number(item.practical ?? item.practicalMarks ?? 0)),
-  remarks: item.remarks ?? "â€”",
+  remarks: item.remarks ?? "—",
   isAbsent: Boolean(item.isAbsent ?? item.absent),
 });
 
 const toStudentAnalysisRow = (item) => ({
   ...item,
   studentId: item.studentId ?? item.id,
-  rollNo: item.rollNo ?? item.rollNumber ?? "â€”",
-  studentName: item.studentName ?? item.name ?? item.fullName ?? "â€”",
+  rollNo: item.rollNo ?? item.rollNumber ?? "—",
+  studentName: item.studentName ?? item.name ?? item.fullName ?? "—",
   subjectMarks: item.subjectMarks ?? {},
   subjects: Array.isArray(item.subjects) ? item.subjects : [],
   totalMarks: item.totalMarks ?? 0,
-  maxTotal: item.maxTotal ?? item.maximumMarks ?? item.totalMaximumMarks ?? "â€”",
-  grade: item.grade ?? "â€”",
+  maxTotal: item.maxTotal ?? item.maximumMarks ?? item.totalMaximumMarks ?? "—",
+  grade: item.grade ?? "—",
 });
 
 /* ============================================================ 
    MAIN COMPONENT 
-   ============================================================ */ 
-export default function MarksEntryPage() { 
+   ============================================================ */
+export default function MarksEntryPage() {
   // Core 6 Filter States
-  const [filters, setFilters] = useState({ 
-    board: "", 
-    academicYear: "", 
-    academicLevel: "", 
-    group: "", 
-    section: "", 
+  const [filters, setFilters] = useState({
+    board: "",
+    academicYear: "",
+    academicLevel: "",
+    group: "",
+    section: "",
     examination: ""
-  }); 
- 
-  const [ready, setReady] = useState(false); 
+  });
+
+  const [ready, setReady] = useState(false);
   const [activeTab, setActiveTab] = useState("evaluations"); // "evaluations" | "studentAnalysis"
-  const [evaluationSearchTerm, setEvaluationSearchTerm] = useState(""); 
-  const [studentAnalysisSearchTerm, setStudentAnalysisSearchTerm] = useState(""); 
-  const [toastMessage, setToastMessage] = useState(null); 
+  const [evaluationSearchTerm, setEvaluationSearchTerm] = useState("");
+  const [studentAnalysisSearchTerm, setStudentAnalysisSearchTerm] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
   const toastTimeoutRef = useRef(null);
   const [boards, setBoards] = useState([]);
   const [academicYears, setAcademicYears] = useState([]);
@@ -134,32 +134,32 @@ export default function MarksEntryPage() {
   const [groups, setGroups] = useState([]);
   const [sections, setSections] = useState([]);
   const [examinations, setExaminations] = useState([]);
- 
+
   // Data States 
-  const [evaluations, setEvaluations] = useState([]); 
+  const [evaluations, setEvaluations] = useState([]);
   const [studentAnalysis, setStudentAnalysis] = useState([]);
-  const [subjectStatuses, setSubjectStatuses] = useState({}); 
-  const [selectedEvaluationId, setSelectedEvaluationId] = useState(null); 
-  const [subjectMarksData, setSubjectMarksData] = useState({}); 
-  const [modalRows, setModalRows] = useState([]); 
-  const [viewMode, setViewMode] = useState("list"); 
-  const [currentPage, setCurrentPage] = useState(1); 
-  const [studentMarksPage, setStudentMarksPage] = useState(1); 
+  const [subjectStatuses, setSubjectStatuses] = useState({});
+  const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
+  const [subjectMarksData, setSubjectMarksData] = useState({});
+  const [modalRows, setModalRows] = useState([]);
+  const [viewMode, setViewMode] = useState("list");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [studentMarksPage, setStudentMarksPage] = useState(1);
 
   const selectedEvaluation = useMemo(
     () => evaluations.find((item) => item.subjectId === selectedEvaluationId) ?? null,
     [evaluations, selectedEvaluationId]
   );
 
-  const showToast = useCallback((message, type = "success") => { 
+  const showToast = useCallback((message, type = "success") => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    const id = Date.now(); 
-    setToastMessage({ id, msg: message, type }); 
+    const id = Date.now();
+    setToastMessage({ id, msg: message, type });
     toastTimeoutRef.current = setTimeout(() => {
       setToastMessage(null);
       toastTimeoutRef.current = null;
-    }, 3500); 
-  }, []); 
+    }, 3500);
+  }, []);
 
   useEffect(() => () => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -224,51 +224,100 @@ export default function MarksEntryPage() {
     () => academicYears.map((year) => ({ label: year.academicYearName, value: String(year.academicYearId) })),
     [academicYears]
   );
-  const academicLevelOptions = useMemo(
-    () => academicLevels.map((level) => ({ label: level.levelName, value: String(level.academicLevelId) })),
-    [academicLevels]
-  );
+  const academicLevelOptions = useMemo(() => {
+    return academicLevels
+      .filter(
+        (level) =>
+          !filters.board ||
+          String(level.boardId) === filters.board
+      )
+      .map((level) => ({
+        label: level.levelName,
+        value: String(level.academicLevelId),
+      }));
+  }, [academicLevels, filters.board]);
+
   const groupOptions = useMemo(() => {
-    const selectedLevel = academicLevels.find((level) => String(level.academicLevelId) === filters.academicLevel)?.levelName;
     return groups
-      .filter((group) =>
-        (!filters.board || String(group.boardId) === filters.board) &&
-        (!filters.academicYear || String(group.academicYearId) === filters.academicYear) &&
-        (!selectedLevel || group.academicLevel === selectedLevel)
+      .filter(
+        (group) =>
+          (!filters.board ||
+            String(group.boardId) === filters.board) &&
+          (!filters.academicYear ||
+            String(group.academicYearId) === filters.academicYear) &&
+          (!filters.academicLevel ||
+            String(group.academicLevelId) === filters.academicLevel)
       )
-      .map((group) => ({ label: group.groupName, value: String(group.groupId) }));
-  }, [academicLevels, filters.academicLevel, filters.academicYear, filters.board, groups]);
-  const sectionOptions = useMemo(
-    () => sections.map((section) => ({ label: section.sectionName, value: String(section.sectionId) })),
-    [sections]
-  );
+      .map((group) => ({
+        label: group.groupName,
+        value: String(group.groupId),
+      }));
+  }, [
+    groups,
+    filters.board,
+    filters.academicYear,
+    filters.academicLevel,
+  ]);
   const examinationOptions = useMemo(() => {
-    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
-    const selectedYear = academicYears.find((year) => String(year.academicYearId) === filters.academicYear);
     return examinations
-      .filter((exam) =>
-        (!selectedGroup || exam.groupName === selectedGroup.groupName) &&
-        (!selectedYear || exam.academicYear === selectedYear.academicYearName)
+      .filter(
+        (exam) =>
+          (!filters.group ||
+            String(exam.groupId) === filters.group) &&
+          (!filters.academicYear ||
+            String(exam.academicYearId) === filters.academicYear)
       )
-      .map((exam) => ({ label: exam.examName, value: String(exam.examinationId) }));
-  }, [academicYears, examinations, filters.academicYear, filters.group, groups]);
-  const displayFilters = useMemo(() => ({
-    ...filters,
-    board: boardOptions.find((option) => option.value === filters.board)?.label || filters.board,
-    academicYear: academicYearOptions.find((option) => option.value === filters.academicYear)?.label || filters.academicYear,
-    academicLevel: academicLevelOptions.find((option) => option.value === filters.academicLevel)?.label || filters.academicLevel,
-    group: groupOptions.find((option) => option.value === filters.group)?.label || filters.group,
-    section: sectionOptions.find((option) => option.value === filters.section)?.label || filters.section,
-    examination: examinationOptions.find((option) => option.value === filters.examination)?.label || filters.examination,
-  }), [academicLevelOptions, academicYearOptions, boardOptions, examinationOptions, filters, groupOptions, sectionOptions]);
+      .map((exam) => ({
+        label: exam.examName,
+        value: String(exam.examinationId),
+      }));
+  }, [
+    examinations,
+    filters.group,
+    filters.academicYear,
+  ]);
 
-  const getCurrentStatus = useCallback( 
-    (subjectId, fallbackStatus) => 
-      subjectStatuses[subjectId] ?? fallbackStatus ?? "SUBMITTED", 
-    [subjectStatuses] 
-  ); 
+  const sectionOptions = useMemo(() => {
+    return sections.map((section) => ({
+      label: section.sectionName,
+      value: String(section.sectionId),
+    }));
+  }, [sections]);
 
-  const currentGroupSubjects = useMemo(() => { 
+  const displayFilters = useMemo(() => {
+    return {
+      group:
+        groups.find(
+          (g) => String(g.groupId) === filters.group
+        )?.groupName || "-",
+
+      section:
+        sections.find(
+          (s) => String(s.sectionId) === filters.section
+        )?.sectionName || "-",
+
+      examination:
+        examinations.find(
+          (e) =>
+            String(e.examinationId) === filters.examination
+        )?.examName || "-",
+    };
+  }, [
+    filters.group,
+    filters.section,
+    filters.examination,
+    groups,
+    sections,
+    examinations,
+  ]);
+
+  const getCurrentStatus = useCallback(
+    (subjectId, fallbackStatus) =>
+      subjectStatuses[subjectId] ?? fallbackStatus ?? "SUBMITTED",
+    [subjectStatuses]
+  );
+
+  const currentGroupSubjects = useMemo(() => {
     return evaluations.map((evaluation) => evaluation.subjectName);
   }, [evaluations]);
 
@@ -291,68 +340,68 @@ export default function MarksEntryPage() {
 
       setEvaluations(newEvaluations);
       setStudentAnalysis(getResponseItems(studentAnalysisResponse.data).map(toStudentAnalysisRow));
-    setSubjectStatuses( 
-      newEvaluations.reduce((statuses, item) => { 
-        statuses[item.subjectId] = item.status; 
-        return statuses; 
-      }, {}) 
-    ); 
+      setSubjectStatuses(
+        newEvaluations.reduce((statuses, item) => {
+          statuses[item.subjectId] = item.status;
+          return statuses;
+        }, {})
+      );
       setSubjectMarksData({});
-    setEvaluationSearchTerm("");
-    setStudentAnalysisSearchTerm("");
-    setSelectedEvaluationId(null);
-    setModalRows([]);
-    setCurrentPage(1);
-    setStudentMarksPage(1); 
+      setEvaluationSearchTerm("");
+      setStudentAnalysisSearchTerm("");
+      setSelectedEvaluationId(null);
+      setModalRows([]);
+      setCurrentPage(1);
+      setStudentMarksPage(1);
       setReady(true);
       setViewMode("list");
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
     }
-  }; 
+  };
 
   // Handle Cascading Filter Changes
-  const handleFilterChange = (key, value) => { 
-    setReady(false); 
-    setSelectedEvaluationId(null); 
-    setViewMode("list"); 
-    setFilters((prev) => { 
-      const next = { ...prev, [key]: value }; 
-      if (key === "board") { 
-        next.academicYear = ""; 
-        next.academicLevel = ""; 
-        next.group = ""; 
-        next.section = ""; 
-        next.examination = ""; 
-      } else if (key === "academicYear") { 
-        next.academicLevel = ""; 
-        next.group = ""; 
-        next.section = ""; 
-        next.examination = ""; 
-      } else if (key === "academicLevel") { 
-        next.group = ""; 
-        next.section = ""; 
-        next.examination = ""; 
-      } else if (key === "group") { 
-        next.section = ""; 
-        next.examination = ""; 
-      } else if (key === "section") { 
-        next.examination = ""; 
-      } 
-      return next; 
-    }); 
-  }; 
+  const handleFilterChange = (key, value) => {
+    setReady(false);
+    setSelectedEvaluationId(null);
+    setViewMode("list");
+    setFilters((prev) => {
+      const next = { ...prev, [key]: value };
+      if (key === "board") {
+        next.academicYear = "";
+        next.academicLevel = "";
+        next.group = "";
+        next.section = "";
+        next.examination = "";
+      } else if (key === "academicYear") {
+        next.academicLevel = "";
+        next.group = "";
+        next.section = "";
+        next.examination = "";
+      } else if (key === "academicLevel") {
+        next.group = "";
+        next.section = "";
+        next.examination = "";
+      } else if (key === "group") {
+        next.section = "";
+        next.examination = "";
+      } else if (key === "section") {
+        next.examination = "";
+      }
+      return next;
+    });
+  };
 
-  const isAllFiltersSelected = useMemo(() => { 
-    return Boolean( 
-      filters.board && 
-      filters.academicYear && 
-      filters.academicLevel && 
-      filters.group && 
-      filters.section && 
-      filters.examination 
-    ); 
-  }, [filters]); 
+  const isAllFiltersSelected = useMemo(() => {
+    return Boolean(
+      filters.board &&
+      filters.academicYear &&
+      filters.academicLevel &&
+      filters.group &&
+      filters.section &&
+      filters.examination
+    );
+  }, [filters]);
 
   // Row Click: Open Subject Evaluation Details
   const handleRowClick = async (item) => {
@@ -370,12 +419,12 @@ export default function MarksEntryPage() {
     }
   };
 
-  const handleBackToEvaluations = () => { 
-    setSelectedEvaluationId(null); 
-    setModalRows([]); 
-    setCurrentPage(1); 
-    setViewMode("list"); 
-  }; 
+  const handleBackToEvaluations = () => {
+    setSelectedEvaluationId(null);
+    setModalRows([]);
+    setCurrentPage(1);
+    setViewMode("list");
+  };
 
   // Single Evaluation Status Change Action (Verify / Approve / Reject)
   const handleUpdateStatus = async (targetStatusNum) => {
@@ -385,10 +434,27 @@ export default function MarksEntryPage() {
 
     if (targetStatusNum === "edit") {
       try {
-        await apiClient.patch(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/restore`);
-        const updatedStatuses = { ...subjectStatuses, [targetSid]: "SUBMITTED" };
-        setSubjectStatuses(updatedStatuses);
-        setEvaluations((prev) => prev.map((item) => item.subjectId === targetSid ? { ...item, status: "SUBMITTED" } : item));
+        await apiClient.patch(
+          `/api/v1/evaluations/${selectedEvaluation.evaluationId}/restore`
+        );
+
+        const restoredStatus = "SUBMITTED";
+
+        setSubjectStatuses((prev) => ({
+          ...prev,
+          [targetSid]: restoredStatus,
+        }));
+
+        setEvaluations((prev) =>
+          prev.map((item) =>
+            item.subjectId === targetSid
+              ? {
+                ...item,
+                status: restoredStatus,
+              }
+              : item
+          )
+        );
         showToast("Subject reverted to Submitted successfully", "success");
       } catch (error) {
         showToast(getApiErrorMessage(error), "error");
@@ -417,24 +483,33 @@ export default function MarksEntryPage() {
   // Global Approval Action ("Approve All")
   // Approves the submitted evaluations in the selected academic context.
   const handleGlobalApproval = async () => {
-    if (!isAllFiltersSelected || evaluations.length === 0) return; 
+    if (!isAllFiltersSelected || evaluations.length === 0) return;
 
     const eligibleEvaluations = evaluations.filter((item) => {
-      const status = getCurrentStatus(item.subjectId, item.status);
-      return item.evaluationId && status === "SUBMITTED";
+      const status = getCurrentStatus(
+        item.subjectId,
+        item.status
+      );
+
+      return (
+        item.evaluationId &&
+        status === "VERIFIED"
+      );
     });
     if (!eligibleEvaluations.length) return;
 
     try {
-      await apiClient.post("/api/v1/evaluations/approve-all", {
-        boardId: Number(filters.board),
-        academicYearId: Number(filters.academicYear),
-        academicLevelId: Number(filters.academicLevel),
-        groupId: Number(filters.group),
-        sectionId: Number(filters.section),
-        examinationId: Number(filters.examination),
-        status: 1,
-      });
+      await apiClient.post(
+        "/api/v1/evaluations/approve-all",
+        {
+          boardId: Number(filters.board),
+          academicYearId: Number(filters.academicYear),
+          academicLevelId: Number(filters.academicLevel),
+          groupId: Number(filters.group),
+          sectionId: Number(filters.section),
+          examinationId: Number(filters.examination),
+        }
+      );
       const updatedStatuses = eligibleEvaluations.reduce((statuses, item) => ({ ...statuses, [item.subjectId]: "APPROVED" }), { ...subjectStatuses });
       setSubjectStatuses(updatedStatuses);
       setEvaluations((previous) => previous.map((item) => ({ ...item, status: updatedStatuses[item.subjectId] ?? item.status })));
@@ -442,62 +517,62 @@ export default function MarksEntryPage() {
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
     }
-  }; 
+  };
 
-  const filteredEvaluations = useMemo(() => { 
-    return evaluations.filter((item) => { 
-      if (!evaluationSearchTerm.trim()) return true; 
-      const term = evaluationSearchTerm.toLowerCase(); 
+  const filteredEvaluations = useMemo(() => {
+    return evaluations.filter((item) => {
+      if (!evaluationSearchTerm.trim()) return true;
+      const term = evaluationSearchTerm.toLowerCase();
       const statusStr = getCurrentStatus(item.subjectId, item.status);
-      return ( 
-        (item.subjectName || "").toLowerCase().includes(term) || 
-        (item.facultyName || "").toLowerCase().includes(term) || 
-        (item.subjectCode || "").toLowerCase().includes(term) || 
-        (item.facultyCode || "").toLowerCase().includes(term) || 
-        String(statusStr).toLowerCase().includes(term) 
-      ); 
-    }); 
-  }, [evaluations, evaluationSearchTerm, getCurrentStatus]); 
+      return (
+        (item.subjectName || "").toLowerCase().includes(term) ||
+        (item.facultyName || "").toLowerCase().includes(term) ||
+        (item.subjectCode || "").toLowerCase().includes(term) ||
+        (item.facultyCode || "").toLowerCase().includes(term) ||
+        String(statusStr).toLowerCase().includes(term)
+      );
+    });
+  }, [evaluations, evaluationSearchTerm, getCurrentStatus]);
 
   // Student Analysis data is provided by the selected academic context.
   const studentSubjectMarksList = useMemo(() => {
     return studentAnalysis;
   }, [studentAnalysis]);
 
-  const filteredStudentMarks = useMemo(() => { 
-    if (!studentAnalysisSearchTerm.trim()) return studentSubjectMarksList; 
-    const term = studentAnalysisSearchTerm.toLowerCase().trim(); 
-    return studentSubjectMarksList.filter((student) => 
-      (student.rollNo || "").toLowerCase().includes(term) || 
-      (student.studentName || "").toLowerCase().includes(term) || 
-      String(student.totalMarks || "").includes(term) || 
-      (student.grade || "").toLowerCase().includes(term) 
-    ); 
-  }, [studentSubjectMarksList, studentAnalysisSearchTerm]); 
+  const filteredStudentMarks = useMemo(() => {
+    if (!studentAnalysisSearchTerm.trim()) return studentSubjectMarksList;
+    const term = studentAnalysisSearchTerm.toLowerCase().trim();
+    return studentSubjectMarksList.filter((student) =>
+      (student.rollNo || "").toLowerCase().includes(term) ||
+      (student.studentName || "").toLowerCase().includes(term) ||
+      String(student.totalMarks || "").includes(term) ||
+      (student.grade || "").toLowerCase().includes(term)
+    );
+  }, [studentSubjectMarksList, studentAnalysisSearchTerm]);
 
   // Pagination Math
-  const totalPages = Math.max(1, Math.ceil(modalRows.length / STUDENTS_PER_PAGE)); 
+  const totalPages = Math.max(1, Math.ceil(modalRows.length / STUDENTS_PER_PAGE));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-  const pageStart = (safeCurrentPage - 1) * STUDENTS_PER_PAGE; 
-  const paginatedRows = useMemo( 
-    () => modalRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE), 
-    [modalRows, pageStart] 
-  ); 
+  const pageStart = (safeCurrentPage - 1) * STUDENTS_PER_PAGE;
+  const paginatedRows = useMemo(
+    () => modalRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE),
+    [modalRows, pageStart]
+  );
 
-  const studentMarksTotalPages = Math.max( 
-    1, 
-    Math.ceil(filteredStudentMarks.length / STUDENT_MARKS_PER_PAGE) 
-  ); 
+  const studentMarksTotalPages = Math.max(
+    1,
+    Math.ceil(filteredStudentMarks.length / STUDENT_MARKS_PER_PAGE)
+  );
   const safeStudentMarksPage = Math.min(Math.max(1, studentMarksPage), studentMarksTotalPages);
-  const studentMarksPageStart = (safeStudentMarksPage - 1) * STUDENT_MARKS_PER_PAGE; 
-  const paginatedStudentMarks = useMemo( 
-    () => 
-      filteredStudentMarks.slice( 
-        studentMarksPageStart, 
-        studentMarksPageStart + STUDENT_MARKS_PER_PAGE 
-      ), 
-    [filteredStudentMarks, studentMarksPageStart] 
-  ); 
+  const studentMarksPageStart = (safeStudentMarksPage - 1) * STUDENT_MARKS_PER_PAGE;
+  const paginatedStudentMarks = useMemo(
+    () =>
+      filteredStudentMarks.slice(
+        studentMarksPageStart,
+        studentMarksPageStart + STUDENT_MARKS_PER_PAGE
+      ),
+    [filteredStudentMarks, studentMarksPageStart]
+  );
 
   useEffect(() => {
     setCurrentPage((page) => Math.min(Math.max(1, page), totalPages));
@@ -515,475 +590,480 @@ export default function MarksEntryPage() {
     setStudentMarksPage(1);
   }, [studentAnalysisSearchTerm, activeTab]);
 
-  return ( 
-    <DashboardLayout 
-      title="Academic Evaluation" 
-      subtitle="Review, verify and approve faculty submitted evaluations." 
-      breadcrumb={["Examinations", "Marks Evaluation"]} 
-    > 
-      <div className="cms-marks-entry cms-anim-up"> 
-         
-        {toastMessage && ( 
-          <div key={toastMessage.id} className={`cms-toast-banner cms-toast-${toastMessage.type}`}> 
-            <span>{toastMessage.msg}</span> 
-          </div> 
-        )} 
+  return (
+    <DashboardLayout
+      title="Academic Evaluation"
+      subtitle="Review, verify and approve faculty submitted evaluations."
+      breadcrumb={["Examinations", "Marks Evaluation"]}
+    >
+      <div className="cms-marks-entry cms-anim-up">
 
-        {/* 6 Core Filters Grid */} 
-        <div className="cms-card cms-card-filter"> 
-          <div className="cms-section-heading"> 
-            <div> 
-              <h2>Evaluation Filters</h2> 
-              <p>Choose the academic context before reviewing faculty submissions.</p> 
-            </div> 
-            <button 
-              className="cms-btn cms-btn-primary" 
-              disabled={!isAllFiltersSelected} 
-              onClick={handleFetchData} 
-            > 
+        {toastMessage && (
+          <div key={toastMessage.id} className={`cms-toast-banner cms-toast-${toastMessage.type}`}>
+            <span>{toastMessage.msg}</span>
+          </div>
+        )}
+
+        {/* 6 Core Filters Grid */}
+        <div className="cms-card cms-card-filter">
+          <div className="cms-section-heading">
+            <div>
+              <h2>Evaluation Filters</h2>
+              <p>Choose the academic context before reviewing faculty submissions.</p>
+            </div>
+            <button
+              className="cms-btn cms-btn-primary"
+              disabled={!isAllFiltersSelected}
+              onClick={handleFetchData}
+            >
               Fetch Evaluation Data
-            </button> 
-          </div> 
+            </button>
+          </div>
 
-          <div className="cms-filter-grid"> 
-            <SelectFilter 
-              label="Board" 
-              value={filters.board} 
+          <div className="cms-filter-grid">
+            <SelectFilter
+              label="Board"
+              value={filters.board}
               options={boardOptions}
-              onChange={(v) => handleFilterChange("board", v)} 
-            /> 
-            <SelectFilter 
-              label="Academic Year" 
-              value={filters.academicYear} 
-              disabled={!filters.board} 
+              onChange={(v) => handleFilterChange("board", v)}
+            />
+            <SelectFilter
+              label="Academic Year"
+              value={filters.academicYear}
+              disabled={!filters.board}
               options={academicYearOptions}
-              onChange={(v) => handleFilterChange("academicYear", v)} 
-            /> 
-            <SelectFilter 
-              label="Academic Level" 
-              value={filters.academicLevel} 
-              disabled={!filters.board || !filters.academicYear} 
+              onChange={(v) => handleFilterChange("academicYear", v)}
+            />
+            <SelectFilter
+              label="Academic Level"
+              value={filters.academicLevel}
+              disabled={!filters.board || !filters.academicYear}
               options={academicLevelOptions}
-              onChange={(v) => handleFilterChange("academicLevel", v)} 
-            /> 
-            <SelectFilter 
-              label="Group" 
-              value={filters.group} 
-              disabled={!filters.academicLevel} 
+              onChange={(v) => handleFilterChange("academicLevel", v)}
+            />
+            <SelectFilter
+              label="Group"
+              value={filters.group}
+              disabled={!filters.academicLevel}
               options={groupOptions}
-              onChange={(v) => handleFilterChange("group", v)} 
-            /> 
-            <SelectFilter 
-              label="Section" 
-              value={filters.section} 
-              disabled={!filters.group} 
+              onChange={(v) => handleFilterChange("group", v)}
+            />
+            <SelectFilter
+              label="Section"
+              value={filters.section}
+              disabled={!filters.group}
               options={sectionOptions}
-              onChange={(v) => handleFilterChange("section", v)} 
-            /> 
-            <SelectFilter 
-              label="Examination" 
-              value={filters.examination} 
-              disabled={!filters.section} 
+              onChange={(v) => handleFilterChange("section", v)}
+            />
+            <SelectFilter
+              label="Examination"
+              value={filters.examination}
+              disabled={!filters.section}
               options={examinationOptions}
-              onChange={(v) => handleFilterChange("examination", v)} 
-            /> 
-          </div> 
-        </div> 
+              onChange={(v) => handleFilterChange("examination", v)}
+            />
+          </div>
+        </div>
 
-        {/* Content Section */} 
-        {ready ? ( 
-          viewMode === "list" ? ( 
-            <div className="cms-card cms-main-card"> 
-              <div className="cms-table-toolbar"> 
-                {/* 2 Main Tabs */} 
-                <div className="cms-tab-bar"> 
-                  <button 
-                    className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`} 
-                    onClick={() => setActiveTab("evaluations")} 
-                  > 
-                    Evaluation 
-                  </button> 
-                  <button 
-                    className={`cms-tab-btn ${activeTab === "studentAnalysis" ? "cms-active" : ""}`} 
-                    onClick={() => setActiveTab("studentAnalysis")} 
-                  > 
-                    Student Analysis 
-                  </button> 
-                </div> 
+        {/* Content Section */}
+        {ready ? (
+          viewMode === "list" ? (
+            <div className="cms-card cms-main-card">
+              <div className="cms-table-toolbar">
+                {/* 2 Main Tabs */}
+                <div className="cms-tab-bar">
+                  <button
+                    className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`}
+                    onClick={() => setActiveTab("evaluations")}
+                  >
+                    Evaluation
+                  </button>
+                  <button
+                    className={`cms-tab-btn ${activeTab === "studentAnalysis" ? "cms-active" : ""}`}
+                    onClick={() => setActiveTab("studentAnalysis")}
+                  >
+                    Student Analysis
+                  </button>
+                </div>
 
-                {activeTab === "evaluations" && ( 
-                  <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}> 
-                    {/* Global Approval Button */} 
-                    <button 
-                      className="cms-btn cms-btn-success" 
-                      onClick={handleGlobalApproval} 
-                    > 
-                      Approve All 
-                    </button> 
+                {activeTab === "evaluations" && (
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                    {/* Global Approval Button */}
+                    <button
+                      className="cms-btn cms-btn-success"
+                      onClick={handleGlobalApproval}
+                    >
+                      Approve All
+                    </button>
 
-                    <div className="cms-search-wrap"> 
-                      <span className="cms-search-icon"><IconSearch /></span> 
-                      <input 
-                        type="text" 
-                        className="cms-search-input" 
-                        placeholder="Search subject, faculty, status..." 
-                        value={evaluationSearchTerm} 
-                        onChange={(e) => setEvaluationSearchTerm(e.target.value)} 
-                      /> 
-                    </div> 
-                  </div> 
-                )} 
+                    <div className="cms-search-wrap">
+                      <span className="cms-search-icon"><IconSearch /></span>
+                      <input
+                        type="text"
+                        className="cms-search-input"
+                        placeholder="Search subject, faculty, status..."
+                        value={evaluationSearchTerm}
+                        onChange={(e) => setEvaluationSearchTerm(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                )}
 
-                {activeTab === "studentAnalysis" && ( 
-                  <div className="cms-search-wrap"> 
-                    <span className="cms-search-icon"><IconSearch /></span> 
-                    <input 
-                      type="text" 
-                      className="cms-search-input" 
-                      placeholder="Search roll no, student..." 
-                      value={studentAnalysisSearchTerm} 
-                      onChange={(e) => setStudentAnalysisSearchTerm(e.target.value)} 
-                    /> 
-                  </div> 
-                )} 
-              </div> 
+                {activeTab === "studentAnalysis" && (
+                  <div className="cms-search-wrap">
+                    <span className="cms-search-icon"><IconSearch /></span>
+                    <input
+                      type="text"
+                      className="cms-search-input"
+                      placeholder="Search roll no, student..."
+                      value={studentAnalysisSearchTerm}
+                      onChange={(e) => setStudentAnalysisSearchTerm(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
 
-              {/* Tab 1: Subject Evaluation */} 
-              {activeTab === "evaluations" && ( 
-                <div className="cms-table-container"> 
-                  <table className="cms-table"> 
-                    <thead> 
-                      <tr> 
-                        <th className="cms-text-left">SUBJECT NAME</th> 
-                        <th className="cms-text-left">FACULTY</th> 
-                        <th className="cms-text-center">TOTAL MARKS</th> 
-                        <th className="cms-text-center">STATUS</th> 
-                      </tr> 
-                    </thead> 
-                    <tbody> 
-                      {filteredEvaluations.length > 0 ? ( 
-                        filteredEvaluations.map((item) => { 
-                          const statusStr = getCurrentStatus(item.subjectId, item.status); 
-                          return ( 
-                            <tr 
-                              key={item.subjectId} 
-                              className="cms-clickable-row" 
-                              onClick={() => handleRowClick(item)} 
-                            > 
+              {/* Tab 1: Subject Evaluation */}
+              {activeTab === "evaluations" && (
+                <div className="cms-table-container">
+                  <table className="cms-table">
+                    <thead>
+                      <tr>
+                        <th className="cms-text-left">SUBJECT NAME</th>
+                        <th className="cms-text-left">FACULTY</th>
+                        <th className="cms-text-center">TOTAL MARKS</th>
+                        <th className="cms-text-center">STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredEvaluations.length > 0 ? (
+                        filteredEvaluations.map((item) => {
+                          const statusStr = getCurrentStatus(item.subjectId, item.status);
+                          return (
+                            <tr
+                              key={item.subjectId}
+                              className="cms-clickable-row"
+                              onClick={() => handleRowClick(item)}
+                            >
                               {/* Subject Column: Left Aligned Single Line */}
                               <td className="cms-font-semibold cms-text-left cms-single-line">
                                 {item.subjectName} - {item.subjectCode}
-                              </td> 
+                              </td>
 
                               {/* Faculty Column: Left Aligned Single Line */}
                               <td className="cms-text-muted cms-text-left cms-single-line">
                                 {item.facultyName} - {item.facultyCode}
-                              </td> 
+                              </td>
 
                               {/* Total Marks: Center Aligned */}
                               <td className="cms-font-semibold cms-text-center">
                                 {item.obtainedMarks} / {item.totalMarks}
-                              </td> 
+                              </td>
 
                               {/* Status Badge: Center Aligned */}
-                              <td className="cms-text-center"> 
-                                <StatusBadge status={statusStr} /> 
-                              </td> 
+                              <td className="cms-text-center">
+                                <StatusBadge status={statusStr} />
+                              </td>
 
-                            </tr> 
-                          ); 
-                        }) 
-                      ) : ( 
-                        <tr> 
-                          <td colSpan={4} className="cms-empty-td"> 
-                            No evaluations found matching search criteria. 
-                          </td> 
-                        </tr> 
-                      )} 
-                    </tbody> 
-                  </table> 
-                </div> 
-              )} 
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan={4} className="cms-empty-td">
+                            No evaluations found matching search criteria.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
-              {/* Tab 2: Student Analysis Table */} 
-              {activeTab === "studentAnalysis" && ( 
-                <> 
-                  <div className="cms-table-container"> 
-                    <table className="cms-table"> 
-                      <thead> 
-                        <tr> 
-                          <th className="cms-text-left">ROLL NO</th> 
-                          <th className="cms-text-left">STUDENT NAME</th> 
-                          {currentGroupSubjects.map((subj, subjectIndex) => ( 
+              {/* Tab 2: Student Analysis Table */}
+              {activeTab === "studentAnalysis" && (
+                <>
+                  <div className="cms-table-container">
+                    <table className="cms-table">
+                      <thead>
+                        <tr>
+                          <th className="cms-text-left">ROLL NO</th>
+                          <th className="cms-text-left">STUDENT NAME</th>
+                          {currentGroupSubjects.map((subj, subjectIndex) => (
                             <th key={evaluations[subjectIndex]?.subjectId || `${subj}-${subjectIndex}`} className="cms-text-center">
                               {String(subj).toUpperCase()}
-                            </th> 
-                          ))} 
-                          <th className="cms-text-center">TOTAL MARKS</th> 
-                          <th className="cms-text-center">GRADE</th> 
-                        </tr> 
-                      </thead> 
-                      <tbody> 
-                        {filteredStudentMarks.length > 0 ? ( 
-                          paginatedStudentMarks.map((stu, index) => { 
-                            const marksObj = stu.subjectMarks || {}; 
-                            return ( 
-                              <tr key={stu.studentId || index} className="cms-idle-row"> 
+                            </th>
+                          ))}
+                          <th className="cms-text-center">TOTAL MARKS</th>
+                          <th className="cms-text-center">GRADE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudentMarks.length > 0 ? (
+                          paginatedStudentMarks.map((stu, index) => {
+                            const marksObj = stu.subjectMarks || {};
+                            return (
+                              <tr key={stu.studentId || index} className="cms-idle-row">
                                 <td className="cms-font-semibold cms-text-left">
                                   {stu.rollNo || "—"}
-                                </td> 
-                                <td className="cms-text-left">{stu.studentName}</td> 
+                                </td>
+                                <td className="cms-text-left">{stu.studentName}</td>
 
-                                {currentGroupSubjects.map((subj, subjectIndex) => ( 
+                                {currentGroupSubjects.map((subj, subjectIndex) => (
                                   <td key={evaluations[subjectIndex]?.subjectId || `${subj}-${subjectIndex}`} className="cms-text-center">
                                     {marksObj[evaluations[subjectIndex]?.subjectId] ?? "—"}
-                                  </td> 
-                                ))} 
+                                  </td>
+                                ))}
 
                                 {/* Student Analysis Total: Centered */}
                                 <td className="cms-font-semibold cms-text-center">
                                   {stu.totalMarks} / {stu.maxTotal}
-                                </td> 
+                                </td>
 
                                 {/* Grade Badge: Centered */}
-                                <td className="cms-text-center"> 
-                                  <span className={`cms-badge-grade cms-grade-${String(stu.grade || "A").toLowerCase().replace("+", "-plus")}`}> 
-                                    {stu.grade || "A"} 
-                                  </span> 
-                                </td> 
-                              </tr> 
-                            ); 
-                          }) 
-                        ) : ( 
-                          <tr> 
-                            <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td"> 
-                              No student analysis available. 
-                            </td> 
-                          </tr> 
-                        )} 
-                      </tbody> 
-                    </table> 
-                  </div> 
+                                <td className="cms-text-center">
+                                  <span className={`cms-badge-grade cms-grade-${String(stu.grade || "A").toLowerCase().replace("+", "-plus")}`}>
+                                    {stu.grade || "A"}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td">
+                              No student analysis available.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
 
-                  <div className="cms-pagination" aria-label="Student analysis pagination"> 
-                    <button 
-                      className="cms-page-btn" 
-                      disabled={safeStudentMarksPage === 1} 
-                      onClick={() => setStudentMarksPage((page) => Math.max(1, page - 1))} 
-                    > 
-                      Previous 
-                    </button> 
-                    <span> 
-                      Page {safeStudentMarksPage} of {studentMarksTotalPages} 
-                    </span> 
-                    <button 
-                      className="cms-page-btn" 
-                      disabled={safeStudentMarksPage === studentMarksTotalPages} 
-                      onClick={() => setStudentMarksPage((page) => Math.min(studentMarksTotalPages, page + 1))} 
-                    > 
-                      Next 
-                    </button> 
-                  </div> 
-                </> 
-              )} 
-            </div> 
-          ) : selectedEvaluation ? ( 
+                  <div className="cms-pagination" aria-label="Student analysis pagination">
+                    <button
+                      className="cms-page-btn"
+                      disabled={safeStudentMarksPage === 1}
+                      onClick={() => setStudentMarksPage((page) => Math.max(1, page - 1))}
+                    >
+                      Previous
+                    </button>
+                    <span>
+                      Page {safeStudentMarksPage} of {studentMarksTotalPages}
+                    </span>
+                    <button
+                      className="cms-page-btn"
+                      disabled={safeStudentMarksPage === studentMarksTotalPages}
+                      onClick={() => setStudentMarksPage((page) => Math.min(studentMarksTotalPages, page + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : selectedEvaluation ? (
             /* Subject Detail View (Opened on Row Click) */
-            <EvaluationDetailsView 
-              selectedEvaluation={selectedEvaluation} 
-              currentStatus={getCurrentStatus(selectedEvaluation.subjectId, selectedEvaluation.status)} 
+            <EvaluationDetailsView
+              selectedEvaluation={selectedEvaluation}
+              currentStatus={getCurrentStatus(selectedEvaluation.subjectId, selectedEvaluation.status)}
               filters={displayFilters}
-              rows={paginatedRows} 
-              totalPages={totalPages} 
-              currentPage={safeCurrentPage} 
-              onBack={handleBackToEvaluations} 
-              onUpdateStatus={handleUpdateStatus} 
-              onPreviousPage={() => setCurrentPage((page) => Math.max(1, page - 1))} 
-              onNextPage={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} 
-            /> 
-          ) : null 
-        ) : ( 
-          <div className="cms-card cms-empty-table"> 
-            <p>Select all 6 evaluation filters and click <strong>Fetch Evaluation Data</strong> to view evaluation status &amp; student marks.</p> 
-          </div> 
-        )} 
-      </div> 
-    </DashboardLayout> 
-  ); 
-} 
+              rows={paginatedRows}
+              totalPages={totalPages}
+              currentPage={safeCurrentPage}
+              onBack={handleBackToEvaluations}
+              onUpdateStatus={handleUpdateStatus}
+              onPreviousPage={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              onNextPage={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            />
+          ) : null
+        ) : (
+          <div className="cms-card cms-empty-table">
+            <p>Select all 6 evaluation filters and click <strong>Fetch Evaluation Data</strong> to view evaluation status &amp; student marks.</p>
+          </div>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}
 
-function SelectFilter({ label, value, options, disabled, onChange }) { 
-  return ( 
-    <div className="cms-field-group"> 
-      <label className="cms-field-label">{label}</label> 
-      <select 
-        className="cms-select-input" 
-        value={value} 
-        disabled={disabled} 
-        onChange={(e) => onChange(e.target.value)} 
-      > 
-        <option value="">Select {label}</option> 
-        {options.map((opt) => ( 
-          <option key={opt.value} value={opt.value}> 
-            {opt.label} 
-          </option> 
-        ))} 
-      </select> 
-    </div> 
-  ); 
-} 
+function SelectFilter({ label, value, options, disabled, onChange }) {
+  return (
+    <div className="cms-field-group">
+      <label className="cms-field-label">{label}</label>
+      <select
+        className="cms-select-input"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="">Select {label}</option>
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 /* ============================================================ 
    EVALUATION DETAILS VIEW (Same Container Size)
-   ============================================================ */ 
-function EvaluationDetailsView({ 
-  selectedEvaluation, 
-  currentStatus, 
-  filters, 
-  rows, 
-  totalPages, 
-  currentPage, 
-  onBack, 
-  onUpdateStatus, 
-  onPreviousPage, 
-  onNextPage 
-}) { 
-  const practical = isPracticalSubject(selectedEvaluation?.subjectName); 
+   ============================================================ */
+function EvaluationDetailsView({
+  selectedEvaluation,
+  currentStatus,
+  filters,
+  rows,
+  totalPages,
+  currentPage,
+  onBack,
+  onUpdateStatus,
+  onPreviousPage,
+  onNextPage
+}) {
+  const practical = isPracticalSubject(selectedEvaluation?.subjectName);
 
-  return ( 
-    <div className="cms-card cms-main-card cms-evaluation-details"> 
-      <div className="cms-details-header"> 
-        <div> 
-          <button className="cms-back-btn" onClick={onBack}>← Back to Evaluations</button> 
-          <h2 className="cms-details-title"> 
+  return (
+    <div className="cms-card cms-main-card cms-evaluation-details">
+      <div className="cms-details-header">
+        <div>
+          <button className="cms-back-btn" onClick={onBack}>← Back to Evaluations</button>
+          <h2 className="cms-details-title">
             {selectedEvaluation?.subjectName} ({selectedEvaluation?.subjectCode}) Evaluation Marks Breakdown
-          </h2> 
-          <span className="cms-details-subtitle">Review student marks for this subject</span> 
-        </div> 
-      </div> 
+          </h2>
+          <span className="cms-details-subtitle">Review student marks for this subject</span>
+        </div>
+      </div>
 
-      <div className="cms-detail-grid"> 
-        <div className="cms-detail-card"> 
-          <span className="cms-detail-label">Faculty</span> 
-          <span className="cms-detail-value">{selectedEvaluation?.facultyName} - {selectedEvaluation?.facultyCode}</span> 
-        </div> 
-        <div className="cms-detail-card"> 
-          <span className="cms-detail-label">Group</span> 
-          <span className="cms-detail-value">{filters.group}</span> 
-        </div> 
-        <div className="cms-detail-card"> 
-          <span className="cms-detail-label">Section</span> 
-          <span className="cms-detail-value">{filters.section}</span> 
-        </div> 
-        <div className="cms-detail-card"> 
-          <span className="cms-detail-label">Examination</span> 
-          <span className="cms-detail-value">{filters.examination}</span> 
-        </div> 
-      </div> 
+      <div className="cms-detail-grid">
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Faculty</span>
+          <span className="cms-detail-value">{selectedEvaluation?.facultyName} - {selectedEvaluation?.facultyCode}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Group</span>
+          <span className="cms-detail-value">{filters.group}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Section</span>
+          <span className="cms-detail-value">{filters.section}</span>
+        </div>
+        <div className="cms-detail-card">
+          <span className="cms-detail-label">Examination</span>
+          <span className="cms-detail-value">{filters.examination}</span>
+        </div>
+      </div>
 
-      {/* Marks Table */} 
-      <div className="cms-table-container cms-details-table-wrap"> 
-        <table className="cms-table cms-details-table"> 
-          <thead> 
-            <tr> 
-              <th className="cms-text-left">ROLL NO</th> 
-              <th className="cms-text-left">STUDENT NAME</th> 
-              <th className="cms-text-center">INTERNAL</th> 
-              {practical && <th className="cms-text-center">PRACTICAL</th>} 
-              <th className="cms-text-center">THEORY</th> 
-              <th className="cms-text-center">TOTAL MARKS</th> 
-              <th className="cms-text-left">REMARKS</th> 
-              <th className="cms-text-center">ABSENT</th> 
-            </tr> 
-          </thead> 
-          <tbody> 
-            {rows.length > 0 ? ( 
-              rows.map((row, pageIndex) => { 
-                const totalMarks = calculateTotal(row, practical); 
-                return ( 
-                  <tr key={row.studentId || pageIndex}> 
-                    <td className="cms-font-semibold cms-text-left">{row.rollNo}</td> 
-                    <td className="cms-text-left">{row.studentName}</td> 
-                    <td className="cms-text-center">{row.internal}</td> 
-                    {practical && <td className="cms-text-center">{row.practical}</td>} 
-                    <td className="cms-text-center">{row.theory}</td> 
-                    <td className="cms-font-semibold cms-text-center">{totalMarks}</td> 
-                    <td className="cms-text-left">{row.remarks}</td> 
-                    <td className="cms-text-center">{row.isAbsent ? "Yes" : "No"}</td> 
-                  </tr> 
-                ); 
-              }) 
-            ) : ( 
-              <tr> 
-                <td colSpan={8} className="cms-empty-td">No student mark details available.</td> 
-              </tr> 
-            )} 
-          </tbody> 
-        </table> 
-      </div> 
+      {/* Marks Table */}
+      <div className="cms-table-container cms-details-table-wrap">
+        <table className="cms-table cms-details-table">
+          <thead>
+            <tr>
+              <th className="cms-text-left">ROLL NO</th>
+              <th className="cms-text-left">STUDENT NAME</th>
+              <th className="cms-text-center">INTERNAL</th>
+              {practical && <th className="cms-text-center">PRACTICAL</th>}
+              <th className="cms-text-center">THEORY</th>
+              <th className="cms-text-center">TOTAL MARKS</th>
+              <th className="cms-text-left">REMARKS</th>
+              <th className="cms-text-center">ABSENT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length > 0 ? (
+              rows.map((row, pageIndex) => {
+                const totalMarks = calculateTotal(row, practical);
+                return (
+                  <tr key={row.studentId || pageIndex}>
+                    <td className="cms-font-semibold cms-text-left">{row.rollNo}</td>
+                    <td className="cms-text-left">{row.studentName}</td>
+                    <td className="cms-text-center">{row.internal}</td>
+                    {practical && <td className="cms-text-center">{row.practical}</td>}
+                    <td className="cms-text-center">{row.theory}</td>
+                    <td className="cms-font-semibold cms-text-center">{totalMarks}</td>
+                    <td className="cms-text-left">{row.remarks}</td>
+                    <td className="cms-text-center">{row.isAbsent ? "Yes" : "No"}</td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={8} className="cms-empty-td">No student mark details available.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {totalPages > 1 && ( 
-        <div className="cms-pagination" aria-label="Evaluation details pagination"> 
-          <button 
-            className="cms-page-btn" 
-            disabled={currentPage === 1} 
-            onClick={onPreviousPage} 
-          > 
-            Previous 
-          </button> 
+      {totalPages > 1 && (
+        <div className="cms-pagination" aria-label="Evaluation details pagination">
+          <button
+            className="cms-page-btn"
+            disabled={currentPage === 1}
+            onClick={onPreviousPage}
+          >
+            Previous
+          </button>
 
-          <span> 
-            Page {currentPage} of {totalPages} 
-          </span> 
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
 
-          <button 
-            className="cms-page-btn" 
-            disabled={currentPage === totalPages} 
-            onClick={onNextPage} 
-          > 
-            Next 
-          </button> 
-        </div> 
-      )} 
+          <button
+            className="cms-page-btn"
+            disabled={currentPage === totalPages}
+            onClick={onNextPage}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Admin Action Buttons & Read-Only Status Pills */}
-      <div className="cms-modal-actions"> 
-        {currentStatus === "SUBMITTED" && ( 
-          <> 
-            <button className="cms-btn cms-btn-info" onClick={() => onUpdateStatus(2)}><IconCheck /> Verify</button> 
-            <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button> 
-            <button className="cms-btn" disabled>Edit</button>
-          </> 
-        )} 
-        {currentStatus === "VERIFIED" && ( 
-          <> 
-            <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus(3)}><IconCheck /> Approve</button> 
-            <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button> 
-            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
-          </> 
-        )} 
-        {currentStatus === "APPROVED" && ( 
-          <span className="cms-status-pill cms-status-approved"><IconCheck /> Approved</span> 
-        )} 
-        {currentStatus === "REJECTED" && ( 
+      <div className="cms-modal-actions">
+        {currentStatus === "SUBMITTED" && (
           <>
-            <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span> 
+            <button className="cms-btn cms-btn-info" onClick={() => onUpdateStatus(2)}><IconCheck /> Verify</button>
+            <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button>
+            <button
+              className="cms-btn"
+              onClick={() => onUpdateStatus("edit")}
+            >
+              Edit
+            </button>
+          </>
+        )}
+        {currentStatus === "VERIFIED" && (
+          <>
+            <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus(3)}><IconCheck /> Approve</button>
+            <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button>
             <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
           </>
-        )} 
-      </div> 
-    </div> 
-  ); 
-} 
+        )}
+        {currentStatus === "APPROVED" && (
+          <span className="cms-status-pill cms-status-approved"><IconCheck /> Approved</span>
+        )}
+        {currentStatus === "REJECTED" && (
+          <>
+            <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span>
+            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
-function StatusBadge({ status }) { 
-  const s = String(status || "SUBMITTED").toUpperCase(); 
-  const meta = STATUS_META[s] || STATUS_META.SUBMITTED; 
+function StatusBadge({ status }) {
+  const s = String(status || "SUBMITTED").toUpperCase();
+  const meta = STATUS_META[s] || STATUS_META.SUBMITTED;
 
-  return ( 
-    <span className={`cms-badge-status ${meta.badgeClass}`}> 
-      <span className="cms-badge-dot" /> 
-      {meta.label} 
-    </span> 
-  ); 
+  return (
+    <span className={`cms-badge-status ${meta.badgeClass}`}>
+      <span className="cms-badge-dot" />
+      {meta.label}
+    </span>
+  );
 }

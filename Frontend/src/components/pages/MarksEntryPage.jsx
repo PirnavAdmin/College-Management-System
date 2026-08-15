@@ -27,77 +27,6 @@ const IconSearch = () => (
   </svg>
 );
 
-const GROUP_SUBJECTS = { 
-  MPC: { 
-    firstYear: ["English", "Sanskrit", "Mathematics 1A", "Mathematics 1B", "Physics I", "Chemistry I"], 
-    secondYear: ["English", "Sanskrit", "Mathematics 2A", "Mathematics 2B", "Physics II", "Chemistry II"] 
-  }, 
-  BiPC: { 
-    firstYear: ["English", "Sanskrit", "Botany I", "Zoology I", "Physics I", "Chemistry I"], 
-    secondYear: ["English", "Sanskrit", "Botany II", "Zoology II", "Physics II", "Chemistry II"] 
-  }, 
-  CEC: { 
-    firstYear: ["English", "Sanskrit", "Civics I", "Economics I", "Commerce I"], 
-    secondYear: ["English", "Sanskrit", "Civics II", "Economics II", "Commerce II"] 
-  }, 
-  MEC: { 
-    firstYear: ["English", "Sanskrit", "Mathematics 1A", "Mathematics 1B", "Economics I", "Commerce I"], 
-    secondYear: ["English", "Sanskrit", "Mathematics 2A", "Mathematics 2B", "Economics II", "Commerce II"] 
-  } 
-}; 
- 
-const SUBJECT_FACULTY = { 
-  English: "Lakshmi", 
-  Sanskrit: "Suresh", 
-  Mathematics: "Ravi Kumar", 
-  Physics: "Naresh", 
-  Chemistry: "Kiran", 
-  Botany: "Dr. S. Reddy", 
-  Zoology: "Dr. P. Varma", 
-  Civics: "M. Narayana", 
-  Economics: "K. Swamy", 
-  Commerce: "V. Rao" 
-}; 
-
-const SUBJECT_CODES = { 
-  English: "ENG101", 
-  Sanskrit: "SAN101", 
-  Mathematics: "MAT101", 
-  Physics: "PHY101", 
-  Chemistry: "CHE101", 
-  Botany: "BOT101", 
-  Zoology: "ZOO101", 
-  Civics: "CIV101", 
-  Economics: "ECO101", 
-  Commerce: "COM101" 
-}; 
-
-const FACULTY_CODES = { 
-  Lakshmi: "FAC1001", 
-  Suresh: "FAC1002", 
-  "Ravi Kumar": "FAC1003", 
-  Naresh: "FAC1004", 
-  Kiran: "FAC1005", 
-  "Dr. S. Reddy": "FAC1006", 
-  "Dr. P. Varma": "FAC1007", 
-  "M. Narayana": "FAC1008", 
-  "K. Swamy": "FAC1009", 
-  "V. Rao": "FAC1010" 
-}; 
-
-const INITIAL_STUDENTS_BASE = [ 
-  { id: 101, rollNo: "001", studentName: "Rahul" }, 
-  { id: 102, rollNo: "002", studentName: "Ramesh" }, 
-  { id: 103, rollNo: "003", studentName: "Sai Kiran" }, 
-  { id: 104, rollNo: "004", studentName: "Ananya Reddy" }, 
-  { id: 105, rollNo: "005", studentName: "Venkatesh" }, 
-  { id: 106, rollNo: "006", studentName: "Priyanka" },
-  { id: 107, rollNo: "007", studentName: "Karthik" },
-  { id: 108, rollNo: "008", studentName: "Sneha" },
-  { id: 109, rollNo: "009", studentName: "Manish" },
-  { id: 110, rollNo: "010", studentName: "Divya" }
-]; 
- 
 const STUDENTS_PER_PAGE = 10; 
 const STUDENT_MARKS_PER_PAGE = 10; 
 
@@ -117,35 +46,19 @@ const isPracticalSubject = (subjectName) => {
   return PRACTICAL_SUBJECT_NAMES.some((p) => name.includes(p)); 
 }; 
  
-const getBaseSubjectName = (subjectName) => 
-  String(subjectName || "").replace(/\s(?:1A|1B|2A|2B|I|II)$/i, ""); 
- 
-const isSecondYearExam = (examName) => 
-  /(?:semester\s*(?:ii|2)|midterm\s*(?:ii|2)|quarterly\s*(?:ii|2)|annual|pre\s*-?\s*final|final)/i.test( 
-    String(examName || "") 
-  ); 
- 
 const calculateTotal = (row, isPractical) => { 
+  if (row.totalMarks !== undefined && row.totalMarks !== null) return row.totalMarks;
   const internal = Number(row.internalMarks || row.internal) || 0; 
   const theory = Number(row.theoryMarks || row.theory) || 0; 
   const practical = isPractical ? Number(row.practicalMarks || row.practical) || 0 : 0; 
   return internal + theory + practical; 
 }; 
  
-const getGrade = (totalMarks, maxMarks = 100) => { 
-  const pct = (totalMarks / maxMarks) * 100; 
-  if (pct >= 90) return "A+"; 
-  if (pct >= 80) return "A"; 
-  if (pct >= 70) return "B+"; 
-  if (pct >= 60) return "B"; 
-  if (pct >= 50) return "C"; 
-  if (pct >= 40) return "D"; 
-  return "F"; 
-}; 
-
 const getResponseItems = (payload) => {
   if (Array.isArray(payload)) return payload;
-  return payload?.items ?? payload?.data ?? payload?.results ?? [];
+  if (!payload || typeof payload !== "object") return [];
+  const items = payload.students ?? payload.marksList ?? payload.items ?? payload.data ?? payload.results;
+  return Array.isArray(items) ? items : getResponseItems(items);
 };
 
 const normalizeStatus = (status) => {
@@ -178,8 +91,21 @@ const toStudentMarksRow = (item) => ({
   internal: item.internal ?? item.internalMarks ?? 0,
   practical: item.practical ?? item.practicalMarks ?? 0,
   theory: item.theory ?? item.theoryMarks ?? 0,
-  remarks: item.remarks ?? "",
+  totalMarks: item.totalMarks ?? (Number(item.internal ?? item.internalMarks ?? 0) + Number(item.theory ?? item.theoryMarks ?? 0) + Number(item.practical ?? item.practicalMarks ?? 0)),
+  remarks: item.remarks ?? "â€”",
   isAbsent: Boolean(item.isAbsent ?? item.absent),
+});
+
+const toStudentAnalysisRow = (item) => ({
+  ...item,
+  studentId: item.studentId ?? item.id,
+  rollNo: item.rollNo ?? item.rollNumber ?? "â€”",
+  studentName: item.studentName ?? item.name ?? item.fullName ?? "â€”",
+  subjectMarks: item.subjectMarks ?? {},
+  subjects: Array.isArray(item.subjects) ? item.subjects : [],
+  totalMarks: item.totalMarks ?? 0,
+  maxTotal: item.maxTotal ?? item.maximumMarks ?? item.totalMaximumMarks ?? "â€”",
+  grade: item.grade ?? "â€”",
 });
 
 /* ============================================================ 
@@ -211,6 +137,7 @@ export default function MarksEntryPage() {
  
   // Data States 
   const [evaluations, setEvaluations] = useState([]); 
+  const [studentAnalysis, setStudentAnalysis] = useState([]);
   const [subjectStatuses, setSubjectStatuses] = useState({}); 
   const [selectedEvaluationId, setSelectedEvaluationId] = useState(null); 
   const [subjectMarksData, setSubjectMarksData] = useState({}); 
@@ -342,49 +269,28 @@ export default function MarksEntryPage() {
   ); 
 
   const currentGroupSubjects = useMemo(() => { 
-    if (evaluations.length) return evaluations.map((evaluation) => evaluation.subjectName);
-    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
-    const grp = selectedGroup?.groupName?.split("-")[0].trim() || "MPC";
-    const groupSubjects = GROUP_SUBJECTS[grp] || GROUP_SUBJECTS.MPC; 
-    const selectedExam = examinations.find((exam) => String(exam.examinationId) === filters.examination);
-    return isSecondYearExam(selectedExam?.examName)
-      ? groupSubjects.secondYear 
-      : groupSubjects.firstYear; 
-  }, [evaluations, examinations, filters.examination, filters.group, groups]);
-
-  // Generate Fallback Static Marks Data for a Subject
-  const createStaticMarksForSubject = useCallback((subjectName) => { 
-    const selectedSection = sections.find((section) => String(section.sectionId) === filters.section);
-    const sectionShort = (selectedSection?.sectionName || "A").replace(/Section\s*/i, "").trim() || "A";
-    const practicalSubject = isPracticalSubject(subjectName);
-    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
-    const grp = selectedGroup?.groupCode || selectedGroup?.groupName?.split("-")[0].trim() || "MPC";
-    return INITIAL_STUDENTS_BASE.map((student, index) => ({ 
-      studentId: student.id, 
-      rollNo: `${grp}${sectionShort}${student.rollNo}`, 
-      studentName: student.studentName, 
-      internal: practicalSubject ? 15 + (index % 5) : 20, 
-      theory: practicalSubject ? 40 + index * 2 : 60 + index * 2, 
-      practical: practicalSubject ? 20 : 0, 
-      remarks: "Good Performance", 
-      isAbsent: false 
-    })); 
-  }, [filters.group, filters.section, groups, sections]);
+    return evaluations.map((evaluation) => evaluation.subjectName);
+  }, [evaluations]);
 
   // Fetch evaluation data for the selected academic context.
   const handleFetchData = async () => {
     try {
-      const response = await apiClient.post("/api/v1/evaluations/search", {
+      const payload = {
         boardId: Number(filters.board),
         academicYearId: Number(filters.academicYear),
         academicLevelId: Number(filters.academicLevel),
         groupId: Number(filters.group),
         sectionId: Number(filters.section),
         examinationId: Number(filters.examination),
-      });
-      const newEvaluations = getResponseItems(response.data).map(toEvaluationRow);
+      };
+      const [evaluationsResponse, studentAnalysisResponse] = await Promise.all([
+        apiClient.post("/api/v1/evaluations/search", payload),
+        apiClient.get("/api/v1/student-analysis", { params: payload }),
+      ]);
+      const newEvaluations = getResponseItems(evaluationsResponse.data).map(toEvaluationRow);
 
       setEvaluations(newEvaluations);
+      setStudentAnalysis(getResponseItems(studentAnalysisResponse.data).map(toStudentAnalysisRow));
     setSubjectStatuses( 
       newEvaluations.reduce((statuses, item) => { 
         statuses[item.subjectId] = item.status; 
@@ -478,10 +384,15 @@ export default function MarksEntryPage() {
     const currentStatus = getCurrentStatus(targetSid, selectedEvaluation.status);
 
     if (targetStatusNum === "edit") {
-      const updatedStatuses = { ...subjectStatuses, [targetSid]: "SUBMITTED" };
-      setSubjectStatuses(updatedStatuses);
-      setEvaluations((prev) => prev.map((item) => item.subjectId === targetSid ? { ...item, status: "SUBMITTED" } : item));
-      showToast("Subject reverted to Submitted successfully", "success");
+      try {
+        await apiClient.patch(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/restore`);
+        const updatedStatuses = { ...subjectStatuses, [targetSid]: "SUBMITTED" };
+        setSubjectStatuses(updatedStatuses);
+        setEvaluations((prev) => prev.map((item) => item.subjectId === targetSid ? { ...item, status: "SUBMITTED" } : item));
+        showToast("Subject reverted to Submitted successfully", "success");
+      } catch (error) {
+        showToast(getApiErrorMessage(error), "error");
+      }
       return;
     }
 
@@ -504,22 +415,30 @@ export default function MarksEntryPage() {
   };
 
   // Global Approval Action ("Approve All")
-  // Approves any subject that is currently SUBMITTED or VERIFIED to APPROVED, keeping REJECTED subjects intact.
+  // Approves the submitted evaluations in the selected academic context.
   const handleGlobalApproval = async () => {
     if (!isAllFiltersSelected || evaluations.length === 0) return; 
 
     const eligibleEvaluations = evaluations.filter((item) => {
       const status = getCurrentStatus(item.subjectId, item.status);
-      return item.evaluationId && (status === "SUBMITTED" || status === "VERIFIED");
+      return item.evaluationId && status === "SUBMITTED";
     });
     if (!eligibleEvaluations.length) return;
 
     try {
-      await Promise.all(eligibleEvaluations.map((item) => apiClient.patch(`/api/v1/evaluations/${item.evaluationId}/approve`)));
+      await apiClient.post("/api/v1/evaluations/approve-all", {
+        boardId: Number(filters.board),
+        academicYearId: Number(filters.academicYear),
+        academicLevelId: Number(filters.academicLevel),
+        groupId: Number(filters.group),
+        sectionId: Number(filters.section),
+        examinationId: Number(filters.examination),
+        status: 1,
+      });
       const updatedStatuses = eligibleEvaluations.reduce((statuses, item) => ({ ...statuses, [item.subjectId]: "APPROVED" }), { ...subjectStatuses });
       setSubjectStatuses(updatedStatuses);
       setEvaluations((previous) => previous.map((item) => ({ ...item, status: updatedStatuses[item.subjectId] ?? item.status })));
-      showToast("All eligible subjects (Submitted / Verified) approved successfully", "success");
+      showToast("All eligible submitted subjects approved successfully", "success");
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
     }
@@ -540,47 +459,10 @@ export default function MarksEntryPage() {
     }); 
   }, [evaluations, evaluationSearchTerm, getCurrentStatus]); 
 
-  // Student Analysis Dynamic Marks & Grade List
-  const studentSubjectMarksList = useMemo(() => { 
-    const selectedSection = sections.find((section) => String(section.sectionId) === filters.section);
-    const sectionShort = (selectedSection?.sectionName || "A").replace(/Section\s*/i, "").trim() || "A";
-    const selectedGroup = groups.find((group) => String(group.groupId) === filters.group);
-    const grp = selectedGroup?.groupCode || selectedGroup?.groupName?.split("-")[0].trim() || "MPC";
-    const loadedStudents = Object.values(subjectMarksData).flat();
-    const hasLoadedStudents = loadedStudents.length > 0;
-    const students = hasLoadedStudents
-      ? Array.from(new Map(loadedStudents.map((student) => [String(student.studentId), student])).values())
-      : INITIAL_STUDENTS_BASE;
-    return students.map((student, idx) => {
-      const rollNo = hasLoadedStudents ? student.rollNo : `${grp}${sectionShort}${student.rollNo}`;
-      let studentTotal = 0; 
-      const marksPerSubject = {}; 
-      currentGroupSubjects.forEach((subj, subjectIndex) => { 
-        const subjectId = evaluations[subjectIndex]?.subjectId;
-        const subjRows = subjectId ? subjectMarksData[subjectId] || [] : []; 
-        const match = subjRows.find((r) => String(r.studentId) === String(student.studentId ?? student.id)) || subjRows[idx];
-        if (match) { 
-          const isPractical = isPracticalSubject(subj); 
-          const total = calculateTotal(match, isPractical); 
-          marksPerSubject[subjectId] = total; 
-          studentTotal += total; 
-        } else { 
-          marksPerSubject[subjectId] = null; 
-        } 
-      }); 
-      const maxPossible = currentGroupSubjects.length * 100; 
-      const overallGrade = getGrade(studentTotal, maxPossible); 
-      return { 
-        studentId: student.studentId ?? student.id,
-        rollNo, 
-        studentName: student.studentName, 
-        subjectMarks: marksPerSubject, 
-        totalMarks: studentTotal, 
-        maxTotal: maxPossible,
-        grade: overallGrade 
-      }; 
-    }); 
-  }, [subjectMarksData, currentGroupSubjects, evaluations, filters.group, filters.section, groups, sections]);
+  // Student Analysis data is provided by the selected academic context.
+  const studentSubjectMarksList = useMemo(() => {
+    return studentAnalysis;
+  }, [studentAnalysis]);
 
   const filteredStudentMarks = useMemo(() => { 
     if (!studentAnalysisSearchTerm.trim()) return studentSubjectMarksList; 

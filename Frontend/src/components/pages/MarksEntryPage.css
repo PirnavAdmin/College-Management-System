@@ -515,6 +515,58 @@
   vertical-align: middle;
 }
 
+/* Detail table remains readable while scrolling wide mark columns. */
+.cms-details-table .cms-sticky-roll,
+.cms-details-table .cms-sticky-student {
+  position: sticky;
+  background: var(--cms-surface);
+  z-index: 2;
+}
+
+.cms-details-table thead .cms-sticky-roll,
+.cms-details-table thead .cms-sticky-student {
+  background: var(--cms-subtle);
+  z-index: 3;
+}
+
+.cms-details-table .cms-sticky-roll { left: 0; }
+.cms-details-table .cms-sticky-student { left: 108px; }
+
+.cms-marks-input,
+.cms-marks-textarea {
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  background: var(--cms-surface);
+  color: var(--cms-text);
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.cms-marks-input { width: 74px; padding: 6px 8px; text-align: center; }
+.cms-marks-textarea { width: 100%; padding: 10px 12px; resize: vertical; }
+.cms-marks-input:focus,
+.cms-marks-textarea:focus { outline: none; border-color: var(--cms-primary); box-shadow: 0 0 0 3px var(--cms-primary-soft); }
+
+.cms-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--cms-bg) 55%, transparent);
+}
+
+.cms-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--cms-primary-soft);
+  border-top-color: var(--cms-primary);
+  border-radius: 50%;
+  animation: cmsMarksSpin 0.75s linear infinite;
+}
+
+@keyframes cmsMarksSpin { to { transform: rotate(360deg); } }
+
 /* Footer Action Buttons & Read-Only Status Pills */
 .cms-modal-actions {
   display: flex;

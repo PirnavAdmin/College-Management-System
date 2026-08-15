@@ -46,14 +46,6 @@ const isPracticalSubject = (subjectName) => {
   return PRACTICAL_SUBJECT_NAMES.some((p) => name.includes(p));
 };
 
-const calculateTotal = (row, isPractical) => {
-  if (row.totalMarks !== undefined && row.totalMarks !== null) return row.totalMarks;
-  const internal = Number(row.internalMarks || row.internal) || 0;
-  const theory = Number(row.theoryMarks || row.theory) || 0;
-  const practical = isPractical ? Number(row.practicalMarks || row.practical) || 0 : 0;
-  return internal + theory + practical;
-};
-
 const getResponseItems = (payload) => {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
@@ -88,10 +80,10 @@ const toStudentMarksRow = (item) => ({
   studentId: item.studentId ?? item.id,
   rollNo: item.rollNo ?? item.rollNumber ?? "—",
   studentName: item.studentName ?? item.name ?? item.fullName ?? "—",
-  internal: item.internal ?? item.internalMarks ?? 0,
-  practical: item.practical ?? item.practicalMarks ?? 0,
-  theory: item.theory ?? item.theoryMarks ?? 0,
-  totalMarks: item.totalMarks ?? (Number(item.internal ?? item.internalMarks ?? 0) + Number(item.theory ?? item.theoryMarks ?? 0) + Number(item.practical ?? item.practicalMarks ?? 0)),
+  internal: item.internal ?? item.internalMarks ?? "—",
+  practical: item.practical ?? item.practicalMarks ?? "—",
+  theory: item.theory ?? item.theoryMarks ?? "—",
+  totalMarks: item.totalMarks ?? item.obtainedMarks ?? "—",
   remarks: item.remarks ?? "—",
   isAbsent: Boolean(item.isAbsent ?? item.absent),
 });
@@ -123,6 +115,7 @@ export default function MarksEntryPage() {
   });
 
   const [ready, setReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("evaluations"); // "evaluations" | "studentAnalysis"
   const [evaluationSearchTerm, setEvaluationSearchTerm] = useState("");
   const [studentAnalysisSearchTerm, setStudentAnalysisSearchTerm] = useState("");
@@ -138,13 +131,15 @@ export default function MarksEntryPage() {
   // Data States 
   const [evaluations, setEvaluations] = useState([]);
   const [studentAnalysis, setStudentAnalysis] = useState([]);
-  const [subjectStatuses, setSubjectStatuses] = useState({});
   const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
-  const [subjectMarksData, setSubjectMarksData] = useState({});
   const [modalRows, setModalRows] = useState([]);
   const [viewMode, setViewMode] = useState("list");
   const [currentPage, setCurrentPage] = useState(1);
   const [studentMarksPage, setStudentMarksPage] = useState(1);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [editableRows, setEditableRows] = useState([]);
 
   const selectedEvaluation = useMemo(
     () => evaluations.find((item) => item.subjectId === selectedEvaluationId) ?? null,
@@ -170,6 +165,7 @@ export default function MarksEntryPage() {
 
     const loadFilterData = async () => {
       try {
+        setIsLoading(true);
         const [boardsResponse, yearsResponse, levelsResponse, groupsResponse, examsResponse] = await Promise.all([
           apiClient.get("/api/v1/boards"),
           apiClient.get("/api/v1/academic-years"),
@@ -186,6 +182,8 @@ export default function MarksEntryPage() {
         setExaminations(getResponseItems(examsResponse.data));
       } catch (error) {
         if (!cancelled) showToast(getApiErrorMessage(error), "error");
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     };
 
@@ -202,6 +200,7 @@ export default function MarksEntryPage() {
 
     const loadSections = async () => {
       try {
+        setIsLoading(true);
         const response = await apiClient.get(`/api/v1/Sections/group/${filters.group}`);
         if (!cancelled) setSections(getResponseItems(response.data));
       } catch (error) {
@@ -209,6 +208,8 @@ export default function MarksEntryPage() {
           setSections([]);
           showToast(getApiErrorMessage(error), "error");
         }
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     };
 
@@ -225,17 +226,11 @@ export default function MarksEntryPage() {
     [academicYears]
   );
   const academicLevelOptions = useMemo(() => {
-    return academicLevels
-      .filter(
-        (level) =>
-          !filters.board ||
-          String(level.boardId) === filters.board
-      )
-      .map((level) => ({
-        label: level.levelName,
-        value: String(level.academicLevelId),
-      }));
-  }, [academicLevels, filters.board]);
+    return academicLevels.map((level) => ({
+      label: level.levelName,
+      value: String(level.academicLevelId),
+    }));
+  }, [academicLevels]);
 
   const groupOptions = useMemo(() => {
     return groups
@@ -259,23 +254,11 @@ export default function MarksEntryPage() {
     filters.academicLevel,
   ]);
   const examinationOptions = useMemo(() => {
-    return examinations
-      .filter(
-        (exam) =>
-          (!filters.group ||
-            String(exam.groupId) === filters.group) &&
-          (!filters.academicYear ||
-            String(exam.academicYearId) === filters.academicYear)
-      )
-      .map((exam) => ({
-        label: exam.examName,
-        value: String(exam.examinationId),
-      }));
-  }, [
-    examinations,
-    filters.group,
-    filters.academicYear,
-  ]);
+    return examinations.map((exam) => ({
+      label: exam.examName,
+      value: String(exam.examinationId),
+    }));
+  }, [examinations]);
 
   const sectionOptions = useMemo(() => {
     return sections.map((section) => ({
@@ -312,9 +295,8 @@ export default function MarksEntryPage() {
   ]);
 
   const getCurrentStatus = useCallback(
-    (subjectId, fallbackStatus) =>
-      subjectStatuses[subjectId] ?? fallbackStatus ?? "SUBMITTED",
-    [subjectStatuses]
+    (_subjectId, fallbackStatus) => fallbackStatus ?? "SUBMITTED",
+    []
   );
 
   const currentGroupSubjects = useMemo(() => {
@@ -324,6 +306,7 @@ export default function MarksEntryPage() {
   // Fetch evaluation data for the selected academic context.
   const handleFetchData = async () => {
     try {
+      setIsLoading(true);
       const payload = {
         boardId: Number(filters.board),
         academicYearId: Number(filters.academicYear),
@@ -340,13 +323,6 @@ export default function MarksEntryPage() {
 
       setEvaluations(newEvaluations);
       setStudentAnalysis(getResponseItems(studentAnalysisResponse.data).map(toStudentAnalysisRow));
-      setSubjectStatuses(
-        newEvaluations.reduce((statuses, item) => {
-          statuses[item.subjectId] = item.status;
-          return statuses;
-        }, {})
-      );
-      setSubjectMarksData({});
       setEvaluationSearchTerm("");
       setStudentAnalysisSearchTerm("");
       setSelectedEvaluationId(null);
@@ -357,6 +333,8 @@ export default function MarksEntryPage() {
       setViewMode("list");
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -409,13 +387,17 @@ export default function MarksEntryPage() {
     setCurrentPage(1);
     setViewMode("details");
     try {
+      setIsLoading(true);
       const response = await apiClient.get(`/api/v1/evaluations/${item.evaluationId}/students`);
       const rows = getResponseItems(response.data).map(toStudentMarksRow);
-      setSubjectMarksData((previous) => ({ ...previous, [item.subjectId]: rows }));
       setModalRows(rows);
+      setEditableRows(rows);
+      setEditMode(false);
     } catch (error) {
       setModalRows([]);
       showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -424,59 +406,55 @@ export default function MarksEntryPage() {
     setModalRows([]);
     setCurrentPage(1);
     setViewMode("list");
+    setEditMode(false);
+    setEditableRows([]);
   };
 
-  // Single Evaluation Status Change Action (Verify / Approve / Reject)
+  // Status changes always reload the current context so the backend stays authoritative.
   const handleUpdateStatus = async (targetStatusNum) => {
-    if (!selectedEvaluation) return;
-    const targetSid = selectedEvaluation.subjectId;
-    const currentStatus = getCurrentStatus(targetSid, selectedEvaluation.status);
-
-    if (targetStatusNum === "edit") {
-      try {
-        await apiClient.patch(
-          `/api/v1/evaluations/${selectedEvaluation.evaluationId}/restore`
-        );
-
-        const restoredStatus = "SUBMITTED";
-
-        setSubjectStatuses((prev) => ({
-          ...prev,
-          [targetSid]: restoredStatus,
-        }));
-
-        setEvaluations((prev) =>
-          prev.map((item) =>
-            item.subjectId === targetSid
-              ? {
-                ...item,
-                status: restoredStatus,
-              }
-              : item
-          )
-        );
-        showToast("Subject reverted to Submitted successfully", "success");
-      } catch (error) {
-        showToast(getApiErrorMessage(error), "error");
-      }
+    if (!selectedEvaluation?.evaluationId) return;
+    if (targetStatusNum === 4) {
+      setRejectReason("");
+      setShowRejectModal(true);
       return;
     }
 
-    const action = ({ 2: "verify", 3: "approve", 4: "reject" })[targetStatusNum];
-    if (!action || !selectedEvaluation.evaluationId) return;
-    if (targetStatusNum === 3 && currentStatus !== "SUBMITTED" && currentStatus !== "VERIFIED") return;
+    const action = targetStatusNum === "edit" ? "restore" : ({ 2: "verify", 3: "approve" })[targetStatusNum];
+    if (!action) return;
 
     try {
+      setIsLoading(true);
       await apiClient.patch(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/${action}`);
-      const newStatusStr = ({ 2: "VERIFIED", 3: "APPROVED", 4: "REJECTED" })[targetStatusNum];
-      const updatedStatuses = { ...subjectStatuses, [targetSid]: newStatusStr };
-      setSubjectStatuses(updatedStatuses);
-      setEvaluations((prev) =>
-        prev.map((item) => (item.subjectId === targetSid ? { ...item, status: newStatusStr } : item))
-      );
-      showToast(`Subject ${newStatusStr.toLowerCase()} successfully`, "success");
+      const actionMessage = { verify: "verified", approve: "approved", restore: "restored" }[action];
+      showToast(`Subject ${actionMessage} successfully`, "success");
+      await handleFetchData();
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRejectEvaluation = async () => {
+    if (!selectedEvaluation?.evaluationId || rejectReason.trim().length < 5) {
+      showToast("Please enter a rejection reason of at least 5 characters.", "error");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      await apiClient.post(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/reject`, {
+        reason: rejectReason.trim(),
+        notifyFaculty: true,
+      });
+      setShowRejectModal(false);
+      setRejectReason("");
+      showToast("Evaluation rejected successfully", "success");
+      await handleFetchData();
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -485,20 +463,11 @@ export default function MarksEntryPage() {
   const handleGlobalApproval = async () => {
     if (!isAllFiltersSelected || evaluations.length === 0) return;
 
-    const eligibleEvaluations = evaluations.filter((item) => {
-      const status = getCurrentStatus(
-        item.subjectId,
-        item.status
-      );
-
-      return (
-        item.evaluationId &&
-        status === "VERIFIED"
-      );
-    });
+    const eligibleEvaluations = evaluations.filter((item) => item.evaluationId && item.status === "VERIFIED");
     if (!eligibleEvaluations.length) return;
 
     try {
+      setIsLoading(true);
       await apiClient.post(
         "/api/v1/evaluations/approve-all",
         {
@@ -510,12 +479,56 @@ export default function MarksEntryPage() {
           examinationId: Number(filters.examination),
         }
       );
-      const updatedStatuses = eligibleEvaluations.reduce((statuses, item) => ({ ...statuses, [item.subjectId]: "APPROVED" }), { ...subjectStatuses });
-      setSubjectStatuses(updatedStatuses);
-      setEvaluations((previous) => previous.map((item) => ({ ...item, status: updatedStatuses[item.subjectId] ?? item.status })));
-      showToast("All eligible submitted subjects approved successfully", "success");
+      showToast("All eligible subjects approved successfully", "success");
+      await handleFetchData();
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveMarks = async () => {
+    if (!selectedEvaluation?.evaluationId) return;
+
+    try {
+      setIsLoading(true);
+      await apiClient.put(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/marks`, {
+        students: editableRows,
+      });
+      showToast("Marks saved successfully", "success");
+      setEditMode(false);
+      await handleRowClick(selectedEvaluation);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!isAllFiltersSelected) return;
+    try {
+      setIsLoading(true);
+      const response = await apiClient.get("/api/v1/evaluations/export", {
+        params: {
+          boardId: Number(filters.board), academicYearId: Number(filters.academicYear),
+          academicLevelId: Number(filters.academicLevel), groupId: Number(filters.group),
+          sectionId: Number(filters.section), examinationId: Number(filters.examination), format: "xlsx",
+        },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "academic-evaluations.xlsx";
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast("Excel export downloaded successfully", "success");
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -597,6 +610,12 @@ export default function MarksEntryPage() {
       breadcrumb={["Examinations", "Marks Evaluation"]}
     >
       <div className="cms-marks-entry cms-anim-up">
+
+        {isLoading && (
+          <div className="cms-loading-overlay" role="status" aria-label="Loading">
+            <div className="cms-loading-spinner" />
+          </div>
+        )}
 
         {toastMessage && (
           <div key={toastMessage.id} className={`cms-toast-banner cms-toast-${toastMessage.type}`}>
@@ -694,6 +713,9 @@ export default function MarksEntryPage() {
                       onClick={handleGlobalApproval}
                     >
                       Approve All
+                    </button>
+                    <button className="cms-btn" onClick={handleExport}>
+                      Export Excel
                     </button>
 
                     <div className="cms-search-wrap">
@@ -868,11 +890,17 @@ export default function MarksEntryPage() {
               selectedEvaluation={selectedEvaluation}
               currentStatus={getCurrentStatus(selectedEvaluation.subjectId, selectedEvaluation.status)}
               filters={displayFilters}
-              rows={paginatedRows}
+              rows={editMode ? editableRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE) : paginatedRows}
               totalPages={totalPages}
               currentPage={safeCurrentPage}
               onBack={handleBackToEvaluations}
               onUpdateStatus={handleUpdateStatus}
+              editMode={editMode}
+              onEdit={() => setEditMode(true)}
+              onSave={handleSaveMarks}
+              onEditRow={(studentId, field, value) => setEditableRows((previous) => previous.map((row) =>
+                row.studentId === studentId ? { ...row, [field]: value } : row
+              ))}
               onPreviousPage={() => setCurrentPage((page) => Math.max(1, page - 1))}
               onNextPage={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
             />
@@ -880,6 +908,37 @@ export default function MarksEntryPage() {
         ) : (
           <div className="cms-card cms-empty-table">
             <p>Select all 6 evaluation filters and click <strong>Fetch Evaluation Data</strong> to view evaluation status &amp; student marks.</p>
+          </div>
+        )}
+
+        {showRejectModal && (
+          <div className="cms-overlay" role="presentation">
+            <div className="cms-modal sm" role="dialog" aria-modal="true" aria-labelledby="reject-evaluation-title">
+              <div className="cms-modal-head">
+                <h3 id="reject-evaluation-title">Reject Evaluation</h3>
+              </div>
+              <div className="cms-modal-body">
+                <div className="cms-field-group">
+                  <label className="cms-field-label" htmlFor="reject-reason">Reason</label>
+                  <textarea
+                    id="reject-reason"
+                    className="cms-marks-textarea"
+                    value={rejectReason}
+                    onChange={(event) => setRejectReason(event.target.value)}
+                    placeholder="Enter rejection reason"
+                    rows={4}
+                  />
+                </div>
+              </div>
+              <div className="cms-modal-foot">
+                <button className="cms-btn" onClick={() => { setShowRejectModal(false); setRejectReason(""); }}>
+                  Cancel
+                </button>
+                <button className="cms-btn cms-btn-danger" disabled={rejectReason.trim().length < 5} onClick={handleRejectEvaluation}>
+                  Confirm Reject
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -920,6 +979,10 @@ function EvaluationDetailsView({
   currentPage,
   onBack,
   onUpdateStatus,
+  editMode,
+  onEdit,
+  onSave,
+  onEditRow,
   onPreviousPage,
   onNextPage
 }) {
@@ -961,8 +1024,8 @@ function EvaluationDetailsView({
         <table className="cms-table cms-details-table">
           <thead>
             <tr>
-              <th className="cms-text-left">ROLL NO</th>
-              <th className="cms-text-left">STUDENT NAME</th>
+              <th className="cms-text-left cms-sticky-roll">ROLL NO</th>
+              <th className="cms-text-left cms-sticky-student">STUDENT NAME</th>
               <th className="cms-text-center">INTERNAL</th>
               {practical && <th className="cms-text-center">PRACTICAL</th>}
               <th className="cms-text-center">THEORY</th>
@@ -974,15 +1037,20 @@ function EvaluationDetailsView({
           <tbody>
             {rows.length > 0 ? (
               rows.map((row, pageIndex) => {
-                const totalMarks = calculateTotal(row, practical);
                 return (
                   <tr key={row.studentId || pageIndex}>
-                    <td className="cms-font-semibold cms-text-left">{row.rollNo}</td>
-                    <td className="cms-text-left">{row.studentName}</td>
-                    <td className="cms-text-center">{row.internal}</td>
-                    {practical && <td className="cms-text-center">{row.practical}</td>}
-                    <td className="cms-text-center">{row.theory}</td>
-                    <td className="cms-font-semibold cms-text-center">{totalMarks}</td>
+                    <td className="cms-font-semibold cms-text-left cms-sticky-roll">{row.rollNo}</td>
+                    <td className="cms-text-left cms-sticky-student">{row.studentName}</td>
+                    <td className="cms-text-center">
+                      {editMode ? <input className="cms-marks-input" type="number" value={row.internal === "—" ? "" : (row.internal ?? "")} onChange={(event) => onEditRow(row.studentId, "internal", event.target.value)} /> : row.internal}
+                    </td>
+                    {practical && <td className="cms-text-center">
+                      {editMode ? <input className="cms-marks-input" type="number" value={row.practical === "—" ? "" : (row.practical ?? "")} onChange={(event) => onEditRow(row.studentId, "practical", event.target.value)} /> : row.practical}
+                    </td>}
+                    <td className="cms-text-center">
+                      {editMode ? <input className="cms-marks-input" type="number" value={row.theory === "—" ? "" : (row.theory ?? "")} onChange={(event) => onEditRow(row.studentId, "theory", event.target.value)} /> : row.theory}
+                    </td>
+                    <td className="cms-font-semibold cms-text-center">{row.totalMarks}</td>
                     <td className="cms-text-left">{row.remarks}</td>
                     <td className="cms-text-center">{row.isAbsent ? "Yes" : "No"}</td>
                   </tr>
@@ -1029,9 +1097,9 @@ function EvaluationDetailsView({
             <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button>
             <button
               className="cms-btn"
-              onClick={() => onUpdateStatus("edit")}
+              onClick={onEdit}
             >
-              Edit
+              {editMode ? "Editing" : "Edit"}
             </button>
           </>
         )}
@@ -1039,7 +1107,7 @@ function EvaluationDetailsView({
           <>
             <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus(3)}><IconCheck /> Approve</button>
             <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button>
-            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
+            <button className="cms-btn" onClick={onEdit}>{editMode ? "Editing" : "Edit"}</button>
           </>
         )}
         {currentStatus === "APPROVED" && (
@@ -1048,9 +1116,10 @@ function EvaluationDetailsView({
         {currentStatus === "REJECTED" && (
           <>
             <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span>
-            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Edit</button>
+            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Restore</button>
           </>
         )}
+        {editMode && <button className="cms-btn cms-btn-primary" onClick={onSave}>Save Changes</button>}
       </div>
     </div>
   );

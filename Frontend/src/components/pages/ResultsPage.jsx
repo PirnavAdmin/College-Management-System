@@ -4,6 +4,8 @@ import { Toast } from "@/components/common/Ui.jsx";
 import { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
+  getBoards,
+  getGroups,
   getStudentResult,
   getRankList,
   getFailedStudents,
@@ -13,6 +15,9 @@ import {
   downloadStudentResultMemo,
   processResults,
   publishResults,
+  getAcademicYears,
+  getAcademicLevels,
+  getExaminations,
 } from "@/features/results/services/resultsService.js";
 import {
   FaSearch,
@@ -25,7 +30,6 @@ import {
   FaCheck,
   FaTimes,
   FaCheckCircle,
-  FaClock,
 } from "react-icons/fa";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -78,8 +82,14 @@ export default function ResultsPage() {
   const [rankSearchQuery, setRankSearchQuery] = useState("");
 
   const [resultsGenerated, setResultsGenerated] = useState(false);
-  const [resultsData, setResultsData] = useState(defaultResults);
+  const [resultsData, setResultsData] = useState([]);
   const [scopeResults, setScopeResults] = useState([]);
+  const [boardOptions, setBoardOptions] = useState([]);
+  const [yearOptions, setYearOptions] = useState([]);
+  const [levelOptions, setLevelOptions] = useState([]);
+  const [groupOptions, setGroupOptions] = useState([]);
+  const [examinationOptions, setExaminationOptions] = useState([]);
+  const [contextLoading, setContextLoading] = useState(true);
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [failedResults, setFailedResults] = useState([]);
@@ -91,6 +101,17 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
+    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
+      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
+        if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
+        if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
+        if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));
+        if (groupsResult.status === "fulfilled") setGroupOptions(groupsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
+        if (examinationsResult.status === "fulfilled") setExaminationOptions(examinationsResult.value.filter((item) => item.status !== "Inactive").map((item) => ({ id: String(item.examinationId ?? item.examId ?? item.id), name: item.examName ?? item.name })));
+        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult].find((result) => result.status === "rejected");
+        if (failed) setToast(getApiErrorMessage(failed.reason));
+      })
+      .finally(() => setContextLoading(false));
     getResults({ PageNumber: 1, PageSize: 100 })
       .then(setScopeResults)
       .catch((error) => setToast(getApiErrorMessage(error)));
@@ -98,11 +119,15 @@ export default function ResultsPage() {
 
   const uniqueScopes = (records, idKey, nameKey) =>
     [...new Map(records.filter((record) => record[idKey] && record[nameKey]).map((record) => [record[idKey], { id: record[idKey], name: record[nameKey] }])).values()];
-  const availableBoards = uniqueScopes(scopeResults, "boardId", "board");
-  const availableYears = filters.board ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board), "academicYearId", "year") : [];
-  const availableLevels = filters.year ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year), "academicLevelId", "academicLevel") : [];
-  const availableGroups = filters.level ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year && String(r.academicLevelId) === filters.level), "groupId", "group") : [];
-  const availableExams = filters.group ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year && String(r.academicLevelId) === filters.level && String(r.groupId) === filters.group), "examId", "exam") : [];
+  const availableBoards = boardOptions;
+  // Academic years and levels are independent reference data. Do not hide them
+  // just because a group has not yet been returned for the selected context.
+  const availableYears = filters.board ? yearOptions : [];
+  const availableLevels = filters.year ? levelOptions : [];
+  const contextualGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year && (!group.academicLevelId || String(group.academicLevelId) === filters.level));
+  const boardYearGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year);
+  const availableGroups = filters.level ? (contextualGroups.length ? contextualGroups : boardYearGroups.length ? boardYearGroups : groupOptions) : [];
+  const availableExams = filters.group ? examinationOptions : [];
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
@@ -158,14 +183,14 @@ export default function ResultsPage() {
       if (Array.isArray(fetchedData) && fetchedData.length > 0) {
         setResultsData(fetchedData);
       } else {
-        setResultsData(defaultResults);
+        setResultsData([]);
       }
 
       setFailedResults(failedData);
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
-      setResultsData(defaultResults);
+      setResultsData([]);
     } finally {
       setResultsGenerated(true);
       setPageStudentResults(1);
@@ -195,7 +220,7 @@ export default function ResultsPage() {
     }
   };
 
-  const filteredStudentResults = resultsData.filter((r) =>
+  const filteredStudentResults = resultsData.filter((r) => r.isPublished !== false).filter((r) =>
     `${r.name} ${r.roll} ${r.group} ${r.section}`
       .toLowerCase()
       .includes(query.toLowerCase())
@@ -606,7 +631,20 @@ export default function ResultsPage() {
         .results-context-description { margin: 4px 0 14px !important; font-size: 14px !important; line-height: 1.45 !important; }
         .results-context-card .cms-label { font-size: 13px !important; line-height: 1.35 !important; }
         .results-context-card .cms-select { min-height: 38px !important; padding: 8px 12px !important; font-size: 14px !important; }
+
+        /* Match the standard page scale on every generated-results view. */
+        .results-page .cms-card { border-radius: 14px; }
+        .results-page .cms-compact-card { width: 100%; max-width: none; margin: 0 0 20px !important; }
+        .results-page .cms-card-body { padding: 24px 28px !important; }
+        .results-page .cms-table-compact th { padding: 12px 14px !important; font-size: 13px !important; }
+        .results-page .cms-table-compact td { padding: 11px 14px !important; font-size: 14px !important; }
+        .results-page .cms-table-compact tr { height: 46px !important; }
+        .results-page .cms-btn { min-height: 40px !important; padding: 0 16px !important; font-size: 14px !important; }
+        .results-page .cms-subtitle { font-size: 14px; line-height: 1.5; }
+        .results-page .cms-table-wrap { margin-top: 18px; }
       `}</style>
+
+      <div className="results-page">
 
       {/* 1. Sequential Filter Card */}
       <div className="cms-card results-context-card">
@@ -631,6 +669,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Board <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
+                disabled={contextLoading}
                 value={filters.board}
                 onChange={(e) => handleFilterChange("board", e.target.value)}
               >
@@ -639,11 +678,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   availableBoards.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))
-                ) : (
-                  ["BIE Telangana", "CBSE", "ICSE"].map((b) => (
-                    <option key={b} value={b}>{b}</option>
-                  ))
-                )}
+                ) : null}
               </select>
             </div>
 
@@ -651,7 +686,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.board}
+                disabled={contextLoading || !filters.board}
                 value={filters.year}
                 onChange={(e) => handleFilterChange("year", e.target.value)}
               >
@@ -660,11 +695,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   availableYears.map((y) => (
                     <option key={y.id} value={y.id}>{y.name}</option>
                   ))
-                ) : (
-                  filters.board && ["2025-2026", "2024-2025"].map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))
-                )}
+                ) : null}
               </select>
             </div>
 
@@ -672,7 +703,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.year}
+                disabled={contextLoading || !filters.year}
                 value={filters.level}
                 onChange={(e) => handleFilterChange("level", e.target.value)}
               >
@@ -681,11 +712,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   availableLevels.map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
                   ))
-                ) : (
-                  filters.year && ["Intermediate 1st Year", "Intermediate 2nd Year"].map((l) => (
-                    <option key={l} value={l}>{l}</option>
-                  ))
-                )}
+                ) : null}
               </select>
             </div>
 
@@ -693,7 +720,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Group <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.level}
+                disabled={contextLoading || !filters.level}
                 value={filters.group}
                 onChange={(e) => handleFilterChange("group", e.target.value)}
               >
@@ -702,11 +729,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   availableGroups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))
-                ) : (
-                  filters.level && ["MPC", "BiPC", "CEC", "MEC"].map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))
-                )}
+                ) : null}
               </select>
             </div>
 
@@ -723,11 +746,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   availableExams.map((ex) => (
                     <option key={ex.id} value={ex.id}>{ex.name}</option>
                   ))
-                ) : (
-                  filters.group && ["Semester I", "Annual Examination", "Quarterly Exam"].map((ex) => (
-                    <option key={ex} value={ex}>{ex}</option>
-                  ))
-                )}
+                ) : null}
               </select>
             </div>
           </div>
@@ -1245,19 +1264,11 @@ Choose the academic context sequentially before reviewing faculty submissions.
                         </td>
 
                         <td style={{ textAlign: "center" }}>
-                          {r.status === "Published" || r.isPublished ? (
-                            <span className="cms-badge cms-badge-active" style={{ padding: "2px 6px", fontSize: "10px" }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaCheckCircle style={{ fontSize: "8px", color: "#15803d" }} /> Published
-                              </span>
+                          <span className="cms-badge cms-badge-active" style={{ padding: "2px 6px", fontSize: "10px" }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+                              <FaCheckCircle style={{ fontSize: "8px", color: "#15803d" }} /> Published
                             </span>
-                          ) : (
-                            <span className="cms-badge" style={{ background: "#fef3c7", color: "#b45309", padding: "2px 6px", fontSize: "10px" }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaClock style={{ fontSize: "8px", color: "#b45309" }} /> Draft
-                              </span>
-                            </span>
-                          )}
+                          </span>
                         </td>
                       </tr>
                     ))
@@ -1336,6 +1347,8 @@ Choose the academic context sequentially before reviewing faculty submissions.
           </div>
         </div>
       )}
+
+      </div>
 
       <div className="results-toast">
         <Toast message={toast} onClose={() => setToast("")} />

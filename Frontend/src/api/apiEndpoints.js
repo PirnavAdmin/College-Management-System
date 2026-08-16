@@ -113,6 +113,7 @@
     process: "/api/v1/results/process",
     publish: "/api/v1/results/publish",
     byStudent: (studentId) => `/api/v1/results/students/${studentId}`,
+    studentResult: "/api/v1/results/student-result",
     rankList: "/api/v1/results/rank-list",
     failedStudents: "/api/v1/results/failed-students",
     statistics: "/api/v1/results/statistics",
@@ -214,6 +215,9 @@
     review: (id) => `/api/certificates/${id}/review`,
     approve: (id) => `/api/certificates/${id}/approve`,
     issue: (id) => `/api/certificates/${id}/issue`,
+  },
+  examinations: {
+    getAll: "/api/v1/examinations",
   },
   timetable: {
     getAll: "/api/v1/timetable",

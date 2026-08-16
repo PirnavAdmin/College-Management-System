@@ -104,6 +104,14 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
     return () => { ignore = true; };
   }, [dependentFieldValues, sectionConfig, values]);
 
+  useEffect(() => {
+    if (!sectionConfig.deriveValues) return;
+    const derivedValues = sectionConfig.deriveValues(values) || {};
+    Object.entries(derivedValues).forEach(([name, value]) => {
+      if (String(values[name] ?? "") !== String(value ?? "")) setValue(name, value);
+    });
+  }, [sectionConfig, setValue, values]);
+
   const submit = async (e) => {
     e.preventDefault();
     if (!validate()) return;

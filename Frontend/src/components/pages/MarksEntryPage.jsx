@@ -175,8 +175,14 @@ export default function MarksEntryPage() {
         ]);
         if (cancelled) return;
 
-        setBoards(getResponseItems(boardsResponse.data));
-        setAcademicYears(getResponseItems(yearsResponse.data));
+        const activeBoards = getResponseItems(boardsResponse.data)
+          .filter(board => board.status);
+
+        const activeAcademicYears = getResponseItems(yearsResponse.data)
+          .filter(year => year.isActive);
+
+        setBoards(activeBoards);
+        setAcademicYears(activeAcademicYears);
         setAcademicLevels(getResponseItems(levelsResponse.data));
         setGroups(getResponseItems(groupsResponse.data));
         setExaminations(getResponseItems(examsResponse.data));
@@ -235,12 +241,7 @@ export default function MarksEntryPage() {
   const groupOptions = useMemo(() => {
     return groups
       .filter(
-        (group) =>
-          (!filters.board ||
-            String(group.boardId) === filters.board) &&
-          (!filters.academicYear ||
-            String(group.academicYearId) === filters.academicYear) &&
-          (!filters.academicLevel ||
+        (group) =>(!filters.academicLevel ||
             String(group.academicLevelId) === filters.academicLevel)
       )
       .map((group) => ({

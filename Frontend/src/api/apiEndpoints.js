@@ -199,6 +199,8 @@
     copy: "/api/v1/timetable/copy",
     publish: (id) => `/api/v1/timetable/${id}/publish`,
     publishSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/publish`,
+    approveSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/approve`,
+    validateSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/validate`,
   },
   reports: {
     dashboard: "/api/reports/dashboard",

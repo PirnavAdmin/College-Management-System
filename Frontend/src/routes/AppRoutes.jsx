@@ -18,7 +18,7 @@ import ExaminationPage, { pageConfig as examinationConfig } from "@/components/p
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
 import ResultProcessingPage from "@/components/pages/ResultProcessingPage.jsx";
 import PromotionPage from "@/components/pages/PromotionPage.jsx";
-import FeeManagementPage, { pageConfig as feeManagementConfig } from "@/components/pages/FeeManagementPage.jsx";
+import FeeManagementPage from "@/components/pages/FeeManagementPage.jsx";
 import CertificatesPage, { pageConfig as certificatesConfig } from "@/components/pages/CertificatesPage.jsx";
 import ReportsAnalyticsPage from "@/components/pages/ReportsAnalyticsPage.jsx";
 import StudentProfilePage from "@/components/pages/StudentProfilePage.jsx";
@@ -40,7 +40,6 @@ const moduleConfigs = {
   "faculty-allocation": FacultyManagementPage.facultySubjectAllocationConfig,
   assignments: assignmentsMaterialsConfig,
   examinations: examinationConfig,
-  "fee-structure": feeManagementConfig,
   certificates: certificatesConfig,
   students: studentManagementConfig,
 };
@@ -87,7 +86,9 @@ export default function AppRoutes() {
         <Route path="/dashboard/subjects" element={<SubjectManagementPage />} />
         <Route path="/dashboard/sections" element={<SectionManagementPage />} />
         <Route path="/dashboard/faculty" element={<FacultyManagementPage />} />
-        <Route path="/dashboard/faculty-allocation" element={<ModuleListRoute slug="faculty-allocation" />} />
+        <Route path="/dashboard/faculty/add" element={<FacultyManagementPage />} />
+        <Route path="/dashboard/faculty/:id/edit" element={<FacultyManagementPage />} />
+        <Route path="/dashboard/faculty-allocation" element={<Navigate to="/dashboard/faculty" replace />} />
         <Route path="/dashboard/admission" element={<StudentAdmissionPage />} />
         <Route path="/dashboard/students" element={<StudentManagementPage />} />
         <Route path="/dashboard/timetable" element={<TimetablePage />} />
@@ -102,8 +103,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/fee-structure" element={<FeeManagementPage />} />
         <Route path="/dashboard/certificates" element={<CertificatesPage />} />
         <Route path="/dashboard/reports" element={<ReportsAnalyticsPage />} />
-        {listSlugs.map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
-        {listSlugs.map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
+        {listSlugs.filter((slug) => slug !== "faculty").map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
+        {listSlugs.filter((slug) => slug !== "faculty").map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
         <Route path="/dashboard/students/:id" element={<StudentProfileRoute />} />
       </Route>
 

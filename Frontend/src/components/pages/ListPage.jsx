@@ -83,6 +83,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   const [viewing, setViewing] = useState(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({});
+  const [filterFields, setFilterFields] = useState(sectionConfig.filters || []);
   const navigate = useNavigate();
 
   const loadRows = useCallback(async (nextSearch = "", nextFilters = {}) => {
@@ -111,6 +112,22 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     const timer = setTimeout(() => setLoading(false), 450);
     return () => clearTimeout(timer);
   }, [slug, secondary, usesApi, loadRows, sectionConfig.preserveLocalRows, storeRows.length]);
+
+  useEffect(() => {
+    if (!usesApi || !sectionConfig.api?.loadFilters || !sectionConfig.filters?.length) {
+      setFilterFields(sectionConfig.filters || []);
+      return undefined;
+    }
+    let ignore = false;
+    sectionConfig.api.loadFilters(sectionConfig.filters)
+      .then((loadedFields) => {
+        if (!ignore) setFilterFields(loadedFields);
+      })
+      .catch(() => {
+        if (!ignore) setFilterFields(sectionConfig.filters || []);
+      });
+    return () => { ignore = true; };
+  }, [sectionConfig, usesApi]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
   const displayedRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
@@ -149,8 +166,8 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     <>
       {heading ? <h2 style={{ fontSize: 16, margin: "22px 0 12px" }}>{heading}</h2> : null}
       {!secondary ? <SummaryCards config={sectionConfig} /> : null}
-      {usesApi && sectionConfig.filters?.length ? (
-        <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
+      {usesApi && filterFields?.length ? (
+        <FilterBar fields={filterFields} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
       ) : null}
       {error ? (
         <div className="cms-card" style={{ marginBottom: 16 }}>

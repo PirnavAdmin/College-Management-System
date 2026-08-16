@@ -104,41 +104,6 @@ const academicLevelOptionsFromResponse = (response) => extractItems(response.dat
   .map((level) => option(level, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]))
   .filter(Boolean);
 
-
-const firstValue = (source, keys) => keys
-  .map((key) => source?.[key])
-  .find((value) => value !== undefined && value !== null && value !== "");
-
-const toSubjectRow = (subject) => {
-  // Subject responses have existed in both the original flat format and the
-  // newer lookup format. Accept both so the list keeps showing the values
-  // regardless of which API version is deployed.
-  const group = firstValue(subject, ["group", "Group", "groupName", "GroupName", "groupCode", "GroupCode"])
-    ?? firstValue(subject.groupDetails ?? subject.GroupDetails, ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"]);
-  const level = firstValue(subject, ["academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName", "level", "Level", "levelName", "LevelName"])
-    ?? firstValue(subject.academicLevelDetails ?? subject.AcademicLevelDetails, ["levelName", "LevelName", "name", "Name"]);
-
-  return {
-    id: subject.subjectId ?? subject.SubjectId ?? subject.id ?? subject.Id,
-    board: firstValue(subject, ["board", "Board", "boardName", "BoardName", "boardCode", "BoardCode"]),
-    group: group ?? "-",
-    level: level ?? "-",
-    name: firstValue(subject, ["subjectName", "SubjectName", "name", "Name"]),
-    code: firstValue(subject, ["subjectCode", "SubjectCode", "code", "Code"]),
-    type: firstValue(subject, ["subjectType", "SubjectType", "type", "Type"]),
-    theory: subject.theory ?? subject.Theory,
-    practicalFlag: subject.practical ?? subject.Practical,
-    language: subject.language ?? subject.Language,
-    elective: subject.elective ?? subject.Elective,
-    internalMarks: subject.internalMarks ?? subject.InternalMarks,
-    practicalMarks: subject.practicalMarks ?? subject.PracticalMarks,
-    externalMarks: subject.externalMarks ?? subject.ExternalMarks,
-    max: subject.totalMarks ?? subject.TotalMarks,
-    pass: subject.passingMarks ?? subject.PassingMarks,
-    status: subject.status ?? subject.Status ?? "Active",
-  };
-};
-
 const academicYearOptionsFromResponse = (response) => extractItems(response.data)
   .map((year) => option(year, ["academicYearId", "AcademicYearId", "yearId", "YearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]))
   .filter(Boolean);
@@ -174,7 +139,6 @@ const toSubjectRow = (subject) => ({
   pass: read(subject, "passingMarks", "PassingMarks") ?? 0,
   status: statusFrom(subject),
 });
-
 
 const toSubjectForm = (subject) => {
   const row = toSubjectRow(subject);

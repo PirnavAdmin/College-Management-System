@@ -1,7 +1,11 @@
 .cms-toast {
   position: fixed;
+  top: auto;
   right: 20px;
   bottom: 20px;
+  width: fit-content;
+  max-width: min(420px, calc(100vw - 32px));
+  max-height: 120px;
   z-index: 200;
   background: #0f2f1d;
   color: #fff;
@@ -10,8 +14,16 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  overflow: auto;
   box-shadow: var(--cms-shadow-lg);
   animation: cmsPop 0.2s ease;
   font-size: 13.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cms-toast > svg { flex: 0 0 auto; }
+
+@media (max-width: 520px) {
+  .cms-toast { right: 16px; bottom: 16px; max-width: calc(100vw - 32px); }
 }
 [data-theme="dark"] .cms-toast { background: #14532d; }

@@ -47,6 +47,10 @@
   margin-bottom: 20px;
 }
 
+.reports-filter-card .cms-field select {
+  cursor: pointer;
+}
+
 .reports-export-actions {
   display: flex;
   justify-content: flex-end;
@@ -215,7 +219,7 @@
 }
 
 .reports-summary-card-expanded {
-  min-height: 254px;
+  min-height: 174px;
   height: auto;
   align-items: stretch;
   flex-direction: column;
@@ -754,7 +758,7 @@
   }
 
   .reports-summary-card-expanded {
-    min-height: 228px;
+    min-height: 168px;
     height: auto;
     padding: 14px;
   }

@@ -106,6 +106,9 @@
     failedStudents: "/api/v1/results/failed-students",
     statistics: "/api/v1/results/statistics",
     analysis: "/api/v1/results/analysis",
+    exportExcel: "/api/v1/results/export-excel",
+    downloadPdf: "/api/v1/results/download-pdf",
+    studentMemo: "/api/v1/results/students/memo",
     memo: (studentId) => `/api/v1/results/memo/${studentId}`,
     revaluation: "/api/v1/results/revaluation",
     revaluationById: (revaluationId) => `/api/v1/results/revaluation/${revaluationId}`,
@@ -207,6 +210,8 @@
     copy: "/api/v1/timetable/copy",
     publish: (id) => `/api/v1/timetable/${id}/publish`,
     publishSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/publish`,
+    approveSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/approve`,
+    validateSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/validate`,
   },
   reports: {
     dashboard: "/api/reports/dashboard",

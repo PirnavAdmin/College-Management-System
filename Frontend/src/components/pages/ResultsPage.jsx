@@ -10,6 +10,7 @@ import {
   getResultAnalysis,
   downloadResultsExcel,
   downloadResultsPdf,
+  downloadStudentResultMemo,
   processResults,
   publishResults,
 } from "@/features/results/services/resultsService.js";
@@ -146,7 +147,7 @@ export default function ResultsPage() {
     try {
       await processResults({
         ...selectedScope,
-        processDate: new Date().toISOString(),
+        publishDate: new Date().toISOString(),
       });
 
       const [fetchedData, failedData] = await Promise.all([
@@ -380,11 +381,24 @@ export default function ResultsPage() {
     }
   };
 
-  const handlePrintStudentMemo = (student) => {
-    setToast(`Opening Print preview for ${student.name} (${student.roll})...`);
-    setTimeout(() => {
-      window.print();
-    }, 400);
+  const handlePrintStudentMemo = async (student) => {
+    if (!isAllFiltersSelected) return setToast("Select the complete result scope first.");
+
+    setLoading(true);
+    try {
+      const response = await downloadStudentResultMemo({
+        studentId: student.studentId || student.id,
+        ...selectedScope,
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+      setToast(`Opened marks memo for ${student.name}.`);
+    } catch (error) {
+      setToast(getApiErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleViewStudentResult = async (student) => {
@@ -539,13 +553,66 @@ export default function ResultsPage() {
         .cms-table-compact tr {
           height: 34px !important;
         }
+
+        /* Keep Results page notifications as a compact black modal at the bottom. */
+        .results-toast .cms-toast {
+          position: fixed !important;
+          top: auto !important;
+          right: auto !important;
+          bottom: 24px !important;
+          left: 50% !important;
+          width: min(720px, calc(100vw - 48px)) !important;
+          max-width: none !important;
+          min-width: 0 !important;
+          height: auto !important;
+          min-height: 0 !important;
+          padding: 16px 20px !important;
+          background: #111827 !important;
+          color: #ffffff !important;
+          border: 1px solid #374151 !important;
+          border-radius: 12px !important;
+          box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28) !important;
+          font-size: 15px !important;
+          font-weight: 600 !important;
+          line-height: 1.35 !important;
+          white-space: normal !important;
+          transform: translateX(-50%) !important;
+          animation: results-toast-in 0.2s ease !important;
+          z-index: 5000 !important;
+        }
+
+        @keyframes results-toast-in {
+          from { opacity: 0; transform: translate(-50%, 12px); }
+          to { opacity: 1; transform: translateX(-50%); }
+        }
+
+        @media (max-width: 640px) {
+          .results-toast .cms-toast {
+            bottom: 12px !important;
+            width: calc(100vw - 24px) !important;
+          }
+        }
+
+        .results-required-mark { color: #dc2626; font-weight: 800; margin-left: 3px; }
+        .results-publish-modal { max-width: 560px !important; }
+        .results-publish-modal .cms-modal-title { font-size: 21px !important; }
+        .results-publish-modal .cms-modal-body { padding: 24px !important; }
+        .results-publish-modal .cms-modal-body p { font-size: 16px !important; line-height: 1.65 !important; }
+        .results-publish-modal .cms-btn { font-size: 15px !important; min-height: 40px !important; }
+
+        /* Result page form sizing matches the standard CMS page layout. */
+        .results-context-card .cms-card-body { padding: 16px 20px !important; }
+        .results-context-heading { margin: 0 !important; font-size: 18px !important; line-height: 1.3 !important; }
+        .results-context-description { margin: 4px 0 14px !important; font-size: 14px !important; line-height: 1.45 !important; }
+        .results-context-card .cms-label { font-size: 13px !important; line-height: 1.35 !important; }
+        .results-context-card .cms-select { min-height: 38px !important; padding: 8px 12px !important; font-size: 14px !important; }
       `}</style>
 
       {/* 1. Sequential Filter Card */}
-      <div className="cms-card">
-        <div className="cms-card-body" style={{ padding: "16px 20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h3 className="cms-card-title">Academic Context</h3>
+      <div className="cms-card results-context-card">
+        <div className="cms-card-body" style={{ padding: "12px 16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 className="cms-card-title results-context-heading">Academic Context</h3>
             <button
               type="button"
               className="cms-btn cms-btn-primary"
@@ -555,13 +622,13 @@ export default function ResultsPage() {
               {loading ? "Generating..." : "Generate Data"}
             </button>
           </div>
-          <p className="cms-subtitle" style={{ marginBottom: 12 }}>
+          <p className="cms-subtitle results-context-description">
 Choose the academic context sequentially before reviewing faculty submissions.
           </p>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             <div className="cms-field-group">
-              <label className="cms-label">Board *</label>
+              <label className="cms-label">Board <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
                 value={filters.board}
@@ -581,7 +648,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
             </div>
 
             <div className="cms-field-group">
-              <label className="cms-label">Academic Year *</label>
+              <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
                 disabled={!filters.board}
@@ -602,7 +669,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
             </div>
 
             <div className="cms-field-group">
-              <label className="cms-label">Academic Level *</label>
+              <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
                 disabled={!filters.year}
@@ -623,7 +690,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
             </div>
 
             <div className="cms-field-group">
-              <label className="cms-label">Group *</label>
+              <label className="cms-label">Group <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
                 disabled={!filters.level}
@@ -644,7 +711,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
             </div>
 
             <div className="cms-field-group">
-              <label className="cms-label">Examination *</label>
+              <label className="cms-label">Examination <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
                 disabled={!filters.group}
@@ -1246,23 +1313,23 @@ Choose the academic context sequentially before reviewing faculty submissions.
       {/* CONFIRM PUBLISH DIALOG */}
       {confirm && (
         <div className="cms-modal-overlay" onClick={() => setConfirm(false)}>
-          <div className="cms-modal-content" style={{ maxWidth: 400 }} onClick={(e) => e.stopPropagation()}>
-            <div className="cms-modal-header" style={{ padding: "12px 16px" }}>
-              <h3 className="cms-modal-title" style={{ fontSize: "15px" }}>Publish Group Results</h3>
+          <div className="cms-modal-content results-publish-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="cms-modal-header" style={{ padding: "18px 24px" }}>
+              <h3 className="cms-modal-title">Publish Group Results</h3>
               <button type="button" className="cms-modal-close" onClick={() => setConfirm(false)}>✕</button>
             </div>
 
-            <div className="cms-modal-body" style={{ padding: "16px" }}>
-              <p className="cms-subtitle" style={{ margin: 0, fontSize: "12px", lineHeight: 1.5 }}>
+            <div className="cms-modal-body">
+              <p className="cms-subtitle" style={{ margin: 0 }}>
                 Published results will become immediately visible to students and parents on the Student Portal. Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong>. Continue?
               </p>
             </div>
 
-            <div className="cms-modal-footer" style={{ padding: "10px 16px" }}>
-              <button type="button" className="cms-btn cms-btn-secondary" style={{ height: "32px", padding: "0 12px", fontSize: "12px" }} onClick={() => setConfirm(false)}>
+            <div className="cms-modal-footer" style={{ padding: "16px 24px" }}>
+              <button type="button" className="cms-btn cms-btn-secondary" onClick={() => setConfirm(false)}>
                 Cancel
               </button>
-              <button type="button" className="cms-btn cms-btn-primary" style={{ height: "32px", padding: "0 12px", fontSize: "12px" }} disabled={loading} onClick={handlePublishResults}>
+              <button type="button" className="cms-btn cms-btn-primary" disabled={loading} onClick={handlePublishResults}>
                 {loading ? "Publishing..." : "Publish Results"}
               </button>
             </div>
@@ -1270,7 +1337,9 @@ Choose the academic context sequentially before reviewing faculty submissions.
         </div>
       )}
 
-      <Toast message={toast} onClose={() => setToast("")} />
+      <div className="results-toast">
+        <Toast message={toast} onClose={() => setToast("")} />
+      </div>
     </DashboardLayout>
   );
 }

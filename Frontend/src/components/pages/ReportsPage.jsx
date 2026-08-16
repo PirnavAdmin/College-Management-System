@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ShieldX,
   Percent,
+  Printer,
   Trophy,
   Users,
   WalletCards,
@@ -24,7 +25,6 @@ import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import "./ReportsAnalyticsPage.css";
 
 const EMPTY_REPORTS = {
-  summary: {},
   admissions: {},
   studentStrength: {},
   attendance: {},
@@ -35,48 +35,62 @@ const EMPTY_REPORTS = {
   passPercentage: {},
   toppers: {},
   facultyWorkload: {},
-  studentPerformance: {},
-  auditLogs: {},
+};
+
+const reportsApi = {
+  filters: {
+    boards: "/api/module18-reports/filters/boards",
+    years: "/api/module18-reports/filters/academic-years",
+    levels: "/api/module18-reports/filters/academic-levels",
+    groups: "/api/module18-reports/filters/groups",
+    sections: "/api/module18-reports/filters/sections",
+  },
+  auditLogs: "/api/module18-reports/audit-logs",
+  custom: "/api/module18-reports/custom",
+  generate: (reportType) => `/api/module18-reports/generate/${encodeURIComponent(reportType)}`,
+  print: (reportType) => `/api/module18-reports/print/${encodeURIComponent(reportType)}`,
+  fallback: {
+    filters: {
+      boards: apiEndpoints.boards.getAll,
+      years: apiEndpoints.academicYears.getAll,
+      levels: apiEndpoints.boards.academicLevels,
+      groups: apiEndpoints.groups.getAll,
+      sections: apiEndpoints.sections.getAll,
+    },
+    auditLogs: apiEndpoints.reports.auditLogs,
+  },
 };
 
 const reportRequests = [
-  ["summary", apiEndpoints.reports.summary],
-  ["admissions", apiEndpoints.reports.admissions],
-  ["studentStrength", apiEndpoints.reports.studentStrength],
-  ["attendance", apiEndpoints.reports.attendance],
-  ["feeCollection", apiEndpoints.reports.feeCollection],
-  ["feeOutstanding", apiEndpoints.reports.feeOutstanding],
-  ["examinations", apiEndpoints.reports.examinations],
-  ["results", apiEndpoints.reports.results],
-  ["passPercentage", apiEndpoints.reports.passPercentage],
-  ["toppers", apiEndpoints.reports.toppers],
-  ["facultyWorkload", apiEndpoints.reports.facultyWorkload],
-  ["studentPerformance", apiEndpoints.reports.studentPerformance],
+  { key: "admissions", endpoint: "/api/module18-reports/details/admissions", fallback: apiEndpoints.reports.admissions, casing: "lower" },
+  { key: "attendance", endpoint: "/api/module18-reports/details/attendance", fallback: apiEndpoints.reports.attendance, casing: "lower" },
+  { key: "feeCollection", endpoint: "/api/module18-reports/details/fee-collection", fallback: apiEndpoints.reports.feeCollection, casing: "lower" },
+  { key: "feeOutstanding", endpoint: "/api/module18-reports/details/due-fees", fallback: apiEndpoints.reports.feeOutstanding, casing: "lower", omitDates: true },
+  { key: "examinations", endpoint: "/api/module18-reports/details/examinations", fallback: apiEndpoints.reports.examinations, casing: "lower", omitSection: true },
+  { key: "results", endpoint: "/api/module18-reports/details/results", fallback: apiEndpoints.reports.results, casing: "lower", omitSection: true },
+  { key: "facultyWorkload", endpoint: "/api/module18-reports/details/faculty-workload", fallback: apiEndpoints.reports.facultyWorkload, casing: "upper" },
+  { key: "studentStrength", endpoint: "/api/module18-reports/details/student-strength", fallback: apiEndpoints.reports.studentStrength, casing: "lower", omitDates: true },
+  { key: "passPercentage", endpoint: "/api/module18-reports/details/pass-percentage", fallback: apiEndpoints.reports.passPercentage, casing: "upper" },
+  { key: "toppers", endpoint: "/api/module18-reports/details/toppers", fallback: apiEndpoints.reports.toppers, casing: "lower", omitSection: true },
 ];
 
+async function getWithMissingRouteFallback(endpoint, fallbackEndpoint, config) {
+  try {
+    return await apiClient.get(endpoint, config);
+  } catch (error) {
+    if (error?.response?.status !== 404 || !fallbackEndpoint) throw error;
+    return apiClient.get(fallbackEndpoint, config);
+  }
+}
+
 const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
-const AUDIT_SAMPLE_OPTIONS = {
-  user: ["Super Admin", "College Admin", "Faculty User", "Staff User", "Student User"],
-  role: ["Super Admin", "Admin", "Faculty", "Staff", "Student"],
-  module: ["Student Management", "Fee Management", "Attendance", "Admissions", "Faculty", "Examinations", "Results", "Reports", "Users", "Settings", "Authentication"],
-  action: ["Create", "Update", "Delete", "View", "Login", "Logout", "Approve", "Reject", "Export", "Import", "Assign", "Role Change"],
-  status: ["Success", "Failed"],
-};
 const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
-const AUDIT_SAMPLE_ROWS = [
-  { id: "sample-1", timestamp: "2026-08-12T09:15:00+05:30", user: "Super Admin", role: "Super Admin", module: "Authentication", action: "Login", description: "User signed in to the College Management System.", recordId: "USR-0001", status: "Success", ipAddress: "192.168.0.25", device: "Chrome on Windows", isSample: true },
-  { id: "sample-2", timestamp: "2026-08-12T09:42:00+05:30", user: "College Admin", role: "Admin", module: "Student Management", action: "Create", description: "Created a new student admission record.", recordId: "STU-1001", status: "Success", previousValue: null, newValue: { admissionStatus: "Active", academicYear: "2026-27" }, isSample: true },
-  { id: "sample-3", timestamp: "2026-08-12T10:20:00+05:30", user: "Super Admin", role: "Super Admin", module: "Attendance", action: "Update", description: "Updated daily attendance for MPC first year.", recordId: "ATT-2048", status: "Success", previousValue: { present: 42, absent: 3 }, newValue: { present: 43, absent: 2 }, isSample: true },
-  { id: "sample-4", timestamp: "2026-08-12T11:05:00+05:30", user: "Staff User", role: "Staff", module: "Fee Management", action: "Update", description: "Fee receipt update failed because the transaction reference was invalid.", recordId: "FEE-3512", status: "Failed", isSample: true },
-  { id: "sample-5", timestamp: "2026-08-12T12:10:00+05:30", user: "College Admin", role: "Admin", module: "Reports", action: "Export", description: "Exported the Reports & Analytics summary in PDF format.", recordId: "RPT-0826", status: "Success", isSample: true },
-  { id: "sample-6", timestamp: "2026-08-12T14:30:00+05:30", user: "Student User", role: "Student", module: "Results", action: "View", description: "Viewed the published semester examination result.", recordId: "RES-7814", status: "Success", isSample: true },
-];
 
 const summaryCardConfig = [
   { key: "admissions", sourceKey: "admissions", reportType: "admissions", label: "Admissions", icon: GraduationCap, tone: "blue" },
   { key: "attendance", sourceKey: "attendance", reportType: "attendance", label: "Attendance", icon: CalendarCheck, tone: "green", suffix: "%" },
-  { key: "feeCollection", sourceKey: "feeCollection", reportType: "fees/collection", label: "Fee Collection", icon: WalletCards, tone: "violet", currency: true },
-  { key: "dueFees", sourceKey: "feeOutstanding", reportType: "fees/outstanding", label: "Due Fees", icon: AlertCircle, tone: "amber", currency: true },
+  { key: "feeCollection", sourceKey: "feeCollection", reportType: "fee-collection", label: "Fee Collection", icon: WalletCards, tone: "violet", currency: true },
+  { key: "dueFees", sourceKey: "feeOutstanding", reportType: "due-fees", label: "Due Fees", icon: AlertCircle, tone: "amber", currency: true },
   { key: "examinations", sourceKey: "examinations", reportType: "examinations", label: "Examinations", icon: FileSpreadsheet, tone: "blue" },
   { key: "results", sourceKey: "results", reportType: "results", label: "Results Published", icon: Award, tone: "green" },
   { key: "facultyWorkload", sourceKey: "facultyWorkload", reportType: "faculty-workload", label: "Faculty Workload", icon: BriefcaseBusiness, tone: "violet", suffix: " hrs/wk" },
@@ -85,6 +99,20 @@ const summaryCardConfig = [
   { key: "toppers", sourceKey: "toppers", reportType: "toppers", label: "Toppers Identified", icon: Trophy, tone: "amber" },
 ];
 
+/* Legacy presentation samples retained only as a comment; live cards never read them.
+  admissions: { value: "128", details: [["Applications", "356"], ["Enrolled", "128"], ["Conversion Rate", "35.96%"]] },
+  attendance: { value: "92.4%", details: [["Present Today", "1,248"], ["Absent Today", "103"], ["This Month Avg", "92.4%"]] },
+  feeCollection: { value: "₹24.56L", details: [["Collected", "₹24.56L"], ["Pending", "₹8.34L"], ["Collection Rate", "74.65%"]] },
+  dueFees: { value: "₹8.34L", details: [["Total Outstanding", "₹8.34L"], ["Overdue (30+ days)", "₹3.2L"], ["Students Due", "412"]] },
+  examinations: { value: "12", details: [["Upcoming Exams", "6"], ["Ongoing Exams", "2"], ["Completed Exams", "4"]] },
+  results: { value: "85", details: [["Published Results", "85"], ["Pending Results", "12"], ["Pass Count", "1,062"]] },
+  facultyWorkload: { value: "128 hrs/wk", details: [["Total Teaching Hrs", "128"], ["Avg Hrs / Faculty", "16"], ["Total Faculty", "32"]] },
+  studentStrength: { value: "1,351", details: [["Total Students", "1,351"], ["Male Students", "732"], ["Female Students", "619"]] },
+  passPercentage: { value: "89.35%", details: [["Appeared", "1,187"], ["Passed", "1,061"], ["Failed", "126"]] },
+  toppers: { value: "18", details: [["University Toppers", "5"], ["Department Toppers", "13"], ["Programs", "6"]] },
+};
+
+*/
 const DETAIL_LABELS = {
   count: "Records", total: "Total", male: "Male", female: "Female", present: "Present", absent: "Absent",
   workingDays: "Working days", totalStudents: "Students", totalFaculty: "Faculty", totalExaminations: "Examinations",
@@ -110,13 +138,21 @@ function reportDetails(payload, mainValue, { currency = false } = {}) {
   };
 
   if (node && !Array.isArray(node) && typeof node === "object") {
-    Object.entries(node).forEach(([key, value]) => {
+    const queue = [{ value: node, depth: 0 }];
+    const visited = new Set();
+    while (queue.length && details.length < 3) {
+      const current = queue.shift();
+      if (!current.value || typeof current.value !== "object" || visited.has(current.value)) continue;
+      visited.add(current.value);
+      Object.entries(current.value).forEach(([key, value]) => {
       const lowerKey = key.toLowerCase();
       const valueFormat = { currency: currency || /amount|fee|collection|outstanding|due|paid/i.test(key), suffix: /percentage|rate/i.test(key) ? "%" : "" };
       if (/id$|date|created|updated|message|status/i.test(lowerKey)) return;
       if (Array.isArray(value)) add(readableLabel(key), value.length);
-      else add(readableLabel(key), value, valueFormat);
-    });
+        else if (value && typeof value === "object" && current.depth < 2) queue.push({ value, depth: current.depth + 1 });
+        else add(readableLabel(key), value, valueFormat);
+      });
+    }
   }
 
   const rows = collection(payload);
@@ -125,7 +161,15 @@ function reportDetails(payload, mainValue, { currency = false } = {}) {
 }
 
 function dataNode(payload) {
-  return payload?.data ?? payload?.Data ?? payload?.result ?? payload?.Result ?? payload;
+  let node = payload;
+  const visited = new Set();
+  while (node && typeof node === "object" && !Array.isArray(node) && !visited.has(node)) {
+    visited.add(node);
+    const wrapped = node.data ?? node.Data ?? node.result ?? node.Result;
+    if (wrapped === undefined || wrapped === node) break;
+    node = wrapped;
+  }
+  return node;
 }
 
 function collection(payload, preferredKeys = []) {
@@ -153,7 +197,41 @@ function numberValue(item, ...keys) {
 }
 
 function metric(payload, keys) {
-  return numberValue(dataNode(payload), ...keys);
+  const wanted = new Set(keys.map((key) => key.toLowerCase()));
+  const queue = [dataNode(payload)];
+  const visited = new Set();
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node || typeof node !== "object" || visited.has(node)) continue;
+    visited.add(node);
+    if (!Array.isArray(node)) {
+      for (const [key, value] of Object.entries(node)) {
+        if (wanted.has(key.toLowerCase())) {
+          const numeric = typeof value === "string" ? Number(value.replace(/[₹,%\s]/g, "")) : Number(value);
+          if (value !== "" && Number.isFinite(numeric)) return numeric;
+        }
+      }
+    }
+    Object.values(node).forEach((value) => {
+      if (value && typeof value === "object") queue.push(value);
+    });
+  }
+  return undefined;
+}
+
+function matchesSelected(value, selectedValue, selectedLabel) {
+  if (value === undefined || value === null || value === "") return true;
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === String(selectedValue ?? "").trim().toLowerCase()
+    || normalized === String(selectedLabel ?? "").trim().toLowerCase();
+}
+
+function metricFromSources(sources, keys) {
+  for (const source of sources) {
+    const value = metric(source, keys);
+    if (value !== undefined) return value;
+  }
+  return undefined;
 }
 
 function hasReportData(payload) {
@@ -198,20 +276,31 @@ function optionFrom(item, idKeys, labelKeys, metadata = {}) {
   };
 }
 
-function buildQuery(filters) {
+function buildQuery(filters, { casing = "upper", omitDates = false, omitSection = false } = {}) {
+  const upper = casing === "upper";
   const mapping = {
-    board: "BoardId",
-    year: "AcademicYearId",
-    level: "AcademicLevelId",
-    group: "GroupId",
-    section: "SectionId",
-    from: "FromDate",
-    to: "ToDate",
+    board: upper ? "BoardId" : "boardId",
+    year: upper ? "AcademicYearId" : "academicYearId",
+    level: upper ? "AcademicLevelId" : "academicLevelId",
+    group: upper ? "GroupId" : "groupId",
+    section: upper ? "SectionId" : "sectionId",
+    from: upper ? "FromDate" : "fromDate",
+    to: upper ? "ToDate" : "toDate",
   };
   return Object.entries(mapping).reduce((params, [filterKey, queryKey]) => {
+    if (omitDates && ["from", "to"].includes(filterKey)) return params;
+    if (omitSection && filterKey === "section") return params;
     const value = filters[filterKey];
     if (value === undefined || value === null || value === "") return params;
-    params[queryKey] = ["from", "to"].includes(filterKey) ? new Date(value).toISOString() : Number(value);
+    if (["from", "to"].includes(filterKey)) {
+      const normalized = String(value).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        params[queryKey] = `${normalized}T${filterKey === "from" ? "00:00:00" : "23:59:59"}`;
+      }
+      return params;
+    }
+    const id = Number(value);
+    if (Number.isInteger(id) && id > 0) params[queryKey] = id;
     return params;
   }, {});
 }
@@ -297,12 +386,7 @@ function uniqueOptions(rows, key) {
 }
 
 function auditOptions(rows, key) {
-  const apiOptions = uniqueOptions(rows, key);
-  const apiValues = new Set(apiOptions.map((option) => option.value));
-  const sampleOptions = AUDIT_SAMPLE_OPTIONS[key]
-    .filter((value) => !apiValues.has(value))
-    .map((value) => ({ value, label: `${value} (Sample)` }));
-  return [...apiOptions, ...sampleOptions];
+  return uniqueOptions(rows, key);
 }
 
 function formatMetric(value, { currency = false, suffix = "" } = {}) {
@@ -350,12 +434,53 @@ function downloadBlob(blob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+function printExcelPreview(reportRows) {
+  const rows = reportRows.map((card) => `
+    <tr>
+      <td>${card.label}</td>
+      <td>${card.value}</td>
+    </tr>
+  `).join("");
+  const printWindow = window.open("", "reports-excel-print", "width=960,height=720");
+  if (!printWindow) throw new Error("The print window was blocked. Allow pop-ups and try again.");
+  printWindow.document.open();
+  printWindow.document.write(`<!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <title>Reports Overview</title>
+        <style>
+          @page { size: A4 portrait; margin: 18mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; color: #172844; font-family: Arial, sans-serif; }
+          h1 { margin: 0 0 6px; font-size: 22px; }
+          p { margin: 0 0 22px; color: #687791; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 13px; }
+          th, td { padding: 11px 12px; border: 1px solid #dce5f1; text-align: left; }
+          th { background: #f4f7fb; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+          td:last-child { font-weight: 700; }
+          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body>
+        <h1>Reports Overview</h1>
+        <p>Key institution-wide report metrics</p>
+        <table><thead><tr><th>Report Metric</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>
+      </body>
+    </html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.setTimeout(() => printWindow.print(), 250);
+}
+
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState("reports");
   const [filters, setFilters] = useState({});
   const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [], groups: [], sections: [] });
   const [reports, setReports] = useState(EMPTY_REPORTS);
-  const [loading, setLoading] = useState(true);
+  const [reportGenerated, setReportGenerated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [reportErrors, setReportErrors] = useState({});
   const [masterLoading, setMasterLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -363,7 +488,6 @@ export default function ReportsPage() {
   const [exportingCards, setExportingCards] = useState({});
   const [previewFile, setPreviewFile] = useState(null);
   const [pdfPreviewLoaded, setPdfPreviewLoaded] = useState(false);
-  const [reportGenerated, setReportGenerated] = useState(false);
   const [auditFilters, setAuditFilters] = useState({});
   const [auditData, setAuditData] = useState(null);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -376,41 +500,40 @@ export default function ReportsPage() {
   const loadMasterOptions = useCallback(async () => {
     setMasterLoading(true);
     const results = await Promise.allSettled([
-      apiClient.get(apiEndpoints.boards.getAll),
-      apiClient.get(apiEndpoints.academicYears.getAll),
-      apiClient.get(apiEndpoints.boards.getAcademicLevels),
-      apiClient.get(apiEndpoints.groups.getAll),
-      apiClient.get(apiEndpoints.sections.getAll),
+      getWithMissingRouteFallback(reportsApi.filters.boards, reportsApi.fallback.filters.boards),
+      getWithMissingRouteFallback(reportsApi.filters.years, reportsApi.fallback.filters.years),
     ]);
-    const getRows = (index) => results[index].status === "fulfilled" ? collection(results[index].value.data) : [];
-    setMasterOptions({
-      boards: getRows(0).map((item) => optionFrom(item, ["boardId", "BoardId", "id", "Id"], ["boardCode", "BoardCode", "boardName", "BoardName", "name", "Name"])).filter(Boolean),
-      years: getRows(1).map((item) => optionFrom(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])).filter(Boolean),
-      levels: getRows(2).map((item) => optionFrom(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "name", "Name"])).filter(Boolean),
-      groups: getRows(3).map((item) => optionFrom(item, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"], { boardId: ["boardId", "BoardId"], levelId: ["academicLevelId", "AcademicLevelId"] })).filter(Boolean),
-      sections: getRows(4).map((item) => optionFrom(item, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"], { groupId: ["groupId", "GroupId"] })).filter(Boolean),
-    });
+    setMasterOptions((current) => ({
+      ...current,
+      boards: (results[0].status === "fulfilled" ? collection(results[0].value.data, ["boards", "Boards"]) : []).map((item) => optionFrom(item, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])).filter(Boolean),
+      years: (results[1].status === "fulfilled" ? collection(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"]) : []).map((item) => optionFrom(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])).filter(Boolean),
+      levels: [], groups: [], sections: [],
+    }));
     const failures = results.filter((result) => result.status === "rejected");
     if (failures.length) setToast("Some report filters could not be loaded.");
     setMasterLoading(false);
   }, []);
 
-  const loadReports = useCallback(async (selectedFilters, markAsGenerated = false) => {
+  const loadReports = useCallback(async (selectedFilters) => {
     setLoading(true);
     setError("");
-    const params = buildQuery(selectedFilters);
-    const results = await Promise.allSettled(reportRequests.map(([, endpoint]) => apiClient.get(endpoint, { params })));
+    const results = await Promise.allSettled(reportRequests.map((request) => getWithMissingRouteFallback(request.endpoint, request.fallback, {
+      params: buildQuery(selectedFilters, request),
+    })));
     const nextReports = { ...EMPTY_REPORTS };
+    const nextErrors = {};
     const failures = [];
     results.forEach((result, index) => {
-      const [key] = reportRequests[index];
+      const { key } = reportRequests[index];
       if (result.status === "fulfilled") nextReports[key] = result.value.data;
-      else failures.push({ key, reason: result.reason });
+      else {
+        failures.push({ key, reason: result.reason });
+        nextErrors[key] = getApiErrorMessage(result.reason);
+      }
     });
     setReports(nextReports);
-    if (markAsGenerated) {
-      setReportGenerated(results.some((result) => result.status === "fulfilled" && hasReportData(result.value.data)));
-    }
+    setReportErrors(nextErrors);
+    setReportGenerated(results.some((result) => result.status === "fulfilled"));
     setAuditPage(1);
     setError(reportFailureMessage(failures));
     setLoading(false);
@@ -420,31 +543,76 @@ export default function ReportsPage() {
     if (initialized.current) return;
     initialized.current = true;
     loadMasterOptions();
-    loadReports({});
   }, [loadMasterOptions, loadReports]);
 
+  useEffect(() => {
+    if (!filters.board) return;
+    let active = true;
+    setMasterLoading(true);
+    getWithMissingRouteFallback(reportsApi.filters.levels, reportsApi.fallback.filters.levels, { params: { boardId: Number(filters.board) } })
+      .then((response) => {
+        if (!active) return;
+        const levels = collection(response.data, ["academicLevels", "AcademicLevels", "levels", "Levels"]).map((item) => optionFrom(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"])).filter(Boolean);
+        setMasterOptions((current) => ({ ...current, levels }));
+      })
+      .catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
+      .finally(() => active && setMasterLoading(false));
+    return () => { active = false; };
+  }, [filters.board]);
+
+  useEffect(() => {
+    if (!filters.board || !filters.year || !filters.level) return;
+    let active = true;
+    const boardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label;
+    const levelLabel = masterOptions.levels.find((item) => item.value === filters.level)?.label;
+    setMasterLoading(true);
+    getWithMissingRouteFallback(reportsApi.filters.groups, reportsApi.fallback.filters.groups, { params: {
+      boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level),
+    } }).then((response) => {
+      if (!active) return;
+      const groups = collection(response.data, ["groups", "Groups"])
+        .filter((item) => matchesSelected(read(item, "boardId", "BoardId", "board", "Board"), filters.board, boardLabel)
+          && matchesSelected(read(item, "academicYearId", "AcademicYearId"), filters.year)
+          && matchesSelected(read(item, "academicLevelId", "AcademicLevelId", "academicLevel", "AcademicLevel"), filters.level, levelLabel))
+        .map((item) => optionFrom(item, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"])).filter(Boolean);
+      setMasterOptions((current) => ({ ...current, groups }));
+    }).catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
+      .finally(() => active && setMasterLoading(false));
+    return () => { active = false; };
+  }, [filters.board, filters.level, filters.year, masterOptions.boards, masterOptions.levels]);
+
+  useEffect(() => {
+    if (!filters.board || !filters.year || !filters.level || !filters.group) return;
+    let active = true;
+    setMasterLoading(true);
+    getWithMissingRouteFallback(reportsApi.filters.sections, reportsApi.fallback.filters.sections, { params: {
+      boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group),
+    } }).then((response) => {
+      if (!active) return;
+      const sections = collection(response.data, ["sections", "Sections"])
+        .filter((item) => matchesSelected(read(item, "groupId", "GroupId", "group", "Group"), filters.group, masterOptions.groups.find((group) => group.value === filters.group)?.label))
+        .map((item) => optionFrom(item, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])).filter(Boolean);
+      setMasterOptions((current) => ({ ...current, sections }));
+    }).catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
+      .finally(() => active && setMasterLoading(false));
+    return () => { active = false; };
+  }, [filters.board, filters.group, filters.level, filters.year, masterOptions.groups]);
+
   const filterFields = useMemo(() => {
-    const groups = masterOptions.groups.filter((option) => (
-      (!filters.board || !option.boardId || String(option.boardId) === filters.board)
-      && (!filters.level || !option.levelId || String(option.levelId) === filters.level)
-    ));
-    const sections = masterOptions.sections.filter((option) => !filters.group || !option.groupId || String(option.groupId) === filters.group);
     return [
       { name: "board", label: "Board", type: "select", options: masterOptions.boards },
       { name: "year", label: "Academic Year", type: "select", options: masterOptions.years },
       { name: "level", label: "Academic Level", type: "select", options: masterOptions.levels },
-      { name: "group", label: "Group", type: "select", options: groups },
-      { name: "section", label: "Section", type: "select", options: sections },
+      { name: "group", label: "Group", type: "select", options: masterOptions.groups },
+      { name: "section", label: "Section", type: "select", options: masterOptions.sections },
       { name: "from", label: "From Date", type: "date" },
       { name: "to", label: "To Date", type: "date" },
     ];
-  }, [filters.board, filters.group, filters.level, masterOptions]);
+  }, [masterOptions]);
 
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
-  const apiAuditRows = useMemo(() => mapAuditLogs(auditData), [auditData]);
-  const showingSampleAuditRows = !apiAuditRows.length;
-  const auditRows = showingSampleAuditRows ? AUDIT_SAMPLE_ROWS : apiAuditRows;
+  const auditRows = useMemo(() => mapAuditLogs(auditData), [auditData]);
   const auditFilterFields = useMemo(() => [
     { name: "user", label: "User", type: "select", options: auditOptions(auditRows, "user") },
     { name: "role", label: "Role", type: "select", options: auditOptions(auditRows, "role") },
@@ -475,31 +643,44 @@ export default function ReportsPage() {
 
   const passRate = metric(reports.passPercentage, ["passPercentage", "PassPercentage", "percentage", "Percentage", "passRate", "PassRate"]);
   const summaryValues = useMemo(() => {
-    const summary = reports.summary;
     const admissionCount = collection(reports.admissions).length || undefined;
     const examinationCount = collection(reports.examinations).length || undefined;
     const resultCount = collection(reports.results).length || undefined;
     return {
-      admissions: metric(summary, ["totalAdmissions", "TotalAdmissions", "admissionsCount", "AdmissionsCount"]) ?? admissionCount,
-      attendance: metric(summary, ["attendancePercentage", "AttendancePercentage", "averageAttendance", "AverageAttendance"]) ?? metric(reports.attendance, ["attendancePercentage", "AttendancePercentage", "averageAttendance", "AverageAttendance"]),
-      feeCollection: metric(summary, ["feeCollected", "FeeCollected", "totalFeeCollected", "TotalFeeCollected"]) ?? metric(reports.feeCollection, ["totalCollected", "TotalCollected", "collectedAmount", "CollectedAmount"]),
-      dueFees: metric(summary, ["dueFees", "DueFees", "outstandingFees", "OutstandingFees"]) ?? metric(reports.feeOutstanding, ["totalOutstanding", "TotalOutstanding", "outstandingAmount", "OutstandingAmount"]),
-      examinations: metric(summary, ["totalExaminations", "TotalExaminations", "examinationCount", "ExaminationCount"]) ?? examinationCount,
-      results: metric(summary, ["resultsPublished", "ResultsPublished", "publishedResults", "PublishedResults"]) ?? resultCount,
-      facultyWorkload: metric(summary, ["facultyWorkload", "FacultyWorkload", "averageFacultyWorkload", "AverageFacultyWorkload"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) / workloadData.length : undefined),
-      studentStrength: metric(summary, ["studentStrength", "StudentStrength", "totalStudents", "TotalStudents"]) ?? metric(reports.studentStrength, ["totalStudents", "TotalStudents", "studentStrength", "StudentStrength"]),
-      passPercentage: passRate ?? metric(summary, ["passPercentage", "PassPercentage"]),
-      toppers: metric(summary, ["toppersIdentified", "ToppersIdentified", "topperCount", "TopperCount"]) ?? (topperRows.length || undefined),
+      admissions: metricFromSources([reports.admissions], ["totalAdmissions", "admissions", "admissionsCount", "total", "count"]) ?? admissionCount,
+      attendance: metricFromSources([reports.attendance], ["attendancePercentage", "averageAttendance", "attendanceRate", "percentage"]),
+      feeCollection: metricFromSources([reports.feeCollection], ["collected", "totalCollected", "collectedAmount", "feeCollected", "totalFeeCollected", "amount"]),
+      dueFees: metricFromSources([reports.feeOutstanding], ["totalOutstanding", "outstandingAmount", "dueFees", "outstandingFees", "dueAmount", "amount"]),
+      examinations: metricFromSources([reports.examinations], ["totalExaminations", "examinationCount", "total", "count"]) ?? examinationCount,
+      results: metricFromSources([reports.results], ["published", "resultsPublished", "publishedResults", "resultCount", "total", "count"]) ?? resultCount,
+      facultyWorkload: metricFromSources([reports.facultyWorkload], ["averageFacultyWorkload", "averageWorkload", "facultyWorkload", "weeklyHours", "hoursPerWeek", "totalTeachingHours"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) : undefined),
+      studentStrength: metricFromSources([reports.studentStrength], ["totalStudents", "studentStrength", "total", "count"]),
+      passPercentage: passRate,
+      toppers: metricFromSources([reports.toppers], ["identified", "toppersIdentified", "topperCount", "totalToppers", "count"]) ?? (topperRows.length || undefined),
     };
   }, [passRate, reports, topperRows.length, workloadData]);
+  const excelPreviewRows = useMemo(() => summaryCardConfig.map((card) => ({
+    key: card.key,
+    label: card.label,
+    value: hasReportData(reports[card.sourceKey])
+      ? formatMetric(summaryValues[card.key], { currency: card.currency, suffix: card.suffix })
+      : "Unavailable",
+  })), [reports, summaryValues]);
 
   const handleFilterChange = (name, value) => {
     setReportGenerated(false);
     setFilters((current) => {
       const next = { ...current, [name]: value };
-      if (name === "board") Object.assign(next, { level: "", group: "", section: "" });
-      if (name === "level") Object.assign(next, { group: "", section: "" });
+      if (name === "board") {
+        Object.assign(next, { level: "", group: "", section: "" });
+        setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
+      }
+      if (name === "year" || name === "level") {
+        Object.assign(next, { group: "", section: "" });
+        setMasterOptions((options) => ({ ...options, groups: [], sections: [] }));
+      }
       if (name === "group") next.section = "";
+      if (name === "group") setMasterOptions((options) => ({ ...options, sections: [] }));
       return next;
     });
   };
@@ -509,14 +690,16 @@ export default function ReportsPage() {
       setToast("From Date must be earlier than or equal to To Date.");
       return;
     }
-    setReportGenerated(false);
-    loadReports(filters, true);
+    loadReports(filters);
   };
 
   const resetReports = () => {
     setFilters({});
+    setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
+    setReports(EMPTY_REPORTS);
+    setReportErrors({});
     setReportGenerated(false);
-    loadReports({});
+    setError("");
   };
 
   const handleAuditFilterChange = (name, value) => {
@@ -537,7 +720,7 @@ export default function ReportsPage() {
     setAuditLoading(true);
     setAuditError("");
     try {
-      const response = await apiClient.get(apiEndpoints.reports.auditLogs, { params: buildQuery(filters) });
+      const response = await getWithMissingRouteFallback(reportsApi.auditLogs, reportsApi.fallback.auditLogs, { params: buildQuery(filters) });
       setAuditData(response.data);
       setAuditPage(1);
     } catch (auditRequestError) {
@@ -553,28 +736,20 @@ export default function ReportsPage() {
       throw new Error("From Date must be earlier than or equal to To Date.");
     }
     const isPdf = format === "pdf";
-    const endpoint = isPdf ? apiEndpoints.reports.exportPdf : apiEndpoints.reports.exportExcel;
-    const extension = isPdf ? "pdf" : "xlsx";
+    const endpoint = isPdf ? reportsApi.print(reportType) : reportsApi.generate(reportType);
+    const extension = isPdf ? "html" : "csv";
     const fallbackFilename = `${fallbackBase}-${new Date().toISOString().slice(0, 10)}.${extension}`;
     const response = await apiClient.get(endpoint, {
-      params: { reportType, ...buildQuery(filters) },
-      responseType: "blob",
+      params: buildQuery(filters),
+      responseType: isPdf ? "text" : "json",
     });
-    const contentType = response.headers?.["content-type"] || (isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    if (!response.data?.size) throw new Error("The export API returned an empty file.");
-    if (contentType.includes("application/json") || contentType.includes("text/")) {
-      const text = await response.data.text();
-      let message = text;
-      try {
-        const parsed = JSON.parse(text);
-        message = parsed?.message || parsed?.Message || parsed?.title || message;
-      } catch {
-        // Keep the server text when it is not JSON.
-      }
-      throw new Error(message || "The export API did not return a file.");
-    }
+    const contentType = isPdf ? "text/html;charset=utf-8" : "text/csv;charset=utf-8";
+    const content = isPdf
+      ? String(response.data ?? "")
+      : ["Report Metric,Value", ...excelPreviewRows.map(({ label, value }) => `"${String(label).replaceAll('"', '""')}","${String(value).replaceAll('"', '""')}"`)].join("\r\n");
+    if (!content.trim()) throw new Error("The report API returned an empty response.");
     return {
-      blob: new Blob([response.data], { type: contentType }),
+      blob: new Blob([content], { type: contentType }),
       filename: getDownloadFilename(response.headers?.["content-disposition"], fallbackFilename),
       contentType,
       format,
@@ -585,7 +760,7 @@ export default function ReportsPage() {
     setPreviewing(format);
     setPdfPreviewLoaded(false);
     try {
-      const file = await requestReportFile(format);
+      const file = await requestReportFile(format, "dashboard", "reports-overview");
       setPreviewFile({ ...file, url: format === "pdf" ? URL.createObjectURL(file.blob) : "" });
     } catch (previewError) {
       setPreviewFile(null);
@@ -595,14 +770,14 @@ export default function ReportsPage() {
     }
   };
 
-  const exportCardReport = async (card, format) => {
-    const requestKey = `${card.key}-${format}`;
+  const downloadOverview = async (format) => {
+    const requestKey = `overview-${format}`;
     if (exportingCards[requestKey]) return;
     setExportingCards((current) => ({ ...current, [requestKey]: true }));
     try {
-      const file = await requestReportFile(format, card.reportType, card.key);
+      const file = await requestReportFile(format, "dashboard", "reports-overview");
       downloadBlob(file.blob, file.filename);
-      setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} downloaded successfully.`);
+      setToast(`${format === "pdf" ? "PDF" : "Excel"} report downloaded successfully.`);
     } catch (exportError) {
       setToast(await getExportErrorMessage(exportError));
     } finally {
@@ -642,17 +817,16 @@ export default function ReportsPage() {
         </div>
       </section>
 
-      {loading ? (
-        <div className="cms-card reports-loader"><Loader label="Loading report analytics..." /></div>
-      ) : (
-        <>
-          {error ? <div className="reports-error-banner" role="alert"><span>{error}</span><button className="cms-btn cms-btn-ghost" type="button" onClick={() => loadReports(filters, true)} disabled={loading}>Retry</button></div> : null}
+      <>
+          {error ? <div className="reports-error-banner" role="alert"><span>{error}</span><button className="cms-btn cms-btn-ghost" type="button" onClick={() => loadReports(filters)} disabled={loading}>Retry</button></div> : null}
           <section className="reports-summary-panel" aria-labelledby="reports-summary-title">
             <div className="reports-summary-panel-head">
               <div><h2 id="reports-summary-title">Reports Overview</h2><p>Key institution-wide report metrics</p></div>
               {reportGenerated ? <div className="reports-summary-actions" aria-label="Report file actions">
                 <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("pdf")} disabled={previewing === "pdf"}><Eye size={14} />{previewing === "pdf" ? "Loading..." : "Preview PDF"}</button>
                 <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("excel")} disabled={previewing === "excel"}><Eye size={14} />{previewing === "excel" ? "Loading..." : "Preview Excel"}</button>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadOverview("pdf")} disabled={Boolean(exportingCards["overview-pdf"])}><Download size={14} />{exportingCards["overview-pdf"] ? "Downloading..." : "Download PDF"}</button>
+                <button className="cms-btn cms-btn-ghost" type="button" onClick={() => downloadOverview("excel")} disabled={Boolean(exportingCards["overview-excel"])}><FileSpreadsheet size={14} />{exportingCards["overview-excel"] ? "Downloading..." : "Download Excel"}</button>
               </div> : null}
             </div>
             <div className="reports-summary-grid" aria-label="Report summary">
@@ -660,26 +834,24 @@ export default function ReportsPage() {
                 const { key, sourceKey, label, icon: Icon, tone, currency, suffix } = card;
                 const format = { currency, suffix };
                 const source = reports[sourceKey];
-                const details = reportDetails(source, summaryValues[key], format);
-                const canExport = reportGenerated && hasReportData(source);
+                const hasLiveData = hasReportData(source);
+                const details = hasLiveData
+                  ? reportDetails(source, summaryValues[key], format)
+                  : [];
+                const displayValue = hasLiveData ? formatMetric(summaryValues[key], format) : reportErrors[sourceKey] ? "Unavailable" : "—";
                 return <article className="reports-summary-card reports-summary-card-expanded" key={key}>
                   <div className="reports-summary-card-head">
                     <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} strokeWidth={2} /></span>
-                    <div className="reports-summary-content"><span>{label}</span><strong>{formatMetric(summaryValues[key], format)}</strong></div>
+                    <div className="reports-summary-content"><span>{label}</span><strong>{displayValue}</strong></div>
                   </div>
                   <dl className="reports-summary-details">
-                    {details.length ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>) : <div><dt>Details</dt><dd>{hasReportData(source) ? "No additional summary available" : "No data available"}</dd></div>}
+                    {details.length ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>) : <div><dt>Details</dt><dd>{reportErrors[sourceKey] || "No backend data generated yet"}</dd></div>}
                   </dl>
-                  {canExport ? <div className="reports-card-actions">
-                    <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportCardReport(card, "pdf")} disabled={Boolean(exportingCards[`${key}-pdf`])}><Download size={13} />{exportingCards[`${key}-pdf`] ? "Exporting..." : "Export PDF"}</button>
-                    <button className="cms-btn cms-btn-ghost" type="button" onClick={() => exportCardReport(card, "excel")} disabled={Boolean(exportingCards[`${key}-excel`])}><FileSpreadsheet size={13} />{exportingCards[`${key}-excel`] ? "Exporting..." : "Export Excel"}</button>
-                  </div> : null}
                 </article>;
               })}
             </div>
           </section>
         </>
-      )}
       </> :
           <section className="reports-audit-section" aria-labelledby="audit-logs-title">
             <div className="reports-chart-head reports-audit-head">
@@ -704,7 +876,6 @@ export default function ReportsPage() {
             {auditLoading ? <div className="reports-audit-loader"><Loader label="Fetching audit logs..." /></div> : null}
             {auditError ? <div className="reports-error-banner reports-audit-error" role="alert">{auditError}</div> : null}
             {!auditLoading ? <>
-            {showingSampleAuditRows ? <div className="reports-audit-sample-note" role="note"><strong>Sample data:</strong> These example records demonstrate the expected Audit Logs API fields. Real API records will replace them after a successful fetch.</div> : null}
             <div className="reports-audit-summary" aria-label="Audit log summary">
               {[
                 { label: "Total Activities", value: auditSummary.total, icon: Activity, tone: "blue" },
@@ -750,11 +921,12 @@ export default function ReportsPage() {
         <div className="reports-pdf-preview"><iframe src={previewFile.url} title="Generated report PDF preview" onLoad={() => setPdfPreviewLoaded(true)} /></div>
       </Modal> : null}
       {previewFile?.format === "excel" ? <Modal title="Excel Preview" onClose={() => setPreviewFile(null)} footer={<>
+        <button className="cms-btn cms-btn-ghost" type="button" onClick={() => { try { printExcelPreview(excelPreviewRows); } catch (printError) { setToast(printError.message); } }}><Printer size={15} />Print Excel</button>
         <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download Excel</button>
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
       </>}>
         <div className="reports-excel-preview"><table className="reports-top-students"><thead><tr><th>Report Metric</th><th>Value</th></tr></thead><tbody>
-          {summaryCardConfig.map(({ key, label, currency, suffix }) => <tr key={key}><td><strong>{label}</strong></td><td>{formatMetric(summaryValues[key], { currency, suffix })}</td></tr>)}
+          {excelPreviewRows.map(({ key, label, value }) => <tr key={key}><td><strong>{label}</strong></td><td>{value}</td></tr>)}
         </tbody></table></div>
       </Modal> : null}
       {selectedAuditLog ? <Modal title="Audit Log Details" onClose={() => setSelectedAuditLog(null)} footer={<button className="cms-btn cms-btn-primary" type="button" onClick={() => setSelectedAuditLog(null)}>Close</button>}>

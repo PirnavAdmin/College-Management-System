@@ -4,7 +4,7 @@ import path from "node:path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const apiBaseUrl = env.VITE_API_BASE_URL || "https://cultivate-suitable-manmade.ngrok-free.dev";
+  const apiBaseUrl = env.VITE_API_BASE_URL || "https://sterile-retorted-tightness.ngrok-free.dev";
 
 
   return {
@@ -29,17 +29,6 @@ export default defineConfig(({ mode }) => {
           secure: false,
           headers: {
             "ngrok-skip-browser-warning": "true",
-          },
-          configure: (proxy) => {
-            proxy.on("error", (error, _request, response) => {
-              if (!response || response.headersSent) return;
-
-              response.writeHead(502, { "Content-Type": "application/json" });
-              response.end(JSON.stringify({
-                message: "The API server is unavailable. Check VITE_API_BASE_URL and confirm the backend/ngrok tunnel is running.",
-                detail: error.code || error.message,
-              }));
-            });
           },
         },
       },

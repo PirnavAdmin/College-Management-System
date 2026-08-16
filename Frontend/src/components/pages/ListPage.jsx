@@ -6,9 +6,10 @@ import { ConfirmDialog, FilterBar, Modal, Toast, StatusBadge } from "@/component
 import { getApiErrorMessage } from "@/api/axios.js";
 import { configFor, deleteRow, useRows } from "@/data/store.js";
 
-function SummaryCards({ config }) {
+function SummaryCards({ config, activeFilter, onSelect }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [hovered, setHovered] = useState(null);
 
   useEffect(() => {
     if (!config.summary?.fetch) return;
@@ -41,11 +42,32 @@ function SummaryCards({ config }) {
     <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
       {summary.map((card) => {
         const c = colorFor(card.label);
+        const isSelected = activeFilter === card.label;
+        const isHovered = hovered === card.label;
         return (
-          <div
+          <button
             key={card.label}
+            type="button"
+            onClick={() => onSelect(card.label)}
+            onMouseEnter={() => setHovered(card.label)}
+            onMouseLeave={() => setHovered(null)}
             className="cms-card"
-            style={{ flex: "1 1 0", padding: "16px 20px", display: "flex", alignItems: "center", gap: 16 }}
+            style={{
+              flex: "1 1 0",
+              padding: "16px 20px",
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              cursor: "pointer",
+              border: isSelected ? `2px solid ${c.text}` : "2px solid transparent",
+              textAlign: "left",
+              font: "inherit",
+              transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+              transform: isHovered ? "translateY(-2px)" : "translateY(0)",
+              boxShadow: isHovered
+                ? "0 6px 16px rgba(0,0,0,0.12)"
+                : "0 1px 2px rgba(0,0,0,0.04)",
+            }}
           >
             <div
               style={{
@@ -65,13 +87,12 @@ function SummaryCards({ config }) {
               {card.value}
             </div>
             <div style={{ fontSize: 20, fontWeight: 600, color: "var(--cms-muted)" }}>{card.label}</div>
-          </div>
+          </button>
         );
       })}
     </div>
   );
 }
-
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
   const storeRows = useRows(slug, secondary, config);
@@ -83,6 +104,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   const [viewing, setViewing] = useState(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({});
+  const [statusFilter, setStatusFilter] = useState(null);
   const navigate = useNavigate();
 
   const loadRows = useCallback(async (nextSearch = "", nextFilters = {}) => {
@@ -113,7 +135,15 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   }, [slug, secondary, usesApi, loadRows, sectionConfig.preserveLocalRows, storeRows.length]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
-  const displayedRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
+  const baseRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
+
+  const displayedRows = !statusFilter || statusFilter.toLowerCase() === "total"
+    ? baseRows
+    : baseRows.filter((r) => String(r.status || "").toLowerCase() === statusFilter.toLowerCase());
+
+  const handleSummarySelect = (label) => {
+    setStatusFilter((current) => (current === label ? null : label));
+  };
 
   const setFilter = (name, value) => {
     if (name === "__reset__") {
@@ -148,7 +178,9 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   return (
     <>
       {heading ? <h2 style={{ fontSize: 16, margin: "22px 0 12px" }}>{heading}</h2> : null}
-      {!secondary ? <SummaryCards config={sectionConfig} /> : null}
+      {!secondary ? (
+        <SummaryCards config={sectionConfig} activeFilter={statusFilter} onSelect={handleSummarySelect} />
+      ) : null}
       {usesApi && sectionConfig.filters?.length ? (
         <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
       ) : null}
@@ -166,7 +198,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         rows={displayedRows}
         loading={loading}
         addLabel={sectionConfig.addLabel}
-        onSearchChange={sectionConfig.api?.fetchRows ? handleSearch : null}
+        onSearchChange={usesApi ? handleSearch : null}
         onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}

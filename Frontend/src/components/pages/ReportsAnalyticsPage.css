@@ -47,6 +47,10 @@
   margin-bottom: 20px;
 }
 
+.reports-filter-card .cms-field select {
+  cursor: pointer;
+}
+
 .reports-export-actions {
   display: flex;
   justify-content: flex-end;
@@ -109,8 +113,8 @@
 
 .reports-summary-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
   margin-bottom: 20px;
 }
 
@@ -194,6 +198,11 @@
   min-width: 520px;
 }
 
+.reports-excel-preview td:last-child {
+  color: #172844;
+  font-weight: 750;
+}
+
 .reports-summary-card {
   box-sizing: border-box;
   min-width: 0;
@@ -210,7 +219,7 @@
 }
 
 .reports-summary-card-expanded {
-  min-height: 238px;
+  min-height: 174px;
   height: auto;
   align-items: stretch;
   flex-direction: column;
@@ -260,12 +269,13 @@
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 6px;
   margin-top: auto;
   padding-top: 2px;
 }
 
 .reports-card-actions .cms-btn {
+  flex: 1 1 96px;
   min-height: 30px;
   padding: 5px 8px;
   gap: 4px;
@@ -704,7 +714,7 @@
 
 @media (max-width: 1280px) {
   .reports-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .reports-analytics-grid {
@@ -748,7 +758,7 @@
   }
 
   .reports-summary-card-expanded {
-    min-height: 228px;
+    min-height: 168px;
     height: auto;
     padding: 14px;
   }
@@ -942,6 +952,10 @@
 [data-theme="dark"] .reports-chart-head h2,
 [data-theme="dark"] .reports-donut-label strong,
 [data-theme="dark"] .reports-top-students strong {
+  color: #eef3fb;
+}
+
+[data-theme="dark"] .reports-excel-preview td:last-child {
   color: #eef3fb;
 }
 

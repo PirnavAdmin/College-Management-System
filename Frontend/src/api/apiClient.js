@@ -26,6 +26,14 @@ const getJwtExpiryState = (token) => {
 export const getApiErrorMessage = (error) => {
   const data = error?.response?.data;
   if (typeof data === "string") return data;
+  if (data?.errors && typeof data.errors === "object") {
+    const messages = Object.values(data.errors).flat().filter(Boolean);
+    if (messages.length) return messages.join(" ");
+  }
+  if (data?.Errors && typeof data.Errors === "object") {
+    const messages = Object.values(data.Errors).flat().filter(Boolean);
+    if (messages.length) return messages.join(" ");
+  }
   if (data?.Message) return data.Message;
   if (data?.message) return data.message;
   if (data?.Error) return data.Error;
@@ -71,6 +79,14 @@ apiClient.interceptors.response.use(
     return Promise.reject(new Error("Backend returned HTML instead of JSON. Check API base URL or proxy."));
   },
   (error) => {
+    if (import.meta.env.DEV) {
+      console.error("API response error:", {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+    }
     if (isHtmlResponse(error.response?.data)) {
       error.response.data = { message: "Backend returned HTML instead of JSON. Check API base URL or proxy." };
     }

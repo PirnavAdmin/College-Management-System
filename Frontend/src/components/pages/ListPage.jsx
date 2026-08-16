@@ -104,6 +104,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   const [viewing, setViewing] = useState(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({});
+  const [filterFields, setFilterFields] = useState(sectionConfig.filters || []);
   const [statusFilter, setStatusFilter] = useState(null);
   const navigate = useNavigate();
 
@@ -133,6 +134,26 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     const timer = setTimeout(() => setLoading(false), 450);
     return () => clearTimeout(timer);
   }, [slug, secondary, usesApi, loadRows, sectionConfig.preserveLocalRows, storeRows.length]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadFilterOptions = async () => {
+      const fields = sectionConfig.filters || [];
+      const loaded = await Promise.all(fields.map(async (field) => {
+        if (!field.loadOptions) return field;
+        try {
+          const response = await field.loadOptions();
+          const options = field.getOptions ? field.getOptions(response) : response.data;
+          return Array.isArray(options) ? { ...field, options } : field;
+        } catch {
+          return field;
+        }
+      }));
+      if (mounted) setFilterFields(loaded);
+    };
+    loadFilterOptions();
+    return () => { mounted = false; };
+  }, [sectionConfig]);
 
   const sectionQuery = secondary ? "?section=secondary" : "";
   const baseRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
@@ -181,8 +202,8 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
       {!secondary ? (
         <SummaryCards config={sectionConfig} activeFilter={statusFilter} onSelect={handleSummarySelect} />
       ) : null}
-      {usesApi && sectionConfig.filters?.length ? (
-        <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
+      {usesApi && filterFields.length ? (
+        <FilterBar fields={filterFields} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
       ) : null}
       {error ? (
         <div className="cms-card" style={{ marginBottom: 16 }}>
@@ -199,7 +220,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         loading={loading}
         addLabel={sectionConfig.addLabel}
         onSearchChange={usesApi ? handleSearch : null}
-        onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
+        onAdd={sectionConfig.allowAdd === false ? null : () => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}
         onView={onView ? (row) => onView(row) : (row) => setViewing(row)}

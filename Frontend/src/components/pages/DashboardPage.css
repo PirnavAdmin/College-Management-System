@@ -47,7 +47,12 @@
 .dashboard-grid { display: grid; gap: 16px; margin-bottom: 16px; }
 .dashboard-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .dashboard-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.dashboard-widget { min-width: 0; overflow: hidden; }
+.dashboard-widget {
+  min-width: 0;
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: 340px;
+}
 .dashboard-chart-body { height: 285px; padding: 15px 10px 10px; }
 .dashboard-chart-body .recharts-text { fill: var(--cms-muted); font-size: 11px; }
 .dashboard-empty { min-height: 80px; display: grid; place-items: center; padding: 16px; color: var(--cms-muted); font-size: 12px; text-align: center; }

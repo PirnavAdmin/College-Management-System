@@ -36,6 +36,10 @@
   boards: {
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
+    create: "/api/v1/boards",
+    getById: (boardId) => `/api/v1/boards/${boardId}`,
+    update: (boardId) => `/api/v1/boards/${boardId}`,
+    delete: (boardId) => `/api/v1/boards/${boardId}`,
     getAcademicLevels: "/api/v1/boards/academic-levels",
     academicLevels: "/api/v1/boards/academic-levels",
     gradingSystems: "/api/v1/boards/grading-systems",
@@ -139,6 +143,8 @@
     create: "/api/v1/attendance/create",
     bulk: "/api/v1/attendance/bulk",
     update: "/api/v1/attendance/update",
+    bulkUpdate: "/api/v1/attendance/bulk-update",
+    delete: (attendanceId) => `/api/v1/attendance/${attendanceId}`,
     getById: (attendanceId) => `/api/v1/attendance/${attendanceId}`,
     search: "/api/v1/attendance/search",
     students: "/api/v1/attendance/students",
@@ -146,6 +152,8 @@
     percentage: "/api/v1/attendance/percentage",
     report: "/api/v1/attendance/report",
     updateStatus: (attendanceId) => `/api/v1/attendance/${attendanceId}/status`,
+    lockSession: (sessionId) => `/api/v1/attendance/session/${sessionId}/lock`,
+    unlockSession: (sessionId) => `/api/v1/attendance/session/${sessionId}/unlock`,
   },
   students: {
     getAll: "/api/v1/students",

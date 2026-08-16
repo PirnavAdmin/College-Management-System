@@ -28,6 +28,21 @@ export const getGroups = async (params = {}) => {
   return unwrapRecords(response.data);
 };
 
+export const getAcademicYears = async () => {
+  const response = await apiClient.get(apiEndpoints.academicYears.getAll);
+  return unwrapRecords(response.data);
+};
+
+export const getAcademicLevels = async () => {
+  const response = await apiClient.get(apiEndpoints.boards.academicLevels);
+  return unwrapRecords(response.data);
+};
+
+export const getExaminations = async () => {
+  const response = await apiClient.get(apiEndpoints.examinations.getAll);
+  return unwrapRecords(response.data);
+};
+
 export const getStudentResult = async (params) => {
   const response = await apiClient.get(apiEndpoints.results.studentResult, { params });
   return unwrapPayload(response.data);
@@ -87,7 +102,24 @@ function unwrapRecords(payload) {
 }
 
 function toResultRecords(payload) {
-  return unwrapRecords(payload).map(toResultRecord);
+  const records = unwrapRecords(payload).map(toResultRecord);
+  const grouped = new Map();
+  records.forEach((record) => {
+    const key = `${record.studentId ?? record.id}-${record.examId ?? ""}`;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, { ...record, subjects: [{ subjectId: record.subjectId, subjectName: record.subject, totalMarks: record.total, internal: record.internal, practical: record.practical, external: record.external }] });
+      return;
+    }
+    existing.total += record.total;
+    existing.maximum += record.maximum;
+    existing.internal += record.internal;
+    existing.practical += record.practical;
+    existing.external += record.external;
+    existing.subjects.push({ subjectId: record.subjectId, subjectName: record.subject, totalMarks: record.total, internal: record.internal, practical: record.practical, external: record.external });
+    existing.percentage = existing.maximum ? `${((existing.total / existing.maximum) * 100).toFixed(2)}%` : "-";
+  });
+  return [...grouped.values()];
 }
 
 function toResultRecord(result) {
@@ -103,12 +135,13 @@ function toResultRecord(result) {
     name: result.studentName,
     roll: result.rollNumber,
     subject: result.subjectName,
+    subjectId: result.subjectId,
     internal: result.internalMarks ?? 0,
     practical: result.practicalMarks ?? 0,
     external: result.externalMarks ?? 0,
     total: result.totalMarks ?? 0,
     grade: result.grade || "-",
-    result: result.resultStatus || "-",
+    result: String(result.resultStatus || "-").toUpperCase(),
     rank: result.rank,
     isPublished: result.isPublished,
     publishedDate: result.publishedDate,

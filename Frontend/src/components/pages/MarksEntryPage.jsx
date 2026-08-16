@@ -714,7 +714,7 @@ export default function MarksEntryPage() {
                     >
                       Approve All
                     </button>
-                    <button className="cms-btn" onClick={handleExport}>
+                    <button className="cms-btn cms-btn-export" onClick={handleExport}>
                       Export Excel
                     </button>
 

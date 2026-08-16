@@ -9,6 +9,121 @@
   box-sizing: border-box;
 }
 
+/* ---------- Compact & Professional Button Base System ---------- */
+.cms-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  width: fit-content;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+.cms-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Primary Button (Blue) */
+.cms-btn-primary {
+  background-color: #2563eb;
+  border: 1px solid #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+}
+
+.cms-btn-primary:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  border-color: #1e40af;
+  transform: translateY(-1px);
+}
+
+/* Export Button (Blue Accent / Blue Background) */
+.cms-btn-export {
+  background-color: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  color: #2563eb;
+}
+
+.cms-btn-export:hover:not(:disabled) {
+  background-color: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Global Approval ("Approve All") & Success Button (Green) */
+.cms-btn-success {
+  background-color: #16a34a;
+  border: 1px solid #15803d;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+}
+
+.cms-btn-success:hover:not(:disabled) {
+  background-color: #15803d;
+  border-color: #166534;
+  transform: translateY(-1px);
+}
+
+/* Verify Button (Blue Background) */
+.cms-btn-info {
+  background-color: #2563eb;
+  border: 1px solid #1d4ed8;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.cms-btn-info:hover:not(:disabled) {
+  background-color: #1d4ed8;
+  border-color: #1e40af;
+  transform: translateY(-1px);
+}
+
+/* Danger Button (Reject) */
+.cms-btn-danger {
+  background-color: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  color: #dc2626;
+}
+
+.cms-btn-danger:hover:not(:disabled) {
+  background-color: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Secondary / Default Button */
+.cms-btn-secondary,
+.cms-btn-ghost,
+.cms-btn:not([class*="cms-btn-"]) {
+  background-color: var(--cms-surface-alt, rgba(248, 250, 252, 0.8));
+  border: 1px solid var(--cms-border, #cbd5e1);
+  color: var(--cms-text, #1e293b);
+}
+
+.cms-btn-secondary:hover:not(:disabled),
+.cms-btn-ghost:hover:not(:disabled),
+.cms-btn:not([class*="cms-btn-"]):hover:not(:disabled) {
+  background-color: var(--cms-surface-hover, #f1f5f9);
+  border-color: #94a3b8;
+  color: #2563eb;
+}
+
 /* ---------- Toast Banners ---------- */
 .cms-toast-banner {
   position: fixed;
@@ -86,9 +201,6 @@
 
 .cms-section-heading .cms-btn-primary {
   margin-left: auto;
-  border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 0.83rem;
 }
 
 .cms-filter-grid {

@@ -39,29 +39,49 @@ const EMPTY_REPORTS = {
 
 const reportsApi = {
   filters: {
-    boards: apiEndpoints.boards.getAll,
-    years: apiEndpoints.academicYears.getAll,
-    levels: apiEndpoints.boards.academicLevels,
-    groups: apiEndpoints.reports.groups,
-    sections: apiEndpoints.reports.sections,
+    boards: "/api/module18-reports/filters/boards",
+    years: "/api/module18-reports/filters/academic-years",
+    levels: "/api/module18-reports/filters/academic-levels",
+    groups: "/api/module18-reports/filters/groups",
+    sections: "/api/module18-reports/filters/sections",
   },
-  auditLogs: apiEndpoints.reports.auditLogs,
-  generate: apiEndpoints.reports.exportExcel,
-  print: apiEndpoints.reports.exportPdf,
+  auditLogs: "/api/module18-reports/audit-logs",
+  custom: "/api/module18-reports/custom",
+  generate: (reportType) => `/api/module18-reports/generate/${encodeURIComponent(reportType)}`,
+  print: (reportType) => `/api/module18-reports/print/${encodeURIComponent(reportType)}`,
+  fallback: {
+    filters: {
+      boards: apiEndpoints.boards.getAll,
+      years: apiEndpoints.academicYears.getAll,
+      levels: apiEndpoints.boards.academicLevels,
+      groups: apiEndpoints.groups.getAll,
+      sections: apiEndpoints.sections.getAll,
+    },
+    auditLogs: apiEndpoints.reports.auditLogs,
+  },
 };
 
 const reportRequests = [
-  { key: "admissions", endpoint: apiEndpoints.reports.admissions },
-  { key: "attendance", endpoint: apiEndpoints.reports.attendance },
-  { key: "feeCollection", endpoint: apiEndpoints.reports.feeCollection },
-  { key: "feeOutstanding", endpoint: apiEndpoints.reports.feeOutstanding, omitDates: true },
-  { key: "examinations", endpoint: apiEndpoints.reports.examinations, omitSection: true },
-  { key: "results", endpoint: apiEndpoints.reports.results, omitSection: true },
-  { key: "facultyWorkload", endpoint: apiEndpoints.reports.facultyWorkload },
-  { key: "studentStrength", endpoint: apiEndpoints.reports.studentStrength, omitDates: true },
-  { key: "passPercentage", endpoint: apiEndpoints.reports.passPercentage },
-  { key: "toppers", endpoint: apiEndpoints.reports.toppers },
+  { key: "admissions", endpoint: "/api/module18-reports/details/admissions", fallback: apiEndpoints.reports.admissions, casing: "lower" },
+  { key: "attendance", endpoint: "/api/module18-reports/details/attendance", fallback: apiEndpoints.reports.attendance, casing: "lower" },
+  { key: "feeCollection", endpoint: "/api/module18-reports/details/fee-collection", fallback: apiEndpoints.reports.feeCollection, casing: "lower" },
+  { key: "feeOutstanding", endpoint: "/api/module18-reports/details/due-fees", fallback: apiEndpoints.reports.feeOutstanding, casing: "lower", omitDates: true },
+  { key: "examinations", endpoint: "/api/module18-reports/details/examinations", fallback: apiEndpoints.reports.examinations, casing: "lower", omitSection: true },
+  { key: "results", endpoint: "/api/module18-reports/details/results", fallback: apiEndpoints.reports.results, casing: "lower", omitSection: true },
+  { key: "facultyWorkload", endpoint: "/api/module18-reports/details/faculty-workload", fallback: apiEndpoints.reports.facultyWorkload, casing: "upper" },
+  { key: "studentStrength", endpoint: "/api/module18-reports/details/student-strength", fallback: apiEndpoints.reports.studentStrength, casing: "lower", omitDates: true },
+  { key: "passPercentage", endpoint: "/api/module18-reports/details/pass-percentage", fallback: apiEndpoints.reports.passPercentage, casing: "upper" },
+  { key: "toppers", endpoint: "/api/module18-reports/details/toppers", fallback: apiEndpoints.reports.toppers, casing: "lower", omitSection: true },
 ];
+
+async function getWithMissingRouteFallback(endpoint, fallbackEndpoint, config) {
+  try {
+    return await apiClient.get(endpoint, config);
+  } catch (error) {
+    if (error?.response?.status !== 404 || !fallbackEndpoint) throw error;
+    return apiClient.get(fallbackEndpoint, config);
+  }
+}
 
 const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
 const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
@@ -79,7 +99,7 @@ const summaryCardConfig = [
   { key: "toppers", sourceKey: "toppers", reportType: "toppers", label: "Toppers Identified", icon: Trophy, tone: "amber" },
 ];
 
-const demoReportData = {
+/* Legacy presentation samples retained only as a comment; live cards never read them.
   admissions: { value: "128", details: [["Applications", "356"], ["Enrolled", "128"], ["Conversion Rate", "35.96%"]] },
   attendance: { value: "92.4%", details: [["Present Today", "1,248"], ["Absent Today", "103"], ["This Month Avg", "92.4%"]] },
   feeCollection: { value: "₹24.56L", details: [["Collected", "₹24.56L"], ["Pending", "₹8.34L"], ["Collection Rate", "74.65%"]] },
@@ -92,6 +112,7 @@ const demoReportData = {
   toppers: { value: "18", details: [["University Toppers", "5"], ["Department Toppers", "13"], ["Programs", "6"]] },
 };
 
+*/
 const DETAIL_LABELS = {
   count: "Records", total: "Total", male: "Male", female: "Female", present: "Present", absent: "Absent",
   workingDays: "Working days", totalStudents: "Students", totalFaculty: "Faculty", totalExaminations: "Examinations",
@@ -198,6 +219,13 @@ function metric(payload, keys) {
   return undefined;
 }
 
+function matchesSelected(value, selectedValue, selectedLabel) {
+  if (value === undefined || value === null || value === "") return true;
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === String(selectedValue ?? "").trim().toLowerCase()
+    || normalized === String(selectedLabel ?? "").trim().toLowerCase();
+}
+
 function metricFromSources(sources, keys) {
   for (const source of sources) {
     const value = metric(source, keys);
@@ -265,8 +293,10 @@ function buildQuery(filters, { casing = "upper", omitDates = false, omitSection 
     const value = filters[filterKey];
     if (value === undefined || value === null || value === "") return params;
     if (["from", "to"].includes(filterKey)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) params[queryKey] = date.toISOString();
+      const normalized = String(value).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+        params[queryKey] = `${normalized}T${filterKey === "from" ? "00:00:00" : "23:59:59"}`;
+      }
       return params;
     }
     const id = Number(value);
@@ -448,7 +478,9 @@ export default function ReportsPage() {
   const [filters, setFilters] = useState({});
   const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [], groups: [], sections: [] });
   const [reports, setReports] = useState(EMPTY_REPORTS);
-  const [loading, setLoading] = useState(true);
+  const [reportGenerated, setReportGenerated] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [reportErrors, setReportErrors] = useState({});
   const [masterLoading, setMasterLoading] = useState(true);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -468,12 +500,12 @@ export default function ReportsPage() {
   const loadMasterOptions = useCallback(async () => {
     setMasterLoading(true);
     const results = await Promise.allSettled([
-      apiClient.get(reportsApi.filters.boards),
-      apiClient.get(reportsApi.filters.years),
+      getWithMissingRouteFallback(reportsApi.filters.boards, reportsApi.fallback.filters.boards),
+      getWithMissingRouteFallback(reportsApi.filters.years, reportsApi.fallback.filters.years),
     ]);
     setMasterOptions((current) => ({
       ...current,
-      boards: (results[0].status === "fulfilled" ? collection(results[0].value.data, ["boards", "Boards"]) : []).map((item) => optionFrom(item, ["boardId", "BoardId", "id", "Id"], ["boardCode", "BoardCode", "boardName", "BoardName", "name", "Name"])).filter(Boolean),
+      boards: (results[0].status === "fulfilled" ? collection(results[0].value.data, ["boards", "Boards"]) : []).map((item) => optionFrom(item, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])).filter(Boolean),
       years: (results[1].status === "fulfilled" ? collection(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"]) : []).map((item) => optionFrom(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])).filter(Boolean),
       levels: [], groups: [], sections: [],
     }));
@@ -485,17 +517,23 @@ export default function ReportsPage() {
   const loadReports = useCallback(async (selectedFilters) => {
     setLoading(true);
     setError("");
-    const results = await Promise.allSettled(reportRequests.map((request) => apiClient.get(request.endpoint, {
+    const results = await Promise.allSettled(reportRequests.map((request) => getWithMissingRouteFallback(request.endpoint, request.fallback, {
       params: buildQuery(selectedFilters, request),
     })));
     const nextReports = { ...EMPTY_REPORTS };
+    const nextErrors = {};
     const failures = [];
     results.forEach((result, index) => {
       const { key } = reportRequests[index];
       if (result.status === "fulfilled") nextReports[key] = result.value.data;
-      else failures.push({ key, reason: result.reason });
+      else {
+        failures.push({ key, reason: result.reason });
+        nextErrors[key] = getApiErrorMessage(result.reason);
+      }
     });
     setReports(nextReports);
+    setReportErrors(nextErrors);
+    setReportGenerated(results.some((result) => result.status === "fulfilled"));
     setAuditPage(1);
     setError(reportFailureMessage(failures));
     setLoading(false);
@@ -505,14 +543,13 @@ export default function ReportsPage() {
     if (initialized.current) return;
     initialized.current = true;
     loadMasterOptions();
-    loadReports({});
   }, [loadMasterOptions, loadReports]);
 
   useEffect(() => {
     if (!filters.board) return;
     let active = true;
     setMasterLoading(true);
-    apiClient.get(reportsApi.filters.levels, { params: { boardId: Number(filters.board) } })
+    getWithMissingRouteFallback(reportsApi.filters.levels, reportsApi.fallback.filters.levels, { params: { boardId: Number(filters.board) } })
       .then((response) => {
         if (!active) return;
         const levels = collection(response.data, ["academicLevels", "AcademicLevels", "levels", "Levels"]).map((item) => optionFrom(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"])).filter(Boolean);
@@ -526,44 +563,52 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!filters.board || !filters.year || !filters.level) return;
     let active = true;
+    const boardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label;
+    const levelLabel = masterOptions.levels.find((item) => item.value === filters.level)?.label;
     setMasterLoading(true);
-    apiClient.get(reportsApi.filters.groups, { params: {
+    getWithMissingRouteFallback(reportsApi.filters.groups, reportsApi.fallback.filters.groups, { params: {
       boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level),
     } }).then((response) => {
       if (!active) return;
-      const groups = collection(response.data, ["groups", "Groups"]).map((item) => optionFrom(item, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"])).filter(Boolean);
+      const groups = collection(response.data, ["groups", "Groups"])
+        .filter((item) => matchesSelected(read(item, "boardId", "BoardId", "board", "Board"), filters.board, boardLabel)
+          && matchesSelected(read(item, "academicYearId", "AcademicYearId"), filters.year)
+          && matchesSelected(read(item, "academicLevelId", "AcademicLevelId", "academicLevel", "AcademicLevel"), filters.level, levelLabel))
+        .map((item) => optionFrom(item, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"])).filter(Boolean);
       setMasterOptions((current) => ({ ...current, groups }));
     }).catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
       .finally(() => active && setMasterLoading(false));
     return () => { active = false; };
-  }, [filters.board, filters.level, filters.year]);
+  }, [filters.board, filters.level, filters.year, masterOptions.boards, masterOptions.levels]);
 
   useEffect(() => {
     if (!filters.board || !filters.year || !filters.level || !filters.group) return;
     let active = true;
     setMasterLoading(true);
-    apiClient.get(reportsApi.filters.sections, { params: {
+    getWithMissingRouteFallback(reportsApi.filters.sections, reportsApi.fallback.filters.sections, { params: {
       boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group),
     } }).then((response) => {
       if (!active) return;
-      const sections = collection(response.data, ["sections", "Sections"]).map((item) => optionFrom(item, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])).filter(Boolean);
+      const sections = collection(response.data, ["sections", "Sections"])
+        .filter((item) => matchesSelected(read(item, "groupId", "GroupId", "group", "Group"), filters.group, masterOptions.groups.find((group) => group.value === filters.group)?.label))
+        .map((item) => optionFrom(item, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])).filter(Boolean);
       setMasterOptions((current) => ({ ...current, sections }));
     }).catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
       .finally(() => active && setMasterLoading(false));
     return () => { active = false; };
-  }, [filters.board, filters.group, filters.level, filters.year]);
+  }, [filters.board, filters.group, filters.level, filters.year, masterOptions.groups]);
 
   const filterFields = useMemo(() => {
     return [
       { name: "board", label: "Board", type: "select", options: masterOptions.boards },
       { name: "year", label: "Academic Year", type: "select", options: masterOptions.years },
       { name: "level", label: "Academic Level", type: "select", options: masterOptions.levels },
-      { name: "group", label: "Group", type: "select", options: masterOptions.groups, disabled: !filters.board || !filters.year || !filters.level },
-      { name: "section", label: "Section", type: "select", options: masterOptions.sections, disabled: !filters.group },
+      { name: "group", label: "Group", type: "select", options: masterOptions.groups },
+      { name: "section", label: "Section", type: "select", options: masterOptions.sections },
       { name: "from", label: "From Date", type: "date" },
       { name: "to", label: "To Date", type: "date" },
     ];
-  }, [filters.board, filters.group, filters.level, filters.year, masterOptions]);
+  }, [masterOptions]);
 
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
@@ -602,16 +647,16 @@ export default function ReportsPage() {
     const examinationCount = collection(reports.examinations).length || undefined;
     const resultCount = collection(reports.results).length || undefined;
     return {
-      admissions: metricFromSources([reports.admissions], ["totalAdmissions", "admissionsCount", "total", "count"]) ?? admissionCount,
+      admissions: metricFromSources([reports.admissions], ["totalAdmissions", "admissions", "admissionsCount", "total", "count"]) ?? admissionCount,
       attendance: metricFromSources([reports.attendance], ["attendancePercentage", "averageAttendance", "attendanceRate", "percentage"]),
-      feeCollection: metricFromSources([reports.feeCollection], ["totalCollected", "collectedAmount", "feeCollected", "totalFeeCollected", "amount"]),
+      feeCollection: metricFromSources([reports.feeCollection], ["collected", "totalCollected", "collectedAmount", "feeCollected", "totalFeeCollected", "amount"]),
       dueFees: metricFromSources([reports.feeOutstanding], ["totalOutstanding", "outstandingAmount", "dueFees", "outstandingFees", "dueAmount", "amount"]),
       examinations: metricFromSources([reports.examinations], ["totalExaminations", "examinationCount", "total", "count"]) ?? examinationCount,
-      results: metricFromSources([reports.results], ["resultsPublished", "publishedResults", "resultCount", "total", "count"]) ?? resultCount,
+      results: metricFromSources([reports.results], ["published", "resultsPublished", "publishedResults", "resultCount", "total", "count"]) ?? resultCount,
       facultyWorkload: metricFromSources([reports.facultyWorkload], ["averageFacultyWorkload", "averageWorkload", "facultyWorkload", "weeklyHours", "hoursPerWeek", "totalTeachingHours"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) : undefined),
       studentStrength: metricFromSources([reports.studentStrength], ["totalStudents", "studentStrength", "total", "count"]),
       passPercentage: passRate,
-      toppers: metricFromSources([reports.toppers], ["toppersIdentified", "topperCount", "totalToppers", "count"]) ?? (topperRows.length || undefined),
+      toppers: metricFromSources([reports.toppers], ["identified", "toppersIdentified", "topperCount", "totalToppers", "count"]) ?? (topperRows.length || undefined),
     };
   }, [passRate, reports, topperRows.length, workloadData]);
   const excelPreviewRows = useMemo(() => summaryCardConfig.map((card) => ({
@@ -619,10 +664,11 @@ export default function ReportsPage() {
     label: card.label,
     value: hasReportData(reports[card.sourceKey])
       ? formatMetric(summaryValues[card.key], { currency: card.currency, suffix: card.suffix })
-      : demoReportData[card.key].value,
+      : "Unavailable",
   })), [reports, summaryValues]);
 
   const handleFilterChange = (name, value) => {
+    setReportGenerated(false);
     setFilters((current) => {
       const next = { ...current, [name]: value };
       if (name === "board") {
@@ -651,7 +697,9 @@ export default function ReportsPage() {
     setFilters({});
     setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
     setReports(EMPTY_REPORTS);
-    loadReports({});
+    setReportErrors({});
+    setReportGenerated(false);
+    setError("");
   };
 
   const handleAuditFilterChange = (name, value) => {
@@ -672,7 +720,7 @@ export default function ReportsPage() {
     setAuditLoading(true);
     setAuditError("");
     try {
-      const response = await apiClient.get(reportsApi.auditLogs, { params: buildQuery(filters) });
+      const response = await getWithMissingRouteFallback(reportsApi.auditLogs, reportsApi.fallback.auditLogs, { params: buildQuery(filters) });
       setAuditData(response.data);
       setAuditPage(1);
     } catch (auditRequestError) {
@@ -688,28 +736,20 @@ export default function ReportsPage() {
       throw new Error("From Date must be earlier than or equal to To Date.");
     }
     const isPdf = format === "pdf";
-    const endpoint = isPdf ? reportsApi.print : reportsApi.generate;
-    const extension = isPdf ? "pdf" : "xlsx";
+    const endpoint = isPdf ? reportsApi.print(reportType) : reportsApi.generate(reportType);
+    const extension = isPdf ? "html" : "csv";
     const fallbackFilename = `${fallbackBase}-${new Date().toISOString().slice(0, 10)}.${extension}`;
     const response = await apiClient.get(endpoint, {
-      params: { ...buildQuery(filters), ReportType: reportType },
-      responseType: "blob",
+      params: buildQuery(filters),
+      responseType: isPdf ? "text" : "json",
     });
-    const contentType = response.headers?.["content-type"] || (isPdf ? "application/pdf" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    if (!response.data?.size) throw new Error("The export API returned an empty file.");
-    if (contentType.includes("application/json") || contentType.includes("text/")) {
-      const text = await response.data.text();
-      let message = text;
-      try {
-        const parsed = JSON.parse(text);
-        message = parsed?.message || parsed?.Message || parsed?.title || message;
-      } catch {
-        // Keep the server text when it is not JSON.
-      }
-      throw new Error(message || "The export API did not return a file.");
-    }
+    const contentType = isPdf ? "text/html;charset=utf-8" : "text/csv;charset=utf-8";
+    const content = isPdf
+      ? String(response.data ?? "")
+      : ["Report Metric,Value", ...excelPreviewRows.map(({ label, value }) => `"${String(label).replaceAll('"', '""')}","${String(value).replaceAll('"', '""')}"`)].join("\r\n");
+    if (!content.trim()) throw new Error("The report API returned an empty response.");
     return {
-      blob: new Blob([response.data], { type: contentType }),
+      blob: new Blob([content], { type: contentType }),
       filename: getDownloadFilename(response.headers?.["content-disposition"], fallbackFilename),
       contentType,
       format,
@@ -720,7 +760,7 @@ export default function ReportsPage() {
     setPreviewing(format);
     setPdfPreviewLoaded(false);
     try {
-      const file = await requestReportFile(format, "admissions", "admissions-report");
+      const file = await requestReportFile(format, "dashboard", "reports-overview");
       setPreviewFile({ ...file, url: format === "pdf" ? URL.createObjectURL(file.blob) : "" });
     } catch (previewError) {
       setPreviewFile(null);
@@ -730,14 +770,14 @@ export default function ReportsPage() {
     }
   };
 
-  const exportCardReport = async (card, format) => {
-    const requestKey = `${card.key}-${format}`;
+  const downloadOverview = async (format) => {
+    const requestKey = `overview-${format}`;
     if (exportingCards[requestKey]) return;
     setExportingCards((current) => ({ ...current, [requestKey]: true }));
     try {
-      const file = await requestReportFile(format, card.reportType, card.key);
+      const file = await requestReportFile(format, "dashboard", "reports-overview");
       downloadBlob(file.blob, file.filename);
-      setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} downloaded successfully.`);
+      setToast(`${format === "pdf" ? "PDF" : "Excel"} report downloaded successfully.`);
     } catch (exportError) {
       setToast(await getExportErrorMessage(exportError));
     } finally {
@@ -782,10 +822,12 @@ export default function ReportsPage() {
           <section className="reports-summary-panel" aria-labelledby="reports-summary-title">
             <div className="reports-summary-panel-head">
               <div><h2 id="reports-summary-title">Reports Overview</h2><p>Key institution-wide report metrics</p></div>
-              <div className="reports-summary-actions" aria-label="Report file actions">
+              {reportGenerated ? <div className="reports-summary-actions" aria-label="Report file actions">
                 <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("pdf")} disabled={previewing === "pdf"}><Eye size={14} />{previewing === "pdf" ? "Loading..." : "Preview PDF"}</button>
                 <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("excel")} disabled={previewing === "excel"}><Eye size={14} />{previewing === "excel" ? "Loading..." : "Preview Excel"}</button>
-              </div>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadOverview("pdf")} disabled={Boolean(exportingCards["overview-pdf"])}><Download size={14} />{exportingCards["overview-pdf"] ? "Downloading..." : "Download PDF"}</button>
+                <button className="cms-btn cms-btn-ghost" type="button" onClick={() => downloadOverview("excel")} disabled={Boolean(exportingCards["overview-excel"])}><FileSpreadsheet size={14} />{exportingCards["overview-excel"] ? "Downloading..." : "Download Excel"}</button>
+              </div> : null}
             </div>
             <div className="reports-summary-grid" aria-label="Report summary">
               {summaryCardConfig.map((card) => {
@@ -795,20 +837,16 @@ export default function ReportsPage() {
                 const hasLiveData = hasReportData(source);
                 const details = hasLiveData
                   ? reportDetails(source, summaryValues[key], format)
-                  : demoReportData[key].details.map(([detailLabel, value]) => ({ label: detailLabel, value }));
-                const displayValue = hasLiveData ? formatMetric(summaryValues[key], format) : demoReportData[key].value;
+                  : [];
+                const displayValue = hasLiveData ? formatMetric(summaryValues[key], format) : reportErrors[sourceKey] ? "Unavailable" : "—";
                 return <article className="reports-summary-card reports-summary-card-expanded" key={key}>
                   <div className="reports-summary-card-head">
                     <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} strokeWidth={2} /></span>
                     <div className="reports-summary-content"><span>{label}</span><strong>{displayValue}</strong></div>
                   </div>
                   <dl className="reports-summary-details">
-                    {details.length ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>) : <div><dt>Details</dt><dd>No additional summary available</dd></div>}
+                    {details.length ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>) : <div><dt>Details</dt><dd>{reportErrors[sourceKey] || "No backend data generated yet"}</dd></div>}
                   </dl>
-                  <div className="reports-card-actions">
-                    <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportCardReport(card, "pdf")} disabled={Boolean(exportingCards[`${key}-pdf`])}><Download size={13} />{exportingCards[`${key}-pdf`] ? "Exporting..." : "Export PDF"}</button>
-                    <button className="cms-btn cms-btn-ghost" type="button" onClick={() => exportCardReport(card, "excel")} disabled={Boolean(exportingCards[`${key}-excel`])}><FileSpreadsheet size={13} />{exportingCards[`${key}-excel`] ? "Exporting..." : "Export Excel"}</button>
-                  </div>
                 </article>;
               })}
             </div>

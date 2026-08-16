@@ -56,6 +56,7 @@
   },
   groups: {
     getAll: "/api/v1/groups",
+    dropdown: "/api/v1/groups/dropdown",
     list: "/api/v1/groups",
     listPage: "/api/v1/groups",
     create: "/api/v1/groups",
@@ -111,11 +112,16 @@
   },
   subjects: {
     getAll: "/api/Subjects",
+    search: "/api/Subjects/search",
+    getActive: "/api/Subjects/active",
+    getByBoard: (boardId) => `/api/Subjects/board/${encodeURIComponent(boardId)}`,
+    getByAcademicYear: (academicYearId) => `/api/Subjects/academic-year/${encodeURIComponent(academicYearId)}`,
+    checkCode: "/api/Subjects/check-code",
     create: "/api/Subjects",
     getById: (id) => `/api/Subjects/${id}`,
     update: (id) => `/api/Subjects/${id}`,
     delete: (id) => `/api/Subjects/${id}`,
-    getByGroup: (group) => `/api/Subjects/group/${encodeURIComponent(group)}`,
+    getByGroup: (groupId) => `/api/Subjects/group/${encodeURIComponent(groupId)}`,
   },
   departments: {
     getAll: "/api/v1/departments",
@@ -149,7 +155,6 @@
   },
   students: {
     getAll: "/api/v1/students",
-    create: "/api/v1/students",
     getById: (studentId) => `/api/v1/students/${studentId}`,
     update: (studentId) => `/api/v1/students/${studentId}`,
     delete: (studentId) => `/api/v1/students/${studentId}`,
@@ -162,6 +167,12 @@
     activate: (studentId) => `/api/v1/students/${studentId}/activate`,
     resetPassword: (studentId) => `/api/v1/students/${studentId}/reset-password`,
     getDashboard: (studentId) => `/api/v1/students/${studentId}/dashboard`,
+    search: "/api/v1/students/search",
+    getActive: "/api/v1/students/active",
+    getByGroup: (groupId) => `/api/v1/students/group/${groupId}`,
+    getBySection: (sectionId) => `/api/v1/students/section/${sectionId}`,
+    checkEmail: "/api/v1/students/check-email",
+    checkMobile: "/api/v1/students/check-mobile",
   },
   certificates: {
     list: "/api/certificates",

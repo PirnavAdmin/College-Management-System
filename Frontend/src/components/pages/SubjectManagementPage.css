@@ -1,1 +1,22 @@
-/* Subject Management page-specific styles can be added here during module API integration. */
+/* Compact directory view — isolated to Subject Management. */
+.subject-management { width: 100%; max-width: 1440px; margin: 0 auto; }
+.subject-management .cms-card { overflow: hidden; border: 1px solid var(--cms-border); border-radius: 10px; background: var(--cms-surface); box-shadow: var(--cms-shadow); }
+.subject-management .cms-toolbar { min-height: 0; padding: 14px; gap: 10px; border-bottom: 0; }
+.subject-management .cms-search { width: min(320px, 100%); min-width: 0; max-width: 320px; min-height: 40px; border: 1px solid var(--cms-border); border-radius: 8px; }
+.subject-management .cms-search input { font-size: 13.5px; }
+.subject-management .cms-toolbar-right { gap: 8px; }
+.subject-management .cms-toolbar-right .cms-btn { min-height: 40px; padding: 0 16px; border-radius: 8px; font-size: 13.5px; }
+.subject-management .cms-table-wrap { margin: 0 14px; overflow-x: auto; border: 1px solid var(--cms-border); border-radius: 8px; }
+.subject-management .cms-table th { padding: 13px 16px; background: var(--cms-subtle); font-size: 11px; }
+.subject-management .cms-table td { padding: 14px 16px; font-size: 13.5px; }
+.subject-management .cms-empty { padding: 24px 16px; }
+.subject-management .cms-pagination { min-height: 0; padding: 12px 14px 14px; }
+.subject-management .cms-page-btn { min-width: 34px; height: 34px; border-radius: 8px; font-size: 12.5px; }
+
+@media (max-width: 700px) {
+  .subject-management .cms-toolbar { padding: 16px; align-items: stretch; }
+  .subject-management .cms-search { width: 100%; max-width: none; }
+  .subject-management .cms-toolbar-right { margin-left: 0; }
+  .subject-management .cms-table-wrap { margin: 0 16px; }
+  .subject-management .cms-pagination { padding: 14px 16px 16px; }
+}

@@ -71,6 +71,11 @@ const options = (payload, idKeys, nameKeys) => records(payload).map((item) => ({
   id: read(item, ...idKeys), name: read(item, ...nameKeys),
 })).filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0 && item.name);
 
+const getSubjects = async () => {
+  const response = await apiClient.get("/api/Subjects");
+  return records(response.data);
+};
+
 export default function ResultsPage() {
   const [filters, setFilters] = useState({
     board: "",
@@ -94,6 +99,7 @@ export default function ResultsPage() {
   const [levelOptions, setLevelOptions] = useState([]);
   const [groupOptions, setGroupOptions] = useState([]);
   const [examinationOptions, setExaminationOptions] = useState([]);
+  const [subjectOptions, setSubjectOptions] = useState([]);
   const [contextLoading, setContextLoading] = useState(true);
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
@@ -105,14 +111,15 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
-    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
-      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
+    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations(), getSubjects()])
+      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult, subjectsResult]) => {
         if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
         if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
         if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));
         if (groupsResult.status === "fulfilled") setGroupOptions(groupsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
         if (examinationsResult.status === "fulfilled") setExaminationOptions(examinationsResult.value.filter((item) => item.status !== "Inactive").map((item) => ({ id: String(item.examinationId ?? item.examId ?? item.id), name: item.examName ?? item.name })));
-        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult].find((result) => result.status === "rejected");
+        if (subjectsResult.status === "fulfilled") setSubjectOptions(subjectsResult.value.filter((item) => item.isActive !== false).map((item) => ({ id: String(item.subjectId ?? item.id), name: item.subjectName ?? item.name, groupId: item.groupId, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
+        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult, subjectsResult].find((result) => result.status === "rejected");
         if (failed) setToast(getApiErrorMessage(failed.reason));
       })
       .finally(() => setContextLoading(false));
@@ -140,7 +147,11 @@ export default function ResultsPage() {
   const selectedScope = useMemo(() => ({
     boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group), examId: Number(filters.exam),
   }), [filters]);
-  const selectedGroupName = availableGroups.find((group) => String(group.id) === filters.group)?.name ?? "—";
+  const selectedGroupName = groupOptions.find((group) => String(group.id) === filters.group)?.name ?? "—";
+  const groupNameFor = (groupId, groupName) =>
+    groupOptions.find((group) => String(group.id) === String(groupId))?.name
+    ?? (groupName && !/^\d+$/.test(String(groupName).trim()) ? groupName : "—");
+  const hasSections = resultsData.some((result) => Boolean(String(result.section ?? "").trim()));
 
   const handleFilterChange = (field, value) => {
     setResultsGenerated(false);
@@ -149,12 +160,6 @@ export default function ResultsPage() {
     setResultsData([]);
     setRankResults([]);
     setAnalysis(null);
-    if (["board", "year", "level"].includes(field)) {
-      setFilterOptions((current) => ({ ...current, groups: [], exams: [] }));
-    } else if (field === "group") {
-      setFilterOptions((current) => ({ ...current, exams: [] }));
-    }
-
     setFilters((prev) => {
       const updated = { ...prev, [field]: value };
       if (field === "board") {
@@ -188,10 +193,7 @@ export default function ResultsPage() {
         publishDate: new Date().toISOString(),
       });
 
-      const [fetchedData, failedData] = await Promise.all([
-        getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
-        getFailedStudents(),
-      ]);
+      const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
 
       if (Array.isArray(fetchedData) && fetchedData.length > 0) {
         setResultsData(fetchedData);
@@ -199,7 +201,7 @@ export default function ResultsPage() {
         setResultsData([]);
       }
 
-      setFailedResults(failedData);
+      setResultsGenerated(true);
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
@@ -418,7 +420,8 @@ export default function ResultsPage() {
     ? (resultsData.reduce((acc, r) => acc + parsePercent(r.percentage), 0) / totalStudents).toFixed(2)
     : "0.00";
 
-  const subjectsList = [...new Set(resultsData.map((result) => result.subject).filter(Boolean))];
+  const contextSubjects = subjectOptions.filter((subject) => (!filters.group || String(subject.groupId) === filters.group) && (!filters.board || String(subject.boardId) === filters.board) && (!filters.year || String(subject.academicYearId) === filters.year) && (!filters.level || String(subject.academicLevelId) === filters.level));
+  const subjectsList = [...new Set((contextSubjects.length ? contextSubjects : subjectOptions).map((subject) => subject.name).concat(resultsData.map((result) => result.subject)).filter(Boolean))];
   const subjectAnalytics = analysis?.subjects?.map((subject) => ({
     subject: subject.subjectName,
     average: subject.averageScore,
@@ -651,7 +654,7 @@ export default function ResultsPage() {
                 <label className="cms-label">Examination <span className="results-required-mark">*</span></label>
                 <select
                   className="cms-select"
-                  disabled={!filters.group || filterLoading.exams}
+                  disabled={contextLoading || !filters.group}
                   value={filters.exam}
                   onChange={(e) => handleFilterChange("exam", e.target.value)}
                 >
@@ -698,7 +701,7 @@ export default function ResultsPage() {
                     Official Marks Memo - {selectedViewStudent.name}
                   </h3>
                   <span className="cms-subtitle" style={{ marginTop: 2, fontSize: "12px" }}>
-                    Roll Number: <strong style={{ color: "inherit" }}>{selectedViewStudent.roll}</strong> | Group: {selectedViewStudent.group} - Section {selectedViewStudent.section}
+                     Roll Number: <strong style={{ color: "inherit" }}>{selectedViewStudent.roll}</strong> | Group: {groupNameFor(selectedViewStudent.groupId, selectedViewStudent.group)}{selectedViewStudent.section ? ` - Section ${selectedViewStudent.section}` : ""}
                   </span>
                 </div>
 
@@ -1110,7 +1113,7 @@ export default function ResultsPage() {
                       <th style={{ width: "160px" }}>STUDENT NAME</th>
                       <th style={{ width: "90px" }}>ROLL NO</th>
                       <th style={{ width: "45px" }}>GRP</th>
-                      <th style={{ width: "40px" }}>SEC</th>
+                       {hasSections && <th style={{ width: "40px" }}>SEC</th>}
                       <th style={{ width: "60px", textAlign: "center" }}>TOTAL</th>
                       <th style={{ width: "50px", textAlign: "center" }}>MAX</th>
                       <th style={{ width: "65px", textAlign: "center" }}>PERC</th>
@@ -1146,8 +1149,8 @@ export default function ResultsPage() {
                           </td>
 
                           <td className="cms-strong">{r.roll}</td>
-                          <td>{r.group}</td>
-                          <td>{r.section}</td>
+                           <td>{groupNameFor(r.groupId, r.group)}</td>
+                           {hasSections && <td>{r.section}</td>}
                           <td style={{ fontWeight: 700, textAlign: "center" }}>{r.total}</td>
                           <td style={{ opacity: 0.7, textAlign: "center" }}>{r.maximum ?? "—"}</td>
                           <td style={{ fontWeight: 600, textAlign: "center" }}>{r.percentage}</td>
@@ -1189,7 +1192,7 @@ export default function ResultsPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={11} style={{ textAlign: "center", padding: 12, opacity: 0.7 }}>
+                         <td colSpan={hasSections ? 11 : 10} style={{ textAlign: "center", padding: 12, opacity: 0.7 }}>
                           No student records match search.
                         </td>
                       </tr>

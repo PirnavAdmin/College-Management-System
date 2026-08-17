@@ -5,6 +5,7 @@ import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 <<<<<<< HEAD
 =======
@@ -16,6 +17,11 @@ import {
 >>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
 >>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
 >>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
+=======
+  getBoards,
+  getGroups,
+  getStudentResult,
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
   getRankList,
   getResultAnalysis,
   downloadResultsExcel,
@@ -23,6 +29,10 @@ import {
   downloadStudentResultMemo,
   processResults,
   publishResults,
+  getAcademicYears,
+  getAcademicLevels,
+  getExaminations,
+  getSubjects,
 } from "@/features/results/services/resultsService.js";
 import {
   FaSearch,
@@ -94,6 +104,7 @@ export default function ResultsPage() {
 
   const [resultsGenerated, setResultsGenerated] = useState(false);
   const [resultsData, setResultsData] = useState([]);
+<<<<<<< HEAD
   const [filterOptions, setFilterOptions] = useState({ boards: [], years: [], levels: [], groups: [], exams: [] });
   const [filterLoading, setFilterLoading] = useState({ boards: true, years: true, levels: true, groups: false, exams: false });
 <<<<<<< HEAD
@@ -101,16 +112,22 @@ export default function ResultsPage() {
 <<<<<<< HEAD
 =======
 =======
+=======
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
   const [scopeResults, setScopeResults] = useState([]);
   const [boardOptions, setBoardOptions] = useState([]);
   const [yearOptions, setYearOptions] = useState([]);
   const [levelOptions, setLevelOptions] = useState([]);
   const [groupOptions, setGroupOptions] = useState([]);
   const [examinationOptions, setExaminationOptions] = useState([]);
+  const [subjectOptions, setSubjectOptions] = useState([]);
   const [contextLoading, setContextLoading] = useState(true);
+<<<<<<< HEAD
 >>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
 >>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
 >>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
+=======
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [selectedViewStudent, setSelectedViewStudent] = useState(null);
@@ -121,6 +138,7 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
 <<<<<<< HEAD
@@ -189,12 +207,17 @@ export default function ResultsPage() {
 =======
     Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
       .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
+=======
+    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations(), getSubjects()])
+      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult, subjectsResult]) => {
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
         if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
         if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
         if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));
         if (groupsResult.status === "fulfilled") setGroupOptions(groupsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
         if (examinationsResult.status === "fulfilled") setExaminationOptions(examinationsResult.value.filter((item) => item.status !== "Inactive").map((item) => ({ id: String(item.examinationId ?? item.examId ?? item.id), name: item.examName ?? item.name })));
-        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult].find((result) => result.status === "rejected");
+        if (subjectsResult.status === "fulfilled") setSubjectOptions(subjectsResult.value.filter((item) => item.isActive !== false).map((item) => ({ id: String(item.subjectId ?? item.id), name: item.subjectName ?? item.name, groupId: item.groupId, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
+        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult, subjectsResult].find((result) => result.status === "rejected");
         if (failed) setToast(getApiErrorMessage(failed.reason));
       })
       .finally(() => setContextLoading(false));
@@ -214,9 +237,12 @@ export default function ResultsPage() {
   const boardYearGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year);
   const availableGroups = filters.level ? (contextualGroups.length ? contextualGroups : boardYearGroups.length ? boardYearGroups : groupOptions) : [];
   const availableExams = filters.group ? examinationOptions : [];
+<<<<<<< HEAD
 >>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
 >>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
 >>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
+=======
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
@@ -225,7 +251,11 @@ export default function ResultsPage() {
   const selectedScope = useMemo(() => ({
     boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group), examId: Number(filters.exam),
   }), [filters]);
-  const selectedGroupName = availableGroups.find((group) => String(group.id) === filters.group)?.name ?? "—";
+  const selectedGroupName = groupOptions.find((group) => String(group.id) === filters.group)?.name ?? "—";
+  const groupNameFor = (groupId, groupName) =>
+    groupOptions.find((group) => String(group.id) === String(groupId))?.name
+    ?? (groupName && !/^\d+$/.test(String(groupName).trim()) ? groupName : "—");
+  const hasSections = resultsData.some((result) => Boolean(String(result.section ?? "").trim()));
 
   const handleFilterChange = (field, value) => {
     setResultsGenerated(false);
@@ -234,12 +264,6 @@ export default function ResultsPage() {
     setResultsData([]);
     setRankResults([]);
     setAnalysis(null);
-    if (["board", "year", "level"].includes(field)) {
-      setFilterOptions((current) => ({ ...current, groups: [], exams: [] }));
-    } else if (field === "group") {
-      setFilterOptions((current) => ({ ...current, exams: [] }));
-    }
-
     setFilters((prev) => {
       const updated = { ...prev, [field]: value };
       if (field === "board") {
@@ -273,8 +297,8 @@ export default function ResultsPage() {
         publishDate: new Date().toISOString(),
       });
 
-<<<<<<< HEAD
       const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
+<<<<<<< HEAD
       setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
       setResultsGenerated(true);
 =======
@@ -294,6 +318,8 @@ export default function ResultsPage() {
         getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
         getFailedStudents(),
       ]);
+=======
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
 
       if (Array.isArray(fetchedData) && fetchedData.length > 0) {
         setResultsData(fetchedData);
@@ -301,15 +327,20 @@ export default function ResultsPage() {
         setResultsData([]);
       }
 
+<<<<<<< HEAD
       setFailedResults(failedData);
 >>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
 >>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
 >>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
+=======
+      setResultsGenerated(true);
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
       setResultsData([]);
 <<<<<<< HEAD
+<<<<<<< HEAD
       setResultsGenerated(false);
 =======
 <<<<<<< HEAD
@@ -323,6 +354,8 @@ export default function ResultsPage() {
 >>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
 >>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
 >>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
+=======
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
     } finally {
       setPageStudentResults(1);
       setPageRankResults(1);
@@ -537,7 +570,8 @@ export default function ResultsPage() {
     ? (resultsData.reduce((acc, r) => acc + parsePercent(r.percentage), 0) / totalStudents).toFixed(2)
     : "0.00";
 
-  const subjectsList = [...new Set(resultsData.map((result) => result.subject).filter(Boolean))];
+  const contextSubjects = subjectOptions.filter((subject) => (!filters.group || String(subject.groupId) === filters.group) && (!filters.board || String(subject.boardId) === filters.board) && (!filters.year || String(subject.academicYearId) === filters.year) && (!filters.level || String(subject.academicLevelId) === filters.level));
+  const subjectsList = [...new Set((contextSubjects.length ? contextSubjects : subjectOptions).map((subject) => subject.name).concat(resultsData.map((result) => result.subject)).filter(Boolean))];
   const subjectAnalytics = analysis?.subjects?.map((subject) => ({
     subject: subject.subjectName,
     average: subject.averageScore,
@@ -675,6 +709,7 @@ export default function ResultsPage() {
 
       <div className="results-page">
 
+<<<<<<< HEAD
       {/* 1. Sequential Filter Card */}
       <div className="cms-card results-context-card">
         <div className="cms-card-body" style={{ padding: "12px 16px" }}>
@@ -801,6 +836,117 @@ Choose the academic context sequentially before reviewing faculty submissions.
                 : "All filter fields selected. Click 'Generate Data' to display evaluation statistics and student results table."}
             </p>
 
+=======
+        {/* 1. Sequential Filter Card */}
+        <div className="cms-card results-context-card">
+          <div className="cms-card-body" style={{ padding: "12px 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 className="cms-card-title results-context-heading">Academic Context</h3>
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary"
+                disabled={!isAllFiltersSelected || loading}
+                onClick={handleProcessResults}
+              >
+                {loading ? "Generating..." : "Generate Data"}
+              </button>
+            </div>
+            <p className="cms-subtitle results-context-description">
+              Choose the academic context sequentially before reviewing faculty submissions.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+              <div className="cms-field-group">
+                <label className="cms-label">Board <span className="results-required-mark">*</span></label>
+                <select
+                  className="cms-select"
+                  disabled={contextLoading}
+                  value={filters.board}
+                  onChange={(e) => handleFilterChange("board", e.target.value)}
+                >
+                  <option value="">Select Board</option>
+
+                  {availableBoards?.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="cms-field-group">
+                <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
+                <select
+                  className="cms-select"
+                  disabled={contextLoading || !filters.board}
+                  value={filters.year}
+                  onChange={(e) => handleFilterChange("year", e.target.value)}
+                >
+                  <option value="">Select Year</option>
+
+                  {availableYears?.map((y) => (
+                    <option key={y.id} value={y.id}>
+                      {y.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="cms-field-group">
+                <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
+                <select
+                  className="cms-select"
+                  disabled={contextLoading || !filters.year}
+                  value={filters.level}
+                  onChange={(e) => handleFilterChange("level", e.target.value)}
+                >
+                  <option value="">Select Level</option>
+
+                  {availableLevels?.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="cms-field-group">
+                <label className="cms-label">Group <span className="results-required-mark">*</span></label>
+                <select
+                  className="cms-select"
+                  disabled={contextLoading || !filters.level}
+                  value={filters.group}
+                  onChange={(e) => handleFilterChange("group", e.target.value)}
+                >
+                  <option value="">Select Group</option>
+
+                  {availableGroups?.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="cms-field-group">
+                <label className="cms-label">Examination <span className="results-required-mark">*</span></label>
+                <select
+                  className="cms-select"
+                  disabled={contextLoading || !filters.group}
+                  value={filters.exam}
+                  onChange={(e) => handleFilterChange("exam", e.target.value)}
+                >
+                  <option value="">Select Exam</option>
+
+                  {availableExams?.map((ex) => (
+                    <option key={ex.id} value={ex.id}>
+                      {ex.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+>>>>>>> 1dc8d0ca8336a7ca8f25355c0bc3725b3a7a8728
           </div>
         </div>
       )}
@@ -835,7 +981,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                     Official Marks Memo - {selectedViewStudent.name}
                   </h3>
                   <span className="cms-subtitle" style={{ marginTop: 2, fontSize: "12px" }}>
-                    Roll Number: <strong style={{ color: "inherit" }}>{selectedViewStudent.roll}</strong> | Group: {selectedViewStudent.group} - Section {selectedViewStudent.section}
+                     Roll Number: <strong style={{ color: "inherit" }}>{selectedViewStudent.roll}</strong> | Group: {groupNameFor(selectedViewStudent.groupId, selectedViewStudent.group)}{selectedViewStudent.section ? ` - Section ${selectedViewStudent.section}` : ""}
                   </span>
                 </div>
 
@@ -1247,7 +1393,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                       <th style={{ width: "160px" }}>STUDENT NAME</th>
                       <th style={{ width: "90px" }}>ROLL NO</th>
                       <th style={{ width: "45px" }}>GRP</th>
-                      <th style={{ width: "40px" }}>SEC</th>
+                       {hasSections && <th style={{ width: "40px" }}>SEC</th>}
                       <th style={{ width: "60px", textAlign: "center" }}>TOTAL</th>
                       <th style={{ width: "50px", textAlign: "center" }}>MAX</th>
                       <th style={{ width: "65px", textAlign: "center" }}>PERC</th>
@@ -1283,8 +1429,8 @@ Choose the academic context sequentially before reviewing faculty submissions.
                           </td>
 
                           <td className="cms-strong">{r.roll}</td>
-                          <td>{r.group}</td>
-                          <td>{r.section}</td>
+                           <td>{groupNameFor(r.groupId, r.group)}</td>
+                           {hasSections && <td>{r.section}</td>}
                           <td style={{ fontWeight: 700, textAlign: "center" }}>{r.total}</td>
                           <td style={{ opacity: 0.7, textAlign: "center" }}>{r.maximum ?? "—"}</td>
                           <td style={{ fontWeight: 600, textAlign: "center" }}>{r.percentage}</td>
@@ -1326,7 +1472,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={11} style={{ textAlign: "center", padding: 12, opacity: 0.7 }}>
+                         <td colSpan={hasSections ? 11 : 10} style={{ textAlign: "center", padding: 12, opacity: 0.7 }}>
                           No student records match search.
                         </td>
                       </tr>

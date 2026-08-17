@@ -8,7 +8,7 @@ import { ConfirmDialog, Loader, Modal, Toast } from "@/components/common/Ui.jsx"
 import "./AssignmentsMaterialsPage.css";
 
 const MODULE_TITLE = "Assignment";
-const REQUIRED_FIELDS = ["title", "academicYearId", "academicLevel", "groupId", "subjectId", "facultyId", "dueDate", "maximumMarks"];
+const REQUIRED_FIELDS = ["title", "academicYearId", "academicLevel", "groupId", "subjectId", "facultyId", "startDate", "dueDate", "maximumMarks"];
 
 const columns = [
   { key: "title", label: "Assignment Title", strong: true },
@@ -16,7 +16,8 @@ const columns = [
   { key: "academicLevel", label: "Academic Level" },
   { key: "group", label: "Group" },
   { key: "subject", label: "Subject" },
-  { key: "faculty", label: "Faculty" },
+  { key: "createdBy", label: "Created By" },
+  { key: "start", label: "Start Date" },
   { key: "due", label: "Due Date" },
   { key: "max", label: "Maximum Marks" },
 ];
@@ -141,7 +142,7 @@ function normalizeGroup(item = {}) {
     value: String(value),
     label: String(groupName || groupCode || value),
     groupCode: groupCode ? String(groupCode) : "",
-    academicLevel: firstValue(item, ["academicLevel", "AcademicLevel"]) || "",
+    academicLevel: firstValue(item, ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel"]) || "",
     academicYearId: firstValue(item, ["academicYearId", "AcademicYearId"]) || "",
   };
 }
@@ -181,12 +182,17 @@ function normalizeAssignment(item = {}, lookups = {}) {
   const subjectName = item.subjectName ?? item.SubjectName ?? "";
   const facultyId = item.facultyId ?? item.FacultyId ?? "";
   const facultyName = item.facultyName ?? item.FacultyName ?? "";
+  const createdByType = String(firstValue(item, ["createdByType", "CreatedByType"]) || "").trim();
+  const startDate = item.startDate ?? item.StartDate ?? "";
   const dueDate = item.dueDate ?? item.DueDate ?? item.due ?? "";
   const maximumMarks = item.maximumMarks ?? item.MaximumMarks ?? item.max ?? "";
   const academicYearDisplay = academicYearName || lookups.academicYears?.[String(academicYearId)]?.label || academicYearId || "-";
   const groupDisplay = groupName || lookups.groups?.[String(groupId)]?.label || groupId || "-";
   const facultyDisplay = facultyName || lookups.faculty?.[String(facultyId)]?.label || facultyId || "-";
-  const subjectDisplay = subjectName || subjectId || "-";
+  const createdBy = createdByType
+    ? (createdByType.toLowerCase() === "faculty" ? (facultyDisplay !== "-" ? facultyDisplay : "Faculty") : "Admin")
+    : (facultyDisplay !== "-" ? facultyDisplay : "Admin");
+  const subjectDisplay = subjectName || lookups.subjects?.[String(subjectId)]?.label || "-";
 
   return {
     id,
@@ -205,7 +211,10 @@ function normalizeAssignment(item = {}, lookups = {}) {
     facultyId,
     facultyName,
     faculty: facultyDisplay,
+    createdBy,
     description: item.description ?? item.Description ?? "",
+    startDate,
+    start: startDate ? String(startDate).slice(0, 10) : "-",
     dueDate,
     due: dueDate ? String(dueDate).slice(0, 10) : "-",
     attachmentPath: item.attachmentPath ?? item.AttachmentPath ?? item.attachment ?? "",
@@ -219,6 +228,10 @@ function formatDate(value) {
   return String(value).slice(0, 10);
 }
 
+function toApiDateTime(value) {
+  return value ? `${value}T00:00:00.000Z` : "";
+}
+
 function createInitialValues(row) {
   return {
     title: row?.title || "",
@@ -227,6 +240,7 @@ function createInitialValues(row) {
     groupId: row?.groupId ? String(row.groupId) : "",
     subjectId: row?.subjectId ? String(row.subjectId) : "",
     facultyId: row?.facultyId ? String(row.facultyId) : "",
+    startDate: formatDate(row?.startDate || row?.start),
     dueDate: formatDate(row?.dueDate || row?.due),
     attachmentPath: row?.attachmentPath || "",
     maximumMarks: row?.maximumMarks ?? row?.max ?? "",
@@ -240,11 +254,13 @@ function buildAssignmentFormData(values, file) {
   formData.append("AcademicYearId", String(values.academicYearId));
   formData.append("AcademicLevel", values.academicLevel);
   formData.append("GroupId", String(values.groupId));
-  formData.append("SubjectId", String(values.subjectId));
+  formData.append("SubjectIds", String(values.subjectId));
   formData.append("FacultyId", String(values.facultyId));
-  formData.append("DueDate", values.dueDate);
+  formData.append("StartDate", toApiDateTime(values.startDate));
+  formData.append("DueDate", toApiDateTime(values.dueDate));
   formData.append("MaximumMarks", String(Number(values.maximumMarks)));
   if (values.description?.trim()) formData.append("Description", values.description.trim());
+  if (values.attachmentPath?.trim()) formData.append("AttachmentPath", values.attachmentPath.trim());
   if (file instanceof File) formData.append("Attachment", file);
   return formData;
 }
@@ -265,12 +281,14 @@ export default function AssignmentsMaterialsPage() {
   const [groupOptions, setGroupOptions] = useState([]);
   const [groupError, setGroupError] = useState("");
   const [facultyOptions, setFacultyOptions] = useState([]);
+  const [assignmentSubjectOptions, setAssignmentSubjectOptions] = useState([]);
   const [facultyError, setFacultyError] = useState("");
   const [masterLoading, setMasterLoading] = useState(false);
 
   const academicYearMap = useMemo(() => makeLookup(academicYearOptions), [academicYearOptions]);
   const groupMap = useMemo(() => makeLookup(groupOptions), [groupOptions]);
   const facultyMap = useMemo(() => makeLookup(facultyOptions), [facultyOptions]);
+  const subjectMap = useMemo(() => makeLookup(assignmentSubjectOptions), [assignmentSubjectOptions]);
   const levelOptions = useMemo(() => {
     const levels = [...new Set(groupOptions.map((group) => group.academicLevel).filter(Boolean))];
     const source = levels.length ? levels : ["First Year", "Second Year"];
@@ -285,7 +303,6 @@ export default function AssignmentsMaterialsPage() {
   const [viewing, setViewing] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGroup, setSelectedGroup] = useState("");
-  const [selectedFaculty, setSelectedFaculty] = useState("");
 
   const [subjectOptions, setSubjectOptions] = useState([]);
   const [subjectLoading, setSubjectLoading] = useState(false);
@@ -304,9 +321,9 @@ export default function AssignmentsMaterialsPage() {
     academicYears: academicYearMap,
     groups: groupMap,
     faculty: facultyMap,
-  })), [academicYearMap, facultyMap, groupMap, rawAssignments]);
+    subjects: subjectMap,
+  })), [academicYearMap, facultyMap, groupMap, rawAssignments, subjectMap]);
   const assignmentGroupOptions = useMemo(() => uniqueFilterOptions(assignmentRows, "group", "groupId"), [assignmentRows]);
-  const assignmentFacultyOptions = useMemo(() => uniqueFilterOptions(assignmentRows, "faculty", "facultyId"), [assignmentRows]);
   const filteredAssignmentRows = useMemo(() => {
     const search = normalizeFilterValue(searchTerm);
     return assignmentRows.filter((assignment) => {
@@ -316,14 +333,13 @@ export default function AssignmentsMaterialsPage() {
         assignment.academicLevel,
         assignment.group,
         assignment.subject,
-        assignment.faculty,
+        assignment.createdBy,
         assignment.description,
       ].some((value) => normalizeFilterValue(value).includes(search));
       const matchesGroup = !selectedGroup || String(assignment.groupId) === selectedGroup;
-      const matchesFaculty = !selectedFaculty || String(assignment.facultyId) === selectedFaculty;
-      return matchesSearch && matchesGroup && matchesFaculty;
+      return matchesSearch && matchesGroup;
     });
-  }, [assignmentRows, searchTerm, selectedFaculty, selectedGroup]);
+  }, [assignmentRows, searchTerm, selectedGroup]);
 
   const loadMasterData = useCallback(async () => {
     if (masterLoadingRef.current) return null;
@@ -337,19 +353,21 @@ export default function AssignmentsMaterialsPage() {
       console.log("Assignments selected endpoints:", {
         faculty: apiEndpoints.faculty.list,
         academicYears: apiEndpoints.academicYears.list,
-        groups: apiEndpoints.groups.list,
+        groups: apiEndpoints.groups.dropdown,
       });
     }
 
-    const [academicYearsResult, groupsResult, facultyResult] = await Promise.allSettled([
+    const [academicYearsResult, groupsResult, facultyResult, subjectsResult] = await Promise.allSettled([
       apiClient.get(apiEndpoints.academicYears.list),
-      apiClient.get(apiEndpoints.groups.list),
+      apiClient.get(apiEndpoints.groups.dropdown),
       apiClient.get(apiEndpoints.faculty.list),
+      apiClient.get(apiEndpoints.subjects.getAll),
     ]);
 
     let nextAcademicYears = [];
     let nextGroups = [];
     let nextFaculty = [];
+    let nextSubjects = [];
 
     if (academicYearsResult.status === "fulfilled") {
       nextAcademicYears = getCollection(academicYearsResult.value.data).map(normalizeAcademicYear).filter(Boolean);
@@ -381,11 +399,19 @@ export default function AssignmentsMaterialsPage() {
       setFacultyError(getMasterDataMessage(facultyResult.reason, "Failed to load faculty."));
     }
 
+    if (subjectsResult.status === "fulfilled") {
+      nextSubjects = getCollection(subjectsResult.value.data).map(normalizeSubject).filter(Boolean);
+      setAssignmentSubjectOptions(nextSubjects);
+    } else {
+      setAssignmentSubjectOptions([]);
+    }
+
     if (import.meta.env.DEV) {
       console.log("Assignments master data loaded:", {
         academicYears: nextAcademicYears.length,
         groups: nextGroups.length,
         faculty: nextFaculty.length,
+        subjects: nextSubjects.length,
       });
     }
 
@@ -395,6 +421,7 @@ export default function AssignmentsMaterialsPage() {
       academicYearMap: makeLookup(nextAcademicYears),
       groupMap: makeLookup(nextGroups),
       facultyMap: makeLookup(nextFaculty),
+      subjectMap: makeLookup(nextSubjects),
     };
   }, []);
 
@@ -424,7 +451,7 @@ export default function AssignmentsMaterialsPage() {
         endpoints: {
           assignments: apiEndpoints.assignments.list,
           academicYears: apiEndpoints.academicYears.list,
-          groups: apiEndpoints.groups.list,
+          groups: apiEndpoints.groups.dropdown,
           faculty: apiEndpoints.faculty.list,
         },
       });
@@ -498,6 +525,7 @@ export default function AssignmentsMaterialsPage() {
         next.subjectId = "";
         if (selectedGroup?.academicLevel) next.academicLevel = selectedGroup.academicLevel;
       }
+      if (name === "startDate" && next.dueDate && next.dueDate < value) next.dueDate = "";
       return next;
     });
     setFormErrors((current) => ({ ...current, [name]: undefined }));
@@ -518,6 +546,9 @@ export default function AssignmentsMaterialsPage() {
     const minimumDueDate = getTomorrowDate();
     if (formValues.dueDate && formValues.dueDate < minimumDueDate) {
       nextErrors.dueDate = "Due date must be tomorrow or a future date.";
+    }
+    if (formValues.startDate && formValues.dueDate && formValues.startDate > formValues.dueDate) {
+      nextErrors.dueDate = "Start Date cannot be after Due Date.";
     }
     setFormErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -540,7 +571,7 @@ export default function AssignmentsMaterialsPage() {
         console.log("Assignment form data:", [...formData.entries()].map(([key, value]) => [key, value instanceof File ? value.name : value]));
       }
       if (isEditMode) await apiClient.put(apiEndpoints.assignments.update(id), formData, multipartRequestConfig);
-      else await apiClient.post(apiEndpoints.assignments.create, formData, multipartRequestConfig);
+      else await apiClient.post(apiEndpoints.assignments.adminCreate, formData, multipartRequestConfig);
       setToast(isEditMode ? "Assignment updated successfully" : "Assignment created successfully");
       navigate("/dashboard/assignments");
     } catch (saveError) {
@@ -570,6 +601,7 @@ export default function AssignmentsMaterialsPage() {
         academicYears: academicYearMap,
         groups: groupMap,
         faculty: facultyMap,
+        subjects: subjectMap,
       }));
     } catch {
       setViewing(row);
@@ -592,7 +624,8 @@ export default function AssignmentsMaterialsPage() {
                 <SelectField name="groupId" label={masterLoading ? "Group (loading...)" : "Group"} value={formValues.groupId} error={formErrors.groupId || groupError} options={groupOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(groupError) || groupOptions.length === 0} emptyLabel={groupError ? "Groups unavailable" : "No groups found"} action={groupError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry groups</button> : null} />
                 <SelectField name="subjectId" label={subjectLoading ? "Subject (loading...)" : "Subject"} value={formValues.subjectId} error={formErrors.subjectId || subjectError} options={subjectOptions} onChange={setFieldValue} required disabled={!formValues.groupId || subjectLoading || Boolean(subjectError)} emptyLabel={subjectError ? "Subjects unavailable" : formValues.groupId ? "No subjects found" : "Select group first"} action={subjectError && formValues.groupId ? <button type="button" className="cms-btn cms-btn-ghost" onClick={() => loadSubjectsByGroup(formValues.groupId)}>Retry subjects</button> : null} />
                 <SelectField name="facultyId" label={masterLoading ? "Faculty (loading...)" : "Faculty"} value={formValues.facultyId} error={formErrors.facultyId || facultyError} options={facultyOptions} onChange={setFieldValue} required disabled={masterLoading || Boolean(facultyError) || facultyOptions.length === 0} emptyLabel={facultyError ? "Failed to load faculty." : "No faculty found"} action={facultyError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={loadMasterData}>Retry faculty</button> : null} />
-                <TextField name="dueDate" label="Due Date" type="date" min={getTomorrowDate()} value={formValues.dueDate} error={formErrors.dueDate} onChange={setFieldValue} required />
+                <TextField name="startDate" label="Start Date" type="date" value={formValues.startDate} error={formErrors.startDate} onChange={setFieldValue} required />
+                <TextField name="dueDate" label="Due Date" type="date" min={formValues.startDate || getTomorrowDate()} value={formValues.dueDate} error={formErrors.dueDate} onChange={setFieldValue} required />
                 <FileField label="Attachment" file={attachmentFile} attachmentPath={formValues.attachmentPath} onChange={setAttachmentFile} />
                 <TextField name="maximumMarks" label="Maximum Marks" type="number" value={formValues.maximumMarks} error={formErrors.maximumMarks} onChange={setFieldValue} required />
                 <TextareaField name="description" label="Description" value={formValues.description} onChange={setFieldValue} />
@@ -625,13 +658,10 @@ export default function AssignmentsMaterialsPage() {
         loading={loading}
         searchTerm={searchTerm}
         selectedGroup={selectedGroup}
-        selectedFaculty={selectedFaculty}
         groupOptions={assignmentGroupOptions}
-        facultyOptions={assignmentFacultyOptions}
         onSearchChange={setSearchTerm}
         onGroupChange={setSelectedGroup}
-        onFacultyChange={setSelectedFaculty}
-        onClearFilters={() => { setSearchTerm(""); setSelectedGroup(""); setSelectedFaculty(""); }}
+        onClearFilters={() => { setSearchTerm(""); setSelectedGroup(""); }}
         addLabel="Add Assignment"
         onAdd={() => navigate("/dashboard/assignments/add")}
         onEdit={(row) => navigate(`/dashboard/assignments/${row.id}/edit`)}
@@ -707,14 +737,14 @@ function TextareaField({ name, label, value, onChange }) {
   );
 }
 
-function AssignmentsTable({ columns, rows, loading, searchTerm, selectedGroup, selectedFaculty, groupOptions, facultyOptions, onSearchChange, onGroupChange, onFacultyChange, onClearFilters, addLabel, onAdd, onEdit, onDelete, onView }) {
+function AssignmentsTable({ columns, rows, loading, searchTerm, selectedGroup, groupOptions, onSearchChange, onGroupChange, onClearFilters, addLabel, onAdd, onEdit, onDelete, onView }) {
   const [page, setPage] = useState(1);
   const pageSize = 5;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  useEffect(() => { setPage(1); }, [searchTerm, selectedGroup, selectedFaculty]);
+  useEffect(() => { setPage(1); }, [searchTerm, selectedGroup]);
 
   return (
     <section className="cms-card">
@@ -727,12 +757,8 @@ function AssignmentsTable({ columns, rows, loading, searchTerm, selectedGroup, s
           <option value="">All groups</option>
           {groupOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        <select className="assignment-filter-select" value={selectedFaculty} onChange={(event) => onFacultyChange(event.target.value)} aria-label="Filter by faculty">
-          <option value="">All faculty</option>
-          {facultyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
         <div className="cms-toolbar-right">
-          {(searchTerm || selectedGroup || selectedFaculty) ? <button type="button" className="cms-btn cms-btn-ghost assignment-toolbar-button assignment-clear-filters-btn" title="Clear filters" aria-label="Clear filters" onClick={onClearFilters}><FilterX size={16} /></button> : null}
+          {(searchTerm || selectedGroup) ? <button type="button" className="cms-btn cms-btn-ghost assignment-toolbar-button assignment-clear-filters-btn" title="Clear filters" aria-label="Clear filters" onClick={onClearFilters}><FilterX size={16} /></button> : null}
           <button type="button" className="cms-btn cms-btn-ghost assignment-toolbar-button" onClick={() => window.print()}><Download size={15} /> Export</button>
           <button type="button" className="cms-btn cms-btn-primary assignment-toolbar-button" onClick={onAdd}><Plus size={16} /> {addLabel}</button>
         </div>

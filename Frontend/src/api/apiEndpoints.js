@@ -17,7 +17,7 @@
     delete: (id) => `/api/v1/assignments/${id}`,
     submit: (id) => `/api/v1/assignments/${id}/submit`,
     subjectsByGroup: (groupId) => `/api/v1/assignments/groups/${groupId}/subjects`,
-    submissions: (id) => `/api/v1/assignments/${id}/submissions`,
+    submissions: (id) => `/api/admin/assignments/${id}/submissions`,
   },
   faculty: {
     list: "/api/v1/faculty",

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, X, AlertTriangle, Eye, EyeOff } from "lucide-react";
 
 export function StatusBadge({ value }) {
@@ -36,7 +37,16 @@ export function Toast({ message, onClose }) {
 }
 
 export function Modal({ title, children, footer, onClose, size }) {
-  return (
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  const dialog = (
     <div className="cms-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`cms-modal ${size === "sm" ? "sm" : ""}`} role="dialog" aria-modal="true">
         <div className="cms-modal-head">
@@ -50,6 +60,9 @@ export function Modal({ title, children, footer, onClose, size }) {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return dialog;
+  return createPortal(dialog, document.body);
 }
 
 export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm }) {
@@ -84,7 +97,7 @@ export function Field({ field, value, error, onChange }) {
   const isPassword = type === "password";
   const normalizedOptions = options.map((option) => (
     option && typeof option === "object"
-      ? { value: option.value, label: option.label ?? option.value }
+      ? { value: option.value, label: option.label ?? option.value, disabled: Boolean(option.disabled) }
       : { value: option, label: option }
   ));
   return (

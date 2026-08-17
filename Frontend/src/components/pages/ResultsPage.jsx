@@ -4,6 +4,12 @@ import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
+<<<<<<< HEAD
+=======
+  getBoards,
+  getGroups,
+  getStudentResult,
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
   getRankList,
   getResultAnalysis,
   downloadResultsExcel,
@@ -11,6 +17,9 @@ import {
   downloadStudentResultMemo,
   processResults,
   publishResults,
+  getAcademicYears,
+  getAcademicLevels,
+  getExaminations,
 } from "@/features/results/services/resultsService.js";
 import {
   FaSearch,
@@ -23,7 +32,6 @@ import {
   FaCheck,
   FaTimes,
   FaCheckCircle,
-  FaClock,
 } from "react-icons/fa";
 const RESULTS_API_VERSION = "1.0";
 const resultsPageApi = {
@@ -83,8 +91,18 @@ export default function ResultsPage() {
 
   const [resultsGenerated, setResultsGenerated] = useState(false);
   const [resultsData, setResultsData] = useState([]);
+<<<<<<< HEAD
   const [filterOptions, setFilterOptions] = useState({ boards: [], years: [], levels: [], groups: [], exams: [] });
   const [filterLoading, setFilterLoading] = useState({ boards: true, years: true, levels: true, groups: false, exams: false });
+=======
+  const [scopeResults, setScopeResults] = useState([]);
+  const [boardOptions, setBoardOptions] = useState([]);
+  const [yearOptions, setYearOptions] = useState([]);
+  const [levelOptions, setLevelOptions] = useState([]);
+  const [groupOptions, setGroupOptions] = useState([]);
+  const [examinationOptions, setExaminationOptions] = useState([]);
+  const [contextLoading, setContextLoading] = useState(true);
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [selectedViewStudent, setSelectedViewStudent] = useState(null);
@@ -95,6 +113,7 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
+<<<<<<< HEAD
     let active = true;
     const config = { params: { "api-version": RESULTS_API_VERSION } };
     Promise.allSettled([
@@ -148,6 +167,35 @@ export default function ResultsPage() {
       .finally(() => active && setFilterLoading((current) => ({ ...current, exams: false })));
     return () => { active = false; };
   }, [filterOptions.groups, filters.board, filters.group, filters.level, filters.year]);
+=======
+    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
+      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
+        if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
+        if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
+        if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));
+        if (groupsResult.status === "fulfilled") setGroupOptions(groupsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
+        if (examinationsResult.status === "fulfilled") setExaminationOptions(examinationsResult.value.filter((item) => item.status !== "Inactive").map((item) => ({ id: String(item.examinationId ?? item.examId ?? item.id), name: item.examName ?? item.name })));
+        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult].find((result) => result.status === "rejected");
+        if (failed) setToast(getApiErrorMessage(failed.reason));
+      })
+      .finally(() => setContextLoading(false));
+    getResults({ PageNumber: 1, PageSize: 100 })
+      .then(setScopeResults)
+      .catch((error) => setToast(getApiErrorMessage(error)));
+  }, []);
+
+  const uniqueScopes = (records, idKey, nameKey) =>
+    [...new Map(records.filter((record) => record[idKey] && record[nameKey]).map((record) => [record[idKey], { id: record[idKey], name: record[nameKey] }])).values()];
+  const availableBoards = boardOptions;
+  // Academic years and levels are independent reference data. Do not hide them
+  // just because a group has not yet been returned for the selected context.
+  const availableYears = filters.board ? yearOptions : [];
+  const availableLevels = filters.year ? levelOptions : [];
+  const contextualGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year && (!group.academicLevelId || String(group.academicLevelId) === filters.level));
+  const boardYearGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year);
+  const availableGroups = filters.level ? (contextualGroups.length ? contextualGroups : boardYearGroups.length ? boardYearGroups : groupOptions) : [];
+  const availableExams = filters.group ? examinationOptions : [];
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
@@ -204,14 +252,32 @@ export default function ResultsPage() {
         publishDate: new Date().toISOString(),
       });
 
+<<<<<<< HEAD
       const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
       setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
       setResultsGenerated(true);
+=======
+      const [fetchedData, failedData] = await Promise.all([
+        getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
+        getFailedStudents(),
+      ]);
+
+      if (Array.isArray(fetchedData) && fetchedData.length > 0) {
+        setResultsData(fetchedData);
+      } else {
+        setResultsData([]);
+      }
+
+      setFailedResults(failedData);
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
       setResultsData([]);
+<<<<<<< HEAD
       setResultsGenerated(false);
+=======
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
     } finally {
       setPageStudentResults(1);
       setPageRankResults(1);
@@ -240,7 +306,7 @@ export default function ResultsPage() {
     }
   };
 
-  const filteredStudentResults = resultsData.filter((r) =>
+  const filteredStudentResults = resultsData.filter((r) => r.isPublished !== false).filter((r) =>
     `${r.name} ${r.roll} ${r.group} ${r.section}`
       .toLowerCase()
       .includes(query.toLowerCase())
@@ -549,7 +615,20 @@ export default function ResultsPage() {
         .results-context-description { margin: 4px 0 14px !important; font-size: 14px !important; line-height: 1.45 !important; }
         .results-context-card .cms-label { font-size: 13px !important; line-height: 1.35 !important; }
         .results-context-card .cms-select { min-height: 38px !important; padding: 8px 12px !important; font-size: 14px !important; }
+
+        /* Match the standard page scale on every generated-results view. */
+        .results-page .cms-card { border-radius: 14px; }
+        .results-page .cms-compact-card { width: 100%; max-width: none; margin: 0 0 20px !important; }
+        .results-page .cms-card-body { padding: 24px 28px !important; }
+        .results-page .cms-table-compact th { padding: 12px 14px !important; font-size: 13px !important; }
+        .results-page .cms-table-compact td { padding: 11px 14px !important; font-size: 14px !important; }
+        .results-page .cms-table-compact tr { height: 46px !important; }
+        .results-page .cms-btn { min-height: 40px !important; padding: 0 16px !important; font-size: 14px !important; }
+        .results-page .cms-subtitle { font-size: 14px; line-height: 1.5; }
+        .results-page .cms-table-wrap { margin-top: 18px; }
       `}</style>
+
+      <div className="results-page">
 
       {/* 1. Sequential Filter Card */}
       <div className="cms-card results-context-card">
@@ -574,14 +653,23 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Board <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
+<<<<<<< HEAD
                 disabled={filterLoading.boards}
+=======
+                disabled={contextLoading}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
                 value={filters.board}
                 onChange={(e) => handleFilterChange("board", e.target.value)}
               >
                 <option value="">Select Board</option>
                 {availableBoards.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
+<<<<<<< HEAD
                   ))}
+=======
+                  ))
+                ) : null}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
               </select>
             </div>
 
@@ -589,14 +677,23 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
+<<<<<<< HEAD
                 disabled={!filters.board || filterLoading.years}
+=======
+                disabled={contextLoading || !filters.board}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
                 value={filters.year}
                 onChange={(e) => handleFilterChange("year", e.target.value)}
               >
                 <option value="">Select Year</option>
                 {availableYears.map((y) => (
                     <option key={y.id} value={y.id}>{y.name}</option>
+<<<<<<< HEAD
                   ))}
+=======
+                  ))
+                ) : null}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
               </select>
             </div>
 
@@ -604,14 +701,23 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
+<<<<<<< HEAD
                 disabled={!filters.year || filterLoading.levels}
+=======
+                disabled={contextLoading || !filters.year}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
                 value={filters.level}
                 onChange={(e) => handleFilterChange("level", e.target.value)}
               >
                 <option value="">Select Level</option>
                 {availableLevels.map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
+<<<<<<< HEAD
                   ))}
+=======
+                  ))
+                ) : null}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
               </select>
             </div>
 
@@ -619,14 +725,23 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Group <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
+<<<<<<< HEAD
                 disabled={!filters.level || filterLoading.groups}
+=======
+                disabled={contextLoading || !filters.level}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
                 value={filters.group}
                 onChange={(e) => handleFilterChange("group", e.target.value)}
               >
                 <option value="">Select Group</option>
                 {availableGroups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
+<<<<<<< HEAD
                   ))}
+=======
+                  ))
+                ) : null}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
               </select>
             </div>
 
@@ -641,7 +756,12 @@ Choose the academic context sequentially before reviewing faculty submissions.
                 <option value="">Select Exam</option>
                 {availableExams.map((ex) => (
                     <option key={ex.id} value={ex.id}>{ex.name}</option>
+<<<<<<< HEAD
                   ))}
+=======
+                  ))
+                ) : null}
+>>>>>>> 64ac9888c57e223b358aceab2d64e9c7709a8b11
               </select>
             </div>
           </div>
@@ -1159,19 +1279,11 @@ Choose the academic context sequentially before reviewing faculty submissions.
                         </td>
 
                         <td style={{ textAlign: "center" }}>
-                          {r.status === "Published" || r.isPublished ? (
-                            <span className="cms-badge cms-badge-active" style={{ padding: "2px 6px", fontSize: "10px" }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaCheckCircle style={{ fontSize: "8px", color: "#15803d" }} /> Published
-                              </span>
+                          <span className="cms-badge cms-badge-active" style={{ padding: "2px 6px", fontSize: "10px" }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+                              <FaCheckCircle style={{ fontSize: "8px", color: "#15803d" }} /> Published
                             </span>
-                          ) : (
-                            <span className="cms-badge" style={{ background: "#fef3c7", color: "#b45309", padding: "2px 6px", fontSize: "10px" }}>
-                              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                                <FaClock style={{ fontSize: "8px", color: "#b45309" }} /> Draft
-                              </span>
-                            </span>
-                          )}
+                          </span>
                         </td>
                       </tr>
                     ))
@@ -1250,6 +1362,8 @@ Choose the academic context sequentially before reviewing faculty submissions.
           </div>
         </div>
       )}
+
+      </div>
 
       <div className="results-toast">
         <Toast message={toast} onClose={() => setToast("")} />

@@ -56,6 +56,15 @@
 .dashboard-chart-body .recharts-text { fill: var(--cms-muted); font-size: 11px; }
 .dashboard-empty { min-height: 80px; display: grid; place-items: center; padding: 16px; color: var(--cms-muted); font-size: 12px; text-align: center; }
 .dashboard-chart-body > .dashboard-empty { height: 100%; }
+.dashboard-attendance-card .cms-card-head h2 { min-width: 0; white-space: normal; }
+.dashboard-attendance-daily { min-height: 285px; display: grid; grid-template-columns: minmax(120px, .8fr) minmax(0, 1.2fr); align-items: center; gap: 18px; padding: 18px; }
+.dashboard-attendance-rate { display: grid; place-items: center; align-content: center; width: 138px; height: 138px; justify-self: center; border: 12px solid #dcfce7; border-radius: 50%; background: var(--cms-surface); text-align: center; }
+.dashboard-attendance-rate strong { color: #0f9d58; font-size: 25px; line-height: 1; }
+.dashboard-attendance-rate span { margin-top: 7px; color: var(--cms-muted); font-size: 11px; }
+.dashboard-attendance-metrics { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.dashboard-attendance-metrics > div { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--cms-border); border-radius: 10px; background: var(--cms-subtle); }
+.dashboard-attendance-metrics span { overflow-wrap: anywhere; color: var(--cms-muted); font-size: 11px; }
+.dashboard-attendance-metrics strong { color: var(--cms-text); font-size: 15px; }
 .dashboard-group-card { overflow: hidden; }
 .dashboard-group-body { min-width: 0; min-height: 285px; display: grid; grid-template-columns: minmax(150px, 44%) minmax(0, 56%); align-items: center; gap: 6px; padding: 10px 14px 14px; overflow: hidden; }
 .dashboard-group-chart { position: relative; width: min(100%, 220px); height: 210px; min-width: 0; justify-self: center; }
@@ -85,3 +94,4 @@
   .dashboard-kpi-grid .cms-stat > .cms-stat-icon { width: 40px; height: 40px; }
 }
 @media (max-width: 560px) { .dashboard-group-body { grid-template-columns: 1fr; } .dashboard-group-chart { height: 200px; } .dashboard-group-legend { max-height: 160px; } }
+@media (max-width: 560px) { .dashboard-attendance-daily { grid-template-columns: 1fr; } .dashboard-attendance-rate { width: 120px; height: 120px; } }

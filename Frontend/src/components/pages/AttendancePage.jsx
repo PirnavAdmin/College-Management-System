@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
-import { attendanceRoster, sections as mockSections } from "@/data/mockData.js";
+import { sections as mockSections } from "@/data/mockData.js";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./AttendancePage.css";
@@ -138,7 +138,7 @@ export default function AttendancePage() {
   const [markFilters, setMarkFilters] = useState({ date: today });
   const [markSections, setMarkSections] = useState([]);
   const [markSectionMap, setMarkSectionMap] = useState({});
-  const [rows, setRows] = useState(attendanceRoster);
+const [rows, setRows] = useState([]);
   const [loadingRoster, setLoadingRoster] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -656,7 +656,7 @@ export default function AttendancePage() {
             <button className="cms-btn cms-btn-ghost" onClick={markAll}>Mark All Present</button>
           </div>
         </div>
-        {loadingRoster ? (
+     {loadingRoster ? (
           <Loader label="Loading students..." />
         ) : (
           <div className="cms-table-wrap">
@@ -669,6 +669,13 @@ export default function AttendancePage() {
                 </tr>
               </thead>
               <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={3} style={{ textAlign: "center", padding: 20 }}>
+                      Select filters above and click "Load Students" to view the roster.
+                    </td>
+                  </tr>
+                )}
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td className="cms-strong">{r.roll}</td>
@@ -690,8 +697,7 @@ export default function AttendancePage() {
           </div>
         )}
         <div className="cms-modal-foot">
-          <button className="cms-btn cms-btn-ghost" onClick={() => setRows(attendanceRoster)}>Cancel</button>
-          <button className="cms-btn cms-btn-primary" onClick={saveRoster} disabled={saving}>{saving ? "Saving..." : "Save Attendance"}</button>
+<button className="cms-btn cms-btn-ghost" onClick={() => setRows([])}>Cancel</button>          <button className="cms-btn cms-btn-primary" onClick={saveRoster} disabled={saving}>{saving ? "Saving..." : "Save Attendance"}</button>
         </div>
       </div>
 

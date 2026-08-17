@@ -71,11 +71,6 @@ const options = (payload, idKeys, nameKeys) => records(payload).map((item) => ({
   id: read(item, ...idKeys), name: read(item, ...nameKeys),
 })).filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0 && item.name);
 
-const getSubjects = async () => {
-  const response = await apiClient.get("/api/Subjects");
-  return records(response.data);
-};
-
 export default function ResultsPage() {
   const [filters, setFilters] = useState({
     board: "",
@@ -110,8 +105,8 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
-    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations(), getSubjects()])
-      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult, subjectsResult]) => {
+    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
+      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
         if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
         if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
         if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));

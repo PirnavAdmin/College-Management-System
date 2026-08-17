@@ -69,10 +69,29 @@ const extractItems = (payload) =>
       payload?.data?.Value ||
       payload?.data ||
       [];
+const extractRecord = (payload) => payload?.data ?? payload?.Data ?? payload;
 const facultyName = (item = {}) =>
   item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "Unsaved faculty";
 const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
 const facultyId = (item = {}) => item.facultyId ?? item.id ?? item.FacultyId ?? item.Id;
+const firstValue = (item = {}, ...keys) =>
+  keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null && value !== "") ??
+  Object.entries(item || {}).find(([key, value]) =>
+    keys.some((expected) => key.toLowerCase() === expected.toLowerCase()) &&
+    value !== undefined && value !== null && value !== "",
+  )?.[1];
+const lookupValue = (value) => {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "object") return value;
+  return firstValue(value, "name", "Name", "value", "Value", "bloodGroup", "BloodGroup", "bloodType", "BloodType", "bloodGroupName", "BloodGroupName", "facultyTypeName", "FacultyTypeName", "typeName", "TypeName") ?? "";
+};
+const facultyTypeValue = (item = {}) => {
+  const value = lookupValue(firstValue(item, "facultyType", "FacultyType", "facultyTypeName", "FacultyTypeName", "type", "Type"));
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s_-]/g, "");
+  if (normalized === "teaching" || normalized === "teachingstaff") return "Teaching Staff";
+  if (normalized === "nonteaching" || normalized === "nonteachingstaff") return "Non-Teaching Staff";
+  return value ?? "";
+};
 const subjectId = (item = {}) => item.subjectId ?? item.id ?? item.SubjectId ?? item.Id;
 const subjectName = (item = {}) =>
   item.subjectName || item.name || item.SubjectName || "Unnamed subject";
@@ -111,23 +130,23 @@ const rowFor = (item) => ({
   department: item.department,
   designation: item.designation,
 });
-const valuesFor = (item) => ({
-  empId: item.employeeId ?? item.employeeCode ?? item.empId,
-  firstName: item.firstName,
-  lastName: item.lastName,
-  gender: item.gender,
-  dob: dateOnly(item.dateOfBirth ?? item.dob),
-  aadhaar: item.aadhaar,
-  mobile: item.mobile ?? item.phoneNumber,
-  email: item.email,
-  bloodGroup: item.bloodGroup,
-  qualification: item.qualification,
-  designation: item.designation,
-  facultyType: item.facultyType,
-  department: item.department,
-  joining: dateOnly(item.joiningDate ?? item.joining),
-  experience: item.experience,
-  status: item.status || "Active",
+const valuesFor = (item = {}) => ({
+  empId: firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
+  firstName: firstValue(item, "firstName", "FirstName"),
+  lastName: firstValue(item, "lastName", "LastName"),
+  gender: lookupValue(firstValue(item, "gender", "Gender")),
+  dob: dateOnly(firstValue(item, "dateOfBirth", "DateOfBirth", "dob", "Dob")),
+  aadhaar: firstValue(item, "aadhaar", "Aadhaar", "aadhaarNumber", "AadhaarNumber"),
+  mobile: firstValue(item, "mobile", "Mobile", "phoneNumber", "PhoneNumber"),
+  email: firstValue(item, "email", "Email"),
+  bloodGroup: lookupValue(firstValue(item, "bloodGroup", "BloodGroup", "bloodGroupName", "BloodGroupName", "bloodType", "BloodType", "blood", "Blood")),
+  qualification: firstValue(item, "qualification", "Qualification"),
+  designation: lookupValue(firstValue(item, "designation", "Designation", "designationName", "DesignationName")),
+  facultyType: facultyTypeValue(item),
+  department: lookupValue(firstValue(item, "department", "Department", "departmentName", "DepartmentName")),
+  joining: dateOnly(firstValue(item, "joiningDate", "JoiningDate", "joining", "Joining")),
+  experience: firstValue(item, "experience", "Experience"),
+  status: firstValue(item, "status", "Status") || "Active",
 });
 
 function Steps({ step, onSelect }) {
@@ -238,7 +257,7 @@ function Workflow({ existingId }) {
     apiClient
       .get(apiEndpoints.faculty.getById(existingId))
       .then((r) => {
-        const record = r.data?.data ?? r.data;
+        const record = extractRecord(r.data);
         setValues(valuesFor(record));
         setSaved(record);
       })
@@ -301,7 +320,7 @@ function Workflow({ existingId }) {
       const response = existingId
         ? await apiClient.put(apiEndpoints.faculty.update(existingId), payloadFor(values))
         : await apiClient.post(apiEndpoints.faculty.create, payloadFor(values));
-      const record = response.data?.data ?? response.data;
+      const record = extractRecord(response.data);
       const next = {
         ...record,
         ...valuesFor(record),

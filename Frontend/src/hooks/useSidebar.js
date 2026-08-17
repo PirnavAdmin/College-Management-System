@@ -2,11 +2,13 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 const NAV_KEY = "cms_sidebar_collapsed";
 const FACULTY_KEY = "cms_sidebar_faculty_open";
+const ASSIGNMENTS_KEY = "cms_sidebar_assignments_open";
 const listeners = new Set();
 
 const state = {
   navOpen: null,
   facultyOpen: readBoolean(FACULTY_KEY, false),
+  assignmentsOpen: readBoolean(ASSIGNMENTS_KEY, false),
 };
 
 function readBoolean(key, fallback) {
@@ -38,7 +40,7 @@ function subscribe(callback) {
 }
 
 function snapshot() {
-  return `${state.navOpen}|${state.facultyOpen}`;
+  return `${state.navOpen}|${state.facultyOpen}|${state.assignmentsOpen}`;
 }
 
 function resolveInitialNavOpen() {
@@ -48,9 +50,9 @@ function resolveInitialNavOpen() {
 }
 
 export function useSidebar() {
-  const snap = useSyncExternalStore(subscribe, snapshot, () => "null|false");
+  const snap = useSyncExternalStore(subscribe, snapshot, () => "null|false|false");
   const [mounted, setMounted] = useState(false);
-  const [nav, faculty] = snap.split("|");
+  const [nav, faculty, assignments] = snap.split("|");
 
   useEffect(() => {
     if (state.navOpen === null) {
@@ -64,6 +66,7 @@ export function useSidebar() {
     ready: mounted,
     navOpen: mounted ? nav === "true" : true,
     facultyOpen: faculty === "true",
+    assignmentsOpen: assignments === "true",
     setNavOpen: (value) => {
       const next = typeof value === "function" ? value(state.navOpen === true) : value;
       if (next === state.navOpen) return;
@@ -78,6 +81,13 @@ export function useSidebar() {
       if (next === state.facultyOpen) return;
       state.facultyOpen = next;
       writeBoolean(FACULTY_KEY, next);
+      emit();
+    },
+    setAssignmentsOpen: (value) => {
+      const next = typeof value === "function" ? value(state.assignmentsOpen) : value;
+      if (next === state.assignmentsOpen) return;
+      state.assignmentsOpen = next;
+      writeBoolean(ASSIGNMENTS_KEY, next);
       emit();
     },
   };

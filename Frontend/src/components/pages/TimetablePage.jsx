@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, ClipboardCheck, Edit3, GraduationCap, Plus, Send, Settings2, Sparkles, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import apiClient from "@/api/axios.js";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./TimetablePage.css";
 
@@ -18,6 +18,21 @@ const PERIODS = [
 ];
 const SECTIONS = ["MPC-A", "MPC-B", "MPC-C", "MPC-D"];
 const SUBJECTS = ["Mathematics", "Physics", "Chemistry", "English", "Physics Practical"];
+const recordsFrom = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  const candidates = [
+    payload?.$values, payload?.items, payload?.Items, payload?.results, payload?.Results,
+    payload?.data, payload?.Data, payload?.data?.$values, payload?.data?.items,
+    payload?.data?.Items, payload?.Data?.$values, payload?.Data?.items, payload?.Data?.Items,
+  ];
+  return candidates.find(Array.isArray) || [];
+};
+const contextValue = (item, keys) => {
+  const value = keys.map((key) => item?.[key]).find((candidate) => candidate !== undefined && candidate !== null && candidate !== "");
+  if (value && typeof value === "object") return value.id ?? value.Id ?? value.boardId ?? value.BoardId ?? value.academicYearId ?? value.AcademicYearId ?? value.academicLevelId ?? value.AcademicLevelId ?? value.name ?? value.Name ?? value.boardName ?? value.BoardName ?? value.academicYearName ?? value.AcademicYearName ?? value.academicLevelName ?? value.AcademicLevelName ?? value.value ?? value.Value ?? "";
+  return value ?? "";
+};
+const sameContextValue = (value, id, name) => String(value).trim().toLowerCase() === String(id).trim().toLowerCase() || String(value).trim().toLowerCase() === String(name).trim().toLowerCase();
 const FACULTY = {
   Mathematics: ["Ravi Kumar"], Physics: ["Suresh Rao"], Chemistry: ["Kumar Das"], English: ["Priya Menon"], "Physics Practical": ["Suresh Rao"],
 };
@@ -293,12 +308,12 @@ function Generate({ onGenerate, academicYears, academicYearId, onAcademicYearCha
       if (result?.isSuccess === false) throw new Error(result.message || "Timetable generation failed.");
       onGenerate(result);
     } catch (error) {
-      setGenerateError(error.response?.data?.message || error.message || "Unable to generate the timetable.");
+      setGenerateError(getApiErrorMessage(error));
     } finally {
       setBusy(false);
     }
   };
-  return <Page title="Generate Timetable" subtitle="Generate a theory timetable for all selected sections together." action={<Link className="ttm-secondary" to="/dashboard/timetable/setup">Back: Setup</Link>}><section className="ttm-card ttm-generate"><AcademicContextFields academicYears={academicYears} academicYearId={academicYearId} onAcademicYearChange={onAcademicYearChange} loadingAcademicYears={loadingAcademicYears} boards={boards} boardId={boardId} onBoardChange={onBoardChange} loadingBoards={loadingBoards} academicLevels={academicLevels} academicLevelId={academicLevelId} onAcademicLevelChange={onAcademicLevelChange} loadingAcademicLevels={loadingAcademicLevels} groups={groups} groupId={groupId} onGroupChange={onGroupChange} loadingGroups={loadingGroups}/><h3>Sections</h3><div className="ttm-check-list">{loadingSections ? <span>Loading sections...</span> : sections.map((section) => <label key={section.id}><input type="checkbox" checked={selected.includes(section.name)} disabled/>{section.name}</label>)}</div>{!loadingSections && !sections.length && <p className="ttm-empty">No active sections are available for this group.</p>}{generateError && <p className="ttm-warning">{generateError}</p>}<div className="ttm-info"><Sparkles/> Theory timetable only. Labs and practicals can be added manually after the draft is generated.</div><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable/setup">Back</Link><button className="ttm-primary" disabled={!selected.length || busy || loadingSections} onClick={generate}>{busy ? "Generating draft..." : <><Sparkles/> Generate Timetable</>}</button></div></section></Page>;
+  return <Page title="Generate Timetable" subtitle="Generate a theory timetable for all selected sections together." action={<Link className="ttm-secondary" to="/dashboard/timetable/setup">Back: Setup</Link>}><section className="ttm-card ttm-generate"><AcademicContextFields academicYears={academicYears} academicYearId={academicYearId} onAcademicYearChange={onAcademicYearChange} loadingAcademicYears={loadingAcademicYears} boards={boards} boardId={boardId} onBoardChange={onBoardChange} loadingBoards={loadingBoards} academicLevels={academicLevels} academicLevelId={academicLevelId} onAcademicLevelChange={onAcademicLevelChange} loadingAcademicLevels={loadingAcademicLevels} groups={groups} groupId={groupId} onGroupChange={onGroupChange} loadingGroups={loadingGroups}/><h3>Sections</h3><div className="ttm-check-list">{loadingSections ? <span>Loading sections...</span> : sections.map((section) => <label key={section.id}><input type="checkbox" checked={selected.includes(section.name)} disabled/>{section.name}</label>)}</div>{!loadingSections && !sections.length && <p className="ttm-empty">{groupId ? "No active sections are available for this group." : "Select a group to load its sections."}</p>}{generateError && <p className="ttm-warning">{generateError}</p>}<div className="ttm-info"><Sparkles/> Theory timetable only. Labs and practicals can be added manually after the draft is generated.</div><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable/setup">Back</Link><button className="ttm-primary" disabled={!selected.length || busy || loadingSections} onClick={generate}>{busy ? "Generating draft..." : <><Sparkles/> Generate Timetable</>}</button></div></section></Page>;
 }
 
 function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", boardId = "", academicLevelId = "", groupId = "", subjects = [], loadingSubjects = false }) {
@@ -612,21 +627,20 @@ export default function TimetablePage({ screen = "generate" }) {
       return () => { active = false; };
     }
 
-    const params = {
-      boardId: Number(boardId),
-      academicYearId: Number(academicYearId),
-      academicLevelId: Number(academicLevelId),
-      isActive: true,
-    };
-
     setLoadingGroups(true);
-    apiClient.get(apiEndpoints.groups.getAll, { params })
+    apiClient.get(apiEndpoints.groups.getAll)
       .then((response) => {
         if (!active) return;
-        const records = Array.isArray(response.data) ? response.data : response.data?.data || response.data?.items || [];
-        const options = records
-          .filter((group) => group.isActive !== false)
-          .map((group) => ({ id: String(group.groupId ?? group.id), name: group.groupName ?? group.name ?? group.groupCode }))
+        const activeGroups = recordsFrom(response.data)
+          .filter((group) => group.isActive !== false && group.IsActive !== false);
+        const boardName = boards.find((board) => String(board.id) === String(boardId))?.name ?? "";
+        const yearName = academicYears.find((year) => String(year.id) === String(academicYearId))?.name ?? "";
+        const levelName = academicLevels.find((level) => String(level.id) === String(academicLevelId))?.name ?? "";
+        const options = activeGroups
+          .filter((group) => sameContextValue(contextValue(group, ["boardId", "BoardId", "board", "Board", "boardName", "BoardName"]), boardId, boardName))
+          .filter((group) => sameContextValue(contextValue(group, ["academicYearId", "AcademicYearId", "yearId", "YearId", "year", "Year", "academicYear", "AcademicYear", "academicYearName", "AcademicYearName"]), academicYearId, yearName))
+          .filter((group) => sameContextValue(contextValue(group, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "level", "Level", "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName"]), academicLevelId, levelName))
+          .map((group) => ({ id: String(group.groupId ?? group.GroupId ?? group.id ?? group.Id), name: group.groupName ?? group.GroupName ?? group.name ?? group.Name ?? group.groupCode ?? group.GroupCode }))
           .filter((group) => group.id && group.name);
         setGroups(options);
         setGroupId((currentId) => options.some((group) => group.id === currentId) ? currentId : options[0]?.id ?? "");
@@ -639,14 +653,14 @@ export default function TimetablePage({ screen = "generate" }) {
       .finally(() => { if (active) setLoadingGroups(false); });
 
     return () => { active = false; };
-  }, [academicYearId, academicLevelId, boardId]);
+  }, [academicYearId, academicLevelId, boardId, academicYears, academicLevels, boards]);
 
   useEffect(() => {
     let active = true;
 
     if (!groupId) {
       setSections([]);
-      setLoadingSections(true);
+      setLoadingSections(false);
       return () => { active = false; };
     }
 

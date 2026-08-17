@@ -14,9 +14,7 @@ function getGroups() {
 }
 
 function getBoards() {
-  return apiClient.get(apiEndpoints.boards.getAll, {
-    params: { Status: true, PageNumber: 1, PageSize: 100, SortBy: "BoardName", SortOrder: "asc" },
-  });
+  return apiClient.get(apiEndpoints.boards.getAll);
 }
 
 function getAcademicLevels() {
@@ -75,10 +73,13 @@ pageConfig.deriveValues = (values) => ({
 
 const extractItems = (payload) => {
   if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.$values)) return payload.$values;
   if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.Items)) return payload.Items;
   if (Array.isArray(payload?.data)) return payload.data;
   if (Array.isArray(payload?.Data)) return payload.Data;
+  if (Array.isArray(payload?.data?.$values)) return payload.data.$values;
+  if (Array.isArray(payload?.Data?.$values)) return payload.Data.$values;
   if (Array.isArray(payload?.data?.items)) return payload.data.items;
   if (Array.isArray(payload?.data?.Items)) return payload.data.Items;
   if (Array.isArray(payload?.Data?.items)) return payload.Data.items;
@@ -118,8 +119,8 @@ const statusFrom = (subject) => {
 
 const toSubjectRow = (subject) => ({
   id: read(subject, "subjectId", "SubjectId", "id", "Id"),
-  board: read(subject, "boardName", "BoardName", "board", "Board") || "-",
-  boardId: read(subject, "boardId", "BoardId"),
+  board: read(subject, "boardName", "BoardName") || read(subject?.board, "boardName", "BoardName", "name", "Name") || read(subject, "board", "Board") || "-",
+  boardId: read(subject, "boardId", "BoardId") ?? read(subject?.board, "boardId", "BoardId", "id", "Id"),
   group: read(subject, "groupName", "GroupName", "group", "Group") || "-",
   groupId: read(subject, "groupId", "GroupId"),
   academicYear: read(subject, "academicYearId", "AcademicYearId"),
@@ -199,8 +200,18 @@ pageConfig.api = {
     return extractItems(response.data).map(toSubjectRow).filter((row) => row.id !== undefined).filter((row) => matchesFilters(row, search, filters));
   },
   fetchRow: async (id) => {
-    const response = await apiClient.get(apiEndpoints.subjects.getById(id));
-    return toSubjectForm(response.data?.data || response.data);
+    try {
+      const response = await apiClient.get(apiEndpoints.subjects.getById(id));
+      return toSubjectForm(response.data?.data || response.data);
+    } catch (detailError) {
+      // Some backend deployments return subjects from the list endpoint but
+      // incorrectly return 404 from GET /api/Subjects/{id}. Keep the edit
+      // form usable with the matching list record in that case.
+      const response = await apiClient.get(apiEndpoints.subjects.getAll, { params: { pageNumber: 1, pageSize: 100 } });
+      const subject = extractItems(response.data).find((item) => String(read(item, "subjectId", "SubjectId", "id", "Id")) === String(id));
+      if (!subject) throw detailError;
+      return toSubjectForm(subject);
+    }
   },
   saveRow: (values, id) => id
     ? apiClient.put(apiEndpoints.subjects.update(id), toSubjectPayload(values))

@@ -4,12 +4,6 @@ import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
-<<<<<<< HEAD
-=======
-  getBoards,
-  getGroups,
-  getStudentResult,
->>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
   getRankList,
   getResultAnalysis,
   downloadResultsExcel,
@@ -88,18 +82,8 @@ export default function ResultsPage() {
 
   const [resultsGenerated, setResultsGenerated] = useState(false);
   const [resultsData, setResultsData] = useState([]);
-<<<<<<< HEAD
   const [filterOptions, setFilterOptions] = useState({ boards: [], years: [], levels: [], groups: [], exams: [] });
   const [filterLoading, setFilterLoading] = useState({ boards: true, years: true, levels: true, groups: false, exams: false });
-=======
-  const [scopeResults, setScopeResults] = useState([]);
-  const [boardOptions, setBoardOptions] = useState([]);
-  const [yearOptions, setYearOptions] = useState([]);
-  const [levelOptions, setLevelOptions] = useState([]);
-  const [groupOptions, setGroupOptions] = useState([]);
-  const [examinationOptions, setExaminationOptions] = useState([]);
-  const [contextLoading, setContextLoading] = useState(true);
->>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [selectedViewStudent, setSelectedViewStudent] = useState(null);
@@ -110,8 +94,6 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
-<<<<<<< HEAD
-
     let active = true;
     const config = { params: { "api-version": RESULTS_API_VERSION } };
     Promise.allSettled([
@@ -165,35 +147,6 @@ export default function ResultsPage() {
       .finally(() => active && setFilterLoading((current) => ({ ...current, exams: false })));
     return () => { active = false; };
   }, [filterOptions.groups, filters.board, filters.group, filters.level, filters.year]);
-=======
-    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
-      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
-        if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
-        if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
-        if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));
-        if (groupsResult.status === "fulfilled") setGroupOptions(groupsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
-        if (examinationsResult.status === "fulfilled") setExaminationOptions(examinationsResult.value.filter((item) => item.status !== "Inactive").map((item) => ({ id: String(item.examinationId ?? item.examId ?? item.id), name: item.examName ?? item.name })));
-        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult].find((result) => result.status === "rejected");
-        if (failed) setToast(getApiErrorMessage(failed.reason));
-      })
-      .finally(() => setContextLoading(false));
-    getResults({ PageNumber: 1, PageSize: 100 })
-      .then(setScopeResults)
-      .catch((error) => setToast(getApiErrorMessage(error)));
-  }, []);
-
-  const uniqueScopes = (records, idKey, nameKey) =>
-    [...new Map(records.filter((record) => record[idKey] && record[nameKey]).map((record) => [record[idKey], { id: record[idKey], name: record[nameKey] }])).values()];
-  const availableBoards = boardOptions;
-  // Academic years and levels are independent reference data. Do not hide them
-  // just because a group has not yet been returned for the selected context.
-  const availableYears = filters.board ? yearOptions : [];
-  const availableLevels = filters.year ? levelOptions : [];
-  const contextualGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year && (!group.academicLevelId || String(group.academicLevelId) === filters.level));
-  const boardYearGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year);
-  const availableGroups = filters.level ? (contextualGroups.length ? contextualGroups : boardYearGroups.length ? boardYearGroups : groupOptions) : [];
-  const availableExams = filters.group ? examinationOptions : [];
->>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
@@ -250,36 +203,14 @@ export default function ResultsPage() {
         publishDate: new Date().toISOString(),
       });
 
-<<<<<<< HEAD
-
       const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
       setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
       setResultsGenerated(true);
-
-=======
-      const [fetchedData, failedData] = await Promise.all([
-        getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
-        getFailedStudents(),
-      ]);
-
-      if (Array.isArray(fetchedData) && fetchedData.length > 0) {
-        setResultsData(fetchedData);
-      } else {
-        setResultsData([]);
-      }
-
-      setFailedResults(failedData);
->>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
       setResultsData([]);
-<<<<<<< HEAD
-
       setResultsGenerated(false);
-
-=======
->>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
     } finally {
       setPageStudentResults(1);
       setPageRankResults(1);
@@ -632,7 +563,6 @@ export default function ResultsPage() {
 
       <div className="results-page">
 
-<<<<<<< HEAD
       {/* 1. Sequential Filter Card */}
       <div className="cms-card results-context-card">
         <div className="cms-card-body" style={{ padding: "12px 16px" }}>
@@ -699,119 +629,11 @@ Choose the academic context sequentially before reviewing faculty submissions.
               {!isAllFiltersSelected
                 ? "Select all required filter fields in order (Board → Academic Year → Academic Level → Group → Examination) to unlock evaluation data."
                 : "All filter fields selected. Click 'Generate Data' to display evaluation statistics and student results table."}
-=======
-        {/* 1. Sequential Filter Card */}
-        <div className="cms-card results-context-card">
-          <div className="cms-card-body" style={{ padding: "12px 16px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 className="cms-card-title results-context-heading">Academic Context</h3>
-              <button
-                type="button"
-                className="cms-btn cms-btn-primary"
-                disabled={!isAllFiltersSelected || loading}
-                onClick={handleProcessResults}
-              >
-                {loading ? "Generating..." : "Generate Data"}
-              </button>
-            </div>
-            <p className="cms-subtitle results-context-description">
-              Choose the academic context sequentially before reviewing faculty submissions.
->>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
             </p>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
-              <div className="cms-field-group">
-                <label className="cms-label">Board <span className="results-required-mark">*</span></label>
-                <select
-                  className="cms-select"
-                  disabled={contextLoading}
-                  value={filters.board}
-                  onChange={(e) => handleFilterChange("board", e.target.value)}
-                >
-                  <option value="">Select Board</option>
-
-                  {availableBoards?.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="cms-field-group">
-                <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
-                <select
-                  className="cms-select"
-                  disabled={contextLoading || !filters.board}
-                  value={filters.year}
-                  onChange={(e) => handleFilterChange("year", e.target.value)}
-                >
-                  <option value="">Select Year</option>
-
-                  {availableYears?.map((y) => (
-                    <option key={y.id} value={y.id}>
-                      {y.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="cms-field-group">
-                <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
-                <select
-                  className="cms-select"
-                  disabled={contextLoading || !filters.year}
-                  value={filters.level}
-                  onChange={(e) => handleFilterChange("level", e.target.value)}
-                >
-                  <option value="">Select Level</option>
-
-                  {availableLevels?.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="cms-field-group">
-                <label className="cms-label">Group <span className="results-required-mark">*</span></label>
-                <select
-                  className="cms-select"
-                  disabled={contextLoading || !filters.level}
-                  value={filters.group}
-                  onChange={(e) => handleFilterChange("group", e.target.value)}
-                >
-                  <option value="">Select Group</option>
-
-                  {availableGroups?.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="cms-field-group">
-                <label className="cms-label">Examination <span className="results-required-mark">*</span></label>
-                <select
-                  className="cms-select"
-                  disabled={!filters.group || filterLoading.exams}
-                  value={filters.exam}
-                  onChange={(e) => handleFilterChange("exam", e.target.value)}
-                >
-                  <option value="">Select Exam</option>
-
-                  {availableExams?.map((ex) => (
-                    <option key={ex.id} value={ex.id}>
-                      {ex.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
           </div>
         </div>
+      )}
 
         {/* 2. Instructional Message */}
         {!resultsGenerated && !selectedViewStudent && viewMode === "table" && (

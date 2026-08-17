@@ -636,7 +636,7 @@ export default function MarksEntryPage() {
               disabled={!isAllFiltersSelected}
               onClick={handleFetchData}
             >
-              Fetch Evaluation Data
+              Check Evaluation Data
             </button>
           </div>
 

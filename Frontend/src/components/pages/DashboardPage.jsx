@@ -13,9 +13,7 @@ const dashboardApi = {
   admissionTrend: "/api/v1/dashboard/admission-trend",
 };
 const SECONDARY_REQUESTS = [
-  ["admissions", apiEndpoints.reports.admissions], ["strength", apiEndpoints.reports.studentStrength],
-  ["attendance", apiEndpoints.reports.attendance],
-  ["fees", apiEndpoints.reports.feeCollection], ["dues", apiEndpoints.reports.feeOutstanding],
+  ["strength", apiEndpoints.reports.studentStrength],
   ["exams", apiEndpoints.reports.examinations],
   ["pass", apiEndpoints.reports.passPercentage],
   ["groups", apiEndpoints.reports.groups],
@@ -35,6 +33,25 @@ function readDashboardCache() {
   } catch {
     return null;
   }
+}
+
+function localCalendarDate() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const apiDate = `${year}-${month}-${day}`;
+  return {
+    apiDate,
+    displayDate: new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(date),
+    fromDate: `${apiDate}T00:00:00`,
+    toDate: `${apiDate}T23:59:59`,
+  };
+}
+
+function dateSafeDashboardData(cachedData, today) {
+  if (!cachedData || cachedData.attendanceDate === today) return cachedData ?? {};
+  return { ...cachedData, attendance: null, attendanceDate: today };
 }
 const COLORS = ["#1d4ed8", "#60a5fa", "#6d28d9", "#0f9d58", "#f59e0b", "#ef6675"];
 
@@ -124,11 +141,6 @@ function activeAcademicYearInfo(summary, academicYears) {
   return { id, name: name ? String(name) : null };
 }
 
-function label(item) {
-  const value = read(item, "month", "Month", "date", "Date", "period", "Period", "label", "Label", "name", "Name");
-  return value === undefined ? "" : String(value).slice(0, 10);
-}
-
 function findArray(payload, preferredKeys) {
   const wanted = new Set(preferredKeys.map((key) => key.toLowerCase()));
   const queue = [unwrap(payload)];
@@ -204,6 +216,23 @@ function academicYearAdmissionTotal(payload, normalizedTrend) {
   return normalizedTrend.length ? normalizedTrend.reduce((sum, item) => sum + item.admissions, 0) : undefined;
 }
 
+function dailyAttendanceSummary(payload) {
+  const value = unwrap(payload);
+  const total = number(value, "totalStudents", "TotalStudents", "total", "Total");
+  const present = number(value, "present", "Present", "presentCount", "PresentCount");
+  const absent = number(value, "absent", "Absent", "absentCount", "AbsentCount");
+  const backendPercentage = number(value, "percentage", "Percentage", "attendancePercentage", "AttendancePercentage");
+  const percentage = backendPercentage ?? (total > 0 && present !== undefined ? present / total * 100 : undefined);
+  const hasData = [total, present, absent, backendPercentage].some((item) => item !== undefined);
+  return { total, present, absent, percentage, hasData };
+}
+
+function attendanceResponseMatchesDate(payload, requestedDate) {
+  const value = unwrap(payload);
+  const responseDate = read(value, "attendanceDate", "AttendanceDate", "date", "Date", "fromDate", "FromDate");
+  return responseDate === undefined || String(responseDate).slice(0, 10) === requestedDate;
+}
+
 function formatValue(value, type) {
   if (value === undefined) return "—";
   if (type === "currency") return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", notation: "compact", maximumFractionDigits: 2 }).format(value);
@@ -215,20 +244,23 @@ function Empty({ text = "No data available" }) { return <div className="dashboar
 
 export default function DashboardPage() {
   const initialCache = useMemo(readDashboardCache, []);
-  const [data, setData] = useState(() => initialCache?.data ?? {});
+  const initialDate = useMemo(localCalendarDate, []);
+  const initialData = useMemo(() => dateSafeDashboardData(initialCache?.data, initialDate.apiDate), [initialCache, initialDate.apiDate]);
+  const [data, setData] = useState(initialData);
   const [failures, setFailures] = useState({});
   const [loading, setLoading] = useState(() => !initialCache);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(() => initialCache ? new Date(initialCache.savedAt) : null);
   const mounted = useRef(true);
   const requestInFlight = useRef(false);
-  const dataRef = useRef(initialCache?.data ?? {});
+  const dataRef = useRef(initialData);
 
   const loadData = useCallback(async ({ initial = false } = {}) => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
     if (!initial) setRefreshing(true);
     try {
+      const attendanceDay = localCalendarDate();
       const succeeded = {};
       const errors = {};
       const requestConfig = { params: { "api-version": DASHBOARD_API_VERSION }, timeout: REQUEST_TIMEOUT };
@@ -264,17 +296,34 @@ export default function DashboardPage() {
         return true;
       });
       const secondaryPromise = Promise.allSettled(secondaryRequests.map(([, endpoint]) => apiClient.get(endpoint, requestConfig)));
+      const attendancePromise = Promise.allSettled([apiClient.post(apiEndpoints.attendance.summary, {
+        academicYearId: academicYear.id ?? undefined,
+        fromDate: attendanceDay.fromDate,
+        toDate: attendanceDay.toDate,
+      }, { timeout: REQUEST_TIMEOUT })]);
       const trendPromise = academicYear.id
         ? Promise.allSettled([apiClient.get(dashboardApi.admissionTrend, {
           params: { academicYearId: academicYear.id, "api-version": DASHBOARD_API_VERSION }, timeout: REQUEST_TIMEOUT,
         })])
         : Promise.resolve([]);
-      const [secondaryResults, trendResults] = await Promise.all([secondaryPromise, trendPromise]);
+      const [secondaryResults, attendanceResults, trendResults] = await Promise.all([secondaryPromise, attendancePromise, trendPromise]);
       secondaryResults.forEach((result, index) => {
         const [key] = secondaryRequests[index];
         if (result.status === "fulfilled") succeeded[key] = result.value.data;
         else errors[key] = getApiErrorMessage(result.reason);
       });
+      if (attendanceResults[0].status === "fulfilled" && attendanceResponseMatchesDate(attendanceResults[0].value.data, attendanceDay.apiDate)) {
+        succeeded.attendance = attendanceResults[0].value.data;
+        succeeded.attendanceDate = attendanceDay.apiDate;
+      } else {
+        if (dataRef.current.attendanceDate !== attendanceDay.apiDate) {
+          succeeded.attendance = null;
+          succeeded.attendanceDate = attendanceDay.apiDate;
+        }
+        errors.attendance = attendanceResults[0].status === "fulfilled"
+          ? "Attendance API returned data for a different date."
+          : getApiErrorMessage(attendanceResults[0].reason);
+      }
       const previousAcademicYearId = dataRef.current.activeAcademicYear?.id;
       const academicYearChanged = previousAcademicYearId && previousAcademicYearId !== academicYear.id;
       if (!academicYear.id) {
@@ -326,20 +375,19 @@ export default function DashboardPage() {
       ?? academicYearAdmissionTotal(data.admissionTrend, admissionTrend)
     : undefined;
   const admissionsLabel = activeAcademicYear?.name ? `Admissions (${activeAcademicYear.name})` : "Admissions";
+  const currentAttendanceDay = localCalendarDate();
+  const attendanceForToday = data.attendanceDate === currentAttendanceDay.apiDate
+    ? dailyAttendanceSummary(data.attendance)
+    : dailyAttendanceSummary(null);
   const kpis = useMemo(() => [
     { label: "Total Students", value: firstMetric(data, ["summary", "strength"], ["totalStudents", "studentStrength", "activeStudents"]), icon: Users, tone: "blue" },
     { label: "Faculty Members", value: firstMetric(data, ["summary"], ["totalFaculty", "facultyCount", "activeFaculty"]) ?? arrayCount(data.faculty), icon: GraduationCap, tone: "violet" },
-    { label: "Today's Attendance", value: firstMetric(data, ["summary", "attendance"], ["attendancePercentage", "averageAttendance", "attendanceRate", "percentage"]), icon: CalendarCheck, tone: "green", type: "percent" },
+    { label: "Today's Attendance", value: attendanceForToday.percentage, icon: CalendarCheck, tone: "green", type: "percent" },
     { label: admissionsLabel, value: academicYearAdmissions, icon: TrendingUp, tone: "blue" },
     { label: "Upcoming Exams", value: firstMetric(data, ["summary", "exams"], ["upcomingExams", "upcomingExaminations", "examinationCount"]) ?? arrayCount(data.exams), icon: CalendarClock, tone: "violet" },
     { label: "Pass Percentage", value: firstMetric(data, ["summary", "pass"], ["passPercentage", "passRate", "percentage"]), icon: BookOpen, tone: "green", type: "percent" },
-  ], [academicYearAdmissions, admissionsLabel, data]);
+  ], [academicYearAdmissions, admissionsLabel, attendanceForToday.percentage, data]);
   const groupDistribution = normalizeGroups(data);
-  const attendanceTrend = rows(data.attendance, ["attendanceTrend", "AttendanceTrend", "trend", "Trend"]).map((item) => ({ period: label(item), attendance: number(item, "attendancePercentage", "AttendancePercentage", "attendance", "Attendance", "percentage", "Percentage"), present: number(item, "presentPercentage", "PresentPercentage", "present", "Present"), absent: number(item, "absentPercentage", "AbsentPercentage", "absent", "Absent") })).filter((item) => item.period);
-  const feeRows = rows(data.fees, ["monthlyCollection", "MonthlyCollection", "trend", "Trend"]);
-  const dueRows = rows(data.dues, ["monthlyOutstanding", "MonthlyOutstanding", "trend", "Trend"]);
-  const feeTrend = [...new Set([...feeRows.map(label), ...dueRows.map(label)].filter(Boolean))].map((period) => ({ period, collected: number(feeRows.find((item) => label(item) === period), "collected", "Collected", "collectedAmount", "CollectedAmount", "amount", "Amount"), due: number(dueRows.find((item) => label(item) === period), "outstanding", "Outstanding", "outstandingAmount", "OutstandingAmount", "due", "Due", "amount", "Amount") }));
-  const recentAdmissions = rows(data.admissions, ["recentAdmissions", "RecentAdmissions", "admissions", "Admissions"]).map((item, index) => ({ id: read(item, "studentId", "StudentId", "admissionId", "AdmissionId", "id", "Id") ?? index, admissionNo: read(item, "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo") ?? "—", name: read(item, "studentName", "StudentName", "name", "Name", "fullName", "FullName") ?? "—", group: read(item, "groupName", "GroupName", "group", "Group") ?? "—", section: read(item, "sectionName", "SectionName", "section", "Section") ?? "—", date: read(item, "admissionDate", "AdmissionDate", "date", "Date"), status: read(item, "status", "Status") ?? "—" })).filter((item) => item.name !== "—").slice(0, 5);
   const exams = rows(data.exams, ["examinations", "Examinations", "upcomingExams", "UpcomingExams"]).map((item, index) => ({ id: read(item, "examinationId", "ExaminationId", "id", "Id") ?? index, subject: read(item, "subjectName", "SubjectName", "subject", "Subject", "examName", "ExamName") ?? "—", date: read(item, "examDate", "ExamDate", "date", "Date"), time: read(item, "startTime", "StartTime", "time", "Time") ?? "—", hall: read(item, "hallName", "HallName", "roomName", "RoomName", "hall", "Hall") ?? "—", invigilator: read(item, "invigilatorName", "InvigilatorName", "facultyName", "FacultyName") ?? "—", status: read(item, "status", "Status") ?? "Scheduled" })).filter((item) => { const date = new Date(item.date); return !item.date || Number.isNaN(date.getTime()) || date >= new Date(); }).slice(0, 5);
   const workload = rows(data.workload, ["facultyWorkload", "FacultyWorkload", "workload", "Workload"]).map((item) => ({ name: String(read(item, "facultyName", "FacultyName", "name", "Name") ?? ""), hours: number(item, "assignedHours", "AssignedHours", "weeklyHours", "WeeklyHours", "hours", "Hours") })).filter((item) => item.name && item.hours !== undefined).slice(0, 8);
   const activities = rows(data.audit, ["auditLogs", "AuditLogs", "logs", "Logs"]).map((item, index) => ({ id: read(item, "auditLogId", "AuditLogId", "id", "Id") ?? index, user: read(item, "userName", "UserName", "performedBy", "PerformedBy", "createdBy", "CreatedBy") ?? "—", action: read(item, "action", "Action", "actionType", "ActionType") ?? "—", module: read(item, "module", "Module", "moduleName", "ModuleName") ?? "—", date: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "dateTime", "DateTime") })).slice(0, 5);
@@ -351,15 +399,13 @@ export default function DashboardPage() {
     {loading ? <div className="cms-card dashboard-loader"><Loader label="Loading dashboard..." /></div> : <>
       {Object.keys(failures).length ? <div className="dashboard-warning">Some dashboard sources are unavailable. Successfully loaded widgets remain available.</div> : null}
       <div className="dashboard-kpi-grid">{kpis.map(({ label: name, value, icon: Icon, tone, type }) => <article className="cms-stat" key={name}><span className={`cms-stat-icon tone-${tone}`}><Icon size={20} /></span><div><div className="cms-stat-label">{name}</div><div className="cms-stat-value">{formatValue(value, type)}</div></div></article>)}</div>
-      <div className="dashboard-grid dashboard-grid-3">
+      <div className="dashboard-grid dashboard-grid-2">
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>{admissionsLabel}</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ bottom: 28 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" interval={0} angle={-30} textAnchor="end" height={58} /><YAxis allowDecimals={false} tickFormatter={(value) => Math.round(value)} /><Tooltip labelFormatter={(value) => value} formatter={(value, name) => [Number(value), name === "admissions" ? "Admissions" : "Applications"]} /><Legend /><Area dataKey="admissions" stroke="#1d4ed8" fill="#dbeafe" />{hasApplications ? <Area dataKey="applications" stroke="#6d28d9" fillOpacity={0} /> : null}</AreaChart></ResponsiveContainer>, admissionTrend.length > 0)}</section>
         <section className="cms-card dashboard-widget dashboard-group-card"><div className="cms-card-head"><h2>Group Distribution</h2></div>{groupDistribution.length ? <div className="dashboard-group-body"><div className="dashboard-group-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2} isAnimationActive={false}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [new Intl.NumberFormat("en-IN").format(value), "Students"]} /></PieChart></ResponsiveContainer><div className="dashboard-group-total"><strong>{new Intl.NumberFormat("en-IN").format(groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-legend">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ background: COLORS[index % COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{new Intl.NumberFormat("en-IN").format(item.value)}</strong><em>{groupTotal > 0 ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0.0%"}</em></div>)}</div></div> : <Empty />}</section>
-        <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Student Attendance</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><AreaChart data={attendanceTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis /><Tooltip /><Legend /><Area dataKey="attendance" stroke="#0f9d58" fill="#dcfce7" /><Area dataKey="absent" stroke="#ef6675" fillOpacity={0} /></AreaChart></ResponsiveContainer>, attendanceTrend.length > 0)}</section>
-        <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Fee Collection vs Due</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><BarChart data={feeTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis /><Tooltip /><Legend /><Bar dataKey="collected" fill="#1d4ed8" /><Bar dataKey="due" fill="#cbd5e1" /></BarChart></ResponsiveContainer>, feeTrend.length > 0)}</section>
+        <section className="cms-card dashboard-widget dashboard-attendance-card"><div className="cms-card-head"><h2>Student Attendance ({currentAttendanceDay.displayDate})</h2></div>{attendanceForToday.hasData ? <div className="dashboard-attendance-daily">{attendanceForToday.percentage !== undefined ? <div className="dashboard-attendance-rate"><strong>{formatValue(attendanceForToday.percentage, "percent")}</strong><span>Attendance</span></div> : null}<div className="dashboard-attendance-metrics">{[["Total", attendanceForToday.total], ["Present", attendanceForToday.present], ["Absent", attendanceForToday.absent]].filter(([, value]) => value !== undefined).map(([name, value]) => <div key={name}><span>{name}</span><strong>{new Intl.NumberFormat("en-IN").format(value)}</strong></div>)}</div></div> : <Empty text={failures.attendance ? "Unable to load today's attendance." : "No attendance marked for today."} />}</section>
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Faculty Workload</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><BarChart data={workload} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={85} /><Tooltip /><Bar dataKey="hours" fill="#6d28d9" /></BarChart></ResponsiveContainer>, workload.length > 0)}</section>
       </div>
       <div className="dashboard-grid dashboard-grid-2">
-        <section className="cms-card"><div className="cms-card-head"><h2>Recent Admissions</h2><Link to="/dashboard/students" className="cms-btn cms-btn-ghost">View all</Link></div><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>Admission No.</th><th>Student</th><th>Group</th><th>Section</th><th>Admission Date</th><th>Status</th></tr></thead><tbody>{recentAdmissions.length ? recentAdmissions.map((item) => <tr key={item.id}><td className="cms-strong">{item.admissionNo}</td><td>{item.name}</td><td>{item.group}</td><td>{item.section}</td><td>{item.date ? new Date(item.date).toLocaleDateString("en-IN") : "—"}</td><td><StatusBadge value={item.status} /></td></tr>) : <tr><td colSpan={6}><Empty /></td></tr>}</tbody></table></div></section>
         <section className="cms-card"><div className="cms-card-head"><h2><CalendarClock size={15} /> Upcoming Examinations</h2><Link to="/dashboard/examinations" className="cms-btn cms-btn-ghost">Manage</Link></div><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>Subject</th><th>Date</th><th>Time</th><th>Hall</th><th>Invigilator</th><th>Status</th></tr></thead><tbody>{exams.length ? exams.map((item) => <tr key={item.id}><td className="cms-strong">{item.subject}</td><td>{item.date ? new Date(item.date).toLocaleDateString("en-IN") : "—"}</td><td>{item.time}</td><td>{item.hall}</td><td>{item.invigilator}</td><td><StatusBadge value={item.status} /></td></tr>) : <tr><td colSpan={6}><Empty /></td></tr>}</tbody></table></div></section>
         <section className="cms-card"><div className="cms-card-head"><h2>Recent Activity</h2><Link to="/dashboard/reports" className="cms-btn cms-btn-ghost">View Audit Logs</Link></div><div className="dashboard-activity">{activities.length ? activities.map((item) => <div key={item.id}><span className="dashboard-activity-icon"><Activity size={15} /></span><p><strong>{item.user}</strong> {item.action} · {item.module}<small>{item.date ? new Date(item.date).toLocaleString("en-IN") : "—"}</small></p></div>) : <Empty />}</div></section>
       </div>

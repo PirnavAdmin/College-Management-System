@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "@/layouts/AuthLayout.jsx";
 import { Field, useForm } from "@/components/common/Ui.jsx";
 import { loginUser } from "@/features/auth/services/authService.js";
-import { getApiErrorMessage } from "@/api/axios.js";
 
 const fields = [
   { name: "email", label: "Email or Mobile", type: "text", required: true, placeholder: "Admin@CMS.com", full: true },
@@ -16,7 +15,7 @@ export default function Login() {
   const { values, errors, setValue, validate } = useForm(fields, {});
   const [busy, setBusy] = useState(false);
   const [remember, setRemember] = useState(false);
-  const [formError, setFormError] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,7 +33,7 @@ export default function Login() {
 
   const submit = async (e) => {
     e.preventDefault();
-    setFormError("");
+    setError("");
     if (!validate()) return;
 
     try {
@@ -48,7 +47,7 @@ export default function Login() {
     try {
       const result = await loginUser({ emailOrMobile: String(values.email || "").trim(), password: values.password });
       if (!result.token) {
-        setFormError("Login succeeded but token was not returned by the server.");
+        setError("Unable to sign in right now. Please try again.");
         return;
       }
       localStorage.setItem("token", result.token);
@@ -56,7 +55,17 @@ export default function Login() {
       localStorage.setItem("role", result.user.role);
       navigate(result.user.isAdmin ? "/dashboard" : "/student-dashboard", { replace: true });
     } catch (error) {
-      setFormError(getApiErrorMessage(error));
+      console.error("Login failed:", error);
+
+      if (error.response?.status === 401) {
+        setError("Invalid username or password. Please try again.");
+      } else if ([500, 502, 503, 504].includes(error.response?.status)) {
+        setError("Unable to sign in right now. Please try again in a few moments.");
+      } else if (!error.response) {
+        setError("Unable to connect to the service. Please check your internet connection.");
+      } else {
+        setError("Unable to sign in right now. Please try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -65,7 +74,7 @@ export default function Login() {
   return (
     <AuthLayout title="Welcome back" subtitle="Sign in to the Pirnav Junior College management system.">
       <form onSubmit={submit} noValidate>
-        {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
+        {error ? <div className="cms-alert-error" role="alert">{error}</div> : null}
         <div className="cms-form-grid">
           {fields.map((f) => (
             <Field key={f.name} field={f} value={values[f.name]} error={errors[f.name]} onChange={setValue} />

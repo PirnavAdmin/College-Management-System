@@ -662,6 +662,71 @@ export default function AssignmentsMaterialsPage() {
   );
 }
 
+function AssignmentsTable({
+  columns: tableColumns,
+  rows,
+  loading,
+  searchTerm,
+  selectedGroup,
+  selectedFaculty,
+  groupOptions,
+  facultyOptions,
+  onSearchChange,
+  onGroupChange,
+  onFacultyChange,
+  onClearFilters,
+  addLabel,
+  onAdd,
+  onEdit,
+  onDelete,
+  onView,
+}) {
+  const hasFilters = Boolean(searchTerm || selectedGroup || selectedFaculty);
+
+  return (
+    <div className="cms-card">
+      <div className="cms-toolbar assignment-toolbar">
+        <div className="cms-search">
+          <Search size={16} />
+          <input value={searchTerm} placeholder="Search assignments..." onChange={(event) => onSearchChange(event.target.value)} />
+        </div>
+        <select className="assignment-filter-select" value={selectedGroup} onChange={(event) => onGroupChange(event.target.value)} aria-label="Filter by group">
+          <option value="">All groups</option>
+          {groupOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <select className="assignment-filter-select" value={selectedFaculty} onChange={(event) => onFacultyChange(event.target.value)} aria-label="Filter by faculty">
+          <option value="">All faculty</option>
+          {facultyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        {hasFilters ? <button type="button" className="cms-btn cms-btn-ghost assignment-toolbar-button" onClick={onClearFilters}>Clear</button> : null}
+        <div className="cms-toolbar-right">
+          <button type="button" className="cms-btn cms-btn-ghost" onClick={() => window.print()}><Download size={15} /> Export</button>
+          <button type="button" className="cms-btn cms-btn-primary" onClick={onAdd}><Plus size={16} /> {addLabel}</button>
+        </div>
+      </div>
+      {loading ? <Loader label="Loading assignments..." /> : (
+        <div className="cms-table-wrap">
+          <table className="cms-table">
+            <thead><tr>{tableColumns.map((column) => <th key={column.key}>{column.label}</th>)}<th style={{ textAlign: "right" }}>Actions</th></tr></thead>
+            <tbody>
+              {rows.length ? rows.map((row) => (
+                <tr key={row.id} className="assignment-row-clickable" onClick={() => onView(row)}>
+                  {tableColumns.map((column) => <td key={column.key} className={column.strong ? "cms-strong" : ""}>{row[column.key] ?? "-"}</td>)}
+                  <td><div className="cms-actions" style={{ justifyContent: "flex-end" }}>
+                    <button type="button" className="cms-action-btn view" title="View" aria-label="View assignment" onClick={(event) => { event.stopPropagation(); onView(row); }}><Eye size={15} /></button>
+                    <button type="button" className="cms-action-btn edit" title="Edit" aria-label="Edit assignment" onClick={(event) => { event.stopPropagation(); onEdit(row); }}><Pencil size={15} /></button>
+                    <button type="button" className="cms-action-btn danger" title="Delete" aria-label="Delete assignment" onClick={(event) => { event.stopPropagation(); onDelete(row); }}><Trash2 size={15} /></button>
+                  </div></td>
+                </tr>
+              )) : <tr><td colSpan={tableColumns.length + 1}><div className="cms-empty">No assignments found.</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TextField({ name, label, value, error, onChange, type = "text", required, min }) {
   return (
     <div className={`cms-field ${error ? "has-error" : ""}`}>

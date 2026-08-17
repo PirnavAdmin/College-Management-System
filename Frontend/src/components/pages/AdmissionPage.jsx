@@ -340,8 +340,11 @@ const stepIcons = {
   Admission: ClipboardList,
   "Admission Details": ClipboardList,
   "Personal Details": User,
+  "Student Details": User,
   "Contact Details": MapPin,
   "Parent / Guardian": Users,
+  "Parent Details": Users,
+  Address: MapPin,
   "Previous School": School,
   "Academic Details": GraduationCap,
   Documents: FileCheck,
@@ -1259,14 +1262,11 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     const container = stepNavRef.current;
-    const activeButton = stepButtonRefs.current[step];
-    if (!container || !activeButton) return undefined;
+    const activeStep = stepButtonRefs.current[step];
+    if (!container || !activeStep) return undefined;
 
     const frame = window.requestAnimationFrame(() => {
-      const containerWidth = container.clientWidth;
-      const buttonLeft = activeButton.offsetLeft;
-      const buttonWidth = activeButton.offsetWidth;
-      const targetLeft = buttonLeft - (containerWidth / 2) + (buttonWidth / 2);
+      const targetLeft = activeStep.offsetLeft - ((container.clientWidth - activeStep.offsetWidth) / 2);
       container.scrollTo({ left: Math.max(targetLeft, 0), behavior: "smooth" });
     });
 
@@ -2090,7 +2090,17 @@ export default function AdmissionPage() {
         </button>
       )}
     >
-      <div className="cms-steps" ref={stepNavRef}>
+      <div
+        ref={stepNavRef}
+        className="cms-steps"
+        style={{
+          display: "flex",
+          flexWrap: "nowrap",
+          overflowX: "auto",
+          overflowY: "hidden",
+          whiteSpace: "nowrap",
+        }}
+      >
         {allSteps.map((s, i) => {
           const StepIcon = stepIcons[s.title] || BookOpen;
           return (
@@ -2100,8 +2110,14 @@ export default function AdmissionPage() {
               type="button"
               className={`cms-step ${i === step ? "is-active" : ""} ${i < step ? "is-done" : ""}`}
               onClick={() => goToStep(i)}
+              style={{ flex: "0 0 auto", whiteSpace: "nowrap" }}
             >
-              <span className="cms-step-num"><StepIcon size={13} strokeWidth={2.2} /></span>
+              <span
+                className="cms-step-num"
+                style={{ background: "#fff", color: "currentColor", boxShadow: "inset 0 0 0 1px currentColor" }}
+              >
+                <StepIcon size={13} strokeWidth={2.2} aria-hidden="true" />
+              </span>
               <span className="cms-step-label">{s.title}</span>
             </button>
           );

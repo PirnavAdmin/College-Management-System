@@ -4,6 +4,18 @@ import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+  getBoards,
+  getGroups,
+  getStudentResult,
+>>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
+>>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
   getRankList,
   getResultAnalysis,
   downloadResultsExcel,
@@ -84,6 +96,21 @@ export default function ResultsPage() {
   const [resultsData, setResultsData] = useState([]);
   const [filterOptions, setFilterOptions] = useState({ boards: [], years: [], levels: [], groups: [], exams: [] });
   const [filterLoading, setFilterLoading] = useState({ boards: true, years: true, levels: true, groups: false, exams: false });
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+=======
+  const [scopeResults, setScopeResults] = useState([]);
+  const [boardOptions, setBoardOptions] = useState([]);
+  const [yearOptions, setYearOptions] = useState([]);
+  const [levelOptions, setLevelOptions] = useState([]);
+  const [groupOptions, setGroupOptions] = useState([]);
+  const [examinationOptions, setExaminationOptions] = useState([]);
+  const [contextLoading, setContextLoading] = useState(true);
+>>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
+>>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
   const [selectedViewStudent, setSelectedViewStudent] = useState(null);
@@ -94,6 +121,14 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
+>>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
     let active = true;
     const config = { params: { "api-version": RESULTS_API_VERSION } };
     Promise.allSettled([
@@ -147,6 +182,41 @@ export default function ResultsPage() {
       .finally(() => active && setFilterLoading((current) => ({ ...current, exams: false })));
     return () => { active = false; };
   }, [filterOptions.groups, filters.board, filters.group, filters.level, filters.year]);
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+=======
+=======
+    Promise.allSettled([getBoards(), getAcademicYears(), getAcademicLevels(), getGroups(), getExaminations()])
+      .then(([boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult]) => {
+        if (boardsResult.status === "fulfilled") setBoardOptions(boardsResult.value.filter((item) => item.status !== false && item.status !== "Inactive").map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name, code: item.boardCode })));
+        if (yearsResult.status === "fulfilled") setYearOptions(yearsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name })));
+        if (levelsResult.status === "fulfilled") setLevelOptions(levelsResult.value.map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.name })));
+        if (groupsResult.status === "fulfilled") setGroupOptions(groupsResult.value.filter((item) => item.isActive !== false && item.status !== "Inactive").map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name, boardId: item.boardId, academicYearId: item.academicYearId, academicLevelId: item.academicLevelId })));
+        if (examinationsResult.status === "fulfilled") setExaminationOptions(examinationsResult.value.filter((item) => item.status !== "Inactive").map((item) => ({ id: String(item.examinationId ?? item.examId ?? item.id), name: item.examName ?? item.name })));
+        const failed = [boardsResult, yearsResult, levelsResult, groupsResult, examinationsResult].find((result) => result.status === "rejected");
+        if (failed) setToast(getApiErrorMessage(failed.reason));
+      })
+      .finally(() => setContextLoading(false));
+    getResults({ PageNumber: 1, PageSize: 100 })
+      .then(setScopeResults)
+      .catch((error) => setToast(getApiErrorMessage(error)));
+  }, []);
+
+  const uniqueScopes = (records, idKey, nameKey) =>
+    [...new Map(records.filter((record) => record[idKey] && record[nameKey]).map((record) => [record[idKey], { id: record[idKey], name: record[nameKey] }])).values()];
+  const availableBoards = boardOptions;
+  // Academic years and levels are independent reference data. Do not hide them
+  // just because a group has not yet been returned for the selected context.
+  const availableYears = filters.board ? yearOptions : [];
+  const availableLevels = filters.year ? levelOptions : [];
+  const contextualGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year && (!group.academicLevelId || String(group.academicLevelId) === filters.level));
+  const boardYearGroups = groupOptions.filter((group) => String(group.boardId) === filters.board && String(group.academicYearId) === filters.year);
+  const availableGroups = filters.level ? (contextualGroups.length ? contextualGroups : boardYearGroups.length ? boardYearGroups : groupOptions) : [];
+  const availableExams = filters.group ? examinationOptions : [];
+>>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
+>>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
@@ -203,14 +273,56 @@ export default function ResultsPage() {
         publishDate: new Date().toISOString(),
       });
 
+<<<<<<< HEAD
       const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
       setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
       setResultsGenerated(true);
+=======
+<<<<<<< HEAD
+      const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
+      setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
+      setResultsGenerated(true);
+=======
+<<<<<<< HEAD
+
+      const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
+      setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
+      setResultsGenerated(true);
+
+=======
+      const [fetchedData, failedData] = await Promise.all([
+        getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
+        getFailedStudents(),
+      ]);
+
+      if (Array.isArray(fetchedData) && fetchedData.length > 0) {
+        setResultsData(fetchedData);
+      } else {
+        setResultsData([]);
+      }
+
+      setFailedResults(failedData);
+>>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
+>>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
       setResultsData([]);
+<<<<<<< HEAD
       setResultsGenerated(false);
+=======
+<<<<<<< HEAD
+      setResultsGenerated(false);
+=======
+<<<<<<< HEAD
+
+      setResultsGenerated(false);
+
+=======
+>>>>>>> 65bc6450d2a54d3b9cfa86a52e3df0cb19eaeea4
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
+>>>>>>> 4e7fb7a236e4c4a7f8661518a90eaf6c9a1e801a
     } finally {
       setPageStudentResults(1);
       setPageRankResults(1);
@@ -584,37 +696,95 @@ Choose the academic context sequentially before reviewing faculty submissions.
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             <div className="cms-field-group">
               <label className="cms-label">Board <span className="results-required-mark">*</span></label>
+<<<<<<< HEAD
+              <select
+                className="cms-select"
+                disabled={filterLoading.boards}
+                value={filters.board}
+                onChange={(e) => handleFilterChange("board", e.target.value)}
+              >
+                <option value="">Select Board</option>
+                {availableBoards.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+=======
               <select className="cms-select" disabled={filterLoading.boards} value={filters.board} onChange={(e) => handleFilterChange("board", e.target.value)}>
                 <option value="">Select Board</option>
                 {availableBoards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
               </select>
             </div>
             <div className="cms-field-group">
               <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
+<<<<<<< HEAD
+              <select
+                className="cms-select"
+                disabled={!filters.board || filterLoading.years}
+                value={filters.year}
+                onChange={(e) => handleFilterChange("year", e.target.value)}
+              >
+                <option value="">Select Year</option>
+                {availableYears.map((y) => (
+                    <option key={y.id} value={y.id}>{y.name}</option>
+                  ))}
+=======
               <select className="cms-select" disabled={!filters.board || filterLoading.years} value={filters.year} onChange={(e) => handleFilterChange("year", e.target.value)}>
                 <option value="">Select Year</option>
                 {availableYears.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
               </select>
             </div>
             <div className="cms-field-group">
               <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
+<<<<<<< HEAD
+              <select
+                className="cms-select"
+                disabled={!filters.year || filterLoading.levels}
+                value={filters.level}
+                onChange={(e) => handleFilterChange("level", e.target.value)}
+              >
+                <option value="">Select Level</option>
+                {availableLevels.map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+=======
               <select className="cms-select" disabled={!filters.year || filterLoading.levels} value={filters.level} onChange={(e) => handleFilterChange("level", e.target.value)}>
                 <option value="">Select Level</option>
                 {availableLevels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
               </select>
             </div>
             <div className="cms-field-group">
               <label className="cms-label">Group <span className="results-required-mark">*</span></label>
+<<<<<<< HEAD
+              <select
+                className="cms-select"
+                disabled={!filters.level || filterLoading.groups}
+                value={filters.group}
+                onChange={(e) => handleFilterChange("group", e.target.value)}
+              >
+                <option value="">Select Group</option>
+                {availableGroups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+=======
               <select className="cms-select" disabled={!filters.level || filterLoading.groups} value={filters.group} onChange={(e) => handleFilterChange("group", e.target.value)}>
                 <option value="">Select Group</option>
                 {availableGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
               </select>
             </div>
             <div className="cms-field-group">
               <label className="cms-label">Examination <span className="results-required-mark">*</span></label>
               <select className="cms-select" disabled={!filters.group || filterLoading.exams} value={filters.exam} onChange={(e) => handleFilterChange("exam", e.target.value)}>
                 <option value="">Select Exam</option>
+<<<<<<< HEAD
+                {availableExams.map((ex) => (
+                    <option key={ex.id} value={ex.id}>{ex.name}</option>
+                  ))}
+=======
                 {availableExams.map((examination) => <option key={examination.id} value={examination.id}>{examination.name}</option>)}
+>>>>>>> 3b3581af184288b7a6fa74e060c4eb27c081ee6f
               </select>
             </div>
           </div>

@@ -144,11 +144,38 @@ const buildFallbackRowId = (raw, matchedStudent) => {
   return `certificate-${hash.toString(36)}`;
 };
 
+const normalizeApiDateValue = (value) => {
+  if (value === undefined || value === null) return "";
+  const raw = String(value).trim();
+  if (!raw || raw === "-") return "";
+  if (/^000[01]-\d{2}-\d{2}(?:T|\s|$)/.test(raw)) return "";
+
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      const parsed = new Date(`${year}-${month}-${day}T00:00:00Z`);
+      if (year !== "0000" && parsed.toISOString().slice(0, 10) === raw) return raw;
+      return "";
+    }
+
+  const slashMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
+      return normalizeApiDateValue(`${year}-${month}-${day}`);
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  const normalized = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
+  return normalized.toISOString().slice(0, 10);
+};
+
 const maybeIsoDate = (value) => {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toISOString().slice(0, 10);
+  const normalized = normalizeApiDateValue(value);
+  if (!normalized) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  return String(value);
 };
 
 const normalizeStudentRecord = (raw) => ({
@@ -196,7 +223,7 @@ const normalizeCertificate = (raw, studentLookup = fallbackStudents) => {
     type: pick(raw, ["certificateType", "CertificateType", "type", "Type"]) || "-",
     purpose: pick(raw, ["purpose", "Purpose"]) || "",
     requestDate: requestDate || todayIso(),
-    issue: issueDate || "-",
+    issue: issueDate || todayIso(),
     status,
     remarks: pick(raw, ["remarks", "Remarks", "comment", "Comment", "note", "Note"]) || "",
     generatedAt: maybeIsoDate(pick(raw, ["generatedAt", "GeneratedAt"])) || requestDate || "",
@@ -297,7 +324,7 @@ function getGenerationEndpoint(certificateType) {
   if (type.includes("conduct")) return CERTIFICATE_API.conduct;
   if (type.includes("fee")) return CERTIFICATE_API.fee;
   if (type.includes("transfer") || type === "tc" || type.includes("tc")) return CERTIFICATE_API.tc;
-  return CERTIFICATE_API.bonafide;
+  return CERTIFICATE_API.create;
 }
 
 function escapeHtml(value) {
@@ -935,13 +962,14 @@ export default function CertificatesPage() {
     setCreating(true);
     try {
       const endpoint = getGenerationEndpoint(type);
+      const normalizedRequestDate = normalizeApiDateValue(requestDate);
       const specializedPayload = withOptionalRemarks({
         admissionNo,
         studentId: Number(selectedStudent.id),
         certificateType: type,
         purpose,
-        requestDate,
-        issueDate: requestDate,
+        requestDate: normalizedRequestDate,
+        issueDate: normalizedRequestDate,
       }, remarks);
       const response = await apiClient.post(endpoint, specializedPayload);
       await upsertFromApiResponse(undefined, response.data);
@@ -1036,7 +1064,7 @@ export default function CertificatesPage() {
         admissionNo: String(row.admissionNo || findStudentByAdmission(row.admissionNo)?.admissionNo || "").trim(),
         certificateType: String(row.type || "").trim(),
         purpose: String(row.purpose || "").trim(),
-        requestDate: String(row.requestDate || todayIso()).trim(),
+        requestDate: normalizeApiDateValue(row.requestDate) || todayIso(),
       }, row.remarks));
       await upsertFromApiResponse(row.id, response.data);
       await reloadCurrentView();
@@ -1237,13 +1265,16 @@ export default function CertificatesPage() {
     if (savingEdit) return;
     setSavingEdit(true);
     try {
+      const certificateId = editRow.backendId ?? editRow.id;
       const payload = withOptionalRemarks({
+        certificateId,
         studentId: Number(selectedStudent.id),
         certificateType: editRow.type,
         purpose: normalizeText(editForm.purpose),
+        admissionNo: normalizeText(editForm.admissionNo),
       }, editForm.remarks);
-      const response = await apiClient.put(CERTIFICATE_API.admissionNo, payload);
-      await upsertFromApiResponse(editRow.id, response.data);
+      const response = await apiClient.put(`${CERTIFICATE_API.list}/admission-no`, payload);
+      await upsertFromApiResponse(certificateId, response.data);
       await reloadCurrentView();
       setToast(`Certificate ${editRow.number} updated`);
       closeEditDialog();

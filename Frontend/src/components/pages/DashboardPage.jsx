@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, AlertCircle, ArrowUpRight, BookOpen, CalendarCheck, CalendarClock, CircleDollarSign, GraduationCap, RefreshCw, TrendingUp, Users } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, CalendarCheck, CalendarClock, GraduationCap, RefreshCw, TrendingUp, Users } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -14,7 +14,7 @@ const dashboardApi = {
 };
 const SECONDARY_REQUESTS = [
   ["admissions", apiEndpoints.reports.admissions], ["strength", apiEndpoints.reports.studentStrength],
-  ["attendance", apiEndpoints.reports.attendance], ["facultyAttendance", apiEndpoints.reports.facultyAttendance],
+  ["attendance", apiEndpoints.reports.attendance],
   ["fees", apiEndpoints.reports.feeCollection], ["dues", apiEndpoints.reports.feeOutstanding],
   ["exams", apiEndpoints.reports.examinations],
   ["pass", apiEndpoints.reports.passPercentage],
@@ -25,7 +25,6 @@ const SECONDARY_REQUESTS = [
 const DASHBOARD_API_VERSION = "1.0";
 const DASHBOARD_CACHE_KEY = "cms-dashboard-cache-v2";
 const DASHBOARD_CACHE_TTL = 5 * 60 * 1000;
-const LIVE_REFRESH_INTERVAL = 60 * 1000;
 const REQUEST_TIMEOUT = 8000;
 
 function readDashboardCache() {
@@ -107,17 +106,22 @@ function arrayCount(payload, preferred = []) {
   return undefined;
 }
 
-function activeAcademicYearId(summary, academicYears) {
+function activeAcademicYearInfo(summary, academicYears) {
   const summaryNode = unwrap(summary);
   const summaryId = Number(read(summaryNode, "currentAcademicYearId", "CurrentAcademicYearId", "activeAcademicYearId", "ActiveAcademicYearId", "academicYearId", "AcademicYearId"));
-  if (Number.isInteger(summaryId) && summaryId > 0) return summaryId;
-  const activeYear = rows(academicYears, ["academicYears", "AcademicYears", "years", "Years"])
-    .find((item) => {
+  const summaryName = read(summaryNode, "currentAcademicYearName", "CurrentAcademicYearName", "activeAcademicYearName", "ActiveAcademicYearName", "academicYearName", "AcademicYearName", "yearName", "YearName");
+  const yearRows = rows(academicYears, ["academicYears", "AcademicYears", "years", "Years"]);
+  const idMatch = Number.isInteger(summaryId) && summaryId > 0
+    ? yearRows.find((item) => Number(read(item, "academicYearId", "AcademicYearId", "id", "Id")) === summaryId)
+    : null;
+  const activeYear = idMatch ?? yearRows.find((item) => {
       const marker = read(item, "isCurrent", "IsCurrent", "isActive", "IsActive", "current", "Current", "status", "Status");
       return marker === true || ["true", "active", "current"].includes(String(marker).toLowerCase());
     });
-  const id = Number(read(activeYear, "academicYearId", "AcademicYearId", "id", "Id"));
-  return Number.isInteger(id) && id > 0 ? id : null;
+  const rowId = Number(read(activeYear, "academicYearId", "AcademicYearId", "id", "Id"));
+  const id = Number.isInteger(summaryId) && summaryId > 0 ? summaryId : Number.isInteger(rowId) && rowId > 0 ? rowId : null;
+  const name = summaryName ?? read(activeYear, "academicYearName", "AcademicYearName", "name", "Name", "yearName", "YearName") ?? null;
+  return { id, name: name ? String(name) : null };
 }
 
 function label(item) {
@@ -154,6 +158,52 @@ function normalizeGroups(data) {
   return [];
 }
 
+function wholeCount(item, ...keys) {
+  const value = number(item, ...keys);
+  return value !== undefined && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+function normalizeAdmissionPeriod(item) {
+  const explicitYear = wholeCount(item, "year", "Year", "admissionYear", "AdmissionYear");
+  const explicitMonth = read(item, "month", "Month", "admissionMonth", "AdmissionMonth");
+  let sortDate;
+
+  if (explicitYear && explicitMonth !== undefined) {
+    const numericMonth = Number(explicitMonth);
+    if (Number.isInteger(numericMonth) && numericMonth >= 1 && numericMonth <= 12) {
+      sortDate = Date.UTC(explicitYear, numericMonth - 1, 1);
+    } else {
+      const parsedMonth = Date.parse(`${explicitMonth} 1, ${explicitYear}`);
+      if (!Number.isNaN(parsedMonth)) sortDate = Date.UTC(explicitYear, new Date(parsedMonth).getUTCMonth(), 1);
+    }
+  }
+
+  if (sortDate === undefined) {
+    const datedPeriod = read(item, "date", "Date", "monthYear", "MonthYear", "period", "Period");
+    if (datedPeriod instanceof Date || /(?:19|20)\d{2}/.test(String(datedPeriod ?? ""))) {
+      const parsedDate = new Date(datedPeriod);
+      if (!Number.isNaN(parsedDate.getTime())) sortDate = Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), 1);
+    }
+  }
+
+  if (sortDate === undefined) return null;
+  const admissions = wholeCount(item, "admissions", "Admissions", "admissionCount", "AdmissionCount", "confirmed", "Confirmed", "count", "Count");
+  if (admissions === undefined) return null;
+  return {
+    sortDate,
+    period: new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(sortDate),
+    admissions,
+    applications: wholeCount(item, "applications", "Applications", "applicationCount", "ApplicationCount", "applicationsReceived", "ApplicationsReceived"),
+  };
+}
+
+function academicYearAdmissionTotal(payload, normalizedTrend) {
+  const value = unwrap(payload);
+  const directTotal = wholeCount(value, "totalAdmissions", "TotalAdmissions", "academicYearAdmissions", "AcademicYearAdmissions", "admissionsTotal", "AdmissionsTotal");
+  if (directTotal !== undefined) return directTotal;
+  return normalizedTrend.length ? normalizedTrend.reduce((sum, item) => sum + item.admissions, 0) : undefined;
+}
+
 function formatValue(value, type) {
   if (value === undefined) return "—";
   if (type === "currency") return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", notation: "compact", maximumFractionDigits: 2 }).format(value);
@@ -172,7 +222,6 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState(() => initialCache ? new Date(initialCache.savedAt) : null);
   const mounted = useRef(true);
   const requestInFlight = useRef(false);
-  const lastUpdatedRef = useRef(initialCache?.savedAt ?? 0);
   const dataRef = useRef(initialCache?.data ?? {});
 
   const loadData = useCallback(async ({ initial = false } = {}) => {
@@ -195,18 +244,19 @@ export default function DashboardPage() {
       }
       else errors.summary = getApiErrorMessage(summaryResult[0].reason);
 
+      const summary = succeeded.summary ?? dataRef.current.summary;
       let academicYears;
-      let academicYearId = activeAcademicYearId(succeeded.summary ?? dataRef.current.summary);
-      if (!academicYearId) {
+      let academicYear = activeAcademicYearInfo(summary);
+      if (!academicYear.id || !academicYear.name) {
         const yearResult = await Promise.allSettled([apiClient.get(apiEndpoints.academicYears.getAll, requestConfig)]);
         if (yearResult[0].status === "fulfilled") {
           academicYears = yearResult[0].value.data;
           succeeded.academicYears = academicYears;
-          academicYearId = activeAcademicYearId(succeeded.summary ?? dataRef.current.summary, academicYears);
+          academicYear = activeAcademicYearInfo(summary, academicYears);
         } else errors.academicYears = getApiErrorMessage(yearResult[0].reason);
       }
+      succeeded.activeAcademicYear = academicYear;
 
-      const summary = succeeded.summary ?? dataRef.current.summary;
       const secondaryRequests = SECONDARY_REQUESTS.filter(([key]) => {
         if (key === "strength") return metric(summary, ["totalStudents", "studentStrength", "activeStudents"]) === undefined;
         if (key === "pass") return metric(summary, ["passPercentage", "passRate", "percentage"]) === undefined;
@@ -214,9 +264,9 @@ export default function DashboardPage() {
         return true;
       });
       const secondaryPromise = Promise.allSettled(secondaryRequests.map(([, endpoint]) => apiClient.get(endpoint, requestConfig)));
-      const trendPromise = academicYearId
+      const trendPromise = academicYear.id
         ? Promise.allSettled([apiClient.get(dashboardApi.admissionTrend, {
-          params: { academicYearId, "api-version": DASHBOARD_API_VERSION }, timeout: REQUEST_TIMEOUT,
+          params: { academicYearId: academicYear.id, "api-version": DASHBOARD_API_VERSION }, timeout: REQUEST_TIMEOUT,
         })])
         : Promise.resolve([]);
       const [secondaryResults, trendResults] = await Promise.all([secondaryPromise, trendPromise]);
@@ -225,16 +275,23 @@ export default function DashboardPage() {
         if (result.status === "fulfilled") succeeded[key] = result.value.data;
         else errors[key] = getApiErrorMessage(result.reason);
       });
-      if (!academicYearId) errors.admissionTrend = "No active Academic Year could be resolved.";
+      const previousAcademicYearId = dataRef.current.activeAcademicYear?.id;
+      const academicYearChanged = previousAcademicYearId && previousAcademicYearId !== academicYear.id;
+      if (!academicYear.id) {
+        succeeded.admissionTrend = null;
+        errors.admissionTrend = "No active Academic Year could be resolved.";
+      }
       else if (trendResults[0]?.status === "fulfilled") succeeded.admissionTrend = trendResults[0].value.data;
-      else errors.admissionTrend = getApiErrorMessage(trendResults[0]?.reason);
+      else {
+        if (academicYearChanged) succeeded.admissionTrend = null;
+        errors.admissionTrend = getApiErrorMessage(trendResults[0]?.reason);
+      }
 
       if (!mounted.current) return;
-      if (Object.keys(succeeded).some((key) => key !== "academicYears")) {
+      if (Object.keys(succeeded).some((key) => !["academicYears", "activeAcademicYear"].includes(key))) {
         const merged = { ...dataRef.current, ...succeeded };
         const savedAt = Date.now();
         dataRef.current = merged;
-        lastUpdatedRef.current = savedAt;
         sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ data: merged, savedAt }));
         setData(merged);
         setLastUpdated(new Date(savedAt));
@@ -262,27 +319,21 @@ export default function DashboardPage() {
     loadData({ initial: true });
   }, [loadData]);
 
-  useEffect(() => {
-    const interval = window.setInterval(() => { if (!document.hidden) loadData(); }, LIVE_REFRESH_INTERVAL);
-    const onVisibilityChange = () => {
-      if (!document.hidden && Date.now() - lastUpdatedRef.current >= LIVE_REFRESH_INTERVAL) loadData();
-    };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisibilityChange); };
-  }, [loadData]);
-
+  const activeAcademicYear = data.activeAcademicYear?.id ? data.activeAcademicYear : null;
+  const admissionTrend = activeAcademicYear ? rows(data.admissionTrend, ["monthlyAdmissions", "MonthlyAdmissions", "admissionTrend", "AdmissionTrend", "trend", "Trend"]).map(normalizeAdmissionPeriod).filter(Boolean).sort((a, b) => a.sortDate - b.sortDate) : [];
+  const academicYearAdmissions = activeAcademicYear
+    ? firstMetric(data, ["summary"], ["currentAcademicYearAdmissions", "CurrentAcademicYearAdmissions", "academicYearAdmissions", "AcademicYearAdmissions", "admissionsThisAcademicYear", "AdmissionsThisAcademicYear"])
+      ?? academicYearAdmissionTotal(data.admissionTrend, admissionTrend)
+    : undefined;
+  const admissionsLabel = activeAcademicYear?.name ? `Admissions (${activeAcademicYear.name})` : "Admissions";
   const kpis = useMemo(() => [
     { label: "Total Students", value: firstMetric(data, ["summary", "strength"], ["totalStudents", "studentStrength", "activeStudents"]), icon: Users, tone: "blue" },
-    { label: "Faculty Members", value: firstMetric(data, ["summary", "facultyAttendance"], ["totalFaculty", "facultyCount", "activeFaculty"]) ?? arrayCount(data.faculty), icon: GraduationCap, tone: "violet" },
+    { label: "Faculty Members", value: firstMetric(data, ["summary"], ["totalFaculty", "facultyCount", "activeFaculty"]) ?? arrayCount(data.faculty), icon: GraduationCap, tone: "violet" },
     { label: "Today's Attendance", value: firstMetric(data, ["summary", "attendance"], ["attendancePercentage", "averageAttendance", "attendanceRate", "percentage"]), icon: CalendarCheck, tone: "green", type: "percent" },
-    { label: "New Admissions", value: firstMetric(data, ["summary", "admissions"], ["newAdmissions", "totalAdmissions", "admissionsCount", "count"]) ?? arrayCount(data.admissions), icon: TrendingUp, tone: "blue" },
-    { label: "Fees Collected", value: firstMetric(data, ["summary", "fees"], ["totalCollected", "collectedAmount", "feeCollected", "totalFeeCollected"]), icon: CircleDollarSign, tone: "green", type: "currency" },
-    { label: "Outstanding Fees", value: firstMetric(data, ["summary", "dues"], ["totalOutstanding", "outstandingAmount", "dueFees", "outstandingFees"]), icon: AlertCircle, tone: "amber", type: "currency" },
+    { label: admissionsLabel, value: academicYearAdmissions, icon: TrendingUp, tone: "blue" },
     { label: "Upcoming Exams", value: firstMetric(data, ["summary", "exams"], ["upcomingExams", "upcomingExaminations", "examinationCount"]) ?? arrayCount(data.exams), icon: CalendarClock, tone: "violet" },
     { label: "Pass Percentage", value: firstMetric(data, ["summary", "pass"], ["passPercentage", "passRate", "percentage"]), icon: BookOpen, tone: "green", type: "percent" },
-  ], [data]);
-
-  const admissionTrend = rows(data.admissionTrend, ["monthlyAdmissions", "MonthlyAdmissions", "admissionTrend", "AdmissionTrend", "trend", "Trend"]).map((item) => ({ period: label(item), admissions: number(item, "admissions", "Admissions", "admissionCount", "AdmissionCount", "confirmed", "Confirmed", "count", "Count"), applications: number(item, "applications", "Applications", "applicationCount", "ApplicationCount", "applicationsReceived", "ApplicationsReceived") })).filter((item) => item.period && Object.values(item).some((value) => typeof value === "number"));
+  ], [academicYearAdmissions, admissionsLabel, data]);
   const groupDistribution = normalizeGroups(data);
   const attendanceTrend = rows(data.attendance, ["attendanceTrend", "AttendanceTrend", "trend", "Trend"]).map((item) => ({ period: label(item), attendance: number(item, "attendancePercentage", "AttendancePercentage", "attendance", "Attendance", "percentage", "Percentage"), present: number(item, "presentPercentage", "PresentPercentage", "present", "Present"), absent: number(item, "absentPercentage", "AbsentPercentage", "absent", "Absent") })).filter((item) => item.period);
   const feeRows = rows(data.fees, ["monthlyCollection", "MonthlyCollection", "trend", "Trend"]);
@@ -292,21 +343,18 @@ export default function DashboardPage() {
   const exams = rows(data.exams, ["examinations", "Examinations", "upcomingExams", "UpcomingExams"]).map((item, index) => ({ id: read(item, "examinationId", "ExaminationId", "id", "Id") ?? index, subject: read(item, "subjectName", "SubjectName", "subject", "Subject", "examName", "ExamName") ?? "—", date: read(item, "examDate", "ExamDate", "date", "Date"), time: read(item, "startTime", "StartTime", "time", "Time") ?? "—", hall: read(item, "hallName", "HallName", "roomName", "RoomName", "hall", "Hall") ?? "—", invigilator: read(item, "invigilatorName", "InvigilatorName", "facultyName", "FacultyName") ?? "—", status: read(item, "status", "Status") ?? "Scheduled" })).filter((item) => { const date = new Date(item.date); return !item.date || Number.isNaN(date.getTime()) || date >= new Date(); }).slice(0, 5);
   const workload = rows(data.workload, ["facultyWorkload", "FacultyWorkload", "workload", "Workload"]).map((item) => ({ name: String(read(item, "facultyName", "FacultyName", "name", "Name") ?? ""), hours: number(item, "assignedHours", "AssignedHours", "weeklyHours", "WeeklyHours", "hours", "Hours") })).filter((item) => item.name && item.hours !== undefined).slice(0, 8);
   const activities = rows(data.audit, ["auditLogs", "AuditLogs", "logs", "Logs"]).map((item, index) => ({ id: read(item, "auditLogId", "AuditLogId", "id", "Id") ?? index, user: read(item, "userName", "UserName", "performedBy", "PerformedBy", "createdBy", "CreatedBy") ?? "—", action: read(item, "action", "Action", "actionType", "ActionType") ?? "—", module: read(item, "module", "Module", "moduleName", "ModuleName") ?? "—", date: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "dateTime", "DateTime") })).slice(0, 5);
-  const facultyAttendance = ["Present", "Absent", "On Leave"].map((name) => ({ name, value: firstMetric(data, ["facultyAttendance"], name === "Present" ? ["presentFaculty", "presentCount", "present"] : name === "Absent" ? ["absentFaculty", "absentCount", "absent"] : ["onLeave", "leaveCount"]) })).filter((item) => item.value !== undefined);
   const groupTotal = groupDistribution.reduce((sum, item) => sum + item.value, 0);
 
   const chart = (content, available) => <div className="dashboard-chart-body">{available ? content : <Empty />}</div>;
-  const isOffline = Boolean(failures.summary) && !Object.keys(data).some((key) => key !== "academicYears");
   const hasApplications = admissionTrend.some((item) => item.applications !== undefined);
-  return <DashboardLayout title="Dashboard" subtitle="Live institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-live-meta"><button className={`dashboard-live ${isOffline ? "is-offline" : ""}`} type="button" onClick={() => loadData()} disabled={refreshing}>{refreshing ? <RefreshCw size={14} className="spin" /> : <Activity size={14} />} {refreshing ? "UPDATING..." : isOffline ? "OFFLINE" : "LIVE"}</button><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/admission" className="cms-btn cms-btn-ghost">New Admission</Link><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
-    {loading ? <div className="cms-card dashboard-loader"><Loader label="Loading live dashboard..." /></div> : <>
-      {Object.keys(failures).length ? <div className="dashboard-warning">Some dashboard sources are unavailable. Successfully loaded widgets remain live.</div> : null}
+  return <DashboardLayout title="Dashboard" subtitle="Institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-refresh-meta"><button className="dashboard-refresh" type="button" onClick={() => loadData()} disabled={refreshing}>{refreshing ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />} {refreshing ? "Refreshing..." : "Refresh"}</button><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/admission" className="cms-btn cms-btn-ghost">New Admission</Link><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
+    {loading ? <div className="cms-card dashboard-loader"><Loader label="Loading dashboard..." /></div> : <>
+      {Object.keys(failures).length ? <div className="dashboard-warning">Some dashboard sources are unavailable. Successfully loaded widgets remain available.</div> : null}
       <div className="dashboard-kpi-grid">{kpis.map(({ label: name, value, icon: Icon, tone, type }) => <article className="cms-stat" key={name}><span className={`cms-stat-icon tone-${tone}`}><Icon size={20} /></span><div><div className="cms-stat-label">{name}</div><div className="cms-stat-value">{formatValue(value, type)}</div></div></article>)}</div>
       <div className="dashboard-grid dashboard-grid-3">
-        <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Admissions</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis /><Tooltip /><Legend /><Area dataKey="admissions" stroke="#1d4ed8" fill="#dbeafe" />{hasApplications ? <Area dataKey="applications" stroke="#6d28d9" fillOpacity={0} /> : null}</AreaChart></ResponsiveContainer>, admissionTrend.length > 0)}</section>
+        <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>{admissionsLabel}</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ bottom: 28 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" interval={0} angle={-30} textAnchor="end" height={58} /><YAxis allowDecimals={false} tickFormatter={(value) => Math.round(value)} /><Tooltip labelFormatter={(value) => value} formatter={(value, name) => [Number(value), name === "admissions" ? "Admissions" : "Applications"]} /><Legend /><Area dataKey="admissions" stroke="#1d4ed8" fill="#dbeafe" />{hasApplications ? <Area dataKey="applications" stroke="#6d28d9" fillOpacity={0} /> : null}</AreaChart></ResponsiveContainer>, admissionTrend.length > 0)}</section>
         <section className="cms-card dashboard-widget dashboard-group-card"><div className="cms-card-head"><h2>Group Distribution</h2></div>{groupDistribution.length ? <div className="dashboard-group-body"><div className="dashboard-group-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2} isAnimationActive={false}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [new Intl.NumberFormat("en-IN").format(value), "Students"]} /></PieChart></ResponsiveContainer><div className="dashboard-group-total"><strong>{new Intl.NumberFormat("en-IN").format(groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-legend">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ background: COLORS[index % COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{new Intl.NumberFormat("en-IN").format(item.value)}</strong><em>{groupTotal > 0 ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0.0%"}</em></div>)}</div></div> : <Empty />}</section>
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Student Attendance</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><AreaChart data={attendanceTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis /><Tooltip /><Legend /><Area dataKey="attendance" stroke="#0f9d58" fill="#dcfce7" /><Area dataKey="absent" stroke="#ef6675" fillOpacity={0} /></AreaChart></ResponsiveContainer>, attendanceTrend.length > 0)}</section>
-        <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Faculty Attendance</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={facultyAttendance} dataKey="value" nameKey="name" innerRadius={48} outerRadius={82}>{facultyAttendance.map((item, index) => <Cell key={item.name} fill={COLORS[(index + 3) % COLORS.length]} />)}</Pie><Legend /><Tooltip /></PieChart></ResponsiveContainer>, facultyAttendance.length > 0)}</section>
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Fee Collection vs Due</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><BarChart data={feeTrend}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" /><YAxis /><Tooltip /><Legend /><Bar dataKey="collected" fill="#1d4ed8" /><Bar dataKey="due" fill="#cbd5e1" /></BarChart></ResponsiveContainer>, feeTrend.length > 0)}</section>
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Faculty Workload</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><BarChart data={workload} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={85} /><Tooltip /><Bar dataKey="hours" fill="#6d28d9" /></BarChart></ResponsiveContainer>, workload.length > 0)}</section>
       </div>

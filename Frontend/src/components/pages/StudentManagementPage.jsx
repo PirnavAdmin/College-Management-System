@@ -17,6 +17,7 @@ const extractItems = (payload) => {
 };
 
 const getStudents = (params) => apiClient.get(apiEndpoints.students.getAll, { params });
+const getAdmissions = () => apiClient.get(apiEndpoints.admissions.getAll);
 const getStudentById = (studentId) => apiClient.get(apiEndpoints.students.getById(studentId));
 const updateStudent = (studentId, student) => apiClient.put(apiEndpoints.students.update(studentId), student);
 const deleteStudent = (studentId) => apiClient.delete(apiEndpoints.students.delete(studentId));
@@ -40,6 +41,22 @@ const getAcademicLevels = () => apiClient.get(apiEndpoints.boards.getAcademicLev
 const getSections = () => apiClient.get(apiEndpoints.sections.getAll);
 
 const studentName = (student) => student.fullName || student.studentName || student.name || [student.firstName, student.lastName].filter(Boolean).join(" ");
+const admissionNumber = (record) => String(record?.admissionNo ?? record?.admissionNumber ?? "").trim();
+const isApprovedAdmission = (admission) => admission?.isApproved === true || String(admission?.status ?? "").trim().toLowerCase() === "approved";
+const storedAdmissions = () => {
+  try {
+    const records = JSON.parse(window.localStorage.getItem("studentAdmissionRecords") || "[]");
+    return Array.isArray(records) ? records.map((record) => ({
+      ...(record.raw || {}),
+      ...(record.values || {}),
+      admissionId: record.admissionId || record.raw?.admissionId,
+      admissionNo: record.admissionNo || record.values?.admissionNo,
+      status: record.status,
+    })) : [];
+  } catch {
+    return [];
+  }
+};
 const option = (item, idKeys, labelKeys) => {
   const value = idKeys.map((key) => item?.[key]).find((itemId) => itemId !== undefined && itemId !== null && itemId !== "");
   const label = labelKeys.map((key) => item?.[key]).find(Boolean);
@@ -47,7 +64,7 @@ const option = (item, idKeys, labelKeys) => {
 };
 const toStudentRow = (student) => ({
   ...student,
-  id: student.studentId ?? student.id,
+  id: student.studentId ?? student.admissionId ?? student.id,
   admissionNo: student.admissionNo ?? student.admissionNumber,
   name: studentName(student),
   roll: student.rollNo ?? student.rollNumber ?? student.roll,
@@ -56,7 +73,7 @@ const toStudentRow = (student) => ({
   section: student.sectionName ?? student.sectionCode ?? student.section,
   mobile: student.mobileNumber ?? student.mobile ?? student.phoneNumber,
   father: student.fatherName ?? student.father,
-  status: typeof (student.status ?? student.isActive) === "boolean" ? ((student.status ?? student.isActive) ? "Active" : "Inactive") : student.status,
+  status: typeof (student.status ?? student.isActive) === "boolean" ? ((student.status ?? student.isActive) ? "Active" : "Inactive") : (student.status ?? (student.isActive ? "Active" : "Inactive")),
   groupId: student.groupId,
   sectionId: student.sectionId,
 });
@@ -106,13 +123,32 @@ export const pageConfig = {
 
 pageConfig.api = {
   fetchRows: async ({ search = "", filters = {} } = {}) => {
-    let response;
-    if (filters.status === "Active" && !search && !filters.group && !filters.section) response = await getActiveStudents();
-    else if (filters.group && !search && !filters.section) response = await getStudentsByGroup(filters.group);
-    else if (filters.section && !search && !filters.group) response = await getStudentsBySection(filters.section);
-    else if (search || filters.group || filters.section || filters.status) response = await searchStudents({ search: search || undefined, groupId: filters.group || undefined, sectionId: filters.section || undefined, isActive: filters.status ? filters.status === "Active" : undefined });
-    else response = await getStudents();
-    return extractItems(response.data).map(toStudentRow).filter((row) => row.id !== undefined).filter((row) => matchesFilters(row, search, filters));
+    const [studentsResponse, admissionsResponse] = await Promise.all([getStudents(), getAdmissions()]);
+    const students = extractItems(studentsResponse.data);
+    const apiAdmissions = extractItems(admissionsResponse.data);
+    const localAdmissions = storedAdmissions();
+    // If the backend has not persisted an admission yet, keep the locally completed
+    // Admission-page records visible until the server becomes the source of truth.
+    const admissions = apiAdmissions.length ? [...apiAdmissions, ...localAdmissions] : localAdmissions;
+    const admissionsByAdmissionNo = new Map(
+      admissions
+        .filter((admission) => admissionNumber(admission))
+        .map((admission) => [admissionNumber(admission), admission]),
+    );
+    const approvedByAdmissionNo = new Map(
+      [...admissionsByAdmissionNo.values()]
+        .filter((admission) => apiAdmissions.length === 0 || isApprovedAdmission(admission))
+        .map((admission) => [admissionNumber(admission), admission]),
+    );
+
+    return [...approvedByAdmissionNo.values()]
+      .map((admission) => {
+        const student = students.find((item) => admissionNumber(item) === admissionNumber(admission));
+        return { ...admission, ...student };
+      })
+      .map(toStudentRow)
+      .filter((row) => row.id !== undefined)
+      .filter((row) => matchesFilters(row, search, filters));
   },
   fetchRow: async (studentId) => {
     const response = await getStudentById(studentId);

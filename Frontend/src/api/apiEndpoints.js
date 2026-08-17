@@ -17,7 +17,7 @@
     delete: (id) => `/api/v1/assignments/${id}`,
     submit: (id) => `/api/v1/assignments/${id}/submit`,
     subjectsByGroup: (groupId) => `/api/v1/assignments/groups/${groupId}/subjects`,
-    submissions: (id) => `/api/v1/assignments/${id}/submissions`,
+    submissions: (id) => `/api/admin/assignments/${id}/submissions`,
   },
   faculty: {
     list: "/api/v1/faculty",
@@ -192,6 +192,19 @@
     getBySection: (sectionId) => `/api/v1/students/section/${sectionId}`,
     checkEmail: "/api/v1/students/check-email",
     checkMobile: "/api/v1/students/check-mobile",
+  },
+  admissions: {
+    getAll: "/api/v1/admissions",
+    create: "/api/v1/admissions",
+    getById: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    update: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    delete: (admissionId) => `/api/v1/admissions/${admissionId}`,
+    submit: (admissionId) => `/api/v1/admissions/${admissionId}/submit`,
+    verify: (admissionId) => `/api/v1/admissions/${admissionId}/verify`,
+    generateNumber: "/api/v1/admissions/generate-number",
+    bloodGroups: "/api/v1/admissions/blood-groups",
+    approve: (admissionId) => `/api/v1/admissions/${admissionId}/approve`,
+    reject: (admissionId) => `/api/v1/admissions/${admissionId}/reject`,
   },
   location: {
     byPincode: (pincode) => `/api/v1/locations/pincode/${encodeURIComponent(pincode)}`,

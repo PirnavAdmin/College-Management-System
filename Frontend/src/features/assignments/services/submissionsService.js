@@ -15,13 +15,13 @@ export async function getSubmissionGroups() {
   return unwrap(response.data);
 }
 
-export async function getSubmissionAcademicYears() {
-  const response = await apiClient.get(apiEndpoints.academicYears.list);
+export async function getSubmissionSections() {
+  const response = await apiClient.get(apiEndpoints.sections.list);
   return unwrap(response.data);
 }
 
-export async function getGroupAssignmentSubjects(groupId) {
-  const response = await apiClient.get(apiEndpoints.assignments.subjectsByGroup(groupId));
+export async function getSubmissionAcademicYears() {
+  const response = await apiClient.get(apiEndpoints.academicYears.list);
   return unwrap(response.data);
 }
 

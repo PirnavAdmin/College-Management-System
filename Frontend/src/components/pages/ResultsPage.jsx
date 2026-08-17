@@ -17,7 +17,6 @@ import {
   getAcademicYears,
   getAcademicLevels,
   getExaminations,
-  getSubjects,
 } from "@/features/results/services/resultsService.js";
 import {
   FaSearch,
@@ -71,6 +70,11 @@ const read = (item, ...keys) => item ? keys.map((key) => item[key]).find((value)
 const options = (payload, idKeys, nameKeys) => records(payload).map((item) => ({
   id: read(item, ...idKeys), name: read(item, ...nameKeys),
 })).filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0 && item.name);
+
+const getSubjects = async () => {
+  const response = await apiClient.get("/api/Subjects");
+  return records(response.data);
+};
 
 export default function ResultsPage() {
   const [filters, setFilters] = useState({

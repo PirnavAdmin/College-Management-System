@@ -64,9 +64,11 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   // Reload select options that depend on another form field, such as State
   // after Country changes. These are intentionally separate from the first
   // lookup load because the parent field must resolve first.
+ const getDependsOnKeys = (field) => (Array.isArray(field.dependsOn) ? field.dependsOn : [field.dependsOn]);
+
   const dependentFieldValues = (sectionConfig.fields || [])
     .filter((field) => field.dependsOn)
-    .map((field) => values[field.dependsOn] ?? "")
+    .map((field) => getDependsOnKeys(field).map((key) => values[key] ?? "").join("\u0001"))
     .join("\u0000");
 
   useEffect(() => {
@@ -75,13 +77,16 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
 
     let ignore = false;
     Promise.all(dependentFields.map(async (field) => {
-      if (!values[field.dependsOn]) return { name: field.name, options: [] };
+      const keys = getDependsOnKeys(field);
+      const hasAllValues = keys.every((key) => values[key]);
+      if (!hasAllValues) return { name: field.name, options: [], autoValue: undefined };
       try {
         const response = await field.loadOptions(values);
         const options = field.getOptions ? field.getOptions(response) : response.data;
-        return { name: field.name, options: Array.isArray(options) ? options : [] };
+        const autoValue = field.autoSelect ? field.autoSelect(values, options) : undefined;
+        return { name: field.name, options: Array.isArray(options) ? options : [], autoValue };
       } catch {
-        return { name: field.name, options: [] };
+        return { name: field.name, options: [], autoValue: undefined };
       }
     })).then((results) => {
       if (ignore) return;
@@ -91,10 +96,21 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
           ? { ...field, options: optionsByField[field.name] }
           : field
       )));
+      results.forEach(({ name, autoValue }) => {
+        if (autoValue !== undefined) setValue(name, autoValue);
+      });
     });
 
     return () => { ignore = true; };
   }, [dependentFieldValues, sectionConfig, values]);
+
+  useEffect(() => {
+    if (!sectionConfig.deriveValues) return;
+    const derivedValues = sectionConfig.deriveValues(values) || {};
+    Object.entries(derivedValues).forEach(([name, value]) => {
+      if (String(values[name] ?? "") !== String(value ?? "")) setValue(name, value);
+    });
+  }, [sectionConfig, setValue, values]);
 
   const submit = async (e) => {
     e.preventDefault();

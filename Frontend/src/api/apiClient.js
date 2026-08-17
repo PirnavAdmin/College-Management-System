@@ -26,12 +26,22 @@ const getJwtExpiryState = (token) => {
 export const getApiErrorMessage = (error) => {
   const data = error?.response?.data;
   if (typeof data === "string") return data;
+  if (data?.errors && typeof data.errors === "object") {
+    const messages = Object.values(data.errors).flat().filter(Boolean);
+    if (messages.length) return messages.join(" ");
+  }
+  if (data?.Errors && typeof data.Errors === "object") {
+    const messages = Object.values(data.Errors).flat().filter(Boolean);
+    if (messages.length) return messages.join(" ");
+  }
   if (data?.Message) return data.Message;
   if (data?.message) return data.message;
   if (data?.Error) return data.Error;
   if (data?.error) return data.error;
   if (data?.title) return data.title;
-  if (error?.response?.status === 401) return "Session expired or unauthorized. Please login again.";
+  if (error?.response?.status === 401) return "Your session has expired. Please sign in again.";
+  if (error?.response?.status === 403) return "Your account is not permitted to access this resource.";
+  if (error?.response?.status) return `Request failed (HTTP ${error.response.status}).`;
   if (error?.message === "Network Error") return "Backend is not reachable. Please check API connection or Vite proxy.";
   if (error?.message) return error.message;
   return "Something went wrong. Please try again.";
@@ -69,6 +79,14 @@ apiClient.interceptors.response.use(
     return Promise.reject(new Error("Backend returned HTML instead of JSON. Check API base URL or proxy."));
   },
   (error) => {
+    if (import.meta.env.DEV) {
+      console.error("API response error:", {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+    }
     if (isHtmlResponse(error.response?.data)) {
       error.response.data = { message: "Backend returned HTML instead of JSON. Check API base URL or proxy." };
     }
@@ -86,3 +104,4 @@ apiClient.interceptors.response.use(
 );
 
 export default apiClient;
+

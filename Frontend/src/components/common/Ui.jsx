@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, X, AlertTriangle, Eye, EyeOff } from "lucide-react";
 
 export function StatusBadge({ value }) {
@@ -37,7 +38,16 @@ export function Toast({ message, onClose, type = "success" }) {
 }
 
 export function Modal({ title, children, footer, onClose, size }) {
-  return (
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  const dialog = (
     <div className="cms-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`cms-modal ${size === "sm" ? "sm" : ""}`} role="dialog" aria-modal="true">
         <div className="cms-modal-head">
@@ -51,6 +61,9 @@ export function Modal({ title, children, footer, onClose, size }) {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return dialog;
+  return createPortal(dialog, document.body);
 }
 
 export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm, loading = false }) {
@@ -85,7 +98,7 @@ export function Field({ field, value, error, onChange }) {
   const isPassword = type === "password";
   const normalizedOptions = options.map((option) => (
     option && typeof option === "object"
-      ? { value: option.value, label: option.label ?? option.value }
+      ? { value: option.value, label: option.label ?? option.value, disabled: Boolean(option.disabled) }
       : { value: option, label: option }
   ));
   return (
@@ -96,8 +109,8 @@ export function Field({ field, value, error, onChange }) {
       {type === "select" ? (
         <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)}>
           <option value="">Select {label}</option>
-          {normalizedOptions.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+          {normalizedOptions.map((o, index) => (
+            <option key={`${o.value}-${index}`} value={o.value}>{o.label}</option>
           ))}
         </select>
       ) : type === "textarea" ? (

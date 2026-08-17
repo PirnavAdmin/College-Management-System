@@ -6,6 +6,93 @@ import { ConfirmDialog, FilterBar, Modal, Toast, StatusBadge } from "@/component
 import { getApiErrorMessage } from "@/api/axios.js";
 import { configFor, deleteRow, useRows } from "@/data/store.js";
 
+function SummaryCards({ config, activeFilter, onSelect }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [hovered, setHovered] = useState(null);
+
+  useEffect(() => {
+    if (!config.summary?.fetch) return;
+    let mounted = true;
+    config.summary
+      .fetch()
+      .then((res) => {
+        if (!mounted) return;
+        setSummary(config.summary.map(res.data));
+      })
+      .catch(() => {
+        if (mounted) setSummary(null);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => (mounted = false);
+  }, [config.summary]);
+
+  if (!config.summary?.fetch || loading || !summary) return null;
+
+  const colorFor = (label) => {
+    const l = label.toLowerCase();
+    if (l === "active") return { text: "#16a34a", bg: "#dcfce7" };
+    if (l === "inactive") return { text: "#dc2626", bg: "#fee2e2" };
+    return { text: "#2563eb", bg: "#dbeafe" };
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+      {summary.map((card) => {
+        const c = colorFor(card.label);
+        const isSelected = activeFilter === card.label;
+        const isHovered = hovered === card.label;
+        return (
+          <button
+            key={card.label}
+            type="button"
+            onClick={() => onSelect(card.label)}
+            onMouseEnter={() => setHovered(card.label)}
+            onMouseLeave={() => setHovered(null)}
+            className="cms-card"
+            style={{
+              flex: "1 1 0",
+              padding: "16px 20px",
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              cursor: "pointer",
+              border: isSelected ? `2px solid ${c.text}` : "2px solid transparent",
+              textAlign: "left",
+              font: "inherit",
+              transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
+              transform: isHovered ? "translateY(-2px)" : "translateY(0)",
+              boxShadow: isHovered
+                ? "0 6px 16px rgba(0,0,0,0.12)"
+                : "0 1px 2px rgba(0,0,0,0.04)",
+            }}
+          >
+            <div
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                background: c.bg,
+                color: c.text,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+                fontWeight: 700,
+                flexShrink: 0,
+              }}
+            >
+              {card.value}
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 600, color: "var(--cms-muted)" }}>{card.label}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 function Section({ slug, config, secondary, onToast, heading, onView }) {
   const sectionConfig = configFor(config, secondary);
   const storeRows = useRows(slug, secondary, config);
@@ -17,6 +104,8 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   const [viewing, setViewing] = useState(null);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({});
+  const [filterFields, setFilterFields] = useState(sectionConfig.filters || []);
+  const [statusFilter, setStatusFilter] = useState(null);
   const navigate = useNavigate();
 
   const loadRows = useCallback(async (nextSearch = "", nextFilters = {}) => {
@@ -46,8 +135,36 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     return () => clearTimeout(timer);
   }, [slug, secondary, usesApi, loadRows, sectionConfig.preserveLocalRows, storeRows.length]);
 
+  useEffect(() => {
+    let mounted = true;
+    const loadFilterOptions = async () => {
+      const fields = sectionConfig.filters || [];
+      const loaded = await Promise.all(fields.map(async (field) => {
+        if (!field.loadOptions) return field;
+        try {
+          const response = await field.loadOptions();
+          const options = field.getOptions ? field.getOptions(response) : response.data;
+          return Array.isArray(options) ? { ...field, options } : field;
+        } catch {
+          return field;
+        }
+      }));
+      if (mounted) setFilterFields(loaded);
+    };
+    loadFilterOptions();
+    return () => { mounted = false; };
+  }, [sectionConfig]);
+
   const sectionQuery = secondary ? "?section=secondary" : "";
-  const displayedRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
+  const baseRows = sectionConfig.preserveLocalRows && storeRows.length > 0 ? storeRows : usesApi ? rows : storeRows;
+
+  const displayedRows = !statusFilter || statusFilter.toLowerCase() === "total"
+    ? baseRows
+    : baseRows.filter((r) => String(r.status || "").toLowerCase() === statusFilter.toLowerCase());
+
+  const handleSummarySelect = (label) => {
+    setStatusFilter((current) => (current === label ? null : label));
+  };
 
   const setFilter = (name, value) => {
     if (name === "__reset__") {
@@ -82,8 +199,11 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
   return (
     <>
       {heading ? <h2 style={{ fontSize: 16, margin: "22px 0 12px" }}>{heading}</h2> : null}
-      {usesApi && sectionConfig.filters?.length ? (
-        <FilterBar fields={sectionConfig.filters} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
+      {!secondary ? (
+        <SummaryCards config={sectionConfig} activeFilter={statusFilter} onSelect={handleSummarySelect} />
+      ) : null}
+      {usesApi && filterFields.length ? (
+        <FilterBar fields={filterFields} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
       ) : null}
       {error ? (
         <div className="cms-card" style={{ marginBottom: 16 }}>
@@ -99,8 +219,8 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         rows={displayedRows}
         loading={loading}
         addLabel={sectionConfig.addLabel}
-        onSearchChange={sectionConfig.api?.fetchRows ? handleSearch : null}
-        onAdd={() => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
+        onSearchChange={usesApi ? handleSearch : null}
+        onAdd={sectionConfig.allowAdd === false ? null : () => navigate(`/dashboard/${slug}/add${sectionQuery}`)}
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}
         onView={onView ? (row) => onView(row) : (row) => setViewing(row)}

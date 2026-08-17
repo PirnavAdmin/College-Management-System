@@ -30,7 +30,6 @@ export const menu = [
         to: "/dashboard/faculty",
         label: "Faculty Management",
         icon: Users,
-        children: [{ to: "/dashboard/faculty-allocation", label: "Subject Allocation", icon: ClipboardCheck }],
       },
       { to: "/dashboard/admission", label: "Student Admission", icon: UserPlus },
       { to: "/dashboard/students", label: "Student Management", icon: GraduationCap },
@@ -48,8 +47,8 @@ export const menu = [
     section: "Examinations",
     items: [
       { to: "/dashboard/examinations", label: "Examination", icon: FileSpreadsheet },
-      { to: "/dashboard/marks-entry", label: "Marks Evalution", icon: PenLine },
-      { to: "/dashboard/results", label: "Result Processing", icon: Award },
+      { to: "/dashboard/marks-entry", label: "Marks Evaluation", icon: PenLine },
+      { to: "/dashboard/results", label: "Results", icon: Award },
       { to: "/dashboard/promotion", label: "Promotion", icon: ArrowUpRight },
     ],
   },

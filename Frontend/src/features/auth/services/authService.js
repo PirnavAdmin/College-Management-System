@@ -22,23 +22,15 @@ export const loginUser = async (credentials) => {
 
   if (isAdminLogin) {
     logLoginSelection(apiEndpoints.admin.login, emailOrMobile);
-    try {
-      const response = await adminLogin({ email: emailOrMobile, password });
-      logLoginResponse(response.status);
-      return normalizeLoginResponse(response.data, emailOrMobile, "admin");
-    } catch (error) {
-      throw buildLoginError(error, apiEndpoints.admin.login);
-    }
+    const response = await adminLogin({ email: emailOrMobile, password });
+    logLoginResponse(response.status);
+    return normalizeLoginResponse(response.data, emailOrMobile, "admin");
   }
 
   logLoginSelection(apiEndpoints.auth.login, emailOrMobile);
-  try {
-    const response = await userLogin({ emailOrMobile, password });
-    logLoginResponse(response.status);
-    return normalizeLoginResponse(response.data, emailOrMobile);
-  } catch (error) {
-    throw buildLoginError(error, apiEndpoints.auth.login);
-  }
+  const response = await userLogin({ emailOrMobile, password });
+  logLoginResponse(response.status);
+  return normalizeLoginResponse(response.data, emailOrMobile);
 };
 
 export const registerUser = (data) => apiClient.post(apiEndpoints.auth.register, data);
@@ -103,25 +95,6 @@ function getToken(payload, data) {
 
 function normalizeToken(token) {
   return token ? String(token).replace(/^Bearer\s+/i, "").trim() : "";
-}
-
-function buildLoginError(error, endpoint) {
-  const status = error?.response?.status;
-  if (endpoint === apiEndpoints.admin.login && status === 500) {
-    return new Error("Admin login API failed on server. Please check backend /api/Admin/login.");
-  }
-  if (status === 401) {
-    return new Error("Invalid email/mobile or password.");
-  }
-
-  const message = getBackendMessage(error) || "Login failed. Please try again.";
-  return new Error(message);
-}
-
-function getBackendMessage(error) {
-  const data = error?.response?.data;
-  if (typeof data === "string") return data;
-  return data?.Message || data?.message || data?.title || error?.message;
 }
 
 function logLoginSelection(endpoint, emailOrMobile) {

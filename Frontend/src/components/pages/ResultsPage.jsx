@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
-import { getApiErrorMessage } from "@/api/axios.js";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import {
   getResults,
-  getStudentResult,
   getRankList,
-  getFailedStudents,
   getResultAnalysis,
   downloadResultsExcel,
   downloadResultsPdf,
@@ -27,9 +25,15 @@ import {
   FaCheckCircle,
   FaClock,
 } from "react-icons/fa";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
+const RESULTS_API_VERSION = "1.0";
+const resultsPageApi = {
+  boards: "/api/v1/boards",
+  years: "/api/v1/academic-years",
+  levels: "/api/v1/boards/academic-levels",
+  groups: "/api/v1/groups",
+  examinations: "/api/v1/examinations",
+  studentResult: "/api/v1/results/student-result",
+};
 
 const calculateGrade = (avg) => {
   if (avg >= 90) return "A+";
@@ -52,15 +56,15 @@ const isPracticalSubject = (subjectName) => {
   );
 };
 
-const defaultResults = [
-  { id: "1", slNo: 1, admissionNo: "ADM-2024-001", name: "Aarav Reddy", roll: "24MPC001", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 92, sanskrit: 90, mathematics: 98, physics: 93, chemistry: 95, total: 468, maximum: 500, percentage: "93.60%", grade: "A+", result: "PASS", status: "Published", isPublished: true },
-  { id: "2", slNo: 2, admissionNo: "ADM-2024-002", name: "Diya Sharma", roll: "24MPC002", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 88, sanskrit: 86, mathematics: 94, physics: 91, chemistry: 93, total: 452, maximum: 500, percentage: "90.40%", grade: "A+", result: "PASS", status: "Published", isPublished: true },
-  { id: "3", slNo: 3, admissionNo: "ADM-2024-004", name: "Ishaan Verma", roll: "24MPC003", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 85, sanskrit: 82, mathematics: 89, physics: 86, chemistry: 89, total: 431, maximum: 500, percentage: "86.20%", grade: "A", result: "PASS", status: "Published", isPublished: true },
-  { id: "4", slNo: 4, admissionNo: "ADM-2024-005", name: "Rahul Kumar", roll: "24MPC004", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 80, sanskrit: 78, mathematics: 85, physics: 82, chemistry: 85, total: 410, maximum: 500, percentage: "82.00%", grade: "A", result: "PASS", status: "Published", isPublished: true },
-  { id: "5", slNo: 5, admissionNo: "ADM-2024-006", name: "Suresh Rao", roll: "24MPC005", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 32, sanskrit: 38, mathematics: 29, physics: 36, chemistry: 40, total: 175, maximum: 500, percentage: "35.00%", grade: "F", result: "FAIL", status: "Draft", isPublished: false },
-  { id: "6", slNo: 6, admissionNo: "ADM-2024-007", name: "Ananya Sharma", roll: "24MPC006", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 90, sanskrit: 88, mathematics: 95, physics: 92, chemistry: 94, total: 459, maximum: 500, percentage: "91.80%", grade: "A+", result: "PASS", status: "Published", isPublished: true },
-  { id: "7", slNo: 7, admissionNo: "ADM-2024-008", name: "Venkatesh N", roll: "24MPC007", board: "BIE Telangana", year: "2025-2026", level: "Intermediate 1st Year", group: "MPC", section: "A", exam: "Semester I", english: 68, sanskrit: 72, mathematics: 75, physics: 70, chemistry: 74, total: 359, maximum: 500, percentage: "71.80%", grade: "B", result: "PASS", status: "Draft", isPublished: false },
-];
+const unwrap = (payload) => payload?.data ?? payload?.Data ?? payload;
+const records = (payload) => {
+  const data = unwrap(payload);
+  return Array.isArray(data) ? data : data?.items ?? data?.Items ?? data?.records ?? data?.Records ?? data?.results ?? data?.Results ?? [];
+};
+const read = (item, ...keys) => item ? keys.map((key) => item[key]).find((value) => value !== undefined && value !== null && value !== "") : undefined;
+const options = (payload, idKeys, nameKeys) => records(payload).map((item) => ({
+  id: read(item, ...idKeys), name: read(item, ...nameKeys),
+})).filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0 && item.name);
 
 export default function ResultsPage() {
   const [filters, setFilters] = useState({
@@ -78,11 +82,11 @@ export default function ResultsPage() {
   const [rankSearchQuery, setRankSearchQuery] = useState("");
 
   const [resultsGenerated, setResultsGenerated] = useState(false);
-  const [resultsData, setResultsData] = useState(defaultResults);
-  const [scopeResults, setScopeResults] = useState([]);
+  const [resultsData, setResultsData] = useState([]);
+  const [filterOptions, setFilterOptions] = useState({ boards: [], years: [], levels: [], groups: [], exams: [] });
+  const [filterLoading, setFilterLoading] = useState({ boards: true, years: true, levels: true, groups: false, exams: false });
   const [rankResults, setRankResults] = useState([]);
   const [analysis, setAnalysis] = useState(null);
-  const [failedResults, setFailedResults] = useState([]);
   const [selectedViewStudent, setSelectedViewStudent] = useState(null);
   const [viewMode, setViewMode] = useState("table"); // 'table' | 'rankList' | 'analytics'
 
@@ -91,18 +95,59 @@ export default function ResultsPage() {
   const [pageRankResults, setPageRankResults] = useState(1);
 
   useEffect(() => {
-    getResults({ PageNumber: 1, PageSize: 100 })
-      .then(setScopeResults)
-      .catch((error) => setToast(getApiErrorMessage(error)));
+    let active = true;
+    const config = { params: { "api-version": RESULTS_API_VERSION } };
+    Promise.allSettled([
+      apiClient.get(resultsPageApi.boards, config),
+      apiClient.get(resultsPageApi.years, config),
+      apiClient.get(resultsPageApi.levels, config),
+    ]).then(([boardsResult, yearsResult, levelsResult]) => {
+      if (!active) return;
+      setFilterOptions((current) => ({
+        ...current,
+        boards: boardsResult.status === "fulfilled" ? options(boardsResult.value.data, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]) : [],
+        years: yearsResult.status === "fulfilled" ? options(yearsResult.value.data, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]) : [],
+        levels: levelsResult.status === "fulfilled" ? options(levelsResult.value.data, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]) : [],
+      }));
+      const failed = [boardsResult, yearsResult, levelsResult].find((result) => result.status === "rejected");
+      if (failed) setToast(getApiErrorMessage(failed.reason));
+      setFilterLoading((current) => ({ ...current, boards: false, years: false, levels: false }));
+    });
+    return () => { active = false; };
   }, []);
 
-  const uniqueScopes = (records, idKey, nameKey) =>
-    [...new Map(records.filter((record) => record[idKey] && record[nameKey]).map((record) => [record[idKey], { id: record[idKey], name: record[nameKey] }])).values()];
-  const availableBoards = uniqueScopes(scopeResults, "boardId", "board");
-  const availableYears = filters.board ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board), "academicYearId", "year") : [];
-  const availableLevels = filters.year ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year), "academicLevelId", "academicLevel") : [];
-  const availableGroups = filters.level ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year && String(r.academicLevelId) === filters.level), "groupId", "group") : [];
-  const availableExams = filters.group ? uniqueScopes(scopeResults.filter((r) => String(r.boardId) === filters.board && String(r.academicYearId) === filters.year && String(r.academicLevelId) === filters.level && String(r.groupId) === filters.group), "examId", "exam") : [];
+  const { boards: availableBoards, years: availableYears, levels: availableLevels, groups: availableGroups, exams: availableExams } = filterOptions;
+
+  useEffect(() => {
+    if (!filters.board || !filters.year || !filters.level) return undefined;
+    let active = true;
+    setFilterLoading((current) => ({ ...current, groups: true }));
+    apiClient.get(resultsPageApi.groups, { params: {
+      boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level),
+      pageNumber: 1, pageSize: 100, "api-version": RESULTS_API_VERSION,
+    } }).then((response) => {
+      if (!active) return;
+      setFilterOptions((current) => ({ ...current, groups: options(response.data, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]), exams: [] }));
+    }).catch((error) => active && setToast(getApiErrorMessage(error)))
+      .finally(() => active && setFilterLoading((current) => ({ ...current, groups: false })));
+    return () => { active = false; };
+  }, [filters.board, filters.level, filters.year]);
+
+  useEffect(() => {
+    if (!filters.board || !filters.year || !filters.level || !filters.group) return undefined;
+    let active = true;
+    const courseId = filterOptions.groups.find((group) => String(group.id) === filters.group)?.name;
+    if (!courseId) return undefined;
+    setFilterLoading((current) => ({ ...current, exams: true }));
+    apiClient.get(resultsPageApi.examinations, { params: {
+      courseId,
+    } }).then((response) => {
+      if (!active) return;
+      setFilterOptions((current) => ({ ...current, exams: options(response.data, ["examinationId", "ExaminationId", "examId", "ExamId", "id", "Id"], ["examName", "ExamName", "examinationName", "ExaminationName", "name", "Name", "examCode", "ExamCode"]) }));
+    }).catch((error) => active && setToast(getApiErrorMessage(error)))
+      .finally(() => active && setFilterLoading((current) => ({ ...current, exams: false })));
+    return () => { active = false; };
+  }, [filterOptions.groups, filters.board, filters.group, filters.level, filters.year]);
 
   const isAllFiltersSelected = Boolean(
     filters.board && filters.year && filters.level && filters.group && filters.exam
@@ -111,11 +156,20 @@ export default function ResultsPage() {
   const selectedScope = useMemo(() => ({
     boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group), examId: Number(filters.exam),
   }), [filters]);
+  const selectedGroupName = availableGroups.find((group) => String(group.id) === filters.group)?.name ?? "—";
 
   const handleFilterChange = (field, value) => {
     setResultsGenerated(false);
     setSelectedViewStudent(null);
     setViewMode("table");
+    setResultsData([]);
+    setRankResults([]);
+    setAnalysis(null);
+    if (["board", "year", "level"].includes(field)) {
+      setFilterOptions((current) => ({ ...current, groups: [], exams: [] }));
+    } else if (field === "group") {
+      setFilterOptions((current) => ({ ...current, exams: [] }));
+    }
 
     setFilters((prev) => {
       const updated = { ...prev, [field]: value };
@@ -150,24 +204,15 @@ export default function ResultsPage() {
         publishDate: new Date().toISOString(),
       });
 
-      const [fetchedData, failedData] = await Promise.all([
-        getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 }),
-        getFailedStudents(),
-      ]);
-
-      if (Array.isArray(fetchedData) && fetchedData.length > 0) {
-        setResultsData(fetchedData);
-      } else {
-        setResultsData(defaultResults);
-      }
-
-      setFailedResults(failedData);
+      const fetchedData = await getResults({ ...selectedScope, PageNumber: 1, PageSize: 100 });
+      setResultsData(Array.isArray(fetchedData) ? fetchedData : []);
+      setResultsGenerated(true);
       setToast("Results processed and fetched successfully!");
     } catch (error) {
       setToast(getApiErrorMessage(error));
-      setResultsData(defaultResults);
+      setResultsData([]);
+      setResultsGenerated(false);
     } finally {
-      setResultsGenerated(true);
       setPageStudentResults(1);
       setPageRankResults(1);
       setSelectedViewStudent(null);
@@ -252,7 +297,7 @@ export default function ResultsPage() {
 
   const handleDownloadPDF = async () => {
     if (!isAllFiltersSelected) {
-      handleLocalDownloadPDF();
+      setToast("Select the complete result scope before downloading PDF.");
       return;
     }
     try {
@@ -260,85 +305,14 @@ export default function ResultsPage() {
       downloadBlob(response.data, "Results.pdf");
       setToast("Results PDF downloaded successfully.");
     } catch (error) {
-      handleLocalDownloadPDF();
-    }
-  };
-
-  const handleLocalDownloadPDF = () => {
-    try {
-      const doc = new jsPDF({ orientation: "landscape" });
-      doc.setFontSize(14);
-      doc.setTextColor(15, 23, 42);
-      doc.text("Complete Student Marks & Examination Report", 14, 15);
-
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text(
-        `Board: ${filters.board || "All"} | Year: ${filters.year || "All"} | Level: ${filters.level || "All"} | Group: ${filters.group || "All"} | Exam: ${filters.exam || "All"}`,
-        14,
-        22
-      );
-
-      const tableColumn = [
-        "SL",
-        "NAME",
-        "ROLL NO",
-        "GRP",
-        "SEC",
-        "ENG",
-        "SAN",
-        "MATH",
-        "PHY",
-        "CHE",
-        "TOTAL",
-        "MAX",
-        "PERC",
-        "GRADE",
-        "RESULT",
-        "STATUS",
-      ];
-
-      const tableRows = filteredStudentResults.map((r, i) => [
-        i + 1,
-        r.name,
-        r.roll,
-        r.group,
-        r.section,
-        r.english ?? "-",
-        r.sanskrit ?? "-",
-        r.mathematics ?? "-",
-        r.physics ?? "-",
-        r.chemistry ?? "-",
-        r.total,
-        r.maximum || 500,
-        r.percentage,
-        r.grade,
-        r.result,
-        r.status || (r.isPublished ? "Published" : "Draft"),
-      ]);
-
-      autoTable(doc, {
-        head: [tableColumn],
-        body: tableRows,
-        startY: 25,
-        theme: "striped",
-        styles: { fontSize: 7.5, cellPadding: 2 },
-        headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: "bold" },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
-      });
-
-      doc.save(`Student_Marks_${filters.group || "All"}_${new Date().toISOString().slice(0, 10)}.pdf`);
-      setToast("Student marks PDF downloaded successfully!");
-    } catch (e) {
-      console.error("PDF Export Error:", e);
-      setToast("Error generating PDF file. Please try again.");
+      setToast(getApiErrorMessage(error));
     }
   };
 
   // Excel Export
   const handleExportExcel = async () => {
     if (!isAllFiltersSelected) {
-      handleLocalExportExcel();
+      setToast("Select the complete result scope before exporting Excel.");
       return;
     }
     try {
@@ -346,38 +320,7 @@ export default function ResultsPage() {
       downloadBlob(response.data, "Results.xlsx");
       setToast("Results Excel file downloaded successfully.");
     } catch (error) {
-      handleLocalExportExcel();
-    }
-  };
-
-  const handleLocalExportExcel = () => {
-    try {
-      const exportData = filteredStudentResults.map((r, idx) => ({
-        "SL NO": idx + 1,
-        "STUDENT NAME": r.name,
-        "ROLL NUMBER": r.roll,
-        "GROUP": r.group,
-        "SECTION": r.section,
-        "ENGLISH": r.english ?? "-",
-        "SANSKRIT": r.sanskrit ?? "-",
-        "MATHEMATICS": r.mathematics ?? "-",
-        "PHYSICS": r.physics ?? "-",
-        "CHEMISTRY": r.chemistry ?? "-",
-        "TOTAL MARKS": r.total,
-        "MAXIMUM MARKS": r.maximum || 500,
-        "PERCENTAGE": r.percentage,
-        "GRADE": r.grade,
-        "RESULT": r.result,
-        "STATUS": r.status || (r.isPublished ? "Published" : "Draft"),
-      }));
-
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Marks Sheet");
-      XLSX.writeFile(workbook, `Student_Marks_Sheet_${filters.group || "Export"}.xlsx`);
-      setToast("Excel spreadsheet downloaded successfully!");
-    } catch (e) {
-      setToast("Error exporting Excel file. Please try again.");
+      setToast(getApiErrorMessage(error));
     }
   };
 
@@ -408,7 +351,8 @@ export default function ResultsPage() {
     }
     setLoading(true);
     try {
-      const memo = await getStudentResult({ studentId: student.studentId || student.id, ...selectedScope });
+      const response = await apiClient.get(resultsPageApi.studentResult, { params: { studentId: student.studentId || student.id, ...selectedScope } });
+      const memo = unwrap(response.data);
       setSelectedViewStudent({
         ...student,
         name: memo.studentName || student.name,
@@ -416,7 +360,7 @@ export default function ResultsPage() {
         group: memo.groupName || student.group,
         exam: memo.examName || student.exam,
         total: memo.grandTotal || student.total,
-        maximum: memo.maximumMarks || student.maximum || 500,
+        maximum: memo.maximumMarks ?? student.maximum,
         percentage: memo.percentage ? `${memo.percentage}%` : student.percentage,
         grade: memo.overallGrade || student.grade,
         result: memo.finalResult || student.result,
@@ -425,7 +369,7 @@ export default function ResultsPage() {
         subjects: memo.subjects ?? [],
       });
     } catch (error) {
-      setSelectedViewStudent(student);
+      setToast(getApiErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -444,7 +388,7 @@ export default function ResultsPage() {
             group: item.groupName,
             exam: item.examName,
             total: item.totalMarks,
-            maximum: item.maximumMarks || 500,
+            maximum: item.maximumMarks,
             percentage: `${item.percentage}%`,
             grade: item.grade,
             rank: item.rank,
@@ -452,7 +396,7 @@ export default function ResultsPage() {
           })));
         }
       } catch (error) {
-        // Fallback to computed ranks
+        setToast(getApiErrorMessage(error));
       }
     }
     setRankSearchQuery("");
@@ -466,7 +410,7 @@ export default function ResultsPage() {
         const resAnalysis = await getResultAnalysis(selectedScope);
         if (resAnalysis) setAnalysis(resAnalysis);
       } catch (error) {
-        // Fallback to local calculations
+        setToast(getApiErrorMessage(error));
       }
     }
     setViewMode("analytics");
@@ -482,22 +426,21 @@ export default function ResultsPage() {
     ? (resultsData.reduce((acc, r) => acc + parsePercent(r.percentage), 0) / totalStudents).toFixed(2) 
     : "0.00";
 
-  const subjectsList = ["English", "Sanskrit", "Mathematics", "Physics", "Chemistry"];
+  const subjectsList = [...new Set(resultsData.map((result) => result.subject).filter(Boolean))];
   const subjectAnalytics = analysis?.subjects?.map((subject) => ({
     subject: subject.subjectName,
     average: subject.averageScore,
     passCount: subject.passedStudents,
     passRate: subject.subjectPassPercentage,
   })) ?? subjectsList.map((sub) => {
-    const key = sub.toLowerCase();
-    const scores = resultsData.map((r) => r[key] || 0);
-    const avgScore = totalStudents > 0 ? (scores.reduce((a, b) => a + b, 0) / totalStudents).toFixed(1) : 0;
+    const scores = resultsData.filter((result) => result.subject === sub).map((result) => Number(result.total)).filter(Number.isFinite);
+    const avgScore = scores.length ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : 0;
     const passedCount = scores.filter((s) => s >= 35).length;
     return {
       subject: sub,
       average: avgScore,
       passCount: passedCount,
-      passRate: totalStudents > 0 ? ((passedCount / totalStudents) * 100).toFixed(1) : "0.0",
+      passRate: scores.length ? ((passedCount / scores.length) * 100).toFixed(1) : "0.0",
     };
   });
 
@@ -631,19 +574,14 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Board <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
+                disabled={filterLoading.boards}
                 value={filters.board}
                 onChange={(e) => handleFilterChange("board", e.target.value)}
               >
                 <option value="">Select Board</option>
-                {availableBoards.length ? (
-                  availableBoards.map((b) => (
+                {availableBoards.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
-                  ))
-                ) : (
-                  ["BIE Telangana", "CBSE", "ICSE"].map((b) => (
-                    <option key={b} value={b}>{b}</option>
-                  ))
-                )}
+                  ))}
               </select>
             </div>
 
@@ -651,20 +589,14 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Academic Year <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.board}
+                disabled={!filters.board || filterLoading.years}
                 value={filters.year}
                 onChange={(e) => handleFilterChange("year", e.target.value)}
               >
                 <option value="">Select Year</option>
-                {availableYears.length ? (
-                  availableYears.map((y) => (
+                {availableYears.map((y) => (
                     <option key={y.id} value={y.id}>{y.name}</option>
-                  ))
-                ) : (
-                  filters.board && ["2025-2026", "2024-2025"].map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))
-                )}
+                  ))}
               </select>
             </div>
 
@@ -672,20 +604,14 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Academic Level <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.year}
+                disabled={!filters.year || filterLoading.levels}
                 value={filters.level}
                 onChange={(e) => handleFilterChange("level", e.target.value)}
               >
                 <option value="">Select Level</option>
-                {availableLevels.length ? (
-                  availableLevels.map((l) => (
+                {availableLevels.map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
-                  ))
-                ) : (
-                  filters.year && ["Intermediate 1st Year", "Intermediate 2nd Year"].map((l) => (
-                    <option key={l} value={l}>{l}</option>
-                  ))
-                )}
+                  ))}
               </select>
             </div>
 
@@ -693,20 +619,14 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Group <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.level}
+                disabled={!filters.level || filterLoading.groups}
                 value={filters.group}
                 onChange={(e) => handleFilterChange("group", e.target.value)}
               >
                 <option value="">Select Group</option>
-                {availableGroups.length ? (
-                  availableGroups.map((g) => (
+                {availableGroups.map((g) => (
                     <option key={g.id} value={g.id}>{g.name}</option>
-                  ))
-                ) : (
-                  filters.level && ["MPC", "BiPC", "CEC", "MEC"].map((g) => (
-                    <option key={g} value={g}>{g}</option>
-                  ))
-                )}
+                  ))}
               </select>
             </div>
 
@@ -714,20 +634,14 @@ Choose the academic context sequentially before reviewing faculty submissions.
               <label className="cms-label">Examination <span className="results-required-mark">*</span></label>
               <select
                 className="cms-select"
-                disabled={!filters.group}
+                disabled={!filters.group || filterLoading.exams}
                 value={filters.exam}
                 onChange={(e) => handleFilterChange("exam", e.target.value)}
               >
                 <option value="">Select Exam</option>
-                {availableExams.length ? (
-                  availableExams.map((ex) => (
+                {availableExams.map((ex) => (
                     <option key={ex.id} value={ex.id}>{ex.name}</option>
-                  ))
-                ) : (
-                  filters.group && ["Semester I", "Annual Examination", "Quarterly Exam"].map((ex) => (
-                    <option key={ex} value={ex}>{ex}</option>
-                  ))
-                )}
+                  ))}
               </select>
             </div>
           </div>
@@ -843,7 +757,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                 <div className="cms-summary-label">GRAND TOTAL</div>
                 <div className="cms-summary-val" style={{ fontSize: "18px" }}>
                   {selectedViewStudent.total}{" "}
-                  <span style={{ fontSize: "11px", fontWeight: 500, color: "inherit" }}>/ 500</span>
+                  <span style={{ fontSize: "11px", fontWeight: 500, color: "inherit" }}>/ {selectedViewStudent.maximum ?? "—"}</span>
                 </div>
               </div>
               <div>
@@ -911,7 +825,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   <FaTrophy style={{ color: "#f59e0b" }} /> Group Class Rank List
                 </h3>
                 <span className="cms-subtitle" style={{ fontSize: "12px" }}>
-                  Academic Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong> | Total Evaluated Students: {rankedStudentsWithRanks.length}
+                  Academic Group: <strong style={{ color: "inherit" }}>{selectedGroupName}</strong> | Total Evaluated Students: {rankedStudentsWithRanks.length}
                 </span>
               </div>
             </div>
@@ -975,7 +889,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                           </button>
                         </td>
                         <td style={{ fontWeight: 700, textAlign: "center" }}>{st.total}</td>
-                        <td style={{ opacity: 0.8, textAlign: "center" }}>{st.maximum || 500}</td>
+                        <td style={{ opacity: 0.8, textAlign: "center" }}>{st.maximum ?? "—"}</td>
                         <td style={{ fontWeight: 600, textAlign: "center" }}>{st.percentage}</td>
                         <td style={{ fontWeight: 700, textAlign: "center", color: st.grade === "F" ? "#dc2626" : "#16a34a" }}>{st.grade}</td>
                         <td style={{ textAlign: "center" }}>
@@ -1061,7 +975,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                   <FaChartBar style={{ color: "#2563eb" }} /> Examination Analytics Summary
                 </h3>
                 <span className="cms-subtitle" style={{ fontSize: "12px" }}>
-                  Academic Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong> | Performance Metrics Overview
+                  Academic Group: <strong style={{ color: "inherit" }}>{selectedGroupName}</strong> | Performance Metrics Overview
                 </span>
               </div>
             </div>
@@ -1215,7 +1129,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
                         <td>{r.group}</td>
                         <td>{r.section}</td>
                         <td style={{ fontWeight: 700, textAlign: "center" }}>{r.total}</td>
-                        <td style={{ opacity: 0.7, textAlign: "center" }}>{r.maximum || 500}</td>
+                        <td style={{ opacity: 0.7, textAlign: "center" }}>{r.maximum ?? "—"}</td>
                         <td style={{ fontWeight: 600, textAlign: "center" }}>{r.percentage}</td>
                         <td style={{ fontWeight: 700, textAlign: "center", color: r.grade === "F" ? "#dc2626" : "#16a34a" }}>
                           {r.grade}
@@ -1321,7 +1235,7 @@ Choose the academic context sequentially before reviewing faculty submissions.
 
             <div className="cms-modal-body">
               <p className="cms-subtitle" style={{ margin: 0 }}>
-                Published results will become immediately visible to students and parents on the Student Portal. Group: <strong style={{ color: "inherit" }}>{filters.group || "MPC"}</strong>. Continue?
+                Published results will become immediately visible to students and parents on the Student Portal. Group: <strong style={{ color: "inherit" }}>{selectedGroupName}</strong>. Continue?
               </p>
             </div>
 

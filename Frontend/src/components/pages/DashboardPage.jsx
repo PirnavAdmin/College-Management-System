@@ -148,7 +148,7 @@ function normalizeGroups(data) {
     const normalized = findArray(source, keys).map((item) => ({
       name: String(read(item, "groupName", "GroupName", "courseName", "CourseName", "group", "Group", "name", "Name", "label", "Label") ?? "").trim(),
       value: number(item, "studentCount", "StudentCount", "totalStudents", "TotalStudents", "strength", "Strength", "count", "Count", "value", "Value"),
-    })).filter((item) => item.name && item.value !== undefined && item.value > 0);
+    })).filter((item) => item.name && item.value !== undefined && item.value >= 0);
     if (normalized.length) return normalized;
   }
   return [];

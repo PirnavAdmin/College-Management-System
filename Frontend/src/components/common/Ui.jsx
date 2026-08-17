@@ -20,16 +20,17 @@ export function Loader({ label = "Loading data..." }) {
   );
 }
 
-export function Toast({ message, onClose }) {
+export function Toast({ message, onClose, type = "success" }) {
   useEffect(() => {
     if (!message) return undefined;
     const t = setTimeout(onClose, 2600);
     return () => clearTimeout(t);
   }, [message, onClose]);
   if (!message) return null;
+  const isError = type === "error";
   return (
-    <div className="cms-toast" role="status">
-      <CheckCircle2 size={18} />
+    <div className="cms-toast" role={isError ? "alert" : "status"} style={isError ? { background: "var(--cms-red)", color: "#fff" } : undefined}>
+      {isError ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
       {message}
     </div>
   );
@@ -52,16 +53,16 @@ export function Modal({ title, children, footer, onClose, size }) {
   );
 }
 
-export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm }) {
+export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm, loading = false }) {
   return (
     <Modal
       title={title}
       size="sm"
-      onClose={onCancel}
+      onClose={loading ? () => {} : onCancel}
       footer={
         <>
-          <button className="cms-btn cms-btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="cms-btn cms-btn-danger" onClick={onConfirm}>Yes, delete</button>
+          <button className="cms-btn cms-btn-ghost" onClick={onCancel} disabled={loading}>Cancel</button>
+          <button className="cms-btn cms-btn-danger" onClick={onConfirm} disabled={loading}>{loading ? "Deleting..." : "Yes, delete"}</button>
         </>
       }
     >

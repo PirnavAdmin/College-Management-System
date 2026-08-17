@@ -79,14 +79,25 @@ apiClient.interceptors.response.use(
     return Promise.reject(new Error("Backend returned HTML instead of JSON. Check API base URL or proxy."));
   },
   (error) => {
+    if (import.meta.env.DEV) {
+      console.error("API response error:", {
+        url: error.config?.url,
+        method: error.config?.method,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+    }
     if (isHtmlResponse(error.response?.data)) {
       error.response.data = { message: "Backend returned HTML instead of JSON. Check API base URL or proxy." };
     }
     if (error.response?.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("role");
-      if (window.location.pathname !== "/login") window.location.assign("/login");
+      const expiry = getJwtExpiryState(getStoredAccessToken());
+      if (expiry.isJwt && expiry.isExpired) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        localStorage.removeItem("role");
+        if (window.location.pathname !== "/login") window.location.assign("/login");
+      }
     }
     return Promise.reject(error);
   },

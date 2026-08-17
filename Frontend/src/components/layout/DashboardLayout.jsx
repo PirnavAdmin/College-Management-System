@@ -40,7 +40,7 @@ export const menu = [
     items: [
       { to: "/dashboard/timetable", label: "Timetable", icon: CalendarClock },
       { to: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck },
-      { to: "/dashboard/assignments", label: "Assignments", icon: FileText },
+      { to: "/dashboard/assignments", label: "Assignments", icon: FileText, children: [{ to: "/dashboard/assignments", label: "All Assignments", icon: FileText }, { to: "/dashboard/assignments/submissions", label: "Submissions", icon: ClipboardCheck }] },
     ],
   },
   {
@@ -84,7 +84,7 @@ function initials(name = "CMS Admin") {
 }
 
 export default function DashboardLayout({ title, subtitle, breadcrumb = [], actions, children }) {
-  const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen } = useSidebar();
+  const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -127,7 +127,8 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
   }, [pathname]);
   useEffect(() => {
     if (pathname.startsWith("/dashboard/faculty")) setFacultyOpen(true);
-  }, [pathname, setFacultyOpen]);
+    if (pathname.startsWith("/dashboard/assignments")) setAssignmentsOpen(true);
+  }, [pathname, setAssignmentsOpen, setFacultyOpen]);
 
   useEffect(() => {
     const onPointer = (e) => {
@@ -196,20 +197,24 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
                 const Icon = item.icon;
                 const active = isActive(item.to);
                 if (item.children) {
+                  const isFacultyMenu = item.to === "/dashboard/faculty";
+                  const isOpen = isFacultyMenu ? facultyOpen : assignmentsOpen;
+                  const setOpen = isFacultyMenu ? setFacultyOpen : setAssignmentsOpen;
+                  const childIsActive = (child) => child.to === "/dashboard/assignments" ? pathname === child.to : isActive(child.to);
                   return (
                     <div key={item.to}>
                       <div className="cms-nav-parent">
-                        <Link to={item.to} className={`cms-nav-link ${active && !pathname.startsWith("/dashboard/faculty-allocation") ? "is-active" : ""}`} onClick={closeOnMobile}>
+                        <Link to={item.to} className={`cms-nav-link ${active && !item.children.some(childIsActive) ? "is-active" : ""}`} onClick={closeOnMobile}>
                           <Icon size={17} /> {item.label}
                         </Link>
-                        <button type="button" className={`cms-nav-caret ${facultyOpen ? "is-open" : ""}`} aria-label={`${facultyOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={facultyOpen} onClick={() => setFacultyOpen((v) => !v)}>
+                        <button type="button" className={`cms-nav-caret ${isOpen ? "is-open" : ""}`} aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={isOpen} onClick={() => setOpen((v) => !v)}>
                           <ChevronDown size={15} />
                         </button>
                       </div>
-                      {facultyOpen
+                      {isOpen
                         ? item.children.map((child) => {
                             const ChildIcon = child.icon;
-                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${isActive(child.to) ? "is-active" : ""}`} onClick={closeOnMobile}><ChildIcon size={15} /> {child.label}</Link>;
+                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={closeOnMobile}><ChildIcon size={15} /> {child.label}</Link>;
                           })
                         : null}
                     </div>

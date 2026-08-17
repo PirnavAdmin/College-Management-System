@@ -16,8 +16,7 @@ const extractItems = (payload) => {
   return [];
 };
 
-const getStudents = () => apiClient.get(apiEndpoints.students.getAll);
-const createStudent = (student) => apiClient.post(apiEndpoints.students.create, student);
+const getStudents = (params) => apiClient.get(apiEndpoints.students.getAll, { params });
 const getStudentById = (studentId) => apiClient.get(apiEndpoints.students.getById(studentId));
 const updateStudent = (studentId, student) => apiClient.put(apiEndpoints.students.update(studentId), student);
 const deleteStudent = (studentId) => apiClient.delete(apiEndpoints.students.delete(studentId));
@@ -30,11 +29,22 @@ const suspendStudent = (studentId, data) => apiClient.patch(apiEndpoints.student
 const activateStudent = (studentId, data) => apiClient.patch(apiEndpoints.students.activate(studentId), data);
 const resetStudentPassword = (studentId, data) => apiClient.post(apiEndpoints.students.resetPassword(studentId), data);
 const getStudentDashboard = (studentId) => apiClient.get(apiEndpoints.students.getDashboard(studentId));
-const getGroups = () => apiClient.get(apiEndpoints.groups.getAll, { params: { pageNumber: 1, pageSize: 100 } });
+const searchStudents = (params) => apiClient.get(apiEndpoints.students.search, { params });
+const getActiveStudents = () => apiClient.get(apiEndpoints.students.getActive);
+const getStudentsByGroup = (groupId) => apiClient.get(apiEndpoints.students.getByGroup(groupId));
+const getStudentsBySection = (sectionId) => apiClient.get(apiEndpoints.students.getBySection(sectionId));
+const checkStudentEmail = (params) => apiClient.get(apiEndpoints.students.checkEmail, { params });
+const checkStudentMobile = (params) => apiClient.get(apiEndpoints.students.checkMobile, { params });
+const getGroups = () => apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } });
 const getAcademicLevels = () => apiClient.get(apiEndpoints.boards.getAcademicLevels);
 const getSections = () => apiClient.get(apiEndpoints.sections.getAll);
 
 const studentName = (student) => student.fullName || student.studentName || student.name || [student.firstName, student.lastName].filter(Boolean).join(" ");
+const option = (item, idKeys, labelKeys) => {
+  const value = idKeys.map((key) => item?.[key]).find((itemId) => itemId !== undefined && itemId !== null && itemId !== "");
+  const label = labelKeys.map((key) => item?.[key]).find(Boolean);
+  return value !== undefined && label ? { value: String(value), label: String(label) } : null;
+};
 const toStudentRow = (student) => ({
   ...student,
   id: student.studentId ?? student.id,
@@ -47,13 +57,23 @@ const toStudentRow = (student) => ({
   mobile: student.mobileNumber ?? student.mobile ?? student.phoneNumber,
   father: student.fatherName ?? student.father,
   status: typeof (student.status ?? student.isActive) === "boolean" ? ((student.status ?? student.isActive) ? "Active" : "Inactive") : student.status,
+  groupId: student.groupId,
+  sectionId: student.sectionId,
 });
+
+const matchesFilters = (row, search, filters) => {
+  const query = search.trim().toLowerCase();
+  if (query && !Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(query))) return false;
+  if (filters.group && String(row.groupId) !== String(filters.group)) return false;
+  if (filters.section && String(row.sectionId) !== String(filters.section)) return false;
+  return !filters.status || row.status === filters.status;
+};
 
 export const pageConfig = {
     title: "Student Management",
     subtitle: "Search students, view complete profiles and manage records.",
     breadcrumb: ["People"],
-    addLabel: "Add Student",
+    allowAdd: false,
     rows: [],
     columns: [
       { key: "admissionNo", label: "Admission No", strong: true },
@@ -64,6 +84,11 @@ export const pageConfig = {
       { key: "section", label: "Section" },
       { key: "mobile", label: "Mobile" },
       { key: "status", label: "Status", badge: true },
+    ],
+    filters: [
+      { name: "group", label: "Group", type: "select", options: [], loadOptions: getGroups, getOptions: (response) => extractItems(response.data).filter((group) => group.isActive !== false).map((group) => option(group, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"])).filter(Boolean) },
+      { name: "section", label: "Section", type: "select", options: [], loadOptions: getSections, getOptions: (response) => extractItems(response.data).filter((section) => section.isActive !== false).map((section) => option(section, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "sectionCode", "SectionCode", "name", "Name"])).filter(Boolean) },
+      { name: "status", label: "Status", type: "select", options: ["Active", "Inactive"] },
     ],
     fields: [
       { name: "admissionNo", label: "Admission Number", required: true },
@@ -80,8 +105,19 @@ export const pageConfig = {
   };
 
 pageConfig.api = {
-  getAll: getStudents,
-  create: createStudent,
+  fetchRows: async ({ search = "", filters = {} } = {}) => {
+    let response;
+    if (filters.status === "Active" && !search && !filters.group && !filters.section) response = await getActiveStudents();
+    else if (filters.group && !search && !filters.section) response = await getStudentsByGroup(filters.group);
+    else if (filters.section && !search && !filters.group) response = await getStudentsBySection(filters.section);
+    else if (search || filters.group || filters.section || filters.status) response = await searchStudents({ search: search || undefined, groupId: filters.group || undefined, sectionId: filters.section || undefined, isActive: filters.status ? filters.status === "Active" : undefined });
+    else response = await getStudents();
+    return extractItems(response.data).map(toStudentRow).filter((row) => row.id !== undefined).filter((row) => matchesFilters(row, search, filters));
+  },
+  fetchRow: async (studentId) => {
+    const response = await getStudentById(studentId);
+    return response.data?.data || response.data;
+  },
   getById: getStudentById,
   update: updateStudent,
   delete: deleteStudent,
@@ -94,6 +130,12 @@ pageConfig.api = {
   activate: activateStudent,
   resetPassword: resetStudentPassword,
   getDashboard: getStudentDashboard,
+  search: searchStudents,
+  getActive: getActiveStudents,
+  getByGroup: getStudentsByGroup,
+  getBySection: getStudentsBySection,
+  checkEmail: checkStudentEmail,
+  checkMobile: checkStudentMobile,
   toRow: toStudentRow,
   toRows: (payload) => extractItems(payload).map(toStudentRow),
   toPayload: (student) => student,
@@ -101,14 +143,14 @@ pageConfig.api = {
 
 pageConfig.fields.find((field) => field.name === "group").getOptions = (response) => extractItems(response.data)
   .filter((group) => group.isActive !== false)
-  .map((group) => group.groupCode || group.groupName || group.name)
+  .map((group) => option(group, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"]))
   .filter(Boolean);
 pageConfig.fields.find((field) => field.name === "level").getOptions = (response) => extractItems(response.data)
-  .map((level) => level.levelName || level.academicLevel || level.name)
+  .map((level) => option(level, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["levelName", "LevelName", "academicLevel", "AcademicLevel", "name", "Name"]))
   .filter(Boolean);
 pageConfig.fields.find((field) => field.name === "section").getOptions = (response) => extractItems(response.data)
   .filter((section) => section.isActive !== false)
-  .map((section) => section.sectionName || section.sectionCode || section.name)
+  .map((section) => option(section, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "sectionCode", "SectionCode", "name", "Name"]))
   .filter(Boolean);
 
 export default function StudentManagementPage() {

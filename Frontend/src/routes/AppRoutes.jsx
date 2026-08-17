@@ -14,11 +14,12 @@ import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
 import AttendancePage from "@/components/pages/AttendancePage.jsx";
 import AssignmentsMaterialsPage, { pageConfig as assignmentsMaterialsConfig } from "@/components/pages/AssignmentsMaterialsPage.jsx";
+import AssignmentSubmissionsPage from "@/components/pages/AssignmentSubmissionsPage.jsx";
 import ExaminationPage, { pageConfig as examinationConfig } from "@/components/pages/ExaminationPage.jsx";
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
 import ResultProcessingPage from "@/components/pages/ResultProcessingPage.jsx";
 import PromotionPage from "@/components/pages/PromotionPage.jsx";
-import FeeManagementPage, { pageConfig as feeManagementConfig } from "@/components/pages/FeeManagementPage.jsx";
+import FeeManagementPage from "@/components/pages/FeeManagementPage.jsx";
 import CertificatesPage, { pageConfig as certificatesConfig } from "@/components/pages/CertificatesPage.jsx";
 import ReportsAnalyticsPage from "@/components/pages/ReportsAnalyticsPage.jsx";
 import StudentProfilePage from "@/components/pages/StudentProfilePage.jsx";
@@ -40,7 +41,6 @@ const moduleConfigs = {
   "faculty-allocation": FacultyManagementPage.facultySubjectAllocationConfig,
   assignments: assignmentsMaterialsConfig,
   examinations: examinationConfig,
-  "fee-structure": feeManagementConfig,
   certificates: certificatesConfig,
   students: studentManagementConfig,
 };
@@ -98,9 +98,11 @@ export default function AppRoutes() {
         <Route path="/dashboard/timetable/faculty" element={<TimetablePage screen="faculty" />} />
         <Route path="/dashboard/attendance" element={<AttendancePage />} />
         <Route path="/dashboard/assignments" element={<AssignmentsMaterialsPage />} />
+        <Route path="/dashboard/assignments/submissions" element={<AssignmentSubmissionsPage />} />
         <Route path="/dashboard/assignments/add" element={<AssignmentsMaterialsPage />} />
         <Route path="/dashboard/assignments/:id/edit" element={<AssignmentsMaterialsPage />} />
         <Route path="/dashboard/examinations" element={<ExaminationPage />} />
+        <Route path="/dashboard/examinations/add" element={<ExaminationPage />} />
         <Route path="/dashboard/marks-entry" element={<MarksEntryPage />} />
         <Route path="/dashboard/results" element={<ResultProcessingPage />} />
         <Route path="/dashboard/promotion" element={<PromotionPage />} />

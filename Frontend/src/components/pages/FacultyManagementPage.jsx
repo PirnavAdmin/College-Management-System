@@ -70,7 +70,8 @@ const extractItems = (payload) =>
       payload?.data ||
       [];
 const facultyName = (item = {}) =>
-  item.fullName || item.name || [item.firstName, item.lastName].filter(Boolean).join(" ");
+  item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "Unsaved faculty";
+const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
 const facultyId = (item = {}) => item.facultyId ?? item.id ?? item.FacultyId ?? item.Id;
 const subjectId = (item = {}) => item.subjectId ?? item.id ?? item.SubjectId ?? item.Id;
 const subjectName = (item = {}) =>
@@ -115,7 +116,7 @@ const valuesFor = (item) => ({
   firstName: item.firstName,
   lastName: item.lastName,
   gender: item.gender,
-  dob: item.dateOfBirth ?? item.dob,
+  dob: dateOnly(item.dateOfBirth ?? item.dob),
   aadhaar: item.aadhaar,
   mobile: item.mobile ?? item.phoneNumber,
   email: item.email,
@@ -124,27 +125,25 @@ const valuesFor = (item) => ({
   designation: item.designation,
   facultyType: item.facultyType,
   department: item.department,
-  joining: item.joiningDate ?? item.joining,
+  joining: dateOnly(item.joiningDate ?? item.joining),
   experience: item.experience,
   status: item.status || "Active",
 });
 
-function Steps({ step }) {
+function Steps({ step, onSelect }) {
   return (
     <div className="faculty-steps">
       {[
-        ["Details", UserRound],
-        ["Preview", Eye],
-        ["Save & Next", Check],
-        ["Subjects", GraduationCap],
-      ].map(([label, Icon], index) => (
-        <div className={index <= step ? "is-active" : ""} key={label}>
+        ["Details", UserRound, 0],
+        ["Subjects", GraduationCap, 3],
+      ].map(([label, Icon, targetStep]) => (
+        <button type="button" className={targetStep <= step ? "is-active" : ""} key={label} onClick={() => onSelect(targetStep)}>
           <span>
             <Icon size={15} />
           </span>
-          <small>Step {index + 1}</small>
+          <small>{label === "Details" ? "Step 1" : "Step 2"}</small>
           <strong>{label}</strong>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -185,7 +184,7 @@ function Preview({ values }) {
                 <strong>
                   {name === "firstName"
                     ? `${values.firstName || ""} ${values.lastName || ""}`
-                    : values[name] || "—"}
+                    : (name === "dob" || name === "joining" ? dateOnly(values[name]) : values[name]) || "—"}
                 </strong>
               </p>
             ))}
@@ -219,7 +218,7 @@ function Workflow({ existingId }) {
       ),
     [departments, genders],
   );
-  const { values, errors, setValue, setValues, validate } = useForm(formFields, {});
+  const { values, errors, setValue, setValues } = useForm(formFields, {});
   useEffect(() => {
     apiClient
       .get(apiEndpoints.departments.getAll)
@@ -239,10 +238,24 @@ function Workflow({ existingId }) {
     apiClient
       .get(apiEndpoints.faculty.getById(existingId))
       .then((r) => {
-        setValues(valuesFor(r.data));
-        setSaved(r.data);
+        const record = r.data?.data ?? r.data;
+        setValues(valuesFor(record));
+        setSaved(record);
       })
-      .catch((e) => setToast(getApiErrorMessage(e)));
+      .catch(async (detailError) => {
+        try {
+          const listResponse = await apiClient.get(apiEndpoints.faculty.getAll);
+          const record = extractItems(listResponse.data).find(
+            (item) => String(facultyId(item)) === String(existingId),
+          );
+          if (!record) throw detailError;
+          setValues(valuesFor(record));
+          setSaved(record);
+          setToast("Loaded faculty details from the directory because the individual record endpoint is unavailable.");
+        } catch {
+          setToast(getApiErrorMessage(detailError));
+        }
+      });
   }, [existingId, setValues]);
   const loadAllocation = async (faculty) => {
     const loadSubjects = apiClient
@@ -280,7 +293,7 @@ function Workflow({ existingId }) {
   }, [step, saved]);
   const preview = (e) => {
     e.preventDefault();
-    if (validate()) setStep(1);
+    setStep(1);
   };
   const confirm = async () => {
     setSaving(true);
@@ -363,7 +376,7 @@ function Workflow({ existingId }) {
       breadcrumb={["People"]}
     >
       <main className="faculty-workflow">
-        <Steps step={step} />
+        <Steps step={step} onSelect={setStep} />
         {step === 0 && (
           <form className="faculty-form" onSubmit={preview}>
             <header>
@@ -616,7 +629,7 @@ export default function FacultyManagementPage() {
                     ["Designation", viewing.designation],
                     ["Qualification", viewing.qualification],
                     ["Faculty Type", viewing.facultyType],
-                    ["Joining Date", viewing.joiningDate ?? viewing.joining],
+                    ["Joining Date", dateOnly(viewing.joiningDate ?? viewing.joining)],
                     ["Status", viewing.status],
                   ].map(([label, value]) => (
                     <div key={label}>

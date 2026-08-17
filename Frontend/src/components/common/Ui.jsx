@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, X, AlertTriangle, Eye, EyeOff } from "lucide-react";
 
 export function StatusBadge({ value }) {
@@ -20,23 +21,33 @@ export function Loader({ label = "Loading data..." }) {
   );
 }
 
-export function Toast({ message, onClose }) {
+export function Toast({ message, onClose, type = "success" }) {
   useEffect(() => {
     if (!message) return undefined;
     const t = setTimeout(onClose, 2600);
     return () => clearTimeout(t);
   }, [message, onClose]);
   if (!message) return null;
+  const isError = type === "error";
   return (
-    <div className="cms-toast" role="status">
-      <CheckCircle2 size={18} />
+    <div className="cms-toast" role={isError ? "alert" : "status"} style={isError ? { background: "var(--cms-red)", color: "#fff" } : undefined}>
+      {isError ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
       {message}
     </div>
   );
 }
 
 export function Modal({ title, children, footer, onClose, size }) {
-  return (
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  const dialog = (
     <div className="cms-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={`cms-modal ${size === "sm" ? "sm" : ""}`} role="dialog" aria-modal="true">
         <div className="cms-modal-head">
@@ -50,18 +61,21 @@ export function Modal({ title, children, footer, onClose, size }) {
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return dialog;
+  return createPortal(dialog, document.body);
 }
 
-export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm }) {
+export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm, loading = false }) {
   return (
     <Modal
       title={title}
       size="sm"
-      onClose={onCancel}
+      onClose={loading ? () => {} : onCancel}
       footer={
         <>
-          <button className="cms-btn cms-btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="cms-btn cms-btn-danger" onClick={onConfirm}>Yes, delete</button>
+          <button className="cms-btn cms-btn-ghost" onClick={onCancel} disabled={loading}>Cancel</button>
+          <button className="cms-btn cms-btn-danger" onClick={onConfirm} disabled={loading}>{loading ? "Deleting..." : "Yes, delete"}</button>
         </>
       }
     >
@@ -84,7 +98,7 @@ export function Field({ field, value, error, onChange }) {
   const isPassword = type === "password";
   const normalizedOptions = options.map((option) => (
     option && typeof option === "object"
-      ? { value: option.value, label: option.label ?? option.value }
+      ? { value: option.value, label: option.label ?? option.value, disabled: Boolean(option.disabled) }
       : { value: option, label: option }
   ));
   return (

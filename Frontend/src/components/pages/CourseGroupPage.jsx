@@ -21,14 +21,28 @@ const read = (item, ...keys) => {
   return key ? item[key] : undefined;
 };
 
+const optionFrom = (item, idKeys, labelKeys) => {
+  const value = read(item, ...idKeys);
+  const label = read(item, ...labelKeys) ?? value;
+  if (value === undefined || value === null || value === "") return null;
+  return { value: String(value), label: String(label) };
+};
+
+const getUniqueOptions = (rows, idKeys, labelKeys) => {
+  const options = rows.map((item) => optionFrom(item, idKeys, labelKeys)).filter(Boolean);
+  return Array.from(new Map(options.map((item) => [item.value, item])).values());
+};
+
 const normalizeGroup = (item) => ({
   id: read(item, "groupId", "GroupId", "id"),
   name: read(item, "groupName", "GroupName", "name") || "-",
   code: read(item, "groupCode", "GroupCode", "code") || "-",
-  board: read(item, "board", "Board") || "-",
+  boardId: String(read(item, "boardId", "BoardId") || ""),
+  board: read(item, "boardName", "BoardName", "board", "Board") || "-",
   year: String(read(item, "academicYearId", "AcademicYearId", "year") || ""),
   yearName: read(item, "academicYearName", "AcademicYearName") || "",
-  level: read(item, "academicLevel", "AcademicLevel", "level") || "-",
+  levelId: String(read(item, "academicLevelId", "AcademicLevelId") || ""),
+  level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || "-",
   subjects: read(item, "totalSubjects", "TotalSubjects") ?? 0,
   description: read(item, "description", "Description") || "",
   status: read(item, "status", "Status") || (read(item, "isActive", "IsActive") ? "Active" : "Inactive"),
@@ -37,9 +51,9 @@ const normalizeGroup = (item) => ({
 const normalizeGroupForm = (item) => {
   const group = normalizeGroup(item);
   return {
-    board: group.board === "-" ? "" : group.board,
+    board: group.boardId,
     year: group.year,
-    level: group.level === "-" ? "" : group.level,
+    level: group.levelId,
     name: group.name === "-" ? "" : group.name,
     code: group.code === "-" ? "" : group.code,
     description: group.description,
@@ -48,9 +62,9 @@ const normalizeGroupForm = (item) => {
 };
 
 const toPayload = (formData) => ({
-  board: formData.board,
+  boardId: Number(formData.board),
   academicYearId: Number(formData.year),
-  academicLevel: formData.level,
+  academicLevelId: Number(formData.level),
   groupName: formData.name,
   groupCode: formData.code,
   description: formData.description || "",
@@ -60,33 +74,40 @@ const toPayload = (formData) => ({
 const matchesFilters = (row, search, filters) => {
   const query = search.trim().toLowerCase();
   if (query && !Object.values(row).some((value) => String(value).toLowerCase().includes(query))) return false;
-  if (filters.board && row.board !== filters.board) return false;
-  if (filters.level && row.level !== filters.level) return false;
+  if (filters.board && row.boardId !== filters.board) return false;
+  if (filters.level && row.levelId !== filters.level) return false;
   if (filters.status && row.status !== filters.status) return false;
   return true;
 };
 
-const loadAcademicYearOptions = async () => {
-  const response = await apiClient.get(apiEndpoints.academicYears.list);
-  return getCollection(response.data).map((year) => {
-    const value = read(year, "academicYearId", "AcademicYearId", "id");
-    const label = read(year, "academicYearName", "AcademicYearName", "name") || value;
-    return { value: String(value), label };
-  }).filter((year) => year.value);
+const loadGroupMasters = async () => {
+  const [boardsResult, yearsResult, levelsResult] = await Promise.allSettled([
+    apiClient.get(apiEndpoints.boards.getAll),
+    apiClient.get(apiEndpoints.academicYears.list),
+    apiClient.get(apiEndpoints.boards.getAcademicLevels),
+  ]);
+  return {
+    boards: boardsResult.status === "fulfilled"
+      ? getUniqueOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
+      : [],
+    years: yearsResult.status === "fulfilled"
+      ? getUniqueOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])
+      : [],
+    levels: levelsResult.status === "fulfilled"
+      ? getUniqueOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"])
+      : [],
+  };
 };
 
 const groupApi = {
   fetchRows: async ({ search = "", filters = {} } = {}) => {
     const params = {
       search: search || undefined,
-      board: filters.board || undefined,
-      academicLevel: filters.level || undefined,
+      boardId: filters.board || undefined,
+      academicLevelId: filters.level || undefined,
       isActive: filters.status ? filters.status === "Active" : undefined,
     };
-    const hasOnlyBoardFilter = filters.board && !search && !filters.level && !filters.status;
-    const response = hasOnlyBoardFilter
-      ? await apiClient.get(apiEndpoints.groups.getByBoard(filters.board))
-      : await apiClient.get(apiEndpoints.groups.getAll, { params });
+    const response = await apiClient.get(apiEndpoints.groups.getAll, { params });
     return getCollection(response.data)
       .map(normalizeGroup)
       .filter((row) => row.id)
@@ -113,10 +134,24 @@ const groupApi = {
     return response.data?.isAvailable === false ? { code: "Group Code already exists" } : {};
   },
   loadFields: async (fields) => {
-    const academicYearOptions = await loadAcademicYearOptions();
+    const masters = await loadGroupMasters();
     return fields.map((field) => (
-      field.name === "year"
-        ? { ...field, options: academicYearOptions }
+      field.name === "board"
+        ? { ...field, options: masters.boards }
+        : field.name === "year"
+          ? { ...field, options: masters.years }
+          : field.name === "level"
+            ? { ...field, options: masters.levels }
+            : field
+    ));
+  },
+  loadFilters: async (filters) => {
+    const masters = await loadGroupMasters();
+    return filters.map((field) => (
+      field.name === "board"
+        ? { ...field, options: masters.boards }
+        : field.name === "level"
+          ? { ...field, options: masters.levels }
         : field
     ));
   },
@@ -138,14 +173,14 @@ export const pageConfig = {
       { key: "status", label: "Status", badge: true },
     ],
     filters: [
-      { name: "board", label: "Board", type: "select", options: o.board },
-      { name: "level", label: "Academic Level", type: "select", options: o.level },
+      { name: "board", label: "Board", type: "select", options: [] },
+      { name: "level", label: "Academic Level", type: "select", options: [] },
       { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
     ],
     fields: [
-      { name: "board", label: "Board", type: "select", options: o.board, required: true },
+      { name: "board", label: "Board", type: "select", options: [], required: true },
       { name: "year", label: "Academic Year", type: "select", options: [], required: true },
-      { name: "level", label: "Academic Level", type: "select", options: o.level, required: true },
+      { name: "level", label: "Academic Level", type: "select", options: [], required: true },
       { name: "name", label: "Group Name", required: true },
       { name: "code", label: "Group Code", required: true },
       { name: "description", label: "Description", type: "textarea", full: true },

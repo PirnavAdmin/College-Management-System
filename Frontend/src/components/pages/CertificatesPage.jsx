@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Ban, Download, FilePenLine, RotateCcw, Search, X } from "lucide-react";
+import jsPDF from "jspdf";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
@@ -117,8 +118,9 @@ const pick = (obj, keys) => {
 };
 
 const getCertificateBackendId = (raw) => {
-  const numericId = Number(pick(raw, ["id", "Id", "certificateId", "CertificateId", "certificateID"]));
-  return Number.isFinite(numericId) && numericId > 0 ? numericId : null;
+  const value = pick(raw, ["id", "Id", "certificateId", "CertificateId", "certificateID"]);
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  return String(value);
 };
 
 const buildFallbackRowId = (raw, matchedStudent) => {
@@ -586,6 +588,95 @@ function buildPrintHtml(record) {
 </html>`;
 }
 
+function downloadCertificatePdf(record) {
+  const document = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const width = document.internal.pageSize.getWidth();
+  const height = document.internal.pageSize.getHeight();
+  const template = getCertificateTemplate(record.type, record);
+  const certificateNo = String(record.number || "-");
+  const status = String(record.status || "Generated");
+  const requestDate = formatDateDdMmYyyy(record.requestDate);
+  const issueDate = formatDateDdMmYyyy(record.issue);
+  const bodyLines = document.splitTextToSize(
+    `This is to certify that ${record.student || "-"} ${template.paragraphOne} ${template.paragraphTwo}`,
+    156,
+  );
+
+  document.setFillColor(255, 255, 255);
+  document.rect(0, 0, width, height, "F");
+  document.setDrawColor(197, 211, 236);
+  document.setLineWidth(0.7);
+  document.rect(10, 10, width - 20, height - 20);
+  document.setDrawColor(213, 224, 245);
+  document.setLineWidth(0.35);
+  document.rect(14, 14, width - 28, height - 28);
+
+  document.setFont("times", "bold");
+  document.setFontSize(66);
+  document.setTextColor(232, 238, 248);
+  document.text("PJC", width / 2, height / 2 + 12, { align: "center", angle: 35 });
+
+  document.setDrawColor(185, 203, 236);
+  document.setFillColor(237, 243, 255);
+  document.circle(34, 33, 10, "FD");
+  document.setFont("helvetica", "bold");
+  document.setFontSize(7);
+  document.setTextColor(41, 84, 168);
+  document.text("PJC", 34, 34, { align: "center" });
+
+  document.setFont("times", "bold");
+  document.setFontSize(15);
+  document.setTextColor(55, 82, 127);
+  document.text("PIRNAV JUNIOR COLLEGE", width / 2 + 7, 31, { align: "center" });
+  document.setFontSize(22);
+  document.setTextColor(20, 54, 110);
+  document.text(template.heading.toUpperCase(), width / 2, 47, { align: "center" });
+  document.setFont("times", "italic");
+  document.setFontSize(8);
+  document.setTextColor(90, 111, 147);
+  document.text("Empowering learners with integrity, discipline and excellence", width / 2, 54, { align: "center" });
+  document.setDrawColor(205, 217, 239);
+  document.line(25, 60, width - 25, 60);
+
+  document.setFont("helvetica", "normal");
+  document.setFontSize(8.5);
+  document.setTextColor(46, 66, 105);
+  document.text(`Certificate No: ${certificateNo}`, 26, 69);
+  document.text(`Status: ${status}`, width - 26, 69, { align: "right" });
+  document.setFont("helvetica", "bold");
+  document.setFontSize(9);
+  document.setTextColor(48, 76, 125);
+  document.text("TO WHOM IT MAY CONCERN", width / 2, 82, { align: "center" });
+
+  document.setFont("times", "normal");
+  document.setFontSize(13);
+  document.setLineHeightFactor(1.7);
+  document.setTextColor(29, 49, 86);
+  document.text(bodyLines, 27, 100, { maxWidth: 156, align: "justify" });
+  const contentEnd = 100 + (bodyLines.length * 7.8);
+  document.setFont("helvetica", "bold");
+  document.setFontSize(9);
+  document.text(`Request Date: ${requestDate}`, 27, contentEnd + 13);
+  document.text(`Issue Date: ${issueDate}`, 27, contentEnd + 20);
+  if (record.remarks) {
+    const remarks = document.splitTextToSize(`Remarks: ${record.remarks}`, 156);
+    document.text(remarks, 27, contentEnd + 30);
+  }
+
+  document.setFont("helvetica", "normal");
+  document.setFontSize(8);
+  document.setTextColor(79, 99, 136);
+  document.text("This is a system-generated institutional certificate and is valid without alteration.", 27, height - 38, { maxWidth: 92 });
+  document.setDrawColor(53, 79, 127);
+  document.line(width - 81, height - 45, width - 27, height - 45);
+  document.setFont("times", "bold");
+  document.setFontSize(10);
+  document.setTextColor(24, 37, 63);
+  document.text("Principal, Pirnav Junior College", width - 54, height - 38, { align: "center" });
+
+  document.save(`${certificateNo.replace(/[^a-z0-9_-]/gi, "_") || "certificate"}.pdf`);
+}
+
 export default function CertificatesPage() {
   const [rows, setRows] = useState([]);
   const [studentRows, setStudentRows] = useState(fallbackStudents);
@@ -613,9 +704,6 @@ export default function CertificatesPage() {
   const [page, setPage] = useState(1);
   const [printPreview, setPrintPreview] = useState(null);
   const [editRow, setEditRow] = useState(null);
-  const [viewMode, setViewMode] = useState("list");
-  const [verifyNumber, setVerifyNumber] = useState("");
-  const [verifying, setVerifying] = useState(false);
   const [editForm, setEditForm] = useState({
     admissionNo: "",
     student: "",
@@ -650,56 +738,20 @@ export default function CertificatesPage() {
   };
 
   const hasServerCertificateId = (row) => {
-    const numericId = Number(row?.backendId ?? row?.id);
-    return Number.isFinite(numericId) && numericId > 0;
+    const value = row?.backendId ?? row?.id;
+    return value !== undefined && value !== null && String(value).trim() !== "";
   };
 
   const resolveServerCertificateId = async (row) => {
     if (!row) return null;
     if (hasServerCertificateId(row)) {
-      return Number(row.backendId ?? row.id);
+      return String(row.backendId ?? row.id);
     }
 
-    const certificateNumber = String(row?.number || "").trim();
-    if (!certificateNumber || certificateNumber === "-") return null;
-
-    try {
-      const response = await apiClient.get(CERTIFICATE_API.verify(certificateNumber));
-      const details = unwrapSinglePayload(response.data);
-      if (!hasCertificateShape(details)) return null;
-
-      const normalized = normalizeCertificate(details, studentRows);
-      const resolvedId = Number(normalized.backendId ?? normalized.id);
-      if (!resolvedId) return null;
-
-      setRows((prev) => prev.map((item) => (String(item.id) === String(row.id) ? { ...item, ...normalized, backendId: resolvedId } : item)));
-      return resolvedId;
-    } catch {
-      return null;
-    }
-  };
-
-  const loadCertificateHistory = async ({ showLoader = true, studentLookup = studentRows } = {}) => {
-    if (showLoader) setLoadingList(true);
-    try {
-      const response = await apiClient.get(CERTIFICATE_API.history);
-      const mapped = unwrapListPayload(response?.data).map((item) => normalizeCertificate(item, studentLookup));
-      setRows(mapped);
-      return true;
-    } catch (error) {
-      setRows([]);
-      setToast(getFriendlyErrorMessage(error, "Failed to load certificate history. Please try again."));
-      return false;
-    } finally {
-      if (showLoader) setLoadingList(false);
-    }
+    return null;
   };
 
   const reloadCurrentView = async () => {
-    if (viewMode === "history") {
-      await loadCertificateHistory({ showLoader: false });
-      return;
-    }
     await loadCertificates({ showLoader: false });
   };
 
@@ -708,18 +760,7 @@ export default function CertificatesPage() {
     try {
       const response = await apiClient.get(CERTIFICATE_API.list);
       const mapped = unwrapListPayload(response?.data).map((item) => normalizeCertificate(item, studentLookup));
-      if (mapped.length > 0) {
-        setRows(mapped);
-        return true;
-      }
-
-      try {
-        const historyResponse = await apiClient.get(CERTIFICATE_API.history);
-        const historyMapped = unwrapListPayload(historyResponse?.data).map((item) => normalizeCertificate(item, studentLookup));
-        setRows(historyMapped);
-      } catch {
-        setRows(mapped);
-      }
+      setRows(mapped);
       return true;
     } catch (error) {
       setRows([]);
@@ -869,11 +910,11 @@ export default function CertificatesPage() {
   };
 
   const refreshCertificates = async () => {
-    const ok = viewMode === "history" ? await loadCertificateHistory() : await loadCertificates();
+    const ok = await loadCertificates();
     setPage(1);
     setPrintPreview(null);
     setEditRow(null);
-    if (ok) setToast(viewMode === "history" ? "Certificate history refreshed from server" : "Certificates refreshed from server");
+    if (ok) setToast("Certificates refreshed from server");
   };
 
   const generateCertificate = async () => {
@@ -1017,85 +1058,17 @@ export default function CertificatesPage() {
 
     setBusyAction({ id: row.id, type: "download" });
     try {
-      const response = await apiClient.get(CERTIFICATE_API.download(actionId), { responseType: "blob" });
-      const contentType = String(response?.headers?.["content-type"] || "").toLowerCase();
-      const contentDisposition = String(response?.headers?.["content-disposition"] || "");
+      let certificate = row;
+      const response = await apiClient.get(CERTIFICATE_API.getById(actionId));
+      const details = unwrapSinglePayload(response.data);
+      if (hasCertificateShape(details)) certificate = normalizeCertificate(details, studentRows);
 
-      const blob = response?.data instanceof Blob
-        ? response.data
-        : new Blob([response?.data], { type: contentType || "application/octet-stream" });
-
-      if (contentType.includes("application/json") || contentType.includes("text/plain")) {
-        const text = await blob.text();
-        try {
-          const parsed = JSON.parse(text);
-          const downloadUrl = parsed?.url || parsed?.downloadUrl || parsed?.fileUrl || parsed?.data?.url;
-          const base64 = parsed?.base64 || parsed?.fileBase64 || parsed?.data?.base64;
-          if (downloadUrl) {
-            window.open(String(downloadUrl), "_blank", "noopener,noreferrer");
-            setToast("Certificate download started.");
-            return;
-          }
-          if (base64) {
-            const base64Text = String(base64).split(",").pop();
-            const bytes = window.atob(base64Text);
-            const array = new Uint8Array(bytes.length);
-            for (let index = 0; index < bytes.length; index += 1) array[index] = bytes.charCodeAt(index);
-            const base64Blob = new Blob([array], { type: "application/pdf" });
-            const base64Url = window.URL.createObjectURL(base64Blob);
-            const base64Link = document.createElement("a");
-            base64Link.href = base64Url;
-            base64Link.download = `${row.number || "certificate"}.pdf`;
-            document.body.appendChild(base64Link);
-            base64Link.click();
-            base64Link.remove();
-            window.URL.revokeObjectURL(base64Url);
-            setToast("Certificate downloaded successfully.");
-            return;
-          }
-        } catch {
-          // Continue with generic download fallback.
-        }
-      }
-
-      const filenameMatch = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(contentDisposition);
-      const filename = decodeURIComponent(filenameMatch?.[1] || filenameMatch?.[2] || `${row.number || "certificate"}.pdf`);
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
+      downloadCertificatePdf(certificate);
       setToast("Certificate downloaded successfully.");
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Unable to download certificate. Please try again."));
     } finally {
       setBusyAction({ id: null, type: "" });
-    }
-  };
-
-  const verifyCertificateNo = async () => {
-    const certificateNo = String(verifyNumber || "").trim();
-    if (!certificateNo) {
-      setToast("Enter a certificate number to verify.");
-      return;
-    }
-    if (verifying) return;
-    setVerifying(true);
-    try {
-      const response = await apiClient.get(CERTIFICATE_API.verify(certificateNo));
-      const payload = unwrapSinglePayload(response?.data) || {};
-      const rawValid = payload?.isValid ?? payload?.valid ?? payload?.verified ?? payload?.status;
-      const valid = typeof rawValid === "string"
-        ? ["valid", "verified", "true", "active", "issued"].includes(rawValid.toLowerCase())
-        : Boolean(rawValid);
-      setToast(valid ? "Certificate verified successfully." : "Certificate verification failed.");
-    } catch (error) {
-      setToast(getFriendlyErrorMessage(error, "Unable to verify certificate. Please try again."));
-    } finally {
-      setVerifying(false);
     }
   };
 
@@ -1387,53 +1360,6 @@ export default function CertificatesPage() {
             />
           </div>
           <div className="cms-toolbar-right cert-toolbar-right">
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              onClick={async () => {
-                setViewMode("list");
-                await loadCertificates();
-                setPage(1);
-              }}
-              disabled={loadingList || creating || viewMode === "list"}
-              title="Show current certificates"
-            >
-              Certificates
-            </button>
-
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              onClick={async () => {
-                setViewMode("history");
-                await loadCertificateHistory();
-                setPage(1);
-              }}
-              disabled={loadingList || creating || viewMode === "history"}
-              title="Show certificate history"
-            >
-              History
-            </button>
-
-            <input
-              type="text"
-              className="cert-toolbar-select"
-              value={verifyNumber}
-              placeholder="Verify certificate no."
-              onChange={(e) => setVerifyNumber(e.target.value)}
-              aria-label="Certificate number for verification"
-            />
-
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              onClick={verifyCertificateNo}
-              disabled={verifying || loadingList}
-              title="Verify certificate"
-            >
-              {verifying ? "Verifying..." : "Verify"}
-            </button>
-
             <select
               className="cert-toolbar-select"
               value={status}

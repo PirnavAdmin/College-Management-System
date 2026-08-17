@@ -1,4 +1,70 @@
 /* Student admission stepper styles moved from src/cms.css. */
+.cms-admission-list-card {
+  overflow: hidden;
+}
+
+.cms-admission-toolbar {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--cms-border);
+}
+
+.cms-admission-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, 420px);
+  padding: 8px 12px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  color: var(--cms-muted);
+  background: var(--cms-surface);
+}
+
+.cms-admission-search:focus-within {
+  border-color: var(--cms-primary-border);
+  box-shadow: 0 0 0 3px var(--cms-primary-soft);
+}
+
+.cms-admission-search input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--cms-text);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.cms-admission-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.cms-admission-table {
+  min-width: 1040px;
+}
+
+.cms-admission-actions {
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.cms-admission-actions .cms-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.cms-admission-actions .cms-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+}
+
 .cms-steps {
   display: flex;
   gap: 8px;
@@ -213,3 +279,105 @@
 .cms-fee-summary { display: grid; gap: 6px; max-width: 380px; font-size: 13px; }
 .cms-fee-summary > div { display: flex; justify-content: space-between; gap: 16px; }
 .cms-fee-summary > div.is-total { border-top: 1px solid var(--cms-border); padding-top: 6px; font-weight: 600; }
+
+/* Step 8 - redesigned fee layout */
+.cms-fee-cards {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.cms-fee-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  background: var(--cms-surface-muted, var(--cms-surface));
+}
+.cms-fee-card span { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cms-muted); }
+.cms-fee-card strong { font-size: 20px; font-weight: 650; }
+.cms-fee-card small { font-size: 11.5px; color: var(--cms-muted); }
+.cms-fee-card.is-total { border-color: var(--cms-primary, #1f4b99); }
+.cms-fee-note-line { margin: 12px 0 0; font-size: 12.5px; color: var(--cms-muted); }
+
+.cms-fee-plan-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cms-fee-plan {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  background: var(--cms-surface);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.cms-fee-plan:hover { border-color: var(--cms-primary, #1f4b99); }
+.cms-fee-plan.is-active { border-color: var(--cms-primary, #1f4b99); box-shadow: 0 0 0 1px var(--cms-primary, #1f4b99) inset; }
+.cms-fee-plan span { display: grid; gap: 2px; }
+.cms-fee-plan strong { font-size: 13.5px; }
+.cms-fee-plan small { font-size: 12px; color: var(--cms-muted); }
+.cms-fee-radio {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1px solid var(--cms-border-strong, #9aa4b2);
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.cms-fee-plan.is-active .cms-fee-radio {
+  border-color: var(--cms-primary, #1f4b99);
+  box-shadow: 0 0 0 3px var(--cms-primary, #1f4b99) inset;
+}
+
+.cms-fee-inline-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.cms-fee-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.cms-fee-scroll { overflow-x: auto; }
+.cms-mini-input {
+  width: 100%;
+  min-width: 110px;
+  padding: 5px 8px;
+  border: 1px solid var(--cms-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  background: var(--cms-surface);
+  color: inherit;
+}
+.cms-mini-input:focus { outline: none; border-color: var(--cms-primary, #1f4b99); }
+.cms-fee-required {
+  display: block;
+  margin-top: 2px;
+  color: var(--cms-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cms-fee-preview { display: grid; gap: 14px; }
+.cms-fee-kv-grid { display: grid; gap: 10px 18px; grid-template-columns: repeat(3, minmax(0, 1fr)); font-size: 13px; }
+.cms-fee-kv-grid > div { display: grid; gap: 2px; }
+.cms-fee-kv-grid span { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cms-muted); }
+.cms-fee-preview-schedule h4 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }
+
+@media (max-width: 900px) {
+  .cms-fee-cards, .cms-fee-plan-grid, .cms-fee-kv-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+  .cms-admission-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .cms-admission-toolbar { padding: 14px; }
+  .cms-admission-search { width: 100%; }
+  .cms-admission-filters { grid-template-columns: 1fr; }
+}

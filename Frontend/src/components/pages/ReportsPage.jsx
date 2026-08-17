@@ -19,7 +19,6 @@ import {
   WalletCards,
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import "./ReportsAnalyticsPage.css";
@@ -37,51 +36,47 @@ const EMPTY_REPORTS = {
   facultyWorkload: {},
 };
 
+const REPORTS_API_VERSION = "1.0";
+const REPORTS_API_BASE_URL = String(
+  import.meta.env.VITE_REPORTS_API_BASE_URL
+    || "https://movable-swampland-tinderbox.ngrok-free.dev",
+).replace(/\/$/, "");
+const CMS_API_BASE_URL = String(
+  import.meta.env.VITE_API_BASE_URL
+    || "https://sterile-retorted-tightness.ngrok-free.dev",
+).replace(/\/$/, "");
+const module18Endpoint = (path) => `${REPORTS_API_BASE_URL}/api/module18-reports${path}`;
+const cmsEndpoint = (path) => `${CMS_API_BASE_URL}${path}`;
+const OVERVIEW_REPORT_TYPE = "dashboard";
+
 const reportsApi = {
   filters: {
-    boards: "/api/module18-reports/filters/boards",
-    years: "/api/module18-reports/filters/academic-years",
-    levels: "/api/module18-reports/filters/academic-levels",
-    groups: "/api/module18-reports/filters/groups",
-    sections: "/api/module18-reports/filters/sections",
+    boards: cmsEndpoint("/api/v1/boards"),
+    years: cmsEndpoint("/api/v1/academic-years"),
+    levels: cmsEndpoint("/api/v1/boards/academic-levels"),
+    groups: cmsEndpoint("/api/v1/groups"),
+    sections: (groupId) => cmsEndpoint(`/api/v1/Sections/group/${groupId}`),
   },
-  auditLogs: "/api/module18-reports/audit-logs",
-  custom: "/api/module18-reports/custom",
-  generate: (reportType) => `/api/module18-reports/generate/${encodeURIComponent(reportType)}`,
-  print: (reportType) => `/api/module18-reports/print/${encodeURIComponent(reportType)}`,
-  fallback: {
-    filters: {
-      boards: apiEndpoints.boards.getAll,
-      years: apiEndpoints.academicYears.getAll,
-      levels: apiEndpoints.boards.academicLevels,
-      groups: apiEndpoints.groups.getAll,
-      sections: apiEndpoints.sections.getAll,
-    },
-    auditLogs: apiEndpoints.reports.auditLogs,
-  },
+  auditLogs: module18Endpoint("/audit-logs"),
+  custom: module18Endpoint("/custom"),
+  generate: (reportType) => module18Endpoint(`/generate/${encodeURIComponent(reportType)}`),
+  print: (reportType) => module18Endpoint(`/print/${encodeURIComponent(reportType)}`),
+  exportPdf: (reportType) => module18Endpoint(`/export/pdf/${encodeURIComponent(reportType)}`),
+  exportExcel: (reportType) => module18Endpoint(`/export/excel/${encodeURIComponent(reportType)}`),
 };
 
 const reportRequests = [
-  { key: "admissions", endpoint: "/api/module18-reports/details/admissions", fallback: apiEndpoints.reports.admissions, casing: "lower" },
-  { key: "attendance", endpoint: "/api/module18-reports/details/attendance", fallback: apiEndpoints.reports.attendance, casing: "lower" },
-  { key: "feeCollection", endpoint: "/api/module18-reports/details/fee-collection", fallback: apiEndpoints.reports.feeCollection, casing: "lower" },
-  { key: "feeOutstanding", endpoint: "/api/module18-reports/details/due-fees", fallback: apiEndpoints.reports.feeOutstanding, casing: "lower", omitDates: true },
-  { key: "examinations", endpoint: "/api/module18-reports/details/examinations", fallback: apiEndpoints.reports.examinations, casing: "lower", omitSection: true },
-  { key: "results", endpoint: "/api/module18-reports/details/results", fallback: apiEndpoints.reports.results, casing: "lower", omitSection: true },
-  { key: "facultyWorkload", endpoint: "/api/module18-reports/details/faculty-workload", fallback: apiEndpoints.reports.facultyWorkload, casing: "upper" },
-  { key: "studentStrength", endpoint: "/api/module18-reports/details/student-strength", fallback: apiEndpoints.reports.studentStrength, casing: "lower", omitDates: true },
-  { key: "passPercentage", endpoint: "/api/module18-reports/details/pass-percentage", fallback: apiEndpoints.reports.passPercentage, casing: "upper" },
-  { key: "toppers", endpoint: "/api/module18-reports/details/toppers", fallback: apiEndpoints.reports.toppers, casing: "lower", omitSection: true },
+  { key: "admissions", endpoint: module18Endpoint("/details/admissions"), casing: "lower" },
+  { key: "attendance", endpoint: module18Endpoint("/details/attendance"), casing: "lower" },
+  { key: "feeCollection", endpoint: module18Endpoint("/details/fee-collection"), casing: "lower" },
+  { key: "feeOutstanding", endpoint: module18Endpoint("/details/due-fees"), casing: "lower", omitDates: true },
+  { key: "examinations", endpoint: module18Endpoint("/details/examinations"), casing: "lower", omitSection: true },
+  { key: "results", endpoint: module18Endpoint("/details/results"), casing: "lower", omitSection: true },
+  { key: "facultyWorkload", endpoint: module18Endpoint("/details/faculty-workload"), casing: "upper" },
+  { key: "studentStrength", endpoint: module18Endpoint("/details/student-strength"), casing: "lower", omitDates: true },
+  { key: "passPercentage", endpoint: module18Endpoint("/details/pass-percentage"), casing: "upper" },
+  { key: "toppers", endpoint: module18Endpoint("/details/toppers"), casing: "lower", omitSection: true },
 ];
-
-async function getWithMissingRouteFallback(endpoint, fallbackEndpoint, config) {
-  try {
-    return await apiClient.get(endpoint, config);
-  } catch (error) {
-    if (error?.response?.status !== 404 || !fallbackEndpoint) throw error;
-    return apiClient.get(fallbackEndpoint, config);
-  }
-}
 
 const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
 const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
@@ -99,20 +94,6 @@ const summaryCardConfig = [
   { key: "toppers", sourceKey: "toppers", reportType: "toppers", label: "Toppers Identified", icon: Trophy, tone: "amber" },
 ];
 
-/* Legacy presentation samples retained only as a comment; live cards never read them.
-  admissions: { value: "128", details: [["Applications", "356"], ["Enrolled", "128"], ["Conversion Rate", "35.96%"]] },
-  attendance: { value: "92.4%", details: [["Present Today", "1,248"], ["Absent Today", "103"], ["This Month Avg", "92.4%"]] },
-  feeCollection: { value: "₹24.56L", details: [["Collected", "₹24.56L"], ["Pending", "₹8.34L"], ["Collection Rate", "74.65%"]] },
-  dueFees: { value: "₹8.34L", details: [["Total Outstanding", "₹8.34L"], ["Overdue (30+ days)", "₹3.2L"], ["Students Due", "412"]] },
-  examinations: { value: "12", details: [["Upcoming Exams", "6"], ["Ongoing Exams", "2"], ["Completed Exams", "4"]] },
-  results: { value: "85", details: [["Published Results", "85"], ["Pending Results", "12"], ["Pass Count", "1,062"]] },
-  facultyWorkload: { value: "128 hrs/wk", details: [["Total Teaching Hrs", "128"], ["Avg Hrs / Faculty", "16"], ["Total Faculty", "32"]] },
-  studentStrength: { value: "1,351", details: [["Total Students", "1,351"], ["Male Students", "732"], ["Female Students", "619"]] },
-  passPercentage: { value: "89.35%", details: [["Appeared", "1,187"], ["Passed", "1,061"], ["Failed", "126"]] },
-  toppers: { value: "18", details: [["University Toppers", "5"], ["Department Toppers", "13"], ["Programs", "6"]] },
-};
-
-*/
 const DETAIL_LABELS = {
   count: "Records", total: "Total", male: "Male", female: "Female", present: "Present", absent: "Absent",
   workingDays: "Working days", totalStudents: "Students", totalFaculty: "Faculty", totalExaminations: "Examinations",
@@ -219,19 +200,33 @@ function metric(payload, keys) {
   return undefined;
 }
 
-function matchesSelected(value, selectedValue, selectedLabel) {
-  if (value === undefined || value === null || value === "") return true;
-  const normalized = String(value).trim().toLowerCase();
-  return normalized === String(selectedValue ?? "").trim().toLowerCase()
-    || normalized === String(selectedLabel ?? "").trim().toLowerCase();
-}
-
 function metricFromSources(sources, keys) {
   for (const source of sources) {
     const value = metric(source, keys);
     if (value !== undefined) return value;
   }
   return undefined;
+}
+
+function academicLevelOptions(payload) {
+  return collection(payload, ["academicLevels", "AcademicLevels", "levels", "Levels"])
+    .map((item) => optionFrom(
+      item,
+      ["academicLevelId", "AcademicLevelId", "academicLevelID", "levelId", "LevelId", "id", "Id", "value", "Value"],
+      ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "levelName", "LevelName", "name", "Name", "label", "Label", "text", "Text"],
+    ))
+    .filter(Boolean);
+}
+
+function filterOptions(payload, preferredKeys, idKeys, labelKeys) {
+  return collection(payload, preferredKeys)
+    .map((item) => optionFrom(item, [...idKeys, "value", "Value"], [...labelKeys, "label", "Label", "text", "Text"]))
+    .filter(Boolean);
+}
+
+function positiveId(value) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function hasReportData(payload) {
@@ -302,7 +297,7 @@ function buildQuery(filters, { casing = "upper", omitDates = false, omitSection 
     const id = Number(value);
     if (Number.isInteger(id) && id > 0) params[queryKey] = id;
     return params;
-  }, {});
+  }, { "api-version": REPORTS_API_VERSION });
 }
 
 function mapFacultyWorkload(payload) {
@@ -398,19 +393,6 @@ function formatMetric(value, { currency = false, suffix = "" } = {}) {
   return `${formatted}${suffix}`;
 }
 
-function getDownloadFilename(contentDisposition, fallback) {
-  if (!contentDisposition) return fallback;
-  const encoded = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  if (encoded) {
-    try {
-      return decodeURIComponent(encoded.replace(/["']/g, ""));
-    } catch {
-      return encoded.replace(/["']/g, "");
-    }
-  }
-  return contentDisposition.match(/filename="?([^";]+)"?/i)?.[1]?.trim() || fallback;
-}
-
 async function getExportErrorMessage(error) {
   const payload = error?.response?.data;
   if (!(payload instanceof Blob)) return getApiErrorMessage(error);
@@ -434,43 +416,37 @@ function downloadBlob(blob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
-function printExcelPreview(reportRows) {
-  const rows = reportRows.map((card) => `
-    <tr>
-      <td>${card.label}</td>
-      <td>${card.value}</td>
-    </tr>
-  `).join("");
-  const printWindow = window.open("", "reports-excel-print", "width=960,height=720");
-  if (!printWindow) throw new Error("The print window was blocked. Allow pop-ups and try again.");
-  printWindow.document.open();
-  printWindow.document.write(`<!doctype html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8" />
-        <title>Reports Overview</title>
-        <style>
-          @page { size: A4 portrait; margin: 18mm; }
-          * { box-sizing: border-box; }
-          body { margin: 0; color: #172844; font-family: Arial, sans-serif; }
-          h1 { margin: 0 0 6px; font-size: 22px; }
-          p { margin: 0 0 22px; color: #687791; font-size: 12px; }
-          table { width: 100%; border-collapse: collapse; font-size: 13px; }
-          th, td { padding: 11px 12px; border: 1px solid #dce5f1; text-align: left; }
-          th { background: #f4f7fb; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
-          td:last-child { font-weight: 700; }
-          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
-        </style>
-      </head>
-      <body>
-        <h1>Reports Overview</h1>
-        <p>Key institution-wide report metrics</p>
-        <table><thead><tr><th>Report Metric</th><th>Value</th></tr></thead><tbody>${rows}</tbody></table>
-      </body>
-    </html>`);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.setTimeout(() => printWindow.print(), 250);
+function responseFilename(response, fallbackName) {
+  const disposition = response?.headers?.["content-disposition"] ?? "";
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plainName = disposition.match(/filename\s*=\s*"?([^";]+)"?/i)?.[1];
+  const filename = utf8Name ? decodeURIComponent(utf8Name) : plainName;
+  return String(filename || fallbackName).trim();
+}
+
+function responseBlob(response) {
+  return response.data instanceof Blob
+    ? response.data
+    : new Blob([response.data], { type: response.headers?.["content-type"] || "application/octet-stream" });
+}
+
+async function excelPreview(blob) {
+  const XLSX = await import("xlsx");
+  const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array" });
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!firstSheet) return { rows: [], columns: [] };
+  const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+  return { rows, columns: exportColumns(rows) };
+}
+
+function exportCell(value) {
+  if (value === undefined || value === null || value === "") return "—";
+  if (typeof value === "object") return Array.isArray(value) ? `${value.length} records` : "—";
+  return String(value);
+}
+
+function exportColumns(reportRows) {
+  return [...new Set(reportRows.flatMap((row) => Object.keys(row)))];
 }
 
 export default function ReportsPage() {
@@ -481,10 +457,15 @@ export default function ReportsPage() {
   const [reportGenerated, setReportGenerated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reportErrors, setReportErrors] = useState({});
-  const [masterLoading, setMasterLoading] = useState(true);
+  const [boardsLoading, setBoardsLoading] = useState(true);
+  const [yearsLoading, setYearsLoading] = useState(true);
+  const [levelLoading, setLevelLoading] = useState(false);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [previewing, setPreviewing] = useState("");
+  const [exportingOverview, setExportingOverview] = useState("");
   const [exportingCards, setExportingCards] = useState({});
   const [previewFile, setPreviewFile] = useState(null);
   const [pdfPreviewLoaded, setPdfPreviewLoaded] = useState(false);
@@ -498,26 +479,30 @@ export default function ReportsPage() {
   const initialized = useRef(false);
 
   const loadMasterOptions = useCallback(async () => {
-    setMasterLoading(true);
+    setBoardsLoading(true);
+    setYearsLoading(true);
     const results = await Promise.allSettled([
-      getWithMissingRouteFallback(reportsApi.filters.boards, reportsApi.fallback.filters.boards),
-      getWithMissingRouteFallback(reportsApi.filters.years, reportsApi.fallback.filters.years),
+      apiClient.get(reportsApi.filters.boards, { params: { "api-version": REPORTS_API_VERSION } }),
+      apiClient.get(reportsApi.filters.years, { params: { "api-version": REPORTS_API_VERSION } }),
     ]);
     setMasterOptions((current) => ({
       ...current,
-      boards: (results[0].status === "fulfilled" ? collection(results[0].value.data, ["boards", "Boards"]) : []).map((item) => optionFrom(item, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])).filter(Boolean),
-      years: (results[1].status === "fulfilled" ? collection(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"]) : []).map((item) => optionFrom(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])).filter(Boolean),
+      boards: results[0].status === "fulfilled" ? filterOptions(results[0].value.data, ["boards", "Boards"], ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]) : [],
+      years: results[1].status === "fulfilled" ? filterOptions(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"], ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]) : [],
       levels: [], groups: [], sections: [],
     }));
     const failures = results.filter((result) => result.status === "rejected");
-    if (failures.length) setToast("Some report filters could not be loaded.");
-    setMasterLoading(false);
+    if (failures.length) setToast("One or more Reports dropdowns could not be loaded from the current backend.");
+    setBoardsLoading(false);
+    setYearsLoading(false);
   }, []);
 
   const loadReports = useCallback(async (selectedFilters) => {
+    setReportGenerated(false);
+    setPreviewFile(null);
     setLoading(true);
     setError("");
-    const results = await Promise.allSettled(reportRequests.map((request) => getWithMissingRouteFallback(request.endpoint, request.fallback, {
+    const results = await Promise.allSettled(reportRequests.map((request) => apiClient.get(request.endpoint, {
       params: buildQuery(selectedFilters, request),
     })));
     const nextReports = { ...EMPTY_REPORTS };
@@ -533,7 +518,7 @@ export default function ReportsPage() {
     });
     setReports(nextReports);
     setReportErrors(nextErrors);
-    setReportGenerated(results.some((result) => result.status === "fulfilled"));
+    setReportGenerated(results.some((result, index) => result.status === "fulfilled" && hasReportData(nextReports[reportRequests[index].key])));
     setAuditPage(1);
     setError(reportFailureMessage(failures));
     setLoading(false);
@@ -543,72 +528,83 @@ export default function ReportsPage() {
     if (initialized.current) return;
     initialized.current = true;
     loadMasterOptions();
-  }, [loadMasterOptions, loadReports]);
+  }, [loadMasterOptions]);
 
   useEffect(() => {
-    if (!filters.board) return;
+    const boardId = positiveId(filters.board);
+    if (!boardId) {
+      setLevelLoading(false);
+      return undefined;
+    }
     let active = true;
-    setMasterLoading(true);
-    getWithMissingRouteFallback(reportsApi.filters.levels, reportsApi.fallback.filters.levels, { params: { boardId: Number(filters.board) } })
-      .then((response) => {
-        if (!active) return;
-        const levels = collection(response.data, ["academicLevels", "AcademicLevels", "levels", "Levels"]).map((item) => optionFrom(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"])).filter(Boolean);
-        setMasterOptions((current) => ({ ...current, levels }));
-      })
-      .catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
-      .finally(() => active && setMasterLoading(false));
+    setLevelLoading(true);
+    apiClient.get(reportsApi.filters.levels, {
+      params: { "api-version": REPORTS_API_VERSION },
+    }).then((response) => {
+      if (!active) return;
+      const levels = academicLevelOptions(response.data);
+      setMasterOptions((current) => ({ ...current, levels }));
+      if (!levels.length) setToast("No academic levels available for the selected Board.");
+    }).catch((requestError) => {
+      if (active) setToast(`Unable to load Academic Levels. ${getApiErrorMessage(requestError)}`);
+    }).finally(() => {
+      if (active) setLevelLoading(false);
+    });
     return () => { active = false; };
   }, [filters.board]);
 
   useEffect(() => {
     if (!filters.board || !filters.year || !filters.level) return;
     let active = true;
-    const boardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label;
-    const levelLabel = masterOptions.levels.find((item) => item.value === filters.level)?.label;
-    setMasterLoading(true);
-    getWithMissingRouteFallback(reportsApi.filters.groups, reportsApi.fallback.filters.groups, { params: {
-      boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level),
+    const boardId = positiveId(filters.board);
+    const academicYearId = positiveId(filters.year);
+    const academicLevelId = positiveId(filters.level);
+    if (!boardId || !academicYearId || !academicLevelId) return undefined;
+    setGroupsLoading(true);
+    apiClient.get(reportsApi.filters.groups, { params: {
+      boardId, academicYearId, academicLevelId, "api-version": REPORTS_API_VERSION,
     } }).then((response) => {
       if (!active) return;
-      const groups = collection(response.data, ["groups", "Groups"])
-        .filter((item) => matchesSelected(read(item, "boardId", "BoardId", "board", "Board"), filters.board, boardLabel)
-          && matchesSelected(read(item, "academicYearId", "AcademicYearId"), filters.year)
-          && matchesSelected(read(item, "academicLevelId", "AcademicLevelId", "academicLevel", "AcademicLevel"), filters.level, levelLabel))
-        .map((item) => optionFrom(item, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"])).filter(Boolean);
+      const groups = filterOptions(response.data, ["groups", "Groups"], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]);
       setMasterOptions((current) => ({ ...current, groups }));
-    }).catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
-      .finally(() => active && setMasterLoading(false));
+      if (!groups.length) setToast("No groups available for the selected filters.");
+    }).catch((requestError) => active && setToast(`Unable to load Groups. ${getApiErrorMessage(requestError)}`))
+      .finally(() => active && setGroupsLoading(false));
     return () => { active = false; };
-  }, [filters.board, filters.level, filters.year, masterOptions.boards, masterOptions.levels]);
+  }, [filters.board, filters.level, filters.year]);
 
   useEffect(() => {
     if (!filters.board || !filters.year || !filters.level || !filters.group) return;
     let active = true;
-    setMasterLoading(true);
-    getWithMissingRouteFallback(reportsApi.filters.sections, reportsApi.fallback.filters.sections, { params: {
-      boardId: Number(filters.board), academicYearId: Number(filters.year), academicLevelId: Number(filters.level), groupId: Number(filters.group),
-    } }).then((response) => {
+    const boardId = positiveId(filters.board);
+    const academicYearId = positiveId(filters.year);
+    const academicLevelId = positiveId(filters.level);
+    const groupId = positiveId(filters.group);
+    if (!boardId || !academicYearId || !academicLevelId || !groupId) return undefined;
+    setSectionsLoading(true);
+    apiClient.get(reportsApi.filters.sections(groupId), {
+      params: { "api-version": REPORTS_API_VERSION },
+    }).then((response) => {
       if (!active) return;
-      const sections = collection(response.data, ["sections", "Sections"])
-        .filter((item) => matchesSelected(read(item, "groupId", "GroupId", "group", "Group"), filters.group, masterOptions.groups.find((group) => group.value === filters.group)?.label))
-        .map((item) => optionFrom(item, ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])).filter(Boolean);
+      const sections = filterOptions(response.data, ["sections", "Sections"], ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
       setMasterOptions((current) => ({ ...current, sections }));
-    }).catch((requestError) => active && setToast(getApiErrorMessage(requestError)))
-      .finally(() => active && setMasterLoading(false));
+      if (!sections.length) setToast("No sections available for the selected filters.");
+    }).catch((requestError) => active && setToast(`Unable to load Sections. ${getApiErrorMessage(requestError)}`))
+      .finally(() => active && setSectionsLoading(false));
     return () => { active = false; };
-  }, [filters.board, filters.group, filters.level, filters.year, masterOptions.groups]);
+  }, [filters.board, filters.group, filters.level, filters.year]);
 
   const filterFields = useMemo(() => {
     return [
-      { name: "board", label: "Board", type: "select", options: masterOptions.boards },
-      { name: "year", label: "Academic Year", type: "select", options: masterOptions.years },
-      { name: "level", label: "Academic Level", type: "select", options: masterOptions.levels },
-      { name: "group", label: "Group", type: "select", options: masterOptions.groups },
-      { name: "section", label: "Section", type: "select", options: masterOptions.sections },
-      { name: "from", label: "From Date", type: "date" },
-      { name: "to", label: "To Date", type: "date" },
+      { name: "board", label: boardsLoading ? "Board (Loading...)" : "Board", type: "select", options: masterOptions.boards, disabled: boardsLoading, required: true },
+      { name: "year", label: yearsLoading ? "Academic Year (Loading...)" : "Academic Year", type: "select", options: masterOptions.years, disabled: yearsLoading, required: true },
+      { name: "level", label: levelLoading ? "Academic Level (Loading...)" : "Academic Level", type: "select", options: masterOptions.levels, disabled: levelLoading, required: true },
+      { name: "group", label: groupsLoading ? "Group (Loading...)" : "Group", type: "select", options: masterOptions.groups, disabled: groupsLoading, required: true },
+      { name: "section", label: sectionsLoading ? "Section (Loading...)" : "Section", type: "select", options: masterOptions.sections, disabled: sectionsLoading, required: true },
+      { name: "from", label: "From Date", type: "date", required: true },
+      { name: "to", label: "To Date", type: "date", required: true },
     ];
-  }, [masterOptions]);
+  }, [boardsLoading, groupsLoading, levelLoading, masterOptions, sectionsLoading, yearsLoading]);
 
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
@@ -659,34 +655,43 @@ export default function ReportsPage() {
       toppers: metricFromSources([reports.toppers], ["identified", "toppersIdentified", "topperCount", "totalToppers", "count"]) ?? (topperRows.length || undefined),
     };
   }, [passRate, reports, topperRows.length, workloadData]);
-  const excelPreviewRows = useMemo(() => summaryCardConfig.map((card) => ({
-    key: card.key,
-    label: card.label,
-    value: hasReportData(reports[card.sourceKey])
-      ? formatMetric(summaryValues[card.key], { currency: card.currency, suffix: card.suffix })
-      : "Unavailable",
-  })), [reports, summaryValues]);
-
   const handleFilterChange = (name, value) => {
     setReportGenerated(false);
+    setPreviewFile(null);
     setFilters((current) => {
       const next = { ...current, [name]: value };
       if (name === "board") {
         Object.assign(next, { level: "", group: "", section: "" });
         setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
+        setLevelLoading(false);
+        setGroupsLoading(false);
+        setSectionsLoading(false);
       }
       if (name === "year" || name === "level") {
         Object.assign(next, { group: "", section: "" });
         setMasterOptions((options) => ({ ...options, groups: [], sections: [] }));
+        setGroupsLoading(false);
+        setSectionsLoading(false);
       }
       if (name === "group") next.section = "";
-      if (name === "group") setMasterOptions((options) => ({ ...options, sections: [] }));
+      if (name === "group") {
+        setMasterOptions((options) => ({ ...options, sections: [] }));
+        setSectionsLoading(false);
+      }
       return next;
     });
   };
 
   const generateReport = () => {
+    const requiredIds = [filters.board, filters.year, filters.level, filters.group, filters.section];
+    if (!requiredIds.every((value) => positiveId(value)) || !filters.from || !filters.to) {
+      setReportGenerated(false);
+      setPreviewFile(null);
+      setToast("Complete all required report filters before generating the report.");
+      return;
+    }
     if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
+      setReportGenerated(false);
       setToast("From Date must be earlier than or equal to To Date.");
       return;
     }
@@ -699,7 +704,12 @@ export default function ReportsPage() {
     setReports(EMPTY_REPORTS);
     setReportErrors({});
     setReportGenerated(false);
+    setPreviewFile(null);
     setError("");
+    setToast("");
+    setLevelLoading(false);
+    setGroupsLoading(false);
+    setSectionsLoading(false);
   };
 
   const handleAuditFilterChange = (name, value) => {
@@ -720,7 +730,7 @@ export default function ReportsPage() {
     setAuditLoading(true);
     setAuditError("");
     try {
-      const response = await getWithMissingRouteFallback(reportsApi.auditLogs, reportsApi.fallback.auditLogs, { params: buildQuery(filters) });
+      const response = await apiClient.get(reportsApi.auditLogs, { params: buildQuery(filters, { casing: "upper" }) });
       setAuditData(response.data);
       setAuditPage(1);
     } catch (auditRequestError) {
@@ -731,36 +741,39 @@ export default function ReportsPage() {
     }
   };
 
-  const requestReportFile = async (format, reportType = "dashboard", fallbackBase = "reports-dashboard") => {
+  const requestReportFile = async (format, reportType, title) => {
     if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
       throw new Error("From Date must be earlier than or equal to To Date.");
     }
-    const isPdf = format === "pdf";
-    const endpoint = isPdf ? reportsApi.print(reportType) : reportsApi.generate(reportType);
-    const extension = isPdf ? "html" : "csv";
-    const fallbackFilename = `${fallbackBase}-${new Date().toISOString().slice(0, 10)}.${extension}`;
-    const response = await apiClient.get(endpoint, {
-      params: buildQuery(filters),
-      responseType: isPdf ? "text" : "json",
-    });
-    const contentType = isPdf ? "text/html;charset=utf-8" : "text/csv;charset=utf-8";
-    const content = isPdf
-      ? String(response.data ?? "")
-      : ["Report Metric,Value", ...excelPreviewRows.map(({ label, value }) => `"${String(label).replaceAll('"', '""')}","${String(value).replaceAll('"', '""')}"`)].join("\r\n");
-    if (!content.trim()) throw new Error("The report API returned an empty response.");
-    return {
-      blob: new Blob([content], { type: contentType }),
-      filename: getDownloadFilename(response.headers?.["content-disposition"], fallbackFilename),
+    const extension = format === "pdf" ? "pdf" : "xlsx";
+    const response = await apiClient.get(
+      format === "pdf" ? reportsApi.exportPdf(reportType) : reportsApi.exportExcel(reportType),
+      { params: buildQuery(filters, { casing: "upper" }), responseType: "blob" },
+    );
+    const blob = responseBlob(response);
+    const contentType = String(response.headers?.["content-type"] || blob.type || "").toLowerCase();
+    if (contentType.includes("json") || contentType.includes("text/plain")) {
+      throw Object.assign(new Error("The Reports API returned an error instead of a report file."), { response: { ...response, data: blob } });
+    }
+    if (format === "pdf" && contentType && !contentType.includes("pdf") && !contentType.includes("octet-stream")) {
+      throw new Error(`The Reports API returned '${contentType}' instead of a PDF file.`);
+    }
+    const file = {
+      blob,
+      filename: responseFilename(response, `${reportType}-${new Date().toISOString().slice(0, 10)}.${extension}`),
       contentType,
       format,
+      title,
     };
+    if (format === "excel") Object.assign(file, await excelPreview(blob));
+    return file;
   };
 
   const previewReport = async (format) => {
     setPreviewing(format);
     setPdfPreviewLoaded(false);
     try {
-      const file = await requestReportFile(format, "dashboard", "reports-overview");
+      const file = await requestReportFile(format, OVERVIEW_REPORT_TYPE, "Reports Overview");
       setPreviewFile({ ...file, url: format === "pdf" ? URL.createObjectURL(file.blob) : "" });
     } catch (previewError) {
       setPreviewFile(null);
@@ -770,14 +783,14 @@ export default function ReportsPage() {
     }
   };
 
-  const downloadOverview = async (format) => {
-    const requestKey = `overview-${format}`;
+  const exportCardReport = async (card, format) => {
+    const requestKey = `${card.key}-${format}`;
     if (exportingCards[requestKey]) return;
     setExportingCards((current) => ({ ...current, [requestKey]: true }));
     try {
-      const file = await requestReportFile(format, "dashboard", "reports-overview");
+      const file = await requestReportFile(format, card.reportType, card.label);
       downloadBlob(file.blob, file.filename);
-      setToast(`${format === "pdf" ? "PDF" : "Excel"} report downloaded successfully.`);
+      setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
     } catch (exportError) {
       setToast(await getExportErrorMessage(exportError));
     } finally {
@@ -786,6 +799,62 @@ export default function ReportsPage() {
         delete next[requestKey];
         return next;
       });
+    }
+  };
+
+  const exportOverview = async (format) => {
+    if (exportingOverview) return;
+    setExportingOverview(format);
+    try {
+      const file = await requestReportFile(format, OVERVIEW_REPORT_TYPE, "Reports Overview");
+      downloadBlob(file.blob, file.filename);
+      setToast(`Reports Overview ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
+    } catch (exportError) {
+      setToast(await getExportErrorMessage(exportError));
+    } finally {
+      setExportingOverview("");
+    }
+  };
+
+  const printBackendReport = async (reportType = OVERVIEW_REPORT_TYPE) => {
+    const printWindow = window.open("", "reports-print", "width=960,height=720");
+    if (!printWindow) {
+      setToast("The print window was blocked. Allow pop-ups and try again.");
+      return;
+    }
+    printWindow.document.write("<p style='font-family:Arial,sans-serif;padding:24px'>Preparing report for printing...</p>");
+    try {
+      const response = await apiClient.get(reportsApi.print(reportType), {
+        params: buildQuery(filters, { casing: "upper" }),
+        responseType: "blob",
+      });
+      const blob = responseBlob(response);
+      const contentType = String(response.headers?.["content-type"] || blob.type || "").toLowerCase();
+      if (contentType.includes("json")) {
+        throw Object.assign(new Error("The Reports API returned an error instead of printable content."), { response: { ...response, data: blob } });
+      }
+      if (contentType.includes("html")) {
+        printWindow.document.open();
+        printWindow.document.write(await blob.text());
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.setTimeout(() => printWindow.print(), 250);
+        return;
+      }
+      if (contentType.includes("pdf") || contentType.includes("octet-stream")) {
+        const url = URL.createObjectURL(blob);
+        printWindow.location.href = url;
+        printWindow.addEventListener("load", () => {
+          printWindow.focus();
+          printWindow.print();
+          window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+        }, { once: true });
+        return;
+      }
+      throw new Error(`The Reports API returned unsupported printable content '${contentType || "unknown"}'.`);
+    } catch (printError) {
+      printWindow.close();
+      setToast(await getExportErrorMessage(printError));
     }
   };
 
@@ -802,7 +871,7 @@ export default function ReportsPage() {
       <Toast message={toast} onClose={() => setToast("")} />
       <div className="reports-tabs" role="tablist" aria-label="Reports sections">
         <button className={`reports-tab ${activeTab === "reports" ? "is-active" : ""}`} type="button" role="tab" aria-selected={activeTab === "reports"} onClick={() => { setActiveTab("reports"); setSelectedAuditLog(null); }}>Reports & Analytics</button>
-        <button className={`reports-tab ${activeTab === "audit" ? "is-active" : ""}`} type="button" role="tab" aria-selected={activeTab === "audit"} onClick={() => { setActiveTab("audit"); setPreviewFile(null); }}>Audit Logs</button>
+        <button className={`reports-tab ${activeTab === "audit" ? "is-active" : ""}`} type="button" role="tab" aria-selected={activeTab === "audit"} onClick={() => { setActiveTab("audit"); setPreviewFile(null); if (!auditData && !auditLoading) fetchAuditLogs(); }}>Audit Logs</button>
       </div>
       {activeTab === "reports" ? <>
       <section className="cms-card reports-filter-card">
@@ -811,7 +880,7 @@ export default function ReportsPage() {
             {filterFields.map((field) => <Field key={field.name} field={field} value={filters[field.name]} onChange={handleFilterChange} />)}
           </div>
           <div className="reports-filter-actions">
-            <button className="cms-btn cms-btn-primary" onClick={generateReport} disabled={loading || masterLoading}>Generate Report</button>
+            <button className="cms-btn cms-btn-primary" onClick={generateReport} disabled={loading}>Generate Report</button>
             <button className="cms-btn cms-btn-ghost" onClick={resetReports} disabled={loading}>Reset</button>
           </div>
         </div>
@@ -823,10 +892,10 @@ export default function ReportsPage() {
             <div className="reports-summary-panel-head">
               <div><h2 id="reports-summary-title">Reports Overview</h2><p>Key institution-wide report metrics</p></div>
               {reportGenerated ? <div className="reports-summary-actions" aria-label="Report file actions">
-                <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("pdf")} disabled={previewing === "pdf"}><Eye size={14} />{previewing === "pdf" ? "Loading..." : "Preview PDF"}</button>
-                <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("excel")} disabled={previewing === "excel"}><Eye size={14} />{previewing === "excel" ? "Loading..." : "Preview Excel"}</button>
-                <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadOverview("pdf")} disabled={Boolean(exportingCards["overview-pdf"])}><Download size={14} />{exportingCards["overview-pdf"] ? "Downloading..." : "Download PDF"}</button>
-                <button className="cms-btn cms-btn-ghost" type="button" onClick={() => downloadOverview("excel")} disabled={Boolean(exportingCards["overview-excel"])}><FileSpreadsheet size={14} />{exportingCards["overview-excel"] ? "Downloading..." : "Download Excel"}</button>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("pdf")} disabled={previewing === "pdf"}><Eye size={14} />{previewing === "pdf" ? "Loading..." : "Review PDF"}</button>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => previewReport("excel")} disabled={previewing === "excel"}><Eye size={14} />{previewing === "excel" ? "Loading..." : "Review Excel"}</button>
+                <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportOverview("pdf")} disabled={Boolean(exportingOverview)}><Download size={14} />{exportingOverview === "pdf" ? "Exporting..." : "Export PDF"}</button>
+                <button className="cms-btn cms-btn-ghost" type="button" onClick={() => exportOverview("excel")} disabled={Boolean(exportingOverview)}><FileSpreadsheet size={14} />{exportingOverview === "excel" ? "Exporting..." : "Export Excel"}</button>
               </div> : null}
             </div>
             <div className="reports-summary-grid" aria-label="Report summary">
@@ -847,6 +916,10 @@ export default function ReportsPage() {
                   <dl className="reports-summary-details">
                     {details.length ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>) : <div><dt>Details</dt><dd>{reportErrors[sourceKey] || "No backend data generated yet"}</dd></div>}
                   </dl>
+                  {reportGenerated && hasLiveData ? <div className="reports-card-actions">
+                    <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportCardReport(card, "pdf")} disabled={Boolean(exportingCards[`${key}-pdf`])}><Download size={13} />{exportingCards[`${key}-pdf`] ? "Exporting..." : "Export PDF"}</button>
+                    <button className="cms-btn cms-btn-ghost" type="button" onClick={() => exportCardReport(card, "excel")} disabled={Boolean(exportingCards[`${key}-excel`])}><FileSpreadsheet size={13} />{exportingCards[`${key}-excel`] ? "Exporting..." : "Export Excel"}</button>
+                  </div> : null}
                 </article>;
               })}
             </div>
@@ -915,18 +988,19 @@ export default function ReportsPage() {
           </section>
       }
       {previewFile?.format === "pdf" ? <Modal title="PDF Preview" onClose={() => setPreviewFile(null)} footer={<>
+        {pdfPreviewLoaded ? <button className="cms-btn cms-btn-ghost" type="button" onClick={() => printBackendReport()}><Printer size={15} />Print PDF</button> : null}
         {pdfPreviewLoaded ? <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download PDF</button> : null}
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
       </>}>
         <div className="reports-pdf-preview"><iframe src={previewFile.url} title="Generated report PDF preview" onLoad={() => setPdfPreviewLoaded(true)} /></div>
       </Modal> : null}
       {previewFile?.format === "excel" ? <Modal title="Excel Preview" onClose={() => setPreviewFile(null)} footer={<>
-        <button className="cms-btn cms-btn-ghost" type="button" onClick={() => { try { printExcelPreview(excelPreviewRows); } catch (printError) { setToast(printError.message); } }}><Printer size={15} />Print Excel</button>
+        <button className="cms-btn cms-btn-ghost" type="button" onClick={() => printBackendReport()}><Printer size={15} />Print Excel</button>
         <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download Excel</button>
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
       </>}>
-        <div className="reports-excel-preview"><table className="reports-top-students"><thead><tr><th>Report Metric</th><th>Value</th></tr></thead><tbody>
-          {excelPreviewRows.map(({ key, label, value }) => <tr key={key}><td><strong>{label}</strong></td><td>{value}</td></tr>)}
+        <div className="reports-excel-preview"><table className="reports-top-students"><thead><tr>{previewFile.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>
+          {previewFile.rows.map((row, index) => <tr key={index}>{previewFile.columns.map((column) => <td key={column}>{exportCell(row[column])}</td>)}</tr>)}
         </tbody></table></div>
       </Modal> : null}
       {selectedAuditLog ? <Modal title="Audit Log Details" onClose={() => setSelectedAuditLog(null)} footer={<button className="cms-btn cms-btn-primary" type="button" onClick={() => setSelectedAuditLog(null)}>Close</button>}>

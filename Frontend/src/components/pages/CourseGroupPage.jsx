@@ -1,10 +1,8 @@
-import * as data from "@/data/mockData.js";
-import apiClient from "@/api/axios.js";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import ListPage from "@/components/pages/ListPage.jsx";
 import "./CourseGroupPage.css";
 
-const o = data.options;
 const MODULE_SLUG = "courses";
 const STATUS_OPTIONS = ["Active", "Inactive"];
 
@@ -33,6 +31,13 @@ const getUniqueOptions = (rows, idKeys, labelKeys) => {
   return Array.from(new Map(options.map((item) => [item.value, item])).values());
 };
 
+const normalizeStatus = (item) => {
+  const status = read(item, "status", "Status");
+  if (typeof status === "boolean") return status ? "Active" : "Inactive";
+  if (status) return String(status);
+  return read(item, "isActive", "IsActive") ? "Active" : "Inactive";
+};
+
 const normalizeGroup = (item) => ({
   id: read(item, "groupId", "GroupId", "id"),
   name: read(item, "groupName", "GroupName", "name") || "-",
@@ -45,7 +50,7 @@ const normalizeGroup = (item) => ({
   level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || "-",
   subjects: read(item, "totalSubjects", "TotalSubjects") ?? 0,
   description: read(item, "description", "Description") || "",
-  status: read(item, "status", "Status") || (read(item, "isActive", "IsActive") ? "Active" : "Inactive"),
+  status: normalizeStatus(item),
 });
 
 const normalizeGroupForm = (item) => {
@@ -86,16 +91,22 @@ const loadGroupMasters = async () => {
     apiClient.get(apiEndpoints.academicYears.list),
     apiClient.get(apiEndpoints.boards.getAcademicLevels),
   ]);
+  const failures = [
+    ["Board API", boardsResult],
+    ["Academic Year API", yearsResult],
+    ["Academic Level API", levelsResult],
+  ]
+    .filter(([, result]) => result.status === "rejected")
+    .map(([label, result]) => `${label}: ${getApiErrorMessage(result.reason)}`);
+
+  if (failures.length) {
+    throw new Error(`Failed to load Course / Group dropdown data. ${failures.join(" ")}`);
+  }
+
   return {
-    boards: boardsResult.status === "fulfilled"
-      ? getUniqueOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
-      : [],
-    years: yearsResult.status === "fulfilled"
-      ? getUniqueOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])
-      : [],
-    levels: levelsResult.status === "fulfilled"
-      ? getUniqueOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"])
-      : [],
+    boards: getUniqueOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]),
+    years: getUniqueOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "yearId", "YearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]),
+    levels: getUniqueOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]),
   };
 };
 

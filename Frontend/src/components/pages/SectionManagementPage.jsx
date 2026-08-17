@@ -21,9 +21,20 @@ const nameMap = (items, idKeys, nameKeys) => {
   return { names, map };
 };
 
+const filterActive = (items) =>
+  (items || []).filter((it) => {
+    const flag = it.isActive ?? it.IsActive ?? it.status ?? it.Status;
+    if (flag === undefined) return true;
+    if (typeof flag === "boolean") return flag;
+    return String(flag).toLowerCase() === "active" || String(flag).toLowerCase() === "true";
+  });
+
 let cachedYears = null;
 let cachedFaculty = null;
 let cachedRooms = null;
+let cachedBoards = null;
+let cachedGroups = null;
+let cachedLevels = null;
 let cachedRoomCodes = {}; // roomName -> roomCode, used to reconcile legacy "101" style values
 
 // Finds the dropdown room name that matches a legacy stored value like "101"
@@ -68,7 +79,17 @@ export const pageConfig = {
     { key: "status", label: "Status", badge: true },
   ],
   fields: [
-    { name: "board", label: "Board", type: "select", options: o.board, required: true },
+    {
+      name: "board",
+      label: "Board",
+      type: "select",
+      required: true,
+      loadOptions: () => apiClient.get(apiEndpoints.boards.getAll),
+      getOptions: (res) => {
+        cachedBoards = nameMap(filterActive(unwrapList(res.data)), ["boardId", "id"], ["boardName", "name"]);
+        return cachedBoards.names;
+      },
+    },
     {
       name: "year",
       label: "Academic Year",
@@ -76,12 +97,32 @@ export const pageConfig = {
       required: true,
       loadOptions: () => apiClient.get(apiEndpoints.academicYears.getAll),
       getOptions: (res) => {
-        cachedYears = nameMap(unwrapList(res.data), ["academicYearId", "id"], ["academicYearName", "name"]);
+        cachedYears = nameMap(filterActive(unwrapList(res.data)), ["academicYearId", "id"], ["academicYearName", "name"]);
         return cachedYears.names;
       },
     },
-    { name: "group", label: "Group", type: "select", options: o.group, required: true },
-    { name: "level", label: "Academic Level", type: "select", options: o.level, required: true },
+    {
+      name: "group",
+      label: "Group",
+      type: "select",
+      required: true,
+      loadOptions: () => apiClient.get(apiEndpoints.groups.dropdown),
+      getOptions: (res) => {
+        cachedGroups = nameMap(unwrapList(res.data), ["groupId", "id"], ["groupName", "name"]);
+        return cachedGroups.names;
+      },
+    },
+    {
+      name: "level",
+      label: "Academic Level",
+      type: "select",
+      required: true,
+      loadOptions: () => apiClient.get(apiEndpoints.boards.academicLevels),
+      getOptions: (res) => {
+        cachedLevels = nameMap(unwrapList(res.data), ["academicLevelId", "id"], ["levelName", "name"]);
+        return cachedLevels.names;
+      },
+    },
     { name: "name", label: "Section Name", required: true },
     {
       name: "room",

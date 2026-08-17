@@ -138,12 +138,6 @@ export const feeCollections = [
   { id: 3, receipt: "RCT-90123", student: "Arjun Menon", date: "2024-08-02", amount: 12000, discount: 0, fine: 1000, mode: "Cash", txn: "-", status: "Inactive" },
 ];
 
-export const certificates = [
-  { id: 1, number: "CERT-2024-0012", student: "Aarav Reddy", type: "Bonafide Certificate", issue: "2024-08-11", purpose: "Passport Application", status: "Active" },
-  { id: 2, number: "CERT-2024-0013", student: "Ananya Iyer", type: "Transfer Certificate", issue: "2024-09-02", purpose: "College Change", status: "Inactive" },
-  { id: 3, number: "CERT-2024-0014", student: "Meera Joshi", type: "Study Certificate", issue: "2024-10-19", purpose: "Scholarship", status: "Active" },
-];
-
 export const promotions = [
   { id: 1, roll: "24MPC001", name: "Aarav Reddy", from: "1st Year", to: "2nd Year", status: "Active" },
   { id: 2, roll: "24MPC002", name: "Diya Sharma", from: "1st Year", to: "2nd Year", status: "Active" },

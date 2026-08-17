@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Download, Eye, Pencil, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Eye, FilterX, Pencil, Plus, RefreshCcw, Search, Trash2 } from "lucide-react";
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
@@ -769,5 +769,43 @@ function TextareaField({ name, label, value, onChange }) {
       <label htmlFor={`assignment-${name}`}>{label}</label>
       <textarea id={`assignment-${name}`} value={value ?? ""} onChange={(event) => onChange(name, event.target.value)} />
     </div>
+  );
+}
+
+function AssignmentsTable({ columns, rows, loading, searchTerm, selectedGroup, selectedFaculty, groupOptions, facultyOptions, onSearchChange, onGroupChange, onFacultyChange, onClearFilters, addLabel, onAdd, onEdit, onDelete, onView }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => { setPage(1); }, [searchTerm, selectedGroup, selectedFaculty]);
+
+  return (
+    <section className="cms-card">
+      <div className="cms-toolbar assignment-toolbar">
+        <div className="cms-search">
+          <Search size={16} />
+          <input value={searchTerm} placeholder="Search assignments..." onChange={(event) => onSearchChange(event.target.value)} />
+        </div>
+        <select className="assignment-filter-select" value={selectedGroup} onChange={(event) => onGroupChange(event.target.value)} aria-label="Filter by group">
+          <option value="">All groups</option>
+          {groupOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <select className="assignment-filter-select" value={selectedFaculty} onChange={(event) => onFacultyChange(event.target.value)} aria-label="Filter by faculty">
+          <option value="">All faculty</option>
+          {facultyOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+        <div className="cms-toolbar-right">
+          {(searchTerm || selectedGroup || selectedFaculty) ? <button type="button" className="cms-btn cms-btn-ghost assignment-toolbar-button assignment-clear-filters-btn" title="Clear filters" aria-label="Clear filters" onClick={onClearFilters}><FilterX size={16} /></button> : null}
+          <button type="button" className="cms-btn cms-btn-ghost assignment-toolbar-button" onClick={() => window.print()}><Download size={15} /> Export</button>
+          <button type="button" className="cms-btn cms-btn-primary assignment-toolbar-button" onClick={onAdd}><Plus size={16} /> {addLabel}</button>
+        </div>
+      </div>
+
+      {loading ? <Loader label="Loading assignments..." /> : <div className="cms-table-wrap"><table className="cms-table"><thead><tr>{columns.map((column) => <th key={column.key}>{column.label}</th>)}<th style={{ textAlign: "right" }}>Actions</th></tr></thead><tbody>{pageRows.length ? pageRows.map((row) => <tr key={row.id} className="assignment-row-clickable" onDoubleClick={() => onView(row)}>{columns.map((column) => <td key={column.key} className={column.strong ? "cms-strong" : ""}>{column.render ? column.render(row) : row[column.key]}</td>)}<td><div className="cms-actions" style={{ justifyContent: "flex-end" }}><button type="button" className="cms-action-btn view" title="View" aria-label="View assignment" onClick={() => onView(row)}><Eye size={15} /></button><button type="button" className="cms-action-btn edit" title="Edit" aria-label="Edit assignment" onClick={() => onEdit(row)}><Pencil size={15} /></button><button type="button" className="cms-action-btn danger" title="Delete" aria-label="Delete assignment" onClick={() => onDelete(row)}><Trash2 size={15} /></button></div></td></tr>) : <tr><td colSpan={columns.length + 1}><div className="cms-empty">No assignments found.</div></td></tr>}</tbody></table></div>}
+
+      <div className="cms-pagination"><span className="cms-page-info">Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} records</span><button type="button" className="cms-page-btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Prev</button>{Array.from({ length: totalPages }).map((_, index) => <button type="button" key={index} className={`cms-page-btn ${currentPage === index + 1 ? "is-active" : ""}`} onClick={() => setPage(index + 1)}>{index + 1}</button>)}<button type="button" className="cms-page-btn" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button></div>
+    </section>
   );
 }

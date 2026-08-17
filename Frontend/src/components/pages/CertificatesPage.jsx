@@ -344,6 +344,7 @@ function getCertificateTemplate(type, record) {
   const group = record.group || "-";
   const academicYear = record.academicYear || "-";
   const studyInfo = `with Admission No. ${admissionNo}, currently studying in ${year} (${group}) during the academic year ${academicYear}`;
+  const studentRecord = `with Admission No. ${admissionNo}, in ${year} (${group}) during the academic year ${academicYear}`;
 
   switch (String(type || "").toLowerCase()) {
     case "bonafide certificate":
@@ -359,10 +360,11 @@ function getCertificateTemplate(type, record) {
         paragraphTwo: `This study certificate is issued for the purpose of ${safePurpose}.`,
       };
     case "transfer certificate":
+    case "tc":
       return {
         heading: "Transfer Certificate",
-        paragraphOne: `${studyInfo}, and has completed/withdrawn from studies at ${institutionName} and is eligible for transfer processing.`,
-        paragraphTwo: `This transfer certificate is issued for the purpose of ${safePurpose}.`,
+        paragraphOne: `The student ${studentRecord} has been relieved from ${institutionName} as per the institutional records and is eligible to continue studies at another institution.`,
+        paragraphTwo: `This transfer certificate is issued on request for ${safePurpose}.`,
       };
     case "conduct certificate":
       return {
@@ -373,12 +375,19 @@ function getCertificateTemplate(type, record) {
     case "migration certificate":
       return {
         heading: "Migration Certificate",
-        paragraphOne: `${studyInfo}, and is permitted to migrate from ${institutionName} as per academic regulations and records.`,
+        paragraphOne: `The student ${studentRecord} is permitted to migrate from ${institutionName} in accordance with institutional academic records and regulations.`,
         paragraphTwo: `This migration certificate is issued for the purpose of ${safePurpose}.`,
+      };
+    case "fee certificate":
+    case "fee":
+      return {
+        heading: "Fee Certificate",
+        paragraphOne: `${studyInfo}. The fee details for the stated academic year have been verified from the accounts records of ${institutionName}.`,
+        paragraphTwo: `This fee certificate is issued for the purpose of ${safePurpose}.`,
       };
     default:
       return {
-        heading: "Conduct Certificate",
+        heading: "Student Certificate",
         paragraphOne: `${studyInfo}, and is/was a bonafide student of ${institutionName}.`,
         paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
       };

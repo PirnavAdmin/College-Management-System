@@ -362,3 +362,67 @@ html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"]:focus-visib
   color: #ffffff !important;
   stroke: #ffffff !important;
 }
+
+/* Required markers stay red regardless of field, card, or button hover state. */
+html body :is(.req, .results-required-mark, .required-mark, .required-star, [class*="required-mark"], [class*="required-star"]),
+html body :hover :is(.req, .results-required-mark, .required-mark, .required-star, [class*="required-mark"], [class*="required-star"]),
+html[data-theme="dark"] body :is(.req, .results-required-mark, .required-mark, .required-star, [class*="required-mark"], [class*="required-star"]),
+html[data-theme="dark"] body :hover :is(.req, .results-required-mark, .required-mark, .required-star, [class*="required-mark"], [class*="required-star"]) {
+  color: #dc2626 !important;
+  -webkit-text-fill-color: #dc2626 !important;
+  opacity: 1 !important;
+}
+
+/* Table headings retain their header fill during every hover state. */
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead:hover,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead:focus-within,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr:hover,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr:focus-within,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr:active,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th:hover,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th:focus-within,
+html body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th:active {
+  background: var(--cms-primary-gradient) !important;
+  color: #f8fafc !important;
+  -webkit-text-fill-color: #f8fafc !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead:hover,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead:focus-within,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr:hover,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr:focus-within,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead tr:active,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th:hover,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th:focus-within,
+html[data-theme="dark"] body :is(table, .cms-table, .cms-fee-table, .cert-table-fit) thead th:active {
+  background: var(--cms-primary-gradient) !important;
+  color: #f8fafc !important;
+  -webkit-text-fill-color: #f8fafc !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+/* Persistent table-header lock: outrank page-level normal-state header rules. */
+html body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr,
+html body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr > th,
+html body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr:is(:hover, :focus-within, :active),
+html body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr > th:is(:hover, :focus-within, :active),
+html[data-theme="dark"] body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr,
+html[data-theme="dark"] body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr > th,
+html[data-theme="dark"] body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr:is(:hover, :focus-within, :active),
+html[data-theme="dark"] body .cms-content :is(table, .cms-table, .cms-fee-table, .cert-table-fit) > thead > tr > th:is(:hover, :focus-within, :active) {
+  background: var(--cms-primary-gradient) !important;
+  background-color: var(--cms-primary) !important;
+  color: #f8fafc !important;
+  -webkit-text-fill-color: #f8fafc !important;
+  filter: none !important;
+  transform: none !important;
+}

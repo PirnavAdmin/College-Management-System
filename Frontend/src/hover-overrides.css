@@ -305,3 +305,60 @@ html[data-theme="dark"] body :is(table, .cms-table, .cert-table-fit) tbody tr:ho
   color: var(--cms-text) !important;
   filter: none !important;
 }
+
+/* Final Login hover lock: loaded after landing and authentication styles. */
+html:not([data-theme="dark"]) body :is(a.landing-login-btn, button.auth-submit-btn):hover:not(:disabled),
+html:not([data-theme="dark"]) body :is(a.landing-login-btn, button.auth-submit-btn):focus-visible:not(:disabled) {
+  background-color: #064e3b !important;
+  background-image: linear-gradient(135deg, #064e3b 0%, #075985 100%) !important;
+  border-color: #064e3b !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(6, 78, 59, 0.36) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+  filter: brightness(1.04) !important;
+}
+
+html[data-theme="dark"] body :is(a.landing-login-btn, button.auth-submit-btn):hover:not(:disabled),
+html[data-theme="dark"] body :is(a.landing-login-btn, button.auth-submit-btn):focus-visible:not(:disabled) {
+  background-color: #14b8a6 !important;
+  background-image: linear-gradient(135deg, #14b8a6 0%, #0891b2 100%) !important;
+  border-color: #5eead4 !important;
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  box-shadow: 0 12px 26px rgba(20, 184, 166, 0.4) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+  filter: brightness(1.08) !important;
+}
+
+/* High-contrast theme toggle, scoped so other icon buttons are unchanged. */
+html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"] {
+  background-color: #0b1628 !important;
+  background-image: linear-gradient(135deg, #0b1628 0%, #10263a 100%) !important;
+  border: 1px solid #2dd4bf !important;
+  color: #ccfbf1 !important;
+  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.32) !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"] svg {
+  color: #ccfbf1 !important;
+  stroke: #ccfbf1 !important;
+  opacity: 1 !important;
+}
+
+html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"]:hover:not(:disabled),
+html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"]:focus-visible:not(:disabled) {
+  background-color: #12334a !important;
+  background-image: linear-gradient(135deg, #12334a 0%, #134e4a 100%) !important;
+  border-color: #5eead4 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.24) !important;
+  transform: translateY(-1px) !important;
+}
+
+html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"]:hover svg,
+html[data-theme="dark"] body button.cms-icon-btn[aria-label*="mode"]:focus-visible svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}

@@ -30,7 +30,7 @@ export default function LandingPage() {
           <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav Junior College logo" /></span>
           <span><strong>{heroCopy.title}</strong><span>College Management System</span></span>
         </div>
-        <div className="landing-header-actions"><ThemeToggle /><Link to="/login" className="cms-btn landing-login-btn">Login</Link></div>
+        <div className="landing-header-actions"><ThemeToggle /><Link to="/login" className="landing-login-btn">Login</Link></div>
       </header>
 
       <section className="landing-hero-banner">

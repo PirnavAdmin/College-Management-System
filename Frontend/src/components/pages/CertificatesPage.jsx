@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { Ban, Download, FilePenLine, RotateCcw, Search, X } from "lucide-react";
-import jsPDF from "jspdf";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FaArrowLeft, FaArrowRight, FaArrowsRotate, FaAward, FaBan, FaCheck, FaEraser, FaEye, FaFileCirclePlus, FaMagnifyingGlass, FaPaperPlane, FaPrint, FaRotateLeft, FaXmark } from "react-icons/fa6";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
-import { options } from "@/data/mockData.js";
+import { certificates as staticCertificates, options, students as mockStudents } from "@/data/mockData.js";
 import "./CertificatesPage.css";
 
 export const pageConfig = {
@@ -51,6 +50,18 @@ const unwrapListPayload = (payload) => {
     payload?.data?.Certificates,
     payload?.result?.certificates,
     payload?.result?.Certificates,
+    payload?.students,
+    payload?.Students,
+    payload?.admissions,
+    payload?.Admissions,
+    payload?.data?.students,
+    payload?.data?.Students,
+    payload?.data?.admissions,
+    payload?.data?.Admissions,
+    payload?.result?.students,
+    payload?.result?.Students,
+    payload?.result?.admissions,
+    payload?.result?.Admissions,
     payload?.$values,
     payload?.data?.$values,
     payload?.result?.$values,
@@ -66,9 +77,17 @@ const unwrapListPayload = (payload) => {
   return [];
 };
 
+const unwrapStudentPayload = (payload) => {
+  const list = unwrapListPayload(payload);
+  if (list.length) return list;
+  const single = unwrapSinglePayload(payload);
+  return single && typeof single === "object" ? [single] : [];
+};
+
 const unwrapSinglePayload = (payload) => {
+  if (hasCertificateShape(payload)) return payload;
+
   const singleCandidates = [
-    payload,
     payload?.data,
     payload?.Data,
     payload?.item,
@@ -115,6 +134,70 @@ const pick = (obj, keys) => {
     }
   }
   return undefined;
+};
+
+const getSignatureValue = (raw) => {
+  const value = pick(raw, [
+    "signature",
+    "Signature",
+    "signatureUrl",
+    "SignatureUrl",
+    "signatureImage",
+    "SignatureImage",
+    "signatureImageUrl",
+    "SignatureImageUrl",
+    "signatureFile",
+    "SignatureFile",
+    "signaturePath",
+    "SignaturePath",
+    "signatureBase64",
+    "SignatureBase64",
+    "signatureData",
+    "SignatureData",
+    "authorizedSignature",
+    "AuthorizedSignature",
+    "authorizedSignatory",
+    "AuthorizedSignatory",
+    "principalSignature",
+    "PrincipalSignature",
+  ]);
+
+  if (value && typeof value === "object") {
+    return pick(value, [
+      "url",
+      "Url",
+      "path",
+      "Path",
+      "src",
+      "Src",
+      "data",
+      "Data",
+      "value",
+      "Value",
+      "base64",
+      "Base64",
+    ]) || "";
+  }
+
+  return value || "";
+};
+
+const resolveSignatureSource = (signature) => {
+  const value = String(signature || "").trim();
+  if (!value) return "";
+  if (/^data:image\//i.test(value) || /^(https?:\/\/|blob:)/i.test(value)) return value;
+  if (/^[A-Za-z0-9+/\r\n]+={0,2}$/.test(value) && value.length > 100) {
+    return `data:image/png;base64,${value.replace(/\s/g, "")}`;
+  }
+  if (/^(\/|\.\/|\.\.\/)/.test(value)) {
+    try {
+      const baseUrl = apiClient.defaults.baseURL || window.location.origin;
+      return new URL(value, baseUrl).href;
+    } catch {
+      return value;
+    }
+  }
+  return value;
 };
 
 const getCertificateBackendId = (raw) => {
@@ -178,16 +261,41 @@ const maybeIsoDate = (value) => {
   return String(value);
 };
 
-const normalizeStudentRecord = (raw) => ({
-  id: Number(pick(raw, ["id", "Id", "studentId", "StudentId", "studentID"])) || null,
-  admissionNo: String(pick(raw, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no"]) || "").trim(),
-  name: pick(raw, ["fullName", "FullName", "studentName", "StudentName", "name", "Name", "firstName", "FirstName"]) || "",
-  group: pick(raw, ["groupName", "GroupName", "groupCode", "GroupCode", "group", "Group", "courseGroup", "CourseGroup"]) || "",
-  level: pick(raw, ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "level", "Level", "year", "Year"]) || "",
-  academicYear: pick(raw, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "yearName", "YearName"]) || "",
-});
+const getReferenceLabel = (value, keys) => {
+  if (value && typeof value === "object") return pick(value, keys) || "";
+  return value || "";
+};
 
-const fallbackStudents = [];
+const normalizeStudentRecord = (raw) => {
+  const nested = pick(raw, ["student", "Student", "admission", "Admission"]);
+  const source = nested && typeof nested === "object" ? { ...raw, ...nested } : raw;
+  return {
+    id: Number(pick(source, ["id", "Id", "studentId", "StudentId", "studentID", "admissionId", "AdmissionId"])) || null,
+    admissionNo: String(pick(source, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no", "studentAdmissionNo", "StudentAdmissionNo", "enrollmentNo", "EnrollmentNo"]) || "").trim(),
+    name: pick(source, ["fullName", "FullName", "studentName", "StudentName", "name", "Name", "firstName", "FirstName"]) || "",
+    group: pick(source, ["groupName", "GroupName", "groupCode", "GroupCode", "group", "Group", "courseGroup", "CourseGroup"]) || "",
+    level: getReferenceLabel(
+      pick(source, [
+        "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel",
+        "levelName", "LevelName", "level", "Level", "studyYear", "StudyYear",
+        "currentYear", "CurrentYear", "classYear", "ClassYear", "yearOfStudy",
+        "YearOfStudy", "year", "Year",
+      ]),
+      ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name", "title", "Title", "value", "Value"],
+    ) || "",
+    academicYear: getReferenceLabel(
+      pick(source, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "currentAcademicYear", "CurrentAcademicYear", "yearName", "YearName", "academicYearId", "AcademicYearId"]),
+      ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "title", "Title", "value", "Value"],
+    ),
+  };
+};
+
+const fallbackStudents = mockStudents.map((student) => ({
+  ...student,
+  academicYear: student.academicYear || "2025-2026",
+}));
+
+const isStaticCertificateRow = (row) => String(row?.backendId ?? row?.id ?? "").startsWith("mock-cert-");
 
 const normalizeCertificate = (raw, studentLookup = fallbackStudents) => {
   const backendId = getCertificateBackendId(raw);
@@ -217,7 +325,10 @@ const normalizeCertificate = (raw, studentLookup = fallbackStudents) => {
     group: pick(raw, ["group", "Group", "groupName", "GroupName"]) || matchedStudent?.group || "-",
     level: pick(raw, ["level", "Level", "year", "Year", "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName"]) || matchedStudent?.level || "-",
     academicYear:
-      pick(raw, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName"]) ||
+      getReferenceLabel(
+        pick(raw, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "yearName", "YearName", "academicYearId", "AcademicYearId"]),
+        ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "title", "Title", "value", "Value"],
+      ) ||
       matchedStudent?.academicYear ||
       "-",
     type: pick(raw, ["certificateType", "CertificateType", "type", "Type"]) || "-",
@@ -235,6 +346,7 @@ const normalizeCertificate = (raw, studentLookup = fallbackStudents) => {
     reviewedBy: pick(raw, ["reviewedBy", "ReviewedBy"]) || "",
     approvedBy: pick(raw, ["approvedBy", "ApprovedBy"]) || "",
     issuedBy: pick(raw, ["issuedBy", "IssuedBy"]) || "",
+    signature: getSignatureValue(raw),
   };
 };
 
@@ -317,14 +429,34 @@ function withOptionalRemarks(payload, remarksValue) {
   return { ...payload, remarks: remarks || "" };
 }
 
+const certificateGenerationEndpoints = {
+  Bonafide: "bonafide",
+  Study: "study",
+  Conduct: "conduct",
+  Fee: "fee",
+  TC: "tc",
+};
+
 function getGenerationEndpoint(certificateType) {
-  const type = String(certificateType || "").trim().toLowerCase();
-  if (type.includes("bonafide")) return CERTIFICATE_API.bonafide;
-  if (type.includes("study")) return CERTIFICATE_API.study;
-  if (type.includes("conduct")) return CERTIFICATE_API.conduct;
-  if (type.includes("fee")) return CERTIFICATE_API.fee;
-  if (type.includes("transfer") || type === "tc" || type.includes("tc")) return CERTIFICATE_API.tc;
-  return CERTIFICATE_API.create;
+  const type = String(certificateType || "").trim();
+
+  if (!type) return null;
+
+  const directMatch = Object.keys(certificateGenerationEndpoints).find(
+    (key) => key.toLowerCase() === type.toLowerCase(),
+  );
+  if (directMatch) {
+    return CERTIFICATE_API[certificateGenerationEndpoints[directMatch]];
+  }
+
+  const lowerType = type.toLowerCase();
+  if (lowerType.includes("bonafide")) return CERTIFICATE_API.bonafide;
+  if (lowerType.includes("study")) return CERTIFICATE_API.study;
+  if (lowerType.includes("conduct")) return CERTIFICATE_API.conduct;
+  if (lowerType.includes("fee")) return CERTIFICATE_API.fee;
+  if (lowerType.includes("transfer") || lowerType === "tc" || lowerType.includes("tc")) return CERTIFICATE_API.tc;
+
+  return null;
 }
 
 function escapeHtml(value) {
@@ -334,6 +466,16 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function renderSignatureHtml(signature) {
+  const value = resolveSignatureSource(signature);
+  if (!value) return '<span class="certificate-signature-text">Authorized Signature</span>';
+
+  const isImage = /^(data:image\/|https?:\/\/|blob:)/i.test(value);
+  return isImage
+    ? `<img class="certificate-signature" src="${escapeHtml(value)}" alt="Authorized signature" onerror="this.style.display='none';" />`
+    : `<span class="certificate-signature-text">${escapeHtml(value)}</span>`;
 }
 
 function getCertificateTemplate(type, record) {
@@ -351,51 +493,51 @@ function getCertificateTemplate(type, record) {
       return {
         heading: "Bonafide Certificate",
         paragraphOne: `${studyInfo}, and is a bonafide student of ${institutionName}.`,
-        paragraphTwo: `This certificate is issued on the student's request for the purpose of ${safePurpose}.`,
+        paragraphTwo: `This certificate is issued upon request to authenticate the student's status and is valid for the stated purpose of ${safePurpose}.`,
       };
     case "study certificate":
       return {
         heading: "Study Certificate",
-        paragraphOne: `${studyInfo}, and has pursued studies at ${institutionName} as per institutional academic records.`,
-        paragraphTwo: `This study certificate is issued for the purpose of ${safePurpose}.`,
+        paragraphOne: `${studyInfo}, and has pursued studies at ${institutionName} in accordance with the institution's academic records.`,
+        paragraphTwo: `This certificate is issued as an official record confirming the student's academic status and is valid for the purpose of ${safePurpose}.`,
       };
     case "transfer certificate":
     case "tc":
       return {
         heading: "Transfer Certificate",
-        paragraphOne: `The student ${studentRecord} has been relieved from ${institutionName} as per the institutional records and is eligible to continue studies at another institution.`,
-        paragraphTwo: `This transfer certificate is issued on request for ${safePurpose}.`,
+        paragraphOne: `The student ${studentRecord} has been relieved from ${institutionName} as per the institutional records and is eligible to continue studies at another recognized institution.`,
+        paragraphTwo: `This transfer certificate is issued for the purpose of ${safePurpose} and serves as an official record of the student's withdrawal from the institution.`,
       };
     case "conduct certificate":
       return {
         heading: "Conduct Certificate",
         paragraphOne: `${studyInfo}, and has maintained satisfactory conduct and discipline during the period of study at ${institutionName}.`,
-        paragraphTwo: `This conduct certificate is issued for the purpose of ${safePurpose}.`,
+        paragraphTwo: `This conduct certificate is issued to certify the student's behavior and is valid for the purpose of ${safePurpose}.`,
       };
     case "migration certificate":
       return {
         heading: "Migration Certificate",
-        paragraphOne: `The student ${studentRecord} is permitted to migrate from ${institutionName} in accordance with institutional academic records and regulations.`,
-        paragraphTwo: `This migration certificate is issued for the purpose of ${safePurpose}.`,
+        paragraphOne: `The student ${studentRecord} is permitted to migrate from ${institutionName} in accordance with the institution's academic regulations and official records.`,
+        paragraphTwo: `This migration certificate is issued for the purpose of ${safePurpose} and is recognized as an official transfer of academic status.`,
       };
     case "fee certificate":
     case "fee":
       return {
         heading: "Fee Certificate",
-        paragraphOne: `${studyInfo}. The fee details for the stated academic year have been verified from the accounts records of ${institutionName}.`,
-        paragraphTwo: `This fee certificate is issued for the purpose of ${safePurpose}.`,
+        paragraphOne: `${studyInfo}. The fee particulars for the stated academic year have been verified from the official accounts records of ${institutionName}.`,
+        paragraphTwo: `This fee certificate is issued as evidence of the student's fee record and is valid for the purpose of ${safePurpose}.`,
       };
     default:
       return {
         heading: "Student Certificate",
         paragraphOne: `${studyInfo}, and is/was a bonafide student of ${institutionName}.`,
-        paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
+        paragraphTwo: `This certificate is issued as an official academic document for the purpose of ${safePurpose}.`,
       };
   }
 }
 
 const CERTIFICATE_PRINT_CSS = `
-  @page { size: A4 portrait; margin: 14mm; }
+  @page { size: A4 portrait; margin: 0; }
   body {
     margin: 0;
     font-family: "Times New Roman", Georgia, serif;
@@ -403,15 +545,17 @@ const CERTIFICATE_PRINT_CSS = `
     color: #18253f;
   }
   .page {
-    min-height: 100vh;
+    min-height: 297mm;
     display: grid;
     place-items: center;
-    padding: 20px;
+    box-sizing: border-box;
+    padding: 14mm;
   }
   .cert {
     width: 100%;
     max-width: 820px;
     min-height: 1080px;
+    box-sizing: border-box;
     background: #fff;
     border: 1px solid #c5d3ec;
     border-radius: 8px;
@@ -544,9 +688,29 @@ const CERTIFICATE_PRINT_CSS = `
     min-width: 250px;
     font-size: 15px;
   }
+  .certificate-signature {
+    display: block;
+    width: 150px;
+    max-height: 58px;
+    object-fit: contain;
+    margin: 0 auto 8px;
+  }
+  .certificate-signature-text {
+    display: block;
+    margin: 0 auto 8px;
+    font-family: "Segoe Script", "Brush Script MT", cursive;
+    font-size: 24px;
+    color: #18253f;
+  }
+  .authorized-signatory {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #4f6388;
+  }
   @media print {
     body { background: #fff; }
-    .page { padding: 0; min-height: auto; }
+    .page { padding: 14mm; min-height: 297mm; }
     .cert {
       max-width: none;
       min-height: auto;
@@ -555,6 +719,7 @@ const CERTIFICATE_PRINT_CSS = `
       border-color: #cfd8ea;
       padding: 28px;
       break-inside: avoid;
+      min-height: 269mm;
     }
   }
 `;
@@ -566,9 +731,9 @@ function buildPrintHtml(record) {
   const templateHeading = escapeHtml(template.heading);
   const templateParaOne = escapeHtml(template.paragraphOne);
   const templateParaTwo = escapeHtml(template.paragraphTwo);
-  const requestDate = escapeHtml(formatDateDdMmYyyy(record.requestDate));
   const issueDate = escapeHtml(formatDateDdMmYyyy(record.issue));
   const status = escapeHtml(record.status || "Draft");
+  const signature = renderSignatureHtml(record.signature);
   const remarks = record.remarks ? `<p><strong>Remarks:</strong> ${escapeHtml(record.remarks)}</p>` : "";
 
   return `<!doctype html>
@@ -603,9 +768,7 @@ function buildPrintHtml(record) {
         This is to certify that <strong>${student}</strong> ${templateParaOne}
         ${templateParaTwo}
         <br /><br />
-        Request Date: <strong>${requestDate}</strong>
-        <br />
-        Issue Date: <strong>${issueDate}</strong>
+        <strong>Issue Date:</strong> ${issueDate}
         ${remarks}
       </div>
 
@@ -614,6 +777,8 @@ function buildPrintHtml(record) {
           This is a system-generated institutional certificate and is valid without alteration.
         </div>
         <div>
+          ${signature}
+          <span class="authorized-signatory">Authorized Signatory</span>
           <strong>Principal, Pirnav Junior College</strong>
         </div>
       </footer>
@@ -624,103 +789,15 @@ function buildPrintHtml(record) {
 </html>`;
 }
 
-function downloadCertificatePdf(record) {
-  const document = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-  const width = document.internal.pageSize.getWidth();
-  const height = document.internal.pageSize.getHeight();
-  const template = getCertificateTemplate(record.type, record);
-  const certificateNo = String(record.number || "-");
-  const status = String(record.status || "Generated");
-  const requestDate = formatDateDdMmYyyy(record.requestDate);
-  const issueDate = formatDateDdMmYyyy(record.issue);
-  const bodyLines = document.splitTextToSize(
-    `This is to certify that ${record.student || "-"} ${template.paragraphOne} ${template.paragraphTwo}`,
-    156,
-  );
-
-  document.setFillColor(255, 255, 255);
-  document.rect(0, 0, width, height, "F");
-  document.setDrawColor(197, 211, 236);
-  document.setLineWidth(0.7);
-  document.rect(10, 10, width - 20, height - 20);
-  document.setDrawColor(213, 224, 245);
-  document.setLineWidth(0.35);
-  document.rect(14, 14, width - 28, height - 28);
-
-  document.setFont("times", "bold");
-  document.setFontSize(66);
-  document.setTextColor(232, 238, 248);
-  document.text("PJC", width / 2, height / 2 + 12, { align: "center", angle: 35 });
-
-  document.setDrawColor(185, 203, 236);
-  document.setFillColor(237, 243, 255);
-  document.circle(34, 33, 10, "FD");
-  document.setFont("helvetica", "bold");
-  document.setFontSize(7);
-  document.setTextColor(41, 84, 168);
-  document.text("PJC", 34, 34, { align: "center" });
-
-  document.setFont("times", "bold");
-  document.setFontSize(15);
-  document.setTextColor(55, 82, 127);
-  document.text("PIRNAV JUNIOR COLLEGE", width / 2 + 7, 31, { align: "center" });
-  document.setFontSize(22);
-  document.setTextColor(20, 54, 110);
-  document.text(template.heading.toUpperCase(), width / 2, 47, { align: "center" });
-  document.setFont("times", "italic");
-  document.setFontSize(8);
-  document.setTextColor(90, 111, 147);
-  document.text("Empowering learners with integrity, discipline and excellence", width / 2, 54, { align: "center" });
-  document.setDrawColor(205, 217, 239);
-  document.line(25, 60, width - 25, 60);
-
-  document.setFont("helvetica", "normal");
-  document.setFontSize(8.5);
-  document.setTextColor(46, 66, 105);
-  document.text(`Certificate No: ${certificateNo}`, 26, 69);
-  document.text(`Status: ${status}`, width - 26, 69, { align: "right" });
-  document.setFont("helvetica", "bold");
-  document.setFontSize(9);
-  document.setTextColor(48, 76, 125);
-  document.text("TO WHOM IT MAY CONCERN", width / 2, 82, { align: "center" });
-
-  document.setFont("times", "normal");
-  document.setFontSize(13);
-  document.setLineHeightFactor(1.7);
-  document.setTextColor(29, 49, 86);
-  document.text(bodyLines, 27, 100, { maxWidth: 156, align: "justify" });
-  const contentEnd = 100 + (bodyLines.length * 7.8);
-  document.setFont("helvetica", "bold");
-  document.setFontSize(9);
-  document.text(`Request Date: ${requestDate}`, 27, contentEnd + 13);
-  document.text(`Issue Date: ${issueDate}`, 27, contentEnd + 20);
-  if (record.remarks) {
-    const remarks = document.splitTextToSize(`Remarks: ${record.remarks}`, 156);
-    document.text(remarks, 27, contentEnd + 30);
-  }
-
-  document.setFont("helvetica", "normal");
-  document.setFontSize(8);
-  document.setTextColor(79, 99, 136);
-  document.text("This is a system-generated institutional certificate and is valid without alteration.", 27, height - 38, { maxWidth: 92 });
-  document.setDrawColor(53, 79, 127);
-  document.line(width - 81, height - 45, width - 27, height - 45);
-  document.setFont("times", "bold");
-  document.setFontSize(10);
-  document.setTextColor(24, 37, 63);
-  document.text("Principal, Pirnav Junior College", width - 54, height - 38, { align: "center" });
-
-  document.save(`${certificateNo.replace(/[^a-z0-9_-]/gi, "_") || "certificate"}.pdf`);
-}
-
 export default function CertificatesPage() {
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(() => staticCertificates.map((item) => normalizeCertificate(item, fallbackStudents)));
   const [studentRows, setStudentRows] = useState(fallbackStudents);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingList, setLoadingList] = useState(true);
   const [creating, setCreating] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [busyAction, setBusyAction] = useState({ id: null, type: "" });
+  const [bulkAction, setBulkAction] = useState("");
   const [printingId, setPrintingId] = useState(null);
 
   const [form, setForm] = useState({
@@ -730,6 +807,7 @@ export default function CertificatesPage() {
     level: "",
     academicYear: "",
     type: "",
+    customType: "",
     purpose: "",
     requestDate: todayIso(),
     remarks: "",
@@ -737,7 +815,9 @@ export default function CertificatesPage() {
   const [errors, setErrors] = useState({});
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
+  const [activeTab, setActiveTab] = useState("generate");
   const [page, setPage] = useState(1);
+  const [actionPage, setActionPage] = useState(1);
   const [printPreview, setPrintPreview] = useState(null);
   const [editRow, setEditRow] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -751,6 +831,7 @@ export default function CertificatesPage() {
   });
   const [editErrors, setEditErrors] = useState({});
   const [toast, setToast] = useState("");
+  const admissionLookupRef = useRef(0);
 
   const formFields = useMemo(
     () => baseFormFields.map((field) => {
@@ -796,10 +877,10 @@ export default function CertificatesPage() {
     try {
       const response = await apiClient.get(CERTIFICATE_API.list);
       const mapped = unwrapListPayload(response?.data).map((item) => normalizeCertificate(item, studentLookup));
-      setRows(mapped);
+      setRows(mapped.length ? mapped : staticCertificates.map((item) => normalizeCertificate(item, studentLookup)));
       return true;
     } catch (error) {
-      setRows([]);
+      setRows(staticCertificates.map((item) => normalizeCertificate(item, studentLookup)));
       const message = getFriendlyErrorMessage(error, "Failed to load certificates. Please try again.");
       setToast(message);
       return false;
@@ -811,12 +892,35 @@ export default function CertificatesPage() {
   const loadStudents = async () => {
     setLoadingStudents(true);
     try {
-      const response = await apiClient.get(apiEndpoints.students.getAll);
-      const mapped = unwrapListPayload(response?.data)
-        .map(normalizeStudentRecord)
-        .filter((student) => student.id && student.admissionNo);
-      setStudentRows(mapped.length ? mapped : fallbackStudents);
-      return mapped.length ? mapped : fallbackStudents;
+      const endpoints = [
+        apiEndpoints.students.getAll,
+        apiEndpoints.students.getActive,
+        apiEndpoints.admissions.getAll,
+      ].filter(Boolean);
+      const responses = await Promise.allSettled(endpoints.map((endpoint) => apiClient.get(endpoint)));
+      const records = responses.flatMap((result) => (
+        result.status === "fulfilled" ? unwrapStudentPayload(result.value?.data) : []
+      ));
+      const studentsByAdmission = new Map();
+      records.map(normalizeStudentRecord).filter((student) => student.admissionNo).forEach((student) => {
+        const key = student.admissionNo.toLowerCase();
+        const current = studentsByAdmission.get(key) || {};
+        studentsByAdmission.set(key, {
+          id: student.id || current.id || null,
+          admissionNo: student.admissionNo || current.admissionNo || "",
+          name: student.name || current.name || "",
+          group: student.group || current.group || "",
+          level: student.level || current.level || "",
+          academicYear: student.academicYear || current.academicYear || "",
+        });
+      });
+      const apiStudents = [...studentsByAdmission.values()];
+      const mapped = [
+        ...apiStudents,
+        ...fallbackStudents.filter((mockStudent) => !studentsByAdmission.has(mockStudent.admissionNo.toLowerCase())),
+      ];
+      setStudentRows(mapped);
+      return mapped;
     } catch (error) {
       setStudentRows(fallbackStudents);
       setToast(getFriendlyErrorMessage(error, "Failed to load students."));
@@ -835,7 +939,71 @@ export default function CertificatesPage() {
   }, []);
 
   const findStudentByAdmission = (admissionNo) =>
-    studentRows.find((student) => student.admissionNo === admissionNo) || null;
+    studentRows.find((student) => String(student.admissionNo).trim().toLowerCase() === String(admissionNo).trim().toLowerCase()) || null;
+
+  useEffect(() => {
+    const admissionNo = String(form.admissionNo || "").trim();
+    if (!admissionNo || admissionNo.length < 2) return undefined;
+
+    const lookupId = admissionLookupRef.current + 1;
+    admissionLookupRef.current = lookupId;
+    const timer = window.setTimeout(async () => {
+      try {
+        let candidates = [];
+        try {
+          const response = await apiClient.get(apiEndpoints.students.search, {
+            params: { admissionNo, search: admissionNo },
+          });
+          candidates = unwrapStudentPayload(response?.data);
+        } catch {
+          const responses = await Promise.allSettled([
+            apiClient.get(apiEndpoints.students.getAll),
+            apiClient.get(apiEndpoints.admissions.getAll),
+          ]);
+          candidates = responses.flatMap((result) => (
+            result.status === "fulfilled" ? unwrapStudentPayload(result.value?.data) : []
+          ));
+        }
+        if (!candidates.length) {
+          const admissionsResponse = await apiClient.get(apiEndpoints.admissions.getAll);
+          candidates = unwrapStudentPayload(admissionsResponse?.data);
+        }
+        const matchedStudent = candidates
+          .map(normalizeStudentRecord)
+          .find((student) => student.admissionNo.trim().toLowerCase() === admissionNo.toLowerCase());
+        if (!matchedStudent || admissionLookupRef.current !== lookupId) return;
+
+        const existingStudent = findStudentByAdmission(admissionNo);
+        const resolvedStudent = {
+          ...matchedStudent,
+          id: matchedStudent.id || existingStudent?.id || null,
+          name: matchedStudent.name || existingStudent?.name || "",
+          group: matchedStudent.group || existingStudent?.group || "",
+          level: matchedStudent.level || existingStudent?.level || "",
+          academicYear: matchedStudent.academicYear || existingStudent?.academicYear || "",
+        };
+
+        setStudentRows((current) => [
+          ...current.filter((student) => student.admissionNo !== resolvedStudent.admissionNo),
+          resolvedStudent,
+        ]);
+        setForm((current) => ({
+          ...current,
+          student: resolvedStudent.name,
+          group: resolvedStudent.group,
+          level: resolvedStudent.level,
+          academicYear: resolvedStudent.academicYear,
+        }));
+        setErrors((current) => ({ ...current, admissionNo: undefined }));
+      } catch {
+        // Validation reports an unknown admission number when no student is found.
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+    // Admission changes intentionally drive the lookup; studentRows is merged inside the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.admissionNo]);
 
   const upsertFromApiResponse = async (id, responseData) => {
     const single = unwrapSinglePayload(responseData);
@@ -878,7 +1046,8 @@ export default function CertificatesPage() {
   const validate = () => {
     const next = {};
     const admissionNo = String(form.admissionNo || "").trim();
-    const type = String(form.type || "").trim();
+    const selectedType = String(form.type || "").trim();
+    const type = selectedType === "Others" ? normalizeText(form.customType) : selectedType;
     const purpose = normalizeText(form.purpose);
     const requestDate = String(form.requestDate || "").trim();
     const remarks = normalizeText(form.remarks);
@@ -892,8 +1061,12 @@ export default function CertificatesPage() {
       next.admissionNo = "Select a valid admission number";
     }
 
-    if (type && !options.certificateType.includes(type)) {
+    if (selectedType && selectedType !== "Others" && !options.certificateType.includes(selectedType)) {
       next.type = "Select a valid certificate type";
+    }
+
+    if (selectedType === "Others" && !type) {
+      next.customType = "Enter the certificate type";
     }
 
     if (purpose.length < 5) {
@@ -938,6 +1111,7 @@ export default function CertificatesPage() {
       level: "",
       academicYear: "",
       type: "",
+      customType: "",
       purpose: "",
       requestDate: todayIso(),
       remarks: "",
@@ -958,7 +1132,8 @@ export default function CertificatesPage() {
     if (creating) return;
 
     const admissionNo = String(form.admissionNo || "").trim();
-    const type = String(form.type || "").trim();
+    const selectedType = String(form.type || "").trim();
+    const type = selectedType === "Others" ? normalizeText(form.customType) : selectedType;
     const purpose = normalizeText(form.purpose);
     const requestDate = String(form.requestDate || "").trim();
     const remarks = normalizeText(form.remarks);
@@ -970,7 +1145,11 @@ export default function CertificatesPage() {
 
     setCreating(true);
     try {
-      const endpoint = getGenerationEndpoint(type);
+      const endpoint = selectedType === "Others" ? CERTIFICATE_API.other : getGenerationEndpoint(type);
+      if (!endpoint) {
+        setToast("This certificate type is not supported by the backend endpoint configuration.");
+        return;
+      }
       const normalizedRequestDate = normalizeApiDateValue(requestDate);
       const specializedPayload = withOptionalRemarks({
         admissionNo,
@@ -979,13 +1158,46 @@ export default function CertificatesPage() {
         purpose,
         requestDate: normalizedRequestDate,
         issueDate: normalizedRequestDate,
+        ...(selectedType === "Others" ? { status: "Generated" } : {}),
       }, remarks);
       const response = await apiClient.post(endpoint, specializedPayload);
       await upsertFromApiResponse(undefined, response.data);
       await reloadCurrentView();
       resetForm();
-      setToast("Certificate generated successfully.");
+      setActiveTab("certificates");
+      setToast(selectedType === "Others" ? "Other certificate draft created successfully." : "Certificate generated successfully.");
     } catch (error) {
+      const canUseDemoFallback = selectedType === "Others" && (
+        !error?.response || Number(error.response.status) >= 500
+      );
+
+      if (canUseDemoFallback) {
+        const demoId = `mock-cert-${Date.now()}`;
+        const demoCertificate = normalizeCertificate({
+          id: demoId,
+          certificateNo: `DEMO-${Date.now().toString().slice(-6)}`,
+          studentId: selectedStudent.id,
+          admissionNo,
+          studentName: selectedStudent.name,
+          group: selectedStudent.group,
+          level: selectedStudent.level,
+          academicYear: selectedStudent.academicYear,
+          certificateType: type,
+          purpose,
+          requestDate,
+          issueDate: requestDate,
+          status: "Generated",
+          remarks,
+        }, studentRows);
+
+        setRows((currentRows) => [demoCertificate, ...currentRows]);
+        resetForm();
+        setActiveTab("certificates");
+        setPage(1);
+        setToast("The server could not create the certificate, so a demo draft was created locally for workflow testing.");
+        return;
+      }
+
       setToast(getFriendlyErrorMessage(error, "Failed to generate certificate. Please try again."));
     } finally {
       setCreating(false);
@@ -1007,15 +1219,117 @@ export default function CertificatesPage() {
     if (!canMoveTo(row.status, selected.nextStatus)) return;
 
     setBusyAction({ id: row.id, type: action });
+
+    if (isStaticCertificateRow(row)) {
+      setRows((currentRows) => currentRows.map((currentRow) => (
+        String(currentRow.id) === String(row.id)
+          ? {
+            ...currentRow,
+            status: selected.nextStatus,
+            ...(action === "review" ? { reviewedAt: todayIso() } : {}),
+            ...(action === "approve" ? { approvedAt: todayIso() } : {}),
+            ...(action === "issue" ? { issuedAt: todayIso(), issue: todayIso() } : {}),
+          }
+          : currentRow
+      )));
+      if (action === "review") {
+        setPrintPreview(null);
+        setActiveTab("actions");
+        setActionPage(1);
+      }
+      setToast(`Demo certificate ${row.number} ${selected.success}`);
+      setBusyAction({ id: null, type: "" });
+      return;
+    }
+
     try {
       const response = await apiClient[selected.method](selected.endpoint(actionId));
+      setRows((currentRows) => currentRows.map((currentRow) => (
+        String(currentRow.id) === String(row.id)
+          ? {
+            ...currentRow,
+            status: selected.nextStatus,
+            ...(action === "review" ? { reviewedAt: todayIso() } : {}),
+            ...(action === "approve" ? { approvedAt: todayIso() } : {}),
+            ...(action === "issue" ? { issuedAt: todayIso(), issue: todayIso() } : {}),
+          }
+          : currentRow
+      )));
       await upsertFromApiResponse(actionId, response.data);
       await reloadCurrentView();
+      if (action === "review") {
+        setPrintPreview(null);
+        setActiveTab("actions");
+        setActionPage(1);
+      }
       setToast(`Certificate ${row.number} ${selected.success}`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, `Failed to ${action} certificate. Please try again.`));
     } finally {
       setBusyAction({ id: null, type: "" });
+    }
+  };
+
+  const handleBulkWorkflow = async (action) => {
+    if (bulkAction || busyAction.id) return;
+
+    const actionMap = {
+      review: { currentStatus: "Generated", nextStatus: "Reviewed", endpoint: CERTIFICATE_API.review, label: "reviewed" },
+      approve: { currentStatus: "Reviewed", nextStatus: "Approved", endpoint: CERTIFICATE_API.approve, label: "approved" },
+      issue: { currentStatus: "Approved", nextStatus: "Issued", endpoint: CERTIFICATE_API.issue, label: "issued" },
+    };
+    const selected = actionMap[action];
+    if (!selected) return;
+
+    const eligibleRows = rows.filter((row) => row.status === selected.currentStatus && hasServerCertificateId(row));
+    if (!eligibleRows.length) {
+      setToast(`No ${selected.currentStatus.toLowerCase()} certificates are available for bulk ${action}.`);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Do you want to ${action} all ${eligibleRows.length} eligible certificate${eligibleRows.length === 1 ? "" : "s"}?`,
+    );
+    if (!confirmed) return;
+
+    setBulkAction(action);
+    try {
+      const results = await Promise.all(eligibleRows.map(async (row) => {
+        if (isStaticCertificateRow(row)) return { row, succeeded: true };
+        try {
+          const actionId = await resolveServerCertificateId(row);
+          if (!actionId) return { row, succeeded: false };
+          await apiClient.patch(selected.endpoint(actionId));
+          return { row, succeeded: true };
+        } catch {
+          return { row, succeeded: false };
+        }
+      }));
+
+      const succeededIds = new Set(results.filter((result) => result.succeeded).map((result) => String(result.row.id)));
+      const succeededCount = succeededIds.size;
+      const failedCount = results.length - succeededCount;
+
+      setRows((currentRows) => currentRows.map((row) => (
+        succeededIds.has(String(row.id))
+          ? {
+            ...row,
+            status: selected.nextStatus,
+            ...(action === "review" ? { reviewedAt: todayIso() } : {}),
+            ...(action === "approve" ? { approvedAt: todayIso() } : {}),
+            ...(action === "issue" ? { issuedAt: todayIso(), issue: todayIso() } : {}),
+          }
+          : row
+      )));
+
+      if (action === "review" && succeededCount) {
+        setPrintPreview(null);
+        setActiveTab("actions");
+        setActionPage(1);
+      }
+      setToast(`${succeededCount} certificate${succeededCount === 1 ? "" : "s"} ${selected.label}${failedCount ? `; ${failedCount} failed` : ""}.`);
+    } finally {
+      setBulkAction("");
     }
   };
 
@@ -1027,13 +1341,34 @@ export default function CertificatesPage() {
     if (!ok) return;
 
     setBusyAction({ id: row.id, type: "cancel" });
+    if (isStaticCertificateRow(row)) {
+      setRows((currentRows) => currentRows.map((currentRow) => (
+        String(currentRow.id) === String(row.id)
+          ? { ...currentRow, status: "Cancelled", cancelledAt: todayIso() }
+          : currentRow
+      )));
+      setToast(`Demo certificate ${row.number} cancelled`);
+      setBusyAction({ id: null, type: "" });
+      return;
+    }
+
     try {
       const response = await apiClient.patch(CERTIFICATE_API.cancel(actionId));
       await upsertFromApiResponse(actionId, response.data);
       await reloadCurrentView();
       setToast(`Certificate ${row.number} cancelled`);
     } catch (error) {
-      setToast(getFriendlyErrorMessage(error, "Failed to cancel certificate. Please try again."));
+      const canUseLocalFallback = !error?.response || Number(error.response.status) >= 500;
+      if (canUseLocalFallback) {
+        setRows((currentRows) => currentRows.map((currentRow) => (
+          String(currentRow.id) === String(row.id)
+            ? { ...currentRow, status: "Cancelled", cancelledAt: todayIso() }
+            : currentRow
+        )));
+        setToast(`Certificate ${row.number} cancelled locally because the server could not complete the request.`);
+      } else {
+        setToast(getFriendlyErrorMessage(error, "Failed to cancel certificate. Please try again."));
+      }
     } finally {
       setBusyAction({ id: null, type: "" });
     }
@@ -1041,9 +1376,47 @@ export default function CertificatesPage() {
 
   const regenerateCertificate = async (row) => {
     if (busyAction.id) return;
+    if (row.reissuedAt) {
+      setToast(`Certificate ${row.number} has already been reissued as ${row.reissuedCertificateNo || "a new certificate"}.`);
+      return;
+    }
     const actionId = await resolveServerCertificateId(row);
     if (!actionId) return;
+    const confirmed = window.confirm(`Do you want to reissue certificate ${row.number}? A new certificate number will be generated.`);
+    if (!confirmed) return;
     setBusyAction({ id: row.id, type: "reissue" });
+
+    if (isStaticCertificateRow(row)) {
+      const reissuedId = `mock-cert-${Date.now()}`;
+      const reissued = {
+        ...row,
+        id: reissuedId,
+        backendId: reissuedId,
+        number: `CERT-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+        status: "Issued",
+        requestDate: todayIso(),
+        issue: todayIso(),
+        generatedAt: todayIso(),
+        reviewedAt: "",
+        approvedAt: "",
+        issuedAt: todayIso(),
+        cancelledAt: "",
+      };
+      setRows((currentRows) => [
+        reissued,
+        ...currentRows.map((currentRow) => (
+          String(currentRow.id) === String(row.id)
+            ? { ...currentRow, reissuedAt: todayIso(), reissuedCertificateNo: reissued.number }
+            : currentRow
+        )),
+      ]);
+      setActiveTab("actions");
+      setActionPage(1);
+      setToast(`Demo certificate ${row.number} reissued as ${reissued.number}`);
+      setBusyAction({ id: null, type: "" });
+      return;
+    }
+
     try {
       let resolvedStudentId = Number(row.studentId) || null;
       if (!resolvedStudentId) {
@@ -1075,35 +1448,78 @@ export default function CertificatesPage() {
         purpose: String(row.purpose || "").trim(),
         requestDate: normalizeApiDateValue(row.requestDate) || todayIso(),
       }, row.remarks));
-      await upsertFromApiResponse(row.id, response.data);
-      await reloadCurrentView();
-      setToast(`Certificate ${row.number} reissued`);
+      const responseRecord = unwrapSinglePayload(response.data);
+      const normalizedResponse = hasCertificateShape(responseRecord)
+        ? normalizeCertificate(responseRecord, studentRows)
+        : null;
+      const generatedNumber = `CERT-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+      const responseNumber = String(normalizedResponse?.number || "").trim();
+      const hasNewServerNumber = responseNumber && responseNumber !== "-" && responseNumber !== String(row.number);
+      const responseId = normalizedResponse?.backendId;
+      const hasNewServerId = responseId && String(responseId) !== String(actionId);
+      const reissuedId = hasNewServerId ? String(responseId) : `mock-cert-${Date.now()}`;
+      const reissued = {
+        ...row,
+        ...(normalizedResponse || {}),
+        id: reissuedId,
+        backendId: reissuedId,
+        number: hasNewServerNumber ? responseNumber : generatedNumber,
+        status: "Issued",
+        requestDate: normalizedResponse?.requestDate || todayIso(),
+        issue: normalizedResponse?.issue || todayIso(),
+        generatedAt: normalizedResponse?.generatedAt || todayIso(),
+        reviewedAt: normalizedResponse?.reviewedAt || todayIso(),
+        approvedAt: normalizedResponse?.approvedAt || todayIso(),
+        issuedAt: normalizedResponse?.issuedAt || todayIso(),
+        cancelledAt: "",
+      };
+      setRows((currentRows) => [
+        reissued,
+        ...currentRows
+          .filter((item) => String(item.id) !== String(reissued.id))
+          .map((currentRow) => (
+            String(currentRow.id) === String(row.id)
+              ? { ...currentRow, reissuedAt: todayIso(), reissuedCertificateNo: reissued.number }
+              : currentRow
+          )),
+      ]);
+      setPrintPreview(null);
+      setActiveTab("actions");
+      setActionPage(1);
+      setToast(`Certificate ${row.number} reissued as ${reissued.number}`);
     } catch (error) {
-      setToast(getFriendlyErrorMessage(error, "Failed to reissue certificate. Please try again."));
-    } finally {
-      setBusyAction({ id: null, type: "" });
-    }
-  };
-
-  const downloadCertificate = async (row) => {
-    if (busyAction.id) return;
-    const actionId = await resolveServerCertificateId(row);
-    if (!actionId) {
-      setToast("Unable to resolve certificate ID for download.");
-      return;
-    }
-
-    setBusyAction({ id: row.id, type: "download" });
-    try {
-      let certificate = row;
-      const response = await apiClient.get(CERTIFICATE_API.getById(actionId));
-      const details = unwrapSinglePayload(response.data);
-      if (hasCertificateShape(details)) certificate = normalizeCertificate(details, studentRows);
-
-      downloadCertificatePdf(certificate);
-      setToast("Certificate downloaded successfully.");
-    } catch (error) {
-      setToast(getFriendlyErrorMessage(error, "Unable to download certificate. Please try again."));
+      const canUseLocalFallback = !error?.response || Number(error.response.status) >= 500;
+      if (canUseLocalFallback) {
+        const reissuedId = `mock-cert-${Date.now()}`;
+        const reissuedNumber = `CERT-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        const reissued = {
+          ...row,
+          id: reissuedId,
+          backendId: reissuedId,
+          number: reissuedNumber,
+          status: "Issued",
+          requestDate: todayIso(),
+          issue: todayIso(),
+          generatedAt: todayIso(),
+          reviewedAt: "",
+          approvedAt: "",
+          issuedAt: todayIso(),
+          cancelledAt: "",
+        };
+        setRows((currentRows) => [
+          reissued,
+          ...currentRows.map((currentRow) => (
+            String(currentRow.id) === String(row.id)
+              ? { ...currentRow, reissuedAt: todayIso(), reissuedCertificateNo: reissued.number }
+              : currentRow
+          )),
+        ]);
+        setActiveTab("actions");
+        setActionPage(1);
+        setToast(`Certificate ${row.number} reissued locally as ${reissuedNumber}.`);
+      } else {
+        setToast(getFriendlyErrorMessage(error, "Failed to reissue certificate. Please try again."));
+      }
     } finally {
       setBusyAction({ id: null, type: "" });
     }
@@ -1113,56 +1529,53 @@ export default function CertificatesPage() {
     const target = record;
     if (!target) return;
 
-    const resolvedId = await resolveServerCertificateId(target);
-    if (!resolvedId) {
+    if (printingId) return;
+    setPrintingId(target.id);
+
+    try {
       const popup = window.open("", "_blank", "width=1000,height=760");
       if (!popup) {
         setToast("Please allow popups to print certificate");
         return;
       }
+
+      const openPrintDialog = () => {
+        const images = Array.from(popup.document.images || []);
+        const imageLoads = images.map((image) => {
+          if (image.complete) return Promise.resolve();
+          return new Promise((resolve) => {
+            image.addEventListener("load", resolve, { once: true });
+            image.addEventListener("error", resolve, { once: true });
+          });
+        });
+
+        Promise.all(imageLoads).then(() => {
+          window.setTimeout(() => {
+            try {
+              popup.focus();
+              popup.print();
+            } catch {
+              // Ignore browser print blockers.
+            }
+          }, 250);
+        });
+      };
+
+      popup.onload = openPrintDialog;
       popup.document.open();
       popup.document.write(buildPrintHtml(target));
       popup.document.close();
-      popup.focus();
-      popup.onload = () => popup.print();
-      return;
-    }
 
-    if (printingId) return;
-    setPrintingId(target.id);
-
-    try {
-      const response = await apiClient.get(apiEndpoints.certificates.download(resolvedId), { responseType: "blob" });
-      const contentType = String(response?.headers?.["content-type"] || "").toLowerCase();
-      if (contentType.includes("pdf") || contentType.includes("application/octet-stream")) {
-        const blob = new Blob([response.data], { type: contentType || "application/pdf" });
-        const url = window.URL.createObjectURL(blob);
-        const popup = window.open(url, "_blank", "noopener,noreferrer");
-        if (!popup) {
-          setToast("Please allow popups to print certificate");
-        } else {
-          popup.focus();
-        }
-        setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
-        return;
+      // Some browsers complete the popup document before firing the assigned
+      // load callback. Keep a safe fallback so the print dialog still opens.
+      if (popup.document.readyState === "complete") {
+        openPrintDialog();
       }
     } catch {
-      // Fallback to existing preview template print.
+      setToast("Unable to open print preview for this certificate.");
     } finally {
-      setPrintingId(null);
+      setTimeout(() => setPrintingId(null), 400);
     }
-
-    const popup = window.open("", "_blank", "width=1000,height=760");
-    if (!popup) {
-      setToast("Please allow popups to print certificate");
-      return;
-    }
-
-    popup.document.open();
-    popup.document.write(buildPrintHtml(target));
-    popup.document.close();
-    popup.focus();
-    popup.onload = () => popup.print();
   };
 
   const openPrintPreview = (record) => {
@@ -1250,6 +1663,13 @@ export default function CertificatesPage() {
   const saveEditDialog = async () => {
     if (!editRow) return;
 
+    const certificateId = editRow.backendId ?? editRow.id;
+    if (!certificateId || !String(certificateId).trim()) {
+      setToast("Certificate edit is not supported by the available backend APIs.");
+      closeEditDialog();
+      return;
+    }
+
     const nextErrors = {};
     if (!String(editForm.admissionNo || "").trim()) nextErrors.admissionNo = "Admission No. is required";
 
@@ -1274,21 +1694,10 @@ export default function CertificatesPage() {
     if (savingEdit) return;
     setSavingEdit(true);
     try {
-      const certificateId = editRow.backendId ?? editRow.id;
-      const payload = withOptionalRemarks({
-        certificateId,
-        studentId: Number(selectedStudent.id),
-        certificateType: editRow.type,
-        purpose: normalizeText(editForm.purpose),
-        admissionNo: normalizeText(editForm.admissionNo),
-      }, editForm.remarks);
-      const response = await apiClient.put(`${CERTIFICATE_API.list}/admission-no`, payload);
-      await upsertFromApiResponse(certificateId, response.data);
-      await reloadCurrentView();
-      setToast(`Certificate ${editRow.number} updated`);
+      setToast("Certificate editing is not supported by the backend. Please use the available review/approve/issue workflow.");
       closeEditDialog();
     } catch (error) {
-      setToast(getFriendlyErrorMessage(error, "Failed to update certificate. Please try again."));
+      setToast(getFriendlyErrorMessage(error, "Certificate editing is not supported by the backend."));
     } finally {
       setSavingEdit(false);
     }
@@ -1308,52 +1717,181 @@ export default function CertificatesPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const actionRows = rows.filter((row) => ["Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status));
+  const actionTotalPages = Math.max(1, Math.ceil(actionRows.length / PAGE_SIZE));
+  const currentActionPage = Math.min(actionPage, actionTotalPages);
+  const actionPageRows = actionRows.slice((currentActionPage - 1) * PAGE_SIZE, currentActionPage * PAGE_SIZE);
 
   const printTemplate = printPreview ? getCertificateTemplate(printPreview.type, printPreview) : null;
+  const previewSignature = resolveSignatureSource(printPreview?.signature);
+  const previewSignatureIsImage = /^(data:image\/|https?:\/\/|blob:)/i.test(previewSignature);
+  const tabButtonStyle = (tab) => ({
+    border: "1px solid var(--cms-border)",
+    borderRadius: "var(--cms-radius)",
+    padding: "9px 14px",
+    font: "inherit",
+    fontSize: "13px",
+    fontWeight: 700,
+    cursor: "pointer",
+    color: activeTab === tab ? "#ffffff" : "var(--cms-text)",
+    background: activeTab === tab ? "var(--cms-primary)" : "var(--cms-surface)",
+  });
+  const workflowButtonStyle = (action, enabled) => {
+    const styles = {
+      review: { background: "#e0f2fe", borderColor: "#7dd3fc", color: "#0369a1" },
+      approve: { background: "#ecfdf5", borderColor: "#6ee7b7", color: "#047857" },
+      issue: { background: "#0f766e", borderColor: "#0f766e", color: "#ffffff" },
+    };
+    const current = styles[action];
+    return {
+      minWidth: 38,
+      minHeight: 34,
+      padding: 6,
+      border: "1px solid",
+      borderRadius: 7,
+      font: "inherit",
+      fontSize: 12,
+      fontWeight: 700,
+      ...current,
+      opacity: enabled ? 1 : 0.52,
+      cursor: enabled ? "pointer" : "not-allowed",
+    };
+  };
 
   return (
     <DashboardLayout
       title="Certificate Management"
-      subtitle="Generate, review, and issue certificates with a controlled workflow."
+      subtitle="Generate certificates, view requests, and process approval ."
       breadcrumb={["Administration"]}
     >
       <div className="cert-page">
+        <nav className="cert-internal-tabs" aria-label="Certificate sections" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button type="button" style={tabButtonStyle("generate")} title="Generate Certificate" aria-label="Generate Certificate" aria-current={activeTab === "generate" ? "page" : undefined} onClick={() => setActiveTab("generate")}>
+            <FaAward size={14} aria-hidden="true" /> Generate Certificate
+          </button>
+          <button type="button" style={tabButtonStyle("certificates")} title="Certificates" aria-label="Certificates" aria-current={activeTab === "certificates" ? "page" : undefined} onClick={() => setActiveTab("certificates")}>
+            <FaMagnifyingGlass size={13} aria-hidden="true" /> Certificates
+          </button>
+          <button type="button" style={tabButtonStyle("actions")} title="Approve, Issue" aria-label="Approve, Issue" aria-current={activeTab === "actions" ? "page" : undefined} onClick={() => setActiveTab("actions")}>
+            <FaCheck size={14} aria-hidden="true" /> Approve, Issue
+          </button>
+        </nav>
+
+        {activeTab === "generate" ? (
         <div className="cert-section-gap">
           <div className="cms-card cert-form-card">
             <div className="cms-card-head cert-section-head">
               <div>
                 <h2>Generate Certificate</h2>
-                <p>Enter request details and generate a controlled draft for approval flow.</p>
+                <p>Enter request details and generate a certificate request.</p>
               </div>
             </div>
             <div className="cms-card-body">
               <div className="cms-form-grid cols-3">
-                {formFields.map((field) => (
-                  <Field
-                    key={field.name}
-                    field={field}
-                    value={form[field.name]}
-                    error={errors[field.name]}
-                    onChange={(name, value) => {
-                      if (name === "admissionNo") {
-                        const selectedStudent = findStudentByAdmission(value);
-                        setForm((prev) => ({
-                          ...prev,
-                          admissionNo: value,
-                          student: selectedStudent?.name || "",
-                          group: selectedStudent?.group || "",
-                          level: selectedStudent?.level || "",
-                          academicYear: selectedStudent?.academicYear || "",
-                        }));
-                        setErrors((prev) => ({ ...prev, admissionNo: undefined }));
-                        return;
-                      }
+                {formFields.map((field) => {
+                  const isThemeControlledField = field.name === "admissionNo" || field.name === "type" || field.name === "requestDate";
+                  if (isThemeControlledField) {
+                    return (
+                      <div key={field.name} className="cms-field">
+                        <label htmlFor={`certificate-${field.name}`}>
+                          {field.label} {field.required ? <span className="req">*</span> : null}
+                        </label>
+                        {field.name === "admissionNo" ? (
+                          <>
+                          <input
+                            id="certificate-admissionNo"
+                            type="text"
+                            value={form.admissionNo}
+                            placeholder={loadingStudents ? "Loading admissions..." : "Enter admission number"}
+                            autoComplete="off"
+                            onChange={(e) => {
+                              const admissionNo = e.target.value;
+                              const selectedStudent = findStudentByAdmission(admissionNo);
+                              setForm((prev) => ({
+                                ...prev,
+                                admissionNo,
+                                student: selectedStudent?.name || "",
+                                group: selectedStudent?.group || "",
+                                level: selectedStudent?.level || "",
+                                academicYear: selectedStudent?.academicYear || "",
+                              }));
+                              setErrors((prev) => ({ ...prev, admissionNo: undefined }));
+                            }}
+                          />
+                          </>
+                        ) : field.name === "type" ? (
+                          <select
+                            id="certificate-type"
+                            className={form.type ? "" : "cert-field-placeholder"}
+                            value={form.type}
+                            onChange={(e) => {
+                              setForm((prev) => ({ ...prev, type: e.target.value, customType: "" }));
+                              setErrors((prev) => ({ ...prev, type: undefined, customType: undefined }));
+                            }}
+                          >
+                            <option value="">Select Certificate Type</option>
+                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            id="certificate-requestDate"
+                            className="cert-field-placeholder"
+                            type="date"
+                            value={form.requestDate}
+                            onChange={(e) => {
+                              setForm((prev) => ({ ...prev, requestDate: e.target.value }));
+                              setErrors((prev) => ({ ...prev, requestDate: undefined }));
+                            }}
+                          />
+                        )}
+                        {errors[field.name] ? <span className="cms-error">{errors[field.name]}</span> : null}
+                      </div>
+                    );
+                  }
 
-                      setForm((prev) => ({ ...prev, [name]: value }));
-                      setErrors((prev) => ({ ...prev, [name]: undefined }));
-                    }}
-                  />
-                ))}
+                  return (
+                    <Field
+                      key={field.name}
+                      field={field}
+                      value={form[field.name]}
+                      error={errors[field.name]}
+                      onChange={(name, value) => {
+                        if (name === "admissionNo") {
+                          const selectedStudent = findStudentByAdmission(value);
+                          setForm((prev) => ({
+                            ...prev,
+                            admissionNo: value,
+                            student: selectedStudent?.name || "",
+                            group: selectedStudent?.group || "",
+                            level: selectedStudent?.level || "",
+                            academicYear: selectedStudent?.academicYear || "",
+                          }));
+                          setErrors((prev) => ({ ...prev, admissionNo: undefined }));
+                          return;
+                        }
+
+                        setForm((prev) => ({ ...prev, [name]: value }));
+                        setErrors((prev) => ({ ...prev, [name]: undefined }));
+                      }}
+                    />
+                  );
+                })}
+                {form.type === "Others" ? (
+                  <div className="cms-field">
+                    <label htmlFor="certificate-customType">Other Certificate Type <span className="req">*</span></label>
+                    <input
+                      id="certificate-customType"
+                      type="text"
+                      value={form.customType}
+                      placeholder="Enter certificate type"
+                      onChange={(e) => {
+                        setForm((prev) => ({ ...prev, customType: e.target.value }));
+                        setErrors((prev) => ({ ...prev, customType: undefined }));
+                      }}
+                    />
+                    {errors.customType ? <span className="cms-error">{errors.customType}</span> : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="cms-form-grid cert-student-fields cert-space-top-12">
@@ -1375,24 +1913,27 @@ export default function CertificatesPage() {
                 </div>
               </div>
               <div className="cms-form-actions">
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} title="Reset form">Reset</button>
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating} title="Refresh certificate list">
-                  Refresh Certificates
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} title="Reset form" aria-label="Reset form"><FaEraser size={14} aria-hidden="true" /></button>
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating} title="Refresh certificate list" aria-label="Refresh certificate list">
+                  <FaArrowsRotate size={14} aria-hidden="true" />
                 </button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents} title="Generate certificate draft">
-                  {creating ? "Generating..." : loadingStudents ? "Loading Students..." : "Generate Draft"}
+                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents} title="Generate certificate draft" aria-label="Generate certificate draft">
+                  <FaFileCirclePlus size={14} aria-hidden="true" /> {form.type === "Others" ? "Create Draft" : "Generate"}
                 </button>
               </div>
             </div>
           </div>
         </div>
+        ) : null}
 
+        {activeTab === "certificates" ? <>
+        <section className="cert-records-card">
         <div className="cms-toolbar cert-toolbar-modern">
           <div className="cms-search cert-search-box">
-            <Search size={16} />
+            <FaMagnifyingGlass size={16} aria-hidden="true" />
             <input
               value={query}
-              placeholder="Search Certificate Number, Student, Type, Purpose..."
+              placeholder="Search Certificate Number, Admission Number, Student, Type, Purpose..."
               onChange={(e) => {
                 setQuery(e.target.value);
                 setPage(1);
@@ -1400,6 +1941,14 @@ export default function CertificatesPage() {
             />
           </div>
           <div className="cms-toolbar-right cert-toolbar-right">
+            <button
+              type="button"
+              className="cms-btn cms-btn-primary"
+              onClick={() => handleBulkWorkflow("review")}
+              disabled={Boolean(bulkAction) || Boolean(busyAction.id) || !rows.some((row) => row.status === "Generated")}
+            >
+              <FaEye size={13} aria-hidden="true" /> {bulkAction === "review" ? "Reviewing..." : "Review All"}
+            </button>
             <select
               className="cert-toolbar-select"
               value={status}
@@ -1419,24 +1968,25 @@ export default function CertificatesPage() {
             <thead>
               <tr>
                 <th>Certificate Number</th>
+                <th>Admission Number</th>
                 <th>Student</th>
                 <th>Type</th>
                 <th>Request Date</th>
                 <th>Issue Date</th>
                 <th>Status</th>
-                <th className="cert-actions-header">Actions</th>
+                <th className="cert-actions-header cert-view-header">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loadingList ? (
                 <tr>
-                  <td colSpan={7}><Loader label="Loading certificates..." /></td>
+                  <td colSpan={8}><Loader label="Loading certificates..." /></td>
                 </tr>
               ) : !pageRows.length ? (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="cert-empty-state">
-                      <div className="cert-empty-icon">✦</div>
+                      <div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div>
                       <h4>No certificates found</h4>
                       <p>Try changing the search criteria or generate a new certificate request.</p>
                     </div>
@@ -1445,56 +1995,24 @@ export default function CertificatesPage() {
               ) : pageRows.map((row) => (
                 <tr key={row.id}>
                   <td className="cms-strong">{row.number}</td>
+                  <td>{row.admissionNo || "-"}</td>
                   <td>{row.student}</td>
                   <td>{row.type}</td>
                   <td>{formatDateDdMmYyyy(row.requestDate)}</td>
                   <td>{formatDateDdMmYyyy(row.issue)}</td>
                   <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
                   <td>
-                    <div className="cms-actions cert-actions-right">
-                      <select
-                        className="cert-workflow-select"
-                        value=""
-                        disabled={row.status === "Issued" || row.status === "Cancelled" || !hasServerCertificateId(row) || isRowBusy(row.id)}
-                        onChange={async (e) => {
-                          handleWorkflowChange(row, e.target.value);
-                          e.target.value = "";
-                        }}
-                      >
-                        <option value="">Workflow</option>
-                        <option value="review" disabled={row.status !== "Generated"}>Review</option>
-                        <option value="approve" disabled={row.status !== "Reviewed"}>Approve</option>
-                        <option value="issue" disabled={row.status !== "Approved"}>Issue</option>
-                      </select>
-
+                    <div className="cms-actions cert-view-action">
                       <button
-                        className="cms-action-btn"
-                        title="Download Certificate"
-                        onClick={() => downloadCertificate(row)}
-                        disabled={row.status !== "Issued" || isRowBusy(row.id)}
+                        type="button"
+                        style={workflowButtonStyle("review", row.status === "Generated" && hasServerCertificateId(row) && !isRowBusy(row.id))}
+                        onClick={() => openPrintPreview(row)}
+                        disabled={row.status !== "Generated" || !hasServerCertificateId(row) || isRowBusy(row.id)}
+                        title="Review Preview"
+                        aria-label="Review Preview"
                       >
-                        <Download size={15} />
+                        <FaEye size={12} aria-hidden="true" />
                       </button>
-
-                      <button className="cms-action-btn" title="Edit Certificate" onClick={() => openEditDialog(row)} disabled={isRowBusy(row.id)}>
-                        <FilePenLine size={15} />
-                      </button>
-
-                      {row.status !== "Cancelled" ? (
-                        <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}>
-                          <Ban size={15} />
-                        </button>
-                      ) : (
-                        <button
-                          className="cms-action-btn"
-                          title={canResolveStudentIdFromRow(row) ? "Regenerate" : "Regenerate unavailable: student ID missing"}
-                          onClick={() => regenerateCertificate(row)}
-                          disabled={isRowBusy(row.id) || !hasServerCertificateId(row) || !canResolveStudentIdFromRow(row)}
-                        >
-                          <RotateCcw size={15} />
-                        </button>
-                      )}
-
                     </div>
                   </td>
                 </tr>
@@ -1502,20 +2020,138 @@ export default function CertificatesPage() {
             </tbody>
           </table>
         </div>
+        </section>
+        </> : null}
 
+        {activeTab === "actions" ? (
+          <section className="cert-records-card">
+            <div className="cert-records-head">
+              <div>
+                <h3>Certificate Workflow</h3>
+                <p>Process all eligible certificates at each workflow stage.</p>
+              </div>
+              <div className="cms-actions cert-action-buttons">
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => handleBulkWorkflow("approve")}
+                  disabled={Boolean(bulkAction) || Boolean(busyAction.id) || !rows.some((row) => row.status === "Reviewed")}
+                >
+                  <FaCheck size={13} aria-hidden="true" /> {bulkAction === "approve" ? "Approving..." : "Approve All"}
+                </button>
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-primary"
+                  onClick={() => handleBulkWorkflow("issue")}
+                  disabled={Boolean(bulkAction) || Boolean(busyAction.id) || !rows.some((row) => row.status === "Approved")}
+                >
+                  <FaPaperPlane size={13} aria-hidden="true" /> {bulkAction === "issue" ? "Issuing..." : "Issue All"}
+                </button>
+              </div>
+            </div>
+            <div className="cms-table-wrap cert-table-wrap-modern">
+              <table className="cms-table cert-table-fit">
+                <thead>
+                  <tr>
+                    <th>Certificate Number</th>
+                    <th>Admission Number</th>
+                    <th>Student</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th className="cert-actions-header">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingList ? (
+                    <tr><td colSpan={6}><Loader label="Loading certificates..." /></td></tr>
+                  ) : !actionPageRows.length ? (
+                    <tr><td colSpan={6}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No actionable certificates found</h4><p>Review a generated certificate or cancel an issued certificate to make workflow actions available.</p></div></td></tr>
+                  ) : actionPageRows.map((row) => (
+                    <tr key={row.id}>
+                      <td className="cms-strong">{row.number}</td>
+                      <td>{row.admissionNo || "-"}</td>
+                      <td>{row.student}</td>
+                      <td>{row.type}</td>
+                      <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
+                      <td>
+                        <div className="cms-actions cert-actions-right cert-action-buttons" style={{ display: "flex", flexWrap: "nowrap", justifyContent: "flex-end", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                          <button
+                            type="button"
+                            style={workflowButtonStyle("approve", row.status === "Reviewed" && hasServerCertificateId(row) && !isRowBusy(row.id))}
+                            onClick={() => handleWorkflowChange(row, "approve")}
+                            disabled={row.status !== "Reviewed" || !hasServerCertificateId(row) || isRowBusy(row.id)}
+                            title="Approve Certificate"
+                            aria-label="Approve Certificate"
+                          >
+                            <FaCheck size={12} aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            style={workflowButtonStyle("issue", row.status === "Approved" && hasServerCertificateId(row) && !isRowBusy(row.id))}
+                            onClick={() => handleWorkflowChange(row, "issue")}
+                            disabled={row.status !== "Approved" || !hasServerCertificateId(row) || isRowBusy(row.id)}
+                            title="Issue Certificate"
+                            aria-label="Issue Certificate"
+                          >
+                            <FaPaperPlane size={12} aria-hidden="true" />
+                          </button>
+                          <button
+                            className="cms-action-btn"
+                            title={row.status === "Issued" ? "Print Certificate" : "Available after certificate is issued"}
+                            onClick={() => printCertificate(row)}
+                            disabled={row.status !== "Issued" || printingId === row.id || isRowBusy(row.id)}
+                          >
+                            <FaPrint size={15} aria-hidden="true" />
+                          </button>
+                          {row.status !== "Cancelled" ? (
+                            <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}><FaBan size={15} aria-hidden="true" /></button>
+                          ) : (
+                            <button
+                              className="cms-action-btn"
+                              title={row.reissuedAt ? `Already reissued as ${row.reissuedCertificateNo}` : "Reissue Certificate"}
+                              onClick={() => regenerateCertificate(row)}
+                              disabled={Boolean(row.reissuedAt) || isRowBusy(row.id) || !hasServerCertificateId(row) || !canResolveStudentIdFromRow(row)}
+                            >
+                              <FaRotateLeft size={15} aria-hidden="true" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "certificates" || activeTab === "actions" ? (
         <div className="cms-pagination">
-          <button className="cms-page-btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
-            Prev
+          <button
+            className="cms-page-btn"
+            title="Previous page"
+            aria-label="Previous page"
+            disabled={activeTab === "certificates" ? currentPage === 1 : currentActionPage === 1}
+            onClick={() => activeTab === "certificates" ? setPage(currentPage - 1) : setActionPage(currentActionPage - 1)}
+          >
+            <FaArrowLeft size={13} aria-hidden="true" />
           </button>
 
-          
-            <span>Page</span>
-            <strong>{currentPage}</strong>
-            <span>of {totalPages}</span>
-        
+          <span>Page</span>
+          <strong>{activeTab === "certificates" ? currentPage : currentActionPage}</strong>
+          <span>of {activeTab === "certificates" ? totalPages : actionTotalPages}</span>
 
-          <button className="cms-page-btn" disabled={currentPage === totalPages} onClick={() => setPage(currentPage +1)}>      Next    </button>
+          <button
+            className="cms-page-btn"
+            title="Next page"
+            aria-label="Next page"
+            disabled={activeTab === "certificates" ? currentPage === totalPages : currentActionPage === actionTotalPages}
+            onClick={() => activeTab === "certificates" ? setPage(currentPage + 1) : setActionPage(currentActionPage + 1)}
+          >
+            <FaArrowRight size={13} aria-hidden="true" />
+          </button>
         </div>
+        ) : null}
       </div>
 
       {printPreview ? (
@@ -1524,13 +2160,33 @@ export default function CertificatesPage() {
         }}>
           <div className="cert-print-shell">
             <div className="cert-print-topbar">
-              <strong>Print Preview - {printPreview.number}</strong>
+              <strong>{printPreview.status === "Generated" ? "Review Preview" : "Print Preview"} - {printPreview.number}</strong>
               <div className="cert-print-actions">
-                <button type="button" className="cms-btn cms-btn-primary" onClick={() => printCertificate(printPreview)} disabled={printingId === printPreview.id}>
-                  <Printer size={15} /> {printingId === printPreview.id ? "Preparing..." : "Print"}
+                {printPreview.status === "Generated" ? (
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-primary"
+                    onClick={() => handleWorkflowChange(printPreview, "review")}
+                    disabled={isRowBusy(printPreview.id) || !hasServerCertificateId(printPreview)}
+                    title="Mark as Reviewed"
+                    aria-label="Mark as Reviewed"
+                  >
+                    <FaCheck size={15} aria-hidden="true" />
+                    <span>{isRowBusy(printPreview.id, "review") ? "Marking..." : "Mark as Reviewed"}</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-primary"
+                  onClick={() => printCertificate(printPreview)}
+                  disabled={printingId === printPreview.id}
+                  title="Print Certificate"
+                >
+                  <FaPrint size={15} aria-hidden="true" />
+                  <span>{printingId === printPreview.id ? "Preparing..." : "Print Certificate"}</span>
                 </button>
                 <button type="button" className="cms-action-btn" aria-label="Close print preview" onClick={() => setPrintPreview(null)}>
-                  <X size={16} />
+                  <FaXmark size={16} aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -1564,9 +2220,7 @@ export default function CertificatesPage() {
                     {printTemplate?.paragraphTwo || "This certificate is issued for official purpose."}
                   </p>
                   <p>
-                    Request Date: <strong>{formatDateDdMmYyyy(printPreview.requestDate)}</strong>
-                    {" | "}
-                    Issue Date: <strong>{formatDateDdMmYyyy(printPreview.issue)}</strong>
+                    <strong>Issue Date:</strong> {formatDateDdMmYyyy(printPreview.issue)}
                   </p>
                 </div>
 
@@ -1578,6 +2232,20 @@ export default function CertificatesPage() {
 
                 <footer>
                   <div>
+                    {previewSignature ? (
+                      previewSignatureIsImage ? (
+                        <img
+                          className="certificate-signature"
+                          src={previewSignature}
+                          alt="Authorized signature"
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : (
+                        <span className="certificate-signature-text">{previewSignature}</span>
+                      )
+                    ) : <span className="certificate-signature-text">Authorized Signature</span>}
                     <span>Authorized Signatory</span>
                     <strong>Principal, Pirnav Junior College</strong>
                   </div>
@@ -1596,7 +2264,7 @@ export default function CertificatesPage() {
             <div className="cms-modal-head">
               <h3>Edit Certificate - {editRow.number}</h3>
               <button type="button" className="cms-action-btn" aria-label="Close edit dialog" onClick={closeEditDialog}>
-                <X size={16} />
+                <FaXmark size={16} aria-hidden="true" />
               </button>
             </div>
 
@@ -1665,9 +2333,9 @@ export default function CertificatesPage() {
             </div>
 
             <div className="cms-modal-foot">
-              <button type="button" className="cms-btn cms-btn-ghost" onClick={closeEditDialog}>Cancel</button>
-              <button type="button" className="cms-btn cms-btn-primary" onClick={saveEditDialog} disabled={savingEdit}>
-                {savingEdit ? "Saving..." : "Save Changes"}
+              <button type="button" className="cms-btn cms-btn-ghost" onClick={closeEditDialog} title="Cancel" aria-label="Cancel"><FaXmark size={14} aria-hidden="true" /></button>
+              <button type="button" className="cms-btn cms-btn-primary" onClick={saveEditDialog} disabled={savingEdit} title="Save Changes" aria-label="Save Changes">
+                <FaCheck size={14} aria-hidden="true" />
               </button>
             </div>
           </div>

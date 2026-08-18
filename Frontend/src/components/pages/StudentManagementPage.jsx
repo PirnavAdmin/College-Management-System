@@ -1,6 +1,7 @@
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import ListPage from "@/components/pages/ListPage.jsx";
+import { students as mockStudents } from "@/data/mockData.js";
 import "./StudentManagementPage.css";
 
 const MODULE_SLUG = "students";
@@ -132,9 +133,9 @@ export const pageConfig = {
 
 pageConfig.api = {
   fetchRows: async ({ search = "", filters = {} } = {}) => {
-    const [studentsResponse, admissionsResponse] = await Promise.all([getStudents(), getAdmissions()]);
-    const students = extractItems(studentsResponse.data);
-    const apiAdmissions = extractItems(admissionsResponse.data);
+    const [studentsResult, admissionsResult] = await Promise.allSettled([getStudents(), getAdmissions()]);
+    const students = studentsResult.status === "fulfilled" ? extractItems(studentsResult.value.data) : [];
+    const apiAdmissions = admissionsResult.status === "fulfilled" ? extractItems(admissionsResult.value.data) : [];
     const localAdmissions = storedAdmissions();
     // If the backend has not persisted an admission yet, keep the locally completed
     // Admission-page records visible until the server becomes the source of truth.
@@ -152,14 +153,15 @@ pageConfig.api = {
         .map((admission) => [admissionNumber(admission), admission]),
     );
 
-    return [...approvedByAdmissionNo.values()]
+    const apiRows = [...approvedByAdmissionNo.values()]
       .map((admission) => {
         const student = students.find((item) => admissionNumber(item) === admissionNumber(admission));
         return { ...admission, ...student };
       })
       .map(toStudentRow)
-      .filter((row) => row.id !== undefined)
-      .filter((row) => matchesFilters(row, search, filters));
+      .filter((row) => row.id !== undefined);
+    const rows = apiRows.length ? apiRows : mockStudents.map(toStudentRow);
+    return rows.filter((row) => matchesFilters(row, search, filters));
   },
   fetchRow: async (studentId) => {
     const response = await getStudentById(studentId);

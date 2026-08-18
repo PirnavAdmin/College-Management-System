@@ -9,7 +9,6 @@ import { configFor, deleteRow, useRows } from "@/data/store.js";
 function SummaryCards({ config, activeFilter, onSelect }) {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [hovered, setHovered] = useState(null);
 
   useEffect(() => {
     if (!config.summary?.fetch) return;
@@ -39,54 +38,23 @@ function SummaryCards({ config, activeFilter, onSelect }) {
   };
 
   return (
-    <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+    <div className="cms-summary-grid">
       {summary.map((card) => {
         const c = colorFor(card.label);
         const isSelected = activeFilter === card.label;
-        const isHovered = hovered === card.label;
         return (
           <button
             key={card.label}
             type="button"
             onClick={() => onSelect(card.label)}
-            onMouseEnter={() => setHovered(card.label)}
-            onMouseLeave={() => setHovered(null)}
-            className="cms-card"
+            className={`cms-summary-card${isSelected ? " is-selected" : ""}`}
             style={{
-              flex: "1 1 0",
-              padding: "16px 20px",
-              display: "flex",
-              alignItems: "center",
-              gap: 16,
-              cursor: "pointer",
-              border: isSelected ? `2px solid ${c.text}` : "2px solid transparent",
-              textAlign: "left",
-              font: "inherit",
-              transition: "transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease",
-              transform: isHovered ? "translateY(-2px)" : "translateY(0)",
-              boxShadow: isHovered
-                ? "0 6px 16px rgba(0,0,0,0.12)"
-                : "0 1px 2px rgba(0,0,0,0.04)",
+              "--summary-accent": c.text,
+              "--summary-accent-soft": c.bg,
             }}
           >
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 12,
-                background: c.bg,
-                color: c.text,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 20,
-                fontWeight: 700,
-                flexShrink: 0,
-              }}
-            >
-              {card.value}
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 600, color: "var(--cms-muted)" }}>{card.label}</div>
+            <span className="cms-summary-value">{card.value}</span>
+            <span className="cms-summary-label">{card.label}</span>
           </button>
         );
       })}
@@ -139,6 +107,18 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     let mounted = true;
     const loadFilterOptions = async () => {
       const fields = sectionConfig.filters || [];
+      if (sectionConfig.api?.loadFilters) {
+        try {
+          const loaded = await sectionConfig.api.loadFilters(fields);
+          if (mounted) setFilterFields(Array.isArray(loaded) ? loaded : fields);
+        } catch (err) {
+          if (mounted) {
+            setFilterFields(fields);
+            setError(getApiErrorMessage(err));
+          }
+        }
+        return;
+      }
       const loaded = await Promise.all(fields.map(async (field) => {
         if (!field.loadOptions) return field;
         try {

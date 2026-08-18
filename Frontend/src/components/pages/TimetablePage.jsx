@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, ClipboardCheck, Edit3, GraduationCap, Plus, Send, Settings2, Sparkles, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./TimetablePage.css";
 
@@ -18,21 +18,6 @@ const PERIODS = [
 ];
 const SECTIONS = ["MPC-A", "MPC-B", "MPC-C", "MPC-D"];
 const SUBJECTS = ["Mathematics", "Physics", "Chemistry", "English", "Physics Practical"];
-const recordsFrom = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  const candidates = [
-    payload?.$values, payload?.items, payload?.Items, payload?.results, payload?.Results,
-    payload?.data, payload?.Data, payload?.data?.$values, payload?.data?.items,
-    payload?.data?.Items, payload?.Data?.$values, payload?.Data?.items, payload?.Data?.Items,
-  ];
-  return candidates.find(Array.isArray) || [];
-};
-const contextValue = (item, keys) => {
-  const value = keys.map((key) => item?.[key]).find((candidate) => candidate !== undefined && candidate !== null && candidate !== "");
-  if (value && typeof value === "object") return value.id ?? value.Id ?? value.boardId ?? value.BoardId ?? value.academicYearId ?? value.AcademicYearId ?? value.academicLevelId ?? value.AcademicLevelId ?? value.name ?? value.Name ?? value.boardName ?? value.BoardName ?? value.academicYearName ?? value.AcademicYearName ?? value.academicLevelName ?? value.AcademicLevelName ?? value.value ?? value.Value ?? "";
-  return value ?? "";
-};
-const sameContextValue = (value, id, name) => String(value).trim().toLowerCase() === String(id).trim().toLowerCase() || String(value).trim().toLowerCase() === String(name).trim().toLowerCase();
 const FACULTY = {
   Mathematics: ["Ravi Kumar"], Physics: ["Suresh Rao"], Chemistry: ["Kumar Das"], English: ["Priya Menon"], "Physics Practical": ["Suresh Rao"],
 };
@@ -181,7 +166,7 @@ function Setup({ academicYears, academicYearId, onAcademicYearChange, loadingAca
           )}
         </div>
 
-        {/* Period Schedule Table (Read-Only vs Editable Mode) */}
+        {/* Period Schedule Table */}
         {isEditingPeriods ? (
           <div className="ttm-period-edit-wrapper">
             <div className="ttm-period-table ttm-period-table-editing" style={{ gridTemplateColumns: "1fr 1.2fr 1.2fr 1.2fr 50px", gap: "8px", alignItems: "center" }}>
@@ -308,15 +293,78 @@ function Generate({ onGenerate, academicYears, academicYearId, onAcademicYearCha
       if (result?.isSuccess === false) throw new Error(result.message || "Timetable generation failed.");
       onGenerate(result);
     } catch (error) {
-      setGenerateError(getApiErrorMessage(error));
+      setGenerateError(error.response?.data?.message || error.message || "Unable to generate the timetable.");
     } finally {
       setBusy(false);
     }
   };
-  return <Page title="Generate Timetable" subtitle="Generate a theory timetable for all selected sections together." action={<Link className="ttm-secondary" to="/dashboard/timetable/setup">Back: Setup</Link>}><section className="ttm-card ttm-generate"><AcademicContextFields academicYears={academicYears} academicYearId={academicYearId} onAcademicYearChange={onAcademicYearChange} loadingAcademicYears={loadingAcademicYears} boards={boards} boardId={boardId} onBoardChange={onBoardChange} loadingBoards={loadingBoards} academicLevels={academicLevels} academicLevelId={academicLevelId} onAcademicLevelChange={onAcademicLevelChange} loadingAcademicLevels={loadingAcademicLevels} groups={groups} groupId={groupId} onGroupChange={onGroupChange} loadingGroups={loadingGroups}/><h3>Sections</h3><div className="ttm-check-list">{loadingSections ? <span>Loading sections...</span> : sections.map((section) => <label key={section.id}><input type="checkbox" checked={selected.includes(section.name)} disabled/>{section.name}</label>)}</div>{!loadingSections && !sections.length && <p className="ttm-empty">{groupId ? "No active sections are available for this group." : "Select a group to load its sections."}</p>}{generateError && <p className="ttm-warning">{generateError}</p>}<div className="ttm-info"><Sparkles/> Theory timetable only. Labs and practicals can be added manually after the draft is generated.</div><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable/setup">Back</Link><button className="ttm-primary" disabled={!selected.length || busy || loadingSections} onClick={generate}>{busy ? "Generating draft..." : <><Sparkles/> Generate Timetable</>}</button></div></section></Page>;
+  return <Page title="Generate Timetable" subtitle="Generate a theory timetable for all selected sections together." action={<Link className="ttm-secondary" to="/dashboard/timetable/setup">Back: Setup</Link>}><section className="ttm-card ttm-generate"><AcademicContextFields academicYears={academicYears} academicYearId={academicYearId} onAcademicYearChange={onAcademicYearChange} loadingAcademicYears={loadingAcademicYears} boards={boards} boardId={boardId} onBoardChange={onBoardChange} loadingBoards={loadingBoards} academicLevels={academicLevels} academicLevelId={academicLevelId} onAcademicLevelChange={onAcademicLevelChange} loadingAcademicLevels={loadingAcademicLevels} groups={groups} groupId={groupId} onGroupChange={onGroupChange} loadingGroups={loadingGroups}/><h3>Sections</h3><div className="ttm-check-list">{loadingSections ? <span>Loading sections...</span> : sections.map((section) => <label key={section.id}><input type="checkbox" checked={selected.includes(section.name)} disabled/>{section.name}</label>)}</div>{!loadingSections && !sections.length && <p className="ttm-empty">No active sections are available for this group.</p>}{generateError && <p className="ttm-warning">{generateError}</p>}<div className="ttm-info"><Sparkles/> Theory timetable only. Labs and practicals can be added manually after the draft is generated.</div><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable/setup">Back</Link><button className="ttm-primary" disabled={!selected.length || busy || loadingSections} onClick={generate}>{busy ? "Generating draft..." : <><Sparkles/> Generate Timetable</>}</button></div></section></Page>;
 }
 
-function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", boardId = "", academicLevelId = "", groupId = "", subjects = [], loadingSubjects = false }) {
+function FacultyView({ periods = PERIODS, academicYearId = "" }) {
+  const [facultyList, setFacultyList] = useState([]);
+  const [facultyId, setFacultyId] = useState("");
+  const [schedule, setSchedule] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const selectedFaculty = facultyList.find((item) => item.id === facultyId);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get(apiEndpoints.faculty.getAll, { params: { PageNumber: 1, PageSize: 100, Status: "Active" } })
+      .then((response) => {
+        if (!active) return;
+        const body = response.data?.data ?? response.data;
+        const records = Array.isArray(body) ? body : body?.items ?? body?.data ?? [];
+        const options = records.map((item) => ({ id: String(item.facultyId ?? item.id), name: item.facultyName ?? item.fullName ?? `${item.firstName ?? ""} ${item.lastName ?? ""}`.trim(), employeeId: item.employeeId ?? item.facultyEmployeeId })).filter((item) => item.id && item.name);
+        setFacultyList(options);
+        setFacultyId(options[0]?.id ?? "");
+      })
+      .catch((requestError) => { if (active) setError(requestError.response?.data?.message || requestError.message || "Unable to load faculty."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!facultyId) { setSchedule([]); return undefined; }
+    let active = true;
+    setLoading(true);
+    apiClient.get(apiEndpoints.timetable.getByFaculty(facultyId), { params: academicYearId ? { academicYearId: Number(academicYearId) } : undefined })
+      .then((response) => {
+        if (!active) return;
+        const records = Array.isArray(response.data) ? response.data : response.data?.data ?? response.data?.items ?? [];
+        setSchedule(records.map((item) => ({ id: String(item.id), section: item.sectionName, day: item.dayName, period: item.periodName, subject: item.subjectName ?? "", faculty: item.facultyName ?? selectedFaculty?.name ?? "", room: item.roomName ?? item.roomCode ?? "", type: item.remarks?.toLowerCase().includes("practical") ? "Practical" : "Theory" })).filter((item) => item.day && item.period));
+      })
+      .catch((requestError) => { if (active) { setSchedule([]); setError(requestError.response?.data?.message || requestError.message || "Unable to load faculty timetable."); } })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [facultyId, academicYearId, selectedFaculty?.name]);
+
+  return (
+    <div className="ttm-faculty-container" style={{ marginTop: "1rem" }}>
+      <div className="ttm-faculty-select" style={{ marginBottom: "1.25rem" }}>
+        <label>Select Faculty
+          <select value={facultyId} disabled={loading && !facultyList.length} onChange={(event) => setFacultyId(event.target.value)}>
+            {!facultyList.length && <option value="">{loading ? "Loading faculty..." : "No faculty found"}</option>}
+            {facultyList.map((item) => <option key={item.id} value={item.id}>{item.name}{item.employeeId ? ` (${item.employeeId})` : ""}</option>)}
+          </select>
+        </label>
+        <div>
+          <GraduationCap/>
+          <strong>{selectedFaculty?.name ?? "Faculty"}</strong>
+          <span>Faculty timetable</span>
+        </div>
+      </div>
+      {error && <p className="ttm-warning">{error}</p>}
+      {loading && <p className="ttm-empty">Loading faculty timetable...</p>}
+      {!loading && !error && !schedule.length && <p className="ttm-empty">No timetable entries found for this faculty.</p>}
+      <WeeklyGrid slots={schedule} section="Faculty" onEdit={() => {}} periods={periods}/>
+    </div>
+  );
+}
+
+function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", boardId = "", academicLevelId = "", groupId = "", subjects = [], loadingSubjects = false, initialTab = "section" }) {
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [sectionId, setSectionId] = useState("");
   const [sectionSlots, setSectionSlots] = useState([]);
   const [draftMeta, setDraftMeta] = useState(null);
@@ -330,7 +378,10 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
   const [isValidated, setIsValidated] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
-  const [editing, setEditing] = useState(null); const [dialog, setDialog] = useState(null); const [status, setStatus] = useState("DRAFT");
+  const [editing, setEditing] = useState(null); 
+  const [dialog, setDialog] = useState(null); 
+  const [status, setStatus] = useState("DRAFT");
+
   const selectedSection = sections.find((item) => item.id === sectionId) ?? sections[0];
   const section = selectedSection?.name ?? "";
   const subjectNames = subjects.map((item) => item.name).filter(Boolean);
@@ -409,6 +460,7 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
     setValidationResult(null);
     return updatedSlot;
   };
+
   const approveSection = async () => {
     if (!selectedSection?.id) return;
     setApproving(true);
@@ -428,6 +480,7 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
       setApproving(false);
     }
   };
+
   const validateSection = async () => {
     if (!selectedSection?.id) return;
     setValidating(true);
@@ -446,6 +499,7 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
       setValidating(false);
     }
   };
+
   const publishSection = async () => {
     if (!selectedSection?.id) return;
     setPublishing(true);
@@ -464,13 +518,163 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
       setPublishing(false);
     }
   };
+
   const groupName = draftMeta?.groupName ?? context.group;
   const yearName = draftMeta?.academicYearName ?? context.academicYear;
   const boardName = draftMeta?.boardName ?? context.board;
-  return <Page title="Timetable Draft" subtitle="Review, validate and publish the generated timetable." action={<div className="ttm-actions"><button className="ttm-secondary" disabled={validating} onClick={() => { setDialog("validate"); validateSection(); }}><ClipboardCheck/> {validating ? "Validating..." : "Validate"}</button><button className="ttm-secondary" onClick={() => setStatus("DRAFT")}>Save Draft</button><button className="ttm-secondary" disabled={status !== "DRAFT" || approving || !isValidated} onClick={() => setDialog("approve")}>{approving ? "Approving..." : "Approve"}</button><button className="ttm-primary" disabled={status !== "APPROVED" || publishing} onClick={() => setDialog("publish")}><Send/> {publishing ? "Publishing..." : "Publish"}</button></div>}><section className="ttm-card"><div className="ttm-draft-meta"><div><strong>{groupName} Group</strong><span>{yearName} · {boardName}</span></div><b data-status={status}>{status}</b></div><div className="ttm-tabs">{sections.map((item) => <button className={item.id === sectionId ? "active" : ""} key={item.id} onClick={() => setSectionId(item.id)}>{item.name}</button>)}</div>{loadingTimetable && <p className="ttm-empty">Loading section timetable...</p>}{loadingSubjects && <p className="ttm-empty">Loading group subjects...</p>}{timetableError && <p className="ttm-warning">{timetableError}</p>}{approvalError && <p className="ttm-warning">{approvalError}</p>}{publishError && <p className="ttm-warning">{publishError}</p>}{!loadingTimetable && !timetableError && !sectionSlots.length && <p className="ttm-empty">No timetable entries are available for this section.</p>}<WeeklyGrid slots={sectionSlots} section={section} onEdit={setEditing} periods={periods} defaultSubject={subjectNames[0] ?? ""}/><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable">Back</Link><Link className="ttm-primary" to="/dashboard/timetable/faculty">Next</Link></div></section>{editing && <SlotEditor slot={editing} section={section} subjects={subjects} contextIds={{ boardId, academicLevelId, academicYearId, groupId, sectionId: selectedSection?.id }} onClose={() => setEditing(null)} onSave={saveSlot}/>} {dialog === "validate" && <Validation loading={validating} result={validationResult} error={validationError} onClose={() => setDialog(null)}/>} {dialog === "approve" && <Confirm title="Approve Timetable" text={`Approve the timetable for ${section || "this section"}?`} confirm={approving ? "Approving..." : "Approve Draft"} onClose={() => setDialog(null)} onConfirm={approveSection}/>} {dialog === "publish" && <Confirm title="Publish Timetable" text="This approved timetable will become visible to students and faculty." confirm={publishing ? "Publishing..." : "Publish Now"} onClose={() => setDialog(null)} onConfirm={publishSection}/>}</Page>;
+
+  // Header Actions
+  const headerActions = activeTab === "section" ? (
+    <div className="ttm-actions" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+      <button className="ttm-secondary" disabled={validating} onClick={() => { setDialog("validate"); validateSection(); }}>
+        <ClipboardCheck size={16}/> {validating ? "Validating..." : "Validate"}
+      </button>
+      <button className="ttm-secondary" onClick={() => setStatus("DRAFT")}>
+        Save Draft
+      </button>
+      <button className="ttm-secondary" disabled={status !== "DRAFT" || approving || !isValidated} onClick={() => setDialog("approve")}>
+        {approving ? "Approving..." : "Approve"}
+      </button>
+
+      {/* Styled Publish Button (Always legible and clearly formatted) */}
+      <button
+        className="ttm-primary"
+        disabled={status !== "APPROVED" || publishing}
+        onClick={() => setDialog("publish")}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "6px",
+          opacity: status !== "APPROVED" && !publishing ? 0.65 : 1,
+          cursor: status !== "APPROVED" && !publishing ? "not-allowed" : "pointer",
+          backgroundColor: status === "APPROVED" ? "#2563eb" : "#cbd5e1",
+          color: status === "APPROVED" ? "#ffffff" : "#475569",
+          border: "none",
+          padding: "8px 16px",
+          borderRadius: "6px",
+          fontWeight: 600,
+        }}
+      >
+        <Send size={16} color={status === "APPROVED" ? "#ffffff" : "#475569"} />
+        {publishing ? "Publishing..." : "Publish"}
+      </button>
+    </div>
+  ) : (
+    <Link className="ttm-secondary" to="/dashboard/timetable/setup">Back: Setup</Link>
+  );
+
+  return (
+    <Page title="Timetable Management" subtitle="Review, swap views, validate and publish the generated timetable." action={headerActions}>
+      <section className="ttm-card">
+        {/* Single-Screen View Switcher Bar */}
+        <div className="ttm-view-switcher" style={{ display: "flex", gap: "12px", marginBottom: "1.25rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "12px" }}>
+          <button
+            type="button"
+            className={`ttm-tab-btn ${activeTab === "section" ? "active" : ""}`}
+            style={{
+              padding: "8px 18px",
+              borderRadius: "8px",
+              border: "1px solid",
+              borderColor: activeTab === "section" ? "#2563eb" : "#cbd5e1",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              background: activeTab === "section" ? "#2563eb" : "#ffffff",
+              color: activeTab === "section" ? "#ffffff" : "#475569",
+              boxShadow: activeTab === "section" ? "0 2px 4px rgba(37,99,235,0.15)" : "none",
+              transition: "all 0.2s ease",
+            }}
+            onClick={() => setActiveTab("section")}
+          >
+            Section Timetable
+          </button>
+          <button
+            type="button"
+            className={`ttm-tab-btn ${activeTab === "faculty" ? "active" : ""}`}
+            style={{
+              padding: "8px 18px",
+              borderRadius: "8px",
+              border: "1px solid",
+              borderColor: activeTab === "faculty" ? "#2563eb" : "#cbd5e1",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              background: activeTab === "faculty" ? "#2563eb" : "#ffffff",
+              color: activeTab === "faculty" ? "#ffffff" : "#475569",
+              boxShadow: activeTab === "faculty" ? "0 2px 4px rgba(37,99,235,0.15)" : "none",
+              transition: "all 0.2s ease",
+            }}
+            onClick={() => setActiveTab("faculty")}
+          >
+            <GraduationCap size={18} /> Faculty Timetable
+          </button>
+        </div>
+
+        {/* SECTION TIMETABLE TAB */}
+        {activeTab === "section" ? (
+          <>
+            <div className="ttm-draft-meta">
+              <div>
+                <strong>{groupName} Group</strong>
+                <span>{yearName} · {boardName}</span>
+              </div>
+              <b data-status={status}>{status}</b>
+            </div>
+
+            <div className="ttm-tabs">
+              {sections.map((item) => (
+                <button className={item.id === sectionId ? "active" : ""} key={item.id} onClick={() => setSectionId(item.id)}>
+                  {item.name}
+                </button>
+              ))}
+            </div>
+
+            {loadingTimetable && <p className="ttm-empty">Loading section timetable...</p>}
+            {loadingSubjects && <p className="ttm-empty">Loading group subjects...</p>}
+            {timetableError && <p className="ttm-warning">{timetableError}</p>}
+            {approvalError && <p className="ttm-warning">{approvalError}</p>}
+            {publishError && <p className="ttm-warning">{publishError}</p>}
+            {!loadingTimetable && !timetableError && !sectionSlots.length && <p className="ttm-empty">No timetable entries are available for this section.</p>}
+
+            <WeeklyGrid slots={sectionSlots} section={section} onEdit={setEditing} periods={periods} defaultSubject={subjectNames[0] ?? ""}/>
+
+            <div className="ttm-screen-nav" style={{ marginTop: "1.5rem" }}>
+              <Link className="ttm-secondary" to="/dashboard/timetable/setup">Back to Setup</Link>
+              <button className="ttm-primary" onClick={() => setActiveTab("faculty")} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <GraduationCap size={16} /> Switch to Faculty View
+              </button>
+            </div>
+          </>
+        ) : (
+          /* FACULTY TIMETABLE TAB */
+          <>
+            <FacultyView periods={periods} academicYearId={academicYearId} />
+            
+            <div className="ttm-screen-nav" style={{ marginTop: "1.5rem" }}>
+              <button className="ttm-secondary" onClick={() => setActiveTab("section")}>
+                Back to Section View
+              </button>
+              <Link className="ttm-primary" to="/dashboard/timetable">Finish</Link>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Modals & Dialogs */}
+      {editing && <SlotEditor slot={editing} section={section} subjects={subjects} contextIds={{ boardId, academicLevelId, academicYearId, groupId, sectionId: selectedSection?.id }} onClose={() => setEditing(null)} onSave={saveSlot}/>} 
+      {dialog === "validate" && <Validation loading={validating} result={validationResult} error={validationError} onClose={() => setDialog(null)}/>} 
+      {dialog === "approve" && <Confirm title="Approve Timetable" text={`Approve the timetable for ${section || "this section"}?`} confirm={approving ? "Approving..." : "Approve Draft"} onClose={() => setDialog(null)} onConfirm={approveSection}/>} 
+      {dialog === "publish" && <Confirm title="Publish Timetable" text="This approved timetable will become visible to students and faculty." confirm={publishing ? "Publishing..." : "Publish Now"} onClose={() => setDialog(null)} onConfirm={publishSection}/>}
+    </Page>
+  );
 }
 
 function WeeklyGrid({ slots, section, onEdit, periods = PERIODS, defaultSubject = "" }) { return <div className="ttm-grid-wrap"><div className="ttm-grid"> <div className="ttm-grid-head">Period</div>{DAYS.map((day) => <div className="ttm-grid-head" key={day}>{day.slice(0,3)}</div>)}{periods.map((period) => <React.Fragment key={period.id}><div className={`ttm-period ${period.type === "Break" ? "is-break" : ""}`}>{period.id}<small>{period.start}–{period.end}</small></div>{DAYS.map((day, dayIndex) => { const slot = slots.find((item) => item.period === period.id && item.day === day); return <div className={`ttm-cell ${period.type === "Break" ? "is-break" : ""}`} key={`${period.id}-${day}`}>{period.type === "Break" ? "BREAK" : slot ? <button className="ttm-slot" onClick={() => onEdit(slot)}><strong>{slot.subject}</strong><span>{slot.faculty}</span><small>{slot.room}</small><Edit3/></button> : <button className="ttm-empty-slot" disabled={!defaultSubject} onClick={() => onEdit({ id: `${section}-${day}-${period.id}`, section, day, dayOfWeek: dayIndex + 1, period: period.id, periodId: period.periodId, subject: defaultSubject, faculty: "", room: ROOM[section] ?? "", roomId: 0, type: "Practical" })}><Plus/> Add lab</button>}</div>; })}</React.Fragment>)}</div></div>; }
+
 function SlotEditor({ slot, section, subjects = [], contextIds = {}, onClose, onSave }) {
   const [value, setValue] = useState(slot);
   const [facultyOptions, setFacultyOptions] = useState([]);
@@ -508,49 +712,10 @@ function SlotEditor({ slot, section, subjects = [], contextIds = {}, onClose, on
   const save = async () => { setSaving(true); setSaveError(""); try { await onSave(value); onClose(); } catch (error) { setSaveError(error.response?.data?.message || error.message || "Unable to save this timetable slot."); } finally { setSaving(false); } };
   return <Modal title={slot.type === "Practical" ? "Add Practical / Lab Slot" : "Edit Timetable Slot"} onClose={onClose}><div className="ttm-modal-body"><p><b>{section}</b> · {value.day} · {value.period}</p><label>Subject<Select value={value.subject} onChange={(subject) => setValue((item) => ({ ...item, subject, subjectId: subjects.find((item) => item.name === subject)?.id ?? "", faculty: "", facultyId: "" }))} options={subjectOptions}/></label><label>Faculty<select value={value.faculty} disabled={loadingFaculty || !facultyOptions.length} onChange={(event) => { const faculty = facultyOptions.find((item) => item.name === event.target.value); setValue((item) => ({ ...item, faculty: event.target.value, facultyId: faculty?.id ?? "" })); }}>{loadingFaculty && <option value="">Loading allocated faculty...</option>}{!loadingFaculty && !facultyOptions.length && <option value="">No faculty allocated</option>}{facultyOptions.map((faculty) => <option key={faculty.id} value={faculty.name}>{faculty.name}</option>)}</select></label><label>Room<select value={value.room} onChange={(e) => setValue((item) => ({ ...item, room: e.target.value }))}><option>{ROOM[section] ?? value.room}</option><option>Physics Lab</option></select></label>{saveError && <p className="ttm-warning">{saveError}</p>}<p className="ttm-info">{value.type === "Practical" ? "Manual lab room selected." : `${ROOM[section] ?? value.room} is the section default room.`}</p><div className="ttm-actions"><button className="ttm-secondary" onClick={onClose}>Cancel</button><button className="ttm-primary" disabled={saving || !value.facultyId} onClick={save}>{saving ? "Saving..." : "Save"}</button></div></div></Modal>;
 }
+
 function Validation({ loading, result, error, onClose }) { return <Modal title="Timetable Validation" onClose={onClose}><div className="ttm-modal-body">{loading && <p>Validating timetable...</p>}{error && <p className="ttm-warning">{error}</p>}{result && <><p className={result.isValid ? "ttm-success" : "ttm-warning"}>{result.isValid ? `✓ ${result.sectionName || "Section"} timetable is valid.` : "Validation found issues."}</p><p>{result.totalSlots ?? 0} timetable slot(s) checked.</p>{result.errors?.length > 0 && <ul className="ttm-validation">{result.errors.map((item, index) => <li key={`error-${index}`}>✕ {item}</li>)}</ul>}{result.warnings?.length > 0 && <ul className="ttm-validation">{result.warnings.map((item, index) => <li key={`warning-${index}`}>⚠ {item}</li>)}</ul>}</>}<button className="ttm-primary" onClick={onClose}>Done</button></div></Modal>; }
+
 function Confirm({ title, text, confirm, onClose, onConfirm }) { return <Modal title={title} onClose={onClose}><div className="ttm-modal-body"><p>{text}</p><div className="ttm-actions"><button className="ttm-secondary" onClick={onClose}>Cancel</button><button className="ttm-primary" onClick={onConfirm}>{confirm}</button></div></div></Modal>; }
-function Faculty({ periods = PERIODS, academicYearId = "" }) {
-  const [facultyList, setFacultyList] = useState([]);
-  const [facultyId, setFacultyId] = useState("");
-  const [schedule, setSchedule] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const selectedFaculty = facultyList.find((item) => item.id === facultyId);
-
-  useEffect(() => {
-    let active = true;
-    apiClient.get(apiEndpoints.faculty.getAll, { params: { PageNumber: 1, PageSize: 100, Status: "Active" } })
-      .then((response) => {
-        if (!active) return;
-        const body = response.data?.data ?? response.data;
-        const records = Array.isArray(body) ? body : body?.items ?? body?.data ?? [];
-        const options = records.map((item) => ({ id: String(item.facultyId ?? item.id), name: item.facultyName ?? item.fullName ?? `${item.firstName ?? ""} ${item.lastName ?? ""}`.trim(), employeeId: item.employeeId ?? item.facultyEmployeeId })).filter((item) => item.id && item.name);
-        setFacultyList(options);
-        setFacultyId(options[0]?.id ?? "");
-      })
-      .catch((requestError) => { if (active) setError(requestError.response?.data?.message || requestError.message || "Unable to load faculty."); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
-
-  useEffect(() => {
-    if (!facultyId) { setSchedule([]); return undefined; }
-    let active = true;
-    setLoading(true);
-    apiClient.get(apiEndpoints.timetable.getByFaculty(facultyId), { params: academicYearId ? { academicYearId: Number(academicYearId) } : undefined })
-      .then((response) => {
-        if (!active) return;
-        const records = Array.isArray(response.data) ? response.data : response.data?.data ?? response.data?.items ?? [];
-        setSchedule(records.map((item) => ({ id: String(item.id), section: item.sectionName, day: item.dayName, period: item.periodName, subject: item.subjectName ?? "", faculty: item.facultyName ?? selectedFaculty?.name ?? "", room: item.roomName ?? item.roomCode ?? "", type: item.remarks?.toLowerCase().includes("practical") ? "Practical" : "Theory" })).filter((item) => item.day && item.period));
-      })
-      .catch((requestError) => { if (active) { setSchedule([]); setError(requestError.response?.data?.message || requestError.message || "Unable to load faculty timetable."); } })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [facultyId, academicYearId, selectedFaculty?.name]);
-
-  return <Page title="Faculty Timetable" subtitle="View the complete weekly schedule of a faculty member." action={<Link className="ttm-secondary" to="/dashboard/timetable/draft">Back: Draft</Link>}><section className="ttm-card"><div className="ttm-faculty-select"><label>Select Faculty<select value={facultyId} disabled={loading && !facultyList.length} onChange={(event) => setFacultyId(event.target.value)}>{!facultyList.length && <option value="">{loading ? "Loading faculty..." : "No faculty found"}</option>}{facultyList.map((item) => <option key={item.id} value={item.id}>{item.name}{item.employeeId ? ` (${item.employeeId})` : ""}</option>)}</select></label><div><GraduationCap/><strong>{selectedFaculty?.name ?? "Faculty"}</strong><span>Faculty timetable</span></div></div>{error && <p className="ttm-warning">{error}</p>}{loading && <p className="ttm-empty">Loading faculty timetable...</p>}{!loading && !error && !schedule.length && <p className="ttm-empty">No timetable entries found for this faculty.</p>}<WeeklyGrid slots={schedule} section="Faculty" onEdit={() => {}} periods={periods}/><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable/draft">Back</Link><Link className="ttm-primary" to="/dashboard/timetable">Finish</Link></div></section></Page>;
-}
 
 export default function TimetablePage({ screen = "generate" }) {
   const [periods, setPeriods] = useState(PERIODS);
@@ -592,7 +757,7 @@ export default function TimetablePage({ screen = "generate" }) {
           .filter((period) => period.id && period.start && period.end);
         if (schedule.length) setPeriods(schedule);
       })
-      .catch(() => { /* Keep the existing fallback schedule if the API is unavailable. */ });
+      .catch(() => { /* Keep fallback schedule if API is unavailable. */ });
 
     return () => { active = false; };
   }, []);
@@ -627,20 +792,21 @@ export default function TimetablePage({ screen = "generate" }) {
       return () => { active = false; };
     }
 
+    const params = {
+      boardId: Number(boardId),
+      academicYearId: Number(academicYearId),
+      academicLevelId: Number(academicLevelId),
+      isActive: true,
+    };
+
     setLoadingGroups(true);
-    apiClient.get(apiEndpoints.groups.getAll)
+    apiClient.get(apiEndpoints.groups.getAll, { params })
       .then((response) => {
         if (!active) return;
-        const activeGroups = recordsFrom(response.data)
-          .filter((group) => group.isActive !== false && group.IsActive !== false);
-        const boardName = boards.find((board) => String(board.id) === String(boardId))?.name ?? "";
-        const yearName = academicYears.find((year) => String(year.id) === String(academicYearId))?.name ?? "";
-        const levelName = academicLevels.find((level) => String(level.id) === String(academicLevelId))?.name ?? "";
-        const options = activeGroups
-          .filter((group) => sameContextValue(contextValue(group, ["boardId", "BoardId", "board", "Board", "boardName", "BoardName"]), boardId, boardName))
-          .filter((group) => sameContextValue(contextValue(group, ["academicYearId", "AcademicYearId", "yearId", "YearId", "year", "Year", "academicYear", "AcademicYear", "academicYearName", "AcademicYearName"]), academicYearId, yearName))
-          .filter((group) => sameContextValue(contextValue(group, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "level", "Level", "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName"]), academicLevelId, levelName))
-          .map((group) => ({ id: String(group.groupId ?? group.GroupId ?? group.id ?? group.Id), name: group.groupName ?? group.GroupName ?? group.name ?? group.Name ?? group.groupCode ?? group.GroupCode }))
+        const records = Array.isArray(response.data) ? response.data : response.data?.data || response.data?.items || [];
+        const options = records
+          .filter((group) => group.isActive !== false)
+          .map((group) => ({ id: String(group.groupId ?? group.id), name: group.groupName ?? group.name ?? group.groupCode }))
           .filter((group) => group.id && group.name);
         setGroups(options);
         setGroupId((currentId) => options.some((group) => group.id === currentId) ? currentId : options[0]?.id ?? "");
@@ -653,14 +819,14 @@ export default function TimetablePage({ screen = "generate" }) {
       .finally(() => { if (active) setLoadingGroups(false); });
 
     return () => { active = false; };
-  }, [academicYearId, academicLevelId, boardId, academicYears, academicLevels, boards]);
+  }, [academicYearId, academicLevelId, boardId]);
 
   useEffect(() => {
     let active = true;
 
     if (!groupId) {
       setSections([]);
-      setLoadingSections(false);
+      setLoadingSections(true);
       return () => { active = false; };
     }
 
@@ -754,6 +920,6 @@ export default function TimetablePage({ screen = "generate" }) {
   
   if (screen === "setup") return <Setup {...academicYearProps}/>;
   if (screen === "draft") return <Draft slots={slots} periods={periods} sections={sections} boardId={boardId} academicLevelId={academicLevelId} academicYearId={academicYearId} groupId={groupId} subjects={subjects} loadingSubjects={loadingSubjects}/>;
-  if (screen === "faculty") return <Faculty periods={periods} academicYearId={academicYearId}/>;
+  if (screen === "faculty") return <Draft slots={slots} periods={periods} sections={sections} boardId={boardId} academicLevelId={academicLevelId} academicYearId={academicYearId} groupId={groupId} subjects={subjects} loadingSubjects={loadingSubjects} initialTab="faculty"/>;
   return <Generate {...academicYearProps} onGenerate={() => { window.location.assign("/dashboard/timetable/draft"); }}/>;
 }

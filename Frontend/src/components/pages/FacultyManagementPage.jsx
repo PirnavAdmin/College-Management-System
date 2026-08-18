@@ -13,7 +13,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
@@ -38,7 +38,7 @@ const fields = [
   { name: "email", label: "Email", type: "email", required: true },
   { name: "bloodGroup", label: "Blood Group" },
   { name: "qualification", label: "Qualification", required: true },
-  { name: "designation", label: "Designation", required: true },
+  { name: "designation", label: "Designation", type: "select", options: [], required: true },
   {
     name: "facultyType",
     label: "Faculty Type",
@@ -129,6 +129,7 @@ const rowFor = (item) => ({
       : item.status || "Active",
   department: item.department,
   designation: item.designation,
+  facultyType: facultyTypeValue(item),
 });
 const valuesFor = (item = {}) => ({
   empId: firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
@@ -148,6 +149,71 @@ const valuesFor = (item = {}) => ({
   experience: firstValue(item, "experience", "Experience"),
   status: firstValue(item, "status", "Status") || "Active",
 });
+
+const BLOOD_GROUPS = new Set(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]);
+const DESIGNATIONS = {
+  "Teaching Staff": ["Lecturer", "Senior Lecturer", "Assistant Professor", "Professor", "Head of Department"],
+  "Non-Teaching Staff": ["Principal", "Administrative Officer", "Accountant", "Librarian", "Lab Assistant", "Office Assistant", "Clerk", "Receptionist"],
+};
+const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
+const EMPLOYEE_ID_PATTERN = /^[A-Za-z0-9-]+$/;
+const today = () => new Date().toISOString().slice(0, 10);
+const ageOn = (date) => {
+  const birth = new Date(`${date}T00:00:00`);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  if (now < new Date(now.getFullYear(), birth.getMonth(), birth.getDate())) age -= 1;
+  return age;
+};
+const cleanFacultyValues = (source) => {
+  const text = (name) => String(source[name] ?? "").trim();
+  return {
+    ...source,
+    empId: text("empId"), firstName: text("firstName"), lastName: text("lastName"),
+    aadhaar: text("aadhaar").replace(/\s/g, ""), mobile: text("mobile").replace(/\D/g, ""),
+    email: text("email").toLowerCase(), qualification: text("qualification"),
+    designation: text("designation"), department: text("department"),
+    experience: text("experience"),
+  };
+};
+const facultyValidation = (source, { departments = [], genders = [] } = {}) => {
+  const values = cleanFacultyValues(source);
+  const errors = {};
+  if (!EMPLOYEE_ID_PATTERN.test(values.empId) || values.empId.length < 3 || values.empId.length > 20) errors.empId = "Employee ID must be 3–20 letters, numbers, or hyphens.";
+  if (!NAME_PATTERN.test(values.firstName) || values.firstName.length < 2 || values.firstName.length > 50) errors.firstName = "Please enter a valid first name.";
+  if (!NAME_PATTERN.test(values.lastName) || values.lastName.length > 50) errors.lastName = "Please enter a valid last name.";
+  if (!genders.includes(values.gender)) errors.gender = "Please select a gender.";
+  if (!values.dob) errors.dob = "Date of birth is required.";
+  else if (values.dob > today()) errors.dob = "Date of birth cannot be in the future.";
+  else if (Number.isNaN(new Date(`${values.dob}T00:00:00`).getTime())) errors.dob = "Please enter a valid date of birth.";
+  else if (ageOn(values.dob) < 18) errors.dob = "Faculty member must be at least 18 years old.";
+  if (values.aadhaar && !/^\d{12}$/.test(values.aadhaar)) errors.aadhaar = "Aadhaar number must contain exactly 12 digits.";
+  if (!/^[6-9]\d{9}$/.test(values.mobile) || /^0+$/.test(values.mobile)) errors.mobile = "Please enter a valid 10-digit mobile number.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.email = "Please enter a valid email address.";
+  if (values.bloodGroup && !BLOOD_GROUPS.has(values.bloodGroup)) errors.bloodGroup = "Please select a valid blood group.";
+  if (!values.qualification || values.qualification.length > 100) errors.qualification = "Qualification is required.";
+  if (!values.designation || values.designation.length > 100 || !(DESIGNATIONS[values.facultyType] || []).includes(values.designation)) errors.designation = "Please select a valid designation.";
+  if (!["Teaching Staff", "Non-Teaching Staff"].includes(values.facultyType)) errors.facultyType = "Please select a faculty type.";
+  if (!departments.includes(values.department)) errors.department = "Please select a department.";
+  if (!values.joining) errors.joining = "Joining date is required.";
+  else if (values.dob && values.joining <= values.dob) errors.joining = "Joining date cannot be before date of birth.";
+  else if (Number.isNaN(new Date(`${values.joining}T00:00:00`).getTime())) errors.joining = "Please enter a valid joining date.";
+  if (values.experience && (!/^\d+(\.\d+)?$/.test(values.experience) || Number(values.experience) > 80)) errors.experience = "Please enter a valid experience.";
+  return { values, errors };
+};
+const friendlyFacultyError = (error) => {
+  console.error("Faculty operation failed:", error);
+  const status = error?.response?.status;
+  const message = String(error?.response?.data?.message ?? error?.response?.data?.Message ?? "").toLowerCase();
+  if (message.includes("employee")) return "Employee ID already exists. Please use a different Employee ID.";
+  if (message.includes("email")) return "Email already exists. Please use a different email address.";
+  if (message.includes("mobile") || message.includes("phone")) return "Mobile number already exists. Please use a different mobile number.";
+  if (status === 401) return "Your session has expired. Please log in again.";
+  if (status === 409) return "A faculty record with these details already exists.";
+  if ([500, 502, 503, 504].includes(status)) return "Unable to complete the request right now. Please try again later.";
+  if (error?.message === "Network Error") return "Unable to connect to the service. Please check your internet connection and try again.";
+  return "Please check the entered information and try again.";
+};
 
 function Steps({ step, onSelect }) {
   return (
@@ -221,23 +287,32 @@ function Workflow({ existingId }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [departments, setDepartments] = useState([]);
+  const [loadingDepartments, setLoadingDepartments] = useState(true);
+  const [loadingDetails, setLoadingDetails] = useState(Boolean(existingId));
   const [genders, setGenders] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [removing, setRemoving] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState("");
+  const [selectedFacultyType, setSelectedFacultyType] = useState("");
+  const [subjectSearch, setSubjectSearch] = useState("");
+  const [pendingSubjects, setPendingSubjects] = useState([]);
+  const [loadingAllocation, setLoadingAllocation] = useState(false);
+  const [savingAllocation, setSavingAllocation] = useState(false);
   const formFields = useMemo(
     () =>
       fields.map((field) =>
         field.name === "department"
-          ? { ...field, options: departments }
+          ? { ...field, options: departments, disabled: loadingDepartments }
           : field.name === "gender"
             ? { ...field, options: genders }
+            : field.name === "designation"
+              ? { ...field, options: DESIGNATIONS[selectedFacultyType] || [], disabled: !selectedFacultyType }
             : field,
       ),
-    [departments, genders],
+    [departments, genders, loadingDepartments, selectedFacultyType],
   );
-  const { values, errors, setValue, setValues } = useForm(formFields, {});
+  const { values, errors, setValue, setValues, setErrors } = useForm(formFields, {});
   useEffect(() => {
     apiClient
       .get(apiEndpoints.departments.getAll)
@@ -250,7 +325,8 @@ function Workflow({ existingId }) {
         );
         setGenders(["Male", "Female", "Other"]);
       })
-      .catch((e) => setToast(getApiErrorMessage(e)));
+      .catch((e) => setToast(friendlyFacultyError(e)))
+      .finally(() => setLoadingDepartments(false));
   }, []);
   useEffect(() => {
     if (!existingId) return;
@@ -259,6 +335,7 @@ function Workflow({ existingId }) {
       .then((r) => {
         const record = extractRecord(r.data);
         setValues(valuesFor(record));
+        setSelectedFacultyType(facultyTypeValue(record));
         setSaved(record);
       })
       .catch(async (detailError) => {
@@ -269,14 +346,16 @@ function Workflow({ existingId }) {
           );
           if (!record) throw detailError;
           setValues(valuesFor(record));
+          setSelectedFacultyType(facultyTypeValue(record));
           setSaved(record);
           setToast("Loaded faculty details from the directory because the individual record endpoint is unavailable.");
         } catch {
-          setToast(getApiErrorMessage(detailError));
+          setToast(friendlyFacultyError(detailError));
         }
-      });
+      }).finally(() => setLoadingDetails(false));
   }, [existingId, setValues]);
   const loadAllocation = async (faculty) => {
+    setLoadingAllocation(true);
     const loadSubjects = apiClient
       .get(apiEndpoints.subjects.getAll)
       .then((subjectResponse) => {
@@ -286,7 +365,7 @@ function Workflow({ existingId }) {
           ),
         );
       })
-      .catch((e) => setToast(getApiErrorMessage(e)));
+      .catch((e) => setToast(friendlyFacultyError(e)));
 
     const loadWorkload = apiClient
       .get(apiEndpoints.faculty.getWorkload(facultyId(faculty)))
@@ -303,23 +382,71 @@ function Workflow({ existingId }) {
       );
       setAllocations(list);
       })
-      .catch((e) => setToast(getApiErrorMessage(e)));
+      .catch((e) => setToast(friendlyFacultyError(e)));
 
     await Promise.all([loadSubjects, loadWorkload]);
+    setLoadingAllocation(false);
   };
   useEffect(() => {
     if (step === 3 && saved) loadAllocation(saved);
   }, [step, saved]);
+  const validateAndShow = (source = values) => {
+    const result = facultyValidation(source, { departments, genders });
+    setErrors(result.errors);
+    return result;
+  };
+  const handleFieldChange = (name, value) => {
+    const sanitized = name === "mobile" ? String(value).replace(/\D/g, "").slice(0, 10) : name === "aadhaar" ? String(value).replace(/\D/g, "").slice(0, 12) : value;
+    setValue(name, sanitized);
+    if (name === "facultyType") { setSelectedFacultyType(sanitized); if (values.designation) setValue("designation", ""); }
+    const result = facultyValidation({ ...values, [name]: sanitized }, { departments, genders });
+    if (!result.errors[name]) setErrors((current) => ({ ...current, [name]: undefined }));
+  };
+  const handleFieldBlur = (name) => {
+    const result = facultyValidation(values, { departments, genders });
+    setValues(result.values);
+    setErrors((current) => ({ ...current, [name]: result.errors[name] }));
+  };
+  const focusFirstError = (nextErrors) => {
+    const field = Object.keys(nextErrors)[0];
+    if (field) document.getElementById(`f-${field}`)?.focus();
+  };
   const preview = (e) => {
     e.preventDefault();
+    const result = validateAndShow();
+    setValues(result.values);
+    if (Object.keys(result.errors).length) return focusFirstError(result.errors);
     setStep(1);
   };
   const confirm = async () => {
+    const result = validateAndShow();
+    setValues(result.values);
+    if (Object.keys(result.errors).length) {
+      setStep(0);
+      return focusFirstError(result.errors);
+    }
     setSaving(true);
     try {
+      const directory = await apiClient.get(apiEndpoints.faculty.getAll);
+      const duplicate = extractItems(directory.data).find((faculty) => {
+        if (existingId && String(facultyId(faculty)) === String(existingId)) return false;
+        const record = valuesFor(faculty);
+        return record.empId?.trim().toLowerCase() === result.values.empId.toLowerCase()
+          || record.email?.trim().toLowerCase() === result.values.email
+          || String(record.mobile ?? "").replace(/\D/g, "") === result.values.mobile;
+      });
+      if (duplicate) {
+        const existing = valuesFor(duplicate);
+        const duplicateErrors = {
+          ...(existing.empId?.trim().toLowerCase() === result.values.empId.toLowerCase() ? { empId: "Employee ID already exists. Please use a different Employee ID." } : {}),
+          ...(existing.email?.trim().toLowerCase() === result.values.email ? { email: "Email already exists. Please use a different email address." } : {}),
+          ...(String(existing.mobile ?? "").replace(/\D/g, "") === result.values.mobile ? { mobile: "Mobile number already exists. Please use a different mobile number." } : {}),
+        };
+        setErrors(duplicateErrors); setStep(0); return focusFirstError(duplicateErrors);
+      }
       const response = existingId
-        ? await apiClient.put(apiEndpoints.faculty.update(existingId), payloadFor(values))
-        : await apiClient.post(apiEndpoints.faculty.create, payloadFor(values));
+        ? await apiClient.put(apiEndpoints.faculty.update(existingId), payloadFor(result.values))
+        : await apiClient.post(apiEndpoints.faculty.create, payloadFor(result.values));
       const record = extractRecord(response.data);
       const next = {
         ...record,
@@ -331,7 +458,7 @@ function Workflow({ existingId }) {
       setStep(2);
       setToast("Faculty saved successfully.");
     } catch (e) {
-      setToast(getApiErrorMessage(e));
+      setToast(friendlyFacultyError(e));
     } finally {
       setSaving(false);
     }
@@ -359,7 +486,7 @@ function Workflow({ existingId }) {
       await loadAllocation(saved);
       setToast(`${subjectName(subject)} allocated successfully.`);
     } catch (e) {
-      setToast(getApiErrorMessage(e));
+      setToast(friendlyFacultyError(e));
     }
   };
   const remove = async () => {
@@ -369,7 +496,7 @@ function Workflow({ existingId }) {
       await loadAllocation(saved);
       setToast("Subject allocation removed.");
     } catch (e) {
-      setToast(getApiErrorMessage(e));
+      setToast(friendlyFacultyError(e));
     }
   };
   const allocatedIds = new Set(
@@ -383,10 +510,32 @@ function Workflow({ existingId }) {
   const selectedAvailableSubject = available.find(
     (subject) => String(subjectId(subject)) === selectedSubject,
   );
+  const matchingSubjects = available.filter((subject) => {
+    const query = subjectSearch.trim().toLowerCase();
+    return !query || `${subjectName(subject)} ${subject.subjectCode ?? subject.SubjectCode ?? ""}`.toLowerCase().includes(query);
+  });
   const allocateSelectedSubject = async () => {
     if (!selectedAvailableSubject) return setToast("Select a subject to allocate.");
     await allocate(selectedAvailableSubject);
     setSelectedSubject("");
+  };
+  const addPendingSubject = (subject) => {
+    const id = String(subjectId(subject) ?? "");
+    if (!id) return setToast("Please select a valid subject.");
+    if (pendingSubjects.some((item) => String(subjectId(item)) === id)) return setToast("This subject is already selected.");
+    setPendingSubjects((current) => [...current, subject]);
+  };
+  const savePendingSubjects = async () => {
+    if (!pendingSubjects.length) return setToast("Please select at least one subject.");
+    if (!saved) return setToast("Faculty must be saved before subjects can be allocated.");
+    setSavingAllocation(true);
+    try {
+      for (const subject of pendingSubjects) await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: facultyId(saved), subjectId: subjectId(subject) });
+      setPendingSubjects([]);
+      await loadAllocation(saved);
+      setToast("Selected subjects allocated successfully.");
+    } catch (error) { setToast(friendlyFacultyError(error)); }
+    finally { setSavingAllocation(false); }
   };
   return (
     <DashboardLayout
@@ -396,7 +545,7 @@ function Workflow({ existingId }) {
     >
       <main className="faculty-workflow">
         <Steps step={step} onSelect={setStep} />
-        {step === 0 && (
+        {step === 0 && loadingDetails ? <section className="faculty-stage"><p className="faculty-empty">Loading faculty details...</p></section> : step === 0 && (
           <form className="faculty-form" onSubmit={preview}>
             <header>
               <UserRound />{" "}
@@ -406,13 +555,15 @@ function Workflow({ existingId }) {
               </div>
             </header>
             <div className="faculty-form-grid">
+              {loadingDepartments ? <p className="faculty-empty">Loading departments...</p> : null}
               {formFields.map((field) => (
                 <Field
                   key={field.name}
                   field={field}
                   value={values[field.name]}
                   error={errors[field.name]}
-                  onChange={setValue}
+                  onChange={handleFieldChange}
+                  onBlur={handleFieldBlur}
                 />
               ))}
             </div>
@@ -490,16 +641,12 @@ function Workflow({ existingId }) {
                   Available Subjects <small>{available.length}</small>
                 </h3>
                 <div className="faculty-subject-selector">
-                  <label htmlFor="available-subject">Select a subject</label>
+                  <label htmlFor="subject-search">Search subjects</label>
                   <div>
-                    <select id="available-subject" value={selectedSubject} disabled={!available.length} onChange={(event) => setSelectedSubject(event.target.value)}>
-                      <option value="">{available.length ? "Choose an available subject" : "No subjects available"}</option>
-                      {available.map((subject) => <option key={subjectId(subject) ?? subjectName(subject)} value={String(subjectId(subject))}>{subjectName(subject)}</option>)}
-                    </select>
-                    <button type="button" className="cms-btn" disabled={!selectedAvailableSubject} onClick={allocateSelectedSubject}>
-                      <Plus size={15} /> Allocate
-                    </button>
+                    <input id="subject-search" value={subjectSearch} placeholder="Search by subject name or code" onChange={(event) => setSubjectSearch(event.target.value)} disabled={loadingAllocation} />
                   </div>
+                  {loadingAllocation ? <p className="faculty-empty">Loading subjects...</p> : matchingSubjects.length ? <div className="faculty-search-results">{matchingSubjects.map((subject) => <button type="button" key={subjectId(subject)} onClick={() => addPendingSubject(subject)} disabled={savingAllocation}><Plus size={14}/>{subjectName(subject)}{subject.subjectCode ?? subject.SubjectCode ? ` (${subject.subjectCode ?? subject.SubjectCode})` : ""}</button>)}</div> : <p className="faculty-empty">No subjects found.</p>}
+                  {pendingSubjects.length ? <><p className="faculty-selected-label">Selected subjects</p><div className="faculty-subject-chips">{pendingSubjects.map((subject) => <span key={subjectId(subject)}>{subjectName(subject)}<button type="button" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))} aria-label={`Remove ${subjectName(subject)}`}><X size={13}/></button></span>)}</div><button type="button" className="cms-btn" disabled={savingAllocation} onClick={savePendingSubjects}>{savingAllocation ? "Saving..." : "Save selected subjects"}</button></> : null}
                   {!available.length && <p className="faculty-empty">Add or activate subjects in Subject Management, then return here to allocate them.</p>}
                 </div>
               </section>
@@ -559,6 +706,7 @@ export default function FacultyManagementPage() {
   const [viewing, setViewing] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [toast, setToast] = useState("");
+  const [facultyTypeFilter, setFacultyTypeFilter] = useState("");
   const isWorkflow = location.pathname !== "/dashboard/faculty";
   const load = async () => {
     setLoading(true);
@@ -566,7 +714,7 @@ export default function FacultyManagementPage() {
       const response = await apiClient.get(apiEndpoints.faculty.getAll);
       setRows(extractItems(response.data).map(rowFor));
     } catch (e) {
-      setToast(getApiErrorMessage(e));
+      setToast(friendlyFacultyError(e));
     } finally {
       setLoading(false);
     }
@@ -579,7 +727,7 @@ export default function FacultyManagementPage() {
       setViewing({ ...row, ...response.data });
     } catch (e) {
       setViewing(null);
-      setToast(getApiErrorMessage(e));
+      setToast(friendlyFacultyError(e));
     } finally {
       setViewLoading(false);
     }
@@ -588,6 +736,7 @@ export default function FacultyManagementPage() {
     if (!isWorkflow) load();
   }, [isWorkflow]);
   if (isWorkflow) return <Workflow existingId={id} />;
+  const visibleRows = facultyTypeFilter ? rows.filter((row) => row.facultyType === facultyTypeFilter) : rows;
   return (
     <DashboardLayout
       title="Faculty Management"
@@ -607,8 +756,10 @@ export default function FacultyManagementPage() {
             { key: "designation", label: "Designation" },
             { key: "status", label: "Status", badge: true },
           ]}
-          rows={rows}
+          rows={visibleRows}
           loading={loading}
+          toolbarExtra={<label className="faculty-type-filter">Faculty Type<select value={facultyTypeFilter} onChange={(event) => setFacultyTypeFilter(event.target.value)}><option value="">All Faculty</option><option value="Teaching Staff">Teaching Staff</option><option value="Non-Teaching Staff">Non-Teaching Staff</option></select></label>}
+          emptyMessage={facultyTypeFilter ? `No ${facultyTypeFilter.toLowerCase()} found.` : "No faculty members found."}
           onAdd={() => navigate("/dashboard/faculty/add")}
           onView={viewFaculty}
           onEdit={(row) => navigate(`/dashboard/faculty/${row.id}/edit`)}
@@ -684,7 +835,7 @@ export default function FacultyManagementPage() {
                 await load();
                 setToast("Faculty deleted successfully.");
               } catch (e) {
-                setToast(getApiErrorMessage(e));
+                setToast(friendlyFacultyError(e));
               }
             }}
           />

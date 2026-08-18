@@ -126,9 +126,9 @@
   gap: 10px;
 }
 
-.landing-header-actions .cms-icon-btn,
-.landing-header-actions .landing-login-btn {
-  min-height: 40px;
+.landing-header-actions .cms-icon-btn {
+  width: 40px;
+  height: 40px;
 }
 
 .landing-hero-banner {
@@ -190,16 +190,41 @@
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
-.landing-login-btn {
-  border: 1px solid transparent;
+.cms-landing-nav a.cms-btn.landing-login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 96px;
+  min-width: 96px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid #1d4ed8;
+  border-radius: 10px;
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   color: #ffffff;
-  box-shadow: 0 12px 24px rgba(29, 78, 216, 0.28);
+  line-height: 1;
+  text-align: center;
+  text-decoration: none;
+  opacity: 1;
+  filter: none;
+  box-shadow: 0 8px 18px rgba(29, 78, 216, 0.28);
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease, border-color 180ms ease;
 }
 
-.landing-login-btn:hover {
+.cms-landing-nav a.cms-btn.landing-login-btn:hover {
+  color: #ffffff;
+  border-color: #1e40af;
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
   transform: translateY(-1px);
   box-shadow: 0 16px 30px rgba(29, 78, 216, 0.34);
+}
+
+.cms-landing-nav a.cms-btn.landing-login-btn:focus-visible {
+  color: #ffffff;
+  outline: 3px solid rgba(96, 165, 250, 0.72);
+  outline-offset: 3px;
 }
 
 .landing-start-btn {
@@ -393,6 +418,9 @@
   }
 
   .landing-header-actions .landing-login-btn {
+    width: 84px;
+    min-width: 84px;
+    height: 38px;
     min-height: 38px;
     padding: 0 16px;
   }

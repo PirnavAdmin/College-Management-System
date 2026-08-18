@@ -15,6 +15,8 @@ export default function DataTable({
   onSearchChange,
   addLabel = "Add New",
   title,
+  toolbarExtra,
+  emptyMessage,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -52,6 +54,7 @@ export default function DataTable({
           />
         </div>
         <div className="cms-toolbar-right">
+          {toolbarExtra}
           <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
             <Download size={15} /> Export
           </button>
@@ -80,7 +83,7 @@ export default function DataTable({
               {pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length + 1}>
-                    <div className="cms-empty">No records found for your search.</div>
+                    <div className="cms-empty">{emptyMessage || "No records found for your search."}</div>
                   </td>
                 </tr>
               ) : (

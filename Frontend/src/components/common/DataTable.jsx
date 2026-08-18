@@ -1,8 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Pencil, Trash2, Eye, Download } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Eye, Printer, FileSpreadsheet, ChevronDown } from "lucide-react";
 import { StatusBadge, Loader } from "./Ui.jsx";
 
 const PAGE_SIZE = 5;
+
+const textValue = (value) => {
+  if (value == null) return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
+
+const escapePrintHtml = (value) => textValue(value)
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#039;");
+
+const safeFileName = (value) => String(value || "records")
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-|-$/g, "") || "records";
 
 export default function DataTable({
   columns,
@@ -18,6 +37,7 @@ export default function DataTable({
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     if (!onSearchChange) return undefined;
@@ -37,6 +57,35 @@ export default function DataTable({
   const current = Math.min(page, totalPages);
   const pageRows = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
 
+  const exportExcel = async () => {
+    const exportColumns = columns.filter((column) => column.exportable !== false);
+    const data = filtered.map((row) => Object.fromEntries(
+      exportColumns.map((column) => [column.label, textValue(row[column.key])]),
+    ));
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Records");
+    XLSX.writeFile(workbook, `${safeFileName(title)}.xlsx`);
+    setExportOpen(false);
+  };
+
+  const printRows = () => {
+    setExportOpen(false);
+    const printableColumns = columns.filter((column) => column.printable !== false);
+    const popup = window.open("", "_blank", "width=1100,height=760");
+    if (!popup) return;
+    popup.document.open();
+    popup.document.write(`<!doctype html><html><head><meta charset="UTF-8"><title>${escapePrintHtml(title || "Records")}</title><style>
+      @page{size:auto;margin:0}html,body{margin:0;padding:0}body{font-family:"Segoe UI",Arial,sans-serif;color:#0f172a}
+      .print-page{padding:12mm}h1{font-size:20px;margin:0 0 18px}
+      table{width:100%;border-collapse:collapse}th,td{padding:9px 10px;border:1px solid #dbe3ea;text-align:left;font-size:12px}
+      th{background:#f3f7f8;text-transform:uppercase;letter-spacing:.06em;font-size:10px}tr:nth-child(even) td{background:#fafcfc}
+      @media print{h1{font-size:18px}}
+    </style></head><body><main class="print-page"><h1>${escapePrintHtml(title || "Records")}</h1><table><thead><tr>${printableColumns.map((column) => `<th>${escapePrintHtml(column.label)}</th>`).join("")}</tr></thead><tbody>${filtered.map((row) => `<tr>${printableColumns.map((column) => `<td>${escapePrintHtml(row[column.key])}</td>`).join("")}</tr>`).join("")}</tbody></table></main><script>window.addEventListener('load',()=>{document.title='${escapePrintHtml(title || "Records")}';window.focus();window.print();});</script></body></html>`);
+    popup.document.close();
+  };
+
   return (
     <div className="cms-card">
       <div className="cms-toolbar">
@@ -52,9 +101,30 @@ export default function DataTable({
           />
         </div>
         <div className="cms-toolbar-right">
-          <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
-            <Download size={15} /> Export
-          </button>
+          <div className="cms-export-control">
+            <button
+              className="cms-btn cms-btn-ghost"
+              type="button"
+              onClick={() => setExportOpen((open) => !open)}
+              disabled={!filtered.length}
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+            >
+              Export <ChevronDown size={14} />
+            </button>
+            {exportOpen ? (
+              <div className="cms-export-menu" role="menu">
+                <button type="button" role="menuitem" onClick={exportExcel}>
+                  <FileSpreadsheet size={17} />
+                  <span><strong>Excel</strong><small>Download .xlsx file</small></span>
+                </button>
+                <button type="button" role="menuitem" onClick={printRows}>
+                  <Printer size={17} />
+                  <span><strong>Print</strong><small>Open print preview</small></span>
+                </button>
+              </div>
+            ) : null}
+          </div>
           {onAdd ? (
             <button className="cms-btn cms-btn-primary" onClick={onAdd}>
               <Plus size={16} /> {addLabel}

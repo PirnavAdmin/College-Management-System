@@ -17,7 +17,7 @@
   padding: 9px 12px;
   font-size: 13.5px;
   font-family: inherit;
-  background: var(--cms-surface);
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.08) 0%, rgba(14, 116, 144, 0.08) 100%);
   color: var(--cms-text);
   outline: none;
   transition: border 0.18s ease, box-shadow 0.18s ease;
@@ -27,7 +27,7 @@
 .cms-field select:focus,
 .cms-field textarea:focus {
   border-color: var(--cms-primary);
-  box-shadow: 0 0 0 3px var(--cms-primary-soft);
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.13);
 }
 .cms-field.has-error input,
 .cms-field.has-error select,
@@ -76,14 +76,50 @@
 .cms-field textarea { border-color: var(--cms-border) !important; }
 .cms-field input:hover,
 .cms-field select:hover,
-.cms-field textarea:hover { border-color: var(--cms-border-strong); }
+.cms-field textarea:hover {
+  border-color: #65a9a1;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.14) 0%, rgba(14, 116, 144, 0.14) 100%);
+  box-shadow: 0 5px 12px rgba(15, 118, 110, 0.1);
+  transform: translateY(-1px);
+}
 [data-theme="dark"] input,
 [data-theme="dark"] select,
 [data-theme="dark"] textarea {
-  background: var(--cms-subtle);
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.12) 0%, rgba(14, 116, 144, 0.14) 100%);
   color: var(--cms-text);
 }
 [data-theme="dark"] option { background: var(--cms-surface); color: var(--cms-text); }
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover,
+select:hover,
+textarea:hover {
+  border-color: #65a9a1 !important;
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.14) 0%, rgba(14, 116, 144, 0.14) 100%) !important;
+  box-shadow: 0 5px 12px rgba(15, 118, 110, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+select:focus,
+textarea:focus {
+  border-color: #0e7490 !important;
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.13) !important;
+}
+
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):hover,
+[data-theme="dark"] select:hover,
+[data-theme="dark"] textarea:hover {
+  border-color: #5eead4 !important;
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.24) 0%, rgba(14, 116, 144, 0.25) 100%) !important;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.16) !important;
+}
+
+[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] textarea:focus {
+  border-color: #5eead4 !important;
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14) !important;
+}
 @media (max-width: 1200px) {
   .cms-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

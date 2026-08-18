@@ -35,7 +35,8 @@ const STATUS_META = {
   SUBMITTED: { label: "SUBMITTED", badgeClass: "cms-status-submitted" },
   VERIFIED: { label: "VERIFIED", badgeClass: "cms-status-verified" },
   APPROVED: { label: "APPROVED", badgeClass: "cms-status-approved" },
-  REJECTED: { label: "REJECTED", badgeClass: "cms-status-rejected" }
+  REJECTED: { label: "REJECTED", badgeClass: "cms-status-rejected" },
+  UNKNOWN: { label: "UNKNOWN", badgeClass: "cms-status-submitted" }
 };
 
 const PRACTICAL_SUBJECT_NAMES = ["physics", "chemistry", "zoology", "botany"];
@@ -54,7 +55,8 @@ const getResponseItems = (payload) => {
 };
 
 const normalizeStatus = (status) => {
-  const value = String(status ?? "SUBMITTED").toUpperCase();
+  if (status === null || status === undefined || String(status).trim() === "") return "UNKNOWN";
+  const value = String(status).toUpperCase();
   return ({ 0: "DRAFT", 1: "SUBMITTED", 2: "VERIFIED", 3: "APPROVED", 4: "REJECTED" })[value] ?? value;
 };
 
@@ -66,12 +68,12 @@ const toEvaluationRow = (item) => ({
   subjectCode: item.subjectCode ?? item.subject?.subjectCode ?? item.subject?.code ?? "—",
   facultyName: item.facultyName ?? item.faculty?.facultyName ?? item.faculty?.name ?? "—",
   facultyCode: item.facultyCode ?? item.faculty?.facultyCode ?? item.faculty?.code ?? "—",
-  obtainedMarks: item.obtainedMarks ?? item.averageMarks ?? item.average ?? 0,
-  totalMarks: item.totalMarks ?? item.maximumMarks ?? item.maxMarks ?? 0,
+  obtainedMarks: item.obtainedMarks ?? "â€”",
+  totalMarks: item.totalMarks ?? item.maximumMarks ?? item.maxMarks ?? "â€”",
   totalStudents: item.totalStudents ?? item.studentCount ?? 0,
-  averageMarks: item.averageMarks ?? item.average ?? 0,
-  highestMarks: item.highestMarks ?? item.highest ?? 0,
-  lowestMarks: item.lowestMarks ?? item.lowest ?? 0,
+  averageMarks: item.averageMarks ?? item.average ?? "â€”",
+  highestMarks: item.highestMarks ?? item.highest ?? "â€”",
+  lowestMarks: item.lowestMarks ?? item.lowest ?? "â€”",
   status: normalizeStatus(item.status ?? item.evaluationStatus),
 });
 
@@ -95,7 +97,7 @@ const toStudentAnalysisRow = (item) => ({
   studentName: item.studentName ?? item.name ?? item.fullName ?? "—",
   subjectMarks: item.subjectMarks ?? {},
   subjects: Array.isArray(item.subjects) ? item.subjects : [],
-  totalMarks: item.totalMarks ?? 0,
+  totalMarks: item.totalMarks ?? "â€”",
   maxTotal: item.maxTotal ?? item.maximumMarks ?? item.totalMaximumMarks ?? "—",
   grade: item.grade ?? "—",
 });
@@ -131,18 +133,25 @@ export default function MarksEntryPage() {
   // Data States 
   const [evaluations, setEvaluations] = useState([]);
   const [studentAnalysis, setStudentAnalysis] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [studentDetails, setStudentDetails] = useState(null);
+  const [studentViewMode, setStudentViewMode] = useState("list");
   const [selectedEvaluationId, setSelectedEvaluationId] = useState(null);
   const [modalRows, setModalRows] = useState([]);
   const [viewMode, setViewMode] = useState("list");
   const [currentPage, setCurrentPage] = useState(1);
   const [studentMarksPage, setStudentMarksPage] = useState(1);
   const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showApproveAllModal, setShowApproveAllModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
-  const [editMode, setEditMode] = useState(false);
-  const [editableRows, setEditableRows] = useState([]);
+  const [statusEditMode, setStatusEditMode] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState(null);
 
   const selectedEvaluation = useMemo(
-    () => evaluations.find((item) => item.subjectId === selectedEvaluationId) ?? null,
+    () =>
+      evaluations.find(
+        (item) => String(item.evaluationId) === String(selectedEvaluationId)
+      ) ?? null,
     [evaluations, selectedEvaluationId]
   );
 
@@ -241,25 +250,25 @@ export default function MarksEntryPage() {
   const groupOptions = useMemo(() => {
     return groups
       .filter(
-        (group) =>(!filters.academicLevel ||
-            String(group.academicLevelId) === filters.academicLevel)
+        (group) => (!filters.academicLevel ||
+          String(group.academicLevelId) === filters.academicLevel)
       )
       .map((group) => ({
         label: group.groupName,
         value: String(group.groupId),
       }));
-  }, [
-    groups,
-    filters.board,
-    filters.academicYear,
-    filters.academicLevel,
-  ]);
+  }, [groups, filters.academicLevel]);
   const examinationOptions = useMemo(() => {
-    return examinations.map((exam) => ({
+    return examinations.filter((exam) => {
+      const matchesContext = (value, selected) => value === undefined || value === null || value === "" || String(value) === selected;
+      return matchesContext(exam.boardId, filters.board)
+        && matchesContext(exam.academicYearId, filters.academicYear)
+        && matchesContext(exam.academicLevelId, filters.academicLevel);
+    }).map((exam) => ({
       label: exam.examName,
       value: String(exam.examinationId),
     }));
-  }, [examinations]);
+  }, [examinations, filters.board, filters.academicYear, filters.academicLevel]);
 
   const sectionOptions = useMemo(() => {
     return sections.map((section) => ({
@@ -296,16 +305,28 @@ export default function MarksEntryPage() {
   ]);
 
   const getCurrentStatus = useCallback(
-    (_subjectId, fallbackStatus) => fallbackStatus ?? "SUBMITTED",
+    (status) => normalizeStatus(status),
     []
   );
 
-  const currentGroupSubjects = useMemo(() => {
-    return evaluations.map((evaluation) => evaluation.subjectName);
-  }, [evaluations]);
+  const evaluationSubjects = useMemo(() => {
+    const subjects = evaluations.map((evaluation) => ({
+      subjectId: evaluation.subjectId,
+      subjectName: evaluation.subjectName,
+    }));
+    const source = subjects.length ? subjects : studentAnalysis.flatMap((student) =>
+      (student.subjects || []).map((subject) => ({
+        subjectId: subject.subjectId ?? subject.id,
+        subjectName: subject.subjectName ?? subject.name,
+      }))
+    );
+    return Array.from(new Map(source.filter((subject) => subject.subjectId != null)
+      .map((subject) => [String(subject.subjectId), subject])).values());
+  }, [evaluations, studentAnalysis]);
 
   // Fetch evaluation data for the selected academic context.
-  const handleFetchData = async () => {
+  const handleFetchData = async (preserveSelectedId = false) => {
+    const selectedId = preserveSelectedId ? selectedEvaluationId : null;
     try {
       setIsLoading(true);
       const payload = {
@@ -324,14 +345,22 @@ export default function MarksEntryPage() {
 
       setEvaluations(newEvaluations);
       setStudentAnalysis(getResponseItems(studentAnalysisResponse.data).map(toStudentAnalysisRow));
-      setEvaluationSearchTerm("");
-      setStudentAnalysisSearchTerm("");
-      setSelectedEvaluationId(null);
-      setModalRows([]);
-      setCurrentPage(1);
-      setStudentMarksPage(1);
+      if (!selectedId) {
+        setEvaluationSearchTerm("");
+        setStudentAnalysisSearchTerm("");
+        setSelectedStudent(null);
+        setStudentDetails(null);
+        setStudentViewMode("list");
+        setSelectedEvaluationId(null);
+        setModalRows([]);
+        setCurrentPage(1);
+        setStudentMarksPage(1);
+      } else if (newEvaluations.some((item) => String(item.evaluationId) === String(selectedId))) {
+        setSelectedEvaluationId(selectedId);
+        setViewMode("details");
+      }
       setReady(true);
-      setViewMode("list");
+      if (!selectedId) setViewMode("list");
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
     } finally {
@@ -342,6 +371,9 @@ export default function MarksEntryPage() {
   // Handle Cascading Filter Changes
   const handleFilterChange = (key, value) => {
     setReady(false);
+    setSelectedStudent(null);
+    setStudentDetails(null);
+    setStudentViewMode("list");
     setSelectedEvaluationId(null);
     setViewMode("list");
     setFilters((prev) => {
@@ -382,18 +414,20 @@ export default function MarksEntryPage() {
     );
   }, [filters]);
 
-  // Row Click: Open Subject Evaluation Details
   const handleRowClick = async (item) => {
-    setSelectedEvaluationId(item.subjectId);
+    setSelectedEvaluationId(item.evaluationId);
     setCurrentPage(1);
     setViewMode("details");
+    // Reset status editing whenever a new evaluation is opened
+    setStatusEditMode(false);
+    setPendingStatus(null);
     try {
       setIsLoading(true);
-      const response = await apiClient.get(`/api/v1/evaluations/${item.evaluationId}/students`);
+      const response = await apiClient.get(
+        `/api/v1/evaluations/${item.evaluationId}/students`
+      );
       const rows = getResponseItems(response.data).map(toStudentMarksRow);
       setModalRows(rows);
-      setEditableRows(rows);
-      setEditMode(false);
     } catch (error) {
       setModalRows([]);
       showToast(getApiErrorMessage(error), "error");
@@ -407,28 +441,95 @@ export default function MarksEntryPage() {
     setModalRows([]);
     setCurrentPage(1);
     setViewMode("list");
-    setEditMode(false);
-    setEditableRows([]);
+    setStatusEditMode(false);
+    setPendingStatus(null);
+  };
+
+  const handleStudentRowClick = async (student) => {
+    if (!student?.studentId) return;
+
+    try {
+      setIsLoading(true);
+      const response = await apiClient.get(`/api/v1/student-analysis/${student.studentId}/details`);
+      const details = response.data?.data ?? response.data;
+      setSelectedStudent(student);
+      setStudentDetails(details);
+      setStudentViewMode("details");
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBackToStudentAnalysis = () => {
+    setSelectedStudent(null);
+    setStudentDetails(null);
+    setStudentViewMode("list");
   };
 
   // Status changes always reload the current context so the backend stays authoritative.
   const handleUpdateStatus = async (targetStatusNum) => {
     if (!selectedEvaluation?.evaluationId) return;
+    if (selectedEvaluation.status === "UNKNOWN") {
+      showToast("This evaluation has an unknown status and cannot be updated.", "error");
+      return;
+    }
+    // ---------------------------------------------------------
+    // EDIT MODE
+    // Edit means: Admin is changing ONLY the evaluation status.
+    // Marks must never be changed here.
+    // ---------------------------------------------------------
+    if (statusEditMode) {
+      if (targetStatusNum === 2) {
+        // Verify selected while editing
+        setPendingStatus("VERIFIED");
+        showToast("Status changed to Verify. Click Save Changes to confirm.", "success");
+        return;
+      }
+      if (targetStatusNum === 4) {
+        // Reject selected while editing
+        setPendingStatus("REJECTED");
+        setRejectReason("");
+        setShowRejectModal(true);
+        return;
+      }
+      return;
+    }
+    // ---------------------------------------------------------
+    // NORMAL REVIEW MODE
+    // ---------------------------------------------------------
     if (targetStatusNum === 4) {
       setRejectReason("");
       setShowRejectModal(true);
       return;
     }
 
-    const action = targetStatusNum === "edit" ? "restore" : ({ 2: "verify", 3: "approve" })[targetStatusNum];
+    const action = {
+      2: "verify",
+      3: "approve",
+    }[targetStatusNum];
+
     if (!action) return;
 
     try {
       setIsLoading(true);
-      await apiClient.patch(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/${action}`);
-      const actionMessage = { verify: "verified", approve: "approved", restore: "restored" }[action];
-      showToast(`Subject ${actionMessage} successfully`, "success");
-      await handleFetchData();
+
+      await apiClient.patch(
+        `/api/v1/evaluations/${selectedEvaluation.evaluationId}/${action}`
+      );
+
+      const actionMessage = {
+        verify: "verified",
+        approve: "approved",
+      }[action];
+
+      showToast(
+        `Subject ${actionMessage} successfully`,
+        "success"
+      );
+
+      await handleFetchData(true);
     } catch (error) {
       showToast(getApiErrorMessage(error), "error");
     } finally {
@@ -436,36 +537,125 @@ export default function MarksEntryPage() {
     }
   };
 
-  const handleRejectEvaluation = async () => {
-    if (!selectedEvaluation?.evaluationId || rejectReason.trim().length < 5) {
-      showToast("Please enter a rejection reason of at least 5 characters.", "error");
+  const handleEditStatus = () => {
+    setStatusEditMode(true);
+    setPendingStatus(null);
+
+    showToast(
+      "Status editing enabled. Choose Verify or Reject, then save changes.",
+      "success"
+    );
+  };
+
+  const handleSaveStatusChanges = async () => {
+    if (!selectedEvaluation?.evaluationId) return;
+
+    if (!pendingStatus) {
+      showToast(
+        "Please choose Verify or Reject before saving.",
+        "error"
+      );
       return;
     }
 
     try {
-      setIsLoading(true);
-      await apiClient.post(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/reject`, {
-        reason: rejectReason.trim(),
-        notifyFaculty: true,
-      });
-      setShowRejectModal(false);
+      if (pendingStatus === "VERIFIED") {
+        await apiClient.patch(
+          `/api/v1/evaluations/${selectedEvaluation.evaluationId}/verify`
+        );
+      }
+
+      if (pendingStatus === "REJECTED") {
+        await apiClient.post(
+          `/api/v1/evaluations/${selectedEvaluation.evaluationId}/reject`,
+          {
+            reason: rejectReason.trim(),
+            notifyFaculty: true,
+          }
+        );
+      }
+
+      showToast(
+        `Evaluation status changed to ${pendingStatus}`,
+        "success"
+      );
+
+      setStatusEditMode(false);
+      setPendingStatus(null);
       setRejectReason("");
-      showToast("Evaluation rejected successfully", "success");
-      await handleFetchData();
+
+      await handleFetchData(true);
     } catch (error) {
-      showToast(getApiErrorMessage(error), "error");
-    } finally {
-      setIsLoading(false);
+      showToast(
+        getApiErrorMessage(error),
+        "error"
+      );
     }
   };
 
-  // Global Approval Action ("Approve All")
-  // Approves the submitted evaluations in the selected academic context.
+  const handleRejectEvaluation = async () => {
+    if (!selectedEvaluation?.evaluationId) return;
+
+    if (rejectReason.trim().length < 5) {
+      showToast(
+        "Please enter a rejection reason of at least 5 characters.",
+        "error"
+      );
+      return;
+    }
+
+    // ---------------------------------------------------------
+    // STATUS EDIT MODE
+    // Do not call API yet.
+    // Just store the selected status and close the reason modal.
+    // Save Changes will perform the actual update.
+    // ---------------------------------------------------------
+    if (statusEditMode) {
+      setPendingStatus("REJECTED");
+      setShowRejectModal(false);
+
+      showToast(
+        "Rejection selected. Click Save Changes to confirm.",
+        "success"
+      );
+
+      return;
+    }
+
+    // ---------------------------------------------------------
+    // NORMAL REJECT
+    // ---------------------------------------------------------
+    try {
+      await apiClient.post(
+        `/api/v1/evaluations/${selectedEvaluation.evaluationId}/reject`,
+        {
+          reason: rejectReason.trim(),
+          notifyFaculty: true,
+        }
+      );
+
+      setShowRejectModal(false);
+      setRejectReason("");
+
+      showToast(
+        "Evaluation rejected successfully",
+        "success"
+      );
+
+      await handleFetchData(true);
+    } catch (error) {
+      showToast(getApiErrorMessage(error), "error");
+    }
+  };
+
+  const verifiedEvaluations = useMemo(
+    () => evaluations.filter((item) => item.evaluationId && item.status === "VERIFIED"),
+    [evaluations]
+  );
+
   const handleGlobalApproval = async () => {
     if (!isAllFiltersSelected || evaluations.length === 0) return;
-
-    const eligibleEvaluations = evaluations.filter((item) => item.evaluationId && item.status === "VERIFIED");
-    if (!eligibleEvaluations.length) return;
+    if (!verifiedEvaluations.length) return;
 
     try {
       setIsLoading(true);
@@ -489,55 +679,11 @@ export default function MarksEntryPage() {
     }
   };
 
-  const handleSaveMarks = async () => {
-    if (!selectedEvaluation?.evaluationId) return;
-
-    try {
-      setIsLoading(true);
-      await apiClient.put(`/api/v1/evaluations/${selectedEvaluation.evaluationId}/marks`, {
-        students: editableRows,
-      });
-      showToast("Marks saved successfully", "success");
-      setEditMode(false);
-      await handleRowClick(selectedEvaluation);
-    } catch (error) {
-      showToast(getApiErrorMessage(error), "error");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleExport = async () => {
-    if (!isAllFiltersSelected) return;
-    try {
-      setIsLoading(true);
-      const response = await apiClient.get("/api/v1/evaluations/export", {
-        params: {
-          boardId: Number(filters.board), academicYearId: Number(filters.academicYear),
-          academicLevelId: Number(filters.academicLevel), groupId: Number(filters.group),
-          sectionId: Number(filters.section), examinationId: Number(filters.examination), format: "xlsx",
-        },
-        responseType: "blob",
-      });
-      const url = URL.createObjectURL(new Blob([response.data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "academic-evaluations.xlsx";
-      link.click();
-      URL.revokeObjectURL(url);
-      showToast("Excel export downloaded successfully", "success");
-    } catch (error) {
-      showToast(getApiErrorMessage(error), "error");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const filteredEvaluations = useMemo(() => {
     return evaluations.filter((item) => {
       if (!evaluationSearchTerm.trim()) return true;
       const term = evaluationSearchTerm.toLowerCase();
-      const statusStr = getCurrentStatus(item.subjectId, item.status);
+      const statusStr = getCurrentStatus(item.status);
       return (
         (item.subjectName || "").toLowerCase().includes(term) ||
         (item.facultyName || "").toLowerCase().includes(term) ||
@@ -604,11 +750,17 @@ export default function MarksEntryPage() {
     setStudentMarksPage(1);
   }, [studentAnalysisSearchTerm, activeTab]);
 
+  const hasVerifiedEvaluations = evaluations.some(
+    (item) =>
+      item.evaluationId &&
+      item.status === "VERIFIED"
+  );
+
   return (
     <DashboardLayout
-      title="Academic Evaluation"
+      title="Marks Evaluation"
       subtitle="Review, verify and approve faculty submitted evaluations."
-      breadcrumb={["Examinations", "Marks Evaluation"]}
+      breadcrumb={["Examinations"]}
     >
       <div className="cms-marks-entry cms-anim-up">
 
@@ -688,222 +840,249 @@ export default function MarksEntryPage() {
         {/* Content Section */}
         {ready ? (
           viewMode === "list" ? (
-            <div className="cms-card cms-main-card">
-              <div className="cms-table-toolbar">
-                {/* 2 Main Tabs */}
-                <div className="cms-tab-bar">
-                  <button
-                    className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`}
-                    onClick={() => setActiveTab("evaluations")}
-                  >
-                    Evaluation
-                  </button>
-                  <button
-                    className={`cms-tab-btn ${activeTab === "studentAnalysis" ? "cms-active" : ""}`}
-                    onClick={() => setActiveTab("studentAnalysis")}
-                  >
-                    Student Analysis
-                  </button>
-                </div>
-
-                {activeTab === "evaluations" && (
-                  <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                    {/* Global Approval Button */}
+            activeTab === "studentAnalysis" && studentViewMode === "details" && studentDetails ? (
+              <StudentDetailsView
+                selectedStudent={selectedStudent}
+                studentDetails={studentDetails}
+                filters={displayFilters}
+                onBack={handleBackToStudentAnalysis}
+              />
+            ) : (
+              <div className="cms-card cms-main-card">
+                <div className="cms-table-toolbar">
+                  {/* 2 Main Tabs */}
+                  <div className="cms-tab-bar">
                     <button
-                      className="cms-btn cms-btn-success"
-                      onClick={handleGlobalApproval}
+                      className={`cms-tab-btn ${activeTab === "evaluations" ? "cms-active" : ""}`}
+                      onClick={() => setActiveTab("evaluations")}
                     >
-                      Approve All
+                      Evaluation
                     </button>
-                    {/* <button className="cms-btn cms-btn-export" onClick={handleExport}>
+                    <button
+                      className={`cms-tab-btn ${activeTab === "studentAnalysis" ? "cms-active" : ""}`}
+                      onClick={() => setActiveTab("studentAnalysis")}
+                    >
+                      Student Analysis
+                    </button>
+                  </div>
+
+                  {activeTab === "evaluations" && (
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                      {/* Global Approval Button */}
+                      <button
+                        className="cms-btn cms-btn-success"
+                        disabled={!verifiedEvaluations.length}
+                        onClick={() => setShowApproveAllModal(true)}
+                      >
+                        Approve All
+                      </button>
+                      {/* <button className="cms-btn cms-btn-export" onClick={handleExport}>
                       Export Excel
                     </button> */}
 
+                      <div className="cms-search-wrap">
+                        <span className="cms-search-icon"><IconSearch /></span>
+                        <input
+                          type="text"
+                          className="cms-search-input"
+                          placeholder="Search subject, faculty, status..."
+                          value={evaluationSearchTerm}
+                          onChange={(e) => setEvaluationSearchTerm(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === "studentAnalysis" && (
                     <div className="cms-search-wrap">
                       <span className="cms-search-icon"><IconSearch /></span>
                       <input
                         type="text"
                         className="cms-search-input"
-                        placeholder="Search subject, faculty, status..."
-                        value={evaluationSearchTerm}
-                        onChange={(e) => setEvaluationSearchTerm(e.target.value)}
+                        placeholder="Search roll no, student..."
+                        value={studentAnalysisSearchTerm}
+                        onChange={(e) => setStudentAnalysisSearchTerm(e.target.value)}
                       />
                     </div>
-                  </div>
-                )}
-
-                {activeTab === "studentAnalysis" && (
-                  <div className="cms-search-wrap">
-                    <span className="cms-search-icon"><IconSearch /></span>
-                    <input
-                      type="text"
-                      className="cms-search-input"
-                      placeholder="Search roll no, student..."
-                      value={studentAnalysisSearchTerm}
-                      onChange={(e) => setStudentAnalysisSearchTerm(e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* Tab 1: Subject Evaluation */}
-              {activeTab === "evaluations" && (
-                <div className="cms-table-container">
-                  <table className="cms-table">
-                    <thead>
-                      <tr>
-                        <th className="cms-text-left">SUBJECT NAME</th>
-                        <th className="cms-text-left">FACULTY</th>
-                        <th className="cms-text-center">TOTAL MARKS</th>
-                        <th className="cms-text-center">STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEvaluations.length > 0 ? (
-                        filteredEvaluations.map((item) => {
-                          const statusStr = getCurrentStatus(item.subjectId, item.status);
-                          return (
-                            <tr
-                              key={item.subjectId}
-                              className="cms-clickable-row"
-                              onClick={() => handleRowClick(item)}
-                            >
-                              {/* Subject Column: Left Aligned Single Line */}
-                              <td className="cms-font-semibold cms-text-left cms-single-line">
-                                {item.subjectName} - {item.subjectCode}
-                              </td>
-
-                              {/* Faculty Column: Left Aligned Single Line */}
-                              <td className="cms-text-muted cms-text-left cms-single-line">
-                                {item.facultyName} - {item.facultyCode}
-                              </td>
-
-                              {/* Total Marks: Center Aligned */}
-                              <td className="cms-font-semibold cms-text-center">
-                                {item.obtainedMarks} / {item.totalMarks}
-                              </td>
-
-                              {/* Status Badge: Center Aligned */}
-                              <td className="cms-text-center">
-                                <StatusBadge status={statusStr} />
-                              </td>
-
-                            </tr>
-                          );
-                        })
-                      ) : (
-                        <tr>
-                          <td colSpan={4} className="cms-empty-td">
-                            No evaluations found matching search criteria.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
+                  )}
                 </div>
-              )}
 
-              {/* Tab 2: Student Analysis Table */}
-              {activeTab === "studentAnalysis" && (
-                <>
+                {/* Tab 1: Subject Evaluation */}
+                {activeTab === "evaluations" && (
                   <div className="cms-table-container">
                     <table className="cms-table">
                       <thead>
                         <tr>
-                          <th className="cms-text-left">ROLL NO</th>
-                          <th className="cms-text-left">STUDENT NAME</th>
-                          {currentGroupSubjects.map((subj, subjectIndex) => (
-                            <th key={evaluations[subjectIndex]?.subjectId || `${subj}-${subjectIndex}`} className="cms-text-center">
-                              {String(subj).toUpperCase()}
-                            </th>
-                          ))}
-                          <th className="cms-text-center">TOTAL MARKS</th>
-                          <th className="cms-text-center">GRADE</th>
+                          <th className="cms-text-left">SUBJECT NAME</th>
+                          <th className="cms-text-left">FACULTY</th>
+                          <th className="cms-text-center">AVERAGE MARKS</th>
+                          <th className="cms-text-center">STATUS</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredStudentMarks.length > 0 ? (
-                          paginatedStudentMarks.map((stu, index) => {
-                            const marksObj = stu.subjectMarks || {};
+                        {filteredEvaluations.length > 0 ? (
+                          filteredEvaluations.map((item) => {
+                            const statusStr = getCurrentStatus(item.status);
                             return (
-                              <tr key={stu.studentId || index} className="cms-idle-row">
-                                <td className="cms-font-semibold cms-text-left">
-                                  {stu.rollNo || "—"}
+                              <tr
+                                key={item.evaluationId}
+                                className="cms-clickable-row"
+                                onClick={() => handleRowClick(item)}
+                              >
+                                {/* Subject Column: Left Aligned Single Line */}
+                                <td className="cms-font-semibold cms-text-left cms-single-line">
+                                  {item.subjectName} - {item.subjectCode}
                                 </td>
-                                <td className="cms-text-left">{stu.studentName}</td>
 
-                                {currentGroupSubjects.map((subj, subjectIndex) => (
-                                  <td key={evaluations[subjectIndex]?.subjectId || `${subj}-${subjectIndex}`} className="cms-text-center">
-                                    {marksObj[evaluations[subjectIndex]?.subjectId] ?? "—"}
-                                  </td>
-                                ))}
+                                {/* Faculty Column: Left Aligned Single Line */}
+                                <td className="cms-text-muted cms-text-left cms-single-line">
+                                  {item.facultyName} - {item.facultyCode}
+                                </td>
 
-                                {/* Student Analysis Total: Centered */}
+                                {/* Total Marks: Center Aligned */}
                                 <td className="cms-font-semibold cms-text-center">
-                                  {stu.totalMarks} / {stu.maxTotal}
+                                  {item.averageMarks} / {item.totalMarks}
                                 </td>
 
-                                {/* Grade Badge: Centered */}
+                                {/* Status Badge: Center Aligned */}
                                 <td className="cms-text-center">
-                                  <span className={`cms-badge-grade cms-grade-${String(stu.grade || "A").toLowerCase().replace("+", "-plus")}`}>
-                                    {stu.grade || "A"}
-                                  </span>
+                                  <StatusBadge status={statusStr} />
                                 </td>
+
                               </tr>
                             );
                           })
                         ) : (
                           <tr>
-                            <td colSpan={currentGroupSubjects.length + 4} className="cms-empty-td">
-                              No student analysis available.
+                            <td colSpan={4} className="cms-empty-td">
+                              No evaluations found matching search criteria.
                             </td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
+                )}
 
-                  <div className="cms-pagination" aria-label="Student analysis pagination">
-                    <button
-                      className="cms-page-btn"
-                      disabled={safeStudentMarksPage === 1}
-                      onClick={() => setStudentMarksPage((page) => Math.max(1, page - 1))}
-                    >
-                      Previous
-                    </button>
-                    <span>
-                      Page {safeStudentMarksPage} of {studentMarksTotalPages}
-                    </span>
-                    <button
-                      className="cms-page-btn"
-                      disabled={safeStudentMarksPage === studentMarksTotalPages}
-                      onClick={() => setStudentMarksPage((page) => Math.min(studentMarksTotalPages, page + 1))}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+                {/* Tab 2: Student Analysis Table */}
+                {activeTab === "studentAnalysis" && (
+                  <>
+                    <div className="cms-table-container">
+                      <table className="cms-table">
+                        <thead>
+                          <tr>
+                            <th className="cms-text-left">ROLL NO</th>
+                            <th className="cms-text-left">STUDENT NAME</th>
+                            {evaluationSubjects.map((subject) => (
+                              <th key={subject.subjectId} className="cms-text-center">
+                                {String(subject.subjectName || "â€”").toUpperCase()}
+                              </th>
+                            ))}
+                            <th className="cms-text-center">TOTAL MARKS</th>
+                            <th className="cms-text-center">GRADE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredStudentMarks.length > 0 ? (
+                            paginatedStudentMarks.map((stu, index) => {
+                              const marksObj = stu.subjectMarks || {};
+                              return (
+                                <tr
+                                  key={stu.studentId || index}
+                                  className="cms-clickable-row"
+                                  onClick={() => handleStudentRowClick(stu)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      handleStudentRowClick(stu);
+                                    }
+                                  }}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`View detailed report for ${stu.studentName}`}
+                                >
+                                  <td className="cms-font-semibold cms-text-left">
+                                    {stu.rollNo || "—"}
+                                  </td>
+                                  <td className="cms-text-left">{stu.studentName}</td>
+
+                                  {evaluationSubjects.map((subject, subjectIndex) => (
+                                    <td key={subject.subjectId} className="cms-text-center">
+                                      {marksObj[evaluations[subjectIndex]?.subjectId] ?? "—"}
+                                    </td>
+                                  ))}
+
+                                  {/* Student Analysis Total: Centered */}
+                                  <td className="cms-font-semibold cms-text-center">
+                                    {stu.totalMarks} / {stu.maxTotal}
+                                  </td>
+
+                                  {/* Grade Badge: Centered */}
+                                  <td className="cms-text-center">
+                                    <span className={`cms-badge-grade cms-grade-${String(stu.grade || "A").toLowerCase().replace("+", "-plus")}`}>
+                                      {stu.grade || "A"}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={evaluationSubjects.length + 4} className="cms-empty-td">
+                                No student analysis available.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="cms-pagination" aria-label="Student analysis pagination">
+                      <button
+                        className="cms-page-btn"
+                        disabled={safeStudentMarksPage === 1}
+                        onClick={() => setStudentMarksPage((page) => Math.max(1, page - 1))}
+                      >
+                        Previous
+                      </button>
+                      <span>
+                        Page {safeStudentMarksPage} of {studentMarksTotalPages}
+                      </span>
+                      <button
+                        className="cms-page-btn"
+                        disabled={safeStudentMarksPage === studentMarksTotalPages}
+                        onClick={() => setStudentMarksPage((page) => Math.min(studentMarksTotalPages, page + 1))}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )
           ) : selectedEvaluation ? (
             /* Subject Detail View (Opened on Row Click) */
             <EvaluationDetailsView
               selectedEvaluation={selectedEvaluation}
-              currentStatus={getCurrentStatus(selectedEvaluation.subjectId, selectedEvaluation.status)}
+              currentStatus={getCurrentStatus(selectedEvaluation.status)}
               filters={displayFilters}
-              rows={editMode ? editableRows.slice(pageStart, pageStart + STUDENTS_PER_PAGE) : paginatedRows}
+              rows={paginatedRows}
               totalPages={totalPages}
               currentPage={safeCurrentPage}
               onBack={handleBackToEvaluations}
               onUpdateStatus={handleUpdateStatus}
-              editMode={editMode}
-              onEdit={() => setEditMode(true)}
-              onSave={handleSaveMarks}
-              onEditRow={(studentId, field, value) => setEditableRows((previous) => previous.map((row) =>
-                row.studentId === studentId ? { ...row, [field]: value } : row
-              ))}
-              onPreviousPage={() => setCurrentPage((page) => Math.max(1, page - 1))}
-              onNextPage={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              statusEditMode={statusEditMode}
+              pendingStatus={pendingStatus}
+              onEdit={handleEditStatus}
+              onSaveStatus={handleSaveStatusChanges}
+              onPreviousPage={() =>
+                setCurrentPage((page) => Math.max(1, page - 1))
+              }
+              onNextPage={() =>
+                setCurrentPage((page) =>
+                  Math.min(totalPages, page + 1)
+                )
+              }
             />
           ) : null
         ) : (
@@ -932,11 +1111,40 @@ export default function MarksEntryPage() {
                 </div>
               </div>
               <div className="cms-modal-foot">
-                <button className="cms-btn" onClick={() => { setShowRejectModal(false); setRejectReason(""); }}>
+                <button className="cms-btn" onClick={() => {
+                  setShowRejectModal(false);
+                  setRejectReason("");
+
+                  if (statusEditMode) {
+                    setPendingStatus(null);
+                  }
+                }}>
                   Cancel
                 </button>
                 <button className="cms-btn cms-btn-danger" disabled={rejectReason.trim().length < 5} onClick={handleRejectEvaluation}>
                   Confirm Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showApproveAllModal && (
+          <div className="cms-overlay" role="presentation">
+            <div className="cms-modal sm" role="dialog" aria-modal="true" aria-labelledby="approve-all-title">
+              <div className="cms-modal-head">
+                <h3 id="approve-all-title">Approve All Evaluations</h3>
+              </div>
+              <div className="cms-modal-body">
+                Approve All will apply only to the {verifiedEvaluations.length} VERIFIED evaluations in this selection context.
+              </div>
+              <div className="cms-modal-foot">
+                <button className="cms-btn" onClick={() => setShowApproveAllModal(false)}>Cancel</button>
+                <button className="cms-btn cms-btn-success" onClick={() => {
+                  setShowApproveAllModal(false);
+                  handleGlobalApproval();
+                }}>
+                  Confirm Approve All
                 </button>
               </div>
             </div>
@@ -980,14 +1188,15 @@ function EvaluationDetailsView({
   currentPage,
   onBack,
   onUpdateStatus,
-  editMode,
+  statusEditMode,
+  pendingStatus,
   onEdit,
-  onSave,
-  onEditRow,
+  onSaveStatus,
   onPreviousPage,
   onNextPage
 }) {
-  const practical = isPracticalSubject(selectedEvaluation?.subjectName);
+  const hasPractical = isPracticalSubject(selectedEvaluation?.subjectName)
+    || rows.some((row) => row.practicalMarks !== undefined || (row.practical !== undefined && row.practical !== "â€”"));
 
   return (
     <div className="cms-card cms-main-card cms-evaluation-details">
@@ -1028,7 +1237,7 @@ function EvaluationDetailsView({
               <th className="cms-text-left cms-sticky-roll">ROLL NO</th>
               <th className="cms-text-left cms-sticky-student">STUDENT NAME</th>
               <th className="cms-text-center">INTERNAL</th>
-              {practical && <th className="cms-text-center">PRACTICAL</th>}
+              {hasPractical && <th className="cms-text-center">PRACTICAL</th>}
               <th className="cms-text-center">THEORY</th>
               <th className="cms-text-center">TOTAL MARKS</th>
               <th className="cms-text-left">REMARKS</th>
@@ -1043,13 +1252,15 @@ function EvaluationDetailsView({
                     <td className="cms-font-semibold cms-text-left cms-sticky-roll">{row.rollNo}</td>
                     <td className="cms-text-left cms-sticky-student">{row.studentName}</td>
                     <td className="cms-text-center">
-                      {editMode ? <input className="cms-marks-input" type="number" value={row.internal === "—" ? "" : (row.internal ?? "")} onChange={(event) => onEditRow(row.studentId, "internal", event.target.value)} /> : row.internal}
+                      {row.internal}
                     </td>
-                    {practical && <td className="cms-text-center">
-                      {editMode ? <input className="cms-marks-input" type="number" value={row.practical === "—" ? "" : (row.practical ?? "")} onChange={(event) => onEditRow(row.studentId, "practical", event.target.value)} /> : row.practical}
-                    </td>}
+                    {hasPractical && (
+                      <td className="cms-text-center">
+                        {row.practical}
+                      </td>
+                    )}
                     <td className="cms-text-center">
-                      {editMode ? <input className="cms-marks-input" type="number" value={row.theory === "—" ? "" : (row.theory ?? "")} onChange={(event) => onEditRow(row.studentId, "theory", event.target.value)} /> : row.theory}
+                      {row.theory}
                     </td>
                     <td className="cms-font-semibold cms-text-center">{row.totalMarks}</td>
                     <td className="cms-text-left">{row.remarks}</td>
@@ -1059,7 +1270,7 @@ function EvaluationDetailsView({
               })
             ) : (
               <tr>
-                <td colSpan={8} className="cms-empty-td">No student mark details available.</td>
+                <td colSpan={hasPractical ? 8 : 7} className="cms-empty-td">No student mark details available.</td>
               </tr>
             )}
           </tbody>
@@ -1092,36 +1303,206 @@ function EvaluationDetailsView({
 
       {/* Admin Action Buttons & Read-Only Status Pills */}
       <div className="cms-modal-actions">
-        {currentStatus === "SUBMITTED" && (
+
+        {/* ======================================================
+      NORMAL REVIEW MODE
+      ====================================================== */}
+
+        {!statusEditMode && currentStatus === "SUBMITTED" && (
           <>
-            <button className="cms-btn cms-btn-info" onClick={() => onUpdateStatus(2)}><IconCheck /> Verify</button>
-            <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button>
+            <button
+              className="cms-btn cms-btn-info"
+              onClick={() => onUpdateStatus(2)}
+            >
+              <IconCheck />
+              Verify
+            </button>
+
+            <button
+              className="cms-btn cms-btn-danger"
+              onClick={() => onUpdateStatus(4)}
+            >
+              <IconXCircle />
+              Reject
+            </button>
+          </>
+        )}
+
+        {!statusEditMode && currentStatus === "VERIFIED" && (
+          <>
+            <span className="cms-status-pill cms-status-verified">
+              <IconCheck />
+              Verified
+            </span>
+
             <button
               className="cms-btn"
               onClick={onEdit}
             >
-              {editMode ? "Editing" : "Edit"}
+              Edit
             </button>
           </>
         )}
-        {currentStatus === "VERIFIED" && (
+
+        {/* ======================================================
+      APPROVED / REJECTED
+      Admin can reopen status decision using Edit.
+      ====================================================== */}
+
+        {!statusEditMode && currentStatus === "APPROVED" && (
           <>
-            <button className="cms-btn cms-btn-success" onClick={() => onUpdateStatus(3)}><IconCheck /> Approve</button>
-            <button className="cms-btn cms-btn-danger" onClick={() => onUpdateStatus(4)}><IconXCircle /> Reject</button>
-            <button className="cms-btn" onClick={onEdit}>{editMode ? "Editing" : "Edit"}</button>
+            <span className="cms-status-pill cms-status-approved">
+              <IconCheck />
+              Approved
+            </span>
+
+            <button
+              className="cms-btn"
+              onClick={onEdit}
+            >
+              Edit
+            </button>
           </>
         )}
-        {currentStatus === "APPROVED" && (
-          <span className="cms-status-pill cms-status-approved"><IconCheck /> Approved</span>
-        )}
-        {currentStatus === "REJECTED" && (
+
+        {!statusEditMode && currentStatus === "REJECTED" && (
           <>
-            <span className="cms-status-pill cms-status-rejected"><IconXCircle /> Rejected</span>
-            <button className="cms-btn" onClick={() => onUpdateStatus("edit")}>Restore</button>
+            <span className="cms-status-pill cms-status-rejected">
+              <IconXCircle />
+              Rejected
+            </span>
+
+            <button
+              className="cms-btn"
+              onClick={onEdit}
+            >
+              Edit
+            </button>
           </>
         )}
-        {editMode && <button className="cms-btn cms-btn-primary" onClick={onSave}>Save Changes</button>}
+
+        {/* ======================================================
+      STATUS EDIT MODE
+      ====================================================== */}
+
+        {statusEditMode && (
+          <>
+            <button
+              className={`cms-btn cms-btn-info ${pendingStatus === "VERIFIED"
+                ? "cms-btn-selected"
+                : ""
+                }`}
+              onClick={() => onUpdateStatus(2)}
+            >
+              <IconCheck />
+              Verify
+            </button>
+
+            <button
+              className={`cms-btn cms-btn-danger ${pendingStatus === "REJECTED"
+                ? "cms-btn-selected"
+                : ""
+                }`}
+              onClick={() => onUpdateStatus(4)}
+            >
+              <IconXCircle />
+              Reject
+            </button>
+
+            <button
+              className="cms-btn cms-btn-primary"
+              disabled={!pendingStatus}
+              onClick={onSaveStatus}
+            >
+              Save Changes
+            </button>
+          </>
+        )}
+
       </div>
+    </div>
+  );
+}
+
+function StudentDetailsView({ selectedStudent, studentDetails, filters, onBack }) {
+  const subjects = Array.isArray(studentDetails?.subjects) ? studentDetails.subjects : [];
+  const detail = {
+    rollNo: studentDetails?.rollNo ?? selectedStudent?.rollNo ?? "—",
+    studentName: studentDetails?.studentName ?? selectedStudent?.studentName ?? "—",
+    totalMarks: studentDetails?.totalMarks ?? selectedStudent?.totalMarks ?? "—",
+    maxMarks: studentDetails?.maxMarks ?? studentDetails?.maximumMarks ?? selectedStudent?.maxTotal ?? "—",
+    percentage: studentDetails?.percentage ?? "—",
+    grade: studentDetails?.grade ?? selectedStudent?.grade ?? "—",
+  };
+
+  return (
+    <div className="cms-card cms-main-card cms-student-details">
+      <div className="cms-details-header">
+        <div>
+          <button className="cms-back-btn" onClick={onBack}>← Back To Student Analysis</button>
+          <h2 className="cms-details-title">Student Detailed Report</h2>
+          <span className="cms-details-subtitle">Subject-wise marks and academic performance</span>
+        </div>
+      </div>
+
+      <div className="cms-details-section">
+        <h3 className="cms-details-section-title">Student Information</h3>
+        <div className="cms-detail-grid cms-student-info-grid">
+          <DetailCard label="Roll Number" value={detail.rollNo} />
+          <DetailCard label="Student Name" value={detail.studentName} />
+          <DetailCard label="Group" value={filters.group} />
+          <DetailCard label="Section" value={filters.section} />
+          <DetailCard label="Examination" value={filters.examination} />
+          <DetailCard label="Grade" value={detail.grade} />
+          <DetailCard label="Percentage" value={detail.percentage === "—" ? "—" : `${detail.percentage}%`} />
+        </div>
+      </div>
+
+      <div className="cms-table-container cms-details-table-wrap">
+        <table className="cms-table cms-details-table">
+          <thead>
+            <tr>
+              <th className="cms-text-left">SUBJECT</th>
+              <th className="cms-text-center">INTERNAL</th>
+              <th className="cms-text-center">PRACTICAL</th>
+              <th className="cms-text-center">THEORY</th>
+              <th className="cms-text-center">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subjects.length ? subjects.map((subject, index) => (
+              <tr key={subject.subjectId ?? index}>
+                <td className="cms-font-semibold cms-text-left">{subject.subjectName ?? "—"}</td>
+                <td className="cms-text-center">{subject.internal ?? "—"}</td>
+                <td className="cms-text-center">{subject.practical ?? "—"}</td>
+                <td className="cms-text-center">{subject.theory ?? "—"}</td>
+                <td className="cms-font-semibold cms-text-center">{subject.total ?? subject.totalMarks ?? "—"}</td>
+              </tr>
+            )) : (
+              <tr><td colSpan={5} className="cms-empty-td">No subject mark details available.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="cms-details-section">
+        <h3 className="cms-details-section-title">Performance Summary</h3>
+        <div className="cms-detail-grid cms-summary-grid">
+          <DetailCard label="Total Marks" value={detail.totalMarks} />
+          <DetailCard label="Maximum Marks" value={detail.maxMarks} />
+          <DetailCard label="Percentage" value={detail.percentage === "—" ? "—" : `${detail.percentage}%`} />
+          <DetailCard label="Grade" value={detail.grade} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailCard({ label, value }) {
+  return (
+    <div className="cms-detail-card">
+      <span className="cms-detail-label">{label}</span>
+      <span className="cms-detail-value">{value}</span>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, X, AlertTriangle, Eye, EyeOff } from "lucide-react";
 
@@ -37,7 +37,7 @@ export function Toast({ message, onClose, type = "success" }) {
   );
 }
 
-export function Modal({ title, children, footer, onClose, size }) {
+export function Modal({ title, children, footer, onClose, size, className = "" }) {
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
     const previousOverflow = document.body.style.overflow;
@@ -49,7 +49,7 @@ export function Modal({ title, children, footer, onClose, size }) {
 
   const dialog = (
     <div className="cms-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`cms-modal ${size === "sm" ? "sm" : ""}`} role="dialog" aria-modal="true">
+      <div className={`cms-modal ${size === "sm" ? "sm" : ""} ${className}`.trim()} role="dialog" aria-modal="true">
         <div className="cms-modal-head">
           <h3>{title}</h3>
           <button className="cms-action-btn" onClick={onClose} aria-label="Close">
@@ -66,24 +66,22 @@ export function Modal({ title, children, footer, onClose, size }) {
   return createPortal(dialog, document.body);
 }
 
-export function ConfirmDialog({ title = "Delete record", message, onCancel, onConfirm, loading = false }) {
+export function ConfirmDialog({ title = "Confirm action", message, onCancel, onConfirm, loading = false, confirmLabel = "Confirm", loadingLabel = "Please wait...", danger = false }) {
   return (
     <Modal
       title={title}
       size="sm"
+      className="cms-confirm-dialog"
       onClose={loading ? () => {} : onCancel}
       footer={
         <>
           <button className="cms-btn cms-btn-ghost" onClick={onCancel} disabled={loading}>Cancel</button>
-          <button className="cms-btn cms-btn-danger" onClick={onConfirm} disabled={loading}>{loading ? "Deleting..." : "Yes, delete"}</button>
+          <button className={`cms-btn ${danger ? "cms-btn-danger" : "cms-btn-primary"}`} onClick={onConfirm} disabled={loading}>{loading ? loadingLabel : confirmLabel}</button>
         </>
       }
     >
-      <div style={{ display: "flex", gap: 12 }}>
-        <span className="cms-stat-icon" style={{ background: "var(--cms-red-soft)", color: "var(--cms-red)" }}>
-          <AlertTriangle size={20} />
-        </span>
-        <p style={{ margin: 0, color: "var(--cms-muted)" }}>
+      <div className={`cms-confirm-content ${danger ? "is-danger" : ""}`}>
+        <p className="cms-confirm-message">
           {message || "This action cannot be undone. Are you sure you want to delete this record?"}
         </p>
       </div>
@@ -91,7 +89,34 @@ export function ConfirmDialog({ title = "Delete record", message, onCancel, onCo
   );
 }
 
-export function Field({ field, value, error, onChange }) {
+export function useConfirmDialog() {
+  const [options, setOptions] = useState(null);
+  const resolverRef = useRef(null);
+
+  const confirm = useCallback((nextOptions) => new Promise((resolve) => {
+    resolverRef.current = resolve;
+    setOptions(typeof nextOptions === "string" ? { message: nextOptions } : nextOptions);
+  }), []);
+
+  const finish = useCallback((result) => {
+    const resolve = resolverRef.current;
+    resolverRef.current = null;
+    setOptions(null);
+    resolve?.(result);
+  }, []);
+
+  const confirmationDialog = options ? (
+    <ConfirmDialog
+      {...options}
+      onCancel={() => finish(false)}
+      onConfirm={() => finish(true)}
+    />
+  ) : null;
+
+  return { confirm, confirmationDialog };
+}
+
+export function Field({ field, value, error, onChange, onBlur }) {
   const { name, label, type = "text", options = [], required, placeholder, full, disabled = false } = field;
   const id = `f-${name}`;
   const [reveal, setReveal] = useState(false);
@@ -107,14 +132,14 @@ export function Field({ field, value, error, onChange }) {
         {label} {required ? <span className="req">*</span> : null}
       </label>
       {type === "select" ? (
-        <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)}>
+        <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)} onBlur={() => onBlur?.(name)}>
           <option value="">Select {label}</option>
           {normalizedOptions.map((o, index) => (
             <option key={`${o.value}-${index}`} value={o.value}>{o.label}</option>
           ))}
         </select>
       ) : type === "textarea" ? (
-        <textarea id={id} value={value ?? ""} disabled={disabled} placeholder={placeholder} onChange={(e) => onChange(name, e.target.value)} />
+        <textarea id={id} value={value ?? ""} disabled={disabled} placeholder={placeholder} onChange={(e) => onChange(name, e.target.value)} onBlur={() => onBlur?.(name)} />
       ) : type === "checkbox" ? (
         <span className="cms-check">
           <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => onChange(name, e.target.checked)} />
@@ -129,6 +154,7 @@ export function Field({ field, value, error, onChange }) {
             disabled={disabled}
             placeholder={placeholder || label}
             onChange={(e) => onChange(name, e.target.value)}
+            onBlur={() => onBlur?.(name)}
           />
           <button
             type="button"
@@ -147,7 +173,7 @@ export function Field({ field, value, error, onChange }) {
           value={value ?? ""}
           disabled={disabled}
           placeholder={placeholder || label}
-          onChange={(e) => onChange(name, e.target.value)}
+          onChange={(e) => onChange(name, e.target.value)} onBlur={() => onBlur?.(name)}
         />
       )}
       {error ? <span className="cms-error">{error}</span> : null}

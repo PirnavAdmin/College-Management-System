@@ -3,7 +3,11 @@
 .dashboard-update-meta small { font-size: 11px; white-space: nowrap; }
 .dashboard-loader { min-height: 300px; display: grid; place-items: center; }
 .dashboard-warning { margin-bottom: 16px; padding: 10px 13px; border: 1px solid #f0d098; border-radius: 10px; color: #925c08; background: #fff8e8; font-size: 12px; }
-.dashboard-kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.dashboard-kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.dashboard-kpi-link { min-width: 0; color: inherit; text-decoration: none; border-radius: 12px; }
+.dashboard-kpi-link .cms-stat { height: 100%; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+.dashboard-kpi-link:hover .cms-stat { border-color: color-mix(in srgb, var(--cms-primary) 35%, var(--cms-border)); box-shadow: 0 8px 20px rgb(15 23 42 / 8%); transform: translateY(-1px); }
+.dashboard-kpi-link:focus-visible { outline: 2px solid var(--cms-primary); outline-offset: 2px; }
 .dashboard-kpi-grid .cms-stat {
   min-width: 0;
   display: grid;

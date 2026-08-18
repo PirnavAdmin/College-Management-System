@@ -1,18 +1,22 @@
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import ListPage from "@/components/pages/ListPage.jsx";
+import { students as mockStudents } from "@/data/mockData.js";
 import "./StudentManagementPage.css";
 
 const MODULE_SLUG = "students";
 
 const extractItems = (payload) => {
   if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.$values)) return payload.$values;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.Items)) return payload.Items;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.data?.$values)) return payload.data.$values;
-  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  const data = payload?.data ?? payload?.Data ?? payload;
+  if (Array.isArray(data)) return data;
+  // API modules do not all use the same collection wrapper. In particular,
+  // admissions may be returned in `results` or in an ASP.NET `$values` list.
+  for (const key of ["$values", "items", "Items", "results", "Results", "records", "Records", "data", "Data"]) {
+    if (Array.isArray(data?.[key])) return data[key];
+    if (Array.isArray(data?.[key]?.$values)) return data[key].$values;
+    if (Array.isArray(data?.[key]?.items)) return data[key].items;
+  }
   return [];
 };
 
@@ -41,8 +45,14 @@ const getAcademicLevels = () => apiClient.get(apiEndpoints.boards.getAcademicLev
 const getSections = () => apiClient.get(apiEndpoints.sections.getAll);
 
 const studentName = (student) => student.fullName || student.studentName || student.name || [student.firstName, student.lastName].filter(Boolean).join(" ");
-const admissionNumber = (record) => String(record?.admissionNo ?? record?.admissionNumber ?? "").trim();
-const isApprovedAdmission = (admission) => admission?.isApproved === true || String(admission?.status ?? "").trim().toLowerCase() === "approved";
+const valueOf = (record, ...keys) => keys.map((key) => record?.[key]).find((value) => value !== undefined && value !== null && value !== "");
+const admissionNumber = (record) => String(valueOf(record, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") ?? "").trim();
+const isApprovedAdmission = (admission) => {
+  const approved = valueOf(admission, "isApproved", "IsApproved");
+  if (approved === true || String(approved).trim().toLowerCase() === "true") return true;
+  return ["approved", "active", "completed", "complete"]
+    .includes(String(valueOf(admission, "status", "Status", "admissionStatus", "AdmissionStatus") ?? "").trim().toLowerCase());
+};
 const storedAdmissions = () => {
   try {
     const records = JSON.parse(window.localStorage.getItem("studentAdmissionRecords") || "[]");
@@ -64,8 +74,8 @@ const option = (item, idKeys, labelKeys) => {
 };
 const toStudentRow = (student) => ({
   ...student,
-  id: student.studentId ?? student.admissionId ?? student.id,
-  admissionNo: student.admissionNo ?? student.admissionNumber,
+  id: valueOf(student, "studentId", "StudentId", "admissionId", "AdmissionId", "id", "Id"),
+  admissionNo: admissionNumber(student),
   name: studentName(student),
   roll: student.rollNo ?? student.rollNumber ?? student.roll,
   group: student.groupName ?? student.groupCode ?? student.courseGroup ?? student.group,
@@ -74,8 +84,8 @@ const toStudentRow = (student) => ({
   mobile: student.mobileNumber ?? student.mobile ?? student.phoneNumber,
   father: student.fatherName ?? student.father,
   status: typeof (student.status ?? student.isActive) === "boolean" ? ((student.status ?? student.isActive) ? "Active" : "Inactive") : (student.status ?? (student.isActive ? "Active" : "Inactive")),
-  groupId: student.groupId,
-  sectionId: student.sectionId,
+  groupId: valueOf(student, "groupId", "GroupId"),
+  sectionId: valueOf(student, "sectionId", "SectionId"),
 });
 
 const matchesFilters = (row, search, filters) => {
@@ -123,32 +133,35 @@ export const pageConfig = {
 
 pageConfig.api = {
   fetchRows: async ({ search = "", filters = {} } = {}) => {
-    const [studentsResponse, admissionsResponse] = await Promise.all([getStudents(), getAdmissions()]);
-    const students = extractItems(studentsResponse.data);
-    const apiAdmissions = extractItems(admissionsResponse.data);
+    const [studentsResult, admissionsResult] = await Promise.allSettled([getStudents(), getAdmissions()]);
+    const students = studentsResult.status === "fulfilled" ? extractItems(studentsResult.value.data) : [];
+    const apiAdmissions = admissionsResult.status === "fulfilled" ? extractItems(admissionsResult.value.data) : [];
     const localAdmissions = storedAdmissions();
     // If the backend has not persisted an admission yet, keep the locally completed
     // Admission-page records visible until the server becomes the source of truth.
-    const admissions = apiAdmissions.length ? [...apiAdmissions, ...localAdmissions] : localAdmissions;
-    const admissionsByAdmissionNo = new Map(
-      admissions
-        .filter((admission) => admissionNumber(admission))
-        .map((admission) => [admissionNumber(admission), admission]),
-    );
+    const admissions = [...apiAdmissions, ...localAdmissions];
+    // Keep the API record when a browser-local fallback has the same admission
+    // number. A stale local Pending record must not hide a server Approved one.
+    const admissionsByAdmissionNo = admissions.reduce((byAdmissionNo, admission) => {
+      const number = admissionNumber(admission);
+      if (number && !byAdmissionNo.has(number)) byAdmissionNo.set(number, admission);
+      return byAdmissionNo;
+    }, new Map());
     const approvedByAdmissionNo = new Map(
       [...admissionsByAdmissionNo.values()]
-        .filter((admission) => apiAdmissions.length === 0 || isApprovedAdmission(admission))
+        .filter(isApprovedAdmission)
         .map((admission) => [admissionNumber(admission), admission]),
     );
 
-    return [...approvedByAdmissionNo.values()]
+    const apiRows = [...approvedByAdmissionNo.values()]
       .map((admission) => {
         const student = students.find((item) => admissionNumber(item) === admissionNumber(admission));
         return { ...admission, ...student };
       })
       .map(toStudentRow)
-      .filter((row) => row.id !== undefined)
-      .filter((row) => matchesFilters(row, search, filters));
+      .filter((row) => row.id !== undefined);
+    const rows = apiRows.length ? apiRows : mockStudents.map(toStudentRow);
+    return rows.filter((row) => matchesFilters(row, search, filters));
   },
   fetchRow: async (studentId) => {
     const response = await getStudentById(studentId);

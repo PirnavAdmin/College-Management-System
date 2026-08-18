@@ -89,6 +89,7 @@ export function ConfirmDialog({ title = "Confirm action", message, onCancel, onC
   );
 }
 
+<<<<<<< HEAD
 export function useConfirmDialog() {
   const [options, setOptions] = useState(null);
   const resolverRef = useRef(null);
@@ -117,6 +118,9 @@ export function useConfirmDialog() {
 }
 
 export function Field({ field, value, error, onChange }) {
+=======
+export function Field({ field, value, error, onChange, onBlur }) {
+>>>>>>> 9f9f6df17957e341f25fbc4b8c85d67a6b35d38b
   const { name, label, type = "text", options = [], required, placeholder, full, disabled = false } = field;
   const id = `f-${name}`;
   const [reveal, setReveal] = useState(false);
@@ -132,14 +136,14 @@ export function Field({ field, value, error, onChange }) {
         {label} {required ? <span className="req">*</span> : null}
       </label>
       {type === "select" ? (
-        <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)}>
+        <select id={id} value={value ?? ""} disabled={disabled} onChange={(e) => onChange(name, e.target.value)} onBlur={() => onBlur?.(name)}>
           <option value="">Select {label}</option>
           {normalizedOptions.map((o, index) => (
             <option key={`${o.value}-${index}`} value={o.value}>{o.label}</option>
           ))}
         </select>
       ) : type === "textarea" ? (
-        <textarea id={id} value={value ?? ""} disabled={disabled} placeholder={placeholder} onChange={(e) => onChange(name, e.target.value)} />
+        <textarea id={id} value={value ?? ""} disabled={disabled} placeholder={placeholder} onChange={(e) => onChange(name, e.target.value)} onBlur={() => onBlur?.(name)} />
       ) : type === "checkbox" ? (
         <span className="cms-check">
           <input id={id} type="checkbox" disabled={disabled} checked={!!value} onChange={(e) => onChange(name, e.target.checked)} />
@@ -172,7 +176,7 @@ export function Field({ field, value, error, onChange }) {
           value={value ?? ""}
           disabled={disabled}
           placeholder={placeholder || label}
-          onChange={(e) => onChange(name, e.target.value)}
+          onChange={(e) => onChange(name, e.target.value)} onBlur={() => onBlur?.(name)}
         />
       )}
       {error ? <span className="cms-error">{error}</span> : null}

@@ -107,6 +107,18 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
     let mounted = true;
     const loadFilterOptions = async () => {
       const fields = sectionConfig.filters || [];
+      if (sectionConfig.api?.loadFilters) {
+        try {
+          const loaded = await sectionConfig.api.loadFilters(fields);
+          if (mounted) setFilterFields(Array.isArray(loaded) ? loaded : fields);
+        } catch (err) {
+          if (mounted) {
+            setFilterFields(fields);
+            setError(getApiErrorMessage(err));
+          }
+        }
+        return;
+      }
       const loaded = await Promise.all(fields.map(async (field) => {
         if (!field.loadOptions) return field;
         try {

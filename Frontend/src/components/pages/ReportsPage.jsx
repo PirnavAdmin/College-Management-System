@@ -39,11 +39,10 @@ const EMPTY_REPORTS = {
 const REPORTS_API_VERSION = "1.0";
 const REPORTS_API_BASE_URL = String(
   import.meta.env.VITE_REPORTS_API_BASE_URL
-    || "https://movable-swampland-tinderbox.ngrok-free.dev",
+    
 ).replace(/\/$/, "");
 const CMS_API_BASE_URL = String(
   import.meta.env.VITE_API_BASE_URL
-    || "https://sterile-retorted-tightness.ngrok-free.dev",
 ).replace(/\/$/, "");
 const module18Endpoint = (path) => `${REPORTS_API_BASE_URL}/api/module18-reports${path}`;
 const cmsEndpoint = (path) => `${CMS_API_BASE_URL}${path}`;

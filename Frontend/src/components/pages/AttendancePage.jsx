@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
+import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import { sections as mockSections } from "@/data/mockData.js";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -67,6 +67,7 @@ const mapPercentageRow = (r) => ({
 export default function AttendancePage() {
   const today = new Date().toISOString().split("T")[0];
   const [toast, setToast] = useState("");
+  const { confirm, confirmationDialog } = useConfirmDialog();
 
   // ---- Shared lookup data (loaded once, used across all sections) ----
   const [boards, setBoards] = useState([]);
@@ -406,7 +407,13 @@ const [rows, setRows] = useState([]);
       setToast("This session is locked. Ask an admin to unlock it first.");
       return;
     }
-    if (!window.confirm(`Delete attendance record for ${record.name} on ${record.date}?`)) return;
+    const confirmed = await confirm({
+      title: "Delete attendance record",
+      message: `Delete attendance record for ${record.name} on ${record.date}?`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
     setSavingId(record.attendanceId);
     try {
       await apiClient.delete(apiEndpoints.attendance.delete(record.attendanceId));
@@ -956,6 +963,7 @@ const [rows, setRows] = useState([]);
         )}
       </div>
 
+      {confirmationDialog}
       <Toast message={toast} onClose={() => setToast("")} />
     </DashboardLayout>
   );

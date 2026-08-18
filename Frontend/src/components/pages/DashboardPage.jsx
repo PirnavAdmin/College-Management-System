@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, ArrowUpRight, BookOpen, CalendarCheck, CalendarClock, GraduationCap, RefreshCw, TrendingUp, Users } from "lucide-react";
+import { Activity, ArrowUpRight, BookOpen, CalendarCheck, CalendarClock, GraduationCap, TrendingUp, Users } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -249,16 +249,14 @@ export default function DashboardPage() {
   const [data, setData] = useState(initialData);
   const [failures, setFailures] = useState({});
   const [loading, setLoading] = useState(() => !initialCache);
-  const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(() => initialCache ? new Date(initialCache.savedAt) : null);
   const mounted = useRef(true);
   const requestInFlight = useRef(false);
   const dataRef = useRef(initialData);
 
-  const loadData = useCallback(async ({ initial = false } = {}) => {
+  const loadData = useCallback(async () => {
     if (requestInFlight.current) return;
     requestInFlight.current = true;
-    if (!initial) setRefreshing(true);
     try {
       const attendanceDay = localCalendarDate();
       const succeeded = {};
@@ -354,7 +352,6 @@ export default function DashboardPage() {
       requestInFlight.current = false;
       if (mounted.current) {
         setLoading(false);
-        setRefreshing(false);
       }
     }
   }, []);
@@ -365,7 +362,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    loadData({ initial: true });
+    loadData();
   }, [loadData]);
 
   const activeAcademicYear = data.activeAcademicYear?.id ? data.activeAcademicYear : null;
@@ -395,13 +392,13 @@ export default function DashboardPage() {
 
   const chart = (content, available) => <div className="dashboard-chart-body">{available ? content : <Empty />}</div>;
   const hasApplications = admissionTrend.some((item) => item.applications !== undefined);
-  return <DashboardLayout title="Dashboard" subtitle="Institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-refresh-meta"><button className="dashboard-refresh" type="button" onClick={() => loadData()} disabled={refreshing}>{refreshing ? <RefreshCw size={14} className="spin" /> : <RefreshCw size={14} />} {refreshing ? "Refreshing..." : "Refresh"}</button><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/admission" className="cms-btn cms-btn-ghost">New Admission</Link><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
+  return <DashboardLayout title="Dashboard" subtitle="Institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-update-meta"><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/admission" className="cms-btn cms-btn-ghost">New Admission</Link><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
     {loading ? <div className="cms-card dashboard-loader"><Loader label="Loading dashboard..." /></div> : <>
       {Object.keys(failures).length ? <div className="dashboard-warning">Some dashboard sources are unavailable. Successfully loaded widgets remain available.</div> : null}
       <div className="dashboard-kpi-grid">{kpis.map(({ label: name, value, icon: Icon, tone, type }) => <article className="cms-stat" key={name}><span className={`cms-stat-icon tone-${tone}`}><Icon size={20} /></span><div><div className="cms-stat-label">{name}</div><div className="cms-stat-value">{formatValue(value, type)}</div></div></article>)}</div>
       <div className="dashboard-grid dashboard-grid-2">
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>{admissionsLabel}</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ bottom: 28 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="period" interval={0} angle={-30} textAnchor="end" height={58} /><YAxis allowDecimals={false} tickFormatter={(value) => Math.round(value)} /><Tooltip labelFormatter={(value) => value} formatter={(value, name) => [Number(value), name === "admissions" ? "Admissions" : "Applications"]} /><Legend /><Area dataKey="admissions" stroke="#1d4ed8" fill="#dbeafe" />{hasApplications ? <Area dataKey="applications" stroke="#6d28d9" fillOpacity={0} /> : null}</AreaChart></ResponsiveContainer>, admissionTrend.length > 0)}</section>
-        <section className="cms-card dashboard-widget dashboard-group-card"><div className="cms-card-head"><h2>Group Distribution</h2></div>{groupDistribution.length ? <div className="dashboard-group-body"><div className="dashboard-group-chart"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2} isAnimationActive={false}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [new Intl.NumberFormat("en-IN").format(value), "Students"]} /></PieChart></ResponsiveContainer><div className="dashboard-group-total"><strong>{new Intl.NumberFormat("en-IN").format(groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-legend">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ background: COLORS[index % COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{new Intl.NumberFormat("en-IN").format(item.value)}</strong><em>{groupTotal > 0 ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0.0%"}</em></div>)}</div></div> : <Empty />}</section>
+        <section className="cms-card dashboard-widget dashboard-group-card"><div className="cms-card-head"><h2>Group Distribution</h2></div>{groupDistribution.length ? <div className="dashboard-group-body"><div className="dashboard-group-chart">{groupTotal > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2} isAnimationActive={false}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [new Intl.NumberFormat("en-IN").format(value), "Students"]} /></PieChart></ResponsiveContainer> : <div className="dashboard-group-empty-ring" aria-hidden="true" />}<div className="dashboard-group-total"><strong>{new Intl.NumberFormat("en-IN").format(groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-legend">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ background: COLORS[index % COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{new Intl.NumberFormat("en-IN").format(item.value)}</strong><em>{groupTotal > 0 ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0.0%"}</em></div>)}</div></div> : <Empty />}</section>
         <section className="cms-card dashboard-widget dashboard-attendance-card"><div className="cms-card-head"><h2>Student Attendance ({currentAttendanceDay.displayDate})</h2></div>{attendanceForToday.hasData ? <div className="dashboard-attendance-daily">{attendanceForToday.percentage !== undefined ? <div className="dashboard-attendance-rate"><strong>{formatValue(attendanceForToday.percentage, "percent")}</strong><span>Attendance</span></div> : null}<div className="dashboard-attendance-metrics">{[["Total", attendanceForToday.total], ["Present", attendanceForToday.present], ["Absent", attendanceForToday.absent]].filter(([, value]) => value !== undefined).map(([name, value]) => <div key={name}><span>{name}</span><strong>{new Intl.NumberFormat("en-IN").format(value)}</strong></div>)}</div></div> : <Empty text={failures.attendance ? "Unable to load today's attendance." : "No attendance marked for today."} />}</section>
         <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Faculty Workload</h2></div>{chart(<ResponsiveContainer width="100%" height="100%"><BarChart data={workload} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis dataKey="name" type="category" width={85} /><Tooltip /><Bar dataKey="hours" fill="#6d28d9" /></BarChart></ResponsiveContainer>, workload.length > 0)}</section>
       </div>

@@ -89,7 +89,6 @@ export function ConfirmDialog({ title = "Confirm action", message, onCancel, onC
   );
 }
 
-<<<<<<< HEAD
 export function useConfirmDialog() {
   const [options, setOptions] = useState(null);
   const resolverRef = useRef(null);
@@ -117,10 +116,7 @@ export function useConfirmDialog() {
   return { confirm, confirmationDialog };
 }
 
-export function Field({ field, value, error, onChange }) {
-=======
 export function Field({ field, value, error, onChange, onBlur }) {
->>>>>>> 9f9f6df17957e341f25fbc4b8c85d67a6b35d38b
   const { name, label, type = "text", options = [], required, placeholder, full, disabled = false } = field;
   const id = `f-${name}`;
   const [reveal, setReveal] = useState(false);
@@ -158,6 +154,7 @@ export function Field({ field, value, error, onChange, onBlur }) {
             disabled={disabled}
             placeholder={placeholder || label}
             onChange={(e) => onChange(name, e.target.value)}
+            onBlur={() => onBlur?.(name)}
           />
           <button
             type="button"

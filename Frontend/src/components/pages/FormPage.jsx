@@ -100,7 +100,6 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
         if (autoValue !== undefined) setValue(name, autoValue);
       });
     });
-ap
     return () => { ignore = true; };
   }, [dependentFieldValues, sectionConfig, values]);
 

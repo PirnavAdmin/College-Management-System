@@ -220,6 +220,7 @@
     conduct: "/api/certificates/conduct",
     fee: "/api/certificates/fee",
     tc: "/api/certificates/tc",
+    other: "/api/certificates/other",
     history: "/api/certificates/history",
     download: (id) => `/api/certificates/download/${id}`,
     verify: (certificateNo) => `/api/certificates/verify/${encodeURIComponent(certificateNo)}`,

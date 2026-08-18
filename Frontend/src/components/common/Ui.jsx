@@ -92,7 +92,7 @@ export function ConfirmDialog({ title = "Delete record", message, onCancel, onCo
 }
 
 export function Field({ field, value, error, onChange }) {
-  const { name, label, type = "text", options = [], required, placeholder, full, disabled = false } = field;
+  const { name, label, type = "text", options = [], required, placeholder, full, disabled = false, min, max, step } = field;
   const id = `f-${name}`;
   const [reveal, setReveal] = useState(false);
   const isPassword = type === "password";
@@ -147,10 +147,29 @@ export function Field({ field, value, error, onChange }) {
           value={value ?? ""}
           disabled={disabled}
           placeholder={placeholder || label}
-          onChange={(e) => onChange(name, e.target.value)}
+          min={min}
+          max={max}
+          step={step}
+          onKeyDown={(e) => {
+            if (type === "number" && Number(min) >= 0 && (e.key === "-" || e.key === "Subtract" || e.key === "e" || e.key === "E")) {
+              e.preventDefault();
+            }
+          }}
+          onPaste={(e) => {
+            if (type === "number" && Number(min) >= 0) {
+              const pasted = e.clipboardData.getData("text");
+              if (pasted.trim().startsWith("-")) e.preventDefault();
+            }
+          }}
+          onChange={(e) => {
+            let raw = e.target.value;
+            if (type === "number" && raw !== "" && min !== undefined && Number(raw) < Number(min)) {
+              raw = String(min);
+            }
+            onChange(name, raw);
+          }}
         />
-      )}
-      {error ? <span className="cms-error">{error}</span> : null}
+      )}    {error ? <span className="cms-error">{error}</span> : null}
     </div>
   );
 }
@@ -174,6 +193,10 @@ export function useForm(fields, initial) {
         next[f.name] = "Enter a valid 10 digit mobile number";
       } else if (f.type === "number" && val && Number.isNaN(Number(val))) {
         next[f.name] = "Enter a valid number";
+      } else if (f.type === "number" && val !== "" && f.min !== undefined && Number(val) < Number(f.min)) {
+        next[f.name] = `${f.label} must be at least ${f.min}`;
+      } else if (f.type === "number" && val !== "" && f.max !== undefined && Number(val) > Number(f.max)) {
+        next[f.name] = `${f.label} must be no more than ${f.max}`;
       }
     });
     setErrors(next);

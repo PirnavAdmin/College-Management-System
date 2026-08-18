@@ -1417,7 +1417,7 @@ function StudentDetailsView({ selectedStudent, studentDetails, filters, onBack }
               <tr><td colSpan={5} className="cms-empty-td">No subject mark details available.</td></tr> 
             )} 
           </tbody> 
-        </table> ,
+        </table> 
       </div> 
  
       <div className="cms-details-section"> 

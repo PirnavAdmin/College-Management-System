@@ -1,407 +1,528 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+
 import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import { sections as mockSections } from "@/data/mockData.js";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
+
 import "./AttendancePage.css";
 
 const marksList = ["Present", "Absent", "Late", "Leave"];
-const defaultSectionNames = ["Section A", "Section B"];
 
-// Maps UI labels to the numeric status codes the backend expects.
-// Confirm against the AttendanceStatus enum in Swagger's "Schemas" section.
-const statusMap = { Present: 1, Absent: 2, Late: 3, Leave: 4 };
-const reverseStatusMap = { 1: "Present", 2: "Absent", 3: "Late", 4: "Leave" };
+const today = new Date().toISOString().split("T")[0];
 
-const unwrapList = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.Data || data?.items || data?.Items || [];
+/* ============================================================
+   STATIC STUDENT DATA
+   ============================================================ */
+
+const mockStudents = [
+  {
+    id: 1,
+    roll: "101",
+    name: "Aarav Kumar",
+    group: "MPC",
+    section: "Section A",
+  },
+  {
+    id: 2,
+    roll: "102",
+    name: "Rahul Sharma",
+    group: "MPC",
+    section: "Section A",
+  },
+  {
+    id: 3,
+    roll: "103",
+    name: "Priya Reddy",
+    group: "MPC",
+    section: "Section A",
+  },
+  {
+    id: 4,
+    roll: "104",
+    name: "Sneha Rao",
+    group: "MPC",
+    section: "Section A",
+  },
+  {
+    id: 5,
+    roll: "105",
+    name: "Kiran Kumar",
+    group: "MPC",
+    section: "Section B",
+  },
+  {
+    id: 6,
+    roll: "106",
+    name: "Anjali Devi",
+    group: "MPC",
+    section: "Section B",
+  },
+  {
+    id: 7,
+    roll: "107",
+    name: "Vijay Sai",
+    group: "MPC",
+    section: "Section B",
+  },
+  {
+    id: 8,
+    roll: "108",
+    name: "Pooja Reddy",
+    group: "MPC",
+    section: "Section B",
+  },
+];
+
+/* ============================================================
+   STATIC FACULTY DATA
+   ============================================================ */
+
+const mockFaculty = [
+  {
+    id: 1,
+    employeeId: "FAC001",
+    name: "Dr. Ramesh Kumar",
+    department: "Mathematics",
+  },
+  {
+    id: 2,
+    employeeId: "FAC002",
+    name: "Suresh Reddy",
+    department: "Physics",
+  },
+  {
+    id: 3,
+    employeeId: "FAC003",
+    name: "Lakshmi Devi",
+    department: "Chemistry",
+  },
+  {
+    id: 4,
+    employeeId: "FAC004",
+    name: "Anitha Rao",
+    department: "English",
+  },
+  {
+    id: 5,
+    employeeId: "FAC005",
+    name: "Prakash Kumar",
+    department: "Computer Science",
+  },
+];
+
+/* ============================================================
+   INITIAL STUDENT HISTORY
+   Only these 8 students are used.
+   ============================================================ */
+
+const initialStudentHistory = [
+  {
+    id: "S-1",
+    personId: 1,
+    type: "Student",
+    date: today,
+    roll: "101",
+    name: "Aarav Kumar",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-2",
+    personId: 2,
+    type: "Student",
+    date: today,
+    roll: "102",
+    name: "Rahul Sharma",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Absent",
+    remarks: "",
+  },
+  {
+    id: "S-3",
+    personId: 3,
+    type: "Student",
+    date: today,
+    roll: "103",
+    name: "Priya Reddy",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-4",
+    personId: 4,
+    type: "Student",
+    date: today,
+    roll: "104",
+    name: "Sneha Rao",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Late",
+    remarks: "",
+  },
+  {
+    id: "S-5",
+    personId: 5,
+    type: "Student",
+    date: today,
+    roll: "105",
+    name: "Kiran Kumar",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-6",
+    personId: 6,
+    type: "Student",
+    date: today,
+    roll: "106",
+    name: "Anjali Devi",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Leave",
+    remarks: "",
+  },
+  {
+    id: "S-7",
+    personId: 7,
+    type: "Student",
+    date: today,
+    roll: "107",
+    name: "Vijay Sai",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-8",
+    personId: 8,
+    type: "Student",
+    date: today,
+    roll: "108",
+    name: "Pooja Reddy",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Absent",
+    remarks: "",
+  },
+
+  /* Previous-day records for report demonstration */
+
+  {
+    id: "S-9",
+    personId: 1,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "101",
+    name: "Aarav Kumar",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-10",
+    personId: 2,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "102",
+    name: "Rahul Sharma",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-11",
+    personId: 3,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "103",
+    name: "Priya Reddy",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-12",
+    personId: 4,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "104",
+    name: "Sneha Rao",
+    department: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    status: "Absent",
+    remarks: "",
+  },
+  {
+    id: "S-13",
+    personId: 5,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "105",
+    name: "Kiran Kumar",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-14",
+    personId: 6,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "106",
+    name: "Anjali Devi",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Leave",
+    remarks: "",
+  },
+  {
+    id: "S-15",
+    personId: 7,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "107",
+    name: "Vijay Sai",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "S-16",
+    personId: 8,
+    type: "Student",
+    date: "2026-08-17",
+    roll: "108",
+    name: "Pooja Reddy",
+    department: "MPC",
+    section: "Section B",
+    subject: "Physics",
+    faculty: "Suresh Reddy",
+    status: "Absent",
+    remarks: "",
+  },
+];
+
+/* ============================================================
+   INITIAL FACULTY HISTORY
+   ============================================================ */
+
+const initialFacultyHistory = [
+  {
+    id: "F-1",
+    personId: 1,
+    type: "Faculty",
+    date: today,
+    employeeId: "FAC001",
+    name: "Dr. Ramesh Kumar",
+    department: "Mathematics",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "F-2",
+    personId: 2,
+    type: "Faculty",
+    date: today,
+    employeeId: "FAC002",
+    name: "Suresh Reddy",
+    department: "Physics",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "F-3",
+    personId: 3,
+    type: "Faculty",
+    date: today,
+    employeeId: "FAC003",
+    name: "Lakshmi Devi",
+    department: "Chemistry",
+    status: "Absent",
+    remarks: "",
+  },
+  {
+    id: "F-4",
+    personId: 4,
+    type: "Faculty",
+    date: today,
+    employeeId: "FAC004",
+    name: "Anitha Rao",
+    department: "English",
+    status: "Present",
+    remarks: "",
+  },
+  {
+    id: "F-5",
+    personId: 5,
+    type: "Faculty",
+    date: today,
+    employeeId: "FAC005",
+    name: "Prakash Kumar",
+    department: "Computer Science",
+    status: "Leave",
+    remarks: "",
+  },
+];
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+const getCount = (records, status) =>
+  records.filter((record) => record.status === status).length;
+
+const getPercentage = (records) => {
+  if (!records.length) return 0;
+
+  const present = records.filter(
+    (record) => record.status === "Present"
+  ).length;
+
+  return Math.round((present / records.length) * 100);
 };
 
-const mapNameId = (items, idKeys, nameKeys) => {
-  const names = [];
-  const map = {};
-  (items || []).forEach((it) => {
-    const id = idKeys.map((k) => it[k]).find((v) => v !== undefined && v !== null);
-    const name = nameKeys.map((k) => it[k]).find((v) => v !== undefined && v !== null && v !== "");
-    if (name) names.push(name);
-    if (name && id !== undefined) map[name] = id;
-  });
-  return { names, map };
-};
-
-const getFallbackSections = (groupName) => {
-  const matchingSections = mockSections
-    .filter((section) => section.group === groupName)
-    .map((section) => section.name);
-  return matchingSections.length ? matchingSections : defaultSectionNames;
-};
-
-// Normalizes a raw attendance record from search responses into a shape the
-// history table can render, tolerating PascalCase or camelCase payloads.
-const mapRecord = (r) => ({
-  attendanceId: r.attendanceId ?? r.AttendanceId,
-  attendanceSessionId: r.attendanceSessionId ?? r.AttendanceSessionId ?? null,
-  date: (r.attendanceDate ?? r.AttendanceDate ?? "").toString().split("T")[0],
-  roll: r.rollNumber ?? r.RollNumber ?? "",
-  name: r.studentName ?? r.StudentName ?? "",
-  subject: r.subjectName ?? r.SubjectName ?? "",
-  faculty: r.facultyName ?? r.FacultyName ?? "",
-  status: r.status ?? r.Status,
-  remarks: r.remarks ?? r.Remarks ?? "",
-  isActive: r.isActive ?? r.IsActive ?? true,
-  isLocked: r.isLocked ?? r.IsLocked ?? false,
-});
-
-// Normalizes a raw row from the percentage report endpoint.
-const mapPercentageRow = (r) => ({
-  studentId: r.studentId ?? r.StudentId,
-  roll: r.rollNumber ?? r.RollNumber ?? "",
-  name: r.studentName ?? r.StudentName ?? "",
-  totalDays: r.totalDays ?? r.TotalDays ?? r.totalSessions ?? r.TotalSessions ?? 0,
-  presentDays: r.presentDays ?? r.PresentDays ?? r.presentCount ?? r.PresentCount ?? 0,
-  percentage: r.percentage ?? r.Percentage ?? r.attendancePercentage ?? r.AttendancePercentage ?? 0,
-});
+/* ============================================================
+   COMPONENT
+   ============================================================ */
 
 export default function AttendancePage() {
-  const today = new Date().toISOString().split("T")[0];
+  const [attendanceMode, setAttendanceMode] = useState("student");
+  const [attendanceStep, setAttendanceStep] = useState(1);
   const [toast, setToast] = useState("");
   const { confirm, confirmationDialog } = useConfirmDialog();
 
-  // ---- Shared lookup data (loaded once, used across all sections) ----
-  const [boards, setBoards] = useState([]);
-  const [boardMap, setBoardMap] = useState({});
-  const [years, setYears] = useState([]);
-  const [yearMap, setYearMap] = useState({});
-  const [levels, setLevels] = useState([]);
-  const [levelMap, setLevelMap] = useState({});
-  const [groups, setGroups] = useState([]);
-  const [groupMap, setGroupMap] = useState({});
-  const [subjects, setSubjects] = useState([]);
-  const [subjectMap, setSubjectMap] = useState({});
-  const [faculty, setFaculty] = useState([]);
-  const [facultyMap, setFacultyMap] = useState({});
-  const [periods, setPeriods] = useState([]);
-  const [periodMap, setPeriodMap] = useState({});
-  const [lookupsLoading, setLookupsLoading] = useState(true);
+  /* ============================================================
+     STUDENT FILTERS
+     ============================================================ */
 
-  useEffect(() => {
-    let mounted = true;
-    const loadLookups = async () => {
-      setLookupsLoading(true);
-      try {
-        const results = await Promise.allSettled([
-          apiClient.get(apiEndpoints.boards.getAll),
-          apiClient.get(apiEndpoints.academicYears.getAll),
-          apiClient.get(apiEndpoints.boards.academicLevels),
-          apiClient.get(apiEndpoints.groups.getAll),
-          apiClient.get(apiEndpoints.subjects.getAll),
-          apiClient.get(apiEndpoints.faculty.getAll),
-          apiClient.get(apiEndpoints.periods.getAll),
-        ]);
-        if (!mounted) return;
-
-        const loadOptions = (index, setNames, setMap, idKeys, nameKeys) => {
-          const result = results[index];
-          if (result.status !== "fulfilled") return false;
-          const mapped = mapNameId(unwrapList(result.value.data), idKeys, nameKeys);
-          setNames(mapped.names);
-          setMap(mapped.map);
-          return true;
-        };
-
-        const succeeded = [
-          loadOptions(0, setBoards, setBoardMap, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]),
-          loadOptions(1, setYears, setYearMap, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
-          loadOptions(2, setLevels, setLevelMap, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "name", "Name"]),
-          loadOptions(3, setGroups, setGroupMap, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name"]),
-          loadOptions(4, setSubjects, setSubjectMap, ["subjectId", "SubjectId", "id", "Id"], ["subjectName", "SubjectName", "name", "Name"]),
-          loadOptions(5, setFaculty, setFacultyMap, ["id", "Id", "facultyId", "FacultyId"], ["fullName", "FullName", "name", "Name"]),
-          loadOptions(6, setPeriods, setPeriodMap, ["periodId", "PeriodId", "id", "Id"], ["periodName", "PeriodName", "name", "Name"]),
-        ];
-        if (succeeded.some((success) => !success)) {
-          setToast("Some filter options could not be loaded. The available dropdowns can still be used.");
-        }
-      } catch {
-        setToast("Failed to load filter options. Please refresh and try again.");
-      } finally {
-        if (mounted) setLookupsLoading(false);
-      }
-    };
-    loadLookups();
-    return () => (mounted = false);
-  }, []);
-
-  // =====================================================================
-  // SECTION 1 — Mark Attendance (today's roster, bulk save)
-  // =====================================================================
-  const [markFilters, setMarkFilters] = useState({ date: today });
-  const [markSections, setMarkSections] = useState([]);
-  const [markSectionMap, setMarkSectionMap] = useState({});
-const [rows, setRows] = useState([]);
-  const [loadingRoster, setLoadingRoster] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    const groupId = groupMap[markFilters.group];
-    if (!groupId) {
-      setMarkSections([]);
-      setMarkSectionMap({});
-      return;
-    }
-    apiClient
-      .get(apiEndpoints.sections.byGroup(groupId))
-      .then((res) => {
-        if (!mounted) return;
-        const mapped = mapNameId(unwrapList(res.data), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
-        if (mapped.names.length) {
-          setMarkSections(mapped.names);
-          setMarkSectionMap(mapped.map);
-        } else {
-          const fallback = getFallbackSections(markFilters.group);
-          const fallbackMap = {};
-          fallback.forEach((name, index) => (fallbackMap[name] = index + 1));
-          setMarkSections(fallback);
-          setMarkSectionMap(fallbackMap);
-        }
-      })
-      .catch(() => {
-        if (!mounted) return;
-        const fallback = getFallbackSections(markFilters.group);
-        const fallbackMap = {};
-        fallback.forEach((name, index) => (fallbackMap[name] = index + 1));
-        setMarkSections(fallback);
-        setMarkSectionMap(fallbackMap);
-      });
-    return () => (mounted = false);
-  }, [markFilters.group, groupMap]);
-
-  const markFilterFields = [
-    { name: "date", label: "Date", type: "date" },
-    { name: "board", label: "Board", type: "select", options: boards },
-    { name: "year", label: "Academic Year", type: "select", options: years },
-    { name: "level", label: "Academic Level", type: "select", options: levels },
-    { name: "group", label: "Group", type: "select", options: groups },
-    { name: "section", label: "Section", type: "select", options: markSections },
-    { name: "subject", label: "Subject", type: "select", options: subjects },
-    { name: "period", label: "Period", type: "select", options: periods },
-    { name: "faculty", label: "Faculty", type: "select", options: faculty },
-  ];
-
-  const setMark = (id, mark) => setRows((r) => r.map((x) => (x.id === id ? { ...x, mark } : x)));
-  const markAll = () => {
-    setRows((r) => r.map((x) => ({ ...x, mark: "Present" })));
-    setToast("All students marked present");
+  const defaultStudentFilters = {
+    date: today,
+    board: "Board of Intermediate Education, Andhra Pradesh",
+    academicYear: "2026-2027",
+    group: "MPC",
+    section: "Section A",
+    subject: "Mathematics",
+    faculty: "Dr. Ramesh Kumar",
+    period: "Period 1",
   };
 
-  // FIX (bug #1): unselected filters now resolve to `undefined` (omitted
-  // from the JSON payload) instead of `0`. Sending a literal 0 for, say,
-  // subjectId tells the backend "match subject id 0", which returns no
-  // results — it does NOT mean "any subject". This matches the convention
-  // already used in buildHistoryFilterPayload() below.
-  const loadRoster = async () => {
-    setLoadingRoster(true);
-    try {
-      const payload = {
-        boardId: boardMap[markFilters.board] || undefined,
-        academicYearId: yearMap[markFilters.year] || undefined,
-        academicLevelId: levelMap[markFilters.level] || undefined,
-        groupId: groupMap[markFilters.group] || undefined,
-        sectionId: markSectionMap[markFilters.section] || undefined,
-        subjectId: subjectMap[markFilters.subject] || undefined,
-        facultyId: facultyMap[markFilters.faculty] || undefined,
-        periodId: periodMap[markFilters.period] || undefined,
-        fromDate: markFilters.date,
-        toDate: markFilters.date,
-        pageNumber: 1,
-        pageSize: 200,
-      };
-      const res = await apiClient.post(apiEndpoints.attendance.students, payload);
-      const list = unwrapList(res.data).map((s) => ({
-        id: s.studentId,
-        roll: s.rollNumber,
-        name: s.studentName,
-        mark: s.isAttendanceMarked ? (reverseStatusMap[s.status] || "Present") : "Present",
-      }));
-      setRows(list);
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setLoadingRoster(false);
-    }
+  const [studentFilters, setStudentFilters] = useState(
+    defaultStudentFilters
+  );
+
+  /* ============================================================
+     STUDENT ROWS
+     ============================================================ */
+
+  const [studentRows, setStudentRows] = useState(
+    mockStudents.map((student) => ({
+      ...student,
+      mark: "Present",
+    }))
+  );
+
+  /* ============================================================
+     FACULTY FILTERS
+     ============================================================ */
+
+  const defaultFacultyFilters = {
+    date: today,
+    department: "All Departments",
   };
 
-  // FIX (bug #1, same reasoning as loadRoster above).
-  const saveRoster = async () => {
-    setSaving(true);
-    try {
-      const payload = {
-        attendanceDate: markFilters.date,
-        boardId: boardMap[markFilters.board] || undefined,
-        academicYearId: yearMap[markFilters.year] || undefined,
-        academicLevelId: levelMap[markFilters.level] || undefined,
-        groupId: groupMap[markFilters.group] || undefined,
-        sectionId: markSectionMap[markFilters.section] || undefined,
-        subjectId: subjectMap[markFilters.subject] || undefined,
-        facultyId: facultyMap[markFilters.faculty] || undefined,
-        periodId: periodMap[markFilters.period] || undefined,
-        students: rows.map((r) => ({
-          studentId: r.id,
-          status: statusMap[r.mark],
-          remarks: "",
-        })),
-      };
-      await apiClient.post(apiEndpoints.attendance.bulk, payload);
-      setToast("Attendance saved successfully");
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  const [facultyFilters, setFacultyFilters] = useState(
+    defaultFacultyFilters
+  );
 
-  const markSummary = marksList.map((m) => ({ m, n: rows.filter((r) => r.mark === m).length }));
+  /* ============================================================
+     FACULTY ROWS
+     ============================================================ */
 
-  // =====================================================================
-  // SECTION 2 — Attendance History (search, review, correct saved records)
-  // =====================================================================
-  const [historyFilters, setHistoryFilters] = useState({ fromDate: today, toDate: today });
-  const [historySections, setHistorySections] = useState([]);
-  const [historySectionMap, setHistorySectionMap] = useState({});
-  const [pageNumber, setPageNumber] = useState(1);
-  const pageSize = 10;
+  const [facultyRows, setFacultyRows] = useState(
+    mockFaculty.map((faculty) => ({
+      ...faculty,
+      mark: "Present",
+    }))
+  );
 
-  const [records, setRecords] = useState([]);
-  const [totalCount, setTotalCount] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [summary, setSummary] = useState(null);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [savingId, setSavingId] = useState(null);
+  /* ============================================================
+     HISTORY
+     ============================================================ */
 
-  // Multi-select for bulk-update
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [bulkStatus, setBulkStatus] = useState("Present");
-  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [studentHistory, setStudentHistory] =
+    useState(initialStudentHistory);
 
-  // Session lock/unlock in-flight tracking (per attendanceSessionId)
-  const [sessionActionId, setSessionActionId] = useState(null);
+  const [facultyHistory, setFacultyHistory] =
+    useState(initialFacultyHistory);
 
-  useEffect(() => {
-    let mounted = true;
-    const groupId = groupMap[historyFilters.group];
-    if (!groupId) {
-      setHistorySections([]);
-      setHistorySectionMap({});
-      return;
-    }
-    apiClient
-      .get(apiEndpoints.sections.byGroup(groupId))
-      .then((res) => {
-        if (!mounted) return;
-        const mapped = mapNameId(unwrapList(res.data), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
-        setHistorySections(mapped.names);
-        setHistorySectionMap(mapped.map);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setHistorySections([]);
-        setHistorySectionMap({});
-      });
-    return () => (mounted = false);
-  }, [historyFilters.group, groupMap]);
+  const [historyFilter, setHistoryFilter] = useState("Student");
 
-  const buildHistoryFilterPayload = () => ({
-    boardId: boardMap[historyFilters.board] || undefined,
-    academicYearId: yearMap[historyFilters.year] || undefined,
-    groupId: groupMap[historyFilters.group] || undefined,
-    sectionId: historySectionMap[historyFilters.section] || undefined,
-    subjectId: subjectMap[historyFilters.subject] || undefined,
-    facultyId: facultyMap[historyFilters.faculty] || undefined,
-    fromDate: historyFilters.fromDate ? `${historyFilters.fromDate}T00:00:00` : undefined,
-    toDate: historyFilters.toDate ? `${historyFilters.toDate}T23:59:59` : undefined,
-  });
+  const [historySearch, setHistorySearch] = useState("");
 
-  const searchHistory = async (page = 1) => {
-    setLoadingHistory(true);
-    try {
-      const payload = { ...buildHistoryFilterPayload(), pageNumber: page, pageSize };
-      const res = await apiClient.post(apiEndpoints.attendance.search, payload);
-      const data = res.data || {};
-      setRecords(unwrapList(data).map(mapRecord));
-      setTotalCount(data.totalCount ?? data.TotalCount ?? 0);
-      setTotalPages(data.totalPages ?? data.TotalPages ?? 1);
-      setPageNumber(data.currentPage ?? data.CurrentPage ?? page);
-      setSelectedIds([]);
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
+  /* ============================================================
+     HISTORY PAGINATION
+     ============================================================ */
 
-  const loadHistorySummary = async () => {
-    try {
-      const res = await apiClient.post(apiEndpoints.attendance.summary, buildHistoryFilterPayload());
-      setSummary(res.data);
-    } catch {
-      setSummary(null);
-    }
-  };
+  const [historyPage, setHistoryPage] = useState(1);
 
-  const runHistorySearch = () => {
-    searchHistory(1);
-    loadHistorySummary();
-  };
+  const historyPageSize = 8;
 
-  const changeHistoryPage = (page) => {
-    if (page < 1 || page > totalPages) return;
-    searchHistory(page);
-  };
+  /* ============================================================
+     REPORT
+     ============================================================ */
 
-  const updateRecordStatus = async (record, newMarkLabel) => {
-    if (record.isLocked) {
-      setToast("This session is locked. Ask an admin to unlock it first.");
-      return;
-    }
-    setSavingId(record.attendanceId);
-    try {
-      await apiClient.put(apiEndpoints.attendance.update, {
-        attendanceId: record.attendanceId,
-        status: statusMap[newMarkLabel],
-        remarks: record.remarks,
-      });
-      setRecords((rs) =>
-        rs.map((r) => (r.attendanceId === record.attendanceId ? { ...r, status: statusMap[newMarkLabel] } : r))
-      );
-      setToast("Attendance updated");
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setSavingId(null);
-    }
-  };
+  const [reportType, setReportType] = useState("Student");
 
-  const toggleRecordActive = async (record) => {
-    if (record.isLocked) {
-      setToast("This session is locked. Ask an admin to unlock it first.");
-      return;
-    }
-    setSavingId(record.attendanceId);
-    try {
-      await apiClient.patch(`${apiEndpoints.attendance.updateStatus(record.attendanceId)}?isActive=${!record.isActive}`);
-      setRecords((rs) =>
-        rs.map((r) => (r.attendanceId === record.attendanceId ? { ...r, isActive: !r.isActive } : r))
-      );
-      setToast(record.isActive ? "Record deactivated" : "Record activated");
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setSavingId(null);
-    }
-  };
+  const [reportFromDate, setReportFromDate] =
+    useState("2026-08-17");
 
+  const [reportToDate, setReportToDate] =
+    useState(today);
   const deleteRecord = async (record) => {
     if (record.isLocked) {
       setToast("This session is locked. Ask an admin to unlock it first.");
@@ -427,544 +548,1733 @@ const [rows, setRows] = useState([]);
     }
   };
 
-  // ---- Bulk-update (PUT /attendance/bulk-update) ----
-  // Groups selected rows by attendanceSessionId, since the backend expects
-  // one session id + a list of {attendanceId, status, remarks} per call.
-  // If a selection spans multiple sessions, we fire one request per session.
-  const toggleSelected = (record) => {
-    if (record.isLocked) return;
-    setSelectedIds((ids) =>
-      ids.includes(record.attendanceId) ? ids.filter((id) => id !== record.attendanceId) : [...ids, record.attendanceId]
+  const [reportGenerated, setReportGenerated] = useState(true);
+
+  /* ============================================================
+     REPORT PAGINATION
+     ============================================================ */
+
+  const [reportPage, setReportPage] = useState(1);
+
+  const reportPageSize = 8;
+
+  /* ============================================================
+     STUDENT MARK
+     ============================================================ */
+
+  const setStudentMark = (id, mark) => {
+    setStudentRows((rows) =>
+      rows.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              mark,
+            }
+          : row
+      )
     );
   };
 
-  const toggleSelectAll = () => {
-    const selectable = records.filter((r) => !r.isLocked).map((r) => r.attendanceId);
-    const allSelected = selectable.length > 0 && selectable.every((id) => selectedIds.includes(id));
-    setSelectedIds(allSelected ? [] : selectable);
+  /* ============================================================
+     FACULTY MARK
+     ============================================================ */
+
+  const setFacultyMark = (id, mark) => {
+    setFacultyRows((rows) =>
+      rows.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              mark,
+            }
+          : row
+      )
+    );
   };
 
-  // FIX (bug #2 + #3):
-  //  - Only ids that were actually sent to the server in a successful PUT
-  //    are now applied to local state (updatedIds), instead of blindly
-  //    applying the new status to every selectedId, which previously made
-  //    skipped (no-session-id) records look updated in the UI when they
-  //    weren't touched on the backend.
-  //  - The "some records skipped" warning is no longer silently overwritten
-  //    by the final success toast — we track hadSkipped and choose one
-  //    final message at the end instead of calling setToast twice.
-  const applyBulkUpdate = async () => {
-    if (selectedIds.length === 0) {
-      setToast("Select at least one record to bulk update");
+  /* ============================================================
+     MARK ALL STUDENTS PRESENT
+     ============================================================ */
+
+  const markAllStudentsPresent = () => {
+    setStudentRows((rows) =>
+      rows.map((row) => ({
+        ...row,
+        mark: "Present",
+      }))
+    );
+
+    setToast("All students marked present");
+  };
+
+  /* ============================================================
+     MARK ALL FACULTY PRESENT
+     ============================================================ */
+
+  const markAllFacultyPresent = () => {
+    setFacultyRows((rows) =>
+      rows.map((row) => ({
+        ...row,
+        mark: "Present",
+      }))
+    );
+
+    setToast("All faculty marked present");
+  };
+
+  /* ============================================================
+     SAVE STUDENT ATTENDANCE
+     ============================================================ */
+
+  const saveStudentAttendance = () => {
+    if (!studentRows.length) {
+      setToast("Please add students before saving attendance");
       return;
     }
-    const selectedRecords = records.filter((r) => selectedIds.includes(r.attendanceId));
-    const bySession = new Map();
-    selectedRecords.forEach((r) => {
-      const key = r.attendanceSessionId ?? "unknown";
-      if (!bySession.has(key)) bySession.set(key, []);
-      bySession.get(key).push(r);
+
+    const newRecords = studentRows.map((student) => ({
+      id: `student-${Date.now()}-${student.id}-${Math.random()}`,
+      personId: student.id,
+      type: "Student",
+      date: studentFilters.date,
+      roll: student.roll,
+      name: student.name,
+      department: student.group,
+      section: student.section,
+      subject: studentFilters.subject,
+      faculty: studentFilters.faculty,
+      status: student.mark,
+      remarks: "",
+    }));
+
+    /*
+     * IMPORTANT:
+     * Remove existing records for the same student/date/subject/faculty
+     * before adding the newly saved records.
+     *
+     * This prevents duplicate records when the same attendance is saved
+     * multiple times.
+     */
+
+    setStudentHistory((previous) => {
+      const filteredPrevious = previous.filter(
+        (oldRecord) =>
+          !newRecords.some(
+            (newRecord) =>
+              oldRecord.personId === newRecord.personId &&
+              oldRecord.date === newRecord.date &&
+              oldRecord.subject === newRecord.subject &&
+              oldRecord.faculty === newRecord.faculty
+          )
+      );
+
+      return [...newRecords, ...filteredPrevious];
     });
 
-    setBulkUpdating(true);
-    const updatedIds = [];
-    let hadSkipped = false;
-    try {
-      for (const [sessionId, recs] of bySession.entries()) {
-        if (sessionId === "unknown" || sessionId === null) {
-          hadSkipped = true;
-          continue;
-        }
-        await apiClient.put(apiEndpoints.attendance.bulkUpdate, {
-          attendanceSessionId: sessionId,
-          updates: recs.map((r) => ({
-            attendanceId: r.attendanceId,
-            status: statusMap[bulkStatus],
-            remarks: r.remarks,
-          })),
-        });
-        updatedIds.push(...recs.map((r) => r.attendanceId));
+    setHistoryPage(1);
+    setReportPage(1);
+
+    setToast("Student attendance saved successfully");
+  };
+
+  /* ============================================================
+     SAVE FACULTY ATTENDANCE
+     ============================================================ */
+
+  const saveFacultyAttendance = () => {
+    if (!facultyRows.length) {
+      setToast("Please add faculty before saving attendance");
+      return;
+    }
+
+    const newRecords = facultyRows.map((faculty) => ({
+      id: `faculty-${Date.now()}-${faculty.id}-${Math.random()}`,
+      personId: faculty.id,
+      type: "Faculty",
+      date: facultyFilters.date,
+      employeeId: faculty.employeeId,
+      name: faculty.name,
+      department: faculty.department,
+      status: faculty.mark,
+      remarks: "",
+    }));
+
+    /*
+     * Prevent duplicate attendance for the same faculty/date.
+     */
+
+    setFacultyHistory((previous) => {
+      const filteredPrevious = previous.filter(
+        (oldRecord) =>
+          !newRecords.some(
+            (newRecord) =>
+              oldRecord.personId === newRecord.personId &&
+              oldRecord.date === newRecord.date
+          )
+      );
+
+      return [...newRecords, ...filteredPrevious];
+    });
+
+    setHistoryPage(1);
+    setReportPage(1);
+
+    setToast("Faculty attendance saved successfully");
+  };
+
+  /* ============================================================
+     RESET STUDENT
+     ============================================================ */
+
+  const resetStudent = () => {
+    setStudentFilters(defaultStudentFilters);
+
+    setStudentRows(
+      mockStudents.map((student) => ({
+        ...student,
+        mark: "Present",
+      }))
+    );
+  };
+
+  /* ============================================================
+     RESET FACULTY
+     ============================================================ */
+
+  const resetFaculty = () => {
+    setFacultyFilters(defaultFacultyFilters);
+
+    setFacultyRows(
+      mockFaculty.map((faculty) => ({
+        ...faculty,
+        mark: "Present",
+      }))
+    );
+  };
+
+  /* ============================================================
+     HISTORY FILTERING
+     ============================================================ */
+
+  const filteredHistory = useMemo(() => {
+    const source =
+      historyFilter === "Student"
+        ? studentHistory
+        : facultyHistory;
+
+    const search = historySearch.trim().toLowerCase();
+
+    if (!search) return source;
+
+    return source.filter((record) => {
+      return (
+        record.name?.toLowerCase().includes(search) ||
+        record.roll?.toLowerCase().includes(search) ||
+        record.employeeId?.toLowerCase().includes(search) ||
+        record.department?.toLowerCase().includes(search) ||
+        record.subject?.toLowerCase().includes(search) ||
+        record.faculty?.toLowerCase().includes(search)
+      );
+    });
+  }, [
+    historyFilter,
+    historySearch,
+    studentHistory,
+    facultyHistory,
+  ]);
+
+  /* ============================================================
+     HISTORY PAGINATION DATA
+     ============================================================ */
+
+  const historyTotalPages = Math.max(
+    1,
+    Math.ceil(filteredHistory.length / historyPageSize)
+  );
+
+  const paginatedHistory = useMemo(() => {
+    const start =
+      (historyPage - 1) * historyPageSize;
+
+    return filteredHistory.slice(
+      start,
+      start + historyPageSize
+    );
+  }, [
+    filteredHistory,
+    historyPage,
+  ]);
+
+  /* ============================================================
+     CHANGE HISTORY FILTER
+     ============================================================ */
+
+  const changeHistoryFilter = (filter) => {
+    setHistoryFilter(filter);
+    setHistorySearch("");
+    setHistoryPage(1);
+  };
+
+  /* ============================================================
+     REPORT DATA
+     ============================================================ */
+
+  const reportRows = useMemo(() => {
+    const source =
+      reportType === "Student"
+        ? studentHistory
+        : facultyHistory;
+
+    const filtered = source.filter((record) => {
+      return (
+        record.date >= reportFromDate &&
+        record.date <= reportToDate
+      );
+    });
+
+    const people = {};
+
+    filtered.forEach((record) => {
+      const key = record.personId;
+
+      if (!people[key]) {
+        people[key] = {
+          personId: key,
+          name: record.name,
+          roll: record.roll || "-",
+          employeeId: record.employeeId || "-",
+          department: record.department || "-",
+          total: 0,
+          present: 0,
+          absent: 0,
+          late: 0,
+          leave: 0,
+        };
       }
-      setRecords((rs) =>
-        rs.map((r) => (updatedIds.includes(r.attendanceId) ? { ...r, status: statusMap[bulkStatus] } : r))
-      );
-      setSelectedIds([]);
-      setToast(
-        hadSkipped
-          ? "Bulk update applied. Some records had no session id and were skipped — update them individually."
-          : "Bulk update applied"
-      );
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setBulkUpdating(false);
-    }
-  };
 
-  // ---- Lock / Unlock session ----
-  const lockSession = async (record) => {
-    if (!record.attendanceSessionId) {
-      setToast("Missing session id for this record — cannot lock.");
-      return;
-    }
-    setSessionActionId(record.attendanceSessionId);
-    try {
-      await apiClient.post(apiEndpoints.attendance.lockSession(record.attendanceSessionId));
-      setRecords((rs) =>
-        rs.map((r) => (r.attendanceSessionId === record.attendanceSessionId ? { ...r, isLocked: true } : r))
-      );
-      setSelectedIds((ids) => ids.filter((id) => !records.some((r) => r.attendanceId === id && r.attendanceSessionId === record.attendanceSessionId)));
-      setToast("Session locked");
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setSessionActionId(null);
-    }
-  };
+      people[key].total += 1;
 
-  const unlockSession = async (record) => {
-    if (!record.attendanceSessionId) {
-      setToast("Missing session id for this record — cannot unlock.");
-      return;
-    }
-    setSessionActionId(record.attendanceSessionId);
-    try {
-      await apiClient.post(apiEndpoints.attendance.unlockSession(record.attendanceSessionId));
-      setRecords((rs) =>
-        rs.map((r) => (r.attendanceSessionId === record.attendanceSessionId ? { ...r, isLocked: false } : r))
-      );
-      setToast("Session unlocked");
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-    } finally {
-      setSessionActionId(null);
-    }
-  };
+      if (record.status === "Present") {
+        people[key].present += 1;
+      }
 
-  const historyFilterFields = [
-    { name: "fromDate", label: "From Date", type: "date" },
-    { name: "toDate", label: "To Date", type: "date" },
-    { name: "board", label: "Board", type: "select", options: boards },
-    { name: "year", label: "Academic Year", type: "select", options: years },
-    { name: "group", label: "Group", type: "select", options: groups },
-    { name: "section", label: "Section", type: "select", options: historySections },
-    { name: "subject", label: "Subject", type: "select", options: subjects },
-    { name: "faculty", label: "Faculty", type: "select", options: faculty },
-  ];
+      if (record.status === "Absent") {
+        people[key].absent += 1;
+      }
 
-  // =====================================================================
-  // SECTION 3 — Attendance Percentage Report (POST /attendance/percentage)
-  // =====================================================================
-  const [pctFilters, setPctFilters] = useState({ fromDate: today, toDate: today });
-  const [pctSections, setPctSections] = useState([]);
-  const [pctSectionMap, setPctSectionMap] = useState({});
-  const [pctRows, setPctRows] = useState([]);
-  const [loadingPct, setLoadingPct] = useState(false);
-  const [pctSearched, setPctSearched] = useState(false);
+      if (record.status === "Late") {
+        people[key].late += 1;
+      }
 
-  useEffect(() => {
-    let mounted = true;
-    const groupId = groupMap[pctFilters.group];
-    if (!groupId) {
-      setPctSections([]);
-      setPctSectionMap({});
-      return;
-    }
-    apiClient
-      .get(apiEndpoints.sections.byGroup(groupId))
-      .then((res) => {
-        if (!mounted) return;
-        const mapped = mapNameId(unwrapList(res.data), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
-        setPctSections(mapped.names);
-        setPctSectionMap(mapped.map);
+      if (record.status === "Leave") {
+        people[key].leave += 1;
+      }
+    });
+
+    return Object.values(people)
+      .sort((a, b) => {
+        if (reportType === "Student") {
+          return a.roll.localeCompare(b.roll);
+        }
+
+        return a.employeeId.localeCompare(b.employeeId);
       })
-      .catch(() => {
-        if (!mounted) return;
-        setPctSections([]);
-        setPctSectionMap({});
-      });
-    return () => (mounted = false);
-  }, [pctFilters.group, groupMap]);
+      .map((person) => ({
+        ...person,
+        percentage:
+          person.total > 0
+            ? Math.round(
+                (person.present / person.total) * 100
+              )
+            : 0,
+      }));
+  }, [
+    reportType,
+    reportFromDate,
+    reportToDate,
+    studentHistory,
+    facultyHistory,
+  ]);
 
-  const pctFilterFields = [
-    { name: "fromDate", label: "From Date", type: "date" },
-    { name: "toDate", label: "To Date", type: "date" },
-    { name: "board", label: "Board", type: "select", options: boards },
-    { name: "year", label: "Academic Year", type: "select", options: years },
-    { name: "group", label: "Group", type: "select", options: groups },
-    { name: "section", label: "Section", type: "select", options: pctSections },
-    { name: "subject", label: "Subject", type: "select", options: subjects },
-  ];
+  /* ============================================================
+     REPORT SUMMARY
+     ============================================================ */
 
-  const loadPercentageReport = async () => {
-    setLoadingPct(true);
-    setPctSearched(true);
-    try {
-      const payload = {
-        boardId: boardMap[pctFilters.board] || undefined,
-        academicYearId: yearMap[pctFilters.year] || undefined,
-        groupId: groupMap[pctFilters.group] || undefined,
-        sectionId: pctSectionMap[pctFilters.section] || undefined,
-        subjectId: subjectMap[pctFilters.subject] || undefined,
-        fromDate: pctFilters.fromDate ? `${pctFilters.fromDate}T00:00:00` : undefined,
-        toDate: pctFilters.toDate ? `${pctFilters.toDate}T23:59:59` : undefined,
-      };
-      const res = await apiClient.post(apiEndpoints.attendance.percentage, payload);
-      setPctRows(unwrapList(res.data).map(mapPercentageRow));
-    } catch (err) {
-      setToast(getApiErrorMessage(err));
-      setPctRows([]);
-    } finally {
-      setLoadingPct(false);
-    }
+  const reportSummary = useMemo(() => {
+    const total = reportRows.reduce(
+      (sum, row) => sum + row.total,
+      0
+    );
+
+    const present = reportRows.reduce(
+      (sum, row) => sum + row.present,
+      0
+    );
+
+    const absent = reportRows.reduce(
+      (sum, row) => sum + row.absent,
+      0
+    );
+
+    const late = reportRows.reduce(
+      (sum, row) => sum + row.late,
+      0
+    );
+
+    const leave = reportRows.reduce(
+      (sum, row) => sum + row.leave,
+      0
+    );
+
+    return {
+      total,
+      present,
+      absent,
+      late,
+      leave,
+      percentage:
+        total > 0
+          ? Math.round((present / total) * 100)
+          : 0,
+    };
+  }, [reportRows]);
+
+  /* ============================================================
+     REPORT PAGINATION
+     ============================================================ */
+
+  const reportTotalPages = Math.max(
+    1,
+    Math.ceil(reportRows.length / reportPageSize)
+  );
+
+  const paginatedReportRows = useMemo(() => {
+    const start =
+      (reportPage - 1) * reportPageSize;
+
+    return reportRows.slice(
+      start,
+      start + reportPageSize
+    );
+  }, [reportRows, reportPage]);
+
+  /* ============================================================
+     CHANGE REPORT TYPE
+     ============================================================ */
+
+  const changeReportType = (type) => {
+    setReportType(type);
+    setReportGenerated(true);
+    setReportPage(1);
   };
 
-  // =====================================================================
-  // Render
-  // =====================================================================
+  /* ============================================================
+     RENDER
+     ============================================================ */
+
   return (
-    <DashboardLayout title="Attendance Management" subtitle="Mark daily attendance and review saved records." breadcrumb={["Operations"]}>
-      {/* ---------- Mark Attendance ---------- */}
-      <div className="cms-card" style={{ marginBottom: 16 }}>
-        <div className="cms-card-head">
-          <h2>Mark Attendance</h2>
-        </div>
-        <div className="cms-card-body">
-          {lookupsLoading ? (
-            <Loader label="Loading filter options..." />
-          ) : (
-            <div className="cms-filters">
-              {markFilterFields.map((f) => (
-                <Field
-                  key={f.name}
-                  field={f}
-                  value={markFilters[f.name]}
-                  onChange={(name, value) => setMarkFilters((previous) => (
-                    name === "group" ? { ...previous, group: value, section: "" } : { ...previous, [name]: value }
-                  ))}
-                />
-              ))}
-            </div>
-          )}
-          <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            <button className="cms-btn cms-btn-primary" onClick={loadRoster}>Load Students</button>
-            <button className="cms-btn cms-btn-ghost" onClick={() => setMarkFilters({ date: markFilters.date })}>Reset</button>
-          </div>
+    <DashboardLayout
+      title="Attendance Management"
+      subtitle="Manage student and faculty attendance."
+      breadcrumb={["Operations"]}
+    >
+      {/* ======================================================
+          ATTENDANCE TYPE
+          ====================================================== */}
+
+      <div
+        className="cms-card"
+        style={{ marginBottom: 16 }}
+      >
+        <div
+          className="cms-card-body"
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            className={`cms-btn ${
+              attendanceMode === "student"
+                ? "cms-btn-primary"
+                : "cms-btn-ghost"
+            }`}
+            onClick={() => setAttendanceMode("student")}
+          >
+            Student Attendance
+          </button>
+
+          <button
+            className={`cms-btn ${
+              attendanceMode === "faculty"
+                ? "cms-btn-primary"
+                : "cms-btn-ghost"
+            }`}
+            onClick={() => setAttendanceMode("faculty")}
+          >
+            Faculty Attendance
+          </button>
         </div>
       </div>
 
-      <div className="cms-card" style={{ marginBottom: 32 }}>
-        <div className="cms-card-head">
-          <h2>Student Attendance</h2>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {markSummary.map((s) => (
-              <span key={s.m} className="cms-badge cms-badge-info">{s.m}: {s.n}</span>
-            ))}
-            <button className="cms-btn cms-btn-ghost" onClick={markAll}>Mark All Present</button>
-          </div>
+      {/* ======================================================
+          STEP NAVIGATION
+          ====================================================== */}
+
+      <div
+        className="cms-card"
+        style={{ marginBottom: 16 }}
+      >
+        <div
+          className="cms-card-body"
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            justifyContent: "flex-end",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            className={`cms-btn ${
+              attendanceStep === 1
+                ? "cms-btn-primary"
+                : "cms-btn-ghost"
+            }`}
+            onClick={() => setAttendanceStep(1)}
+          >
+            1. Mark Attendance
+          </button>
+
+          <button
+            className={`cms-btn ${
+              attendanceStep === 2
+                ? "cms-btn-primary"
+                : "cms-btn-ghost"
+            }`}
+            onClick={() => setAttendanceStep(2)}
+          >
+            2. Attendance History
+          </button>
+
+          <button
+            className={`cms-btn ${
+              attendanceStep === 3
+                ? "cms-btn-primary"
+                : "cms-btn-ghost"
+            }`}
+            onClick={() => setAttendanceStep(3)}
+          >
+            3. Attendance Report
+          </button>
         </div>
-     {loadingRoster ? (
-          <Loader label="Loading students..." />
-        ) : (
+      </div>
+
+      {/* ======================================================
+          STEP 1 — MARK ATTENDANCE
+          ====================================================== */}
+
+      {attendanceStep === 1 && (
+        <>
+          {/* ==================================================
+              STUDENT ATTENDANCE
+              ================================================== */}
+
+          {attendanceMode === "student" && (
+            <>
+              <div
+                className="cms-card"
+                style={{ marginBottom: 16 }}
+              >
+                <div className="cms-card-head">
+                  <h2>Student Attendance</h2>
+                </div>
+
+                <div className="cms-card-body">
+                  <div className="cms-filters">
+                    {/* DATE */}
+
+                    <div className="cms-field">
+                      <label>Date</label>
+
+                      <input
+                        type="date"
+                        value={studentFilters.date}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            date: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    {/* BOARD */}
+
+                    <div className="cms-field">
+                      <label>Board</label>
+
+                      <select
+                        value={studentFilters.board}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            board: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>
+                          Board of Intermediate Education, Andhra Pradesh
+                        </option>
+
+                        <option>
+                          Telangana State Board
+                        </option>
+                      </select>
+                    </div>
+
+                    {/* YEAR */}
+
+                    <div className="cms-field">
+                      <label>Academic Year</label>
+
+                      <select
+                        value={studentFilters.academicYear}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            academicYear: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>2026-2027</option>
+                        <option>2025-2026</option>
+                      </select>
+                    </div>
+
+                    {/* GROUP */}
+
+                    <div className="cms-field">
+                      <label>Group</label>
+
+                      <select
+                        value={studentFilters.group}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            group: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>MPC</option>
+                        <option>BiPC</option>
+                        <option>CEC</option>
+                      </select>
+                    </div>
+
+                    {/* SECTION */}
+
+                    <div className="cms-field">
+                      <label>Section</label>
+
+                      <select
+                        value={studentFilters.section}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            section: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>Section A</option>
+                        <option>Section B</option>
+                      </select>
+                    </div>
+
+                    {/* SUBJECT */}
+
+                    <div className="cms-field">
+                      <label>Subject</label>
+
+                      <select
+                        value={studentFilters.subject}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            subject: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>Mathematics</option>
+                        <option>Physics</option>
+                        <option>Chemistry</option>
+                        <option>English</option>
+                        <option>Computer Science</option>
+                      </select>
+                    </div>
+
+                    {/* FACULTY */}
+
+                    <div className="cms-field">
+                      <label>Faculty</label>
+
+                      <select
+                        value={studentFilters.faculty}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            faculty: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>Dr. Ramesh Kumar</option>
+                        <option>Suresh Reddy</option>
+                        <option>Lakshmi Devi</option>
+                        <option>Anitha Rao</option>
+                        <option>Prakash Kumar</option>
+                      </select>
+                    </div>
+
+                    {/* PERIOD */}
+
+                    <div className="cms-field">
+                      <label>Period</label>
+
+                      <select
+                        value={studentFilters.period}
+                        onChange={(e) =>
+                          setStudentFilters((prev) => ({
+                            ...prev,
+                            period: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>Period 1</option>
+                        <option>Period 2</option>
+                        <option>Period 3</option>
+                        <option>Period 4</option>
+                        <option>Period 5</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      marginTop: 16,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button
+                      className="cms-btn cms-btn-ghost"
+                      onClick={resetStudent}
+                    >
+                      Reset
+                    </button>
+
+                    <button
+                      className="cms-btn cms-btn-primary"
+                      onClick={markAllStudentsPresent}
+                    >
+                      Mark All Present
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* STUDENT TABLE */}
+
+              <div className="cms-card">
+                <div className="cms-card-head">
+                  <h2>Student Attendance</h2>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {marksList.map((status) => (
+                      <span
+                        key={status}
+                        className="cms-badge cms-badge-info"
+                      >
+                        {status}:{" "}
+                        {getCount(studentRows, status)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="cms-table-wrap">
+                  <table className="cms-table cms-attendance-table">
+                    <thead>
+                      <tr>
+                        <th>Roll Number</th>
+                        <th>Student Name</th>
+                        <th>Group</th>
+                        <th>Section</th>
+                        <th>Attendance</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {studentRows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={5}
+                            style={{
+                              textAlign: "center",
+                              padding: 20,
+                            }}
+                          >
+                            No students available.
+                            Click Reset to restore the
+                            static students.
+                          </td>
+                        </tr>
+                      ) : (
+                        studentRows.map((student) => (
+                          <tr key={student.id}>
+                            <td className="cms-strong">
+                              {student.roll}
+                            </td>
+
+                            <td>{student.name}</td>
+
+                            <td>{student.group}</td>
+
+                            <td>{student.section}</td>
+
+                            <td>
+                              <div className="cms-radio-row">
+                                {marksList.map((mark) => (
+                                  <label
+                                    key={mark}
+                                    className={`cms-radio ${
+                                      student.mark === mark
+                                        ? `on-${mark.toLowerCase()}`
+                                        : ""
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`student-${student.id}`}
+                                      checked={
+                                        student.mark === mark
+                                      }
+                                      onChange={() =>
+                                        setStudentMark(
+                                          student.id,
+                                          mark
+                                        )
+                                      }
+                                    />
+
+                                    {mark}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="cms-modal-foot">
+                  <button
+                    className="cms-btn cms-btn-ghost"
+                    onClick={() => {
+                      setStudentRows([]);
+                      setToast(
+                        "Student list cleared. Click Reset to restore students."
+                      );
+                    }}
+                  >
+                    Clear
+                  </button>
+
+                  <button
+                    className="cms-btn cms-btn-primary"
+                    onClick={saveStudentAttendance}
+                  >
+                    Save Attendance
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ==================================================
+              FACULTY ATTENDANCE
+              ================================================== */}
+
+          {attendanceMode === "faculty" && (
+            <>
+              <div
+                className="cms-card"
+                style={{ marginBottom: 16 }}
+              >
+                <div className="cms-card-head">
+                  <h2>Faculty Attendance</h2>
+                </div>
+
+                <div className="cms-card-body">
+                  <div className="cms-filters">
+                    <div className="cms-field">
+                      <label>Date</label>
+
+                      <input
+                        type="date"
+                        value={facultyFilters.date}
+                        onChange={(e) =>
+                          setFacultyFilters((prev) => ({
+                            ...prev,
+                            date: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <div className="cms-field">
+                      <label>Department</label>
+
+                      <select
+                        value={facultyFilters.department}
+                        onChange={(e) =>
+                          setFacultyFilters((prev) => ({
+                            ...prev,
+                            department: e.target.value,
+                          }))
+                        }
+                      >
+                        <option>All Departments</option>
+                        <option>Mathematics</option>
+                        <option>Physics</option>
+                        <option>Chemistry</option>
+                        <option>English</option>
+                        <option>Computer Science</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      marginTop: 16,
+                    }}
+                  >
+                    <button
+                      className="cms-btn cms-btn-ghost"
+                      onClick={resetFaculty}
+                    >
+                      Reset
+                    </button>
+
+                    <button
+                      className="cms-btn cms-btn-primary"
+                      onClick={markAllFacultyPresent}
+                    >
+                      Mark All Present
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="cms-card">
+                <div className="cms-card-head">
+                  <h2>Faculty Attendance</h2>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {marksList.map((status) => (
+                      <span
+                        key={status}
+                        className="cms-badge cms-badge-info"
+                      >
+                        {status}:{" "}
+                        {getCount(facultyRows, status)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="cms-table-wrap">
+                  <table className="cms-table cms-attendance-table">
+                    <thead>
+                      <tr>
+                        <th>Employee ID</th>
+                        <th>Faculty Name</th>
+                        <th>Department</th>
+                        <th>Attendance</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {facultyRows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            style={{
+                              textAlign: "center",
+                              padding: 20,
+                            }}
+                          >
+                            No faculty available.
+                            Click Reset to restore the
+                            static faculty.
+                          </td>
+                        </tr>
+                      ) : (
+                        facultyRows.map((faculty) => (
+                          <tr key={faculty.id}>
+                            <td className="cms-strong">
+                              {faculty.employeeId}
+                            </td>
+
+                            <td>{faculty.name}</td>
+
+                            <td>{faculty.department}</td>
+
+                            <td>
+                              <div className="cms-radio-row">
+                                {marksList.map((mark) => (
+                                  <label
+                                    key={mark}
+                                    className={`cms-radio ${
+                                      faculty.mark === mark
+                                        ? `on-${mark.toLowerCase()}`
+                                        : ""
+                                    }`}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`faculty-${faculty.id}`}
+                                      checked={
+                                        faculty.mark === mark
+                                      }
+                                      onChange={() =>
+                                        setFacultyMark(
+                                          faculty.id,
+                                          mark
+                                        )
+                                      }
+                                    />
+
+                                    {mark}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="cms-modal-foot">
+                  <button
+                    className="cms-btn cms-btn-ghost"
+                    onClick={() => {
+                      setFacultyRows([]);
+                      setToast(
+                        "Faculty list cleared. Click Reset to restore faculty."
+                      );
+                    }}
+                  >
+                    Clear
+                  </button>
+
+                  <button
+                    className="cms-btn cms-btn-primary"
+                    onClick={saveFacultyAttendance}
+                  >
+                    Save Attendance
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ======================================================
+          STEP 2 — ATTENDANCE HISTORY
+          ====================================================== */}
+
+      {attendanceStep === 2 && (
+        <div className="cms-card">
+          <div className="cms-card-head">
+            <h2>Attendance History</h2>
+          </div>
+
+          <div className="cms-card-body">
+            {/* STUDENT / FACULTY */}
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                marginBottom: 16,
+                flexWrap: "wrap",
+              }}
+            >
+              <button
+                className={`cms-btn ${
+                  historyFilter === "Student"
+                    ? "cms-btn-primary"
+                    : "cms-btn-ghost"
+                }`}
+                onClick={() =>
+                  changeHistoryFilter("Student")
+                }
+              >
+                Student History
+              </button>
+
+              <button
+                className={`cms-btn ${
+                  historyFilter === "Faculty"
+                    ? "cms-btn-primary"
+                    : "cms-btn-ghost"
+                }`}
+                onClick={() =>
+                  changeHistoryFilter("Faculty")
+                }
+              >
+                Faculty History
+              </button>
+            </div>
+
+            {/* SEARCH */}
+
+            <div
+              className="cms-filters"
+              style={{ marginBottom: 16 }}
+            >
+              <div className="cms-field">
+                <label>Search</label>
+
+                <input
+                  type="text"
+                  placeholder={
+                    historyFilter === "Student"
+                      ? "Search student..."
+                      : "Search faculty..."
+                  }
+                  value={historySearch}
+                  onChange={(e) => {
+                    setHistorySearch(e.target.value);
+                    setHistoryPage(1);
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* SUMMARY */}
+
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 16,
+              }}
+            >
+              {marksList.map((status) => (
+                <span
+                  key={status}
+                  className="cms-badge cms-badge-info"
+                >
+                  {status}:{" "}
+                  {getCount(filteredHistory, status)}
+                </span>
+              ))}
+
+              <span className="cms-badge cms-badge-success">
+                Attendance:{" "}
+                {getPercentage(filteredHistory)}%
+              </span>
+
+              <span className="cms-badge cms-badge-info">
+                Records: {filteredHistory.length}
+              </span>
+            </div>
+          </div>
+
+          {/* HISTORY TABLE */}
+
           <div className="cms-table-wrap">
             <table className="cms-table cms-attendance-table">
               <thead>
-                <tr>
-                  <th>Roll Number</th>
-                  <th>Student Name</th>
-                  <th>Attendance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 && (
+                {historyFilter === "Student" ? (
                   <tr>
-                    <td colSpan={3} style={{ textAlign: "center", padding: 20 }}>
-                      Select filters above and click "Load Students" to view the roster.
+                    <th>Date</th>
+                    <th>Roll Number</th>
+                    <th>Student Name</th>
+                    <th>Group</th>
+                    <th>Section</th>
+                    <th>Subject</th>
+                    <th>Faculty</th>
+                    <th>Attendance</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th>Date</th>
+                    <th>Employee ID</th>
+                    <th>Faculty Name</th>
+                    <th>Department</th>
+                    <th>Attendance</th>
+                  </tr>
+                )}
+              </thead>
+
+              <tbody>
+                {paginatedHistory.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={
+                        historyFilter === "Student"
+                          ? 8
+                          : 5
+                      }
+                      style={{
+                        textAlign: "center",
+                        padding: 20,
+                      }}
+                    >
+                      No attendance records found.
                     </td>
                   </tr>
                 )}
-                {rows.map((r) => (
-                  <tr key={r.id}>
-                    <td className="cms-strong">{r.roll}</td>
-                    <td>{r.name}</td>
-                    <td>
-                      <div className="cms-radio-row">
-                        {marksList.map((m) => (
-                          <label key={m} className={`cms-radio ${r.mark === m ? `on-${m.toLowerCase()}` : ""}`}>
-                            <input type="radio" name={`att-${r.id}`} checked={r.mark === m} onChange={() => setMark(r.id, m)} />
-                            {m}
-                          </label>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+
+                {paginatedHistory.map((record) =>
+                  historyFilter === "Student" ? (
+                    <tr key={record.id}>
+                      <td>{record.date}</td>
+
+                      <td className="cms-strong">
+                        {record.roll}
+                      </td>
+
+                      <td>{record.name}</td>
+
+                      <td>{record.department}</td>
+
+                      <td>{record.section || "-"}</td>
+
+                      <td>{record.subject}</td>
+
+                      <td>{record.faculty}</td>
+
+                      <td>
+                        <span
+                          className={`cms-badge ${
+                            record.status === "Present"
+                              ? "cms-badge-success"
+                              : record.status === "Absent"
+                              ? "cms-badge-warn"
+                              : "cms-badge-info"
+                          }`}
+                        >
+                          {record.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={record.id}>
+                      <td>{record.date}</td>
+
+                      <td className="cms-strong">
+                        {record.employeeId}
+                      </td>
+
+                      <td>{record.name}</td>
+
+                      <td>{record.department}</td>
+
+                      <td>
+                        <span
+                          className={`cms-badge ${
+                            record.status === "Present"
+                              ? "cms-badge-success"
+                              : record.status === "Absent"
+                              ? "cms-badge-warn"
+                              : "cms-badge-info"
+                          }`}
+                        >
+                          {record.status}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                )}
               </tbody>
             </table>
           </div>
-        )}
-        <div className="cms-modal-foot">
-<button className="cms-btn cms-btn-ghost" onClick={() => setRows([])}>Cancel</button>          <button className="cms-btn cms-btn-primary" onClick={saveRoster} disabled={saving}>{saving ? "Saving..." : "Save Attendance"}</button>
-        </div>
-      </div>
 
-      {/* ---------- Attendance History ---------- */}
-      <div className="cms-card" style={{ marginBottom: 16 }}>
-        <div className="cms-card-head">
-          <h2>Attendance History</h2>
-        </div>
-        <div className="cms-card-body">
-          {lookupsLoading ? (
-            <Loader label="Loading filter options..." />
-          ) : (
-            <div className="cms-filters">
-              {historyFilterFields.map((f) => (
-                <Field
-                  key={f.name}
-                  field={f}
-                  value={historyFilters[f.name]}
-                  onChange={(name, value) => setHistoryFilters((previous) => (
-                    name === "group" ? { ...previous, group: value, section: "" } : { ...previous, [name]: value }
-                  ))}
-                />
-              ))}
+          {/* HISTORY PAGINATION */}
+
+          {filteredHistory.length > 0 && (
+            <div
+              className="cms-modal-foot"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <span className="cms-strong">
+                Page {historyPage} of {historyTotalPages}
+              </span>
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                }}
+              >
+                <button
+                  className="cms-btn cms-btn-ghost"
+                  disabled={historyPage === 1}
+                  onClick={() =>
+                    setHistoryPage((page) =>
+                      Math.max(1, page - 1)
+                    )
+                  }
+                >
+                  ← Previous
+                </button>
+
+                <button
+                  className="cms-btn cms-btn-primary"
+                  disabled={
+                    historyPage === historyTotalPages
+                  }
+                  onClick={() =>
+                    setHistoryPage((page) =>
+                      Math.min(
+                        historyTotalPages,
+                        page + 1
+                      )
+                    )
+                  }
+                >
+                  Next →
+                </button>
+              </div>
             </div>
           )}
-          <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            <button className="cms-btn cms-btn-primary" onClick={runHistorySearch}>Search</button>
-            <button className="cms-btn cms-btn-ghost" onClick={() => setHistoryFilters({ fromDate: today, toDate: today })}>Reset</button>
-          </div>
-        </div>
-      </div>
-
-      {summary && (
-        <div className="cms-card" style={{ marginBottom: 16 }}>
-          <div className="cms-card-body" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <span className="cms-badge cms-badge-info">Total: {summary.totalStudents ?? summary.TotalStudents ?? "-"}</span>
-            <span className="cms-badge cms-badge-info">Present: {summary.present ?? summary.Present ?? "-"}</span>
-            <span className="cms-badge cms-badge-info">Absent: {summary.absent ?? summary.Absent ?? "-"}</span>
-            <span className="cms-badge cms-badge-info">Late: {summary.late ?? summary.Late ?? "-"}</span>
-            <span className="cms-badge cms-badge-info">Leave: {summary.leave ?? summary.Leave ?? "-"}</span>
-            {(summary.percentage ?? summary.Percentage) !== undefined && (
-              <span className="cms-badge cms-badge-info">Percentage: {summary.percentage ?? summary.Percentage}%</span>
-            )}
-          </div>
         </div>
       )}
 
-      <div className="cms-card">
-        <div className="cms-card-head">
-          <h2>Records ({totalCount})</h2>
-        </div>
+      {/* ======================================================
+          STEP 3 — ATTENDANCE REPORT
+          ====================================================== */}
 
-        {/* Bulk-update toolbar — only shows once something is selected */}
-        {selectedIds.length > 0 && (
-          <div className="cms-card-body" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderBottom: "1px solid var(--border, #e5e5e5)" }}>
-            <span className="cms-strong">{selectedIds.length} selected</span>
-            <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
-              {marksList.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-            <button className="cms-btn cms-btn-primary" onClick={applyBulkUpdate} disabled={bulkUpdating}>
-              {bulkUpdating ? "Updating..." : `Set ${selectedIds.length} to ${bulkStatus}`}
-            </button>
-            <button className="cms-btn cms-btn-ghost" onClick={() => setSelectedIds([])}>Clear selection</button>
-          </div>
-        )}
-
-        {loadingHistory ? (
-          <Loader label="Loading records..." />
-        ) : (
-          <div className="cms-table-wrap">
-            <table className="cms-table cms-attendance-table">
-              <thead>
-                <tr>
-                  <th>
-                    <input
-                      type="checkbox"
-                      onChange={toggleSelectAll}
-                      checked={records.length > 0 && records.filter((r) => !r.isLocked).every((r) => selectedIds.includes(r.attendanceId)) && records.some((r) => !r.isLocked)}
-                      aria-label="Select all records"
-                    />
-                  </th>
-                  <th>Date</th>
-                  <th>Roll Number</th>
-                  <th>Student Name</th>
-                  <th>Subject</th>
-                  <th>Faculty</th>
-                  <th>Attendance</th>
-                  <th>Status</th>
-                  <th>Session</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {records.length === 0 && (
-                  <tr>
-                    <td colSpan={10} style={{ textAlign: "center", padding: 20 }}>No records found. Adjust filters and search.</td>
-                  </tr>
-                )}
-                {records.map((r) => (
-                  <tr key={r.attendanceId}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(r.attendanceId)}
-                        disabled={r.isLocked}
-                        onChange={() => toggleSelected(r)}
-                        aria-label={`Select record for ${r.name}`}
-                      />
-                    </td>
-                    <td>{r.date}</td>
-                    <td className="cms-strong">{r.roll}</td>
-                    <td>{r.name}</td>
-                    <td>{r.subject}</td>
-                    <td>{r.faculty}</td>
-                    <td>
-                      <select
-                        value={reverseStatusMap[r.status] || "Present"}
-                        disabled={r.isLocked || savingId === r.attendanceId}
-                        onChange={(e) => updateRecordStatus(r, e.target.value)}
-                      >
-                        {marksList.map((m) => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td>
-                      {r.isLocked && <span className="cms-badge cms-badge-warn">Locked</span>}
-                      {!r.isLocked && !r.isActive && <span className="cms-badge cms-badge-muted">Inactive</span>}
-                      {!r.isLocked && r.isActive && <span className="cms-badge cms-badge-success">Active</span>}
-                    </td>
-                    <td>
-                      {r.isLocked ? (
-                        <button
-                          className="cms-btn cms-btn-ghost"
-                          disabled={sessionActionId === r.attendanceSessionId}
-                          onClick={() => unlockSession(r)}
-                        >
-                          {sessionActionId === r.attendanceSessionId ? "..." : "Unlock"}
-                        </button>
-                      ) : (
-                        <button
-                          className="cms-btn cms-btn-ghost"
-                          disabled={sessionActionId === r.attendanceSessionId || !r.attendanceSessionId}
-                          onClick={() => lockSession(r)}
-                        >
-                          {sessionActionId === r.attendanceSessionId ? "..." : "Lock"}
-                        </button>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button
-                          className="cms-btn cms-btn-ghost"
-                          disabled={r.isLocked || savingId === r.attendanceId}
-                          onClick={() => toggleRecordActive(r)}
-                        >
-                          {r.isActive ? "Deactivate" : "Activate"}
-                        </button>
-                        <button
-                          className="cms-btn cms-btn-danger"
-                          disabled={r.isLocked || savingId === r.attendanceId}
-                          onClick={() => deleteRecord(r)}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <div className="cms-modal-foot" style={{ justifyContent: "space-between" }}>
-          <span>Page {pageNumber} of {totalPages}</span>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="cms-btn cms-btn-ghost" disabled={pageNumber <= 1} onClick={() => changeHistoryPage(pageNumber - 1)}>Previous</button>
-            <button className="cms-btn cms-btn-ghost" disabled={pageNumber >= totalPages} onClick={() => changeHistoryPage(pageNumber + 1)}>Next</button>
-          </div>
-        </div>
-      </div>
-
-      {/* ---------- Attendance Percentage Report ---------- */}
-      <div className="cms-card" style={{ marginTop: 32, marginBottom: 16 }}>
-        <div className="cms-card-head">
-          <h2>Attendance Percentage Report</h2>
-        </div>
-        <div className="cms-card-body">
-          {lookupsLoading ? (
-            <Loader label="Loading filter options..." />
-          ) : (
-            <div className="cms-filters">
-              {pctFilterFields.map((f) => (
-                <Field
-                  key={f.name}
-                  field={f}
-                  value={pctFilters[f.name]}
-                  onChange={(name, value) => setPctFilters((previous) => (
-                    name === "group" ? { ...previous, group: value, section: "" } : { ...previous, [name]: value }
-                  ))}
-                />
-              ))}
+      {attendanceStep === 3 && (
+        <>
+          <div
+            className="cms-card"
+            style={{ marginBottom: 16 }}
+          >
+            <div className="cms-card-head">
+              <h2>Attendance Report</h2>
             </div>
-          )}
-          <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-            <button className="cms-btn cms-btn-primary" onClick={loadPercentageReport}>Generate Report</button>
-            <button className="cms-btn cms-btn-ghost" onClick={() => { setPctFilters({ fromDate: today, toDate: today }); setPctRows([]); setPctSearched(false); }}>Reset</button>
+
+            <div className="cms-card-body">
+              {/* REPORT TYPE */}
+
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  marginBottom: 16,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  className={`cms-btn ${
+                    reportType === "Student"
+                      ? "cms-btn-primary"
+                      : "cms-btn-ghost"
+                  }`}
+                  onClick={() =>
+                    changeReportType("Student")
+                  }
+                >
+                  Student Report
+                </button>
+
+                <button
+                  className={`cms-btn ${
+                    reportType === "Faculty"
+                      ? "cms-btn-primary"
+                      : "cms-btn-ghost"
+                  }`}
+                  onClick={() =>
+                    changeReportType("Faculty")
+                  }
+                >
+                  Faculty Report
+                </button>
+              </div>
+
+              {/* DATE RANGE */}
+
+              <div className="cms-filters">
+                <div className="cms-field">
+                  <label>From Date</label>
+
+                  <input
+                    type="date"
+                    value={reportFromDate}
+                    onChange={(e) => {
+                      setReportFromDate(e.target.value);
+                      setReportPage(1);
+                    }}
+                  />
+                </div>
+
+                <div className="cms-field">
+                  <label>To Date</label>
+
+                  <input
+                    type="date"
+                    value={reportToDate}
+                    onChange={(e) => {
+                      setReportToDate(e.target.value);
+                      setReportPage(1);
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 16,
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  className="cms-btn cms-btn-primary"
+                  onClick={() => {
+                    setReportPage(1);
+                    setReportGenerated(true);
+                    setToast("Attendance report generated");
+                  }}
+                >
+                  Generate Report
+                </button>
+              </div>
+            </div>
           </div>
+
+          {/* REPORT SUMMARY */}
+
+          {reportGenerated && (
+            <>
+              <div
+                className="cms-card"
+                style={{ marginBottom: 16 }}
+              >
+                <div className="cms-card-body">
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span className="cms-badge cms-badge-info">
+                      Total: {reportSummary.total}
+                    </span>
+
+                    <span className="cms-badge cms-badge-success">
+                      Present: {reportSummary.present}
+                    </span>
+
+                    <span className="cms-badge cms-badge-warn">
+                      Absent: {reportSummary.absent}
+                    </span>
+
+                    <span className="cms-badge cms-badge-info">
+                      Late: {reportSummary.late}
+                    </span>
+
+                    <span className="cms-badge cms-badge-info">
+                      Leave: {reportSummary.leave}
+                    </span>
+
+                    <span className="cms-badge cms-badge-success">
+                      Overall: {reportSummary.percentage}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* REPORT TABLE */}
+
+              <div className="cms-card">
+                <div className="cms-card-head">
+                  <h2>
+                    {reportType === "Student"
+                      ? "Student-wise Attendance Report"
+                      : "Faculty-wise Attendance Report"}
+                  </h2>
+
+                  <span className="cms-badge cms-badge-info">
+                    {reportFromDate} → {reportToDate}
+                  </span>
+                </div>
+
+                <div className="cms-table-wrap">
+                  <table className="cms-table cms-attendance-table">
+                    <thead>
+                      {reportType === "Student" ? (
+                        <tr>
+                          <th>Roll Number</th>
+                          <th>Student Name</th>
+                          <th>Group</th>
+                          <th>Present</th>
+                          <th>Absent</th>
+                          <th>Late</th>
+                          <th>Leave</th>
+                          <th>Total</th>
+                          <th>Percentage</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th>Employee ID</th>
+                          <th>Faculty Name</th>
+                          <th>Department</th>
+                          <th>Present</th>
+                          <th>Absent</th>
+                          <th>Late</th>
+                          <th>Leave</th>
+                          <th>Total</th>
+                          <th>Percentage</th>
+                        </tr>
+                      )}
+                    </thead>
+
+                    <tbody>
+                      {paginatedReportRows.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={9}
+                            style={{
+                              textAlign: "center",
+                              padding: 20,
+                            }}
+                          >
+                            No attendance data found for
+                            the selected dates.
+                          </td>
+                        </tr>
+                      )}
+
+                      {paginatedReportRows.map((row) => (
+                        <tr key={row.personId}>
+                          <td className="cms-strong">
+                            {reportType === "Student"
+                              ? row.roll
+                              : row.employeeId}
+                          </td>
+
+                          <td>{row.name}</td>
+
+                          <td>{row.department}</td>
+
+                          <td>{row.present}</td>
+
+                          <td>{row.absent}</td>
+
+                          <td>{row.late}</td>
+
+                          <td>{row.leave}</td>
+
+                          <td>{row.total}</td>
+
+                          <td>
+                            <span
+                              className={`cms-badge ${
+                                row.percentage >= 75
+                                  ? "cms-badge-success"
+                                  : "cms-badge-warn"
+                              }`}
+                            >
+                              {row.percentage}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* REPORT PAGINATION */}
+
+                {reportRows.length > 0 && (
+                  <div
+                    className="cms-modal-foot"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span className="cms-strong">
+                      Page {reportPage} of {reportTotalPages}
+                    </span>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                      }}
+                    >
+                      <button
+                        className="cms-btn cms-btn-ghost"
+                        disabled={reportPage === 1}
+                        onClick={() =>
+                          setReportPage((page) =>
+                            Math.max(1, page - 1)
+                          )
+                        }
+                      >
+                        ← Previous
+                      </button>
+
+                      <button
+                        className="cms-btn cms-btn-primary"
+                        disabled={
+                          reportPage === reportTotalPages
+                        }
+                        onClick={() =>
+                          setReportPage((page) =>
+                            Math.min(
+                              reportTotalPages,
+                              page + 1
+                            )
+                          )
+                        }
+                      >
+                        Next →
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ======================================================
+          PREVIOUS / NEXT
+          ====================================================== */}
+
+      <div
+        className="cms-card"
+        style={{ marginTop: 16 }}
+      >
+        <div
+          className="cms-card-body"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <button
+            className="cms-btn cms-btn-ghost"
+            disabled={attendanceStep === 1}
+            onClick={() =>
+              setAttendanceStep((step) =>
+                Math.max(1, step - 1)
+              )
+            }
+          >
+            ← Previous
+          </button>
+
+          <span className="cms-strong">
+            Step {attendanceStep} of 3
+          </span>
+
+          <button
+            className="cms-btn cms-btn-primary"
+            disabled={attendanceStep === 3}
+            onClick={() =>
+              setAttendanceStep((step) =>
+                Math.min(3, step + 1)
+              )
+            }
+          >
+            Next →
+          </button>
         </div>
       </div>
 
-      <div className="cms-card">
-        <div className="cms-card-head">
-          <h2>Student-wise Percentage</h2>
+
+      {/* ======================================================
+          SUCCESS TOAST
+          ====================================================== */}
+
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            right: 24,
+            bottom: 24,
+            zIndex: 9999,
+            background: "var(--card, #ffffff)",
+            border: "1px solid var(--border, #ddd)",
+            borderRadius: 10,
+            padding: "14px 18px",
+            boxShadow: "0 8px 25px rgba(0,0,0,0.15)",
+            minWidth: 280,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 15,
+          }}
+        >
+          <span>{toast}</span>
+
+          <button
+            className="cms-btn cms-btn-ghost"
+            onClick={() => setToast("")}
+          >
+            ×
+          </button>
         </div>
-        {loadingPct ? (
-          <Loader label="Calculating attendance percentage..." />
-        ) : (
-          <div className="cms-table-wrap">
-            <table className="cms-table cms-attendance-table">
-              <thead>
-                <tr>
-                  <th>Roll Number</th>
-                  <th>Student Name</th>
-                  <th>Present</th>
-                  <th>Total</th>
-                  <th>Percentage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pctRows.length === 0 && (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: "center", padding: 20 }}>
-                      {pctSearched ? "No data for the selected filters." : "Choose filters and click Generate Report."}
-                    </td>
-                  </tr>
-                )}
-                {pctRows.map((r) => (
-                  <tr key={r.studentId}>
-                    <td className="cms-strong">{r.roll}</td>
-                    <td>{r.name}</td>
-                    <td>{r.presentDays}</td>
-                    <td>{r.totalDays}</td>
-                    <td>
-                      <span className={`cms-badge ${r.percentage >= 75 ? "cms-badge-success" : "cms-badge-warn"}`}>
-                        {r.percentage}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      )}
 
       {confirmationDialog}
       <Toast message={toast} onClose={() => setToast("")} />
+
     </DashboardLayout>
   );
 }

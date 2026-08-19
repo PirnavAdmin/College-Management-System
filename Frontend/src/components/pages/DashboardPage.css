@@ -1,13 +1,13 @@
 .dashboard-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
-.dashboard-update-meta { display: flex; align-items: center; gap: 9px; color: var(--cms-muted); }
-.dashboard-update-meta small { font-size: 11px; white-space: nowrap; }
+.dashboard-refresh-meta { display: flex; align-items: center; gap: 9px; color: var(--cms-muted); }
+.dashboard-refresh-meta small { font-size: 11px; white-space: nowrap; }
+.dashboard-refresh { min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--cms-border); border-radius: 9px; color: var(--cms-text); background: var(--cms-surface); font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
+.dashboard-refresh:disabled { cursor: wait; opacity: .7; }
+.spin { animation: dashboard-spin 1s linear infinite; }
+@keyframes dashboard-spin { to { transform: rotate(360deg); } }
 .dashboard-loader { min-height: 300px; display: grid; place-items: center; }
 .dashboard-warning { margin-bottom: 16px; padding: 10px 13px; border: 1px solid #f0d098; border-radius: 10px; color: #925c08; background: #fff8e8; font-size: 12px; }
-.dashboard-kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-.dashboard-kpi-link { min-width: 0; color: inherit; text-decoration: none; border-radius: 12px; }
-.dashboard-kpi-link .cms-stat { height: 100%; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
-.dashboard-kpi-link:hover .cms-stat { border-color: color-mix(in srgb, var(--cms-primary) 35%, var(--cms-border)); box-shadow: 0 8px 20px rgb(15 23 42 / 8%); transform: translateY(-1px); }
-.dashboard-kpi-link:focus-visible { outline: 2px solid var(--cms-primary); outline-offset: 2px; }
+.dashboard-kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .dashboard-kpi-grid .cms-stat {
   min-width: 0;
   display: grid;
@@ -56,35 +56,9 @@
 .dashboard-chart-body .recharts-text { fill: var(--cms-muted); font-size: 11px; }
 .dashboard-empty { min-height: 80px; display: grid; place-items: center; padding: 16px; color: var(--cms-muted); font-size: 12px; text-align: center; }
 .dashboard-chart-body > .dashboard-empty { height: 100%; }
-.dashboard-admissions-head { align-items: flex-start; gap: 12px; }
-.dashboard-admissions-head > div:first-child { min-width: 0; }
-.dashboard-admissions-head small { display: block; margin-top: 4px; color: var(--cms-muted); font-size: 10px; }
-.dashboard-admissions-actions { display: flex; align-items: center; gap: 7px; }
-.dashboard-filter-button, .dashboard-chart-reset, .dashboard-filter-close { border: 0; color: var(--cms-text); background: transparent; font: inherit; cursor: pointer; }
-.dashboard-filter-button { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 11px; border: 1px solid var(--cms-border); border-radius: 9px; background: var(--cms-surface); font-size: 11px; font-weight: 700; }
-.dashboard-filter-button:hover, .dashboard-filter-button:focus-visible { border-color: var(--cms-primary); color: var(--cms-primary); }
-.dashboard-filter-button span { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; display: grid; place-items: center; border: 2px solid var(--cms-surface); border-radius: 50%; color: #fff; background: var(--cms-primary); font-size: 9px; }
-.dashboard-chart-reset { padding: 6px; color: var(--cms-primary); font-size: 11px; font-weight: 700; }
-.dashboard-admissions-filter { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) 30px; align-items: end; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--cms-border); background: var(--cms-subtle); }
-.dashboard-admissions-filter label { min-width: 0; display: grid; gap: 5px; color: var(--cms-muted); font-size: 10px; font-weight: 700; }
-.dashboard-admissions-filter select { width: 100%; min-height: 34px; padding: 6px 9px; border: 1px solid var(--cms-border); border-radius: 8px; color: var(--cms-text); background: var(--cms-surface); font: inherit; font-size: 11px; }
-.dashboard-filter-close { width: 30px; height: 34px; display: grid; place-items: center; border-radius: 8px; color: var(--cms-muted); }
-.dashboard-filter-close:hover, .dashboard-filter-close:focus-visible { color: var(--cms-primary); background: var(--cms-primary-soft); }
-.dashboard-admissions-chart { height: 330px; padding-top: 8px; }
-.dashboard-admissions-chart .recharts-brush { font-size: 9px; }
-.dashboard-attendance-card .cms-card-head h2 { min-width: 0; white-space: normal; }
-.dashboard-attendance-daily { min-height: 285px; display: grid; grid-template-columns: minmax(120px, .8fr) minmax(0, 1.2fr); align-items: center; gap: 18px; padding: 18px; }
-.dashboard-attendance-rate { display: grid; place-items: center; align-content: center; width: 138px; height: 138px; justify-self: center; border: 12px solid #dcfce7; border-radius: 50%; background: var(--cms-surface); text-align: center; }
-.dashboard-attendance-rate strong { color: #0f9d58; font-size: 25px; line-height: 1; }
-.dashboard-attendance-rate span { margin-top: 7px; color: var(--cms-muted); font-size: 11px; }
-.dashboard-attendance-metrics { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.dashboard-attendance-metrics > div { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--cms-border); border-radius: 10px; background: var(--cms-subtle); }
-.dashboard-attendance-metrics span { overflow-wrap: anywhere; color: var(--cms-muted); font-size: 11px; }
-.dashboard-attendance-metrics strong { color: var(--cms-text); font-size: 15px; }
 .dashboard-group-card { overflow: hidden; }
 .dashboard-group-body { min-width: 0; min-height: 285px; display: grid; grid-template-columns: minmax(150px, 44%) minmax(0, 56%); align-items: center; gap: 6px; padding: 10px 14px 14px; overflow: hidden; }
 .dashboard-group-chart { position: relative; width: min(100%, 220px); height: 210px; min-width: 0; justify-self: center; }
-.dashboard-group-empty-ring { position: absolute; top: 50%; left: 50%; width: 164px; height: 164px; border: 28px solid var(--cms-border); border-radius: 50%; opacity: .65; transform: translate(-50%, -50%); }
 .dashboard-group-total { position: absolute; top: 50%; left: 50%; display: grid; justify-items: center; transform: translate(-50%, -50%); pointer-events: none; }
 .dashboard-group-total strong { color: var(--cms-text); font-size: 22px; line-height: 1; }
 .dashboard-group-total span { margin-top: 5px; color: var(--cms-muted); font-size: 10px; white-space: nowrap; }
@@ -104,12 +78,10 @@
 .cms-card .recharts-wrapper { max-width: 100%; }
 @media (max-width: 1280px) { .dashboard-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .dashboard-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .dashboard-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dashboard-grid-2, .dashboard-grid-3 { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .dashboard-header-actions { align-items: stretch; flex-direction: column; width: 100%; } .dashboard-update-meta { justify-content: space-between; } }
-@media (max-width: 560px) { .dashboard-admissions-head { align-items: stretch; flex-direction: column; } .dashboard-admissions-actions { justify-content: flex-end; } .dashboard-admissions-filter { grid-template-columns: 1fr 1fr; } .dashboard-filter-close { position: absolute; top: 2px; right: 2px; } .dashboard-admissions-chart { height: 320px; padding-right: 2px; padding-left: 0; } }
-@media (max-width: 460px) { .dashboard-kpi-grid { grid-template-columns: 1fr; } .dashboard-update-meta { align-items: flex-start; flex-direction: column; } }
+@media (max-width: 640px) { .dashboard-header-actions { align-items: stretch; flex-direction: column; width: 100%; } .dashboard-refresh-meta { justify-content: space-between; } }
+@media (max-width: 460px) { .dashboard-kpi-grid { grid-template-columns: 1fr; } .dashboard-refresh-meta { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 360px) {
   .dashboard-kpi-grid .cms-stat { grid-template-columns: 40px minmax(0, 1fr); column-gap: 12px; }
   .dashboard-kpi-grid .cms-stat > .cms-stat-icon { width: 40px; height: 40px; }
 }
 @media (max-width: 560px) { .dashboard-group-body { grid-template-columns: 1fr; } .dashboard-group-chart { height: 200px; } .dashboard-group-legend { max-height: 160px; } }
-@media (max-width: 560px) { .dashboard-attendance-daily { grid-template-columns: 1fr; } .dashboard-attendance-rate { width: 120px; height: 120px; } }

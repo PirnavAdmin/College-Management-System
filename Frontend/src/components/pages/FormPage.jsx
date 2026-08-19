@@ -64,7 +64,7 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
   // Reload select options that depend on another form field, such as State
   // after Country changes. These are intentionally separate from the first
   // lookup load because the parent field must resolve first.
- const getDependsOnKeys = (field) => (Array.isArray(field.dependsOn) ? field.dependsOn : [field.dependsOn]);
+  const getDependsOnKeys = (field) => (Array.isArray(field.dependsOn) ? field.dependsOn : [field.dependsOn]);
 
   const dependentFieldValues = (sectionConfig.fields || [])
     .filter((field) => field.dependsOn)
@@ -100,6 +100,8 @@ export default function FormPage({ slug, config, id = null, secondary = false, l
         if (autoValue !== undefined) setValue(name, autoValue);
       });
     });
+
+
     return () => { ignore = true; };
   }, [dependentFieldValues, sectionConfig, values]);
 

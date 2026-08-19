@@ -6,8 +6,6 @@
 .faculty-list .cms-search { width: min(320px, 100%); min-width: 0; max-width: 320px; min-height: 40px; border-color: var(--cms-border); border-radius: 8px; }
 .faculty-list .cms-search input { font-size: 13.5px; }
 .faculty-list .cms-toolbar-right { gap: 8px; }
-.faculty-type-filter { display: flex; align-items: center; gap: 7px; color: var(--cms-muted); font-size: 12px; font-weight: 700; white-space: nowrap; }
-.faculty-type-filter select { min-height: 40px; padding: 0 28px 0 10px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); color: var(--cms-text); font: inherit; }
 .faculty-list .cms-toolbar-right .cms-btn { min-height: 40px; padding: 0 16px; border-radius: 8px; font-size: 13.5px; }
 .faculty-list .cms-table-wrap { margin: 0 14px; overflow-x: auto; overflow-y: hidden; border: 1px solid var(--cms-border); border-radius: 8px; }
 .faculty-list .cms-table th { padding: 13px 16px; font-size: 11px; }
@@ -123,15 +121,6 @@
 .faculty-subject-selector select:disabled { cursor: not-allowed; opacity: 0.7; }
 .faculty-subject-selector .cms-btn:disabled { cursor: not-allowed; opacity: 0.55; }
 .faculty-empty { padding: 14px; color: var(--cms-muted); font-size: 13px; text-align: center; }
-.faculty-subject-selector input { width: 100%; min-height: 42px; padding: 0 12px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); color: var(--cms-text); }
-.faculty-search-results { display: grid; max-height: 190px; overflow: auto; border: 1px solid var(--cms-border); border-radius: 8px; }
-.faculty-search-results button { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--cms-border); background: transparent; color: var(--cms-text); text-align: left; cursor: pointer; }
-.faculty-search-results button:last-child { border-bottom: 0; }
-.faculty-search-results button:hover { background: var(--cms-primary-soft); }
-.faculty-selected-label { margin: 8px 0 0; color: var(--cms-muted); font-size: 13px; font-weight: 600; }
-.faculty-subject-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.faculty-subject-chips span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 99px; background: var(--cms-primary-soft); color: var(--cms-primary); font-size: 13px; }
-.faculty-subject-chips button { display: inline-grid; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
 
 @media (max-width: 800px) {
   .faculty-list .cms-toolbar { padding: 14px; }

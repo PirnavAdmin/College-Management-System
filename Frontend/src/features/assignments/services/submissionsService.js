@@ -1,18 +1,36 @@
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
-import { getAssignments } from "./assignmentsService.js";
+import { getAdminAssignments, getAssignments } from "./assignmentsService.js";
 
 const unwrap = (payload) => payload?.data ?? payload?.Data ?? payload;
 
-// This is deliberately local to the submissions submodule. The API receives the
-// authenticated session from apiClient and applies its existing Admin/Faculty scope.
-export async function getSubmissionAssignments() {
-  return getAssignments();
+function list(payload) {
+  return Array.isArray(payload) ? payload : payload?.items ?? payload?.Items ?? payload?.data ?? payload?.Data ?? [];
 }
 
-export async function getSubmissionGroups() {
-  const response = await apiClient.get(apiEndpoints.groups.list, { params: { isActive: true } });
-  return unwrap(response.data);
+function mergeAssignments(...collections) {
+  const byId = new Map();
+  collections.flat().forEach((assignment) => {
+    const id = assignment?.assignmentId ?? assignment?.AssignmentId ?? assignment?.id ?? assignment?.Id;
+    if (id !== undefined && id !== null && id !== "") {
+      byId.set(String(id), { ...(byId.get(String(id)) || {}), ...assignment });
+    }
+  });
+  return [...byId.values()].sort((left, right) => Number(right.assignmentId ?? right.id) - Number(left.assignmentId ?? left.id));
+}
+
+// Keep the picker in sync with All Assignments: merge the Admin endpoint and
+// the standard /api/v1/assignments endpoint, which includes faculty assignments.
+export async function getSubmissionAssignments() {
+  const [adminResult, assignmentsResult] = await Promise.allSettled([
+    getAdminAssignments(),
+    getAssignments(),
+  ]);
+  const collections = [adminResult, assignmentsResult]
+    .filter((result) => result.status === "fulfilled")
+    .map((result) => list(result.value));
+  if (!collections.length) throw adminResult.reason || assignmentsResult.reason;
+  return mergeAssignments(...collections);
 }
 
 export async function getSubmissionSections() {
@@ -26,7 +44,7 @@ export async function getSubmissionAcademicYears() {
 }
 
 export async function getAssignmentSubmissions(assignmentId) {
-  const response = await apiClient.get(`/api/admin/assignments/${assignmentId}/submissions`);
+  const response = await apiClient.get(apiEndpoints.assignments.submissions(assignmentId));
   return unwrap(response.data);
 }
 

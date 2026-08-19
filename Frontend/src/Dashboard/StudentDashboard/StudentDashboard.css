@@ -7,7 +7,7 @@
 .student-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .student-actions button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--cms-border); border-radius: 10px; background: var(--cms-surface); color: var(--cms-text); padding: 9px 12px; cursor: pointer; font-weight: 700; }
 .student-main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0; }
-.student-hero { border: 1px solid var(--cms-border); border-radius: 22px; background: var(--cms-primary-gradient); color: #fff; padding: 28px; box-shadow: var(--cms-shadow); }
+.student-hero { border: 1px solid var(--cms-border); border-radius: 22px; background: linear-gradient(135deg, var(--cms-primary), #6d28d9); color: #fff; padding: 28px; box-shadow: var(--cms-shadow); }
 .student-hero span { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; opacity: 0.9; }
 .student-hero h1 { margin: 12px 0 8px; font-size: clamp(28px, 4vw, 42px); }
 .student-hero p { margin: 0; color: rgba(255,255,255,0.86); }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FaArrowLeft, FaArrowRight, FaArrowsRotate, FaAward, FaBan, FaCheck, FaEraser, FaEye, FaFileCirclePlus, FaMagnifyingGlass, FaPaperPlane, FaPrint, FaRotateLeft, FaXmark } from "react-icons/fa6";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Field, Loader, Toast } from "@/components/common/Ui.jsx";
+import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import { certificates as staticCertificates, options, students as mockStudents } from "@/data/mockData.js";
@@ -20,6 +20,15 @@ const workflowSteps = ["Generated", "Reviewed", "Approved", "Issued"];
 const statusChoices = ["All", "Generated", "Reviewed", "Approved", "Issued", "Cancelled"];
 
 const CERTIFICATE_API = apiEndpoints.certificates;
+
+const getBackendPrincipalSignatureUrl = () => {
+  try {
+    const baseUrl = apiClient.defaults.baseURL || (typeof window !== "undefined" ? window.location.origin : "");
+    return baseUrl ? new URL("/images/signature.png", baseUrl).href : "/images/signature.png";
+  } catch {
+    return "/images/signature.png";
+  }
+};
 
 const unwrapListPayload = (payload) => {
   const candidates = [
@@ -137,7 +146,7 @@ const pick = (obj, keys) => {
 };
 
 const getSignatureValue = (raw) => {
-  const value = pick(raw, [
+  const signatureKeys = [
     "signature",
     "Signature",
     "signatureUrl",
@@ -160,36 +169,85 @@ const getSignatureValue = (raw) => {
     "AuthorizedSignatory",
     "principalSignature",
     "PrincipalSignature",
-  ]);
+  ];
+  const containerKeys = [
+    "principal",
+    "Principal",
+    "college",
+    "College",
+    "institution",
+    "Institution",
+    "settings",
+    "Settings",
+    "certificateSettings",
+    "CertificateSettings",
+    "signatory",
+    "Signatory",
+    "authorizedSignatory",
+    "AuthorizedSignatory",
+    "data",
+    "Data",
+    "result",
+    "Result",
+    "record",
+    "Record",
+  ];
+  const extract = (source, depth = 0) => {
+    if (!source || typeof source !== "object" || depth > 3) return "";
+    const value = pick(source, signatureKeys);
 
-  if (value && typeof value === "object") {
-    return pick(value, [
-      "url",
-      "Url",
-      "path",
-      "Path",
-      "src",
-      "Src",
-      "data",
-      "Data",
-      "value",
-      "Value",
-      "base64",
-      "Base64",
-    ]) || "";
-  }
+    if (value && typeof value === "object") {
+      const nestedValue = pick(value, [
+        "url",
+        "Url",
+        "path",
+        "Path",
+        "src",
+        "Src",
+        "data",
+        "Data",
+        "value",
+        "Value",
+        "base64",
+        "Base64",
+        "content",
+        "Content",
+      ]);
+      const mimeType = pick(value, ["mimeType", "MimeType", "contentType", "ContentType", "type", "Type"]);
+      if (nestedValue) {
+        const rawValue = String(nestedValue).trim();
+        if (mimeType && !/^data:/i.test(rawValue) && /^[A-Za-z0-9+/\r\n]+={0,2}$/.test(rawValue)) {
+          return `data:${mimeType};base64,${rawValue.replace(/\s/g, "")}`;
+        }
+        return rawValue;
+      }
+      const nestedSignature = extract(value, depth + 1);
+      if (nestedSignature) return nestedSignature;
+    }
 
-  return value || "";
+    if (value && typeof value !== "object") return value;
+
+    for (const key of containerKeys) {
+      const nested = source[key];
+      const nestedSignature = extract(nested, depth + 1);
+      if (nestedSignature) return nestedSignature;
+    }
+
+    return "";
+  };
+
+  return extract(raw);
 };
 
 const resolveSignatureSource = (signature) => {
   const value = String(signature || "").trim();
   if (!value) return "";
   if (/^data:image\//i.test(value) || /^(https?:\/\/|blob:)/i.test(value)) return value;
+  if (/^image\/[a-z0-9.+-]+;base64,/i.test(value)) return `data:${value}`;
   if (/^[A-Za-z0-9+/\r\n]+={0,2}$/.test(value) && value.length > 100) {
     return `data:image/png;base64,${value.replace(/\s/g, "")}`;
   }
-  if (/^(\/|\.\/|\.\.\/)/.test(value)) {
+  if (/^(\/|\.\/|\.\.\/|uploads?\/|files?\/)/i.test(value) || /\.(png|jpe?g|gif|webp|svg)(?:[?#].*)?$/i.test(value)) {
     try {
       const baseUrl = apiClient.defaults.baseURL || window.location.origin;
       return new URL(value, baseUrl).href;
@@ -346,7 +404,7 @@ const normalizeCertificate = (raw, studentLookup = fallbackStudents) => {
     reviewedBy: pick(raw, ["reviewedBy", "ReviewedBy"]) || "",
     approvedBy: pick(raw, ["approvedBy", "ApprovedBy"]) || "",
     issuedBy: pick(raw, ["issuedBy", "IssuedBy"]) || "",
-    signature: getSignatureValue(raw),
+    signature: getSignatureValue(raw) || getBackendPrincipalSignatureUrl(),
   };
 };
 
@@ -470,12 +528,12 @@ function escapeHtml(value) {
 
 function renderSignatureHtml(signature) {
   const value = resolveSignatureSource(signature);
-  if (!value) return '<span class="certificate-signature-text">Authorized Signature</span>';
+  if (!value) return "";
 
   const isImage = /^(data:image\/|https?:\/\/|blob:)/i.test(value);
   return isImage
     ? `<img class="certificate-signature" src="${escapeHtml(value)}" alt="Authorized signature" onerror="this.style.display='none';" />`
-    : `<span class="certificate-signature-text">${escapeHtml(value)}</span>`;
+    : "";
 }
 
 function getCertificateTemplate(type, record) {
@@ -690,8 +748,9 @@ const CERTIFICATE_PRINT_CSS = `
   }
   .certificate-signature {
     display: block;
-    width: 150px;
-    max-height: 58px;
+    width: 180px;
+    height: auto;
+    max-height: 70px;
     object-fit: contain;
     margin: 0 auto 8px;
   }
@@ -790,6 +849,7 @@ function buildPrintHtml(record) {
 }
 
 export default function CertificatesPage() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const [rows, setRows] = useState(() => staticCertificates.map((item) => normalizeCertificate(item, fallbackStudents)));
   const [studentRows, setStudentRows] = useState(fallbackStudents);
   const [loadingStudents, setLoadingStudents] = useState(true);
@@ -1287,9 +1347,11 @@ export default function CertificatesPage() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Do you want to ${action} all ${eligibleRows.length} eligible certificate${eligibleRows.length === 1 ? "" : "s"}?`,
-    );
+    const confirmed = await confirm({
+      title: `${action.charAt(0).toUpperCase() + action.slice(1)} all?`,
+      message: `${action.charAt(0).toUpperCase() + action.slice(1)} all ${eligibleRows.length} eligible certificate${eligibleRows.length === 1 ? "" : "s"}?`,
+      confirmLabel: `${action.charAt(0).toUpperCase() + action.slice(1)} all`,
+    });
     if (!confirmed) return;
 
     setBulkAction(action);
@@ -1337,7 +1399,12 @@ export default function CertificatesPage() {
     if (busyAction.id) return;
     const actionId = await resolveServerCertificateId(row);
     if (!actionId) return;
-    const ok = window.confirm(`Cancel certificate ${row.number}?`);
+    const ok = await confirm({
+      title: "Cancel certificate",
+      message: `Cancel certificate ${row.number}?`,
+      confirmLabel: "Cancel certificate",
+      danger: true,
+    });
     if (!ok) return;
 
     setBusyAction({ id: row.id, type: "cancel" });
@@ -1382,7 +1449,11 @@ export default function CertificatesPage() {
     }
     const actionId = await resolveServerCertificateId(row);
     if (!actionId) return;
-    const confirmed = window.confirm(`Do you want to reissue certificate ${row.number}? A new certificate number will be generated.`);
+    const confirmed = await confirm({
+      title: "Reissue certificate",
+      message: `Do you want to reissue certificate ${row.number}? A new certificate number will be generated.`,
+      confirmLabel: "Reissue",
+    });
     if (!confirmed) return;
     setBusyAction({ id: row.id, type: "reissue" });
 
@@ -1526,7 +1597,7 @@ export default function CertificatesPage() {
   };
 
   const printCertificate = async (record) => {
-    const target = record;
+    let target = record;
     if (!target) return;
 
     if (printingId) return;
@@ -1537,6 +1608,24 @@ export default function CertificatesPage() {
       if (!popup) {
         setToast("Please allow popups to print certificate");
         return;
+      }
+
+      const resolvedId = await resolveServerCertificateId(record);
+      if (resolvedId) {
+        try {
+          const response = await apiClient.get(CERTIFICATE_API.getById(resolvedId));
+          const details = unwrapSinglePayload(response.data);
+          if (hasCertificateShape(details)) {
+            const normalizedDetails = normalizeCertificate(details, studentRows);
+            target = {
+              ...record,
+              ...normalizedDetails,
+              signature: normalizedDetails.signature || getSignatureValue(response.data) || record.signature || "",
+            };
+          }
+        } catch {
+          // Retain the already loaded record when certificate details are unavailable.
+        }
       }
 
       const openPrintDialog = () => {
@@ -1590,7 +1679,11 @@ export default function CertificatesPage() {
         const response = await apiClient.get(CERTIFICATE_API.getById(resolvedId));
         const details = unwrapSinglePayload(response.data);
         if (hasCertificateShape(details)) {
-          setPrintPreview(normalizeCertificate(details, studentRows));
+          const normalizedDetails = normalizeCertificate(details, studentRows);
+          setPrintPreview({
+            ...normalizedDetails,
+            signature: normalizedDetails.signature || getSignatureValue(response.data) || record.signature || "",
+          });
           return;
         }
       } catch {
@@ -2175,16 +2268,6 @@ export default function CertificatesPage() {
                     <span>{isRowBusy(printPreview.id, "review") ? "Marking..." : "Mark as Reviewed"}</span>
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-primary"
-                  onClick={() => printCertificate(printPreview)}
-                  disabled={printingId === printPreview.id}
-                  title="Print Certificate"
-                >
-                  <FaPrint size={15} aria-hidden="true" />
-                  <span>{printingId === printPreview.id ? "Preparing..." : "Print Certificate"}</span>
-                </button>
                 <button type="button" className="cms-action-btn" aria-label="Close print preview" onClick={() => setPrintPreview(null)}>
                   <FaXmark size={16} aria-hidden="true" />
                 </button>
@@ -2232,20 +2315,16 @@ export default function CertificatesPage() {
 
                 <footer>
                   <div>
-                    {previewSignature ? (
-                      previewSignatureIsImage ? (
-                        <img
-                          className="certificate-signature"
-                          src={previewSignature}
-                          alt="Authorized signature"
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <span className="certificate-signature-text">{previewSignature}</span>
-                      )
-                    ) : <span className="certificate-signature-text">Authorized Signature</span>}
+                    {previewSignature && previewSignatureIsImage ? (
+                      <img
+                        className="certificate-signature"
+                        src={previewSignature}
+                        alt="Authorized signature"
+                        onError={(event) => {
+                          event.currentTarget.style.display = "none";
+                        }}
+                      />
+                    ) : null}
                     <span>Authorized Signatory</span>
                     <strong>Principal, Pirnav Junior College</strong>
                   </div>
@@ -2342,6 +2421,7 @@ export default function CertificatesPage() {
         </div>
       ) : null}
 
+      {confirmationDialog}
       <Toast message={toast} onClose={() => setToast("")} />
     </DashboardLayout>
   );

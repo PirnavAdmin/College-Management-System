@@ -27,19 +27,6 @@
   width: min(420px, calc(100vw - 32px));
   max-width: 420px;
 }
-.cms-modal.cms-confirm-dialog {
-  width: min(360px, calc(100vw - 32px));
-  max-width: 360px;
-}
-.cms-modal.cms-confirm-dialog .cms-modal-head {
-  padding: 12px 16px;
-}
-.cms-modal.cms-confirm-dialog .cms-modal-body {
-  padding: 12px 16px;
-}
-.cms-modal.cms-confirm-dialog .cms-modal-foot {
-  padding: 10px 16px;
-}
 .cms-modal-head {
   flex: 0 0 auto;
   padding: 16px 20px;
@@ -69,22 +56,6 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-}
-.cms-confirm-content {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  text-align: center;
-}
-.cms-confirm-message {
-  max-width: 320px;
-  margin: 0;
-  color: var(--cms-text);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.55;
 }
 [data-theme="dark"] .cms-modal {
   background: var(--cms-surface);

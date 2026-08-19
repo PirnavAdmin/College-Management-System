@@ -39,23 +39,19 @@ const EMPTY_REPORTS = {
 const REPORTS_API_VERSION = "1.0";
 const REPORTS_API_BASE_URL = String(
   import.meta.env.VITE_REPORTS_API_BASE_URL
-    || "https://movable-swampland-tinderbox.ngrok-free.dev",
-).replace(/\/$/, "");
-const CMS_API_BASE_URL = String(
-  import.meta.env.VITE_API_BASE_URL
-    || "https://sterile-retorted-tightness.ngrok-free.dev",
+    || import.meta.env.VITE_API_BASE_URL
+    || ""
 ).replace(/\/$/, "");
 const module18Endpoint = (path) => `${REPORTS_API_BASE_URL}/api/module18-reports${path}`;
-const cmsEndpoint = (path) => `${CMS_API_BASE_URL}${path}`;
 const OVERVIEW_REPORT_TYPE = "dashboard";
 
 const reportsApi = {
   filters: {
-    boards: cmsEndpoint("/api/v1/boards"),
-    years: cmsEndpoint("/api/v1/academic-years"),
-    levels: cmsEndpoint("/api/v1/boards/academic-levels"),
-    groups: cmsEndpoint("/api/v1/groups"),
-    sections: (groupId) => cmsEndpoint(`/api/v1/Sections/group/${groupId}`),
+    boards: module18Endpoint("/filters/boards"),
+    years: module18Endpoint("/filters/academic-years"),
+    levels: module18Endpoint("/filters/academic-levels"),
+    groups: module18Endpoint("/filters/groups"),
+    sections: module18Endpoint("/filters/sections"),
   },
   auditLogs: module18Endpoint("/audit-logs"),
   custom: module18Endpoint("/custom"),
@@ -208,20 +204,29 @@ function metricFromSources(sources, keys) {
   return undefined;
 }
 
-function academicLevelOptions(payload) {
-  return collection(payload, ["academicLevels", "AcademicLevels", "levels", "Levels"])
-    .map((item) => optionFrom(
-      item,
-      ["academicLevelId", "AcademicLevelId", "academicLevelID", "levelId", "LevelId", "id", "Id", "value", "Value"],
-      ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "levelName", "LevelName", "name", "Name", "label", "Label", "text", "Text"],
-    ))
-    .filter(Boolean);
+function activeOption(item) {
+  const marker = read(item, "isActive", "IsActive", "active", "Active", "status", "Status", "isCurrent", "IsCurrent");
+  if (marker === undefined || marker === null || marker === "") return true;
+  if (marker === false) return false;
+  return !["false", "inactive", "disabled"].includes(String(marker).trim().toLowerCase());
 }
 
-function filterOptions(payload, preferredKeys, idKeys, labelKeys) {
-  return collection(payload, preferredKeys)
-    .map((item) => optionFrom(item, [...idKeys, "value", "Value"], [...labelKeys, "label", "Label", "text", "Text"]))
-    .filter(Boolean);
+function responseRecordCount(payload) {
+  const node = dataNode(payload);
+  if (Array.isArray(node)) return node.length;
+  const records = collection(payload);
+  return records.length ? records.length : undefined;
+}
+
+function activeFilterOptions(payload, preferredKeys, idKeys, labelKeys) {
+  const unique = new Map();
+  collection(payload, preferredKeys).forEach((item) => {
+    if (!activeOption(item)) return;
+    const normalized = optionFrom(item, [...idKeys, "value", "Value"], [...labelKeys, "label", "Label", "text", "Text"]);
+    const id = positiveId(normalized?.value);
+    if (normalized && id && !unique.has(id)) unique.set(id, { ...normalized, value: String(id) });
+  });
+  return Array.from(unique.values());
 }
 
 function positiveId(value) {
@@ -304,7 +309,7 @@ function mapFacultyWorkload(payload) {
   return collection(payload, ["facultyWorkload", "FacultyWorkload", "workload", "Workload", "faculty", "Faculty"])
     .map((item) => ({
       faculty: String(read(item, "facultyName", "FacultyName", "name", "Name") ?? ""),
-      hours: numberValue(item, "weeklyHours", "WeeklyHours", "hoursPerWeek", "HoursPerWeek", "workloadHours", "WorkloadHours", "hours", "Hours"),
+      hours: numberValue(item, "totalWorkloadHours", "TotalWorkloadHours", "weeklyHours", "WeeklyHours", "hoursPerWeek", "HoursPerWeek", "workloadHours", "WorkloadHours", "hours", "Hours"),
     }))
     .filter((item) => item.faculty && item.hours !== undefined);
 }
@@ -487,8 +492,8 @@ export default function ReportsPage() {
     ]);
     setMasterOptions((current) => ({
       ...current,
-      boards: results[0].status === "fulfilled" ? filterOptions(results[0].value.data, ["boards", "Boards"], ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]) : [],
-      years: results[1].status === "fulfilled" ? filterOptions(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"], ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]) : [],
+      boards: results[0].status === "fulfilled" ? activeFilterOptions(results[0].value.data, ["boards", "Boards"], ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]) : [],
+      years: results[1].status === "fulfilled" ? activeFilterOptions(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"], ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]) : [],
       levels: [], groups: [], sections: [],
     }));
     const failures = results.filter((result) => result.status === "rejected");
@@ -502,9 +507,11 @@ export default function ReportsPage() {
     setPreviewFile(null);
     setLoading(true);
     setError("");
-    const results = await Promise.allSettled(reportRequests.map((request) => apiClient.get(request.endpoint, {
-      params: buildQuery(selectedFilters, request),
-    })));
+    setReportErrors({});
+    const [overviewResult, ...results] = await Promise.allSettled([
+      apiClient.get(reportsApi.generate(OVERVIEW_REPORT_TYPE), { params: buildQuery(selectedFilters, { casing: "upper" }) }),
+      ...reportRequests.map((request) => apiClient.get(request.endpoint, { params: buildQuery(selectedFilters, request) })),
+    ]);
     const nextReports = { ...EMPTY_REPORTS };
     const nextErrors = {};
     const failures = [];
@@ -518,7 +525,10 @@ export default function ReportsPage() {
     });
     setReports(nextReports);
     setReportErrors(nextErrors);
-    setReportGenerated(results.some((result, index) => result.status === "fulfilled" && hasReportData(nextReports[reportRequests[index].key])));
+    setReportGenerated(
+      (overviewResult.status === "fulfilled" && hasReportData(overviewResult.value.data))
+      || results.some((result, index) => result.status === "fulfilled" && hasReportData(nextReports[reportRequests[index].key])),
+    );
     setAuditPage(1);
     setError(reportFailureMessage(failures));
     setLoading(false);
@@ -539,10 +549,10 @@ export default function ReportsPage() {
     let active = true;
     setLevelLoading(true);
     apiClient.get(reportsApi.filters.levels, {
-      params: { "api-version": REPORTS_API_VERSION },
+      params: { boardId, "api-version": REPORTS_API_VERSION },
     }).then((response) => {
       if (!active) return;
-      const levels = academicLevelOptions(response.data);
+      const levels = activeFilterOptions(response.data, ["academicLevels", "AcademicLevels", "levels", "Levels"], ["academicLevelId", "AcademicLevelId", "academicLevelID", "levelId", "LevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "levelName", "LevelName", "name", "Name"]);
       setMasterOptions((current) => ({ ...current, levels }));
       if (!levels.length) setToast("No academic levels available for the selected Board.");
     }).catch((requestError) => {
@@ -565,7 +575,7 @@ export default function ReportsPage() {
       boardId, academicYearId, academicLevelId, "api-version": REPORTS_API_VERSION,
     } }).then((response) => {
       if (!active) return;
-      const groups = filterOptions(response.data, ["groups", "Groups"], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]);
+      const groups = activeFilterOptions(response.data, ["groups", "Groups"], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]);
       setMasterOptions((current) => ({ ...current, groups }));
       if (!groups.length) setToast("No groups available for the selected filters.");
     }).catch((requestError) => active && setToast(`Unable to load Groups. ${getApiErrorMessage(requestError)}`))
@@ -582,11 +592,11 @@ export default function ReportsPage() {
     const groupId = positiveId(filters.group);
     if (!boardId || !academicYearId || !academicLevelId || !groupId) return undefined;
     setSectionsLoading(true);
-    apiClient.get(reportsApi.filters.sections(groupId), {
-      params: { "api-version": REPORTS_API_VERSION },
+    apiClient.get(reportsApi.filters.sections, {
+      params: { boardId, academicYearId, academicLevelId, groupId, "api-version": REPORTS_API_VERSION },
     }).then((response) => {
       if (!active) return;
-      const sections = filterOptions(response.data, ["sections", "Sections"], ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
+      const sections = activeFilterOptions(response.data, ["sections", "Sections"], ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
       setMasterOptions((current) => ({ ...current, sections }));
       if (!sections.length) setToast("No sections available for the selected filters.");
     }).catch((requestError) => active && setToast(`Unable to load Sections. ${getApiErrorMessage(requestError)}`))
@@ -598,13 +608,13 @@ export default function ReportsPage() {
     return [
       { name: "board", label: boardsLoading ? "Board (Loading...)" : "Board", type: "select", options: masterOptions.boards, disabled: boardsLoading, required: true },
       { name: "year", label: yearsLoading ? "Academic Year (Loading...)" : "Academic Year", type: "select", options: masterOptions.years, disabled: yearsLoading, required: true },
-      { name: "level", label: levelLoading ? "Academic Level (Loading...)" : "Academic Level", type: "select", options: masterOptions.levels, disabled: levelLoading, required: true },
-      { name: "group", label: groupsLoading ? "Group (Loading...)" : "Group", type: "select", options: masterOptions.groups, disabled: groupsLoading, required: true },
-      { name: "section", label: sectionsLoading ? "Section (Loading...)" : "Section", type: "select", options: masterOptions.sections, disabled: sectionsLoading, required: true },
+      { name: "level", label: levelLoading ? "Academic Level (Loading...)" : "Academic Level", type: "select", options: masterOptions.levels, disabled: !positiveId(filters.board) || levelLoading, required: true },
+      { name: "group", label: groupsLoading ? "Group (Loading...)" : "Group", type: "select", options: masterOptions.groups, disabled: !positiveId(filters.board) || !positiveId(filters.year) || !positiveId(filters.level) || groupsLoading, required: true },
+      { name: "section", label: sectionsLoading ? "Section (Loading...)" : "Section", type: "select", options: masterOptions.sections, disabled: !positiveId(filters.board) || !positiveId(filters.year) || !positiveId(filters.level) || !positiveId(filters.group) || sectionsLoading, required: true },
       { name: "from", label: "From Date", type: "date", required: true },
       { name: "to", label: "To Date", type: "date", required: true },
     ];
-  }, [boardsLoading, groupsLoading, levelLoading, masterOptions, sectionsLoading, yearsLoading]);
+  }, [boardsLoading, filters.board, filters.group, filters.level, filters.year, groupsLoading, levelLoading, masterOptions, sectionsLoading, yearsLoading]);
 
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
@@ -639,9 +649,9 @@ export default function ReportsPage() {
 
   const passRate = metric(reports.passPercentage, ["passPercentage", "PassPercentage", "percentage", "Percentage", "passRate", "PassRate"]);
   const summaryValues = useMemo(() => {
-    const admissionCount = collection(reports.admissions).length || undefined;
-    const examinationCount = collection(reports.examinations).length || undefined;
-    const resultCount = collection(reports.results).length || undefined;
+    const admissionCount = responseRecordCount(reports.admissions);
+    const examinationCount = responseRecordCount(reports.examinations);
+    const resultCount = responseRecordCount(reports.results);
     return {
       admissions: metricFromSources([reports.admissions], ["totalAdmissions", "admissions", "admissionsCount", "total", "count"]) ?? admissionCount,
       attendance: metricFromSources([reports.attendance], ["attendancePercentage", "averageAttendance", "attendanceRate", "percentage"]),
@@ -652,9 +662,9 @@ export default function ReportsPage() {
       facultyWorkload: metricFromSources([reports.facultyWorkload], ["averageFacultyWorkload", "averageWorkload", "facultyWorkload", "weeklyHours", "hoursPerWeek", "totalTeachingHours"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) : undefined),
       studentStrength: metricFromSources([reports.studentStrength], ["totalStudents", "studentStrength", "total", "count"]),
       passPercentage: passRate,
-      toppers: metricFromSources([reports.toppers], ["identified", "toppersIdentified", "topperCount", "totalToppers", "count"]) ?? (topperRows.length || undefined),
+      toppers: metricFromSources([reports.toppers], ["identified", "toppersIdentified", "topperCount", "totalToppers", "count"]) ?? responseRecordCount(reports.toppers),
     };
-  }, [passRate, reports, topperRows.length, workloadData]);
+  }, [passRate, reports, workloadData]);
   const handleFilterChange = (name, value) => {
     setReportGenerated(false);
     setPreviewFile(null);
@@ -710,6 +720,10 @@ export default function ReportsPage() {
     setLevelLoading(false);
     setGroupsLoading(false);
     setSectionsLoading(false);
+    setAuditFilters({});
+    setAuditData(null);
+    setAuditError("");
+    setAuditPage(1);
   };
 
   const handleAuditFilterChange = (name, value) => {

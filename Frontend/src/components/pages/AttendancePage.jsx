@@ -1,5 +1,11 @@
 import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+
+import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
+import { sections as mockSections } from "@/data/mockData.js";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
+
 import "./AttendancePage.css";
 
 const marksList = ["Present", "Absent", "Late", "Leave"];
@@ -428,6 +434,7 @@ export default function AttendancePage() {
   const [attendanceMode, setAttendanceMode] = useState("student");
   const [attendanceStep, setAttendanceStep] = useState(1);
   const [toast, setToast] = useState("");
+  const { confirm, confirmationDialog } = useConfirmDialog();
 
   /* ============================================================
      STUDENT FILTERS
@@ -516,6 +523,30 @@ export default function AttendancePage() {
 
   const [reportToDate, setReportToDate] =
     useState(today);
+  const deleteRecord = async (record) => {
+    if (record.isLocked) {
+      setToast("This session is locked. Ask an admin to unlock it first.");
+      return;
+    }
+    const confirmed = await confirm({
+      title: "Delete attendance record",
+      message: `Delete attendance record for ${record.name} on ${record.date}?`,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!confirmed) return;
+    setSavingId(record.attendanceId);
+    try {
+      await apiClient.delete(apiEndpoints.attendance.delete(record.attendanceId));
+      setRecords((rs) => rs.filter((r) => r.attendanceId !== record.attendanceId));
+      setSelectedIds((ids) => ids.filter((id) => id !== record.attendanceId));
+      setToast("Record deleted");
+    } catch (err) {
+      setToast(getApiErrorMessage(err));
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const [reportGenerated, setReportGenerated] = useState(true);
 
@@ -2206,6 +2237,7 @@ export default function AttendancePage() {
         </div>
       </div>
 
+
       {/* ======================================================
           SUCCESS TOAST
           ====================================================== */}
@@ -2239,6 +2271,10 @@ export default function AttendancePage() {
           </button>
         </div>
       )}
+
+      {confirmationDialog}
+      <Toast message={toast} onClose={() => setToast("")} />
+
     </DashboardLayout>
   );
 }

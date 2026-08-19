@@ -70,6 +70,16 @@ export const students = [
   { id: 8, admissionNo: "ADM-2024-006", name: "Meera Joshi", roll: "24MPC004", group: "MPC", level: "1st Year", section: "A", gender: "Female", father: "Vinay Joshi", mobile: "9000089012", status: "Active", attendance: 93, fee: "Paid", percentage: 90 },
 ];
 
+// Certificate fixtures keep the certificate screens testable when the API is
+// unavailable. IDs are deliberately prefixed so UI-only workflow transitions
+// never get sent to the backend.
+export const certificates = [
+  { id: "mock-cert-001", certificateNo: "CERT-2026-001", studentId: 1, admissionNo: "ADM-2024-001", studentName: "Aarav Reddy", group: "MPC", level: "1st Year", academicYear: "2025-2026", certificateType: "Bonafide Certificate", purpose: "Scholarship application", requestDate: "2026-08-12", issueDate: "2026-08-12", status: "Generated", remarks: "Demo record ready for review" },
+  { id: "mock-cert-002", certificateNo: "CERT-2026-002", studentId: 2, admissionNo: "ADM-2024-002", studentName: "Diya Sharma", group: "MPC", level: "1st Year", academicYear: "2025-2026", certificateType: "Study Certificate", purpose: "Education loan documentation", requestDate: "2026-08-11", issueDate: "2026-08-11", status: "Reviewed", remarks: "Demo record ready for approval" },
+  { id: "mock-cert-003", certificateNo: "CERT-2026-003", studentId: 3, admissionNo: "ADM-2024-003", studentName: "Vihaan Patel", group: "BIPC", level: "1st Year", academicYear: "2025-2026", certificateType: "Conduct Certificate", purpose: "University admission", requestDate: "2026-08-10", issueDate: "2026-08-10", status: "Approved", remarks: "Demo record ready to issue" },
+  { id: "mock-cert-004", certificateNo: "CERT-2026-004", studentId: 5, admissionNo: "ADM-2024-004", studentName: "Ishaan Verma", group: "MPC", level: "1st Year", academicYear: "2025-2026", certificateType: "Sports Participation Certificate", purpose: "District sports registration", requestDate: "2026-08-09", issueDate: "2026-08-09", status: "Issued", remarks: "Example certificate created through the Other flow" },
+];
+
 export const admissions = [
   { id: 1, admissionNo: "ADM-2024-006", name: "Meera Joshi", group: "MPC", date: "2024-06-18", quota: "Merit", status: "Active" },
   { id: 2, admissionNo: "ADM-2024-005", name: "Saanvi Nair", group: "BIPC", date: "2024-06-15", quota: "Management", status: "Active" },
@@ -210,7 +220,7 @@ export const options = {
   status: ["Active", "Inactive"],
   gender: ["Male", "Female", "Other"],
   paymentMode: ["Cash", "UPI", "Card", "Net Banking", "Cheque"],
-  certificateType: ["Bonafide Certificate", "Transfer Certificate", "Study Certificate", "Conduct Certificate", "Migration Certificate"],
+  certificateType: ["Bonafide Certificate", "Transfer Certificate", "Study Certificate", "Conduct Certificate", "Others"],
   examType: ["Unit Test", "Quarterly", "Half Yearly", "Pre-Final", "Annual"],
   subjectType: ["Theory", "Practical", "Theory + Practical", "Language", "Elective"],
   feeType: ["Tuition Fee", "Laboratory Fee", "Hostel Fee", "Transport Fee", "Exam Fee"],

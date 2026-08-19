@@ -9,6 +9,7 @@
   },
   assignments: {
     list: "/api/v1/assignments",
+    published: "/api/v1/assignments/published",
     adminList: "/api/admin/assignments",
     adminCreate: "/api/admin/assignments",
     create: "/api/v1/assignments",
@@ -16,7 +17,10 @@
     update: (id) => `/api/v1/assignments/${id}`,
     delete: (id) => `/api/v1/assignments/${id}`,
     submit: (id) => `/api/v1/assignments/${id}/submit`,
+    // Backend contract: POST { assignmentIds: number[] } to publish selected assignments.
+    bulkPublish: "/api/v1/assignments/bulk-publish",
     subjectsByGroup: (groupId) => `/api/v1/assignments/groups/${groupId}/subjects`,
+    facultyDropdown: "/api/v1/assignments/faculty-dropdown",
     submissions: (id) => `/api/admin/assignments/${id}/submissions`,
   },
   faculty: {
@@ -32,6 +36,8 @@
     updateSubjectAssignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
     deleteSubjectAssignment: (id) => `/api/v1/faculty/assign-subject/${id}`,
     getWorkload: (facultyId) => `/api/v1/faculty/workload/${facultyId}`,
+    // Existing assignment faculty dropdown endpoint; subject IDs are supplied as query params by the caller.
+    bySubjects: "/api/v1/assignments/faculty-dropdown",
   },
   boards: {
     list: "/api/v1/boards",
@@ -220,6 +226,7 @@
     conduct: "/api/certificates/conduct",
     fee: "/api/certificates/fee",
     tc: "/api/certificates/tc",
+    other: "/api/certificates/other",
     history: "/api/certificates/history",
     download: (id) => `/api/certificates/download/${id}`,
     verify: (certificateNo) => `/api/certificates/verify/${encodeURIComponent(certificateNo)}`,

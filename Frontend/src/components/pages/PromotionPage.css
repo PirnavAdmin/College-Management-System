@@ -316,6 +316,42 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px 16px;
 }
+.promotion-date-range {
+  grid-column: span 2;
+}
+.promotion-date-range-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--cms-border);
+  border-radius: 9px;
+  background: var(--cms-surface);
+}
+.promotion-date-range-control > label {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  color: var(--cms-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.promotion-date-range-control input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--cms-text);
+  font: inherit;
+  outline: 0;
+}
+.promotion-date-range-control > span {
+  color: var(--cms-muted);
+}
 .promotion-card .cms-field textarea {
   min-height: 96px;
   resize: vertical;
@@ -373,6 +409,20 @@
   }
   .promotion-history-filters {
     grid-template-columns: 1fr;
+  }
+  .promotion-date-range {
+    grid-column: auto;
+  }
+  .promotion-date-range-control {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 10px 12px;
+  }
+  .promotion-date-range-control > label {
+    width: 100%;
+  }
+  .promotion-date-range-control > span {
+    display: none;
   }
   .promotion-tabs {
     width: 100%;

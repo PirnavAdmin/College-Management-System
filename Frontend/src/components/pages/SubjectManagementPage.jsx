@@ -8,9 +8,7 @@ const SUBJECT_TYPES = ["Theory", "Practical", "Theory + Practical", "Language", 
 const STATUS_OPTIONS = ["Active", "Inactive"];
 
 function getGroups() {
-  return apiClient.get(apiEndpoints.groups.getAll, {
-    params: { isActive: true },
-  });
+  return apiClient.get(apiEndpoints.groups.dropdown);
 }
 
 function getBoards() {

@@ -40,7 +40,7 @@ export const menu = [
     items: [
       { to: "/dashboard/timetable", label: "Timetable", icon: CalendarClock },
       { to: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck },
-      { to: "/dashboard/assignments", label: "Assignments", icon: FileText, children: [{ to: "/dashboard/assignments", label: "All Assignments", icon: FileText }, { to: "/dashboard/assignments/submissions", label: "Submissions", icon: ClipboardCheck }] },
+      { to: "/dashboard/assignments", label: "Assignments", icon: FileText, children: [{ to: "/dashboard/assignments", label: "Assignment Creation", icon: FileText }, { to: "/dashboard/assignments/submissions", label: "Submissions", icon: ClipboardCheck }] },
     ],
   },
   {

@@ -89,13 +89,15 @@
 
 .cms-sec-table th,
 .cms-sec-table td {
-  padding: 11px 8px;
+  padding: 8px;
   font-size: 12px;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .cms-sec-table th {
+  padding-top: 7px;
+  padding-bottom: 7px;
   font-size: 11px;
 }
 
@@ -108,6 +110,16 @@
 .cms-sec-table th:nth-child(7) { width: 7%; }
 .cms-sec-table th:nth-child(8) { width: 10%; }
 .cms-sec-table th:nth-child(9) { width: 12%; }
+
+.cms-sec-table th:nth-child(4),
+.cms-sec-table td:nth-child(4) {
+  padding-right: 14px;
+}
+
+.cms-sec-table th:nth-child(5),
+.cms-sec-table td:nth-child(5) {
+  padding-left: 14px;
+}
 
 .cms-sec-table th.cms-sec-align-center,
 .cms-sec-table td.cms-sec-align-center {

@@ -49,7 +49,7 @@ const normalizeGroup = (item) => ({
   levelId: String(read(item, "academicLevelId", "AcademicLevelId") || ""),
   level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || "-",
   subjects: read(item, "totalSubjects", "TotalSubjects") ?? 0,
-  description: read(item, "description", "Description") || "",
+  // description is removed for this form; total subjects is used instead
   status: normalizeStatus(item),
 });
 
@@ -61,7 +61,7 @@ const normalizeGroupForm = (item) => {
     level: group.levelId,
     name: group.name === "-" ? "" : group.name,
     code: group.code === "-" ? "" : group.code,
-    description: group.description,
+    subjects: group.subjects,
     status: group.status,
   };
 };
@@ -72,7 +72,7 @@ const toPayload = (formData) => ({
   academicLevelId: Number(formData.level),
   groupName: formData.name,
   groupCode: formData.code,
-  description: formData.description || "",
+  totalSubjects: formData.subjects ? Number(formData.subjects) : 0,
   isActive: formData.status === "Active",
 });
 
@@ -100,7 +100,7 @@ const loadGroupMasters = async () => {
     .map(([label, result]) => `${label}: ${getApiErrorMessage(result.reason)}`);
 
   if (failures.length) {
-    throw new Error(`Failed to load Course / Group dropdown data. ${failures.join(" ")}`);
+    throw new Error(`Failed to load Group dropdown data. ${failures.join(" ")}`);
   }
 
   return {
@@ -169,10 +169,10 @@ const groupApi = {
 };
 
 export const pageConfig = {
-    title: "Course / Group Management",
-    subtitle: "Manage streams and groups mapped to boards and academic levels.",
+    title: "Group Management",
+    subtitle: "Manage groups mapped to boards and academic levels.",
     breadcrumb: ["Academics"],
-    addLabel: "Add Course",
+    addLabel: "Add Group",
     rows: [],
     api: groupApi,
     columns: [
@@ -194,7 +194,7 @@ export const pageConfig = {
       { name: "level", label: "Academic Level", type: "select", options: [], required: true },
       { name: "name", label: "Group Name", required: true },
       { name: "code", label: "Group Code", required: true },
-      { name: "description", label: "Description", type: "textarea", full: true },
+      { name: "subjects", label: "Total Subjects", type: "number" },
       { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
     ],
   };

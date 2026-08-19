@@ -18,7 +18,7 @@ export const menu = [
     items: [
       { to: "/dashboard/boards", label: "Board Management", icon: Landmark },
       { to: "/dashboard/academic-years", label: "Academic Year", icon: CalendarRange },
-      { to: "/dashboard/courses", label: "Course / Group", icon: BookOpen },
+      { to: "/dashboard/courses", label: "Group Management", icon: BookOpen },
       { to: "/dashboard/subjects", label: "Subject Management", icon: Library },
       { to: "/dashboard/sections", label: "Section Management", icon: Layers3 },
     ],

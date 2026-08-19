@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Pencil, Trash2, Eye, Printer, FileSpreadsheet, ChevronDown } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Eye, Printer, FileSpreadsheet, ChevronDown, Download } from "lucide-react";
 import { StatusBadge, Loader } from "./Ui.jsx";
 
 const PAGE_SIZE = 5;
@@ -34,6 +34,8 @@ export default function DataTable({
   onSearchChange,
   addLabel = "Add New",
   title,
+  toolbarExtra,
+  emptyMessage,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -101,30 +103,10 @@ export default function DataTable({
           />
         </div>
         <div className="cms-toolbar-right">
-          <div className="cms-export-control">
-            <button
-              className="cms-btn cms-btn-ghost"
-              type="button"
-              onClick={() => setExportOpen((open) => !open)}
-              disabled={!filtered.length}
-              aria-haspopup="menu"
-              aria-expanded={exportOpen}
-            >
-              Export <ChevronDown size={14} />
-            </button>
-            {exportOpen ? (
-              <div className="cms-export-menu" role="menu">
-                <button type="button" role="menuitem" onClick={exportExcel}>
-                  <FileSpreadsheet size={17} />
-                  <span><strong>Excel</strong><small>Download .xlsx file</small></span>
-                </button>
-                <button type="button" role="menuitem" onClick={printRows}>
-                  <Printer size={17} />
-                  <span><strong>Print</strong><small>Open print preview</small></span>
-                </button>
-              </div>
-            ) : null}
-          </div>
+          {toolbarExtra}
+          <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
+            <Download size={15} /> Export
+          </button>
           {onAdd ? (
             <button className="cms-btn cms-btn-primary" onClick={onAdd}>
               <Plus size={16} /> {addLabel}
@@ -150,7 +132,7 @@ export default function DataTable({
               {pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length + 1}>
-                    <div className="cms-empty">No records found for your search.</div>
+                    <div className="cms-empty">{emptyMessage || "No records found for your search."}</div>
                   </td>
                 </tr>
               ) : (

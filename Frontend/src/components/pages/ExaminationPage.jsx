@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { CalendarDays, ClipboardList, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
+import { ConfirmDialog, Modal, StatusBadge, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import * as data from "@/data/mockData.js";
 import "./ExaminationPage.css";
 
@@ -66,6 +66,7 @@ export const pageConfig = {
 };
 
 export default function ExaminationPage() {
+  const { confirm, confirmationDialog } = useConfirmDialog();
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
@@ -189,8 +190,13 @@ export default function ExaminationPage() {
     setToast(`Schedule ${editingScheduleId ? "updated" : "saved"} successfully.`);
   };
 
-  const publish = (exam) => {
-    if (!window.confirm(`Publish the schedule for ${exam.name}?`)) return;
+  const publish = async (exam) => {
+    const confirmed = await confirm({
+      title: "Publish examination schedule",
+      message: `Publish the schedule for ${exam.name}?`,
+      confirmLabel: "Publish",
+    });
+    if (!confirmed) return;
     const next = exams.map((item) =>
       item.id === exam.id ? { ...item, status: "Published" } : item,
     );
@@ -429,6 +435,7 @@ export default function ExaminationPage() {
           onClose={() => setSelectedExam(null)}
         />
       )}
+      {confirmationDialog}
       {deleting && (
         <ConfirmDialog
           message={`Delete "${deleting.name}" and its saved schedules?`}

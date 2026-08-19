@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, ArrowUpRight, BookOpen, CalendarCheck, CalendarClock, Filter, GraduationCap, TrendingUp, Users, X } from "lucide-react";
+import { Activity, ArrowUpRight, CalendarCheck, CalendarClock, Filter, GraduationCap, TrendingUp, Users, X } from "lucide-react";
 import { BarChart, Bar, Brush, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -15,7 +15,6 @@ const dashboardApi = {
 const SECONDARY_REQUESTS = [
   ["strength", apiEndpoints.reports.studentStrength],
   ["exams", apiEndpoints.reports.examinations],
-  ["pass", apiEndpoints.reports.passPercentage],
   ["groups", apiEndpoints.reports.groups],
   ["groupCatalog", apiEndpoints.groups.getAll],
   ["students", apiEndpoints.students.getAll],
@@ -371,17 +370,16 @@ export default function DashboardPage() {
       succeeded.activeAcademicYear = academicYear;
 
       const secondaryRequests = SECONDARY_REQUESTS.filter(([key]) => {
-        if (key === "pass") return metric(summary, ["passPercentage", "passRate", "percentage"]) === undefined;
         return true;
       });
       const secondaryPromise = Promise.allSettled(secondaryRequests.map(([key, endpoint]) => apiClient.get(endpoint, {
         ...requestConfig,
         params: {
           ...requestConfig.params,
-          ...(["strength", "exams", "pass", "groups", "workload", "audit"].includes(key) && academicYear.id
+          ...(["strength", "exams", "pass", "workload", "audit"].includes(key) && academicYear.id
             ? { AcademicYearId: academicYear.id }
             : {}),
-          ...(key === "groupCatalog" && academicYear.id ? { academicYearId: academicYear.id, isActive: true } : {}),
+          ...(key === "groupCatalog" ? { isActive: true } : {}),
           ...(key === "faculty" ? { PageNumber: 1, PageSize: 8 } : {}),
         },
       })));
@@ -509,12 +507,11 @@ export default function DashboardPage() {
     ? dailyAttendanceSummary(data.attendance)
     : dailyAttendanceSummary(null);
   const kpis = useMemo(() => [
-    { label: "Total Students", value: firstMetric(data, ["summary", "strength"], ["totalStudents", "studentStrength", "activeStudents"]), icon: Users, tone: "blue" },
-    { label: "Faculty Members", value: firstMetric(data, ["summary"], ["totalFaculty", "facultyCount", "activeFaculty"]) ?? arrayCount(data.faculty), icon: GraduationCap, tone: "violet" },
-    { label: "Today's Attendance", value: attendanceForToday.percentage, icon: CalendarCheck, tone: "green", type: "percent" },
-    { label: admissionsLabel, value: academicYearAdmissions, icon: TrendingUp, tone: "blue" },
-    { label: "Upcoming Exams", value: firstMetric(data, ["summary", "exams"], ["upcomingExams", "upcomingExaminations", "examinationCount"]) ?? arrayCount(data.exams), icon: CalendarClock, tone: "violet" },
-    { label: "Pass Percentage", value: firstMetric(data, ["summary", "pass"], ["passPercentage", "passRate", "percentage"]), icon: BookOpen, tone: "green", type: "percent" },
+    { label: "Total Students", value: firstMetric(data, ["summary", "strength"], ["totalStudents", "studentStrength", "activeStudents"]), icon: Users, tone: "blue", to: "/dashboard/students" },
+    { label: "Faculty Members", value: firstMetric(data, ["summary"], ["totalFaculty", "facultyCount", "activeFaculty"]) ?? arrayCount(data.faculty), icon: GraduationCap, tone: "violet", to: "/dashboard/faculty" },
+    { label: "Today's Attendance", value: attendanceForToday.percentage, icon: CalendarCheck, tone: "green", type: "percent", to: "/dashboard/attendance" },
+    { label: admissionsLabel, value: academicYearAdmissions, icon: TrendingUp, tone: "blue", to: "/dashboard/admission" },
+    { label: "Upcoming Exams", value: firstMetric(data, ["summary", "exams"], ["upcomingExams", "upcomingExaminations", "examinationCount"]) ?? arrayCount(data.exams), icon: CalendarClock, tone: "violet", to: "/dashboard/examinations" },
   ], [academicYearAdmissions, admissionsLabel, attendanceForToday.percentage, data]);
   const groupDistribution = normalizeGroups(data, activeAcademicYear?.id);
   const exams = rows(data.exams, ["examinations", "Examinations", "upcomingExams", "UpcomingExams"]).map((item, index) => ({ id: read(item, "examinationId", "ExaminationId", "id", "Id") ?? index, subject: read(item, "subjectName", "SubjectName", "subject", "Subject", "examName", "ExamName") ?? "—", date: read(item, "examDate", "ExamDate", "date", "Date"), time: read(item, "startTime", "StartTime", "time", "Time") ?? "—", hall: read(item, "hallName", "HallName", "roomName", "RoomName", "hall", "Hall") ?? "—", invigilator: read(item, "invigilatorName", "InvigilatorName", "facultyName", "FacultyName") ?? "—", status: read(item, "status", "Status") ?? "Scheduled" })).filter((item) => { const date = new Date(item.date); return !item.date || Number.isNaN(date.getTime()) || date >= new Date(); }).slice(0, 5);
@@ -524,10 +521,10 @@ export default function DashboardPage() {
 
   const chart = (content, available) => <div className="dashboard-chart-body">{available ? content : <Empty />}</div>;
   const hasApplications = filteredAdmissionTrend.some((item) => item.applications !== undefined);
-  return <DashboardLayout title="Dashboard" subtitle="Institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-update-meta"><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/admission" className="cms-btn cms-btn-ghost">New Admission</Link><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
+  return <DashboardLayout title="Dashboard" subtitle="Institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-update-meta"><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
     {loading ? <div className="cms-card dashboard-loader"><Loader label="Loading dashboard..." /></div> : <>
       {Object.keys(failures).length ? <div className="dashboard-warning">Some dashboard sources are unavailable. Successfully loaded widgets remain available.</div> : null}
-      <div className="dashboard-kpi-grid">{kpis.map(({ label: name, value, icon: Icon, tone, type }) => <article className="cms-stat" key={name}><span className={`cms-stat-icon tone-${tone}`}><Icon size={20} /></span><div><div className="cms-stat-label">{name}</div><div className="cms-stat-value">{formatValue(value, type)}</div></div></article>)}</div>
+      <div className="dashboard-kpi-grid">{kpis.map(({ label: name, value, icon: Icon, tone, type, to }) => <Link className="dashboard-kpi-link" to={to} key={name} aria-label={`Open ${name}`}><article className="cms-stat"><span className={`cms-stat-icon tone-${tone}`}><Icon size={20} /></span><div><div className="cms-stat-label">{name}</div><div className="cms-stat-value">{formatValue(value, type)}</div></div></article></Link>)}</div>
       <div className="dashboard-grid dashboard-grid-2">
         <section className="cms-card dashboard-widget dashboard-admissions-card">
           <div className="cms-card-head dashboard-admissions-head">

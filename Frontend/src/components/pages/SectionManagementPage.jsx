@@ -153,7 +153,7 @@ export const pageConfig = {
         return cachedFaculty.names;
       },
     },
-    { name: "strength", label: "Maximum Strength", type: "number", required: true },
+    { name: "strength", label: "Maximum Strength", type: "number", min: 0, step: 1, required: true },
     { name: "status", label: "Status", type: "select", options: o.status, required: true },
   ],
   api: {
@@ -175,7 +175,7 @@ export const pageConfig = {
         sectionName: values.name,
         roomNumber: values.room,
         classTeacherId: cachedFaculty?.map[values.teacher] ?? 0,
-        maximumStrength: Number(values.strength) || 0,
+        maximumStrength: Math.max(0, Number(values.strength) || 0),
         isActive: values.status === "Active" || values.status === true,
       };
       if (id) return apiClient.put(apiEndpoints.sections.getById(id), payload);

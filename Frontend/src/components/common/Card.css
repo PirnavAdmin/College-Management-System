@@ -70,65 +70,6 @@
 .cms-stat-delta.down {
   color: var(--cms-red);
 }
-.cms-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
-}
-.cms-summary-card {
-  min-height: 112px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 20px;
-  border: 1px solid var(--cms-border);
-  border-radius: var(--cms-radius);
-  background: var(--cms-surface);
-  color: var(--cms-text);
-  box-shadow: var(--cms-shadow);
-  font-family: var(--cms-font-family);
-  text-align: left;
-  cursor: pointer;
-  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
-}
-.cms-summary-card:hover,
-.cms-summary-card:focus-visible,
-.cms-summary-card.is-selected {
-  border-color: var(--summary-accent, var(--cms-primary)) !important;
-  background: linear-gradient(135deg, var(--summary-accent-soft, var(--cms-primary-soft)), var(--cms-surface)) !important;
-  box-shadow: 0 12px 26px rgba(15, 23, 42, .12) !important;
-  transform: translateY(-2px);
-  outline: none;
-}
-.cms-summary-value {
-  width: 54px;
-  height: 54px;
-  flex: 0 0 54px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  background: var(--summary-accent-soft, var(--cms-primary-soft));
-  color: var(--summary-accent, var(--cms-primary));
-  font-size: 22px;
-  line-height: 1;
-  font-weight: 800;
-}
-.cms-summary-label {
-  color: var(--cms-text);
-  font-size: 18px;
-  line-height: 1.25;
-  font-weight: 800;
-}
-.cms-summary-card:hover .cms-summary-label,
-.cms-summary-card:focus-visible .cms-summary-label,
-.cms-summary-card.is-selected .cms-summary-label { color: #0f172a; }
-[data-theme="dark"] .cms-summary-card:hover .cms-summary-label,
-[data-theme="dark"] .cms-summary-card:focus-visible .cms-summary-label,
-[data-theme="dark"] .cms-summary-card.is-selected .cms-summary-label { color: #f8fafc; }
-.cms-stat { font-family: var(--cms-font-family); }
-.cms-stat-label { color: var(--cms-text); font-weight: 700; }
-.cms-stat-value { color: var(--cms-text); font-weight: 800; }
 .cms-grid-2 {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
@@ -150,8 +91,7 @@
 }
 @media (max-width: 720px) {
   .cms-stat-grid,
-  .cms-grid-3,
-  .cms-summary-grid {
+  .cms-grid-3 {
     grid-template-columns: 1fr;
   }
 }

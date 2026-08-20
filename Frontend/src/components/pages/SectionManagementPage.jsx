@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Plus, Search, X, CheckCircle2, Pencil, ChevronDown } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Eye, Plus, Search, X, CheckCircle2, Pencil } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import "./SectionManagementPage.css";
 
@@ -240,9 +240,6 @@ export default function SectionManagementPage() {
           section.name,
           section.group,
           section.program,
-          section.academicLevel,
-          section.teacher,
-          section.room,
         ].some((value) =>
           String(value ?? "")
             .toLowerCase()
@@ -763,7 +760,6 @@ export default function SectionManagementPage() {
                       value={form.status}
                       field="status"
                       options={["Active", "Inactive"]}
-                      searchable={false}
                       readOnly={readOnly}
                       change={change}
                     />
@@ -875,7 +871,6 @@ export default function SectionManagementPage() {
                       }
                       options={["Active", "Inactive"]}
                       placeholder="Status"
-                      searchable={false}
                     />
                   </div>
                 </div>
@@ -926,7 +921,6 @@ function FormField({
   field,
   options,
   disabled = false,
-  searchable = true,
   readOnly,
   change,
 }) {
@@ -941,83 +935,28 @@ function FormField({
         options={options}
         placeholder={`Select ${label}`}
         disabled={disabled || readOnly}
-        searchable={searchable}
       />
     </div>
   );
 }
 
-function Select({ value, onChange, options, placeholder, disabled = false, searchable = true }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const ref = useRef(null);
-  useEffect(() => {
-    const handleOutsideClick = (event) => {
-      if (!ref.current?.contains(event.target)) {
-        setOpen(false);
-        setQuery("");
-      }
-    };
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, []);
-  const filteredOptions = searchable
-    ? options.filter((option) => option.toLowerCase().includes(query.toLowerCase()))
-    : options;
-  const toggle = () => {
-    if (disabled) return;
-    setOpen((current) => !current);
-    setQuery("");
-  };
+function Select({ value, onChange, options, placeholder, disabled = false }) {
   return (
-    <div className={`cms-sec-select ${disabled ? "is-disabled" : ""}`} ref={ref}>
-      <button
-        type="button"
+    <div className={`cms-sec-select ${disabled ? "is-disabled" : ""}`}>
+      <select
         className="cms-sec-select-trigger"
+        value={value}
         disabled={disabled}
-        onClick={toggle}
-        aria-expanded={open}
+        aria-label={placeholder}
+        onChange={(event) => onChange(event.target.value)}
       >
-        {value || placeholder}
-        <ChevronDown size={14} />
-      </button>
-      {open && (
-        <div className="cms-sec-select-menu">
-          {searchable && (
-            <input
-              autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  setOpen(false);
-                  setQuery("");
-                }
-              }}
-              placeholder="Search..."
-            />
-          )}
-          <div className="cms-sec-select-options">
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((option) => (
-                <button
-                  type="button"
-                  key={option}
-                  onClick={() => {
-                    onChange(option);
-                    setOpen(false);
-                    setQuery("");
-                  }}
-                >
-                  {option}
-                </button>
-              ))
-            ) : (
-              <span>No options found.</span>
-            )}
-          </div>
-        </div>
-      )}
+        {!value && <option value="">{placeholder}</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

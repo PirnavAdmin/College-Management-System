@@ -165,6 +165,8 @@ const EMPTY_ROOM = {
   isActive: true,
 };
 const EMPTY_FILTERS = { board: "", academicYear: "", group: "", program: "", academicLevel: "" };
+const EMPTY_ROOM_FILTERS = { building: "", floor: "", roomType: "", status: "" };
+const ROOM_TYPES = ["Classroom", "Laboratory", "Computer Lab", "Seminar Hall", "Library", "Examination Hall", "Staff Room", "Other"];
 const label = (room) => room.roomCode;
 
 export const pageConfig = {
@@ -174,6 +176,7 @@ export const pageConfig = {
 };
 
 export default function SectionManagementPage() {
+  const [activeTab, setActiveTab] = useState("sections");
   const [context, setContext] = useState({ board: "", academicYear: "" });
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
@@ -187,6 +190,12 @@ export default function SectionManagementPage() {
   const [mode, setMode] = useState("add");
   const [form, setForm] = useState(EMPTY);
   const [roomForm, setRoomForm] = useState(EMPTY_ROOM);
+  const [selectedRoomId, setSelectedRoomId] = useState(null);
+  const [roomMode, setRoomMode] = useState("add");
+  const [roomSearch, setRoomSearch] = useState("");
+  const [roomFilters, setRoomFilters] = useState(EMPTY_ROOM_FILTERS);
+  const [appliedRoomFilters, setAppliedRoomFilters] = useState(EMPTY_ROOM_FILTERS);
+  const [roomPage, setRoomPage] = useState(1);
   const [toast, setToast] = useState(null);
 
   const say = (message) => {
@@ -250,10 +259,30 @@ export default function SectionManagementPage() {
   }, [sections, appliedFilters, search]);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const roomRows = useMemo(() => {
+    const query = roomSearch.trim().toLowerCase();
+    return rooms.filter((room) => {
+      if (appliedRoomFilters.building && room.building !== appliedRoomFilters.building) return false;
+      if (appliedRoomFilters.floor && String(room.floor) !== appliedRoomFilters.floor) return false;
+      if (appliedRoomFilters.roomType && room.roomType !== appliedRoomFilters.roomType) return false;
+      if (appliedRoomFilters.status && (room.isActive ? "Active" : "Inactive") !== appliedRoomFilters.status) return false;
+      return !query || [room.roomCode, room.roomName, room.building, room.floor, room.roomType]
+        .some((value) => String(value ?? "").toLowerCase().includes(query));
+    });
+  }, [rooms, roomSearch, appliedRoomFilters]);
+  const roomPages = Math.max(1, Math.ceil(roomRows.length / PAGE_SIZE));
+  const shownRooms = roomRows.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE);
+  const roomBuildings = useMemo(() => [...new Set(rooms.map((room) => room.building).filter(Boolean))], [rooms]);
+  const roomFloors = useMemo(() => [...new Set(rooms.map((room) => String(room.floor)).filter(Boolean))], [rooms]);
+  const roomTypes = useMemo(() => [...new Set([...ROOM_TYPES, ...rooms.map((room) => room.roomType)].filter(Boolean))], [rooms]);
   useEffect(() => setPage(1), [appliedFilters, search]);
+  useEffect(() => setRoomPage(1), [appliedRoomFilters, roomSearch]);
   useEffect(() => {
     if (page > pages) setPage(pages);
   }, [page, pages]);
+  useEffect(() => {
+    if (roomPage > roomPages) setRoomPage(roomPages);
+  }, [roomPage, roomPages]);
   useEffect(() => {
     if (!modal && !roomModal) return undefined;
     const previousOverflow = document.body.style.overflow;
@@ -322,8 +351,23 @@ export default function SectionManagementPage() {
     setForm({ ...section, strength: String(section.strength ?? "") });
     setModal(true);
   };
+  const enterEditMode = () => setMode("edit");
   const openRoomModal = () => {
     setRoomForm(EMPTY_ROOM);
+    setSelectedRoomId(null);
+    setRoomMode("add");
+    setRoomModal(true);
+  };
+  const closeRoomModal = () => {
+    setRoomModal(false);
+    setSelectedRoomId(null);
+    setRoomMode("add");
+    setRoomForm(EMPTY_ROOM);
+  };
+  const openRoom = (room, preview = false) => {
+    setSelectedRoomId(room.id);
+    setRoomMode(preview ? "preview" : "edit");
+    setRoomForm({ ...room, capacity: String(room.capacity ?? "") });
     setRoomModal(true);
   };
   const save = (event) => {
@@ -414,7 +458,7 @@ export default function SectionManagementPage() {
   const saveRoom = (event) => {
     event.preventDefault();
     const room = {
-      id: Date.now(),
+      id: selectedRoomId || Date.now(),
       roomCode: roomForm.roomCode.trim(),
       roomName: roomForm.roomName.trim(),
       capacity: Number(roomForm.capacity),
@@ -434,13 +478,27 @@ export default function SectionManagementPage() {
       return say("Please complete all required room fields.");
     if (!Number.isInteger(room.capacity) || room.capacity <= 0)
       return say("Room capacity must be greater than 0.");
-    if (rooms.some((item) => item.roomCode.toLowerCase() === room.roomCode.toLowerCase()))
+    if (rooms.some((item) => item.id !== selectedRoomId && item.roomCode.toLowerCase() === room.roomCode.toLowerCase()))
       return say("A room with this code already exists.");
+    const currentRoom = rooms.find((item) => item.id === selectedRoomId);
+    const assignedSections = sections.filter(
+      (section) => section.room === (currentRoom?.roomCode ?? room.roomCode) && section.status === "Active",
+    );
+    const maxAssignedStrength = Math.max(0, ...assignedSections.map((section) => Number(section.strength) || 0));
+    if (room.capacity < maxAssignedStrength)
+      return say("Room capacity cannot be reduced below the strength of an assigned active section.");
+    if (currentRoom?.isActive && !room.isActive && assignedSections.length)
+      return say("Cannot deactivate this room because it is assigned to an active section.");
 
-    setRooms((current) => [...current, room]);
-    setForm((current) => ({ ...current, room: room.roomCode }));
-    setRoomModal(false);
-    say("Room added successfully!");
+    const isEditingRoom = Boolean(selectedRoomId);
+    setRooms((current) => isEditingRoom
+      ? current.map((item) => item.id === selectedRoomId ? room : item)
+      : [...current, room]);
+    if (!isEditingRoom) setForm((current) => ({ ...current, room: room.roomCode }));
+    closeRoomModal();
+    say(isEditingRoom
+      ? `Room "${room.roomCode}" ${room.isActive ? "updated" : "deactivated"} successfully!`
+      : `Room "${room.roomCode}" added successfully!`);
   };
 
   return (
@@ -450,6 +508,15 @@ export default function SectionManagementPage() {
       breadcrumb={pageConfig.breadcrumb}
     >
       <div className="cms-sec-container">
+        <div className="cms-room-tabs" role="tablist" aria-label="Management modules">
+          <button type="button" role="tab" aria-selected={activeTab === "sections"} className={`cms-room-tab ${activeTab === "sections" ? "cms-room-tab-active" : ""}`} onClick={() => setActiveTab("sections")}>
+            Section Management
+          </button>
+          <button type="button" role="tab" aria-selected={activeTab === "rooms"} className={`cms-room-tab ${activeTab === "rooms" ? "cms-room-tab-active" : ""}`} onClick={() => setActiveTab("rooms")}>
+            Room Management
+          </button>
+        </div>
+        {activeTab === "sections" && <>
         <div className="cms-card cms-sec-filter-card">
           <div className="cms-sec-filter-grid">
             <FilterField
@@ -783,86 +850,105 @@ export default function SectionManagementPage() {
             </div>
           </div>
         )}
+        </>}
+        {activeTab === "rooms" && (
+          <div className="cms-card">
+            <div className="cms-toolbar cms-sec-toolbar cms-room-toolbar">
+              <div className="cms-search cms-sec-search">
+                <Search size={16} />
+                <input type="search" placeholder="Search rooms..." value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} />
+                {roomSearch && <button type="button" className="cms-sec-search-clear" onClick={() => setRoomSearch("")}><X size={14} /></button>}
+              </div>
+              <div className="cms-room-filters">
+                <Select value={roomFilters.building} onChange={(value) => setRoomFilters((current) => ({ ...current, building: value }))} options={roomBuildings} placeholder="Building" />
+                <Select value={roomFilters.floor} onChange={(value) => setRoomFilters((current) => ({ ...current, floor: value }))} options={roomFloors} placeholder="Floor" />
+                <Select value={roomFilters.roomType} onChange={(value) => setRoomFilters((current) => ({ ...current, roomType: value }))} options={roomTypes} placeholder="Room Type" />
+                <Select value={roomFilters.status} onChange={(value) => setRoomFilters((current) => ({ ...current, status: value }))} options={["Active", "Inactive"]} placeholder="Status" />
+              </div>
+              <button type="button" className="cms-btn cms-btn-ghost cms-sec-compact-btn" onClick={() => { setRoomFilters(EMPTY_ROOM_FILTERS); setAppliedRoomFilters(EMPTY_ROOM_FILTERS); setRoomSearch(""); setRoomPage(1); }}>Reset</button>
+              <button type="button" className="cms-btn cms-btn-primary cms-sec-compact-btn" onClick={() => { setAppliedRoomFilters({ ...roomFilters }); setRoomPage(1); }}>Check Rooms</button>
+              <button type="button" className="cms-btn cms-btn-primary cms-sec-compact-btn" onClick={openRoomModal}><Plus size={15} />Add Room</button>
+            </div>
+            <div className="cms-table-wrap cms-sec-table-wrap">
+              <table className="cms-table cms-sec-table cms-room-table">
+                <thead><tr>{["Room Code", "Room Name", "Building", "Floor", "Room Type", "Capacity", "Status", "Actions"].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+                <tbody>{shownRooms.length ? shownRooms.map((room) => <tr key={room.id}>
+                  <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td><td>{room.roomName}</td><td>{room.building}</td><td>{room.floor}</td><td>{room.roomType}</td><td>{room.capacity}</td>
+                  <td><span className={`cms-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"}`}>{room.isActive ? "Active" : "Inactive"}</span></td>
+                  <td><div className="cms-sec-table-actions"><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room, true)}><Eye size={14} /></button><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room)}><Pencil size={14} /></button></div></td>
+                </tr>) : <tr><td colSpan="8" className="cms-empty">No rooms found matching your criteria.</td></tr>}</tbody>
+              </table>
+            </div>
+            <div className="cms-sec-pagination"><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === 1} onClick={() => setRoomPage((current) => current - 1)}>Previous</button><span>{roomPage} / {roomPages}</span><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === roomPages} onClick={() => setRoomPage((current) => current + 1)}>Next</button></div>
+          </div>
+        )}
         {roomModal && (
-          <div className="cms-sec-overlay cms-sec-room-overlay" onClick={() => setRoomModal(false)}>
+          <div className="cms-sec-overlay cms-sec-room-overlay" onClick={closeRoomModal}>
             <div
-              className="cms-modal cms-sec-modal cms-sec-room-modal"
-              style={{ width: "min(720px, 94%)" }}
+              className="cms-modal cms-sec-modal cms-sec-room-modal cms-room-modal"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="cms-modal-head">
-                <h3>Add Room</h3>
-                <button type="button" className="cms-icon-btn" onClick={() => setRoomModal(false)}>
+                <h3>{roomMode === "preview" ? "View Room" : roomMode === "edit" ? "Edit Room" : "Add Room"}</h3>
+                <button type="button" className="cms-icon-btn" onClick={closeRoomModal}>
                   <X size={16} />
                 </button>
               </div>
               <form onSubmit={saveRoom}>
                 <div
-                  className="cms-modal-body cms-sec-room-form"
-                  style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px 10px" }}
+                  className="cms-modal-body cms-sec-room-form cms-form-grid cms-sec-form-grid cms-room-form-grid"
                 >
                   <div className="cms-field">
                     <label>Room Code *</label>
                     <input
-                      style={{ width: "100%", maxWidth: "none" }}
                       value={roomForm.roomCode}
                       onChange={(event) =>
                         setRoomForm((current) => ({ ...current, roomCode: event.target.value }))
                       }
-                    />
+                    disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Room Name *</label>
                     <input
-                      style={{ width: "100%", maxWidth: "none" }}
                       value={roomForm.roomName}
                       onChange={(event) =>
                         setRoomForm((current) => ({ ...current, roomName: event.target.value }))
                       }
-                    />
+                    disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Capacity *</label>
                     <input
-                      style={{ width: "100%", maxWidth: "none" }}
                       type="number"
                       value={roomForm.capacity}
                       onChange={(event) =>
                         setRoomForm((current) => ({ ...current, capacity: event.target.value }))
                       }
-                    />
+                    disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Room Type *</label>
-                    <input
-                      style={{ width: "100%", maxWidth: "none" }}
-                      value={roomForm.roomType}
-                      onChange={(event) =>
-                        setRoomForm((current) => ({ ...current, roomType: event.target.value }))
-                      }
-                    />
+                    <Select value={roomForm.roomType} onChange={(value) => setRoomForm((current) => ({ ...current, roomType: value }))} options={roomTypes} placeholder="Select room type" disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Building *</label>
                     <input
-                      style={{ width: "100%", maxWidth: "none" }}
                       value={roomForm.building}
                       onChange={(event) =>
                         setRoomForm((current) => ({ ...current, building: event.target.value }))
                       }
-                    />
+                    disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Floor *</label>
                     <input
-                      style={{ width: "100%", maxWidth: "none" }}
                       value={roomForm.floor}
                       onChange={(event) =>
                         setRoomForm((current) => ({ ...current, floor: event.target.value }))
                       }
-                    />
+                    disabled={roomMode === "preview"} />
                   </div>
-                  <div className="cms-field" style={{ gridColumn: "1 / -1" }}>
+                  <div className="cms-field cms-room-status-field">
                     <label>Status *</label>
                     <Select
                       value={roomForm.isActive ? "Active" : "Inactive"}
@@ -871,6 +957,7 @@ export default function SectionManagementPage() {
                       }
                       options={["Active", "Inactive"]}
                       placeholder="Status"
+                      disabled={roomMode === "preview"}
                     />
                   </div>
                 </div>
@@ -878,13 +965,11 @@ export default function SectionManagementPage() {
                   <button
                     type="button"
                     className="cms-btn cms-btn-ghost"
-                    onClick={() => setRoomModal(false)}
+                    onClick={closeRoomModal}
                   >
                     Cancel
                   </button>
-                  <button type="submit" className="cms-btn cms-btn-primary">
-                    Save Room
-                  </button>
+                  {roomMode === "preview" ? <button type="button" className="cms-btn cms-btn-primary" onClick={() => setRoomMode("edit")}>Edit</button> : <button type="submit" className="cms-btn cms-btn-primary">{roomMode === "edit" ? "Save Changes" : "Save Room"}</button>}
                 </div>
               </form>
             </div>

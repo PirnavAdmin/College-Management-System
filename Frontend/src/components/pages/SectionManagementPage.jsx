@@ -14,7 +14,7 @@ const INITIAL_SECTIONS = [
   { id: 1, board: "AP State Board", academicYear: "2026-27", group: "MPC", programme: "JEE Main", yearOfStudy: "1st Year", name: "JEE-A", room: "Room 101", teacher: "Ravi Kumar", strength: 40, status: "Active" },
   { id: 2, board: "AP State Board", academicYear: "2026-27", group: "MPC", programme: "JEE Main", yearOfStudy: "1st Year", name: "JEE-B", room: "Room 102", teacher: "Suresh", strength: 45, status: "Active" },
   { id: 3, board: "AP State Board", academicYear: "2026-27", group: "MPC", programme: "JEE Advanced", yearOfStudy: "2nd Year", name: "JEE-Adv-1", room: "Room 103", teacher: "Priya", strength: 35, status: "Active" },
-  { id: 4, board: "AP State Board", academicYear: "2026-27", group: "BiPC", programme: "NEET", yearOfStudy: "1st Year", name: "NEET-1", room: "Room 101", teacher: "Priya", strength: 38, status: "Active" },
+  { id: 4, board: "AP State Board", academicYear: "2026-27", group: "BiPC", programme: "NEET", yearOfStudy: "1st Year", name: "NEET-1", room: "Room 101", teacher: "Anil", strength: 38, status: "Active" },
   { id: 5, board: "AP State Board", academicYear: "2026-27", group: "CEC", programme: "CA Foundation", yearOfStudy: "2nd Year", name: "CA-Alpha", room: "Room 102", teacher: "Anil", strength: 30, status: "Inactive" }
 ];
 const EMPTY_FORM = { board: "", academicYear: "", group: "", programme: "", yearOfStudy: "", name: "", room: "", teacher: "", strength: "", status: "Active" };
@@ -86,7 +86,7 @@ export default function SectionManagementPage() {
   const openAddModal = () => { setSelectedId(null); setIsEditMode(true); setIsPreviewMode(false); setForm({ ...EMPTY_FORM, ...filters }); setIsModalOpen(true); };
   const openEditModal = (section) => {
     setSelectedId(section.id);
-    setIsEditMode(true);
+    setIsEditMode(false);
     setIsPreviewMode(false);
     setForm({ ...section, strength: String(section.strength) });
     setIsModalOpen(true);
@@ -101,8 +101,70 @@ export default function SectionManagementPage() {
 
   const saveSection = (event) => {
     event.preventDefault();
+    const requiredFields = ["board", "academicYear", "group", "programme", "yearOfStudy", "name", "room", "teacher", "status"];
+    const isMissingRequiredField = requiredFields.some((fieldName) => !String(form[fieldName] ?? "").trim());
+    if (isMissingRequiredField) {
+      showToast("Please complete all required fields.");
+      return;
+    }
+
+    const capacityValue = String(form.strength ?? "").trim();
+    if (!capacityValue) {
+      showToast("Capacity is required.");
+      return;
+    }
+
+    const capacity = Number(capacityValue);
+    if (!Number.isFinite(capacity) || !Number.isInteger(capacity) || capacity < 1 || capacity > 150) {
+      showToast("Capacity must be between 1 and 150.");
+      return;
+    }
+
+    const normalizedName = form.name.trim().toLowerCase();
+    const isAnotherSection = (section) => section.id !== selectedId;
+    const hasDuplicateName = sections.some((section) => (
+      isAnotherSection(section)
+      && section.board === form.board
+      && section.academicYear === form.academicYear
+      && section.group === form.group
+      && section.programme === form.programme
+      && section.yearOfStudy === form.yearOfStudy
+      && section.name.trim().toLowerCase() === normalizedName
+    ));
+    if (hasDuplicateName) {
+      showToast("Section name already exists for the selected academic configuration.");
+      return;
+    }
+
+    const hasRoomConflict = form.status === "Active" && sections.some((section) => (
+      isAnotherSection(section)
+      && section.status === "Active"
+      && section.board === form.board
+      && section.academicYear === form.academicYear
+      && section.yearOfStudy === form.yearOfStudy
+      && section.room === form.room
+    ));
+    if (hasRoomConflict) {
+      showToast("Selected room is already assigned to another section.");
+      return;
+    }
+
+    // One class teacher can manage only one active section
+    // within the same board and academic year.
+    const hasTeacherConflict = form.status === "Active" && sections.some((section) => (
+      isAnotherSection(section)
+      && section.status === "Active"
+      && section.board === form.board
+      && section.academicYear === form.academicYear
+      && section.teacher === form.teacher
+    ));
+    if (hasTeacherConflict) {
+      showToast("Selected class teacher is already assigned to another section.");
+      return;
+    }
+
     const isEditing = Boolean(selectedId);
-    const section = { ...form, id: selectedId ?? Date.now(), name: form.name.trim(), strength: Number(form.strength) };
+    const section = { ...form, id: selectedId ?? Date.now(), name: form.name.trim(), strength: capacity };
     setSections((current) => selectedId ? current.map((item) => item.id === selectedId ? section : item) : [section, ...current]);
     closeModal();
     showToast(isEditing ? `Section "${section.name}" updated successfully!` : `Section "${section.name}" added successfully!`);
@@ -124,7 +186,7 @@ export default function SectionManagementPage() {
             <SelectField label="Year Of Study" value={filters.yearOfStudy} onChange={(value) => updateCascading(setFilters, "yearOfStudy", value)} options={YEARS_OF_STUDY} placeholder="All Years" disabled={!filters.programme} />
           </div>
           <div className="cms-sec-filter-actions">
-            <button className="cms-btn cms-btn-primary" onClick={() => setAppliedFilters(filters)}>Fetch Sections</button>
+            <button className="cms-btn cms-btn-primary" onClick={() => setAppliedFilters(filters)}>Check Sections</button>
             <button className="cms-btn cms-btn-ghost" onClick={resetFilters}><RotateCcw size={15} />Reset</button>
           </div>
         </div>

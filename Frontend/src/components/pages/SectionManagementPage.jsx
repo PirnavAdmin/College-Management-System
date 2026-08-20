@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, Plus, Search, X, CheckCircle2, Pencil, ChevronDown } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import apiClient from "@/api/axios.js";
 import "./SectionManagementPage.css";
 
 const BOARDS = ["AP State Board"];
@@ -156,7 +155,6 @@ const EMPTY = {
   strength: "",
   status: "Active",
 };
-const EMPTY_FILTERS = { board: "", academicYear: "", group: "", program: "", academicLevel: "" };
 const EMPTY_ROOM = {
   roomCode: "",
   roomName: "",
@@ -166,18 +164,8 @@ const EMPTY_ROOM = {
   floor: "",
   isActive: true,
 };
+const EMPTY_FILTERS = { board: "", academicYear: "", group: "", program: "", academicLevel: "" };
 const label = (room) => room.roomCode;
-const roomFromApi = (room) => ({
-  id: room.id ?? room._id ?? room.roomCode,
-  roomCode: room.roomCode ?? "",
-  roomName: room.roomName ?? "",
-  capacity: room.capacity ?? "",
-  roomType: room.roomType ?? "",
-  building: room.building ?? "",
-  floor: room.floor ?? "",
-  isActive: Boolean(room.isActive),
-});
-const responseItem = (data) => data?.item ?? data?.data ?? data?.result ?? data;
 
 export const pageConfig = {
   title: "Section Management",
@@ -277,36 +265,12 @@ export default function SectionManagementPage() {
       document.body.style.overflow = previousOverflow;
     };
   }, [modal, roomModal]);
-  useEffect(() => {
-    let active = true;
-    apiClient
-      .get("/api/v1/rooms")
-      .then((response) => {
-        const payload = responseItem(response.data);
-        const list = Array.isArray(payload)
-          ? payload
-          : Array.isArray(payload?.items)
-            ? payload.items
-            : [];
-        if (active && list.length) setRooms(list.map(roomFromApi));
-      })
-      .catch(() => {
-        /* Keep the local fallback rooms when the API is unavailable. */
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
-  // `mode` is the single source of truth for add, view, edit, and preview states.
+  // `mode` is the single source of truth for add, edit, and preview states.
   const selected = selectedSectionId;
   const edit = mode === "edit";
   const preview = mode === "preview";
-  const enterEditMode = () => {
-    if (!selectedSectionId) return;
-    setMode("edit");
-  };
-  const readOnly = mode === "view" || mode === "preview";
+  const readOnly = mode === "preview";
   const availableRooms = useMemo(
     () =>
       rooms
@@ -355,10 +319,10 @@ export default function SectionManagementPage() {
     setForm({ ...EMPTY, ...context });
     setModal(true);
   };
-  const openRow = (section, isPreview) => {
+  const openRow = (section, isPreview = false) => {
     setSelectedSectionId(section.id);
-    setMode(isPreview ? "preview" : "view");
-    setForm({ ...section, strength: String(section.strength) });
+    setMode(isPreview ? "preview" : "edit");
+    setForm({ ...section, strength: String(section.strength ?? "") });
     setModal(true);
   };
   const openRoomModal = () => {
@@ -384,6 +348,9 @@ export default function SectionManagementPage() {
     if (!String(form.strength).trim()) return say("Capacity is required.");
     if (!Number.isInteger(capacity) || capacity < 1 || capacity > 150)
       return say("Capacity must be between 1 and 150.");
+    const selectedRoom = rooms.find((room) => room.roomCode === form.room);
+    if (selectedRoom && capacity > Number(selectedRoom.capacity))
+      return say(`Section capacity cannot exceed room capacity (${selectedRoom.capacity}).`);
     const other = (section) => section.id !== selectedSectionId;
     if (
       sections.some(
@@ -429,21 +396,28 @@ export default function SectionManagementPage() {
       name: form.name.trim(),
       strength: capacity,
     };
+    const isEditing = Boolean(selectedSectionId);
+
     setSections((current) =>
-      selectedSectionId
-        ? current.map((section) => (section.id === selectedSectionId ? item : section))
+      isEditing
+        ? current.map((section) =>
+          section.id === selectedSectionId ? item : section,
+        )
         : [item, ...current],
     );
+
     close();
+
     say(
-      selectedSectionId
+      isEditing
         ? `Section "${item.name}" updated successfully!`
         : `Section "${item.name}" added successfully!`,
     );
   };
-  const saveRoom = async (event) => {
+  const saveRoom = (event) => {
     event.preventDefault();
-    const payload = {
+    const room = {
+      id: Date.now(),
       roomCode: roomForm.roomCode.trim(),
       roomName: roomForm.roomName.trim(),
       capacity: Number(roomForm.capacity),
@@ -453,29 +427,23 @@ export default function SectionManagementPage() {
       isActive: roomForm.isActive,
     };
     if (
-      !payload.roomCode ||
-      !payload.roomName ||
-      !payload.roomType ||
-      !payload.building ||
-      !payload.floor ||
+      !room.roomCode ||
+      !room.roomName ||
+      !room.roomType ||
+      !room.building ||
+      !room.floor ||
       !String(roomForm.capacity).trim()
     )
       return say("Please complete all required room fields.");
-    if (!Number.isInteger(payload.capacity) || payload.capacity <= 0)
+    if (!Number.isInteger(room.capacity) || room.capacity <= 0)
       return say("Room capacity must be greater than 0.");
-    try {
-      const response = await apiClient.post("/api/v1/rooms", payload);
-      const created = roomFromApi(responseItem(response.data) || payload);
-      setRooms((current) => [
-        ...current.filter((room) => room.roomCode !== created.roomCode),
-        created,
-      ]);
-      setForm((current) => ({ ...current, room: created.roomCode }));
-      setRoomModal(false);
-      say("Room added successfully!");
-    } catch (error) {
-      say(error.response?.data?.message || "Failed to add room.");
-    }
+    if (rooms.some((item) => item.roomCode.toLowerCase() === room.roomCode.toLowerCase()))
+      return say("A room with this code already exists.");
+
+    setRooms((current) => [...current, room]);
+    setForm((current) => ({ ...current, room: room.roomCode }));
+    setRoomModal(false);
+    say("Room added successfully!");
   };
 
   return (
@@ -683,7 +651,7 @@ export default function SectionManagementPage() {
           <div className="cms-sec-overlay" onClick={close}>
             <div className="cms-modal cms-sec-modal" onClick={(event) => event.stopPropagation()}>
               <div className="cms-modal-head">
-                <h3>{preview ? "Preview Section" : selected ? "Edit Section" : "Add Section"}</h3>
+                <h3>{preview ? "Preview Section" : selected ? (edit ? "Edit Section" : "View Section") : "Add Section"}</h3>
                 <button type="button" className="cms-icon-btn" onClick={close}>
                   <X size={16} />
                 </button>
@@ -795,6 +763,7 @@ export default function SectionManagementPage() {
                       value={form.status}
                       field="status"
                       options={["Active", "Inactive"]}
+                      searchable={false}
                       readOnly={readOnly}
                       change={change}
                     />
@@ -808,7 +777,7 @@ export default function SectionManagementPage() {
                     <button
                       type={selected && !edit ? "button" : "submit"}
                       className="cms-btn cms-btn-primary"
-              onClick={selected && !edit ? enterEditMode : undefined}
+                      onClick={selected && !edit ? enterEditMode : undefined}
                     >
                       {selected ? (edit ? "Save Changes" : "Edit") : "Add Section"}
                     </button>
@@ -906,6 +875,7 @@ export default function SectionManagementPage() {
                       }
                       options={["Active", "Inactive"]}
                       placeholder="Status"
+                      searchable={false}
                     />
                   </div>
                 </div>
@@ -950,7 +920,16 @@ function FilterField({ label, value, onChange, options, disabled = false }) {
     </div>
   );
 }
-function FormField({ label, value, field, options, disabled = false, readOnly, change }) {
+function FormField({
+  label,
+  value,
+  field,
+  options,
+  disabled = false,
+  searchable = true,
+  readOnly,
+  change,
+}) {
   return (
     <div className="cms-field cms-sec-field">
       <label>
@@ -962,12 +941,13 @@ function FormField({ label, value, field, options, disabled = false, readOnly, c
         options={options}
         placeholder={`Select ${label}`}
         disabled={disabled || readOnly}
+        searchable={searchable}
       />
     </div>
   );
 }
 
-function Select({ value, onChange, options, placeholder, disabled = false }) {
+function Select({ value, onChange, options, placeholder, disabled = false, searchable = true }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -981,9 +961,9 @@ function Select({ value, onChange, options, placeholder, disabled = false }) {
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
-  const filteredOptions = options.filter((option) =>
-    option.toLowerCase().includes(query.toLowerCase()),
-  );
+  const filteredOptions = searchable
+    ? options.filter((option) => option.toLowerCase().includes(query.toLowerCase()))
+    : options;
   const toggle = () => {
     if (disabled) return;
     setOpen((current) => !current);
@@ -1003,18 +983,20 @@ function Select({ value, onChange, options, placeholder, disabled = false }) {
       </button>
       {open && (
         <div className="cms-sec-select-menu">
-          <input
-            autoFocus
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setOpen(false);
-                setQuery("");
-              }
-            }}
-            placeholder="Search..."
-          />
+          {searchable && (
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setOpen(false);
+                  setQuery("");
+                }
+              }}
+              placeholder="Search..."
+            />
+          )}
           <div className="cms-sec-select-options">
             {filteredOptions.length > 0 ? (
               filteredOptions.map((option) => (

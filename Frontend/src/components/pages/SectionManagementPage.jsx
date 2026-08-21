@@ -1,148 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, Plus, Search, X, CheckCircle2, Pencil } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./SectionManagementPage.css";
 
-const BOARDS = ["AP State Board"];
-const YEARS = ["2025-26", "2026-27"];
-const GROUPS = ["MPC", "BiPC", "CEC"];
-const PROGRAMS = {
-  MPC: ["JEE Main", "JEE Advanced", "EAPCET"],
-  BiPC: ["NEET", "Medical Foundation"],
-  CEC: ["CA Foundation"],
-};
-const LEVELS = ["1st Year", "2nd Year"];
-const TEACHERS = ["Ravi Kumar", "Suresh", "Priya", "Anil"];
-const PAGE_SIZE = 10;
-const ROOMS = [
-  {
-    id: 1,
-    roomCode: "A-101",
-    roomName: "Classroom A-101",
-    capacity: 50,
-    roomType: "Classroom",
-    building: "A",
-    floor: "1",
-    isActive: true,
-  },
-  {
-    id: 2,
-    roomCode: "A-102",
-    roomName: "Classroom A-102",
-    capacity: 50,
-    roomType: "Classroom",
-    building: "A",
-    floor: "1",
-    isActive: true,
-  },
-  {
-    id: 3,
-    roomCode: "A-103",
-    roomName: "Classroom A-103",
-    capacity: 50,
-    roomType: "Classroom",
-    building: "A",
-    floor: "1",
-    isActive: true,
-  },
-  {
-    id: 4,
-    roomCode: "A-104",
-    roomName: "Classroom A-104",
-    capacity: 50,
-    roomType: "Classroom",
-    building: "A",
-    floor: "1",
-    isActive: true,
-  },
-  {
-    id: 5,
-    roomCode: "B-101",
-    roomName: "Classroom B-101",
-    capacity: 50,
-    roomType: "Classroom",
-    building: "B",
-    floor: "1",
-    isActive: true,
-  },
-  {
-    id: 6,
-    roomCode: "B-102",
-    roomName: "Classroom B-102",
-    capacity: 50,
-    roomType: "Classroom",
-    building: "B",
-    floor: "1",
-    isActive: true,
-  },
-];
-const SECTIONS = [
-  {
-    id: 1,
-    board: "AP State Board",
-    academicYear: "2026-27",
-    group: "MPC",
-    program: "JEE Main",
-    academicLevel: "1st Year",
-    name: "JEE-A",
-    room: "A-101",
-    teacher: "Ravi Kumar",
-    strength: 40,
-    status: "Active",
-  },
-  {
-    id: 2,
-    board: "AP State Board",
-    academicYear: "2026-27",
-    group: "MPC",
-    program: "JEE Main",
-    academicLevel: "1st Year",
-    name: "JEE-B",
-    room: "A-102",
-    teacher: "Suresh",
-    strength: 45,
-    status: "Active",
-  },
-  {
-    id: 3,
-    board: "AP State Board",
-    academicYear: "2026-27",
-    group: "MPC",
-    program: "JEE Advanced",
-    academicLevel: "2nd Year",
-    name: "JEE-Adv-1",
-    room: "A-103",
-    teacher: "Priya",
-    strength: 35,
-    status: "Active",
-  },
-  {
-    id: 4,
-    board: "AP State Board",
-    academicYear: "2026-27",
-    group: "BiPC",
-    program: "NEET",
-    academicLevel: "1st Year",
-    name: "NEET-1",
-    room: "A-104",
-    teacher: "Anil",
-    strength: 38,
-    status: "Active",
-  },
-  {
-    id: 5,
-    board: "AP State Board",
-    academicYear: "2026-27",
-    group: "CEC",
-    program: "CA Foundation",
-    academicLevel: "2nd Year",
-    name: "CA-Alpha",
-    room: "A-102",
-    teacher: "Anil",
-    strength: 30,
-    status: "Inactive",
-  },
-];
+const PAGE_SIZE = 5;
 const EMPTY = {
   board: "",
   academicYear: "",
@@ -172,6 +35,34 @@ const normalizeSectionName = (name) => name.trim().replace(/\s+/g, " ");
 const normalizeRoomCode = (code) => String(code ?? "").trim().replace(/\s+/g, " ");
 const roomCodesMatch = (first, second) =>
   normalizeRoomCode(first).toLowerCase() === normalizeRoomCode(second).toLowerCase();
+const collectionFrom = (data) => Array.isArray(data) ? data : data?.data ?? data?.items ?? data?.result ?? [];
+const isActiveRecord = (item) =>
+  item?.isActive === true || item?.status === true || item?.status === "Active";
+const normalizeRoom = (room) => ({
+  ...room,
+  id: room.roomId ?? room.id,
+  roomCode: room.roomCode ?? room.roomNumber ?? "",
+  roomName: room.roomName ?? "",
+  capacity: room.capacity ?? 0,
+  roomType: room.roomType ?? "",
+  building: room.building ?? room.buildingName ?? "",
+  floor: String(room.floor ?? ""),
+  isActive: room.isActive ?? room.status === "Active",
+});
+const normalizeSection = (section) => ({
+  ...section,
+  id: section.sectionId ?? section.id,
+  board: section.board ?? section.boardName ?? "",
+  academicYear: section.academicYearName ?? section.academicYear ?? "",
+  group: section.group ?? section.groupName ?? "",
+  program: section.program ?? section.programme ?? section.programName ?? "",
+  academicLevel: section.academicLevel ?? section.yearOfStudy ?? section.academicLevelName ?? "",
+  name: section.sectionName ?? section.name ?? "",
+  room: section.roomNumber ?? section.roomCode ?? "",
+  teacher: section.classTeacherName ?? section.teacher ?? "",
+  strength: section.maximumStrength ?? section.capacity ?? section.strength ?? "",
+  status: section.isActive ?? section.status === "Active" ? "Active" : "Inactive",
+});
 
 // Future backend integration should relate sections to rooms by roomId, rather than roomCode.
 // `strength` remains the current data-contract name for section capacity.
@@ -186,8 +77,17 @@ export default function SectionManagementPage() {
   const [activeTab, setActiveTab] = useState("sections");
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
-  const [sections, setSections] = useState(SECTIONS);
-  const [rooms, setRooms] = useState(ROOMS);
+  const [sections, setSections] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [boardsList, setBoardsList] = useState([]);
+  const [academicYearsList, setAcademicYearsList] = useState([]);
+  const [groupsList, setGroupsList] = useState([]);
+  const [programsList, setProgramsList] = useState([]);
+  const [academicLevelsList, setAcademicLevelsList] = useState([]);
+  const [teachersList, setTeachersList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
@@ -216,7 +116,86 @@ export default function SectionManagementPage() {
       toastTimer.current = null;
     }, 3000);
   };
-  const updateFilter = (key, value) =>
+  const loadRooms = async () => {
+    setLoadingRooms(true);
+    try {
+      const response = await apiClient.get(apiEndpoints.rooms.getAll);
+      setRooms(collectionFrom(response.data).map(normalizeRoom).filter((room) => room.id));
+    } catch (error) {
+      say(getApiErrorMessage(error));
+    } finally {
+      setLoadingRooms(false);
+    }
+  };
+  const loadSections = async (params) => {
+    const response = await apiClient.get(apiEndpoints.sections.list, { params });
+    setSections(collectionFrom(response.data).map(normalizeSection).filter((section) => section.id));
+  };
+  const loadGroups = async (boardName, selectedGroupName = "") => {
+    const board = boardsList.find((item) => item.name === boardName);
+    if (!board) return setGroupsList([]);
+    try {
+      const response = await apiClient.get(apiEndpoints.groups.getAll, { params: { boardId: board.id } });
+      const groups = collectionFrom(response.data)
+        .filter(isActiveRecord)
+        .map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name ?? "", boardId: String(item.boardId ?? "") }))
+        .filter((item) => item.id && item.name);
+      setGroupsList(groups);
+      const selectedGroup = groups.find((item) => item.name === selectedGroupName);
+      if (selectedGroup) {
+        const programsResponse = await apiClient.get(apiEndpoints.groups.programs(selectedGroup.id));
+        setProgramsList(collectionFrom(programsResponse.data)
+          .filter(isActiveRecord)
+          .map((item) => ({ id: String(item.programId ?? item.id), name: item.programName ?? item.name ?? "" }))
+          .filter((item) => item.id && item.name));
+      }
+    } catch (error) {
+      setGroupsList([]);
+      say(getApiErrorMessage(error));
+    }
+  };
+  const loadPrograms = async (groupName) => {
+    const group = groupsList.find((item) => item.name === groupName);
+    if (!group) return setProgramsList([]);
+    try {
+      const response = await apiClient.get(apiEndpoints.groups.programs(group.id));
+      setProgramsList(collectionFrom(response.data)
+        .filter(isActiveRecord)
+        .map((item) => ({ id: String(item.programId ?? item.id), name: item.programName ?? item.name ?? "" }))
+        .filter((item) => item.id && item.name));
+    } catch (error) {
+      setProgramsList([]);
+      say(getApiErrorMessage(error));
+    }
+  };
+  useEffect(() => {
+    let active = true;
+    const loadInitialData = async () => {
+      setLoading(true);
+      const results = await Promise.allSettled([
+        apiClient.get(apiEndpoints.boards.list),
+        apiClient.get(apiEndpoints.academicYears.list),
+        apiClient.get(apiEndpoints.boards.academicLevels),
+        apiClient.get("/api/v1/faculty/dropdown"),
+        apiClient.get(apiEndpoints.sections.list),
+      ]);
+      if (!active) return;
+      const [boardsResult, yearsResult, levelsResult, facultyResult, sectionsResult] = results;
+      if (boardsResult.status === "fulfilled") setBoardsList(collectionFrom(boardsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name ?? "" })).filter((item) => item.id && item.name));
+      if (yearsResult.status === "fulfilled") setAcademicYearsList(collectionFrom(yearsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name ?? "" })).filter((item) => item.id && item.name));
+      if (levelsResult.status === "fulfilled") setAcademicLevelsList(collectionFrom(levelsResult.value.data).map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.academicLevelName ?? item.name ?? "" })).filter((item) => item.id && item.name));
+      if (facultyResult.status === "fulfilled") setTeachersList(collectionFrom(facultyResult.value.data).filter((item) => item.isActive !== false).map((item) => ({ id: String(item.facultyId ?? item.id), name: item.facultyName ?? item.name ?? "" })).filter((item) => item.id && item.name));
+      if (sectionsResult.status === "fulfilled") setSections(collectionFrom(sectionsResult.value.data).map(normalizeSection).filter((section) => section.id));
+      if (results.some((result) => result.status === "rejected")) say("Some Section Management data could not be loaded.");
+      setLoading(false);
+    };
+    loadInitialData();
+    loadRooms();
+    return () => { active = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial API load is intentionally one-time.
+  const updateFilter = (key, value) => {
+    if (key === "board") loadGroups(value);
+    if (key === "group") loadPrograms(value);
     setFilters((current) => {
       const next = { ...current, [key]: value };
       if (key === "board")
@@ -227,8 +206,11 @@ export default function SectionManagementPage() {
       if (key === "program") next.academicLevel = "";
       return next;
     });
+  };
   const change = (key, value) => {
     setModalError(null);
+    if (key === "board") loadGroups(value);
+    if (key === "group") loadPrograms(value);
     setForm((current) => {
       const next = { ...current, [key]: value };
       if (key === "board")
@@ -303,6 +285,11 @@ export default function SectionManagementPage() {
   const roomBuildings = useMemo(() => [...new Set(rooms.map((room) => room.building).filter(Boolean))], [rooms]);
   const roomFloors = useMemo(() => [...new Set(rooms.map((room) => String(room.floor)).filter(Boolean))], [rooms]);
   const roomTypes = ROOM_TYPES;
+  const boardOptions = useMemo(() => boardsList.map((item) => item.name), [boardsList]);
+  const academicYearOptions = useMemo(() => academicYearsList.map((item) => item.name), [academicYearsList]);
+  const groupOptions = useMemo(() => groupsList.map((item) => item.name), [groupsList]);
+  const programOptions = useMemo(() => programsList.map((item) => item.name), [programsList]);
+  const academicLevelOptions = useMemo(() => academicLevelsList.map((item) => item.name), [academicLevelsList]);
   useEffect(() => setPage(1), [appliedFilters, search]);
   useEffect(() => setRoomPage(1), [appliedRoomFilters, roomSearch]);
   useEffect(() => {
@@ -347,7 +334,7 @@ export default function SectionManagementPage() {
       })(),
     [rooms, sections, selectedSectionId, form.room],
   );
-  const availableTeachers = TEACHERS;
+  const availableTeachers = teachersList.map((teacher) => teacher.name);
 
   const close = () => {
     setModal(false);
@@ -367,6 +354,7 @@ export default function SectionManagementPage() {
     setSelectedSectionId(section.id);
     setMode(isPreview ? "preview" : "edit");
     setForm({ ...section, strength: String(section.strength ?? "") });
+    loadGroups(section.board, section.group);
     setModalError(null);
     setModal(true);
   };
@@ -398,7 +386,7 @@ export default function SectionManagementPage() {
     setRoomModalError(null);
     setRoomModal(true);
   };
-  const save = (event) => {
+  const save = async (event) => {
     event.preventDefault();
     const required = [
       "board",
@@ -428,8 +416,8 @@ export default function SectionManagementPage() {
         return setModalError("Only Classroom rooms can be assigned to a section.");
       if (capacity > Number(selectedRoom.capacity))
         return setModalError(`Section capacity cannot exceed room capacity (${selectedRoom.capacity}).`);
-      if (!TEACHERS.includes(form.teacher))
-        return setModalError("Please select an available active Incharge.");
+      if (!availableTeachers.includes(form.teacher))
+        return setModalError("Please select an available active class teacher.");
     }
     const other = (section) => section.id !== selectedSectionId;
     if (
@@ -455,33 +443,51 @@ export default function SectionManagementPage() {
       )
     )
       return setModalError("Selected room is already assigned to another active section.");
-    const item = {
-      ...form,
-      id: selectedSectionId || Date.now(),
-      name: normalizedName,
-      strength: capacity,
-    };
     const isEditing = Boolean(selectedSectionId);
-
-    setSections((current) =>
-      isEditing
-        ? current.map((section) =>
-          section.id === selectedSectionId ? item : section,
-        )
-        : [item, ...current],
-    );
-
-    close();
-    setSearch("");
-    setPage(1);
-
-    say(
-      isEditing
-        ? `Section "${item.name}" updated successfully!`
-        : `Section "${item.name}" added successfully!`,
-    );
+    const board = boardsList.find((item) => item.name === form.board);
+    const academicYear = academicYearsList.find((item) => item.name === form.academicYear);
+    const group = groupsList.find((item) => item.name === form.group);
+    const program = programsList.find((item) => item.name === form.program);
+    const academicLevel = academicLevelsList.find((item) => item.name === form.academicLevel);
+    const teacher = teachersList.find((item) => item.name === form.teacher);
+    const roomId = selectedRoom?.id ?? form.roomId;
+    const teacherId = teacher?.id ?? form.classTeacherId;
+    if (!board || !academicYear || !group || !program || !academicLevel || !roomId || !teacherId)
+      return setModalError("Please select valid current values from each dropdown.");
+    const payload = {
+      board: form.board,
+      boardId: Number(board.id),
+      academicYearId: Number(academicYear.id),
+      group: form.group,
+      groupId: Number(group.id),
+      programme: form.program,
+      program: form.program,
+      academicLevel: form.academicLevel,
+      yearOfStudy: form.academicLevel,
+      sectionName: normalizedName,
+      roomNumber: selectedRoom?.roomCode ?? form.room,
+      roomId: Number(roomId),
+      classTeacherId: Number(teacherId),
+      maximumStrength: capacity,
+      capacity,
+      isActive: form.status === "Active",
+    };
+    setSubmitting(true);
+    try {
+      if (isEditing) await apiClient.put(apiEndpoints.sections.update(selectedSectionId), payload);
+      else await apiClient.post(apiEndpoints.sections.create, payload);
+      await loadSections();
+      close();
+      setSearch("");
+      setPage(1);
+      say(isEditing ? `Section "${normalizedName}" updated successfully!` : `Section "${normalizedName}" added successfully!`);
+    } catch (error) {
+      setModalError(getApiErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
-  const saveRoom = (event) => {
+  const saveRoom = async (event) => {
     event.preventDefault();
     const room = {
       id: selectedRoomId || Date.now(),
@@ -528,17 +534,33 @@ export default function SectionManagementPage() {
       return setRoomModalError("Cannot deactivate this room because it is assigned to an active section.");
 
     const isEditingRoom = Boolean(selectedRoomId);
-    setRooms((current) => isEditingRoom
-      ? current.map((item) => item.id === selectedRoomId ? room : item)
-      : [...current, room]);
-    if (!isEditingRoom && roomModalFromSection && room.isActive && room.roomType === "Classroom")
-      setForm((current) => ({ ...current, room: room.roomCode }));
-    closeRoomModal();
-    setRoomSearch("");
-    setRoomPage(1);
-    say(isEditingRoom
-      ? `Room "${room.roomCode}" ${room.isActive ? "updated" : "deactivated"} successfully!`
-      : `Room "${room.roomCode}" added successfully!`);
+    const payload = {
+      roomCode: room.roomCode,
+      roomName: room.roomName,
+      roomNumber: room.roomCode,
+      capacity: room.capacity,
+      roomType: room.roomType,
+      building: room.building,
+      buildingName: room.building,
+      floor: room.floor,
+      isActive: room.isActive,
+    };
+    setSubmitting(true);
+    try {
+      if (isEditingRoom) await apiClient.put(`/api/v1/rooms/${selectedRoomId}`, payload);
+      else await apiClient.post(apiEndpoints.rooms.getAll, payload);
+      await loadRooms();
+      if (!isEditingRoom && roomModalFromSection && room.isActive && room.roomType === "Classroom")
+        setForm((current) => ({ ...current, room: room.roomCode }));
+      closeRoomModal();
+      setRoomSearch("");
+      setRoomPage(1);
+      say(isEditingRoom ? `Room "${room.roomCode}" ${room.isActive ? "updated" : "deactivated"} successfully!` : `Room "${room.roomCode}" added successfully!`);
+    } catch (error) {
+      setRoomModalError(getApiErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -563,34 +585,34 @@ export default function SectionManagementPage() {
               label="Board"
               value={filters.board}
               onChange={(value) => updateFilter("board", value)}
-              options={BOARDS}
+              options={boardOptions}
             />
             <FilterField
               label="Academic Year"
               value={filters.academicYear}
               onChange={(value) => updateFilter("academicYear", value)}
-              options={YEARS}
+              options={academicYearOptions}
               disabled={!filters.board}
             />
             <FilterField
               label="Group"
               value={filters.group}
               onChange={(value) => updateFilter("group", value)}
-              options={GROUPS}
+              options={groupOptions}
               disabled={!filters.academicYear}
             />
             <FilterField
               label="Program"
               value={filters.program}
               onChange={(value) => updateFilter("program", value)}
-              options={filters.group ? PROGRAMS[filters.group] : []}
+              options={filters.group ? programOptions : []}
               disabled={!filters.group}
             />
             <FilterField
               label="Academic Level"
               value={filters.academicLevel}
               onChange={(value) => updateFilter("academicLevel", value)}
-              options={LEVELS}
+              options={academicLevelOptions}
               disabled={!filters.program}
             />
           </div>
@@ -745,7 +767,7 @@ export default function SectionManagementPage() {
                       label="Board"
                       value={form.board}
                       field="board"
-                      options={BOARDS}
+                      options={boardOptions}
                       readOnly={readOnly}
                       change={change}
                     />
@@ -753,7 +775,7 @@ export default function SectionManagementPage() {
                       label="Academic Year"
                       value={form.academicYear}
                       field="academicYear"
-                      options={YEARS}
+                      options={academicYearOptions}
                       disabled={!form.board}
                       readOnly={readOnly}
                       change={change}
@@ -762,7 +784,7 @@ export default function SectionManagementPage() {
                       label="Group"
                       value={form.group}
                       field="group"
-                      options={GROUPS}
+                      options={groupOptions}
                       disabled={!form.academicYear}
                       readOnly={readOnly}
                       change={change}
@@ -771,7 +793,7 @@ export default function SectionManagementPage() {
                       label="Program"
                       value={form.program}
                       field="program"
-                      options={form.group ? PROGRAMS[form.group] : []}
+                      options={form.group ? programOptions : []}
                       disabled={!form.group}
                       readOnly={readOnly}
                       change={change}
@@ -780,7 +802,7 @@ export default function SectionManagementPage() {
                       label="Academic Level"
                       value={form.academicLevel}
                       field="academicLevel"
-                      options={LEVELS}
+                      options={academicLevelOptions}
                       disabled={!form.program}
                       readOnly={readOnly}
                       change={change}
@@ -889,7 +911,10 @@ export default function SectionManagementPage() {
                 <Search size={16} />
                 <input type="search" placeholder={roomSearchPlaceholder} value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} />
               </div>
-              <button type="button" className="cms-btn cms-btn-primary cms-room-add-btn" onClick={openRoomModal}><Plus size={15} />Add Room</button>
+              <button type="button" className="cms-btn cms-btn-primary cms-room-add-btn" onClick={openRoomModal}>
+                {/* <Plus size={15} /> */}
+                Add Room
+                </button>
             </div>
             <div className="cms-table-wrap cms-sec-table-wrap">
               <table className="cms-table cms-sec-table cms-room-table">

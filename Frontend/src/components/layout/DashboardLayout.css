@@ -1,12 +1,14 @@
 :root {
-  --cms-sidebar-w: 228px;
+  --cms-sidebar-w: 180px;
   --cms-sidebar-collapsed-w: 72px;
-   --cms-header-height: 64px;
+  --cms-header-height: 64px;
 }
 
 .cms-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .cms-sidebar {
@@ -91,7 +93,10 @@
   color: #cbd5e1;
   text-decoration: none;
   font-size: 12.75px;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .cms-nav-link:hover {
@@ -145,7 +150,9 @@
   display: grid;
   place-items: center;
   border-radius: 8px;
-  transition: transform 0.2s ease, background 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease;
 }
 
 .cms-nav-caret:hover {
@@ -159,10 +166,12 @@
 
 .cms-main {
   flex: 1;
+  height: 100dvh;
   margin-left: var(--cms-sidebar-w);
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   transition: none;
 }
 
@@ -178,6 +187,7 @@
   position: sticky;
   top: 0;
   z-index: 40;
+  flex: 0 0 var(--cms-header-height);
 
   height: var(--cms-header-height);
   min-height: var(--cms-header-height);
@@ -407,7 +417,10 @@
   padding: 22px;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   max-width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .cms-content > * {

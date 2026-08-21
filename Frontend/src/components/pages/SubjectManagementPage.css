@@ -634,6 +634,7 @@
 }
 .subject-config-modal .mark-input { min-width: 0; align-content: start; }
 .subject-config-modal .mark-input small { min-height: 14px; line-height: 1.25; }
+.subject-required-mark { color: #dc2626; }
 
 @media (max-width: 700px) {
   .subject-table-toolbar, .assign-context { align-items: stretch; flex-direction: column; }

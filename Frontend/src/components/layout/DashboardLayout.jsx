@@ -16,14 +16,9 @@ export const menu = [
   {
     section: "Academics",
     items: [
-<<<<<<< HEAD
-      { to: "/dashboard/board-academic-year", label: "Board & Academic Year", icon: Landmark },
-      { to: "/dashboard/courses", label: "Course / Group", icon: BookOpen },
-=======
       { to: "/dashboard/boards", label: "Board Management", icon: Landmark },
       { to: "/dashboard/academic-years", label: "Academic Year", icon: CalendarRange },
       { to: "/dashboard/courses", label: "Group Management", icon: BookOpen },
->>>>>>> 872160ca90702e3bd5bd1028a5f85c679f992f5e
       { to: "/dashboard/subjects", label: "Subject Management", icon: Library },
       { to: "/dashboard/sections", label: "Section Management", icon: Layers3 },
     ],

@@ -3,14 +3,9 @@ import LandingPage from "@/components/pages/LandingPage.jsx";
 import DashboardPage from "@/components/pages/DashboardPage.jsx";
 import ListPage from "@/components/pages/ListPage.jsx";
 import FormPage from "@/components/pages/FormPage.jsx";
-<<<<<<< HEAD
-import BoardAcademicYearManagementPage from "@/components/pages/BoardAcademicYearManagementPage.jsx";
-import CourseGroupPage, { pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
-=======
 import BoardManagementPage, { pageConfig as boardManagementConfig } from "@/components/pages/BoardManagementPage.jsx";
 import AcademicYearPage, { pageConfig as academicYearConfig } from "@/components/pages/AcademicYearPage.jsx";
 import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
->>>>>>> 872160ca90702e3bd5bd1028a5f85c679f992f5e
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
 import FacultyManagementPage from "@/components/pages/FacultyManagementPage.jsx";

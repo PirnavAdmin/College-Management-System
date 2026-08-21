@@ -1,23 +1,10 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, BarChart3, BookOpenCheck, CalendarClock, CheckCircle2, GraduationCap, ShieldCheck, Users, Wallet } from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import HeroSlider from "@/components/common/HeroSlider.jsx";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
 import { heroCopy } from "@/data/heroSlides.js";
 import logo from "@/assets/P_LOGO.png";
 import "./LandingPage.css";
-
-const features = [
-  { icon: GraduationCap, title: "Students & Admissions", text: "Move from enquiry to enrollment with guided admissions, complete profiles, documents and promotion tracking.", link: "/login" },
-  { icon: CalendarClock, title: "Academics & Timetable", text: "Plan boards, courses, subjects, sections, faculty allocation and conflict-aware weekly schedules.", link: "/login" },
-  { icon: Wallet, title: "Fees & Certificates", text: "Manage fee structures, collections, receipts, dues and certificate workflows from one secure workspace.", link: "/login" },
-  { icon: BarChart3, title: "Exams & Analytics", text: "Turn marks, attendance and results into timely insights with clear operational reports.", link: "/login" },
-];
-
-const highlights = [
-  { icon: Users, value: "One", label: "Connected campus workspace" },
-  { icon: BookOpenCheck, value: "End-to-end", label: "Academic workflows" },
-  { icon: ShieldCheck, value: "Secure", label: "Role-based access" },
-];
 
 const quickLinks = [
   { label: "Home", to: "/" },
@@ -52,26 +39,8 @@ export default function LandingPage() {
           </div>
           <div className="cms-hero-actions landing-hero-actions">
             <Link to="/register" className="cms-btn landing-start-btn">Get Started <ArrowRight size={16} /></Link>
-            <a href="#platform-features" className="landing-explore-btn">Explore the platform</a>
+            <Link to="/login" className="cms-btn landing-start-btn landing-explore-btn">Explore the platform <ArrowRight size={16} /></Link>
           </div>
-        </div>
-      </section>
-
-      <section className="landing-highlight-strip" aria-label="Platform highlights">
-        {highlights.map(({ icon: Icon, value, label }) => <article key={label} className="landing-highlight-item"><span><Icon size={20} /></span><div><strong>{value}</strong><small>{label}</small></div></article>)}
-      </section>
-
-      <section id="platform-features" className="landing-feature-section">
-        <div className="landing-section-heading">
-          <span className="cms-eyebrow">Everything in one place</span>
-          <h2>Built around the way your college works</h2>
-          <p>Simple tools for every team, connected by accurate data and consistent workflows.</p>
-        </div>
-        <div className="cms-feature-grid">
-        {features.map((feature) => {
-          const Icon = feature.icon;
-          return <article key={feature.title} className="cms-feature"><span className="cms-stat-icon"><Icon size={20} /></span><h3>{feature.title}</h3><p>{feature.text}</p><Link to={feature.link} className="landing-feature-link">Open module <ArrowRight size={14} /></Link></article>;
-        })}
         </div>
       </section>
 

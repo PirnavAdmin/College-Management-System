@@ -18,11 +18,9 @@ const SUBJECT_CONTEXT = {
   academicLevelId: "",
 };
 const DEFAULT = [];
-const get = () => [];
-const put = () => {};
 const itemsFromResponse = (data) => {
   const body = data?.data ?? data;
-  return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? [];
+  return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? body?.$values ?? [];
 };
 const apiRecord = (record) => {
   const types = componentsOf(record);
@@ -130,7 +128,7 @@ export const pageConfig = { title: "Subject Management", rows: [], fields: [] };
 export default function SubjectManagementPage({ screen = "list" }) {
   const nav = useNavigate(),
     location = useLocation(),
-    [records, setRecords] = useState(() => normalize(get())),
+    [records, setRecords] = useState(() => normalize(DEFAULT)),
     [toast, setToast] = useState(""),
     [apiAvailable, setApiAvailable] = useState(false),
     [loading, setLoading] = useState(false);
@@ -139,6 +137,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
     const requestId = ++subjectRequestId.current;
     if (!subjectContext?.boardId || !subjectContext?.groupId || !subjectContext?.academicLevelId) {
       setRecords([]);
+      setApiAvailable(false);
       return;
     }
     setLoading(true);
@@ -151,11 +150,17 @@ export default function SubjectManagementPage({ screen = "list" }) {
         },
       });
       if (requestId !== subjectRequestId.current) return;
-      setRecords(normalize(itemsFromResponse(response.data)));
+      setRecords(normalize(itemsFromResponse(response.data).map((record) => ({
+        ...record,
+        boardId: subjectContext.boardId,
+        groupId: subjectContext.groupId,
+        academicLevelId: subjectContext.academicLevelId,
+      }))));
       setApiAvailable(true);
     } catch (error) {
       if (requestId !== subjectRequestId.current) return;
       setRecords([]);
+      setApiAvailable(false);
       setToast(getApiErrorMessage(error) || "Unable to load subjects for the selected context.");
     } finally {
       if (requestId === subjectRequestId.current) setLoading(false);
@@ -163,40 +168,41 @@ export default function SubjectManagementPage({ screen = "list" }) {
   }, []);
   const save = async (next, msg) => {
     const normalizedRecords = normalize(next);
-    if (apiAvailable) {
-      const missingContext = normalizedRecords.some((record) => {
-        if (!String(record.id).startsWith("new-")) return false;
-        const payload = apiRecord(record);
-        return !payload.boardId || !payload.groupId || !payload.academicLevelId;
-      });
-      if (missingContext) {
-        setToast("Select a Board, Group, and Academic Level before saving subjects.");
-        return false;
-      }
-      const previous = new Map(records.map((record) => [String(record.id), record]));
-      const nextIds = new Set(normalizedRecords.map((record) => String(record.id)));
-      try {
-        await Promise.all([
-          ...normalizedRecords.flatMap((record) => {
-            const existing = previous.get(String(record.id));
-            if (!existing || String(record.id).startsWith("new-")) {
-              return [apiClient.post(apiEndpoints.subjects.create, apiRecord(record))];
-            }
-            return JSON.stringify(apiRecord(existing)) === JSON.stringify(apiRecord(record))
-              ? []
-              : [apiClient.put(apiEndpoints.subjects.update(record.id), apiRecord(record))];
-          }),
-          ...records
-            .filter((record) => !nextIds.has(String(record.id)))
-            .map((record) => apiClient.delete(apiEndpoints.subjects.delete(record.id))),
-        ]);
-      } catch (error) {
-        setToast(getApiErrorMessage(error) || "The server could not save this subject. Please try again.");
-        return false;
-      }
+    if (!apiAvailable) {
+      setToast("Subjects could not be loaded for this context. Please retry before saving.");
+      return false;
+    }
+    const missingContext = normalizedRecords.some((record) => {
+      if (!String(record.id).startsWith("new-")) return false;
+      const payload = apiRecord(record);
+      return !payload.boardId || !payload.groupId || !payload.academicLevelId;
+    });
+    if (missingContext) {
+      setToast("Select a Board, Group, and Academic Level before saving subjects.");
+      return false;
+    }
+    const previous = new Map(records.map((record) => [String(record.id), record]));
+    const nextIds = new Set(normalizedRecords.map((record) => String(record.id)));
+    try {
+      await Promise.all([
+        ...normalizedRecords.flatMap((record) => {
+          const existing = previous.get(String(record.id));
+          if (!existing || String(record.id).startsWith("new-")) {
+            return [apiClient.post(apiEndpoints.subjects.create, apiRecord(record))];
+          }
+          return JSON.stringify(apiRecord(existing)) === JSON.stringify(apiRecord(record))
+            ? []
+            : [apiClient.put(apiEndpoints.subjects.update(record.id), apiRecord(record))];
+        }),
+        ...records
+          .filter((record) => !nextIds.has(String(record.id)))
+          .map((record) => apiClient.delete(apiEndpoints.subjects.delete(record.id))),
+      ]);
+    } catch (error) {
+      setToast(getApiErrorMessage(error) || "The server could not save this subject. Please try again.");
+      return false;
     }
     setRecords(normalizedRecords);
-    put(normalizedRecords);
     setToast(msg);
     return true;
   };
@@ -207,7 +213,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
         context={{ ...SUBJECT_CONTEXT, ...location.state?.subjectContext }}
         cancel={() => nav("/dashboard/subjects")}
         save={async (next) => {
-          if (await save(next, apiAvailable ? "Subjects saved" : "Subjects saved locally")) {
+          if (await save(next, "Subjects saved")) {
             nav("/dashboard/subjects");
           }
         }}
@@ -242,13 +248,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
 function List({ records, context, assign, loading, loadSubjects }) {
   const [q, setQ] = useState("");
   const [openingAssign, setOpeningAssign] = useState(false);
-  const [selectedContext, setSelectedContext] = useState(() => {
-    try {
-      return { ...context, ...JSON.parse(localStorage.getItem("subjectManagementContext") || "{}")};
-    } catch {
-      return context;
-    }
-  });
+  const [selectedContext, setSelectedContext] = useState(context);
   const [boards, setBoards] = useState([]);
   const [groups, setGroups] = useState([]);
   useEffect(() => {
@@ -262,28 +262,9 @@ function List({ records, context, assign, loading, loadSubjects }) {
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
       setGroups(nextGroups);
-      const savedGroup = nextGroups.find(
-        (group) => String(group.groupId) === String(selectedContext.groupId),
-      );
-      const firstGroup = savedGroup || nextGroups.find((group) => group.isActive !== false) || nextGroups[0];
-      if (firstGroup) {
-        setSelectedContext({
-          board: firstGroup.boardName || "",
-          boardId: firstGroup.boardId || "",
-          group: firstGroup.groupName || "",
-          groupId: firstGroup.groupId || "",
-          academicLevel: firstGroup.academicLevelName || "",
-          academicLevelId: firstGroup.academicLevelId || "",
-        });
-      }
     }).catch(() => {});
     return () => { active = false; };
-  }, [selectedContext.groupId]);
-  useEffect(() => {
-    if (selectedContext.groupId) {
-      localStorage.setItem("subjectManagementContext", JSON.stringify(selectedContext));
-    }
-  }, [selectedContext]);
+  }, []);
   useEffect(() => {
     loadSubjects({
       boardId: selectedContext.boardId,
@@ -452,9 +433,9 @@ function Assign({ records, context, cancel, save }) {
             <span>{rows.length} Subjects Assigned</span>
           </div>
           <div className="assignment-head">
-            <span>Subject Name</span>
-            <span>Subject Code</span>
-            <span>Subject Type</span>
+            <span>Subject Name <RequiredMark /></span>
+            <span>Subject Code <RequiredMark /></span>
+            <span>Subject Type <RequiredMark /></span>
             <span>Action</span>
           </div>
           {rows.map((row) => {
@@ -645,7 +626,7 @@ function Configure({ item, cancel, save }) {
       <div className="subject-config-modal-summary">
         <div className="subject-edit-fields">
           <label className={`mark-input${touched.subjectName && errors.subjectName ? " has-error" : ""}`}>
-            <span>Subject Name *</span>
+            <span>Subject Name <RequiredMark /></span>
             <input
               value={value.subjectName}
               onChange={(event) => setSubjectDetail("subjectName", event.target.value)}
@@ -654,7 +635,7 @@ function Configure({ item, cancel, save }) {
             {touched.subjectName && errors.subjectName && <small>{errors.subjectName}</small>}
           </label>
           <label className={`mark-input${touched.subjectCode && errors.subjectCode ? " has-error" : ""}`}>
-            <span>Subject Code *</span>
+            <span>Subject Code <RequiredMark /></span>
             <input
               value={value.subjectCode}
               onChange={(event) => setSubjectDetail("subjectCode", event.target.value)}
@@ -675,7 +656,8 @@ function Configure({ item, cancel, save }) {
             {theory && (
               <>
                 <Mark
-                  label="Internal Marks *"
+                  label="Internal Marks"
+                  required
                   value={value.internalMarks}
                   change={(v) => set("internalMarks", v)}
                   error={touched.internalMarks ? errors.internalMarks : ""}
@@ -684,7 +666,8 @@ function Configure({ item, cancel, save }) {
                   }}
                 />
                 <Mark
-                  label="External Marks *"
+                  label="External Marks"
+                  required
                   value={value.externalMarks}
                   change={(v) => set("externalMarks", v)}
                   error={touched.externalMarks ? errors.externalMarks : ""}
@@ -697,6 +680,7 @@ function Configure({ item, cancel, save }) {
             {practical && (
               <Mark
                 label="Practical Marks"
+                required
                 value={value.practicalMarks}
                 change={(v) => set("practicalMarks", v)}
                 error={touched.practicalMarks ? errors.practicalMarks : ""}
@@ -706,7 +690,8 @@ function Configure({ item, cancel, save }) {
               />
             )}
             <Mark
-              label="Passing Marks *"
+              label="Passing Marks"
+              required
               value={value.passingMarks}
               change={(v) => set("passingMarks", v)}
               error={touched.passingMarks ? errors.passingMarks : ""}
@@ -761,18 +746,14 @@ function Table({ rows, context, setContext, boards, groups, loading, query, setQ
             options={boards.map((board) => ({ value: board.boardId, label: board.boardName }))}
             onChange={(boardId) => {
               const board = boards.find((item) => String(item.boardId) === String(boardId));
-              const firstGroup = groups.find((item) => String(item.boardId) === String(boardId));
-              setContext((current) => ({
-                ...current,
+              setContext({
                 boardId,
                 board: board?.boardName || "",
-                ...(firstGroup ? {
-                  groupId: firstGroup.groupId,
-                  group: firstGroup.groupName,
-                  academicLevelId: firstGroup.academicLevelId,
-                  academicLevel: firstGroup.academicLevelName,
-                } : {}),
-              }));
+                groupId: "",
+                group: "",
+                academicLevelId: "",
+                academicLevel: "",
+              });
             }}
           />
           <ContextSelect
@@ -788,12 +769,17 @@ function Table({ rows, context, setContext, boards, groups, loading, query, setQ
           />
           <ContextSelect
             label="Academic Level"
-            value={context.academicLevel}
-            options={[...new Set(groups.map((group) => group.academicLevelName).filter(Boolean))]}
-            onChange={(academicLevel) => applyGroupContext(matchingGroup(groups.filter((group) =>
-              String(group.boardId) === String(context.boardId) && group.academicLevelName === academicLevel,
-            )) || matchingGroup(groups.filter((group) =>
-              String(group.boardId) === String(context.boardId) && group.academicLevelName === academicLevel,
+            value={context.academicLevelId}
+            options={[...new Map(groups
+              .filter((group) => !context.boardId || String(group.boardId) === String(context.boardId))
+              .filter((group) => group.academicLevelId && group.academicLevelName)
+              .map((group) => [String(group.academicLevelId), {
+                value: group.academicLevelId,
+                label: group.academicLevelName,
+              }]))
+              .values()]}
+            onChange={(academicLevelId) => applyGroupContext(matchingGroup(groups.filter((group) =>
+              String(group.boardId) === String(context.boardId) && String(group.academicLevelId) === String(academicLevelId),
             )))}
           />
         </div>
@@ -894,11 +880,14 @@ function ContextSelect({ label, value, options, onChange }) {
     </label>
   );
 }
-function Mark({ label, value, change, error, inputRef }) {
+function RequiredMark() {
+  return <span className="subject-required-mark" aria-hidden="true">*</span>;
+}
+function Mark({ label, value, change, error, inputRef, required = false }) {
   const errorId = `${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-error`;
   return (
     <label className={`mark-input${error ? " has-error" : ""}`}>
-      <span>{label}</span>
+      <span>{label}{required && <> <RequiredMark /></>}</span>
       <input
         type="number"
         min="0"

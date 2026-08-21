@@ -137,7 +137,7 @@
   height: clamp(500px, 53vh, 540px);
   width: 100%;
   max-width: none;
-  margin: 0 0 34px;
+  margin: 0;
   overflow: hidden;
   border-radius: 0;
   background: #0d1b33;
@@ -176,17 +176,24 @@
 }
 
 .landing-hero-actions {
+  align-items: center;
   gap: 12px;
   margin-top: 24px;
 }
 
 .landing-login-btn,
-.landing-start-btn {
+.landing-start-btn,
+.landing-explore-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 42px;
   padding: 0 20px;
   border-radius: 11px;
   font-size: 14px;
   font-weight: 800;
+  text-decoration: none;
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
@@ -400,7 +407,7 @@
   .landing-hero-banner {
     height: auto;
     min-height: 410px;
-    margin-bottom: 26px;
+    margin-bottom: 0;
     border-radius: 0;
   }
 
@@ -425,7 +432,8 @@
   }
 
   .landing-login-btn,
-  .landing-start-btn {
+  .landing-start-btn,
+  .landing-explore-btn {
     justify-content: center;
     width: 100%;
   }

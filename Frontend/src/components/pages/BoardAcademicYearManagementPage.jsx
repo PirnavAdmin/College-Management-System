@@ -737,6 +737,7 @@ function AcademicYearWorkspace() {
   };
   const academicYearColumns = [
     "Academic Year",
+    "Board Name",
     "Start Date",
     "End Date",
     "Admission Start Date",
@@ -746,6 +747,7 @@ function AcademicYearWorkspace() {
   const academicYearExportRows = () =>
     academicYears.map((row) => [
       row.year || "",
+      row.boardName || "",
       fmt(row.start),
       fmt(row.end),
       fmt(row.admissionStart),
@@ -835,6 +837,7 @@ function AcademicYearWorkspace() {
             <thead>
               <tr>
                 <th>Academic Year</th>
+                <th>Board Name</th>
                 <th>Start Date</th>
                 <th>End Date</th>
                 <th>Admission Period</th>
@@ -845,12 +848,12 @@ function AcademicYearWorkspace() {
             <tbody>
               {listLoading ? (
                 <tr>
-                  <td colSpan="6" className="bay-empty">Loading academic years...</td>
+                  <td colSpan="7" className="bay-empty">Loading academic years...</td>
                 </tr>
               ) : null}
               {!listLoading && !visible.length ? (
                 <tr>
-                  <td colSpan="6" className="bay-empty">No academic years available.</td>
+                  <td colSpan="7" className="bay-empty">No academic years available.</td>
                 </tr>
               ) : null}
               {!listLoading && visible.map((row) => (
@@ -858,6 +861,7 @@ function AcademicYearWorkspace() {
                   <td>
                     <strong>{row.year}</strong>
                   </td>
+                  <td>{row.boardName || "—"}</td>
                   <td>{fmt(row.start)}</td>
                   <td>{fmt(row.end)}</td>
                   <td>
@@ -964,6 +968,7 @@ function AcademicYearWorkspace() {
             <dl>
               {[
                 ["Academic Year Name", selected.year],
+                ["Board Name", selected.boardName],
                 ["Start Date", fmt(selected.start)],
                 ["End Date", fmt(selected.end)],
                 ["Admission Start Date", fmt(selected.admissionStart)],

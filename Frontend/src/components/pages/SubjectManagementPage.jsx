@@ -251,6 +251,7 @@ function List({ records, context, assign, loading, loadSubjects }) {
   const [selectedContext, setSelectedContext] = useState(context);
   const [boards, setBoards] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [academicLevels, setAcademicLevels] = useState([]);
   useEffect(() => {
     let active = true;
     Promise.all([
@@ -262,6 +263,16 @@ function List({ records, context, assign, loading, loadSubjects }) {
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
       setGroups(nextGroups);
+    }).catch(() => {});
+    apiClient.get(apiEndpoints.boards.academicLevels).then((academicLevelsResponse) => {
+      if (!active) return;
+      const nextAcademicLevels = itemsFromResponse(academicLevelsResponse.data)
+        .map((level) => ({
+          value: level.academicLevelId ?? level.AcademicLevelId ?? level.id ?? level.Id,
+          label: level.levelName ?? level.LevelName ?? level.academicLevelName ?? level.AcademicLevelName ?? level.name ?? level.Name,
+        }))
+        .filter((level) => level.value != null && level.label);
+      setAcademicLevels(nextAcademicLevels);
     }).catch(() => {});
     return () => { active = false; };
   }, []);
@@ -307,6 +318,7 @@ function List({ records, context, assign, loading, loadSubjects }) {
           setContext={setSelectedContext}
           boards={boards}
           groups={groups}
+          academicLevels={academicLevels}
           loading={loading}
           query={q}
           setQuery={setQ}
@@ -708,7 +720,7 @@ function Configure({ item, cancel, save }) {
     </Modal>
   );
 }
-function Table({ rows, context, setContext, boards, groups, loading, query, setQuery }) {
+function Table({ rows, context, setContext, boards, groups, academicLevels, loading, query, setQuery }) {
   const [page, setPage] = useState(1);
   const pageSize = 5;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -726,9 +738,6 @@ function Table({ rows, context, setContext, boards, groups, loading, query, setQ
       academicLevel: group.academicLevelName,
     });
   };
-  const groupPrefix = (name) => String(name || "").split(/[\s(-]/)[0].toLowerCase();
-  const matchingGroup = (matches) =>
-    matches.find((group) => groupPrefix(group.groupName) === groupPrefix(context.group)) || matches[0];
   return (
     <section className="subject-table-card">
       <div className="subject-table-toolbar">
@@ -770,17 +779,15 @@ function Table({ rows, context, setContext, boards, groups, loading, query, setQ
           <ContextSelect
             label="Academic Level"
             value={context.academicLevelId}
-            options={[...new Map(groups
-              .filter((group) => !context.boardId || String(group.boardId) === String(context.boardId))
-              .filter((group) => group.academicLevelId && group.academicLevelName)
-              .map((group) => [String(group.academicLevelId), {
-                value: group.academicLevelId,
-                label: group.academicLevelName,
-              }]))
-              .values()]}
-            onChange={(academicLevelId) => applyGroupContext(matchingGroup(groups.filter((group) =>
-              String(group.boardId) === String(context.boardId) && String(group.academicLevelId) === String(academicLevelId),
-            )))}
+            options={academicLevels}
+            onChange={(academicLevelId) => {
+              const academicLevel = academicLevels.find((level) => String(level.value) === String(academicLevelId));
+              setContext((current) => ({
+                ...current,
+                academicLevelId,
+                academicLevel: academicLevel?.label || "",
+              }));
+            }}
           />
         </div>
         <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>

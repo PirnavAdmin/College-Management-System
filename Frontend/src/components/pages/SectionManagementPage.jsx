@@ -176,7 +176,7 @@ export default function SectionManagementPage() {
         apiClient.get(apiEndpoints.boards.list),
         apiClient.get(apiEndpoints.academicYears.list),
         apiClient.get(apiEndpoints.boards.academicLevels),
-        apiClient.get("/api/v1/faculty/dropdown"),
+        apiClient.get(apiEndpoints.faculty.getAll, { params: { PageNumber: 1, PageSize: 100 } }),
         apiClient.get(apiEndpoints.sections.list),
       ]);
       if (!active) return;
@@ -184,7 +184,21 @@ export default function SectionManagementPage() {
       if (boardsResult.status === "fulfilled") setBoardsList(collectionFrom(boardsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name ?? "" })).filter((item) => item.id && item.name));
       if (yearsResult.status === "fulfilled") setAcademicYearsList(collectionFrom(yearsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name ?? "" })).filter((item) => item.id && item.name));
       if (levelsResult.status === "fulfilled") setAcademicLevelsList(collectionFrom(levelsResult.value.data).map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.academicLevelName ?? item.name ?? "" })).filter((item) => item.id && item.name));
-      if (facultyResult.status === "fulfilled") setTeachersList(collectionFrom(facultyResult.value.data).filter((item) => item.isActive !== false).map((item) => ({ id: String(item.facultyId ?? item.id), name: item.facultyName ?? item.name ?? "" })).filter((item) => item.id && item.name));
+      if (facultyResult.status === "fulfilled") {
+        const facultyItems = collectionFrom(facultyResult.value.data);
+
+        const teachers = facultyItems
+          .filter((item) => String(item.status ?? "").toLowerCase() === "active")
+          .map((item) => ({
+            id: String(item.facultyId ?? item.id ?? ""),
+            name:
+              item.fullName ||
+              `${item.firstName || ""} ${item.lastName || ""}`.trim(),
+          }))
+          .filter((item) => item.id && item.name);
+
+        setTeachersList(teachers);
+      }
       if (sectionsResult.status === "fulfilled") setSections(collectionFrom(sectionsResult.value.data).map(normalizeSection).filter((section) => section.id));
       if (results.some((result) => result.status === "rejected")) say("Some Section Management data could not be loaded.");
       setLoading(false);
@@ -319,17 +333,17 @@ export default function SectionManagementPage() {
     () =>
       (() => {
         const options = rooms
-        .filter((room) => room.isActive && room.roomType === "Classroom")
-        .filter(
-          (room) =>
-            !sections.some(
-              (section) =>
-                section.id !== selectedSectionId &&
-                section.status === "Active" &&
-                roomCodesMatch(section.room, label(room)),
-            ),
-        )
-        .map(label);
+          .filter((room) => room.isActive && room.roomType === "Classroom")
+          .filter(
+            (room) =>
+              !sections.some(
+                (section) =>
+                  section.id !== selectedSectionId &&
+                  section.status === "Active" &&
+                  roomCodesMatch(section.room, label(room)),
+              ),
+          )
+          .map(label);
         return form.room && !options.includes(form.room) ? [form.room, ...options] : options;
       })(),
     [rooms, sections, selectedSectionId, form.room],
@@ -579,355 +593,357 @@ export default function SectionManagementPage() {
           </button>
         </div>
         {activeTab === "sections" && <>
-        <div className="cms-card cms-sec-filter-card">
-          <div className="cms-sec-filter-grid">
-            <FilterField
-              label="Board"
-              value={filters.board}
-              onChange={(value) => updateFilter("board", value)}
-              options={boardOptions}
-            />
-            <FilterField
-              label="Academic Year"
-              value={filters.academicYear}
-              onChange={(value) => updateFilter("academicYear", value)}
-              options={academicYearOptions}
-              disabled={!filters.board}
-            />
-            <FilterField
-              label="Group"
-              value={filters.group}
-              onChange={(value) => updateFilter("group", value)}
-              options={groupOptions}
-              disabled={!filters.academicYear}
-            />
-            <FilterField
-              label="Program"
-              value={filters.program}
-              onChange={(value) => updateFilter("program", value)}
-              options={filters.group ? programOptions : []}
-              disabled={!filters.group}
-            />
-            <FilterField
-              label="Academic Level"
-              value={filters.academicLevel}
-              onChange={(value) => updateFilter("academicLevel", value)}
-              options={academicLevelOptions}
-              disabled={!filters.program}
-            />
-          </div>
-          <div className="cms-sec-filter-actions">
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              onClick={() => {
-                setFilters(EMPTY_FILTERS);
-                setAppliedFilters(EMPTY_FILTERS);
-                setSearch("");
-                setPage(1);
-              }}
-            >
-              Reset
-            </button>
-            <button
-              type="button"
-              className="cms-btn cms-btn-primary"
-              onClick={() => {
-                setAppliedFilters({ ...filters });
-                setPage(1);
-              }}
-            >
-              Check Sections
-            </button>
-          </div>
-        </div>
-        <div className="cms-card">
-          <div className="cms-toolbar cms-sec-toolbar">
-            <div className="cms-search cms-sec-search">
-              <Search size={16} />
-              <input
-                type="search"
-                placeholder={sectionSearchPlaceholder}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
+          <div className="cms-card cms-sec-filter-card">
+            <div className="cms-sec-filter-grid">
+              <FilterField
+                label="Board"
+                value={filters.board}
+                onChange={(value) => updateFilter("board", value)}
+                options={boardOptions}
+              />
+              <FilterField
+                label="Academic Year"
+                value={filters.academicYear}
+                onChange={(value) => updateFilter("academicYear", value)}
+                options={academicYearOptions}
+                disabled={!filters.board}
+              />
+              <FilterField
+                label="Group"
+                value={filters.group}
+                onChange={(value) => updateFilter("group", value)}
+                options={groupOptions}
+                disabled={!filters.academicYear}
+              />
+              <FilterField
+                label="Program"
+                value={filters.program}
+                onChange={(value) => updateFilter("program", value)}
+                options={filters.group ? programOptions : []}
+                disabled={!filters.group}
+              />
+              <FilterField
+                label="Academic Level"
+                value={filters.academicLevel}
+                onChange={(value) => updateFilter("academicLevel", value)}
+                options={academicLevelOptions}
+                disabled={!filters.program}
               />
             </div>
-            <button
-              type="button"
-              className="cms-btn cms-btn-primary cms-sec-compact-btn"
-              onClick={openAdd}
-            >
-              {/* <Plus size={15} /> */}
-              Add Section
-            </button>
-          </div>
-          <div className="cms-table-wrap cms-sec-table-wrap">
-            <table className="cms-table cms-sec-table">
-              <thead>
-                <tr>
-                  {[
-                    "Section Name",
-                    "Group",
-                    "Program",
-                    "Academic Level",
-                    "Room Number",
-                    "Incharge",
-                    "Capacity",
-                    "Status",
-                    "Actions",
-                  ].map((title) => (
-                    <th key={title}>{title}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {shown.length ? (
-                  shown.map((section) => (
-                    <tr key={section.id}>
-                      <td className="cms-strong cms-sec-name-cell">{section.name}</td>
-                      <td>{section.group}</td>
-                      <td>{section.program}</td>
-                      <td>{section.academicLevel}</td>
-                      <td>{section.room}</td>
-                      <td>{section.teacher}</td>
-                      <td>{section.strength}</td>
-                      <td>
-                        <span
-                          className={`cms-badge ${section.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}
-                        >
-                          {section.status}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="cms-sec-table-actions">
-                          <button
-                            type="button"
-                            className="cms-sec-action-btn"
-                            onClick={() => openRow(section, true)}
-                          >
-                            <Eye size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="cms-sec-action-btn"
-                            onClick={() => openRow(section, false)}
-                          >
-                            <Pencil size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="9" className="cms-empty">
-                      No sections found matching your criteria.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="cms-sec-pagination">
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              disabled={page === 1}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              Previous
-            </button>
-            <span>
-              {page} / {pages}
-            </span>
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              disabled={page === pages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-        {modal && (
-          <div className="cms-sec-overlay" onClick={close}>
-            <div className="cms-modal cms-sec-modal" onClick={(event) => event.stopPropagation()}>
-              <div className="cms-modal-head">
-                <h3>{preview ? "Preview Section" : selected ? (edit ? "Edit Section" : "View Section") : "Add Section"}</h3>
-                <button type="button" className="cms-icon-btn" onClick={close}>
-                  <X size={16} />
-                </button>
-              </div>
-              <form onSubmit={save}>
-                <div className="cms-modal-body">
-                  {modalError && <div className="cms-modal-validation-toast" role="alert">{modalError}</div>}
-                  <div className="cms-form-grid cms-sec-form-grid">
-                    <FormField
-                      label="Board"
-                      value={form.board}
-                      field="board"
-                      options={boardOptions}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                    <FormField
-                      label="Academic Year"
-                      value={form.academicYear}
-                      field="academicYear"
-                      options={academicYearOptions}
-                      disabled={!form.board}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                    <FormField
-                      label="Group"
-                      value={form.group}
-                      field="group"
-                      options={groupOptions}
-                      disabled={!form.academicYear}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                    <FormField
-                      label="Program"
-                      value={form.program}
-                      field="program"
-                      options={form.group ? programOptions : []}
-                      disabled={!form.group}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                    <FormField
-                      label="Academic Level"
-                      value={form.academicLevel}
-                      field="academicLevel"
-                      options={academicLevelOptions}
-                      disabled={!form.program}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                    <div className="cms-field">
-                      <label>
-                        Section Name <span className="req">*</span>
-                      </label>
-                      <input
-                        value={form.name}
-                        onChange={(event) => change("name", event.target.value)}
-                        disabled={readOnly}
-                      />
-                    </div>
-                    <div className="cms-field cms-sec-field cms-sec-room-field">
-                      <label>
-                        Room Number <span className="req">*</span>
-                      </label>
-                      <div className="cms-sec-room-field-row">
-                        <Select
-                          value={form.room}
-                          onChange={(value) => change("room", value)}
-                          options={availableRooms}
-                          placeholder="Select Room Number"
-                          disabled={!form.academicLevel || readOnly}
-                        />
-                        {!readOnly && form.academicLevel && !availableRooms.length && (
-                          <div className="cms-modal-empty-state">No active classroom rooms available. Add an active classroom room before assigning a room to this section.</div>
-                        )}
-                        {!readOnly && (
-                          <button
-                            type="button"
-                            className="cms-btn cms-btn-ghost cms-sec-add-room-btn"
-                            onClick={() => openRoomModal(true)}
-                          >
-                            {/* <Plus size={13} /> */}
-                            Add Room
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <FormField
-                      label="Incharge"
-                      value={form.teacher}
-                      field="teacher"
-                      options={availableTeachers}
-                      disabled={!form.academicYear}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                    <div className="cms-field">
-                      <label>
-                        Capacity <span className="req">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={form.strength}
-                        onChange={(event) => change("strength", event.target.value)}
-                        disabled={readOnly}
-                      />
-                    </div>
-                    <FormField
-                      label="Status"
-                      value={form.status}
-                      field="status"
-                      options={["Active", "Inactive"]}
-                      readOnly={readOnly}
-                      change={change}
-                    />
-                  </div>
-                </div>
-                <div className="cms-modal-foot">
-                  {!preview && <>
-                    <button type="button" className="cms-btn cms-btn-ghost" onClick={close}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="cms-btn cms-btn-primary">
-                      {selected ? "Save Changes" : "Add Section"}
-                    </button>
-                  </>}
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-        </>}
-        {activeTab === "rooms" && (
-          <>
-          <div className="cms-card cms-sec-filter-card cms-room-filter-card">
-            <div className="cms-room-filter-grid">
-              <FilterField label="Block Name" value={roomFilters.building} onChange={(value) => setRoomFilters((current) => ({ ...current, building: value }))} options={roomBuildings} />
-              <FilterField label="Floor" value={roomFilters.floor} onChange={(value) => setRoomFilters((current) => ({ ...current, floor: value }))} options={roomFloors} />
-              <FilterField label="Room Type" value={roomFilters.roomType} onChange={(value) => setRoomFilters((current) => ({ ...current, roomType: value }))} options={roomTypes} />
-              <FilterField label="Status" value={roomFilters.status} onChange={(value) => setRoomFilters((current) => ({ ...current, status: value }))} options={["Active", "Inactive"]} />
-            </div>
             <div className="cms-sec-filter-actions">
-              <button type="button" className="cms-btn cms-btn-ghost" onClick={() => { setRoomFilters(EMPTY_ROOM_FILTERS); setAppliedRoomFilters(EMPTY_ROOM_FILTERS); setRoomSearch(""); setRoomPage(1); }}>Reset</button>
-              <button type="button" className="cms-btn cms-btn-primary" onClick={() => { setAppliedRoomFilters({ ...roomFilters }); setRoomPage(1); }}>Check Rooms</button>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={() => {
+                  setFilters(EMPTY_FILTERS);
+                  setAppliedFilters(EMPTY_FILTERS);
+                  setSearch("");
+                  setPage(1);
+                }}
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary"
+                onClick={() => {
+                  setAppliedFilters({ ...filters });
+                  setPage(1);
+                }}
+              >
+                Check Sections
+              </button>
             </div>
           </div>
           <div className="cms-card">
-            <div className="cms-toolbar cms-sec-toolbar cms-room-toolbar">
+            <div className="cms-toolbar cms-sec-toolbar">
               <div className="cms-search cms-sec-search">
                 <Search size={16} />
-                <input type="search" placeholder={roomSearchPlaceholder} value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} />
+                <input
+                  type="search"
+                  placeholder={sectionSearchPlaceholder}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
               </div>
-              <button type="button" className="cms-btn cms-btn-primary cms-room-add-btn" onClick={openRoomModal}>
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary cms-sec-compact-btn"
+                onClick={openAdd}
+              >
                 {/* <Plus size={15} /> */}
-                Add Room
-                </button>
+                Add Section
+              </button>
             </div>
             <div className="cms-table-wrap cms-sec-table-wrap">
-              <table className="cms-table cms-sec-table cms-room-table">
-                <thead><tr>{["Room Code", "Room Name", "Block Name", "Floor", "Room Type", "Capacity", "Status", "Actions"].map((title) => <th key={title}>{title}</th>)}</tr></thead>
-                <tbody>{shownRooms.length ? shownRooms.map((room) => <tr key={room.id}>
-                  <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td><td>{room.roomName}</td><td>{room.building}</td><td>{room.floor}</td><td>{room.roomType}</td><td>{room.capacity}</td>
-                  <td><span className={`cms-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"}`}>{room.isActive ? "Active" : "Inactive"}</span></td>
-                  <td><div className="cms-sec-table-actions"><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room, true)}><Eye size={14} /></button><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room)}><Pencil size={14} /></button></div></td>
-                </tr>) : <tr><td colSpan="8" className="cms-empty">No rooms found matching your criteria.</td></tr>}</tbody>
+              <table className="cms-table cms-sec-table">
+                <thead>
+                  <tr>
+                    {[
+                      "Section Name",
+                      "Group",
+                      "Program",
+                      "Academic Level",
+                      "Room Number",
+                      "Incharge",
+                      "Capacity",
+                      "Status",
+                      "Actions",
+                    ].map((title) => (
+                      <th key={title}>{title}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.length ? (
+                    shown.map((section) => (
+                      <tr key={section.id}>
+                        <td className="cms-strong cms-sec-name-cell">{section.name}</td>
+                        <td>{section.group}</td>
+                        <td>{section.program}</td>
+                        <td>{section.academicLevel}</td>
+                        <td>{section.room}</td>
+                        <td>{section.teacher}</td>
+                        <td>{section.strength}</td>
+                        <td>
+                          <span
+                            className={`cms-badge ${section.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}
+                          >
+                            {section.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="cms-sec-table-actions">
+                            <button
+                              type="button"
+                              className="cms-sec-action-btn"
+                              onClick={() => openRow(section, true)}
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="cms-sec-action-btn"
+                              onClick={() => openRow(section, false)}
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="9" className="cms-empty">
+                        No sections found matching your criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
               </table>
             </div>
-            <div className="cms-sec-pagination"><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === 1} onClick={() => setRoomPage((current) => current - 1)}>Previous</button><span>{roomPage} / {roomPages}</span><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === roomPages} onClick={() => setRoomPage((current) => current + 1)}>Next</button></div>
+            <div className="cms-sec-pagination">
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                disabled={page === 1}
+                onClick={() => setPage((current) => current - 1)}
+              >
+                Previous
+              </button>
+              <span>
+                {page} / {pages}
+              </span>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                disabled={page === pages}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </button>
+            </div>
           </div>
+          {modal && (
+            <div className="cms-sec-overlay" onClick={close}>
+              <div className="cms-modal cms-sec-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="cms-modal-head">
+                  <h3>{preview ? "Preview Section" : selected ? (edit ? "Edit Section" : "View Section") : "Add Section"}</h3>
+                  <button type="button" className="cms-icon-btn" onClick={close}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <form onSubmit={save}>
+                  <div className="cms-modal-body">
+                    {modalError && <div className="cms-modal-validation-toast" role="alert">{modalError}</div>}
+                    <div className="cms-form-grid cms-sec-form-grid">
+                      <FormField
+                        label="Board"
+                        value={form.board}
+                        field="board"
+                        options={boardOptions}
+                        readOnly={readOnly}
+                        change={change}
+                      />
+                      <FormField
+                        label="Academic Year"
+                        value={form.academicYear}
+                        field="academicYear"
+                        options={academicYearOptions}
+                        disabled={!form.board}
+                        readOnly={readOnly}
+                        change={change}
+                      />
+                      <FormField
+                        label="Group"
+                        value={form.group}
+                        field="group"
+                        options={groupOptions}
+                        disabled={!form.academicYear}
+                        readOnly={readOnly}
+                        change={change}
+                      />
+                      <FormField
+                        label="Program"
+                        value={form.program}
+                        field="program"
+                        options={form.group ? programOptions : []}
+                        disabled={!form.group}
+                        readOnly={readOnly}
+                        change={change}
+                      />
+                      <FormField
+                        label="Academic Level"
+                        value={form.academicLevel}
+                        field="academicLevel"
+                        options={academicLevelOptions}
+                        disabled={!form.program}
+                        readOnly={readOnly}
+                        change={change}
+                      />
+                      <div className="cms-field">
+                        <label>
+                          Section Name <span className="req">*</span>
+                        </label>
+                        <input
+                          value={form.name}
+                          onChange={(event) => change("name", event.target.value)}
+                          disabled={readOnly}
+                        />
+                      </div>
+                      <div className="cms-field cms-sec-field cms-sec-room-field">
+                        <label>
+                          Room Number <span className="req">*</span>
+                        </label>
+                        <div className="cms-sec-room-field-row">
+                          <Select
+                            value={form.room}
+                            onChange={(value) => change("room", value)}
+                            options={availableRooms}
+                            placeholder="Select Room Number"
+                            disabled={!form.academicLevel || readOnly}
+                          />
+                          {!readOnly && form.academicLevel && !availableRooms.length && (
+                            <div className="cms-modal-empty-state">No active classroom rooms available. Add an active classroom room before assigning a room to this section.</div>
+                          )}
+                          {!readOnly && (
+                            <button
+                              type="button"
+                              className="cms-btn cms-btn-ghost cms-sec-add-room-btn"
+                              onClick={() => openRoomModal(true)}
+                            >
+                              {/* <Plus size={13} /> */}
+                              Add Room
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="cms-field cms-sec-field">
+                        <label>
+                          Incharge <span className="req">*</span>
+                        </label>
+                        <SearchableTeacherSelect
+                          value={form.teacher}
+                          onChange={(value) => change("teacher", value)}
+                          options={availableTeachers}
+                          disabled={!form.academicYear || readOnly}
+                        />
+                      </div>
+                      <div className="cms-field">
+                        <label>
+                          Capacity <span className="req">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={form.strength}
+                          onChange={(event) => change("strength", event.target.value)}
+                          disabled={readOnly}
+                        />
+                      </div>
+                      <FormField
+                        label="Status"
+                        value={form.status}
+                        field="status"
+                        options={["Active", "Inactive"]}
+                        readOnly={readOnly}
+                        change={change}
+                      />
+                    </div>
+                  </div>
+                  <div className="cms-modal-foot">
+                    {!preview && <>
+                      <button type="button" className="cms-btn cms-btn-ghost" onClick={close}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="cms-btn cms-btn-primary">
+                        {selected ? "Save Changes" : "Add Section"}
+                      </button>
+                    </>}
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </>}
+        {activeTab === "rooms" && (
+          <>
+            <div className="cms-card cms-sec-filter-card cms-room-filter-card">
+              <div className="cms-room-filter-grid">
+                <FilterField label="Block Name" value={roomFilters.building} onChange={(value) => setRoomFilters((current) => ({ ...current, building: value }))} options={roomBuildings} />
+                <FilterField label="Floor" value={roomFilters.floor} onChange={(value) => setRoomFilters((current) => ({ ...current, floor: value }))} options={roomFloors} />
+                <FilterField label="Room Type" value={roomFilters.roomType} onChange={(value) => setRoomFilters((current) => ({ ...current, roomType: value }))} options={roomTypes} />
+                <FilterField label="Status" value={roomFilters.status} onChange={(value) => setRoomFilters((current) => ({ ...current, status: value }))} options={["Active", "Inactive"]} />
+              </div>
+              <div className="cms-sec-filter-actions">
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={() => { setRoomFilters(EMPTY_ROOM_FILTERS); setAppliedRoomFilters(EMPTY_ROOM_FILTERS); setRoomSearch(""); setRoomPage(1); }}>Reset</button>
+                <button type="button" className="cms-btn cms-btn-primary" onClick={() => { setAppliedRoomFilters({ ...roomFilters }); setRoomPage(1); }}>Check Rooms</button>
+              </div>
+            </div>
+            <div className="cms-card">
+              <div className="cms-toolbar cms-sec-toolbar cms-room-toolbar">
+                <div className="cms-search cms-sec-search">
+                  <Search size={16} />
+                  <input type="search" placeholder={roomSearchPlaceholder} value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} />
+                </div>
+                <button type="button" className="cms-btn cms-btn-primary cms-room-add-btn" onClick={openRoomModal}>
+                  {/* <Plus size={15} /> */}
+                  Add Room
+                </button>
+              </div>
+              <div className="cms-table-wrap cms-sec-table-wrap">
+                <table className="cms-table cms-sec-table cms-room-table">
+                  <thead><tr>{["Room Code", "Room Name", "Block Name", "Floor", "Room Type", "Capacity", "Status", "Actions"].map((title) => <th key={title}>{title}</th>)}</tr></thead>
+                  <tbody>{shownRooms.length ? shownRooms.map((room) => <tr key={room.id}>
+                    <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td><td>{room.roomName}</td><td>{room.building}</td><td>{room.floor}</td><td>{room.roomType}</td><td>{room.capacity}</td>
+                    <td><span className={`cms-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"}`}>{room.isActive ? "Active" : "Inactive"}</span></td>
+                    <td><div className="cms-sec-table-actions"><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room, true)}><Eye size={14} /></button><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room)}><Pencil size={14} /></button></div></td>
+                  </tr>) : <tr><td colSpan="8" className="cms-empty">No rooms found matching your criteria.</td></tr>}</tbody>
+                </table>
+              </div>
+              <div className="cms-sec-pagination"><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === 1} onClick={() => setRoomPage((current) => current - 1)}>Previous</button><span>{roomPage} / {roomPages}</span><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === roomPages} onClick={() => setRoomPage((current) => current + 1)}>Next</button></div>
+            </div>
           </>
         )}
         {roomModal && (
@@ -954,7 +970,7 @@ export default function SectionManagementPage() {
                       onChange={(event) =>
                         changeRoom("roomCode", event.target.value)
                       }
-                    disabled={roomMode === "preview"} />
+                      disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Room Name</label>
@@ -963,7 +979,7 @@ export default function SectionManagementPage() {
                       onChange={(event) =>
                         changeRoom("roomName", event.target.value)
                       }
-                    disabled={roomMode === "preview"} />
+                      disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Capacity <span className="cms-room-required-mark">*</span></label>
@@ -975,7 +991,7 @@ export default function SectionManagementPage() {
                       onChange={(event) =>
                         changeRoom("capacity", event.target.value)
                       }
-                    disabled={roomMode === "preview"} />
+                      disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Room Type <span className="cms-room-required-mark">*</span></label>
@@ -988,7 +1004,7 @@ export default function SectionManagementPage() {
                       onChange={(event) =>
                         changeRoom("building", event.target.value)
                       }
-                    disabled={roomMode === "preview"} />
+                      disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
                     <label>Floor <span className="cms-room-required-mark">*</span></label>
@@ -997,7 +1013,7 @@ export default function SectionManagementPage() {
                       onChange={(event) =>
                         changeRoom("floor", event.target.value)
                       }
-                    disabled={roomMode === "preview"} />
+                      disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field cms-room-status-field">
                     <label>Status <span className="cms-room-required-mark">*</span></label>
@@ -1074,6 +1090,69 @@ function FormField({
         placeholder={`Select ${label}`}
         disabled={disabled || readOnly}
       />
+    </div>
+  );
+}
+
+function SearchableTeacherSelect({ value, onChange, options, disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+  const searchRef = useRef(null);
+  const filteredOptions = options.filter((teacher) =>
+    teacher.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!containerRef.current?.contains(event.target)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    searchRef.current?.focus();
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [open]);
+
+  const selectTeacher = (teacher) => {
+    onChange(teacher);
+    setOpen(false);
+    setSearch("");
+  };
+
+  return (
+    <div ref={containerRef} className={`cms-sec-select cms-teacher-select ${disabled ? "is-disabled" : ""}`}>
+      <button
+        type="button"
+        className="cms-sec-select-trigger"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {value || "Select Incharge"}
+      </button>
+      {open && (
+        <div className="cms-sec-select-menu cms-teacher-select-menu">
+          <input
+            ref={searchRef}
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search Teacher..."
+            aria-label="Search Incharge"
+          />
+          <div className="cms-sec-select-options" role="listbox" aria-label="Incharge options">
+            {filteredOptions.length ? filteredOptions.map((teacher) => (
+              <button type="button" role="option" aria-selected={teacher === value} key={teacher} onClick={() => selectTeacher(teacher)}>
+                {teacher}
+              </button>
+            )) : <span>No faculty found.</span>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

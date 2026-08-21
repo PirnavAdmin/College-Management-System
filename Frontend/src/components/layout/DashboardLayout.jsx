@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
-  GraduationCap, CalendarClock, ClipboardCheck, FileText, FileSpreadsheet, PenLine,
+  GraduationCap, CalendarClock, CalendarRange, ClipboardCheck, FileText, FileSpreadsheet, PenLine,
   Award, ArrowUpRight, Wallet, ScrollText, BarChart3, Menu, Bell, Search, ChevronRight,
   ChevronDown, Settings, User, LogOut,
 } from "lucide-react";

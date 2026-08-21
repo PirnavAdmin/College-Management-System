@@ -5,6 +5,7 @@ import ListPage from "@/components/pages/ListPage.jsx";
 import FormPage from "@/components/pages/FormPage.jsx";
 import BoardManagementPage, { pageConfig as boardManagementConfig } from "@/components/pages/BoardManagementPage.jsx";
 import AcademicYearPage, { pageConfig as academicYearConfig } from "@/components/pages/AcademicYearPage.jsx";
+import BoardAcademicYearManagementPage from "@/components/pages/BoardAcademicYearManagementPage.jsx";
 import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";

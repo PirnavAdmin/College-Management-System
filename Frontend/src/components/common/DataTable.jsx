@@ -36,6 +36,7 @@ export default function DataTable({
   title,
   toolbarExtra,
   emptyMessage,
+  paginationCurrentOnly = false,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -178,15 +179,21 @@ export default function DataTable({
         <button className="cms-page-btn" disabled={current === 1} onClick={() => setPage(current - 1)}>
           Prev
         </button>
-        {Array.from({ length: totalPages }).map((_, i) => (
-          <button
-            key={i}
-            className={`cms-page-btn ${current === i + 1 ? "is-active" : ""}`}
-            onClick={() => setPage(i + 1)}
-          >
-            {i + 1}
+        {paginationCurrentOnly ? (
+          <button className="cms-page-btn is-active" aria-current="page">
+            {current}
           </button>
-        ))}
+        ) : (
+          Array.from({ length: totalPages }).map((_, i) => (
+            <button
+              key={i}
+              className={`cms-page-btn ${current === i + 1 ? "is-active" : ""}`}
+              onClick={() => setPage(i + 1)}
+            >
+              {i + 1}
+            </button>
+          ))
+        )}
         <button className="cms-page-btn" disabled={current === totalPages} onClick={() => setPage(current + 1)}>
           Next
         </button>

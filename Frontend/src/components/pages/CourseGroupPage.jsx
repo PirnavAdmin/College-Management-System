@@ -345,28 +345,36 @@ const groupApi = {
 };
 
 export const pageConfig = {
-  title: "Group Management",
-  subtitle: "Manage groups mapped to boards, academic levels and programs.",
-  breadcrumb: ["Academics"],
-  addLabel: "Add Group",
-  rows: [],
-  api: groupApi,
-  columns: [
-    { key: "name", label: "Group Name", strong: true },
-    { key: "code", label: "Group Code" },
-    { key: "board", label: "Board" },
-    { key: "yearName", label: "Academic Year" },
-    { key: "level", label: "Academic Level" },
-    { key: "programs", label: "Programs" },
-    { key: "status", label: "Status", badge: true },
-  ],
-  filters: [
-    { name: "board", label: "Board", type: "select", options: [] },
-    { name: "year", label: "Academic Year", type: "select", options: [] },
-    { name: "level", label: "Academic Level", type: "select", options: [] },
-  ],
-  fields: groupFormFields,
-};
+    title: "Group Management",
+    subtitle: "Manage groups mapped to boards and academic levels.",
+    breadcrumb: ["Academics"],
+    addLabel: "Add Group",
+    rows: [],
+    pagination: { currentOnly: true },
+    api: groupApi,
+    columns: [
+      { key: "name", label: "Group Name", strong: true },
+      { key: "code", label: "Group Code" },
+      { key: "board", label: "Board" },
+      { key: "level", label: "Academic Level" },
+      { key: "subjects", label: "Total Subjects" },
+      { key: "status", label: "Status", badge: true },
+    ],
+    filters: [
+      { name: "board", label: "Board", type: "select", options: [] },
+      { name: "level", label: "Academic Level", type: "select", options: [] },
+      { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
+    ],
+    fields: [
+      { name: "board", label: "Board", type: "select", options: [], required: true },
+      { name: "year", label: "Academic Year", type: "select", options: [], required: true },
+      { name: "level", label: "Academic Level", type: "select", options: [], required: true },
+      { name: "name", label: "Group Name", required: true },
+      { name: "code", label: "Group Code", required: true },
+      { name: "subjects", label: "Total Subjects", type: "number" },
+      { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
+    ],
+  };
 
 function AddProgramModal({ onCancel, onAdd }) {
   const fields = [

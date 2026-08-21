@@ -429,7 +429,7 @@ export default function SectionManagementPage() {
       if (capacity > Number(selectedRoom.capacity))
         return setModalError(`Section capacity cannot exceed room capacity (${selectedRoom.capacity}).`);
       if (!TEACHERS.includes(form.teacher))
-        return setModalError("Please select an available active class teacher.");
+        return setModalError("Please select an available active Incharge.");
     }
     const other = (section) => section.id !== selectedSectionId;
     if (
@@ -649,7 +649,7 @@ export default function SectionManagementPage() {
                     "Program",
                     "Academic Level",
                     "Room Number",
-                    "Class Teacher",
+                    "Incharge",
                     "Capacity",
                     "Status",
                     "Actions",
@@ -823,7 +823,7 @@ export default function SectionManagementPage() {
                       </div>
                     </div>
                     <FormField
-                      label="Class Teacher"
+                      label="Incharge"
                       value={form.teacher}
                       field="teacher"
                       options={availableTeachers}
@@ -923,7 +923,7 @@ export default function SectionManagementPage() {
                 >
                   {roomModalError && <div className="cms-modal-validation-toast" role="alert">{roomModalError}</div>}
                   <div className="cms-field">
-                    <label>Room Code *</label>
+                    <label>Room Code <span className="cms-room-required-mark">*</span></label>
                     <input
                       value={roomForm.roomCode}
                       onChange={(event) =>
@@ -941,7 +941,7 @@ export default function SectionManagementPage() {
                     disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
-                    <label>Capacity *</label>
+                    <label>Capacity <span className="cms-room-required-mark">*</span></label>
                     <input
                       type="number"
                       min="1"
@@ -953,11 +953,11 @@ export default function SectionManagementPage() {
                     disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
-                    <label>Room Type *</label>
+                    <label>Room Type <span className="cms-room-required-mark">*</span></label>
                     <Select value={roomForm.roomType} onChange={(value) => changeRoom("roomType", value)} options={roomTypes} placeholder="Select room type" disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
-                    <label>Block Name *</label>
+                    <label>Block Name <span className="cms-room-required-mark">*</span></label>
                     <input
                       value={roomForm.building}
                       onChange={(event) =>
@@ -966,7 +966,7 @@ export default function SectionManagementPage() {
                     disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field">
-                    <label>Floor *</label>
+                    <label>Floor <span className="cms-room-required-mark">*</span></label>
                     <input
                       value={roomForm.floor}
                       onChange={(event) =>
@@ -975,7 +975,7 @@ export default function SectionManagementPage() {
                     disabled={roomMode === "preview"} />
                   </div>
                   <div className="cms-field cms-room-status-field">
-                    <label>Status *</label>
+                    <label>Status <span className="cms-room-required-mark">*</span></label>
                     <Select
                       value={roomForm.isActive ? "Active" : "Inactive"}
                       onChange={(value) =>

@@ -5,6 +5,7 @@ import ListPage from "@/components/pages/ListPage.jsx";
 import FormPage from "@/components/pages/FormPage.jsx";
 import BoardManagementPage, { pageConfig as boardManagementConfig } from "@/components/pages/BoardManagementPage.jsx";
 import AcademicYearPage, { pageConfig as academicYearConfig } from "@/components/pages/AcademicYearPage.jsx";
+import BoardAcademicYearManagementPage from "@/components/pages/BoardAcademicYearManagementPage.jsx";
 import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
@@ -32,8 +33,6 @@ import StudentDashboard from "@/Dashboard/StudentDashboard/StudentDashboard.jsx"
 import ProtectedRoute, { PublicOnlyRoute } from "./ProtectedRoute.jsx";
 
 const moduleConfigs = {
-  boards: boardManagementConfig,
-  "academic-years": academicYearConfig,
   courses: courseGroupConfig,
   subjects: SubjectManagementPage.pageConfig,
   sections: sectionManagementConfig,
@@ -81,8 +80,9 @@ export default function AppRoutes() {
 
       <Route element={<ProtectedRoute requireAdmin />}>
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/dashboard/boards" element={<BoardManagementPage />} />
-        <Route path="/dashboard/academic-years" element={<AcademicYearPage />} />
+        <Route path="/dashboard/board-academic-year" element={<BoardAcademicYearManagementPage />} />
+        <Route path="/dashboard/boards" element={<Navigate to="/dashboard/board-academic-year" replace />} />
+        <Route path="/dashboard/academic-years" element={<Navigate to="/dashboard/board-academic-year" replace />} />
         <Route path="/dashboard/courses" element={<CourseGroupPage />} />
         <Route path="/dashboard/courses/add" element={<CourseGroupFormRoute />} />
         <Route path="/dashboard/courses/:id/edit" element={<CourseGroupFormRoute />} />

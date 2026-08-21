@@ -341,6 +341,10 @@
   margin-bottom: 1px;
 }
 
+.cms-room-modal .cms-room-required-mark {
+  color: #dc2626;
+}
+
 .cms-sec-form-grid .cms-field input,
 .cms-sec-form-grid .cms-field select {
   padding: 5px 9px;

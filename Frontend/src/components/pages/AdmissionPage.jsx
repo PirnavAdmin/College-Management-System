@@ -252,13 +252,14 @@ const steps = [
       { name: "admissionDate", label: "Admission Date", type: "date", required: true },
       { name: "board", label: "Board", type: "select", options: options.board, required: true },
       { name: "year", label: "Academic Year", type: "select", options: options.year, required: true },
-      { name: "photo", label: "Student Photo", type: "file" },
+      { name: "admissionType", label: "Admission Type", type: "select", options: ["Regular", "Lateral Entry", "Transfer", "Re-admission"] },
       { name: "quota", label: "Admission Quota", type: "select", options: ["Merit", "Management", "Sports", "Reserved"] },
     ],
   },
   {
     title: "Student Details",
     fields: [
+      { name: "photo", label: "Student Photo", type: "file" },
       { name: "firstName", label: "First Name", required: true },
       { name: "lastName", label: "Last Name", required: true },
       { name: "gender", label: "Gender", type: "select", options: options.gender, required: true },
@@ -1973,7 +1974,7 @@ export default function AdmissionPage() {
             </div>
             <div className="cms-admission-filters">
               <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || options.year }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
-              <Field field={{ name: "group", label: "Group / Course", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, section: name === "group" ? "" : current.section })); setPage(1); }} />
+              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, section: name === "group" ? "" : current.section })); setPage(1); }} />
               <Field field={{ name: "section", label: "Section", type: "select", options: sectionFilterOptions }} value={filters.section} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
             </div>
@@ -1988,7 +1989,7 @@ export default function AdmissionPage() {
                   <th>Admission Date</th>
                   <th>Academic Year</th>
                   <th>Board</th>
-                  <th>Group / Course</th>
+                    <th>Group</th>
                   <th>Section</th>
                   <th>Status</th>
                   <th>Actions</th>

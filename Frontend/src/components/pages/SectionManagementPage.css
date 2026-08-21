@@ -8,7 +8,7 @@
 
 /* Filter Card & Grid */
 .cms-sec-filter-card {
-  padding: 20px;
+  padding: 16px 20px;
 }
 
 .cms-sec-filter-grid {
@@ -39,8 +39,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 94px;
-  padding: 18px 26px;
+  min-height: 64px;
+  padding: 10px 26px;
   border-bottom: 1px solid var(--cms-border, #cbd5e1);
 }
 
@@ -94,17 +94,41 @@
 
 .cms-sec-table th,
 .cms-sec-table td {
-  padding: 20px 24px;
-  font-size: 14px;
-  line-height: 1.35;
+  padding: 7px 24px;
+  font-size: 12.5px;
+  line-height: 1.2;
   vertical-align: middle;
   white-space: nowrap;
 }
 
 .cms-sec-table th {
-  padding-top: 18px;
-  padding-bottom: 18px;
-  font-size: 12px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 11px;
+}
+
+.cms-sec-context-toolbar { flex-wrap: wrap; min-height: 0; }
+.cms-sec-context-toolbar > .cms-sec-select { flex: 0 1 170px; }
+.cms-sec-all-tab { white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--cms-text); }
+.cms-sec-select { position: relative; min-width: 0; width: 100%; }
+.cms-sec-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px; padding: 6px 9px; overflow: hidden; border: 1px solid var(--cms-border); border-radius: 8px; color: var(--cms-text); background: var(--cms-surface); font: inherit; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cms-sec-select-trigger:disabled { cursor: not-allowed; opacity: .6; }
+.cms-sec-select-menu { position: absolute; z-index: 10020; top: calc(100% + 4px); left: 0; right: 0; min-width: 180px; padding: 6px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); box-shadow: 0 10px 24px rgb(15 23 42 / 18%); }
+.cms-sec-select-menu input { width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid var(--cms-border); border-radius: 6px; font: inherit; font-size: 12px; }
+.cms-sec-select-options { max-height: 130px; overflow-y: auto; margin-top: 5px; }
+.cms-sec-select-options button, .cms-sec-select-options span { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--cms-text); font: inherit; font-size: 12px; text-align: left; }
+.cms-sec-select-options button:hover { background: var(--cms-hover); }
+.cms-sec-field { position: relative; }
+.cms-sec-room-field-row { display: flex; align-items: center; gap: 8px; }
+.cms-sec-room-field-row .cms-sec-select { flex: 0 1 190px; width: min(100%, 190px); }
+.cms-sec-add-room-btn { flex: 0 0 auto; min-height: 30px !important; padding: 4px 9px !important; font-size: 11px !important; white-space: nowrap; }
+.cms-sec-room-modal { width: min(420px, calc(100vw - 32px)); }
+.cms-sec-room-overlay { z-index: 10010; }
+.cms-sec-room-form { display: grid; gap: 10px; }
+.cms-sec-room-form input { width: 100%; max-width: 120px; }
+
+.cms-sec-table tbody tr {
+  height: 48px;
 }
 
 .cms-sec-table th:nth-child(1) { width: 12%; }
@@ -146,8 +170,8 @@
 .cms-sec-action-btn {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 1px solid var(--cms-primary-border, #b8dcd8);
   border-radius: 8px;
@@ -167,8 +191,8 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  min-height: 88px;
-  padding: 18px 26px;
+  min-height: 56px;
+  padding: 8px 26px;
   border-top: 1px solid var(--cms-border, #cbd5e1);
   color: var(--cms-muted, #64748b);
   font-size: 12.5px;

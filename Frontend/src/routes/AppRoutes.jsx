@@ -5,7 +5,7 @@ import ListPage from "@/components/pages/ListPage.jsx";
 import FormPage from "@/components/pages/FormPage.jsx";
 import BoardManagementPage, { pageConfig as boardManagementConfig } from "@/components/pages/BoardManagementPage.jsx";
 import AcademicYearPage, { pageConfig as academicYearConfig } from "@/components/pages/AcademicYearPage.jsx";
-import CourseGroupPage, { pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
+import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
 import FacultyManagementPage from "@/components/pages/FacultyManagementPage.jsx";
@@ -84,6 +84,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/boards" element={<BoardManagementPage />} />
         <Route path="/dashboard/academic-years" element={<AcademicYearPage />} />
         <Route path="/dashboard/courses" element={<CourseGroupPage />} />
+        <Route path="/dashboard/courses/add" element={<CourseGroupFormRoute />} />
+        <Route path="/dashboard/courses/:id/edit" element={<CourseGroupFormRoute />} />
         <Route path="/dashboard/subjects" element={<SubjectManagementPage />} />
         <Route path="/dashboard/subjects/add" element={<SubjectManagementPage screen="assign" />} />
         <Route path="/dashboard/subjects/assign" element={<SubjectManagementPage screen="assign" />} />
@@ -111,8 +113,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/fee-structure" element={<FeeManagementPage />} />
         <Route path="/dashboard/certificates" element={<CertificatesPage />} />
         <Route path="/dashboard/reports" element={<ReportsAnalyticsPage />} />
-        {listSlugs.filter((slug) => slug !== "faculty" && slug !== "subjects").map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
-        {listSlugs.filter((slug) => slug !== "faculty" && slug !== "subjects").map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
+        {listSlugs.filter((slug) => !["faculty", "courses", "subjects"].includes(slug)).map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
+        {listSlugs.filter((slug) => !["faculty", "courses", "subjects"].includes(slug)).map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
         <Route path="/dashboard/students/:id" element={<StudentProfileRoute />} />
       </Route>
 

@@ -31,10 +31,9 @@
 }
 
 .cms-room-toolbar {
-  display: grid;
-  grid-template-columns: minmax(320px, 1.25fr) minmax(430px, 2fr) auto auto auto;
+  justify-content: space-between;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: stretch;
 }
 
 .cms-room-toolbar .cms-sec-search {
@@ -43,37 +42,28 @@
   max-width: none;
 }
 
-.cms-room-filters {
+.cms-room-filter-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(90px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px 16px;
   min-width: 0;
 }
 
-.cms-room-filters .cms-sec-select { min-width: 0; }
-.cms-room-toolbar > .cms-btn:nth-of-type(1) { grid-column: 3; grid-row: 2; }
-.cms-room-toolbar > .cms-btn:nth-of-type(2) { grid-column: 4; grid-row: 2; }
-.cms-room-toolbar > .cms-btn:nth-of-type(3) { grid-column: 5; grid-row: 2; }
-.cms-room-table { min-width: 900px; }
-.cms-room-table th:nth-child(1) { width: 11%; }
-.cms-room-table th:nth-child(2) { width: 19%; }
-.cms-room-table th:nth-child(3) { width: 10%; }
-.cms-room-table th:nth-child(4) { width: 8%; }
-.cms-room-table th:nth-child(5) { width: 16%; }
-.cms-room-table th:nth-child(6) { width: 10%; }
-.cms-room-table th:nth-child(7) { width: 12%; }
-.cms-room-table th:nth-child(8) { width: 14%; }
+.cms-room-add-btn { flex: 0 0 auto; }
+.cms-sec-table.cms-room-table { min-width: 900px; }
+.cms-sec-table.cms-room-table th:nth-child(1) { width: 11%; }
+.cms-sec-table.cms-room-table th:nth-child(2) { width: 19%; }
+.cms-sec-table.cms-room-table th:nth-child(3) { width: 10%; }
+.cms-sec-table.cms-room-table th:nth-child(4) { width: 8%; }
+.cms-sec-table.cms-room-table th:nth-child(5) { width: 16%; }
+.cms-sec-table.cms-room-table th:nth-child(6) { width: 10%; }
+.cms-sec-table.cms-room-table th:nth-child(7) { width: 12%; }
+.cms-sec-table.cms-room-table th:nth-child(8) { width: 14%; }
 .cms-room-modal { width: min(520px, 94%) !important; }
 .cms-room-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
 .cms-room-form-grid input { width: 100%; max-width: none; }
 .cms-sec-room-form.cms-room-form-grid input { max-width: none; }
 .cms-room-status-field { grid-column: 1 / -1; }
-
-@media (max-width: 1280px) {
-  .cms-room-toolbar {
-    grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.6fr) auto auto auto;
-  }
-}
 
 /* Filter Card & Grid */
 .cms-sec-filter-card {
@@ -176,9 +166,6 @@
   font-size: 11px;
 }
 
-.cms-sec-context-toolbar { flex-wrap: wrap; min-height: 0; }
-.cms-sec-context-toolbar > .cms-sec-select { flex: 0 1 170px; }
-.cms-sec-all-tab { white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--cms-text); }
 .cms-sec-select { position: relative; min-width: 0; width: 100%; }
 .cms-sec-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px; padding: 6px 9px; overflow: hidden; border: 1px solid var(--cms-border); border-radius: 8px; color: var(--cms-text); background: var(--cms-surface); font: inherit; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .cms-sec-select-trigger:disabled { cursor: not-allowed; opacity: .6; }
@@ -318,6 +305,23 @@
   overflow-y: auto;
 }
 
+.cms-modal-validation-toast {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.cms-modal-empty-state {
+  margin-top: 5px;
+  color: var(--cms-muted, #64748b);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .cms-sec-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -366,6 +370,10 @@
   .cms-sec-filter-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .cms-room-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -406,12 +414,11 @@
   .cms-room-toolbar {
     display: flex;
     align-items: stretch;
+    flex-wrap: wrap;
   }
 
-  .cms-room-filters {
-    width: 100%;
-    flex: 1 1 100%;
-    flex-wrap: wrap;
+  .cms-room-filter-grid {
+    grid-template-columns: 1fr;
   }
 
   .cms-sec-search {

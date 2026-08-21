@@ -73,7 +73,12 @@
     getById: (groupId) => `/api/v1/groups/${groupId}`,
     update: (groupId) => `/api/v1/groups/${groupId}`,
     delete: (groupId) => `/api/v1/groups/${groupId}`,
+    students: (groupId) => `/api/v1/groups/${groupId}/students`,
+    subjects: (groupId) => `/api/v1/groups/${groupId}/subjects`,
+    programs: (groupId) => `/api/v1/groups/${groupId}/programs`,
+    summary: (groupId) => `/api/v1/groups/${groupId}/summary`,
     getByBoard: (board) => `/api/v1/groups/board/${board}`,
+    activate: (groupId) => `/api/v1/groups/${groupId}/activate`,
     validateCode: "/api/v1/groups/validate-code",
   },
   fee: {

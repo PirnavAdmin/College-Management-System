@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -12,6 +12,7 @@ const MODULE_SLUG = "courses";
 const STATUS_OPTIONS = ["Active", "Inactive"];
 const PROGRAMS_STORAGE_KEY = "cms.groupPrograms.v1";
 const PROGRAM_MAPPINGS_STORAGE_KEY = "cms.groupProgramMappings.v1";
+const CONTEXT_FIELD_NAMES = ["board", "year", "level"];
 
 const DEFAULT_PROGRAMS = [
   { programId: "regular", programName: "Regular", programCode: "REG", status: "Active" },
@@ -90,6 +91,46 @@ const normalizeGroup = (item) => ({
   programs: programNamesForGroup(read(item, "groupId", "GroupId", "id"), read(item, "groupCode", "GroupCode", "code")).join(", ") || "-",
   status: normalizeStatus(item),
 });
+
+const groupFormFields = [
+  { name: "name", label: "Group Name", required: true },
+  { name: "code", label: "Group Code", required: true },
+  { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
+];
+
+const makeContextQuery = (values) => {
+  const params = new URLSearchParams();
+  CONTEXT_FIELD_NAMES.forEach((name) => {
+    if (values?.[name]) params.set(name, values[name]);
+  });
+  const query = params.toString();
+  return query ? `?${query}` : "";
+};
+
+const optionLabel = (options, value, fallback = "-") => (
+  options.find((option) => String(option.value) === String(value))?.label || fallback
+);
+
+const buildGroupFilterFields = (masters, values) => (
+  pageConfig.filters.map((field) => {
+    if (field.name === "board") return { ...field, options: masters.boards || [] };
+    if (field.name === "year") {
+      return {
+        ...field,
+        options: masters.years || [],
+        disabled: false,
+      };
+    }
+    if (field.name === "level") {
+      return {
+        ...field,
+        options: masters.levels || [],
+        disabled: false,
+      };
+    }
+    return field;
+  })
+);
 
 const normalizeGroupForm = (item) => {
   const group = normalizeGroup(item);
@@ -186,6 +227,7 @@ const findSavedGroupId = async (values) => {
     params: {
       search: values.code || undefined,
       boardId: values.board || undefined,
+      academicYearId: values.year || undefined,
       academicLevelId: values.level || undefined,
     },
   });
@@ -194,6 +236,7 @@ const findSavedGroupId = async (values) => {
     .find((group) => (
       groupCodeKey(group.code) === groupCodeKey(values.code)
       && String(group.boardId) === String(values.board)
+      && String(group.year) === String(values.year)
       && String(group.levelId) === String(values.level)
     ));
   return savedGroup?.id;
@@ -203,6 +246,7 @@ const matchesFilters = (row, search, filters) => {
   const query = search.trim().toLowerCase();
   if (query && !Object.values(row).some((value) => String(value).toLowerCase().includes(query))) return false;
   if (filters.board && row.boardId !== filters.board) return false;
+  if (filters.year && row.year !== filters.year) return false;
   if (filters.level && row.levelId !== filters.level) return false;
   if (filters.status && row.status !== filters.status) return false;
   return true;
@@ -236,6 +280,7 @@ const groupApi = {
     const params = {
       search: search || undefined,
       boardId: filters.board || undefined,
+      academicYearId: filters.year || undefined,
       academicLevelId: filters.level || undefined,
       isActive: filters.status ? filters.status === "Active" : undefined,
     };
@@ -290,6 +335,8 @@ const groupApi = {
     return filters.map((field) => (
       field.name === "board"
         ? { ...field, options: masters.boards }
+        : field.name === "year"
+          ? { ...field, options: masters.years }
         : field.name === "level"
           ? { ...field, options: masters.levels }
           : field
@@ -332,7 +379,6 @@ export const pageConfig = {
 function AddProgramModal({ onCancel, onAdd }) {
   const fields = [
     { name: "programName", label: "Program Name", required: true },
-    { name: "programCode", label: "Program Code" },
     { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
   ];
   const { values, errors, setValue, validate } = useForm(fields, { status: "Active" });
@@ -399,9 +445,12 @@ function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
     <section className="course-programs-panel">
       <div className="course-programs-head">
         <div>
-          <h3>Programs / Tracks for {headingName}</h3>
+          <h3>Programs for {headingName}</h3>
           <p>Selected Programs: {selectedProgramIds.length}</p>
         </div>
+        <button type="button" className="cms-btn cms-btn-ghost course-add-program-btn" onClick={() => setAdding(true)}>
+          <Plus size={14} /> Add Program
+        </button>
       </div>
       <div className="course-program-grid">
         {programs.map((program) => (
@@ -419,11 +468,6 @@ function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
           </label>
         ))}
       </div>
-      <div className="course-program-actions">
-        <button type="button" className="cms-btn cms-btn-ghost course-add-program-btn" onClick={() => setAdding(true)}>
-          <Plus size={15} /> Add Program
-        </button>
-      </div>
       {adding ? <AddProgramModal onCancel={() => setAdding(false)} onAdd={addProgram} /> : null}
     </section>
   );
@@ -432,38 +476,54 @@ function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
 function CourseGroupFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [fields, setFields] = useState(pageConfig.fields);
+  const [searchParams] = useSearchParams();
+  const [contextOptions, setContextOptions] = useState({ boards: [], years: [], levels: [] });
   const [toast, setToast] = useState("");
-  const [loading, setLoading] = useState(Boolean(id));
+  const [toastType, setToastType] = useState("success");
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const { values, errors, setValue, validate, setValues, setErrors } = useForm(fields, { status: "Active" });
+  const initialContext = useMemo(() => ({
+    board: searchParams.get("board") || "",
+    year: searchParams.get("year") || "",
+    level: searchParams.get("level") || "",
+  }), [searchParams]);
+  const { values, errors, setValue, validate, setValues, setErrors } = useForm(groupFormFields, { ...initialContext, status: "Active" });
   const [selectedProgramIds, setSelectedProgramIds] = useState([]);
   const mode = id ? "Edit" : "Add";
+  const listPath = `/dashboard/courses${makeContextQuery(values)}`;
+  const contextSummary = [
+    { label: "Board", value: optionLabel(contextOptions.boards, values.board, values.board || "-") },
+    { label: "Academic Year", value: optionLabel(contextOptions.years, values.year, values.year || "-") },
+    { label: "Academic Level", value: optionLabel(contextOptions.levels, values.level, values.level || "-") },
+  ];
 
   useEffect(() => {
     let ignore = false;
     const load = async () => {
-      setLoading(Boolean(id));
+      setLoading(true);
       try {
-        const [loadedFields, loadedGroup] = await Promise.all([
-          groupApi.loadFields(pageConfig.fields),
+        const [masters, loadedGroup] = await Promise.all([
+          loadGroupMasters(),
           id ? groupApi.fetchRow(id) : null,
         ]);
         if (ignore) return;
-        setFields(loadedFields);
+        setContextOptions(masters);
         if (loadedGroup) {
           setValues(loadedGroup);
           setSelectedProgramIds(programIdsForGroup(id, loadedGroup.code));
         }
       } catch (error) {
-        if (!ignore) setToast(getApiErrorMessage(error));
+        if (!ignore) {
+          setToastType("error");
+          setToast(getApiErrorMessage(error));
+        }
       } finally {
         if (!ignore) setLoading(false);
       }
     };
     load();
     return () => { ignore = true; };
-  }, [id, setValues]);
+  }, [id, initialContext.board, initialContext.level, initialContext.year, setValues]);
 
   useEffect(() => {
     if (id) return;
@@ -472,6 +532,11 @@ function CourseGroupFormPage() {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (!values.board || !values.year || !values.level) {
+      setToastType("error");
+      setToast("Please select Board, Academic Year and Academic Level before adding a group.");
+      return;
+    }
     if (!validate()) return;
     setSaving(true);
     try {
@@ -481,9 +546,11 @@ function CourseGroupFormPage() {
         return;
       }
       await groupApi.saveRow(values, id, selectedProgramIds);
+      setToastType("success");
       setToast(`Group ${id ? "updated" : "created"} successfully`);
-      navigate("/dashboard/courses");
+      navigate(listPath);
     } catch (error) {
+      setToastType("error");
       setToast(getApiErrorMessage(error));
     } finally {
       setSaving(false);
@@ -493,15 +560,23 @@ function CourseGroupFormPage() {
   return (
     <DashboardLayout title={`${mode} Group`} subtitle="Configure the group details and its programs." breadcrumb={["Group Management"]}>
       <div className="cms-form-page course-group-form-page">
-        <Link to="/dashboard/courses" className="cms-back-link"><ArrowLeft size={15} /> Back to Group Management</Link>
+        <Link to={listPath} className="cms-back-link"><ArrowLeft size={15} /> Back to Group Management</Link>
         <form className="cms-card" onSubmit={submit} noValidate>
           <div className="cms-card-body">
             {loading ? (
               <div className="cms-empty">Loading record...</div>
             ) : (
               <>
+                <div className="course-context-summary" aria-label="Selected group context">
+                  {contextSummary.map((item) => (
+                    <div key={item.label}>
+                      <span>{item.label}</span>
+                      <strong>{item.value}</strong>
+                    </div>
+                  ))}
+                </div>
                 <div className="cms-form-grid">
-                  {fields.map((field) => (
+                  {groupFormFields.map((field) => (
                     <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={setValue} />
                   ))}
                 </div>
@@ -514,25 +589,32 @@ function CourseGroupFormPage() {
               </>
             )}
             <div className="cms-form-actions">
-              <button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate("/dashboard/courses")}>Cancel</button>
+              <button type="button" className="cms-btn cms-btn-ghost" onClick={() => navigate(listPath)}>Cancel</button>
               <button type="submit" className="cms-btn cms-btn-primary" disabled={saving || loading}>{saving ? "Saving..." : `${id ? "Update" : "Save"} Group`}</button>
             </div>
           </div>
         </form>
       </div>
-      <Toast message={toast} onClose={() => setToast("")} />
+      <Toast message={toast} type={toastType} onClose={() => setToast("")} />
     </DashboardLayout>
   );
 }
 
 function CourseGroupListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useState(() => ({
+    board: searchParams.get("board") || "",
+    year: searchParams.get("year") || "",
+    level: searchParams.get("level") || "",
+  }));
   const [filterFields, setFilterFields] = useState(pageConfig.filters);
+  const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [] });
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
+  const [toastType, setToastType] = useState("success");
   const [error, setError] = useState("");
   const initialLoadStarted = useRef(false);
   const requestId = useRef(0);
@@ -558,17 +640,48 @@ function CourseGroupListPage() {
   useEffect(() => {
     if (initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    loadRows("", {});
-    groupApi.loadFilters(pageConfig.filters).then(setFilterFields).catch((err) => setError(getApiErrorMessage(err)));
-  }, [loadRows]);
+    loadRows("", filters);
+    loadGroupMasters()
+      .then((masters) => {
+        setMasterOptions(masters);
+        setFilterFields(buildGroupFilterFields(masters, filters));
+      })
+      .catch((err) => setError(getApiErrorMessage(err)));
+  }, [filters, loadRows]);
+
+  useEffect(() => {
+    setFilterFields(buildGroupFilterFields(masterOptions, filters));
+  }, [filters, masterOptions]);
+
+  const updateRouteContext = (nextFilters) => {
+    const params = new URLSearchParams(searchParams);
+    CONTEXT_FIELD_NAMES.forEach((name) => {
+      if (nextFilters[name]) params.set(name, nextFilters[name]);
+      else params.delete(name);
+    });
+    setSearchParams(params, { replace: true });
+  };
 
   const setFilter = (name, value) => {
     if (name === "__reset__") {
-      setFilters({});
-      loadRows(search, {});
+      const nextFilters = {};
+      setFilters(nextFilters);
+      updateRouteContext(nextFilters);
+      loadRows(search, nextFilters);
       return;
     }
-    setFilters((current) => ({ ...current, [name]: value }));
+    setFilters((current) => {
+      const next = { ...current, [name]: value };
+      if (name === "board") {
+        next.year = "";
+        next.level = "";
+      }
+      if (name === "year") {
+        next.level = "";
+      }
+      updateRouteContext(next);
+      return next;
+    });
   };
 
   const handleSearch = (value) => {
@@ -580,11 +693,17 @@ function CourseGroupListPage() {
   const deleteGroup = async (row) => {
     try {
       await groupApi.deleteRow(row.id);
+      setToastType("success");
       setToast("Group deleted successfully");
       await loadRows(search, filters);
     } catch (err) {
+      setToastType("error");
       setToast(getApiErrorMessage(err));
     }
+  };
+
+  const addGroup = () => {
+    navigate(`/dashboard/courses/add${makeContextQuery(filters)}`);
   };
 
   const columns = useMemo(() => pageConfig.columns.map((column) => (
@@ -610,12 +729,12 @@ function CourseGroupListPage() {
           loading={loading}
           addLabel={pageConfig.addLabel}
           onSearchChange={handleSearch}
-          onAdd={() => navigate("/dashboard/courses/add")}
-          onEdit={(row) => navigate(`/dashboard/courses/${row.id}/edit`)}
+          onAdd={addGroup}
+          onEdit={(row) => navigate(`/dashboard/courses/${row.id}/edit${makeContextQuery(filters)}`)}
           onDelete={deleteGroup}
         />
       </div>
-      <Toast message={toast} onClose={() => setToast("")} />
+      <Toast message={toast} type={toastType} onClose={() => setToast("")} />
     </DashboardLayout>
   );
 }

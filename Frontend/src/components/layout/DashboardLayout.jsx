@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
-  GraduationCap, CalendarClock, CalendarRange, ClipboardCheck, FileText, FileSpreadsheet, PenLine,
+  GraduationCap, CalendarClock, ClipboardCheck, FileText, FileSpreadsheet, PenLine,
   Award, ArrowUpRight, Wallet, ScrollText, BarChart3, Menu, Bell, Search, ChevronRight,
   ChevronDown, Settings, User, LogOut,
 } from "lucide-react";
@@ -16,8 +16,7 @@ export const menu = [
   {
     section: "Academics",
     items: [
-      { to: "/dashboard/boards", label: "Board Management", icon: Landmark },
-      { to: "/dashboard/academic-years", label: "Academic Year", icon: CalendarRange },
+      { to: "/dashboard/boards", label: "Board & Academic Year Management", icon: Landmark },
       { to: "/dashboard/courses", label: "Group Management", icon: BookOpen },
       { to: "/dashboard/subjects", label: "Subject Management", icon: Library },
       { to: "/dashboard/sections", label: "Section Management", icon: Layers3 },

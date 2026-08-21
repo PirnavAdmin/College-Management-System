@@ -275,6 +275,8 @@ function ApiLevelMultiSelect({ value, options, onChange }) {
 }
 
 const emptyForm = {
+  boardId: "",
+  boardName: "",
   board: "",
   code: "",
   type: "",
@@ -304,6 +306,8 @@ const dateInputValue = (value) => (value ? String(value).slice(0, 10) : "");
 
 const mapAcademicYearFromApi = (item = {}) => ({
   id: item.academicYearId ?? item.AcademicYearId ?? item.id ?? item.Id,
+  boardId: item.boardId ?? item.BoardId ?? "",
+  boardName: item.boardName ?? item.BoardName ?? "",
   year: item.academicYearName ?? item.AcademicYearName ?? item.year ?? "",
   start: dateInputValue(item.startDate ?? item.StartDate ?? item.start),
   end: dateInputValue(item.endDate ?? item.EndDate ?? item.end),
@@ -354,6 +358,7 @@ function normalizeAcademicYearList(responseData, requestedPage, requestedSize) {
 
 const academicYearPayload = (draft) => {
   const payload = {
+    boardId: Number(draft.boardId),
     academicYearName: draft.year.trim(),
     startDate: draft.start,
     endDate: draft.end,
@@ -539,6 +544,8 @@ function AcademicYearWorkspace() {
   const [page, setPage] = useState(1);
   const [toast, setToast] = useState("");
   const [academicYears, setAcademicYears] = useState([]);
+  const [activeBoards, setActiveBoards] = useState([]);
+  const [boardsLoading, setBoardsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [selected, setSelected] = useState(null);
@@ -591,6 +598,27 @@ function AcademicYearWorkspace() {
     fetchAcademicYears();
   }, [fetchAcademicYears]);
 
+  useEffect(() => {
+    let active = true;
+    setBoardsLoading(true);
+    apiClient.get(BOARD_API.list, { params: { Status: true } })
+      .then((response) => {
+        if (!active) return;
+        setActiveBoards(asArray(response.data).map(mapBoardListItem).filter((board) => board.status === "Active"));
+      })
+      .catch((error) => {
+        if (!active) return;
+        setActiveBoards([]);
+        setToast(getApiErrorMessage(error, "Unable to load active Boards."));
+      })
+      .finally(() => {
+        if (active) setBoardsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const fetchAcademicYearDetails = async (id) => {
     setDetailsLoading(true);
     setSelected(null);
@@ -629,7 +657,7 @@ function AcademicYearWorkspace() {
   const save = async (event) => {
     event.preventDefault();
     if (saving) return;
-    if (!draft.year?.trim() || !draft.start || !draft.end || !draft.status) {
+    if (!draft.boardId || !draft.year?.trim() || !draft.start || !draft.end || !draft.status) {
       setToast("Complete all required fields.");
       return;
     }
@@ -709,6 +737,7 @@ function AcademicYearWorkspace() {
   };
   const academicYearColumns = [
     "Academic Year",
+    "Board Name",
     "Start Date",
     "End Date",
     "Admission Start Date",
@@ -718,6 +747,7 @@ function AcademicYearWorkspace() {
   const academicYearExportRows = () =>
     academicYears.map((row) => [
       row.year || "",
+      row.boardName || "",
       fmt(row.start),
       fmt(row.end),
       fmt(row.admissionStart),
@@ -807,6 +837,7 @@ function AcademicYearWorkspace() {
             <thead>
               <tr>
                 <th>Academic Year</th>
+                <th>Board Name</th>
                 <th>Start Date</th>
                 <th>End Date</th>
                 <th>Admission Period</th>
@@ -817,12 +848,12 @@ function AcademicYearWorkspace() {
             <tbody>
               {listLoading ? (
                 <tr>
-                  <td colSpan="6" className="bay-empty">Loading academic years...</td>
+                  <td colSpan="7" className="bay-empty">Loading academic years...</td>
                 </tr>
               ) : null}
               {!listLoading && !visible.length ? (
                 <tr>
-                  <td colSpan="6" className="bay-empty">No academic years available.</td>
+                  <td colSpan="7" className="bay-empty">No academic years available.</td>
                 </tr>
               ) : null}
               {!listLoading && visible.map((row) => (
@@ -830,6 +861,7 @@ function AcademicYearWorkspace() {
                   <td>
                     <strong>{row.year}</strong>
                   </td>
+                  <td>{row.boardName || "—"}</td>
                   <td>{fmt(row.start)}</td>
                   <td>{fmt(row.end)}</td>
                   <td>
@@ -936,6 +968,7 @@ function AcademicYearWorkspace() {
             <dl>
               {[
                 ["Academic Year Name", selected.year],
+                ["Board Name", selected.boardName],
                 ["Start Date", fmt(selected.start)],
                 ["End Date", fmt(selected.end)],
                 ["Admission Start Date", fmt(selected.admissionStart)],
@@ -964,6 +997,26 @@ function AcademicYearWorkspace() {
             </div>
           </header>
           <form onSubmit={save}>
+            <label>
+              <span>
+                Board Name <b>*</b>
+              </span>
+              <select
+                value={draft.boardId || ""}
+                disabled={boardsLoading}
+                onChange={(event) => {
+                  const boardId = event.target.value;
+                  const boardName = activeBoards.find((board) => String(board.id) === boardId)?.board || "";
+                  setDraft((current) => ({ ...current, boardId, boardName }));
+                }}
+                required
+              >
+                <option value="">{boardsLoading ? "Loading active Boards..." : "Select Board Name"}</option>
+                {activeBoards.map((board) => (
+                  <option key={board.id} value={board.id}>{board.board}</option>
+                ))}
+              </select>
+            </label>
             <label>
               <span>
                 Academic Year Name <b>*</b>

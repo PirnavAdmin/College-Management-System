@@ -204,6 +204,7 @@ function Section({ slug, config, secondary, onToast, heading, onView }) {
         onEdit={(row) => navigate(`/dashboard/${slug}/${row.id}/edit${sectionQuery}`)}
         onDelete={(row) => setDeleting(row)}
         onView={onView ? (row) => onView(row) : (row) => setViewing(row)}
+        paginationCurrentOnly={sectionConfig.pagination?.currentOnly}
       />
 
       {deleting ? (

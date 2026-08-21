@@ -33,7 +33,7 @@ export const subjects = [
   { id: 4, name: "Botany", code: "BOT1", group: "BIPC", level: "1st Year", type: "Theory + Practical", max: 60, pass: 21, status: "Active" },
   { id: 5, name: "English", code: "ENG1", group: "All Groups", level: "1st Year", type: "Language", max: 100, pass: 35, status: "Active" },
   { id: 6, name: "Economics", code: "ECO2", group: "MEC", level: "2nd Year", type: "Theory", max: 100, pass: 35, status: "Inactive" },
-  { id: 7, name: "Computer Science", code: "CSC2", group: "MPC", level: "2nd Year", type: "Elective", max: 100, pass: 35, status: "Active" },
+  { id: 7, name: "Computer Science", code: "CSC2", group: "MPC", level: "2nd Year", type: "Theory", max: 100, pass: 35, status: "Active" },
 ];
 
 export const sections = [
@@ -222,7 +222,7 @@ export const options = {
   paymentMode: ["Cash", "UPI", "Card", "Net Banking", "Cheque"],
   certificateType: ["Bonafide Certificate", "Transfer Certificate", "Study Certificate", "Conduct Certificate", "Others"],
   examType: ["Unit Test", "Quarterly", "Half Yearly", "Pre-Final", "Annual"],
-  subjectType: ["Theory", "Practical", "Theory + Practical", "Language", "Elective"],
+  subjectType: ["Theory", "Practical", "Theory + Practical", "Language"],
   feeType: ["Tuition Fee", "Laboratory Fee", "Hostel Fee", "Transport Fee", "Exam Fee"],
   department: ["Mathematics", "Physics", "Chemistry", "Biology", "Commerce", "English"],
   bloodGroup: ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"],

@@ -85,6 +85,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/academic-years" element={<AcademicYearPage />} />
         <Route path="/dashboard/courses" element={<CourseGroupPage />} />
         <Route path="/dashboard/subjects" element={<SubjectManagementPage />} />
+        <Route path="/dashboard/subjects/add" element={<SubjectManagementPage screen="assign" />} />
+        <Route path="/dashboard/subjects/assign" element={<SubjectManagementPage screen="assign" />} />
         <Route path="/dashboard/sections" element={<SectionManagementPage />} />
         <Route path="/dashboard/faculty" element={<FacultyManagementPage />} />
         <Route path="/dashboard/faculty/add" element={<FacultyManagementPage />} />
@@ -109,8 +111,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/fee-structure" element={<FeeManagementPage />} />
         <Route path="/dashboard/certificates" element={<CertificatesPage />} />
         <Route path="/dashboard/reports" element={<ReportsAnalyticsPage />} />
-        {listSlugs.filter((slug) => slug !== "faculty").map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
-        {listSlugs.filter((slug) => slug !== "faculty").map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
+        {listSlugs.filter((slug) => slug !== "faculty" && slug !== "subjects").map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
+        {listSlugs.filter((slug) => slug !== "faculty" && slug !== "subjects").map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
         <Route path="/dashboard/students/:id" element={<StudentProfileRoute />} />
       </Route>
 

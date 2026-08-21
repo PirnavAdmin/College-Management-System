@@ -174,6 +174,7 @@ export const pageConfig = {
     breadcrumb: ["Academics"],
     addLabel: "Add Group",
     rows: [],
+    pagination: { currentOnly: true },
     api: groupApi,
     columns: [
       { key: "name", label: "Group Name", strong: true },

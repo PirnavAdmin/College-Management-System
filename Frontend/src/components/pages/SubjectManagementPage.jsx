@@ -1,237 +1,925 @@
-import apiClient from "@/api/axios.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Check, Download, Plus, Save, Search, Trash2 } from "lucide-react";
+import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import { Loader, Modal, Toast } from "@/components/common/Ui.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
-import ListPage from "@/components/pages/ListPage.jsx";
 import "./SubjectManagementPage.css";
 
-const MODULE_SLUG = "subjects";
-const SUBJECT_TYPES = ["Theory", "Practical", "Theory + Practical", "Language", "Elective"];
-const STATUS_OPTIONS = ["Active", "Inactive"];
+const MASTER = [];
+const TYPES = ["Theory", "Practical", "Language"];
+const SUBJECT_CONTEXT = {
+  board: "",
+  boardId: "",
+  group: "",
+  groupId: "",
+  academicLevel: "",
+  academicLevelId: "",
+};
+const DEFAULT = [];
+const get = () => [];
+const put = () => {};
+const itemsFromResponse = (data) => {
+  const body = data?.data ?? data;
+  return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? [];
+};
+const apiRecord = (record) => {
+  const types = componentsOf(record);
+  const subjectType = types.includes("Language")
+    ? "Language"
+    : types.length === 2 ? "Theory + Practical" : types[0] || "";
+  const id = (key) => record[`${key}Id`] ?? record[`${key[0].toUpperCase()}${key.slice(1)}Id`];
+  return {
+    boardId: Number(id("board")) || 0,
+    groupId: Number(id("group")) || 0,
+    academicLevelId: Number(id("academicLevel")) || 0,
+    subjectName: record.subjectName,
+    subjectCode: record.subjectCode,
+    subjectType,
+    theory: types.includes("Theory") || types.includes("Language"),
+    practical: types.includes("Practical"),
+    language: types.includes("Language"),
+    elective: false,
+    internalMarks: Number(record.internalMarks || 0),
+    practicalMarks: Number(record.practicalMarks || 0),
+    externalMarks: Number(record.externalMarks || 0),
+    totalMarks: total(record),
+    passingMarks: Number(record.passingMarks || 0),
+    isActive: record.isActive ?? record.IsActive ?? true,
+  };
+};
+const master = (id) =>
+  MASTER.find((x) => x.subjectId === id) || { subjectName: "Select Subject", subjectCode: "—" };
+const total = (x) =>
+  Number(x.internalMarks || 0) + Number(x.externalMarks || 0) + Number(x.practicalMarks || 0);
+const subjectDetails = (record) => {
+  const existing = master(record?.subjectId);
+  return {
+    subjectName: record?.subjectName?.trim() || existing.subjectName,
+    subjectCode: record?.subjectCode?.trim() || existing.subjectCode,
+  };
+};
+const componentsOf = (record) => (Array.isArray(record?.components) ? record.components : []);
+const subjectTypesFrom = (value) => {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => subjectTypesFrom(
+      typeof item === "string" ? item : item?.name ?? item?.type ?? item?.subjectType ?? item?.SubjectType,
+    ));
+  }
+  if (typeof value !== "string") return [];
+  const normalized = value.toLowerCase();
+  return TYPES.filter((type) => normalized.includes(type.toLowerCase()));
+};
+const cleanSubjectTypes = (types) => {
+  const selected = [...new Set(types.filter((type) => TYPES.includes(type)))];
 
-function getGroups() {
-  return apiClient.get(apiEndpoints.groups.dropdown);
-}
+  // Preserve the Theory/Practical pairing when cleaning legacy invalid data.
+  return selected.includes("Language") && selected.some((type) => type !== "Language")
+    ? selected.filter((type) => type !== "Language")
+    : selected;
+};
+const subjectTypeError = (types) => {
+  if (!types.length) return "Select at least one subject type.";
+  if (types.some((type) => !TYPES.includes(type))) return "Select a valid subject type.";
+  if (types.includes("Language") && types.some((type) => type !== "Language")) {
+    return "Language cannot be combined with Theory or Practical.";
+  }
+  return "";
+};
+const normalize = (records) => {
+  if (!Array.isArray(records)) return DEFAULT;
 
-function getBoards() {
-  return apiClient.get(apiEndpoints.boards.getAll);
-}
+  return records.map((record, index) => {
+    const fallback = records.length === DEFAULT.length ? DEFAULT[index] : null;
+    const subject =
+      MASTER.find(
+        (item) => item.subjectId === record?.subjectId || item.subjectId === record?.id,
+      ) ||
+      MASTER.find(
+        (item) =>
+          item.subjectName === record?.subjectName || item.subjectCode === record?.subjectCode,
+      ) ||
+      (fallback ? MASTER.find((item) => item.subjectId === fallback.subjectId) : null);
 
-function getAcademicLevels() {
-  return apiClient.get(apiEndpoints.boards.getAcademicLevels);
-}
-
-function getAcademicYears() {
-  return apiClient.get(apiEndpoints.academicYears.getAll, {
-    params: { pageNumber: 1, pageSize: 100 },
+    return {
+      ...record,
+      id: record?.id ?? record?.subjectId ?? record?.SubjectId ?? record?.Id ?? `subject-${index}`,
+      subjectId: subject?.subjectId || record?.subjectId || record?.SubjectId || record?.id || "",
+      subjectName: record?.subjectName || record?.SubjectName || subject?.subjectName || fallback?.subjectName || "",
+      subjectCode: record?.subjectCode || record?.SubjectCode || subject?.subjectCode || fallback?.subjectCode || "",
+      components: cleanSubjectTypes(
+        subjectTypesFrom(
+          record?.components ?? record?.subjectTypes ?? record?.subjectType ?? record?.SubjectType ?? record?.type ?? record?.Type,
+        ).length
+          ? subjectTypesFrom(
+            record?.components ?? record?.subjectTypes ?? record?.subjectType ?? record?.SubjectType ?? record?.type ?? record?.Type,
+          )
+          : componentsOf(fallback),
+      ),
+      internalMarks: record?.internalMarks ?? record?.InternalMarks ?? record?.internal ?? record?.Internal ?? fallback?.internalMarks ?? 0,
+      externalMarks: record?.externalMarks ?? record?.ExternalMarks ?? record?.external ?? record?.External ?? fallback?.externalMarks ?? 0,
+      practicalMarks: record?.practicalMarks ?? record?.PracticalMarks ?? record?.practical ?? record?.Practical ?? fallback?.practicalMarks ?? 0,
+      passingMarks: record?.passingMarks ?? record?.PassingMarks ?? record?.passing ?? record?.Passing ?? fallback?.passingMarks ?? 0,
+      configured: record?.configured ?? record?.isConfigured ?? record?.IsConfigured ??
+        Number(record?.totalMarks ?? record?.TotalMarks ?? 0) > 0,
+    };
   });
-}
-
-const pageConfig = {
-    title: "Subject Management",
-    subtitle: "Subject master with internal, practical and external mark splits.",
-    breadcrumb: ["Academics"],
-    contentClassName: "subject-management",
-    addLabel: "Add Subject",
-    rows: [],
-    columns: [
-      { key: "name", label: "Subject Name", strong: true },
-      { key: "code", label: "Subject Code" },
-      { key: "group", label: "Group" },
-      { key: "level", label: "Academic Level" },
-      { key: "type", label: "Subject Type" },
-      { key: "max", label: "Maximum Marks" },
-      { key: "pass", label: "Passing Marks" },
-      { key: "status", label: "Status", badge: true },
-    ],
-    filters: [
-      { name: "board", label: "Board", type: "select", options: [] , loadOptions: getBoards, getOptions: (response) => boardOptionsFromResponse(response) },
-      { name: "academicYear", label: "Academic Year", type: "select", options: [], loadOptions: getAcademicYears, getOptions: (response) => academicYearOptionsFromResponse(response) },
-      { name: "group", label: "Group", type: "select", options: [], loadOptions: getGroups, getOptions: (response) => groupOptionsFromResponse(response) },
-      { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
-    ],
-    fields: [
-      { name: "board", label: "Board", type: "select", options: [], loadOptions: getBoards, getOptions: (response) => boardOptionsFromResponse(response), required: true },
-      { name: "academicYear", label: "Academic Year", type: "select", options: [], loadOptions: getAcademicYears, getOptions: (response) => academicYearOptionsFromResponse(response), required: true },
-      { name: "group", label: "Group", type: "select", options: [], loadOptions: getGroups, getOptions: (response) => groupOptionsFromResponse(response), required: true },
-      { name: "level", label: "Academic Level", type: "select", options: [], loadOptions: getAcademicLevels, getOptions: (response) => academicLevelOptionsFromResponse(response), required: true },
-      { name: "name", label: "Subject Name", required: true },
-      { name: "code", label: "Subject Code", required: true },
-      { name: "type", label: "Subject Type", type: "select", options: SUBJECT_TYPES, required: true },
-      { name: "internalMarks", label: "Internal Marks", type: "number", required: true },
-      { name: "practicalMarks", label: "Practical Marks", type: "number" },
-      { name: "externalMarks", label: "External Marks", type: "number", required: true },
-      { name: "max", label: "Total Marks", type: "number", required: true, disabled: true },
-      { name: "pass", label: "Passing Marks", type: "number", required: true },
-      { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
-    ],
-  };
-
-pageConfig.deriveValues = (values) => ({
-  max: Number(values.internalMarks || 0) + Number(values.practicalMarks || 0) + Number(values.externalMarks || 0),
-});
-
-const extractItems = (payload) => {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.$values)) return payload.$values;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.Items)) return payload.Items;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.Data)) return payload.Data;
-  if (Array.isArray(payload?.data?.$values)) return payload.data.$values;
-  if (Array.isArray(payload?.Data?.$values)) return payload.Data.$values;
-  if (Array.isArray(payload?.data?.items)) return payload.data.items;
-  if (Array.isArray(payload?.data?.Items)) return payload.data.Items;
-  if (Array.isArray(payload?.Data?.items)) return payload.Data.items;
-  if (Array.isArray(payload?.Data?.Items)) return payload.Data.Items;
-  return [];
 };
-
-const option = (item, idKeys, labelKeys) => {
-  const value = idKeys.map((key) => item?.[key]).find((itemId) => itemId !== undefined && itemId !== null && itemId !== "");
-  const label = labelKeys.map((key) => item?.[key]).find(Boolean);
-  return value !== undefined && label ? { value: String(value), label: String(label) } : null;
-};
-
-const groupOptionsFromResponse = (response) => extractItems(response.data)
-  .map((group) => option(group, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"]))
-  .filter(Boolean);
-
-const boardOptionsFromResponse = (response) => extractItems(response.data)
-  .map((board) => option(board, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "boardCode", "BoardCode", "name", "Name"]))
-  .filter(Boolean);
-
-const academicLevelOptionsFromResponse = (response) => extractItems(response.data)
-  .map((level) => option(level, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]))
-  .filter(Boolean);
-
-const academicYearOptionsFromResponse = (response) => extractItems(response.data)
-  .map((year) => option(year, ["academicYearId", "AcademicYearId", "yearId", "YearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]))
-  .filter(Boolean);
-
-const read = (item, ...keys) => keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null);
-const statusFrom = (subject) => {
-  const status = read(subject, "status", "Status");
-  if (status !== undefined) return typeof status === "boolean" ? (status ? "Active" : "Inactive") : String(status);
-  const active = read(subject, "isActive", "IsActive", "active", "Active");
-  return active === false ? "Inactive" : "Active";
-};
-
-const toSubjectRow = (subject) => ({
-  id: read(subject, "subjectId", "SubjectId", "id", "Id"),
-  board: read(subject, "boardName", "BoardName") || read(subject?.board, "boardName", "BoardName", "name", "Name") || read(subject, "board", "Board") || "-",
-  boardId: read(subject, "boardId", "BoardId") ?? read(subject?.board, "boardId", "BoardId", "id", "Id"),
-  group: read(subject, "groupName", "GroupName", "group", "Group") || "-",
-  groupId: read(subject, "groupId", "GroupId"),
-  academicYear: read(subject, "academicYearId", "AcademicYearId"),
-  level: read(subject, "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel") || "-",
-  levelId: read(subject, "academicLevelId", "AcademicLevelId"),
-  name: read(subject, "subjectName", "SubjectName", "name", "Name") || "-",
-  code: read(subject, "subjectCode", "SubjectCode", "code", "Code") || "-",
-  type: read(subject, "subjectType", "SubjectType", "type", "Type") || "-",
-  theory: read(subject, "theory", "Theory"),
-  practicalFlag: read(subject, "practical", "Practical"),
-  language: read(subject, "language", "Language"),
-  elective: read(subject, "elective", "Elective"),
-  internalMarks: read(subject, "internalMarks", "InternalMarks") ?? 0,
-  practicalMarks: read(subject, "practicalMarks", "PracticalMarks") ?? 0,
-  externalMarks: read(subject, "externalMarks", "ExternalMarks") ?? 0,
-  max: read(subject, "totalMarks", "TotalMarks") ?? 0,
-  pass: read(subject, "passingMarks", "PassingMarks") ?? 0,
-  status: statusFrom(subject),
-});
-
-const toSubjectForm = (subject) => {
-  const row = toSubjectRow(subject);
-  return {
-    board: String(row.boardId ?? ""), group: String(row.groupId ?? ""), academicYear: String(row.academicYear ?? ""),
-    level: String(row.levelId ?? ""), name: row.name === "-" ? "" : row.name, code: row.code === "-" ? "" : row.code,
-    type: row.type === "-" ? "" : row.type, internalMarks: row.internalMarks, practicalMarks: row.practicalMarks,
-    externalMarks: row.externalMarks, max: row.max, pass: row.pass, status: row.status,
-  };
-};
-
-const toSubjectPayload = (subject) => {
-  const type = String(subject.type || "").toLowerCase();
-  const isTheoryPractical = type === "theory + practical" || type === "theory & practical";
-  const isLanguage = type === "language";
-  const isElective = type === "elective";
-
-  return {
-    boardId: Number(subject.board),
-    groupId: Number(subject.group),
-    academicYearId: Number(subject.academicYear),
-    academicLevelId: Number(subject.level),
-    subjectName: subject.name,
-    subjectCode: subject.code,
-    subjectType: subject.type,
-    theory: type === "theory" || isTheoryPractical || isLanguage || isElective,
-    practical: type === "practical" || isTheoryPractical,
-    language: isLanguage,
-    elective: isElective,
-    internalMarks: Number(subject.internalMarks) || 0,
-    practicalMarks: Number(subject.practicalMarks) || 0,
-    externalMarks: Number(subject.externalMarks) || 0,
-    totalMarks: Number(subject.max) || 0,
-    passingMarks: Number(subject.pass) || 0,
-    isActive: subject.status !== "Inactive",
-  };
-};
-
-const matchesFilters = (row, search, filters) => {
-  const query = search.trim().toLowerCase();
-  if (query && !Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(query))) return false;
-  if (filters.board && String(row.boardId) !== String(filters.board)) return false;
-  if (filters.academicYear && String(row.academicYear) !== String(filters.academicYear)) return false;
-  if (filters.group && String(row.groupId) !== String(filters.group)) return false;
-  return !filters.status || row.status === filters.status;
-};
-
-pageConfig.api = {
-  fetchRows: async ({ search = "", filters = {} } = {}) => {
-    const params = { pageNumber: 1, pageSize: 100 };
-    let response;
-    if (filters.status === "Active" && !search && !filters.board && !filters.academicYear && !filters.group) response = await apiClient.get(apiEndpoints.subjects.getActive);
-    else if (filters.group && !search && !filters.board && !filters.academicYear) response = await apiClient.get(apiEndpoints.subjects.getByGroup(filters.group));
-    else if (filters.board && !search && !filters.academicYear) response = await apiClient.get(apiEndpoints.subjects.getByBoard(filters.board));
-    else if (filters.academicYear && !search && !filters.board) response = await apiClient.get(apiEndpoints.subjects.getByAcademicYear(filters.academicYear));
-    else if (search) response = await apiClient.get(apiEndpoints.subjects.search, { params: { search } });
-    else response = await apiClient.get(apiEndpoints.subjects.getAll, { params });
-    return extractItems(response.data).map(toSubjectRow).filter((row) => row.id !== undefined).filter((row) => matchesFilters(row, search, filters));
-  },
-  fetchRow: async (id) => {
-    try {
-      const response = await apiClient.get(apiEndpoints.subjects.getById(id));
-      return toSubjectForm(response.data?.data || response.data);
-    } catch (detailError) {
-      // Some backend deployments return subjects from the list endpoint but
-      // incorrectly return 404 from GET /api/Subjects/{id}. Keep the edit
-      // form usable with the matching list record in that case.
-      const response = await apiClient.get(apiEndpoints.subjects.getAll, { params: { pageNumber: 1, pageSize: 100 } });
-      const subject = extractItems(response.data).find((item) => String(read(item, "subjectId", "SubjectId", "id", "Id")) === String(id));
-      if (!subject) throw detailError;
-      return toSubjectForm(subject);
+export const pageConfig = { title: "Subject Management", rows: [], fields: [] };
+export default function SubjectManagementPage({ screen = "list" }) {
+  const nav = useNavigate(),
+    location = useLocation(),
+    [records, setRecords] = useState(() => normalize(get())),
+    [toast, setToast] = useState(""),
+    [apiAvailable, setApiAvailable] = useState(false),
+    [loading, setLoading] = useState(false);
+  const subjectRequestId = useRef(0);
+  const loadSubjects = useCallback(async (subjectContext) => {
+    const requestId = ++subjectRequestId.current;
+    if (!subjectContext?.boardId || !subjectContext?.groupId || !subjectContext?.academicLevelId) {
+      setRecords([]);
+      return;
     }
-  },
-  saveRow: (values, id) => id
-    ? apiClient.put(apiEndpoints.subjects.update(id), toSubjectPayload(values))
-    : apiClient.post(apiEndpoints.subjects.create, toSubjectPayload(values)),
-  deleteRow: (id) => apiClient.delete(apiEndpoints.subjects.delete(id)),
-  validateValues: async (values, id) => {
-    const totalMarks = Number(values.max);
-    const componentMarks = Number(values.internalMarks || 0) + Number(values.practicalMarks || 0) + Number(values.externalMarks || 0);
-    const passingMarks = Number(values.pass || 0);
-    const errors = {};
-    if (totalMarks !== componentMarks) errors.max = "Total Marks must equal Internal + Practical + External marks";
-    if (passingMarks > totalMarks) errors.pass = "Passing Marks cannot exceed Total Marks";
-    if (Object.keys(errors).length || !values.code) return errors;
-    const response = await apiClient.get(apiEndpoints.subjects.checkCode, { params: { subjectCode: values.code, excludeSubjectId: id || undefined } });
-    const data = response.data?.data || response.data || {};
-    if (data.isAvailable === false || data.exists === true || data.isUnique === false) errors.code = "Subject code already exists";
-    return errors;
-  },
-};
-
-export default function SubjectManagementPage() {
-  return <ListPage slug={MODULE_SLUG} config={pageConfig} />;
+    setLoading(true);
+    try {
+      const response = await apiClient.get(apiEndpoints.subjects.context, {
+        params: {
+          boardId: subjectContext.boardId,
+          groupId: subjectContext.groupId,
+          academicLevelId: subjectContext.academicLevelId,
+        },
+      });
+      if (requestId !== subjectRequestId.current) return;
+      setRecords(normalize(itemsFromResponse(response.data)));
+      setApiAvailable(true);
+    } catch (error) {
+      if (requestId !== subjectRequestId.current) return;
+      setRecords([]);
+      setToast(getApiErrorMessage(error) || "Unable to load subjects for the selected context.");
+    } finally {
+      if (requestId === subjectRequestId.current) setLoading(false);
+    }
+  }, []);
+  const save = async (next, msg) => {
+    const normalizedRecords = normalize(next);
+    if (apiAvailable) {
+      const missingContext = normalizedRecords.some((record) => {
+        if (!String(record.id).startsWith("new-")) return false;
+        const payload = apiRecord(record);
+        return !payload.boardId || !payload.groupId || !payload.academicLevelId;
+      });
+      if (missingContext) {
+        setToast("Select a Board, Group, and Academic Level before saving subjects.");
+        return false;
+      }
+      const previous = new Map(records.map((record) => [String(record.id), record]));
+      const nextIds = new Set(normalizedRecords.map((record) => String(record.id)));
+      try {
+        await Promise.all([
+          ...normalizedRecords.flatMap((record) => {
+            const existing = previous.get(String(record.id));
+            if (!existing || String(record.id).startsWith("new-")) {
+              return [apiClient.post(apiEndpoints.subjects.create, apiRecord(record))];
+            }
+            return JSON.stringify(apiRecord(existing)) === JSON.stringify(apiRecord(record))
+              ? []
+              : [apiClient.put(apiEndpoints.subjects.update(record.id), apiRecord(record))];
+          }),
+          ...records
+            .filter((record) => !nextIds.has(String(record.id)))
+            .map((record) => apiClient.delete(apiEndpoints.subjects.delete(record.id))),
+        ]);
+      } catch (error) {
+        setToast(getApiErrorMessage(error) || "The server could not save this subject. Please try again.");
+        return false;
+      }
+    }
+    setRecords(normalizedRecords);
+    put(normalizedRecords);
+    setToast(msg);
+    return true;
+  };
+  let page =
+    screen === "assign" ? (
+      <Assign
+        records={records}
+        context={{ ...SUBJECT_CONTEXT, ...location.state?.subjectContext }}
+        cancel={() => nav("/dashboard/subjects")}
+        save={async (next) => {
+          if (await save(next, apiAvailable ? "Subjects saved" : "Subjects saved locally")) {
+            nav("/dashboard/subjects");
+          }
+        }}
+      />
+    ) : (
+      <List
+        records={records}
+        context={SUBJECT_CONTEXT}
+        loading={loading}
+        loadSubjects={loadSubjects}
+        assign={(subjectContext) => nav("/dashboard/subjects/assign", {
+          state: {
+            subjectContext: {
+              board: subjectContext.board,
+              boardId: subjectContext.boardId,
+              group: subjectContext.group,
+              groupId: subjectContext.groupId,
+              academicLevel: subjectContext.academicLevel,
+              academicLevelId: subjectContext.academicLevelId,
+            },
+          },
+        })}
+      />
+    );
+  return (
+    <>
+      {page}
+      <Toast message={toast} onClose={() => setToast("")} />
+    </>
+  );
 }
+function List({ records, context, assign, loading, loadSubjects }) {
+  const [q, setQ] = useState("");
+  const [openingAssign, setOpeningAssign] = useState(false);
+  const [selectedContext, setSelectedContext] = useState(() => {
+    try {
+      return { ...context, ...JSON.parse(localStorage.getItem("subjectManagementContext") || "{}")};
+    } catch {
+      return context;
+    }
+  });
+  const [boards, setBoards] = useState([]);
+  const [groups, setGroups] = useState([]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      apiClient.get(apiEndpoints.boards.getAll, { params: { PageNumber: 1, PageSize: 100 } }),
+      apiClient.get(apiEndpoints.groups.getAll),
+    ]).then(([boardResponse, groupResponse]) => {
+      if (!active) return;
+      const nextBoards = itemsFromResponse(boardResponse.data);
+      const nextGroups = itemsFromResponse(groupResponse.data);
+      setBoards(nextBoards);
+      setGroups(nextGroups);
+      const savedGroup = nextGroups.find(
+        (group) => String(group.groupId) === String(selectedContext.groupId),
+      );
+      const firstGroup = savedGroup || nextGroups.find((group) => group.isActive !== false) || nextGroups[0];
+      if (firstGroup) {
+        setSelectedContext({
+          board: firstGroup.boardName || "",
+          boardId: firstGroup.boardId || "",
+          group: firstGroup.groupName || "",
+          groupId: firstGroup.groupId || "",
+          academicLevel: firstGroup.academicLevelName || "",
+          academicLevelId: firstGroup.academicLevelId || "",
+        });
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [selectedContext.groupId]);
+  useEffect(() => {
+    if (selectedContext.groupId) {
+      localStorage.setItem("subjectManagementContext", JSON.stringify(selectedContext));
+    }
+  }, [selectedContext]);
+  useEffect(() => {
+    loadSubjects({
+      boardId: selectedContext.boardId,
+      groupId: selectedContext.groupId,
+      academicLevelId: selectedContext.academicLevelId,
+    });
+  }, [loadSubjects, selectedContext.boardId, selectedContext.groupId, selectedContext.academicLevelId]);
+  const rows = useMemo(
+    () =>
+      records
+        .filter((x) =>
+          `${subjectDetails(x).subjectName} ${subjectDetails(x).subjectCode}`
+            .toLowerCase()
+            .includes(q.toLowerCase()),
+        ),
+    [records, q],
+  );
+  return (
+    <DashboardLayout
+      title="Subject Management"
+      subtitle="Manage subjects assigned to groups and academic levels."
+      breadcrumb={["Academic Management"]}
+      actions={
+        <button
+          className={`cms-btn cms-btn-primary${openingAssign ? " is-loading" : ""}`}
+          disabled={loading || openingAssign || !selectedContext.groupId || !selectedContext.academicLevelId}
+          onClick={() => {
+            setOpeningAssign(true);
+            window.setTimeout(() => assign(selectedContext), 120);
+          }}
+        >
+          {openingAssign ? <><span className="subject-btn-spinner" /> Opening Assign Subjects...</> : <><Plus size={16} /> Assign Subjects</>}
+        </button>
+      }
+    >
+      <div className="subject-screen">
+        <Table
+          rows={rows}
+          context={selectedContext}
+          setContext={setSelectedContext}
+          boards={boards}
+          groups={groups}
+          loading={loading}
+          query={q}
+          setQuery={setQ}
+        />
+      </div>
+    </DashboardLayout>
+  );
+}
+function Assign({ records, context, cancel, save }) {
+  const [rows, setRows] = useState(records);
+  const [errors, setErrors] = useState({});
+  const [typeMessage, setTypeMessage] = useState("");
+  const [configurationMessage, setConfigurationMessage] = useState("");
+  const [configureSubject, setConfigureSubject] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const blankRow = () => ({
+    id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    subjectId: "",
+    subjectName: "",
+    subjectCode: "",
+    components: [],
+    internalMarks: 0,
+    externalMarks: 0,
+    practicalMarks: 0,
+    passingMarks: 0,
+    configured: false,
+    ...context,
+  });
+  const validateRows = (items, requireConfigured) => {
+    const nextErrors = {};
+    const names = new Set();
+    const codes = new Set();
+    items.forEach((row) => {
+      const rowErrors = {};
+      const name = row.subjectName?.trim();
+      const code = row.subjectCode?.trim();
+      if (!name) rowErrors.subjectName = "Subject name is required.";
+      if (!code) rowErrors.subjectCode = "Subject code is required.";
+      const typeError = subjectTypeError(componentsOf(row));
+      if (typeError) rowErrors.components = typeError;
+      if (name && names.has(name.toLowerCase())) rowErrors.subjectName = "Duplicate subject name.";
+      if (code && codes.has(code.toLowerCase())) rowErrors.subjectCode = "Duplicate subject code.";
+      if (name) names.add(name.toLowerCase());
+      if (code) codes.add(code.toLowerCase());
+      if (requireConfigured && !row.configured)
+        rowErrors.configured = "Configure marks before saving.";
+      if (Object.keys(rowErrors).length) nextErrors[row.id] = rowErrors;
+    });
+    return nextErrors;
+  };
+  const update = (id, key, value) =>
+    setRows((items) =>
+      items.map((x) => (x.id === id ? { ...x, [key]: value, configured: false } : x)),
+    );
+  const clearTypeError = (id) =>
+    setErrors((current) => {
+      if (!current[id]?.components) return current;
+      const { components: _typeError, ...remainingRowErrors } = current[id];
+      return {
+        ...current,
+        [id]: Object.keys(remainingRowErrors).length ? remainingRowErrors : undefined,
+      };
+    });
+  const toggle = (row, component) => {
+    const components = componentsOf(row);
+    let nextComponents;
+    if (components.includes(component)) {
+      nextComponents = components.filter((type) => type !== component);
+    } else if (component === "Language") {
+      nextComponents = ["Language"];
+    } else {
+      nextComponents = [...components.filter((type) => type !== "Language"), component];
+    }
 
-SubjectManagementPage.pageConfig = pageConfig;
+    update(row.id, "components", nextComponents);
+    clearTypeError(row.id);
+    setTypeMessage("");
+  };
+  const add = () => setRows((items) => [...items, blankRow()]);
+  const removeRow = (id) => {
+    setRows((items) => items.filter((row) => row.id !== id));
+    setErrors((current) => {
+      const { [id]: _removed, ...remaining } = current;
+      return remaining;
+    });
+  };
+  const configureRow = (row) => {
+    const nextErrors = validateRows(rows, false);
+    setErrors(nextErrors);
+    if (nextErrors[row.id]) {
+      if (nextErrors[row.id].components) setTypeMessage(nextErrors[row.id].components);
+      return;
+    }
+    setConfigureSubject(row);
+  };
+  const saveAssignments = async () => {
+    const nextErrors = validateRows(rows, true);
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) {
+      const typeError = Object.values(nextErrors).find((rowErrors) => rowErrors.components)
+        ?.components;
+      if (typeError) setTypeMessage(typeError);
+      return;
+    }
+    setSaving(true);
+    try {
+      await save(rows);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <DashboardLayout
+      title="Assign Subjects"
+      subtitle="Assign reusable subjects and subject types to a group."
+      breadcrumb={["Academic Management", "Subject Management", "Assign Subjects"]}
+    >
+      <div className="subject-screen">
+        <section className="subject-table-card assign-card">
+          <div className="subject-table-head">
+            <div className="assign-table-context">
+              <ContextBadges context={context} />
+            </div>
+            <span>{rows.length} Subjects Assigned</span>
+          </div>
+          <div className="assignment-head">
+            <span>Subject Name</span>
+            <span>Subject Code</span>
+            <span>Subject Type</span>
+            <span>Action</span>
+          </div>
+          {rows.map((row) => {
+            const components = componentsOf(row);
+            const rowErrors = errors[row.id] || {};
+            return (
+              <div className="assignment-row" key={row.id}>
+                <label className="assignment-field">
+                  <input
+                    value={row.subjectName}
+                    onChange={(e) => update(row.id, "subjectName", e.target.value)}
+                    placeholder="Subject name"
+                  />
+                  {rowErrors.subjectName && <small>{rowErrors.subjectName}</small>}
+                </label>
+                <label className="assignment-field">
+                  <input
+                    value={row.subjectCode}
+                    onChange={(e) => update(row.id, "subjectCode", e.target.value)}
+                    placeholder="Subject code"
+                  />
+                  {rowErrors.subjectCode && <small>{rowErrors.subjectCode}</small>}
+                </label>
+                <div className="component-picker assignment-components">
+                  {TYPES.map((c) => (
+                    <label key={c}>
+                      <input
+                        type="checkbox"
+                        checked={components.includes(c)}
+                        onChange={() => toggle(row, c)}
+                      />
+                      {c}
+                    </label>
+                  ))}
+                </div>
+                <div className="subject-row-actions">
+                  <button
+                    className="cms-btn cms-btn-primary subject-configure-button"
+                    disabled={
+                      !row.subjectName?.trim() || !row.subjectCode?.trim() || !components.length
+                    }
+                    onClick={() => configureRow(row)}
+                  >
+                    Configure Marks
+                  </button>
+                  <button
+                    className="subject-new-row-delete"
+                    onClick={() => removeRow(row.id)}
+                    aria-label={`Remove ${row.subjectName || "subject"}`}
+                    title="Remove subject"
+                  >
+                    <Trash2 size={18} aria-hidden="true" />
+                  </button>
+                  {rowErrors.configured && <small>{rowErrors.configured}</small>}
+                </div>
+              </div>
+            );
+          })}
+          <button className="add-subject" onClick={add}>
+            <Plus size={15} /> Add Subject
+          </button>
+          <footer className="assignment-footer">
+            <span>{rows.length} Subjects Assigned</span>
+            <div>
+              <button className="cms-btn cms-btn-ghost" onClick={cancel} disabled={saving}>
+                Cancel
+              </button>
+              <button className="cms-btn cms-btn-primary" onClick={saveAssignments} disabled={saving}>
+                {saving ? "Saving subjects..." : <><Save size={15} /> Save &amp; Assign Subjects</>}
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+      {configureSubject && (
+        <Configure
+          item={configureSubject}
+          cancel={() => setConfigureSubject(null)}
+          save={async (next) => {
+            setRows((items) => items.map((row) => (row.id === next.id ? next : row)));
+            setConfigureSubject(null);
+            setConfigurationMessage("Marks configuration saved.");
+          }}
+        />
+      )}
+      <Toast message={typeMessage} type="error" onClose={() => setTypeMessage("")} />
+      <Toast message={configurationMessage} onClose={() => setConfigurationMessage("")} />
+    </DashboardLayout>
+  );
+}
+function Configure({ item, cancel, save }) {
+  const [value, setValue] = useState(item);
+  const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState({});
+  const [submitMessage, setSubmitMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const inputRefs = useRef({});
+  if (!value) return null;
+  const components = cleanSubjectTypes(componentsOf(value));
+  const theory = components.some((x) => ["Theory", "Language"].includes(x));
+  const practical = components.includes("Practical");
+  const applicableFields = [
+    ...(theory ? ["internalMarks", "externalMarks"] : []),
+    ...(practical ? ["practicalMarks"] : []),
+    "passingMarks",
+  ];
+  const validate = (candidate = value) => {
+    const nextErrors = {};
+    const checkRequiredMark = (key, label) => {
+      const raw = candidate[key];
+      const mark = Number(raw);
+      if (raw === "" || raw === null || raw === undefined || !Number.isFinite(mark) || mark < 0) {
+        nextErrors[key] = `${label} must be a non-negative number.`;
+      }
+    };
+
+    const typeError = subjectTypeError(componentsOf(candidate));
+    if (typeError) nextErrors.form = typeError;
+    if (!candidate.subjectName?.trim()) nextErrors.subjectName = "Subject name is required.";
+    if (!candidate.subjectCode?.trim()) nextErrors.subjectCode = "Subject code is required.";
+    if (theory) {
+      checkRequiredMark("internalMarks", "Internal marks");
+      checkRequiredMark("externalMarks", "External marks");
+    }
+    if (practical) checkRequiredMark("practicalMarks", "Practical marks");
+    checkRequiredMark("passingMarks", "Passing marks");
+
+    const passingMarks = Number(candidate.passingMarks);
+    const totalMarks = total(candidate);
+    if (!nextErrors.passingMarks && passingMarks > totalMarks) {
+      nextErrors.passingMarks = "Passing marks cannot exceed total marks.";
+    }
+    if (!nextErrors.form && totalMarks <= 0) {
+      nextErrors.form = "Total marks must be greater than zero.";
+    }
+    return nextErrors;
+  };
+  const set = (key, nextValue) => {
+    const nextValueState = { ...value, [key]: nextValue };
+    setValue(nextValueState);
+    setTouched((current) => ({ ...current, [key]: true }));
+    setErrors(validate(nextValueState));
+    setSubmitMessage("");
+  };
+  const setSubjectDetail = (key, nextValue) => {
+    const nextValueState = { ...value, [key]: nextValue };
+    setValue(nextValueState);
+    setTouched((current) => ({ ...current, [key]: true }));
+    setErrors(validate(nextValueState));
+    setSubmitMessage("");
+  };
+  const submit = async () => {
+    const nextErrors = validate();
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length) {
+      setTouched(
+        Object.fromEntries([...applicableFields, "subjectName", "subjectCode"].map((key) => [key, true])),
+      );
+      setSubmitMessage("Please fix the highlighted fields before saving.");
+      const firstInvalid = applicableFields.find((key) => nextErrors[key]);
+      if (firstInvalid) requestAnimationFrame(() => inputRefs.current[firstInvalid]?.focus());
+      return;
+    }
+    setSaving(true);
+    try {
+      await save({ ...value, configured: true });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal
+      title="View / Edit Subject"
+      className="subject-config-modal"
+      onClose={cancel}
+      closeOnOverlay={false}
+      footer={
+        <>
+          <button className="cms-btn cms-btn-ghost" onClick={cancel} disabled={saving}>
+            Cancel
+          </button>
+          <button className="cms-btn cms-btn-primary" onClick={submit} disabled={saving}>
+            {saving ? "Saving marks..." : <><Save size={16} /> Save Configuration</>}
+          </button>
+        </>
+      }
+    >
+      <div className="subject-config-modal-summary">
+        <div className="subject-edit-fields">
+          <label className={`mark-input${touched.subjectName && errors.subjectName ? " has-error" : ""}`}>
+            <span>Subject Name *</span>
+            <input
+              value={value.subjectName}
+              onChange={(event) => setSubjectDetail("subjectName", event.target.value)}
+              aria-invalid={Boolean(touched.subjectName && errors.subjectName)}
+            />
+            {touched.subjectName && errors.subjectName && <small>{errors.subjectName}</small>}
+          </label>
+          <label className={`mark-input${touched.subjectCode && errors.subjectCode ? " has-error" : ""}`}>
+            <span>Subject Code *</span>
+            <input
+              value={value.subjectCode}
+              onChange={(event) => setSubjectDetail("subjectCode", event.target.value)}
+              aria-invalid={Boolean(touched.subjectCode && errors.subjectCode)}
+            />
+            {touched.subjectCode && errors.subjectCode && <small>{errors.subjectCode}</small>}
+          </label>
+        </div>
+        <p><Badges components={components} /></p>
+        {value.group && <small>Group: {value.group}</small>}
+      </div>
+      <section className="subject-config-modal-marks">
+        <h4>Marks Configuration</h4>
+          {(submitMessage || errors.form) && (
+            <p className="marks-validation-message">{submitMessage || errors.form}</p>
+          )}
+          <div className="marks-inputs">
+            {theory && (
+              <>
+                <Mark
+                  label="Internal Marks *"
+                  value={value.internalMarks}
+                  change={(v) => set("internalMarks", v)}
+                  error={touched.internalMarks ? errors.internalMarks : ""}
+                  inputRef={(element) => {
+                    inputRefs.current.internalMarks = element;
+                  }}
+                />
+                <Mark
+                  label="External Marks *"
+                  value={value.externalMarks}
+                  change={(v) => set("externalMarks", v)}
+                  error={touched.externalMarks ? errors.externalMarks : ""}
+                  inputRef={(element) => {
+                    inputRefs.current.externalMarks = element;
+                  }}
+                />
+              </>
+            )}
+            {practical && (
+              <Mark
+                label="Practical Marks"
+                value={value.practicalMarks}
+                change={(v) => set("practicalMarks", v)}
+                error={touched.practicalMarks ? errors.practicalMarks : ""}
+                inputRef={(element) => {
+                  inputRefs.current.practicalMarks = element;
+                }}
+              />
+            )}
+            <Mark
+              label="Passing Marks *"
+              value={value.passingMarks}
+              change={(v) => set("passingMarks", v)}
+              error={touched.passingMarks ? errors.passingMarks : ""}
+              inputRef={(element) => {
+                inputRefs.current.passingMarks = element;
+              }}
+            />
+            <label className="mark-input">
+              <span>Total Marks</span>
+              <input value={total(value)} readOnly />
+            </label>
+          </div>
+      </section>
+    </Modal>
+  );
+}
+function Table({ rows, context, setContext, boards, groups, loading, query, setQuery }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  useEffect(() => setPage(1), [query, rows.length]);
+  const applyGroupContext = (group) => {
+    if (!group) return;
+    setContext({
+      boardId: group.boardId,
+      board: group.boardName,
+      groupId: group.groupId,
+      group: group.groupName,
+      academicLevelId: group.academicLevelId,
+      academicLevel: group.academicLevelName,
+    });
+  };
+  const groupPrefix = (name) => String(name || "").split(/[\s(-]/)[0].toLowerCase();
+  const matchingGroup = (matches) =>
+    matches.find((group) => groupPrefix(group.groupName) === groupPrefix(context.group)) || matches[0];
+  return (
+    <section className="subject-table-card">
+      <div className="subject-table-toolbar">
+        <label className="subject-search">
+          <span className="sr-only">Search subject or code</span>
+          <div>
+            <Search size={16} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subject / code" />
+          </div>
+        </label>
+        <div className="subject-context-controls">
+          <ContextSelect
+            label="Board"
+            value={context.boardId}
+            options={boards.map((board) => ({ value: board.boardId, label: board.boardName }))}
+            onChange={(boardId) => {
+              const board = boards.find((item) => String(item.boardId) === String(boardId));
+              const firstGroup = groups.find((item) => String(item.boardId) === String(boardId));
+              setContext((current) => ({
+                ...current,
+                boardId,
+                board: board?.boardName || "",
+                ...(firstGroup ? {
+                  groupId: firstGroup.groupId,
+                  group: firstGroup.groupName,
+                  academicLevelId: firstGroup.academicLevelId,
+                  academicLevel: firstGroup.academicLevelName,
+                } : {}),
+              }));
+            }}
+          />
+          <ContextSelect
+            label="Group"
+            value={context.groupId}
+            options={groups
+              .filter((group) => !context.boardId || String(group.boardId) === String(context.boardId))
+              .map((group) => ({ value: group.groupId, label: group.groupName }))}
+            onChange={(groupId) => {
+              const group = groups.find((item) => String(item.groupId) === String(groupId));
+              applyGroupContext(group);
+            }}
+          />
+          <ContextSelect
+            label="Academic Level"
+            value={context.academicLevel}
+            options={[...new Set(groups.map((group) => group.academicLevelName).filter(Boolean))]}
+            onChange={(academicLevel) => applyGroupContext(matchingGroup(groups.filter((group) =>
+              String(group.boardId) === String(context.boardId) && group.academicLevelName === academicLevel,
+            )) || matchingGroup(groups.filter((group) =>
+              String(group.boardId) === String(context.boardId) && group.academicLevelName === academicLevel,
+            )))}
+          />
+        </div>
+        <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
+          <Download size={15} /> Export
+        </button>
+      </div>
+      <div className="subject-table-head subject-table-title-row">
+        <h2>Assigned Subjects</h2>
+        <span>{rows.length} subjects</span>
+      </div>
+      <div className="subject-table-scroll">
+        {loading ? <Loader /> : <table className="subject-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Subject Name</th>
+              <th>Subject Code</th>
+              <th>Subject Type</th>
+              <th>Total Marks</th>
+              <th>Passing Marks</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.length === 0 ? (
+              <tr><td colSpan="7"><div className="cms-empty">No subjects are assigned to this context.</div></td></tr>
+            ) : pageRows.map((x, i) => {
+              const s = subjectDetails(x);
+              return (
+                <tr key={x.id}>
+                  <td>{(currentPage - 1) * pageSize + i + 1}</td>
+                  <td className="cms-strong">{s.subjectName}</td>
+                  <td>{s.subjectCode}</td>
+                  <td className="subject-type-text">{componentsOf(x).join(" · ")}</td>
+                  <td>{total(x)}</td>
+                  <td>{x.passingMarks}</td>
+                  <td>
+                    <span className={`subject-status ${x.configured ? "configured" : "pending"}`}>
+                      {x.configured ? (
+                        <>
+                          <Check size={14} />
+                          Configured
+                        </>
+                      ) : (
+                        "Not Configured"
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>}
+      </div>
+      {!loading && <footer className="subject-table-pagination">
+        <span>
+          Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} subjects
+        </span>
+        <div>
+          <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Prev</button>
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => (
+            <button
+              key={number}
+              className={number === currentPage ? "is-active" : ""}
+              onClick={() => setPage(number)}
+            >
+              {number}
+            </button>
+          ))}
+          <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+        </div>
+      </footer>}
+    </section>
+  );
+}
+function ContextBadges({ context }) {
+  return (
+    <div className="subject-context-badges" aria-label="Selected academic context">
+      {context.board && <span><b>Board</b>{context.board}</span>}
+      <span><b>Group</b>{context.group}</span>
+      <span><b>Academic Level</b>{context.academicLevel}</span>
+    </div>
+  );
+}
+function ContextSelect({ label, value, options, onChange }) {
+  return (
+    <label className="subject-context-select">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Select {label}</option>
+        {options.map((option) => {
+          const valueOption = typeof option === "object" ? option.value : option;
+          const labelOption = typeof option === "object" ? option.label : option;
+          return <option key={valueOption} value={valueOption}>{labelOption}</option>;
+        })}
+      </select>
+    </label>
+  );
+}
+function Mark({ label, value, change, error, inputRef }) {
+  const errorId = `${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-error`;
+  return (
+    <label className={`mark-input${error ? " has-error" : ""}`}>
+      <span>{label}</span>
+      <input
+        type="number"
+        min="0"
+        value={value}
+        onChange={(e) => change(e.target.value)}
+        ref={inputRef}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : undefined}
+      />
+      {error && <small id={errorId}>{error}</small>}
+    </label>
+  );
+}
+function Badges({ components = [] }) {
+  return (
+    <span className="component-badges">
+      {componentsOf({ components }).map((x) => (
+        <span className={`subject-tag type component-${x.toLowerCase()}`} key={x}>
+          {x}
+        </span>
+      ))}
+    </span>
+  );
+}

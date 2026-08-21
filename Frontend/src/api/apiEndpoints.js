@@ -134,6 +134,7 @@
   subjects: {
     getAll: "/api/Subjects",
     search: "/api/Subjects/search",
+    context: "/api/Subjects/context",
     getActive: "/api/Subjects/active",
     getByBoard: (boardId) => `/api/Subjects/board/${encodeURIComponent(boardId)}`,
     getByAcademicYear: (academicYearId) => `/api/Subjects/academic-year/${encodeURIComponent(academicYearId)}`,

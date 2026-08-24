@@ -37,9 +37,9 @@
 }
 
 .cms-room-toolbar .cms-sec-search {
-  width: 100%;
-  min-width: 0;
-  max-width: none;
+  width: auto;
+  min-width: 280px;
+  max-width: 510px;
 }
 
 .cms-room-filter-grid {
@@ -147,23 +147,25 @@
 
 .cms-sec-table {
   width: 100%;
-  min-width: 1040px;
+  min-width: 900px;
   table-layout: fixed;
 }
 
 .cms-sec-table th,
 .cms-sec-table td {
-  padding: 7px 24px;
-  font-size: 12.5px;
-  line-height: 1.2;
+  padding: 7px 10px;
+  font-size: 11px;
+  line-height: 1.35;
   vertical-align: middle;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .cms-sec-table th {
   padding-top: 10px;
   padding-bottom: 10px;
-  font-size: 11px;
+  font-size: 10.5px;
 }
 
 .cms-sec-select { position: relative; min-width: 0; width: 100%; }
@@ -184,27 +186,25 @@
 .cms-sec-room-form input { width: 100%; max-width: 120px; }
 
 .cms-sec-table tbody tr {
-  height: 48px;
+  min-height: 48px;
 }
 
-.cms-sec-table th:nth-child(1) { width: 12%; }
-.cms-sec-table th:nth-child(2) { width: 7%; }
-.cms-sec-table th:nth-child(3) { width: 13%; }
-.cms-sec-table th:nth-child(4) { width: 10%; }
-.cms-sec-table th:nth-child(5) { width: 12%; }
-.cms-sec-table th:nth-child(6) { width: 13%; }
-.cms-sec-table th:nth-child(7) { width: 8%; }
-.cms-sec-table th:nth-child(8) { width: 11%; }
-.cms-sec-table th:nth-child(9) { width: 14%; }
+.cms-section-table th:nth-child(1) { width: 12%; }
+.cms-section-table th:nth-child(2) { width: 8%; }
+.cms-section-table th:nth-child(3) { width: 8%; }
+.cms-section-table th:nth-child(4) { width: 12%; }
+.cms-section-table th:nth-child(5) { width: 12%; }
+.cms-section-table th:nth-child(6) { width: 10%; }
+.cms-section-table th:nth-child(7) { width: 14%; }
+.cms-section-table th:nth-child(8) { width: 7%; }
+.cms-section-table th:nth-child(9) { width: 9%; }
+.cms-section-table th:nth-child(10) { width: 8%; }
 
-.cms-sec-table th:nth-child(4),
-.cms-sec-table td:nth-child(4) {
-  padding-right: 24px;
-}
-
-.cms-sec-table th:nth-child(5),
-.cms-sec-table td:nth-child(5) {
-  padding-left: 24px;
+.cms-sec-board-code {
+  color: var(--cms-muted, #64748b);
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cms-sec-table th.cms-sec-align-center,

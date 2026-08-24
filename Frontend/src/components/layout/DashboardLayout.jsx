@@ -27,7 +27,7 @@ export const menu = [
     items: [
       {
         to: "/dashboard/faculty",
-        label: "Faculty Management",
+        label: "Staff Management",
         icon: Users,
       },
       { to: "/dashboard/admission", label: "Student Admission", icon: UserPlus },

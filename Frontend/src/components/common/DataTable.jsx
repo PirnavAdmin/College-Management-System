@@ -31,6 +31,7 @@ export default function DataTable({
   onEdit,
   onDelete,
   onView,
+  onPrint,
   onSearchChange,
   addLabel = "Add New",
   title,
@@ -149,6 +150,11 @@ export default function DataTable({
                         {onView ? (
                           <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
                             <Eye size={15} />
+                          </button>
+                        ) : null}
+                        {onPrint ? (
+                          <button className="cms-action-btn print" title="Print" aria-label="Print record" onClick={() => onPrint(row)}>
+                            <Printer size={15} />
                           </button>
                         ) : null}
                         {onEdit ? (

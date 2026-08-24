@@ -537,14 +537,28 @@
 /* Keep light-theme sidebar navigation clearly readable. */
 [data-theme="light"] .cms-brand-title,
 [data-theme="light"] .cms-nav-link {
-  color: #000000;
+  color: #10150d !important;
+}
+
+[data-theme="light"] .cms-brand {
+  background: #e9edd9;
+  border-bottom-color: #d9dccb;
+}
+
+[data-theme="light"] .cms-nav-group {
+  color: #000000 !important;
+  font-weight: 700;
+}
+
+[data-theme="light"] .cms-nav-link {
+  font-weight: 600;
 }
 
 [data-theme="light"] .cms-nav-link:hover {
-  color: #000000;
+  color: #10150d !important;
 }
 
 [data-theme="light"] .cms-nav-link.is-active,
 [data-theme="light"] .cms-nav-link.is-active:hover {
-  color: #ffffff;
+  color: #ffffff !important;
 }

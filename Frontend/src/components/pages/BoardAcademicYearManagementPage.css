@@ -241,12 +241,12 @@
   transform: translateY(-1px);
 }
 .bay-action-view {
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
+  border: 1px solid #D9DCCB;
+  background: #F7F8EF;
   color: #1769ff;
 }
 .bay-action-view:hover {
-  background: #dbeafe;
+  background: #F1F4E2;
 }
 .bay-action-delete {
   border: 1px solid #fecaca;

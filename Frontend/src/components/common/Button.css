@@ -15,7 +15,7 @@
 .cms-btn-primary {
   background: var(--cms-primary);
   color: #fff;
-  box-shadow: 0 6px 14px rgba(29, 78, 216, 0.24);
+  box-shadow: 0 6px 14px rgba(111, 132, 0, 0.22);
 }
 .cms-btn-primary:hover {
   background: var(--cms-primary-dark);
@@ -41,6 +41,8 @@
 .cms-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 .cms-action-btn {
   width: 32px;

@@ -11,6 +11,8 @@ function read() {
 export function setTheme(theme) {
   if (typeof document === "undefined") return;
   document.documentElement.setAttribute("data-theme", theme);
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  themeColor?.setAttribute("content", theme === "dark" ? "#161916" : "#6F8400");
   try {
     window.localStorage.setItem(STORAGE_KEY, theme);
   } catch {

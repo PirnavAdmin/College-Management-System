@@ -869,20 +869,20 @@
 }
 
 [data-theme="dark"] .reports-chart-card {
-  border-color: #2c3a50;
+  border-color: #2B3028;
   background: #172236;
   box-shadow: none;
 }
 
 [data-theme="dark"] .reports-summary-panel {
-  border-color: #2c3a50;
+  border-color: #2B3028;
   background: #172236;
   box-shadow: none;
 }
 
 [data-theme="dark"] .reports-summary-panel-head,
 [data-theme="dark"] .reports-summary-actions {
-  border-color: #2c3a50;
+  border-color: #2B3028;
 }
 
 [data-theme="dark"] .reports-summary-panel-head h2 {
@@ -894,14 +894,14 @@
 }
 
 [data-theme="dark"] .reports-audit-section {
-  border-color: #2c3a50;
+  border-color: #2B3028;
   background: #172236;
   box-shadow: none;
 }
 
 [data-theme="dark"] .reports-audit-filters,
 [data-theme="dark"] .reports-audit-pagination {
-  border-color: #2c3a50;
+  border-color: #2B3028;
 }
 
 [data-theme="dark"] .reports-error-banner {
@@ -915,7 +915,7 @@
 }
 
 [data-theme="dark"] .reports-summary-card {
-  border-color: #2c3a50;
+  border-color: #2B3028;
   background: #172236;
   box-shadow: none;
 }
@@ -934,7 +934,7 @@
 }
 
 [data-theme="dark"] .reports-summary-details > div {
-  border-color: #2c3a50;
+  border-color: #2B3028;
 }
 
 [data-theme="dark"] .reports-summary-details dt {
@@ -946,7 +946,7 @@
 }
 
 [data-theme="dark"] .reports-chart-head {
-  border-color: #2c3a50;
+  border-color: #2B3028;
 }
 
 [data-theme="dark"] .reports-chart-head h2,
@@ -980,7 +980,7 @@
 
 [data-theme="dark"] .reports-top-students th,
 [data-theme="dark"] .reports-top-students td {
-  border-color: #2c3a50;
+  border-color: #2B3028;
 }
 
 [data-theme="dark"] .reports-top-students tbody tr:hover {

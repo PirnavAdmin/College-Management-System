@@ -16,7 +16,7 @@
   flex: 0 0 var(--cms-sidebar-w) !important;
   flex-basis: var(--cms-sidebar-w) !important;
   background: var(--cms-sidebar);
-  color: #cbd5e1;
+  color: var(--cms-text-secondary);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -49,12 +49,12 @@
 
   padding: 0 18px;
 
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--cms-border);
 }
 
 .cms-brand-title {
   margin: 0;
-  color: #ffffff;
+  color: var(--cms-text);
   font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
@@ -80,7 +80,7 @@
   font-size: 10px;
   letter-spacing: 1.4px;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--cms-muted);
 }
 
 .cms-nav-link {
@@ -90,7 +90,7 @@
   min-height: 42px;
   padding: 8px 10px;
   border-radius: 10px;
-  color: #cbd5e1;
+  color: var(--cms-text-secondary);
   text-decoration: none;
   font-size: 12.75px;
   transition:
@@ -100,15 +100,15 @@
 }
 
 .cms-nav-link:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #fff;
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary-dark);
   transform: translateX(2px);
 }
 
 .cms-nav-link.is-active {
-  background: linear-gradient(90deg, #2563eb, #1d4ed8);
+  background: linear-gradient(90deg, var(--cms-primary), var(--cms-primary-hover));
   color: #fff;
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+  box-shadow: 0 6px 16px rgba(111, 132, 0, 0.24);
 }
 
 .cms-nav-link svg {
@@ -143,7 +143,7 @@
 .cms-nav-caret {
   border: 0;
   background: transparent;
-  color: #94a3b8;
+  color: var(--cms-muted);
   cursor: pointer;
   width: 26px;
   height: 26px;
@@ -156,8 +156,8 @@
 }
 
 .cms-nav-caret:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary);
 }
 
 .cms-nav-caret.is-open {
@@ -330,7 +330,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #1d4ed8, #60a5fa);
+  background: linear-gradient(135deg, #6F8400, #9CAF27);
   color: #fff;
   display: grid;
   place-items: center;
@@ -532,4 +532,19 @@
   .cms-search-wrap {
     min-width: 0;
   }
+}
+
+/* Keep light-theme sidebar navigation clearly readable. */
+[data-theme="light"] .cms-brand-title,
+[data-theme="light"] .cms-nav-link {
+  color: #000000;
+}
+
+[data-theme="light"] .cms-nav-link:hover {
+  color: #000000;
+}
+
+[data-theme="light"] .cms-nav-link.is-active,
+[data-theme="light"] .cms-nav-link.is-active:hover {
+  color: #ffffff;
 }

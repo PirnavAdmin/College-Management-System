@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, X, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { CheckCircle2, X, AlertTriangle, Eye, EyeOff, Info } from "lucide-react";
 
 export function StatusBadge({ value }) {
   const v = String(value || "").toLowerCase();
@@ -28,11 +28,14 @@ export function Toast({ message, onClose, type = "success" }) {
     return () => clearTimeout(t);
   }, [message, onClose]);
   if (!message) return null;
-  const isError = type === "error";
+  const normalizedType = ["success", "error", "warning", "info"].includes(type) ? type : "info";
+  const isError = normalizedType === "error";
+  const Icon = normalizedType === "success" ? CheckCircle2 : normalizedType === "info" ? Info : AlertTriangle;
   return (
-    <div className="cms-toast" role={isError ? "alert" : "status"} style={isError ? { background: "var(--cms-red)", color: "#fff" } : undefined}>
-      {isError ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
-      {message}
+    <div className={`cms-toast cms-toast-${normalizedType}`} role={isError ? "alert" : "status"} aria-live={isError ? "assertive" : "polite"}>
+      <Icon size={18} />
+      <span className="cms-toast-message">{message}</span>
+      <button type="button" className="cms-toast-close" onClick={onClose} aria-label="Dismiss notification"><X size={15} /></button>
     </div>
   );
 }

@@ -14,10 +14,10 @@
 .cms-skeleton {
   height: 14px;
   border-radius: 7px;
-  background: linear-gradient(90deg, #eef2f7, #f8fafc, #eef2f7);
+  background: linear-gradient(90deg, var(--cms-secondary), var(--cms-primary-soft), var(--cms-secondary));
   background-size: 200% 100%;
   animation: cmsShine 1.2s linear infinite;
 }
 [data-theme="dark"] .cms-skeleton {
-  background: linear-gradient(90deg, #1b2537, #243248, #1b2537);
+  background: linear-gradient(90deg, var(--cms-secondary), var(--cms-elevated), var(--cms-secondary));
 }

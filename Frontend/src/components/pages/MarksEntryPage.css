@@ -37,15 +37,15 @@
 
 /* Primary Button (Blue) */
 .cms-btn-primary {
-  background-color: #2563eb;
-  border: 1px solid #1d4ed8;
+  background-color: #6F8400;
+  border: 1px solid #6F8400;
   color: #ffffff;
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
 }
 
 .cms-btn-primary:hover:not(:disabled) {
-  background-color: #1d4ed8;
-  border-color: #1e40af;
+  background-color: #6F8400;
+  border-color: #566900;
   transform: translateY(-1px);
 }
 
@@ -53,12 +53,12 @@
 .cms-btn-export {
   background-color: rgba(37, 99, 235, 0.08);
   border: 1px solid rgba(37, 99, 235, 0.35);
-  color: #2563eb;
+  color: #6F8400;
 }
 
 .cms-btn-export:hover:not(:disabled) {
-  background-color: #2563eb;
-  border-color: #1d4ed8;
+  background-color: #6F8400;
+  border-color: #6F8400;
   color: #ffffff;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
   transform: translateY(-1px);
@@ -80,15 +80,15 @@
 
 /* Verify Button (Blue Background) */
 .cms-btn-info {
-  background-color: #2563eb;
-  border: 1px solid #1d4ed8;
+  background-color: #6F8400;
+  border: 1px solid #6F8400;
   color: #ffffff;
   box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
 }
 
 .cms-btn-info:hover:not(:disabled) {
-  background-color: #1d4ed8;
-  border-color: #1e40af;
+  background-color: #6F8400;
+  border-color: #566900;
   transform: translateY(-1px);
 }
 
@@ -112,16 +112,16 @@
 .cms-btn-ghost,
 .cms-btn:not([class*="cms-btn-"]) {
   background-color: var(--cms-surface-alt, rgba(248, 250, 252, 0.8));
-  border: 1px solid var(--cms-border, #cbd5e1);
-  color: var(--cms-text, #1e293b);
+  border: 1px solid var(--cms-border, #E6E7DE);
+  color: var(--cms-text, #171A17);
 }
 
 .cms-btn-secondary:hover:not(:disabled),
 .cms-btn-ghost:hover:not(:disabled),
 .cms-btn:not([class*="cms-btn-"]):hover:not(:disabled) {
   background-color: var(--cms-surface-hover, #f1f5f9);
-  border-color: #94a3b8;
-  color: #2563eb;
+  border-color: #8F9789;
+  color: #6F8400;
 }
 
 /* ---------- Toast Banners ---------- */

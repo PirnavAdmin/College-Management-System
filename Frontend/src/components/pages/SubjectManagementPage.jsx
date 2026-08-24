@@ -22,6 +22,30 @@ const itemsFromResponse = (data) => {
   const body = data?.data ?? data;
   return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? body?.$values ?? [];
 };
+const academicLevelsForBoard = (board) => {
+  if (!board) return [];
+
+  const levelIds = board.academicLevelIds ?? board.AcademicLevelIds ?? [];
+  const levelNames = board.academicLevelNames ?? board.AcademicLevelNames ??
+    board.academicLevels ?? board.AcademicLevels ?? [];
+
+  if (Array.isArray(levelIds) && levelIds.length) {
+    return levelIds.map((levelId, index) => {
+      const level = typeof levelNames[index] === "object" ? levelNames[index] : null;
+      return {
+        value: levelId ?? level?.academicLevelId ?? level?.AcademicLevelId ?? level?.id ?? level?.Id,
+        label: level?.levelName ?? level?.LevelName ?? level?.academicLevelName ?? level?.AcademicLevelName ?? level?.name ?? level?.Name ?? levelNames[index],
+      };
+    }).filter((level) => level.value != null && level.label);
+  }
+
+  return Array.isArray(levelNames)
+    ? levelNames.map((level) => ({
+      value: level?.academicLevelId ?? level?.AcademicLevelId ?? level?.id ?? level?.Id,
+      label: level?.levelName ?? level?.LevelName ?? level?.academicLevelName ?? level?.AcademicLevelName ?? level?.name ?? level?.Name,
+    })).filter((level) => level.value != null && level.label)
+    : [];
+};
 const apiRecord = (record) => {
   const types = componentsOf(record);
   const subjectType = types.includes("Language")
@@ -251,7 +275,6 @@ function List({ records, context, assign, loading, loadSubjects }) {
   const [selectedContext, setSelectedContext] = useState(context);
   const [boards, setBoards] = useState([]);
   const [groups, setGroups] = useState([]);
-  const [academicLevels, setAcademicLevels] = useState([]);
   useEffect(() => {
     let active = true;
     Promise.all([
@@ -264,18 +287,11 @@ function List({ records, context, assign, loading, loadSubjects }) {
       setBoards(nextBoards);
       setGroups(nextGroups);
     }).catch(() => {});
-    apiClient.get(apiEndpoints.boards.academicLevels).then((academicLevelsResponse) => {
-      if (!active) return;
-      const nextAcademicLevels = itemsFromResponse(academicLevelsResponse.data)
-        .map((level) => ({
-          value: level.academicLevelId ?? level.AcademicLevelId ?? level.id ?? level.Id,
-          label: level.levelName ?? level.LevelName ?? level.academicLevelName ?? level.AcademicLevelName ?? level.name ?? level.Name,
-        }))
-        .filter((level) => level.value != null && level.label);
-      setAcademicLevels(nextAcademicLevels);
-    }).catch(() => {});
     return () => { active = false; };
   }, []);
+  const academicLevels = useMemo(() => academicLevelsForBoard(
+    boards.find((board) => String(board.boardId ?? board.BoardId ?? board.id ?? board.Id) === String(selectedContext.boardId)),
+  ), [boards, selectedContext.boardId]);
   useEffect(() => {
     loadSubjects({
       boardId: selectedContext.boardId,

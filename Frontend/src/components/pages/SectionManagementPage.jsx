@@ -53,6 +53,7 @@ const normalizeSection = (section) => ({
   ...section,
   id: section.sectionId ?? section.id,
   board: section.board ?? section.boardName ?? "",
+  boardCode: section.boardCode ?? section.code ?? "",
   academicYear: section.academicYearName ?? section.academicYear ?? "",
   group: section.group ?? section.groupName ?? "",
   program: section.program ?? section.programme ?? section.programName ?? "",
@@ -87,7 +88,10 @@ export default function SectionManagementPage() {
   const [teachersList, setTeachersList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingRooms, setLoadingRooms] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [savingSection, setSavingSection] = useState(false);
+  const [savingRoom, setSavingRoom] = useState(false);
+  const [checkingSections, setCheckingSections] = useState(false);
+  const [checkingRooms, setCheckingRooms] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
@@ -181,7 +185,7 @@ export default function SectionManagementPage() {
       ]);
       if (!active) return;
       const [boardsResult, yearsResult, levelsResult, facultyResult, sectionsResult] = results;
-      if (boardsResult.status === "fulfilled") setBoardsList(collectionFrom(boardsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name ?? "" })).filter((item) => item.id && item.name));
+      if (boardsResult.status === "fulfilled") setBoardsList(collectionFrom(boardsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name ?? "", code: item.boardCode ?? item.code ?? "" })).filter((item) => item.id && item.name));
       if (yearsResult.status === "fulfilled") setAcademicYearsList(collectionFrom(yearsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name ?? "" })).filter((item) => item.id && item.name));
       if (levelsResult.status === "fulfilled") setAcademicLevelsList(collectionFrom(levelsResult.value.data).map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.academicLevelName ?? item.name ?? "" })).filter((item) => item.id && item.name));
       if (facultyResult.status === "fulfilled") {
@@ -402,6 +406,7 @@ export default function SectionManagementPage() {
   };
   const save = async (event) => {
     event.preventDefault();
+    if (savingSection) return;
     const required = [
       "board",
       "academicYear",
@@ -486,7 +491,7 @@ export default function SectionManagementPage() {
       capacity,
       isActive: form.status === "Active",
     };
-    setSubmitting(true);
+    setSavingSection(true);
     try {
       if (isEditing) await apiClient.put(apiEndpoints.sections.update(selectedSectionId), payload);
       else await apiClient.post(apiEndpoints.sections.create, payload);
@@ -498,11 +503,12 @@ export default function SectionManagementPage() {
     } catch (error) {
       setModalError(getApiErrorMessage(error));
     } finally {
-      setSubmitting(false);
+      setSavingSection(false);
     }
   };
   const saveRoom = async (event) => {
     event.preventDefault();
+    if (savingRoom) return;
     const room = {
       id: selectedRoomId || Date.now(),
       roomCode: normalizeRoomCode(roomForm.roomCode),
@@ -559,7 +565,7 @@ export default function SectionManagementPage() {
       floor: room.floor,
       isActive: room.isActive,
     };
-    setSubmitting(true);
+    setSavingRoom(true);
     try {
       if (isEditingRoom) await apiClient.put(`/api/v1/rooms/${selectedRoomId}`, payload);
       else await apiClient.post(apiEndpoints.rooms.getAll, payload);
@@ -573,7 +579,29 @@ export default function SectionManagementPage() {
     } catch (error) {
       setRoomModalError(getApiErrorMessage(error));
     } finally {
-      setSubmitting(false);
+      setSavingRoom(false);
+    }
+  };
+  const checkSections = async () => {
+    if (checkingSections) return;
+    setCheckingSections(true);
+    try {
+      await Promise.resolve();
+      setAppliedFilters({ ...filters });
+      setPage(1);
+    } finally {
+      setCheckingSections(false);
+    }
+  };
+  const checkRooms = async () => {
+    if (checkingRooms) return;
+    setCheckingRooms(true);
+    try {
+      await Promise.resolve();
+      setAppliedRoomFilters({ ...roomFilters });
+      setRoomPage(1);
+    } finally {
+      setCheckingRooms(false);
     }
   };
 
@@ -646,12 +674,10 @@ export default function SectionManagementPage() {
               <button
                 type="button"
                 className="cms-btn cms-btn-primary"
-                onClick={() => {
-                  setAppliedFilters({ ...filters });
-                  setPage(1);
-                }}
+                disabled={checkingSections}
+                onClick={checkSections}
               >
-                Check Sections
+                {checkingSections ? "Checking..." : "Check Sections"}
               </button>
             </div>
           </div>
@@ -676,11 +702,12 @@ export default function SectionManagementPage() {
               </button>
             </div>
             <div className="cms-table-wrap cms-sec-table-wrap">
-              <table className="cms-table cms-sec-table">
+              <table className="cms-table cms-sec-table cms-section-table">
                 <thead>
                   <tr>
                     {[
                       "Section Name",
+                      "Board",
                       "Group",
                       "Program",
                       "Academic Level",
@@ -699,6 +726,9 @@ export default function SectionManagementPage() {
                     shown.map((section) => (
                       <tr key={section.id}>
                         <td className="cms-strong cms-sec-name-cell">{section.name}</td>
+                        <td className="cms-sec-board-code" title={section.board}>
+                          {section.boardCode || boardsList.find((board) => board.name === section.board)?.code || "—"}
+                        </td>
                         <td>{section.group}</td>
                         <td>{section.program}</td>
                         <td>{section.academicLevel}</td>
@@ -734,7 +764,7 @@ export default function SectionManagementPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="9" className="cms-empty">
+                      <td colSpan="10" className="cms-empty">
                         No sections found matching your criteria.
                       </td>
                     </tr>
@@ -894,11 +924,11 @@ export default function SectionManagementPage() {
                   </div>
                   <div className="cms-modal-foot">
                     {!preview && <>
-                      <button type="button" className="cms-btn cms-btn-ghost" onClick={close}>
+                      <button type="button" className="cms-btn cms-btn-ghost" onClick={close} disabled={savingSection}>
                         Cancel
                       </button>
-                      <button type="submit" className="cms-btn cms-btn-primary">
-                        {selected ? "Save Changes" : "Add Section"}
+                      <button type="submit" className="cms-btn cms-btn-primary" disabled={savingSection}>
+                        {savingSection ? (selected ? "Saving..." : "Adding...") : (selected ? "Save Changes" : "Add Section")}
                       </button>
                     </>}
                   </div>
@@ -918,7 +948,7 @@ export default function SectionManagementPage() {
               </div>
               <div className="cms-sec-filter-actions">
                 <button type="button" className="cms-btn cms-btn-ghost" onClick={() => { setRoomFilters(EMPTY_ROOM_FILTERS); setAppliedRoomFilters(EMPTY_ROOM_FILTERS); setRoomSearch(""); setRoomPage(1); }}>Reset</button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={() => { setAppliedRoomFilters({ ...roomFilters }); setRoomPage(1); }}>Check Rooms</button>
+                <button type="button" className="cms-btn cms-btn-primary" disabled={checkingRooms} onClick={checkRooms}>{checkingRooms ? "Checking..." : "Check Rooms"}</button>
               </div>
             </div>
             <div className="cms-card">
@@ -1034,10 +1064,11 @@ export default function SectionManagementPage() {
                       type="button"
                       className="cms-btn cms-btn-ghost"
                       onClick={closeRoomModal}
+                      disabled={savingRoom}
                     >
                       Cancel
                     </button>
-                    <button type="submit" className="cms-btn cms-btn-primary">{roomMode === "edit" ? "Save Changes" : "Save Room"}</button>
+                    <button type="submit" className="cms-btn cms-btn-primary" disabled={savingRoom}>{savingRoom ? "Saving..." : roomMode === "edit" ? "Save Changes" : "Save Room"}</button>
                   </>}
                 </div>
               </form>

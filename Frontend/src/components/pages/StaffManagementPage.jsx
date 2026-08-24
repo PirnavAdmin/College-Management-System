@@ -9,6 +9,7 @@ import {
   Mail,
   Pencil,
   Plus,
+  Search,
   Trash2,
   UserRound,
   X,
@@ -25,7 +26,7 @@ import {
   Toast,
   useForm,
 } from "@/components/common/Ui.jsx";
-import "./FacultyManagementPage.css";
+import "./StaffManagementPage.css";
 
 const fields = [
   { name: "empId", label: "Employee ID", required: true },
@@ -39,16 +40,11 @@ const fields = [
   { name: "bloodGroup", label: "Blood Group" },
   { name: "qualification", label: "Qualification", required: true },
   { name: "designation", label: "Designation", type: "select", options: [], required: true },
-  {
-    name: "facultyType",
-    label: "Faculty Type",
-    type: "select",
-    options: ["Teaching Staff", "Non-Teaching Staff"],
-    required: true,
-  },
+  { name: "facultyType", label: "Staff Category", type: "select", options: ["Teaching Staff", "Non-Teaching Staff"], required: true },
   { name: "department", label: "Department", type: "select", options: [], required: true },
   { name: "joining", label: "Joining Date", type: "date", required: true },
-  { name: "experience", label: "Experience (years)", type: "number" },
+  { name: "experience", label: "Experience (Years)", type: "number" },
+  { name: "status", label: "Status", type: "select", options: ["Active", "Inactive"], required: true },
 ];
 const extractItems = (payload) =>
   Array.isArray(payload)
@@ -130,7 +126,20 @@ const rowFor = (item) => ({
   department: item.department,
   designation: item.designation,
   facultyType: facultyTypeValue(item),
+  qualification: item.qualification ?? item.Qualification,
+  experience: item.experience ?? item.Experience,
+  joining: dateOnly(item.joiningDate ?? item.JoiningDate ?? item.joining),
 });
+const nextEmployeeId = (items, staffType) => {
+  const prefix = staffType === "Teaching Staff" ? "PJCTCH" : "PJCNTCH";
+  const pattern = new RegExp(`^${prefix}(\\d+)$`, "i");
+  const highest = items.reduce((maximum, item) => {
+    const current = String(firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId") ?? "").trim();
+    const match = current.match(pattern);
+    return match ? Math.max(maximum, Number(match[1]) || 0) : maximum;
+  }, 0);
+  return `${prefix}${String(highest + 1).padStart(4, "0")}`.replace(/[^A-Z0-9]/gi, "");
+};
 const valuesFor = (item = {}) => ({
   empId: firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
   firstName: firstValue(item, "firstName", "FirstName"),
@@ -152,9 +161,15 @@ const valuesFor = (item = {}) => ({
 
 const BLOOD_GROUPS = new Set(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]);
 const DESIGNATIONS = {
-  "Teaching Staff": ["Lecturer", "Senior Lecturer", "Assistant Professor", "Professor", "Head of Department"],
+  "Teaching Staff": ["Junior Lecturer", "Lecturer", "Senior Lecturer", "Subject Teacher", "Academic Coordinator", "Examination Coordinator", "Vice Principal", "Principal"],
   "Non-Teaching Staff": ["Principal", "Administrative Officer", "Accountant", "Librarian", "Lab Assistant", "Office Assistant", "Clerk", "Receptionist"],
 };
+const FRONTEND_DEPARTMENTS = [
+  "Mathematics", "Physics", "Chemistry", "Botany", "Zoology", "Biology", "Statistics", "English",
+  "Telugu", "Hindi", "Sanskrit", "Commerce", "Accountancy", "Economics", "Business Studies",
+  "Civics", "History", "Political Science", "Computer Science", "Computer Applications",
+  "Physical Education", "Environmental Studies",
+];
 const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 const EMPLOYEE_ID_PATTERN = /^[A-Za-z0-9-]+$/;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -192,7 +207,7 @@ const facultyValidation = (source, { departments = [], genders = [] } = {}) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.email = "Please enter a valid email address.";
   if (values.bloodGroup && !BLOOD_GROUPS.has(values.bloodGroup)) errors.bloodGroup = "Please select a valid blood group.";
   if (!values.qualification || values.qualification.length > 100) errors.qualification = "Qualification is required.";
-  if (!values.designation || values.designation.length > 100 || !(DESIGNATIONS[values.facultyType] || []).includes(values.designation)) errors.designation = "Please select a valid designation.";
+  if (!values.designation || values.designation.length > 100) errors.designation = "Please select or enter a valid designation.";
   if (!["Teaching Staff", "Non-Teaching Staff"].includes(values.facultyType)) errors.facultyType = "Please select a faculty type.";
   if (!departments.includes(values.department)) errors.department = "Please select a department.";
   if (!values.joining) errors.joining = "Joining date is required.";
@@ -215,18 +230,71 @@ const friendlyFacultyError = (error) => {
   return "Please check the entered information and try again.";
 };
 
-function Steps({ step, onSelect }) {
+function SearchableStaffField({ name, label, value, options, placeholder, required, error, allowOther = false, disabled = false, onChange, onBlur }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [custom, setCustom] = useState(Boolean(value && !options.includes(value)));
+  const filtered = options.filter((option) => option.toLowerCase().includes(query.trim().toLowerCase()));
+  return (
+    <div className={`cms-field staff-search-field ${error ? "has-error" : ""}`} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        setOpen(false);
+        onBlur?.(name);
+      }
+    }}>
+      <label htmlFor={`f-${name}`}>{label} {required ? <span className="req">*</span> : null}</label>
+      <div className="staff-search-control">
+        <Search size={17} />
+        <input
+          id={`f-${name}`}
+          role="combobox"
+          aria-expanded={open}
+          autoComplete="new-password"
+          data-form-type="other"
+          spellCheck={false}
+          title=""
+          disabled={disabled}
+          value={custom ? value ?? "" : open ? query : value ?? ""}
+          placeholder={custom ? `Enter ${label}` : placeholder}
+          onFocus={() => { if (!custom) { setQuery(""); setOpen(true); } }}
+          onChange={(event) => {
+            if (custom) onChange(name, event.target.value);
+            else { setQuery(event.target.value); setOpen(true); }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setOpen(false);
+            if (!custom && event.key === "Enter" && filtered[0]) {
+              event.preventDefault();
+              onChange(name, filtered[0]);
+              setOpen(false);
+            }
+          }}
+        />
+        {custom ? <button type="button" className="staff-change-option" onClick={() => { setCustom(false); onChange(name, ""); setOpen(true); }}>List</button> : null}
+      </div>
+      {!custom && open ? <div className="staff-search-options" role="listbox">
+        {filtered.map((option) => <button type="button" title="" role="option" aria-selected={option === value} key={option} onClick={() => { onChange(name, option); setQuery(""); setOpen(false); }}>{option}</button>)}
+        {allowOther ? <button type="button" title="" className="staff-other-option" onClick={() => { setCustom(true); setQuery(""); onChange(name, ""); setOpen(false); }}>Other</button> : null}
+        {!filtered.length && !allowOther ? <span>No matching options found.</span> : null}
+      </div> : null}
+      {error ? <small className="cms-error">{error}</small> : null}
+    </div>
+  );
+}
+
+function Steps({ step, staffType, onSelect }) {
+  const teaching = staffType === "Teaching Staff";
   return (
     <div className="faculty-steps">
       {[
-        ["Details", UserRound, 0],
-        ["Subjects", GraduationCap, 3],
+        [teaching ? "Faculty Details" : "Staff Details", UserRound, 0],
+        [teaching ? "Subjects & Classes" : "Employment & Documents", GraduationCap, 1],
       ].map(([label, Icon, targetStep]) => (
-        <button type="button" className={targetStep <= step ? "is-active" : ""} key={label} onClick={() => onSelect(targetStep)}>
+        <button type="button" disabled={targetStep > step} className={targetStep <= step ? "is-active" : ""} key={label} onClick={() => onSelect(targetStep)}>
           <span>
             <Icon size={15} />
           </span>
-          <small>{label === "Details" ? "Step 1" : "Step 2"}</small>
+          <small>{targetStep === 0 ? "Step 1" : "Step 2"}</small>
           <strong>{label}</strong>
         </button>
       ))}
@@ -280,8 +348,19 @@ function Preview({ values }) {
   );
 }
 
-function Workflow({ existingId }) {
+function StaffTabs({ active, onChange }) {
+  return (
+    <div className="staff-tabs" role="tablist" aria-label="Staff type">
+      <button type="button" role="tab" aria-selected={active === "teaching"} className={active === "teaching" ? "is-active" : ""} onClick={() => onChange("teaching")}>Teaching Staff</button>
+      <button type="button" role="tab" aria-selected={active === "non-teaching"} className={active === "non-teaching" ? "is-active" : ""} onClick={() => onChange("non-teaching")}>Non-Teaching Staff</button>
+    </div>
+  );
+}
+
+function Workflow({ existingId, staffTab = "teaching" }) {
   const navigate = useNavigate();
+  const staffType = staffTab === "non-teaching" ? "Non-Teaching Staff" : "Teaching Staff";
+  const teaching = staffType === "Teaching Staff";
   const [step, setStep] = useState(0);
   const [saved, setSaved] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -294,15 +373,19 @@ function Workflow({ existingId }) {
   const [allocations, setAllocations] = useState([]);
   const [removing, setRemoving] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState("");
-  const [selectedFacultyType, setSelectedFacultyType] = useState("");
+  const [selectedFacultyType, setSelectedFacultyType] = useState(staffType);
+  const [allocationTab, setAllocationTab] = useState("subjects");
   const [subjectSearch, setSubjectSearch] = useState("");
   const [pendingSubjects, setPendingSubjects] = useState([]);
   const [loadingAllocation, setLoadingAllocation] = useState(false);
   const [savingAllocation, setSavingAllocation] = useState(false);
+  const [generatingEmployeeId, setGeneratingEmployeeId] = useState(!existingId);
   const formFields = useMemo(
     () =>
-      fields.map((field) =>
-        field.name === "department"
+      fields.filter((field) => field.name !== "facultyType").map((field) =>
+        field.name === "empId"
+          ? { ...field, disabled: true, placeholder: generatingEmployeeId ? "Generating Employee ID..." : "Employee ID" }
+          : field.name === "department"
           ? { ...field, options: departments, disabled: loadingDepartments }
           : field.name === "gender"
             ? { ...field, options: genders }
@@ -310,23 +393,22 @@ function Workflow({ existingId }) {
               ? { ...field, options: DESIGNATIONS[selectedFacultyType] || [], disabled: !selectedFacultyType }
             : field,
       ),
-    [departments, genders, loadingDepartments, selectedFacultyType],
+    [departments, genders, generatingEmployeeId, loadingDepartments, selectedFacultyType],
   );
-  const { values, errors, setValue, setValues, setErrors } = useForm(formFields, {});
+  const { values, errors, setValue, setValues, setErrors } = useForm(formFields, { facultyType: staffType, status: "Active" });
   useEffect(() => {
+    if (existingId) return;
+    setGeneratingEmployeeId(true);
     apiClient
-      .get(apiEndpoints.departments.getAll)
-      .then((departmentResponse) => {
-        setDepartments(
-          extractItems(departmentResponse.data)
-            .filter((d) => d.isActive !== false)
-            .map((d) => d.departmentName || d.departmentCode)
-            .filter(Boolean),
-        );
-        setGenders(["Male", "Female", "Other"]);
-      })
-      .catch((e) => setToast(friendlyFacultyError(e)))
-      .finally(() => setLoadingDepartments(false));
+      .get(apiEndpoints.faculty.getAll)
+      .then((response) => setValue("empId", nextEmployeeId(extractItems(response.data), staffType)))
+      .catch((error) => setToast(friendlyFacultyError(error)))
+      .finally(() => setGeneratingEmployeeId(false));
+  }, [existingId, staffType]);
+  useEffect(() => {
+    setDepartments(FRONTEND_DEPARTMENTS);
+    setGenders(["Male", "Female", "Other"]);
+    setLoadingDepartments(false);
   }, []);
   useEffect(() => {
     if (!existingId) return;
@@ -388,8 +470,16 @@ function Workflow({ existingId }) {
     setLoadingAllocation(false);
   };
   useEffect(() => {
-    if (step === 3 && saved) loadAllocation(saved);
-  }, [step, saved]);
+    if (step !== 1 || !teaching) return;
+    if (saved) loadAllocation(saved);
+    else {
+      setLoadingAllocation(true);
+      apiClient.get(apiEndpoints.subjects.getAll)
+        .then((response) => setSubjects(extractItems(response.data).filter((subject) => subject.isActive !== false && subject.status?.toLowerCase?.() !== "inactive")))
+        .catch((error) => setToast(friendlyFacultyError(error)))
+        .finally(() => setLoadingAllocation(false));
+    }
+  }, [step, saved, teaching]);
   const validateAndShow = (source = values) => {
     const result = facultyValidation(source, { departments, genders });
     setErrors(result.errors);
@@ -455,8 +545,13 @@ function Workflow({ existingId }) {
         facultyId: facultyId(record) ?? existingId,
       };
       setSaved(next);
-      setStep(2);
-      setToast("Faculty saved successfully.");
+      if (teaching && pendingSubjects.length) {
+        for (const subject of pendingSubjects) {
+          await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: facultyId(next), subjectId: subjectId(subject) });
+        }
+      }
+      setToast(`${staffType} ${existingId ? "updated" : "added"} successfully.`);
+      navigate(`/dashboard/faculty?staffTab=${staffTab}`);
     } catch (e) {
       setToast(friendlyFacultyError(e));
     } finally {
@@ -539,39 +634,50 @@ function Workflow({ existingId }) {
   };
   return (
     <DashboardLayout
-      title="Faculty Management"
-      subtitle="Faculty details and subject allocation."
+      title="Staff Management"
+      subtitle="Manage teaching and non-teaching staff profiles."
       breadcrumb={["People"]}
     >
       <main className="faculty-workflow">
-        <Steps step={step} onSelect={setStep} />
+        <button type="button" className="staff-back-link" onClick={() => navigate(`/dashboard/faculty?staffTab=${staffTab}`)}>
+          <ArrowLeft size={16} /> Back to Staff Management
+        </button>
+        <Steps step={step} staffType={staffType} onSelect={setStep} />
         {step === 0 && loadingDetails ? <section className="faculty-stage"><p className="faculty-empty">Loading faculty details...</p></section> : step === 0 && (
           <form className="faculty-form" onSubmit={preview}>
             <header>
               <UserRound />{" "}
               <div>
-                <h2>Faculty Details</h2>
-                <p>Enter the faculty profile details below.</p>
+                <h2>{teaching ? "Faculty Details" : "Staff Details"}</h2>
+                <p>Enter the {staffType.toLowerCase()} profile details below.</p>
               </div>
             </header>
             <div className="faculty-form-grid">
               {loadingDepartments ? <p className="faculty-empty">Loading departments...</p> : null}
-              {formFields.map((field) => (
-                <Field
+              {formFields.map((field) => field.name === "designation" || field.name === "department" ? (
+                <SearchableStaffField
                   key={field.name}
-                  field={field}
+                  name={field.name}
+                  label={field.label}
                   value={values[field.name]}
+                  options={field.name === "designation" ? DESIGNATIONS[staffType] || [] : departments}
+                  placeholder={field.name === "designation" ? "Search designation" : "Select Department"}
+                  required={field.required}
+                  disabled={field.disabled}
                   error={errors[field.name]}
+                  allowOther={field.name === "designation"}
                   onChange={handleFieldChange}
                   onBlur={handleFieldBlur}
                 />
+              ) : (
+                <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={handleFieldChange} onBlur={handleFieldBlur} />
               ))}
             </div>
             <footer>
               <button
                 type="button"
                 className="cms-btn cms-btn-ghost"
-                onClick={() => navigate("/dashboard/faculty")}
+                onClick={() => navigate(`/dashboard/faculty?staffTab=${staffTab}`)}
               >
                 Cancel
               </button>
@@ -580,21 +686,51 @@ function Workflow({ existingId }) {
           </form>
         )}
         {step === 1 && (
-          <section className="faculty-stage">
+          <section className="faculty-stage staff-step-two">
             <header>
-              <Eye />{" "}
+              <GraduationCap />{" "}
               <div>
-                <h2>Review Faculty Details</h2>
-                <p>Check the information before saving it.</p>
+                <h2>{teaching ? "Subjects & Classes" : "Employment & Documents"}</h2>
+                <p>{teaching ? "Allocate subjects now; class allocation appears when its API is available." : "Review employment information before saving the staff profile."}</p>
               </div>
             </header>
-            <Preview values={values} />
+            {teaching ? (
+              <>
+                <div className="staff-inner-tabs">
+                  <button type="button" className={allocationTab === "subjects" ? "is-active" : ""} onClick={() => setAllocationTab("subjects")}>Subject Allocation</button>
+                  <button type="button" className={allocationTab === "classes" ? "is-active" : ""} onClick={() => setAllocationTab("classes")}>Class Allocation</button>
+                </div>
+                {allocationTab === "subjects" ? (
+                  <div className="faculty-subject-columns">
+                    <section className="faculty-subject-list available">
+                      <h3>Available Subjects <small>{available.length}</small></h3>
+                      <div className="faculty-subject-selector">
+                        <label htmlFor="subject-search">Search subjects</label>
+                        <input id="subject-search" value={subjectSearch} placeholder="Search by subject name or code" onChange={(event) => setSubjectSearch(event.target.value)} disabled={loadingAllocation} />
+                        {loadingAllocation ? <p className="faculty-empty">Loading subjects...</p> : matchingSubjects.length ? <div className="faculty-search-results">{matchingSubjects.map((subject) => <button type="button" key={subjectId(subject)} onClick={() => addPendingSubject(subject)}><Plus size={14}/>{subjectName(subject)}</button>)}</div> : <p className="faculty-empty">No subjects found.</p>}
+                        {pendingSubjects.length ? <div className="faculty-subject-chips">{pendingSubjects.map((subject) => <span key={subjectId(subject)}>{subjectName(subject)}<button type="button" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))} aria-label={`Remove ${subjectName(subject)}`}><X size={13}/></button></span>)}</div> : null}
+                      </div>
+                    </section>
+                    <section className="faculty-subject-list allocated">
+                      <h3>Allocated Subjects <small>{allocations.length}</small></h3>
+                      {allocations.map((allocation, index) => <article key={allocationId(allocation) ?? `${subjectName(allocation)}-${index}`}><span>{subjectName(allocation)}</span><button type="button" className="cms-btn" onClick={() => setRemoving(allocation)}><X size={15}/> Remove</button></article>)}
+                      {!allocations.length && <p className="faculty-empty">No subjects allocated yet.</p>}
+                    </section>
+                  </div>
+                ) : <p className="staff-api-note">Class allocation is not available because no faculty class-allocation endpoint exists in the current API contract.</p>}
+              </>
+            ) : (
+              <>
+                <Preview values={values} />
+                <p className="staff-api-note">Documents, salary, and bank details will be available when their backend endpoints are provided. No mock data will be saved.</p>
+              </>
+            )}
             <footer>
               <button className="cms-btn cms-btn-ghost" onClick={() => setStep(0)}>
                 <ArrowLeft size={16} /> Back
               </button>
               <button className="cms-btn cms-btn-primary" disabled={saving} onClick={confirm}>
-                {saving ? "Saving..." : "Confirm & Save"}
+                {saving ? "Saving..." : existingId ? `Update ${staffType}` : `Save ${staffType}`}
               </button>
             </footer>
           </section>
@@ -696,7 +832,7 @@ function Workflow({ existingId }) {
   );
 }
 
-export default function FacultyManagementPage() {
+export default function StaffManagementPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
@@ -706,8 +842,12 @@ export default function FacultyManagementPage() {
   const [viewing, setViewing] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [toast, setToast] = useState("");
-  const [facultyTypeFilter, setFacultyTypeFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const isWorkflow = location.pathname !== "/dashboard/faculty";
+  const requestedTab = new URLSearchParams(location.search).get("staffTab");
+  const activeTab = requestedTab === "non-teaching" ? "non-teaching" : "teaching";
+  const activeStaffType = activeTab === "teaching" ? "Teaching Staff" : "Non-Teaching Staff";
   const load = async () => {
     setLoading(true);
     try {
@@ -735,56 +875,69 @@ export default function FacultyManagementPage() {
   useEffect(() => {
     if (!isWorkflow) load();
   }, [isWorkflow]);
-  if (isWorkflow) return <Workflow existingId={id} />;
-  const visibleRows = facultyTypeFilter ? rows.filter((row) => row.facultyType === facultyTypeFilter) : rows;
+  if (isWorkflow) return <Workflow existingId={id} staffTab={activeTab} />;
+  const tabRows = rows.filter((row) => row.facultyType === activeStaffType);
+  const departmentOptions = [...new Set(tabRows.map((row) => row.department).filter(Boolean))].sort();
+  const visibleRows = tabRows.filter((row) => (!departmentFilter || row.department === departmentFilter) && (!statusFilter || row.status === statusFilter));
+  const switchTab = (tab) => {
+    setDepartmentFilter("");
+    setStatusFilter("");
+    navigate(`/dashboard/faculty?staffTab=${tab}`);
+  };
+  const listColumns = activeTab === "teaching" ? [
+    { key: "empId", label: "Employee ID", strong: true },
+    { key: "name", label: "Faculty Name" },
+    { key: "department", label: "Department" },
+    { key: "designation", label: "Designation" },
+    { key: "status", label: "Status", badge: true },
+  ] : [
+    { key: "empId", label: "Employee ID", strong: true },
+    { key: "name", label: "Staff Name" },
+    { key: "mobile", label: "Mobile" },
+    { key: "email", label: "Email" },
+    { key: "department", label: "Department" },
+    { key: "designation", label: "Designation" },
+    { key: "facultyType", label: "Staff Type" },
+    { key: "joining", label: "Joining Date" },
+    { key: "status", label: "Status", badge: true },
+  ];
   return (
     <DashboardLayout
-      title="Faculty Management"
-      subtitle="Faculty directory, credentials and departments."
+      title="Staff Management"
+      subtitle="Manage teaching and non-teaching staff, assignments, employment details and records."
       breadcrumb={["People"]}
     >
       <div className="faculty-list">
+        <StaffTabs active={activeTab} onChange={switchTab} />
         <DataTable
-          title="Faculty List"
-          addLabel="Add Faculty"
-          columns={[
-            { key: "empId", label: "Employee ID", strong: true },
-            { key: "name", label: "Faculty Name" },
-            { key: "mobile", label: "Mobile" },
-            { key: "email", label: "Email" },
-            { key: "department", label: "Department" },
-            { key: "designation", label: "Designation" },
-            { key: "status", label: "Status", badge: true },
-          ]}
+          key={activeTab}
+          title={activeStaffType}
+          addLabel={activeTab === "teaching" ? "Add Teaching Staff" : "Add Non-Teaching Staff"}
+          columns={listColumns}
           rows={visibleRows}
           loading={loading}
-          toolbarExtra={<label className="faculty-type-filter">Faculty Type<select value={facultyTypeFilter} onChange={(event) => setFacultyTypeFilter(event.target.value)}><option value="">All Faculty</option><option value="Teaching Staff">Teaching Staff</option><option value="Non-Teaching Staff">Non-Teaching Staff</option></select></label>}
-          emptyMessage={facultyTypeFilter ? `No ${facultyTypeFilter.toLowerCase()} found.` : "No faculty members found."}
-          onAdd={() => navigate("/dashboard/faculty/add")}
+          toolbarExtra={<div className="staff-list-filters"><label><span className="sr-only">Department</span><select aria-label="Filter by department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">All Departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label><span className="sr-only">Status</span><select aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All Status</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select></label></div>}
+          emptyMessage={`No ${activeStaffType.toLowerCase()} found.`}
+          onAdd={() => navigate(`/dashboard/faculty/add?staffTab=${activeTab}`)}
           onView={viewFaculty}
-          onEdit={(row) => navigate(`/dashboard/faculty/${row.id}/edit`)}
+          onPrint={activeTab === "teaching" ? async (row) => { await viewFaculty(row); window.setTimeout(() => window.print(), 150); } : undefined}
+          onEdit={activeTab === "teaching" ? undefined : (row) => navigate(`/dashboard/faculty/${row.id}/edit?staffTab=${activeTab}`)}
           onDelete={setDeleting}
         />
         {viewing && (
           <Modal
-            title="Faculty Details"
+            title={activeTab === "teaching" ? "Teaching Staff Details" : "Non-Teaching Staff Details"}
             onClose={() => setViewing(null)}
             footer={
               <>
                 <button className="cms-btn cms-btn-ghost" onClick={() => setViewing(null)}>
                   Close
                 </button>
-                <button
-                  className="cms-btn cms-btn-primary"
-                  onClick={() =>
-                    navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit`)
-                  }
-                >
-                  <Pencil size={15} /> Edit
-                </button>
+                {activeTab !== "teaching" ? <button className="cms-btn cms-btn-primary" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit?staffTab=${activeTab}`)}><Pencil size={15} /> Edit</button> : null}
               </>
             }
           >
+            {activeTab === "teaching" ? <div className="staff-details-actions"><button type="button" className="cms-btn cms-btn-primary" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit?staffTab=teaching`)}><Pencil size={16} /> Edit Faculty Details</button></div> : null}
             <div className="cms-kv">
               {viewLoading ? (
                 <div className="cms-empty">Loading faculty details...</div>
@@ -792,13 +945,14 @@ export default function FacultyManagementPage() {
                 <>
                   {[
                     ["Employee ID", viewing.employeeId ?? viewing.empId],
-                    ["Faculty Name", facultyName(viewing)],
+                    [activeTab === "teaching" ? "Faculty Name" : "Staff Name", facultyName(viewing)],
                     ["Mobile", viewing.mobile ?? viewing.phoneNumber],
                     ["Email", viewing.email],
                     ["Department", viewing.department],
                     ["Designation", viewing.designation],
                     ["Qualification", viewing.qualification],
-                    ["Faculty Type", viewing.facultyType],
+                    ["Staff Category", viewing.facultyType],
+                    ["Experience", viewing.experience],
                     ["Joining Date", dateOnly(viewing.joiningDate ?? viewing.joining)],
                     ["Status", viewing.status],
                   ].map(([label, value]) => (
@@ -833,7 +987,7 @@ export default function FacultyManagementPage() {
                 await apiClient.delete(apiEndpoints.faculty.delete(deleting.id));
                 setDeleting(null);
                 await load();
-                setToast("Faculty deleted successfully.");
+                setToast(`${activeStaffType} deleted successfully.`);
               } catch (e) {
                 setToast(friendlyFacultyError(e));
               }
@@ -846,5 +1000,5 @@ export default function FacultyManagementPage() {
   );
 }
 
-FacultyManagementPage.pageConfig = { title: "Faculty Management" };
-FacultyManagementPage.facultySubjectAllocationConfig = { title: "Faculty Subject Allocation" };
+StaffManagementPage.pageConfig = { title: "Staff Management" };
+StaffManagementPage.facultySubjectAllocationConfig = { title: "Staff Subject Allocation" };

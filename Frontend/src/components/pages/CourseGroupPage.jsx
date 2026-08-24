@@ -5,7 +5,7 @@ import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
-import { Field, FilterBar, Modal, StatusBadge, Toast, useForm } from "@/components/common/Ui.jsx";
+import { Field, Modal, StatusBadge, Toast, useForm } from "@/components/common/Ui.jsx";
 import "./CourseGroupPage.css";
 
 const MODULE_SLUG = "courses";
@@ -66,9 +66,80 @@ const optionFrom = (item, idKeys, labelKeys) => {
   return { value: String(value), label: String(label) };
 };
 
-const getUniqueOptions = (rows, idKeys, labelKeys) => {
-  const options = rows.map((item) => optionFrom(item, idKeys, labelKeys)).filter(Boolean);
-  return Array.from(new Map(options.map((item) => [item.value, item])).values());
+const splitValues = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.$values)) return value.$values;
+  if (typeof value === "string") return value.split(",");
+  return [];
+};
+
+const compactStrings = (values) => splitValues(values).map((value) => String(value).trim()).filter(Boolean);
+
+const normalizeBoardOption = (item) => {
+  const option = optionFrom(item, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]);
+  if (!option) return null;
+  return {
+    ...option,
+    academicLevelIds: compactStrings(read(item, "academicLevelIds", "AcademicLevelIds", "levelIds", "LevelIds")),
+    academicLevelNames: compactStrings(read(item, "academicLevelNames", "AcademicLevelNames", "levelNames", "LevelNames")),
+    academicYearIds: compactStrings(read(item, "academicYearIds", "AcademicYearIds", "yearIds", "YearIds")),
+    academicYearNames: compactStrings(read(item, "academicYearNames", "AcademicYearNames", "yearNames", "YearNames")),
+  };
+};
+
+const normalizeAcademicYearOption = (item) => {
+  const option = optionFrom(item, ["academicYearId", "AcademicYearId", "yearId", "YearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]);
+  if (!option) return null;
+  const active = read(item, "isActive", "IsActive", "active", "Active", "status", "Status");
+  return {
+    ...option,
+    boardId: String(read(item, "boardId", "BoardId") || ""),
+    isActive: typeof active === "string" ? active.toLowerCase() === "active" : active !== false,
+  };
+};
+
+const normalizeAcademicLevelOption = (item) => optionFrom(
+  item,
+  ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"],
+  ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"],
+);
+
+const uniqueByValue = (options) => Array.from(new Map(options.filter(Boolean).map((item) => [String(item.value), item])).values());
+
+const getMappedLevelsForBoard = (masters, boardId) => {
+  const levels = masters.levels || [];
+  const board = (masters.boards || []).find((item) => String(item.value) === String(boardId));
+  if (!boardId || !board) return [];
+  const mappedIds = new Set(board.academicLevelIds || []);
+  if (mappedIds.size) return levels.filter((level) => mappedIds.has(String(level.value)));
+  const mappedNames = new Set((board.academicLevelNames || []).map((name) => name.toLowerCase()));
+  if (mappedNames.size) return levels.filter((level) => mappedNames.has(String(level.label).toLowerCase()));
+  return [];
+};
+
+const getMappedYearsForBoard = (masters, boardId) => {
+  const years = masters.years || [];
+  const board = (masters.boards || []).find((item) => String(item.value) === String(boardId));
+  const boardYears = years.filter((year) => String(year.boardId) === String(boardId));
+  if (boardYears.length) return boardYears;
+  if (!boardId || !board) return [];
+  const mappedIds = new Set(board.academicYearIds || []);
+  if (mappedIds.size) return years.filter((year) => mappedIds.has(String(year.value)));
+  const mappedNames = new Set((board.academicYearNames || []).map((name) => name.toLowerCase()));
+  if (mappedNames.size) return years.filter((year) => mappedNames.has(String(year.label).toLowerCase()));
+  return [];
+};
+
+const pickActiveYear = (masters, boardId, currentYear = "") => {
+  const years = getMappedYearsForBoard(masters, boardId);
+  if (currentYear && years.some((year) => String(year.value) === String(currentYear))) return currentYear;
+  return years[0]?.value || "";
+};
+
+const pickMappedLevel = (masters, boardId, currentLevel = "") => {
+  const levels = getMappedLevelsForBoard(masters, boardId);
+  if (currentLevel && levels.some((level) => String(level.value) === String(currentLevel))) return currentLevel;
+  return levels.length === 1 ? levels[0].value : "";
 };
 
 const normalizeStatus = (item) => {
@@ -79,16 +150,17 @@ const normalizeStatus = (item) => {
 };
 
 const normalizeGroup = (item) => ({
-  id: read(item, "groupId", "GroupId", "id"),
+  id: read(item, "groupId", "GroupId", "id", "Id"),
   name: read(item, "groupName", "GroupName", "name") || "-",
   code: read(item, "groupCode", "GroupCode", "code") || "-",
   boardId: String(read(item, "boardId", "BoardId") || ""),
   board: read(item, "boardName", "BoardName", "board", "Board") || "-",
-  year: String(read(item, "academicYearId", "AcademicYearId", "year") || ""),
+  year: String(read(item, "academicYearId", "AcademicYearId", "yearId", "YearId", "year", "id", "Id") || ""),
   yearName: read(item, "academicYearName", "AcademicYearName") || "",
   levelId: String(read(item, "academicLevelId", "AcademicLevelId") || ""),
   level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || "-",
-  programs: programNamesForGroup(read(item, "groupId", "GroupId", "id"), read(item, "groupCode", "GroupCode", "code")).join(", ") || "-",
+  programs: programNamesForGroup(read(item, "groupId", "GroupId", "id", "Id"), read(item, "groupCode", "GroupCode", "code")).join(", ") || "-",
+  subjects: read(item, "subjects", "Subjects", "subjectCount", "SubjectCount", "totalSubjects", "TotalSubjects") ?? "-",
   status: normalizeStatus(item),
 });
 
@@ -117,15 +189,15 @@ const buildGroupFilterFields = (masters, values) => (
     if (field.name === "year") {
       return {
         ...field,
-        options: masters.years || [],
+        options: getMappedYearsForBoard(masters, values.board),
         disabled: false,
       };
     }
     if (field.name === "level") {
       return {
         ...field,
-        options: masters.levels || [],
-        disabled: false,
+        options: getMappedLevelsForBoard(masters, values.board),
+        disabled: !values.board || !getMappedLevelsForBoard(masters, values.board).length,
       };
     }
     return field;
@@ -247,12 +319,38 @@ const matchesFilters = (row, search, filters) => {
   if (query && !Object.values(row).some((value) => String(value).toLowerCase().includes(query))) return false;
   if (filters.board && row.boardId !== filters.board) return false;
   if (filters.year && row.year !== filters.year) return false;
-  if (filters.level && row.levelId !== filters.level) return false;
-  if (filters.status && row.status !== filters.status) return false;
   return true;
 };
 
+let groupMastersPromise = null;
+const activeYearByBoardPromises = new Map();
+
+const readActiveYearFromResponse = (payload, boardId) => {
+  const direct = normalizeAcademicYearOption(responseData({ data: payload }) || payload);
+  if (direct?.value && (!direct.boardId || String(direct.boardId) === String(boardId))) return direct.value;
+  return getCollection(payload)
+    .map(normalizeAcademicYearOption)
+    .find((year) => year?.isActive && String(year.boardId) === String(boardId))?.value || "";
+};
+
+const loadActiveYearForBoard = async (boardId, masters) => {
+  if (!boardId) return "";
+  const key = String(boardId);
+  if (!activeYearByBoardPromises.has(key)) {
+    activeYearByBoardPromises.set(key, apiClient.get(apiEndpoints.academicYears.active, {
+      params: { boardId },
+    }).then((response) => readActiveYearFromResponse(response.data, boardId)).catch((error) => {
+      activeYearByBoardPromises.delete(key);
+      throw error;
+    }));
+  }
+  const activeYear = await activeYearByBoardPromises.get(key);
+  return activeYear || pickActiveYear(masters, boardId);
+};
+
 const loadGroupMasters = async () => {
+  if (groupMastersPromise) return groupMastersPromise;
+  groupMastersPromise = (async () => {
   const [boardsResult, yearsResult, levelsResult] = await Promise.allSettled([
     apiClient.get(apiEndpoints.boards.getAll),
     apiClient.get(apiEndpoints.academicYears.list),
@@ -269,10 +367,15 @@ const loadGroupMasters = async () => {
   if (failures.length) throw new Error(`Failed to load Group dropdown data. ${failures.join(" ")}`);
 
   return {
-    boards: getUniqueOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]),
-    years: getUniqueOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "yearId", "YearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]),
-    levels: getUniqueOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]),
+    boards: uniqueByValue(getCollection(boardsResult.value.data).map(normalizeBoardOption)),
+    years: uniqueByValue(getCollection(yearsResult.value.data).map(normalizeAcademicYearOption).filter((year) => year?.isActive)),
+    levels: uniqueByValue(getCollection(levelsResult.value.data).map(normalizeAcademicLevelOption)),
   };
+  })().catch((error) => {
+    groupMastersPromise = null;
+    throw error;
+  });
+  return groupMastersPromise;
 };
 
 const groupApi = {
@@ -357,13 +460,11 @@ export const pageConfig = {
       { key: "code", label: "Group Code" },
       { key: "board", label: "Board" },
       { key: "level", label: "Academic Level" },
-      { key: "subjects", label: "Total Subjects" },
       { key: "status", label: "Status", badge: true },
     ],
     filters: [
       { name: "board", label: "Board", type: "select", options: [] },
-      { name: "level", label: "Academic Level", type: "select", options: [] },
-      { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS },
+      { name: "year", label: "Academic Year", type: "select", options: [] },
     ],
     fields: [
       { name: "board", label: "Board", type: "select", options: [], required: true },
@@ -489,12 +590,12 @@ function CourseGroupFormPage() {
   }), [searchParams]);
   const { values, errors, setValue, validate, setValues, setErrors } = useForm(groupFormFields, { ...initialContext, status: "Active" });
   const [selectedProgramIds, setSelectedProgramIds] = useState([]);
+  const activeYearRequest = useRef(0);
   const mode = id ? "Edit" : "Add";
   const listPath = `/dashboard/courses${makeContextQuery(values)}`;
   const contextSummary = [
     { label: "Board", value: optionLabel(contextOptions.boards, values.board, values.board || "-") },
     { label: "Academic Year", value: optionLabel(contextOptions.years, values.year, values.year || "-") },
-    { label: "Academic Level", value: optionLabel(contextOptions.levels, values.level, values.level || "-") },
   ];
 
   useEffect(() => {
@@ -511,6 +612,15 @@ function CourseGroupFormPage() {
         if (loadedGroup) {
           setValues(loadedGroup);
           setSelectedProgramIds(programIdsForGroup(id, loadedGroup.code));
+        } else if (initialContext.board) {
+          const activeYear = await loadActiveYearForBoard(initialContext.board, masters);
+          if (ignore) return;
+          setValues((current) => ({
+            ...current,
+            board: initialContext.board,
+            year: activeYear,
+            level: pickMappedLevel(masters, initialContext.board, initialContext.level),
+          }));
         }
       } catch (error) {
         if (!ignore) {
@@ -529,6 +639,25 @@ function CourseGroupFormPage() {
     if (id) return;
     setSelectedProgramIds(defaultProgramIdsForCode(values.code));
   }, [id, values.code]);
+
+  useEffect(() => {
+    if (id || !values.board) return undefined;
+    const currentRequest = activeYearRequest.current + 1;
+    activeYearRequest.current = currentRequest;
+    loadActiveYearForBoard(values.board, contextOptions)
+      .then((year) => {
+        if (activeYearRequest.current === currentRequest && year && values.year !== year) {
+          setValues((current) => ({ ...current, year }));
+        }
+      })
+      .catch((error) => {
+        if (activeYearRequest.current === currentRequest) {
+          setToastType("error");
+          setToast(getApiErrorMessage(error));
+        }
+      });
+    return undefined;
+  }, [contextOptions, id, setValues, values.board, values.year]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -609,7 +738,6 @@ function CourseGroupListPage() {
     year: searchParams.get("year") || "",
     level: searchParams.get("level") || "",
   }));
-  const [filterFields, setFilterFields] = useState(pageConfig.filters);
   const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [] });
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -618,6 +746,7 @@ function CourseGroupListPage() {
   const [error, setError] = useState("");
   const initialLoadStarted = useRef(false);
   const requestId = useRef(0);
+  const activeYearRequest = useRef(0);
 
   const loadRows = useCallback(async (nextSearch = search, nextFilters = filters) => {
     const currentRequest = requestId.current + 1;
@@ -640,18 +769,23 @@ function CourseGroupListPage() {
   useEffect(() => {
     if (initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    loadRows("", filters);
     loadGroupMasters()
-      .then((masters) => {
+      .then(async (masters) => {
         setMasterOptions(masters);
-        setFilterFields(buildGroupFilterFields(masters, filters));
+        let nextFilters = filters;
+        if (filters.board) {
+          const activeYear = await loadActiveYearForBoard(filters.board, masters);
+          nextFilters = { ...filters, year: activeYear };
+          setFilters(nextFilters);
+          updateRouteContext(nextFilters);
+        }
+        loadRows("", nextFilters);
       })
-      .catch((err) => setError(getApiErrorMessage(err)));
+      .catch((err) => {
+        setError(getApiErrorMessage(err));
+        loadRows("", filters);
+      });
   }, [filters, loadRows]);
-
-  useEffect(() => {
-    setFilterFields(buildGroupFilterFields(masterOptions, filters));
-  }, [filters, masterOptions]);
 
   const updateRouteContext = (nextFilters) => {
     const params = new URLSearchParams(searchParams);
@@ -670,18 +804,37 @@ function CourseGroupListPage() {
       loadRows(search, nextFilters);
       return;
     }
-    setFilters((current) => {
-      const next = { ...current, [name]: value };
-      if (name === "board") {
-        next.year = "";
-        next.level = "";
+    const next = { ...filters, [name]: value };
+    if (name === "board") {
+      next.year = "";
+      next.level = value ? pickMappedLevel(masterOptions, value, filters.level) : "";
+      const currentRequest = activeYearRequest.current + 1;
+      activeYearRequest.current = currentRequest;
+      if (value) {
+        loadActiveYearForBoard(value, masterOptions)
+          .then((year) => {
+            if (activeYearRequest.current !== currentRequest) return;
+            setFilters((current) => {
+              if (current.board !== value) return current;
+              const withYear = { ...current, year };
+              updateRouteContext(withYear);
+              loadRows(search, withYear);
+              return withYear;
+            });
+          })
+          .catch((err) => {
+            if (activeYearRequest.current === currentRequest) setError(getApiErrorMessage(err));
+          });
+      } else {
+        loadRows(search, next);
       }
-      if (name === "year") {
-        next.level = "";
-      }
-      updateRouteContext(next);
-      return next;
-    });
+    }
+    if (name === "year") {
+      next.level = "";
+    }
+    setFilters(next);
+    updateRouteContext(next);
+    if (name !== "board") loadRows(search, next);
   };
 
   const handleSearch = (value) => {
@@ -710,10 +863,27 @@ function CourseGroupListPage() {
     column.badge ? { ...column, render: (row) => <StatusBadge value={row[column.key]} /> } : column
   )), []);
 
+  const yearOptions = getMappedYearsForBoard(masterOptions, filters.board);
+  const toolbarFilters = (
+    <div className="course-table-filters">
+      <select aria-label="Board" value={filters.board || ""} onChange={(event) => setFilter("board", event.target.value)}>
+        <option value="">Select Board</option>
+        {(masterOptions.boards || []).map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      <select aria-label="Academic Year" value={filters.year || ""} disabled={!filters.board} onChange={(event) => setFilter("year", event.target.value)}>
+        <option value="">Select Academic Year</option>
+        {yearOptions.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <DashboardLayout title={pageConfig.title} subtitle={pageConfig.subtitle} breadcrumb={pageConfig.breadcrumb}>
       <div className="group-management">
-        <FilterBar fields={filterFields} values={filters} onChange={setFilter} onApply={() => loadRows(search, filters)} />
         {error ? (
           <div className="cms-card" style={{ marginBottom: 16 }}>
             <div className="cms-card-body">
@@ -728,6 +898,7 @@ function CourseGroupListPage() {
           rows={rows}
           loading={loading}
           addLabel={pageConfig.addLabel}
+          toolbarExtra={toolbarFilters}
           onSearchChange={handleSearch}
           onAdd={addGroup}
           onEdit={(row) => navigate(`/dashboard/courses/${row.id}/edit${makeContextQuery(filters)}`)}

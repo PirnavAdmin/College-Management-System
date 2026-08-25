@@ -100,7 +100,9 @@ export default function AppRoutes() {
         <Route path="/dashboard/timetable/setup" element={<TimetablePage screen="setup" />} />
         <Route path="/dashboard/timetable/draft" element={<TimetablePage screen="draft" />} />
         <Route path="/dashboard/timetable/faculty" element={<TimetablePage screen="faculty" />} />
-        <Route path="/dashboard/attendance" element={<AttendancePage />} />
+        <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
+        <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
+        <Route path="/dashboard/attendance/:area/reports" element={<AttendancePage />} />
         <Route path="/dashboard/assignments" element={<AssignmentsMaterialsPage />} />
         <Route path="/dashboard/assignments/submissions" element={<AssignmentSubmissionsPage />} />
         <Route path="/dashboard/assignments/add" element={<AssignmentsMaterialsPage />} />

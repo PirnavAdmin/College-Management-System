@@ -1,572 +1,1354 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { CalendarDays, ClipboardList, Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, Eye, Pencil, Plus, Printer, Trash2, X } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { ConfirmDialog, Modal, StatusBadge, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
-import * as data from "@/data/mockData.js";
+import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./ExaminationPage.css";
 
-const EXAMS_KEY = "cms.examinations";
-const SCHEDULES_KEY = "cms.examinationSchedules";
-const initialSchedule = () => ({
+const EK = "cms.examinationWorkflow.v3",
+  SK = "cms.examinationSchedules.v3";
+const BOARDS = [{ id: 1, name: "AP State Board", status: "Active" }];
+const YEARS = [
+  { id: 1, boardId: 1, name: "2025-26" },
+  { id: 2, boardId: 1, name: "2026-27" },
+];
+const LEVELS = [
+  { id: 1, boardId: 1, yearId: 2, name: "1st Year" },
+  { id: 2, boardId: 1, yearId: 2, name: "2nd Year" },
+  { id: 3, boardId: 1, yearId: 1, name: "1st Year" },
+];
+const GROUPS = [
+  { id: 1, boardId: 1, yearId: 2, levelId: 1, code: "MPC", name: "MPC" },
+  { id: 2, boardId: 1, yearId: 2, levelId: 1, code: "BIPC", name: "BiPC" },
+  { id: 3, boardId: 1, yearId: 2, levelId: 1, code: "CEC", name: "CEC" },
+  { id: 4, boardId: 1, yearId: 2, levelId: 2, code: "MPC", name: "MPC" },
+  { id: 5, boardId: 1, yearId: 1, levelId: 3, code: "MPC", name: "MPC" },
+];
+const PROGRAMS = [
+  {
+    id: "REGULAR",
+    name: "Regular Academic",
+    allowedGroups: ["MPC", "BIPC", "CEC"],
+    category: "REGULAR",
+    status: "Active",
+  },
+  {
+    id: "JEE_MAIN",
+    name: "JEE Main",
+    allowedGroups: ["MPC"],
+    category: "ENGINEERING_ENTRANCE",
+    status: "Active",
+  },
+  {
+    id: "JEE_ADVANCED",
+    name: "JEE Advanced",
+    allowedGroups: ["MPC"],
+    category: "ENGINEERING_ENTRANCE",
+    status: "Active",
+  },
+  {
+    id: "EAPCET",
+    name: "EAMCET / EAPCET",
+    allowedGroups: ["MPC", "BIPC"],
+    category: "ENTRANCE",
+    status: "Active",
+  },
+  {
+    id: "NEET",
+    name: "NEET",
+    allowedGroups: ["BIPC"],
+    category: "MEDICAL_ENTRANCE",
+    status: "Active",
+  },
+  {
+    id: "MEDICAL_FOUNDATION",
+    name: "Medical Foundation",
+    allowedGroups: ["BIPC"],
+    category: "FOUNDATION",
+    status: "Active",
+  },
+  {
+    id: "CA_FOUNDATION",
+    name: "CA Foundation",
+    allowedGroups: ["CEC"],
+    category: "PROFESSIONAL",
+    status: "Active",
+  },
+];
+const EXAM_PATTERNS = [
+  {
+    id: "REGULAR_ACADEMIC",
+    name: "Regular Academic Pattern",
+    programIds: ["REGULAR"],
+    subjectSelection: "ALL",
+    languageSubjects: true,
+    allowedExamTypes: ["Written", "Practical", "Mixed", "Other"],
+    scheduleMode: "SUBJECT_WISE",
+    status: "Active",
+  },
+  {
+    id: "JEE_MAIN",
+    name: "JEE Main Pattern",
+    programIds: ["JEE_MAIN"],
+    subjectSelection: "CORE",
+    languageSubjects: false,
+    allowedExamTypes: ["Objective"],
+    scheduleMode: "COMBINED",
+    status: "Active",
+  },
+  {
+    id: "JEE_ADVANCED",
+    name: "JEE Advanced Pattern",
+    programIds: ["JEE_ADVANCED"],
+    subjectSelection: "CORE",
+    languageSubjects: false,
+    allowedExamTypes: ["Objective"],
+    scheduleMode: "COMBINED",
+    status: "Active",
+  },
+  {
+    id: "EAPCET",
+    name: "EAMCET / EAPCET Pattern",
+    programIds: ["EAPCET"],
+    subjectSelection: "CORE",
+    languageSubjects: false,
+    allowedExamTypes: ["Objective"],
+    scheduleMode: "COMBINED",
+    status: "Active",
+  },
+  {
+    id: "NEET",
+    name: "NEET Pattern",
+    programIds: ["NEET"],
+    subjectSelection: "CORE",
+    languageSubjects: false,
+    allowedExamTypes: ["Objective"],
+    scheduleMode: "COMBINED",
+    status: "Active",
+  },
+  {
+    id: "MEDICAL_FOUNDATION",
+    name: "Medical Foundation Pattern",
+    programIds: ["MEDICAL_FOUNDATION"],
+    subjectSelection: "CORE",
+    languageSubjects: false,
+    allowedExamTypes: ["Objective"],
+    scheduleMode: "COMBINED",
+    status: "Active",
+  },
+  {
+    id: "CA_FOUNDATION",
+    name: "CA Foundation Pattern",
+    programIds: ["CA_FOUNDATION"],
+    subjectSelection: "CORE",
+    languageSubjects: false,
+    allowedExamTypes: ["Objective"],
+    scheduleMode: "COMBINED",
+    status: "Active",
+  },
+];
+const SUBJECTS = [
+  [101, "ENG", "English", "MPC"],
+  [102, "SAN", "Sanskrit", "MPC"],
+  [103, "MATH-1A", "Mathematics IA", "MPC"],
+  [104, "MATH-1B", "Mathematics IB", "MPC"],
+  [105, "PHY", "Physics", "MPC"],
+  [106, "CHE", "Chemistry", "MPC"],
+  [201, "ENG-B", "English", "BiPC"],
+  [202, "BOT", "Botany", "BiPC"],
+  [203, "ZOO", "Zoology", "BiPC"],
+  [204, "PHY-B", "Physics", "BiPC"],
+  [205, "CHE-B", "Chemistry", "BiPC"],
+  [301, "ENG-C", "English", "CEC"],
+  [302, "CIV", "Civics", "CEC"],
+  [303, "ECO", "Economics", "CEC"],
+  [304, "COM", "Commerce", "CEC"],
+].map(([id, code, name, group]) => ({
+  id,
+  code,
+  name,
+  group,
+  category: ["ENG", "SAN", "ENG-B", "ENG-C"].includes(code) ? "LANGUAGE" : "CORE",
+  practical: ["PHY", "CHE", "PHY-B", "CHE-B", "BOT", "ZOO"].includes(code),
+  objectiveEligible: !["ENG", "SAN", "ENG-B", "ENG-C"].includes(code),
+  status: "Active",
+}));
+const FACULTY = [
+  { id: 1, name: "Ravi Kumar", subjectIds: [103, 104], status: "Active" },
+  { id: 2, name: "Priya", subjectIds: [105, 204], status: "Active" },
+  { id: 3, name: "Anil", subjectIds: [106, 205], status: "Active" },
+  { id: 4, name: "Suresh", subjectIds: [101, 201, 301], status: "Active" },
+  { id: 5, name: "Lakshmi", subjectIds: [102], status: "Active" },
+  { id: 6, name: "Kiran", subjectIds: [], status: "Active" },
+  { id: 7, name: "Deepa", subjectIds: [], status: "Active" },
+  { id: 8, name: "Mahesh", subjectIds: [], status: "Active" },
+];
+const ROOMS = [
+  { id: 1, code: "A-101", name: "Room A-101", capacity: 50, status: "Active" },
+  { id: 2, code: "A-102", name: "Room A-102", capacity: 60, status: "Active" },
+  { id: 3, code: "Hall-1", name: "Main Hall", capacity: 120, status: "Active" },
+];
+const TYPES = ["Written", "Objective", "Practical", "Mixed", "Other"];
+const emptyExam = () => ({
+  code: "",
+  name: "",
+  boardId: "",
+  yearId: "",
+  levelId: "",
+  groupId: "",
+  programId: "",
+  examPatternId: "",
+  examType: "",
+  type: "",
+  startDate: "",
+  endDate: "",
+  totalMarks: "",
+  passPercentage: "",
+  description: "",
+  status: "DRAFT",
+});
+const emptySchedule = () => ({
   subjectId: "",
   date: "",
   startTime: "",
   endTime: "",
-  duration: "",
-  invigilator: "",
-  status: "Draft",
+  roomId: "",
+  invigilatorId: "",
+  mode: "Written",
 });
-const initialForm = () => ({
-  code: "",
-  name: "",
-  board: "",
-  year: "",
-  level: "",
-  group: "",
-  type: "",
-  sessions: ["Morning"],
-  status: "Draft",
+const nextScheduleFromPrevious = (savedSchedule) => ({
+  subjectId: "",
+  date: "",
+  startTime: savedSchedule.startTime,
+  endTime: savedSchedule.endTime,
+  roomId: String(savedSchedule.roomId),
+  invigilatorId: "",
+  mode: savedSchedule.mode,
 });
-const read = (key, fallback) => {
+const seed = [
+  {
+    id: 1,
+    code: "EXM-2026-001",
+    name: "Quarterly Examination",
+    boardId: 1,
+    yearId: 2,
+    levelId: 1,
+    groupId: 1,
+    programId: "REGULAR",
+    examPatternId: "REGULAR_ACADEMIC",
+    examType: "Written",
+    type: "Written",
+    startDate: "2026-09-15",
+    endDate: "2026-09-22",
+    totalMarks: 600,
+    passPercentage: 35,
+    description: "First-year MPC quarterly assessment.",
+    status: "DRAFT",
+  },
+];
+const get = (key, fallback) => {
   try {
-    const value = JSON.parse(localStorage.getItem(key));
-    return Array.isArray(value) ? value : fallback;
+    const v = JSON.parse(localStorage.getItem(key));
+    return Array.isArray(v) ? v : fallback;
   } catch {
     return fallback;
   }
 };
-const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
-const makeCode = (exams) => {
-  let n = exams.length + 1;
-  let code;
-  do {
-    code = `EXM-${new Date().getFullYear()}-${String(n++).padStart(3, "0")}`;
-  } while (exams.some((exam) => exam.code === code));
-  return code;
+const overlaps = (a, b, c, d) => a < d && b > c;
+const nameOf = (items, id) =>
+  items.find((x) => String(x.id) === String(id))?.name || "All Programs";
+const d = (value) =>
+  value
+    ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
+        new Date(value + "T00:00:00"),
+      )
+    : "—";
+const subjectsFor = (exam) => {
+  const group = GROUPS.find((item) => String(item.id) === String(exam?.groupId)),
+    program = PROGRAMS.find((item) => String(item.id) === String(exam?.programId)),
+    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(exam?.examPatternId));
+  if (!group || !program || !pattern) return [];
+  let subjects = SUBJECTS.filter(
+    (subject) => subject.status === "Active" && subject.group === group.name,
+  );
+  if (exam.examType === "Practical") return subjects.filter((subject) => subject.practical);
+  if (pattern.subjectSelection === "CORE")
+    subjects = subjects.filter(
+      (subject) => subject.category === "CORE" && subject.objectiveEligible,
+    );
+  return pattern.languageSubjects
+    ? subjects
+    : subjects.filter((subject) => subject.category !== "LANGUAGE");
 };
-const overlaps = (aStart, aEnd, bStart, bEnd) => aStart < bEnd && aEnd > bStart;
-
-function safeExaminations() {
-  const fallback = data.examinations.map((exam, index) => ({
-    ...exam,
-    code: `EXM-2024-${String(index + 1).padStart(3, "0")}`,
-    sessions: ["Morning"],
-    status: exam.status === "Active" ? "Scheduled" : "Draft",
-  }));
-  const examinations = read(EXAMS_KEY, fallback).map(({ category, examCategory, ...exam }) => exam);
-  write(EXAMS_KEY, examinations);
-  return examinations;
-}
-
+const programsForGroup = (groupId) => {
+  const group = GROUPS.find((item) => String(item.id) === String(groupId));
+  return group
+    ? PROGRAMS.filter(
+        (program) => program.status === "Active" && program.allowedGroups.includes(group.code),
+      )
+    : [];
+};
+const patternsForProgram = (programId) =>
+  EXAM_PATTERNS.filter(
+    (pattern) =>
+      pattern.status === "Active" &&
+      pattern.programIds.some((id) => String(id) === String(programId)),
+  );
+const validateExamConfiguration = (exam) => {
+  const group = GROUPS.find((item) => String(item.id) === String(exam.groupId)),
+    program = PROGRAMS.find((item) => String(item.id) === String(exam.programId)),
+    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(exam.examPatternId));
+  if (
+    !group ||
+    !program ||
+    !program.allowedGroups.includes(group.code) ||
+    !pattern ||
+    !pattern.programIds.includes(program.id) ||
+    !exam.examType ||
+    !pattern.allowedExamTypes.includes(exam.examType)
+  )
+    return "Select a valid Program, Exam Pattern and Exam Type.";
+  return "";
+};
+const getScheduleMode = (exam) =>
+  EXAM_PATTERNS.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
+  "SUBJECT_WISE";
+const createCombinedSessionId = (examId) => `COMBINED-${examId}-${Date.now()}`;
+const getExamPassingMarks = (exam) => {
+  const total = Number(exam?.totalMarks);
+  const percentage = Number(exam?.passPercentage);
+  if (
+    !Number.isFinite(total) ||
+    !Number.isFinite(percentage) ||
+    total <= 0 ||
+    percentage <= 0 ||
+    percentage > 100
+  )
+    return null;
+  return Math.ceil((total * percentage) / 100);
+};
+const hasValidExamMarks = (exam) =>
+  Number.isInteger(Number(exam?.totalMarks)) &&
+  Number(exam?.totalMarks) > 0 &&
+  Number.isFinite(Number(exam?.passPercentage)) &&
+  Number(exam?.passPercentage) > 0 &&
+  Number(exam?.passPercentage) <= 100;
+const isSameCombinedSession = (existing, candidate) =>
+  existing?.scheduleMode === "COMBINED" &&
+  candidate?.scheduleMode === "COMBINED" &&
+  String(existing.examId) === String(candidate.examId) &&
+  Boolean(existing.sessionId) &&
+  existing.sessionId === candidate.sessionId;
+const MARKS_CONFIG = {
+  REGULAR_ACADEMIC: {
+    Written: { maxMarks: 100, passingMarks: 35 },
+    Practical: { maxMarks: 30, passingMarks: 12 },
+    Mixed: { maxMarks: 100, passingMarks: 35 },
+    Other: { maxMarks: 100, passingMarks: 35 },
+  },
+  JEE_MAIN: { Objective: { maxMarks: 100, passingMarks: 35 } },
+  JEE_ADVANCED: { Objective: { maxMarks: 100, passingMarks: 35 } },
+  EAPCET: { Objective: { maxMarks: 100, passingMarks: 35 } },
+  NEET: { Objective: { maxMarks: 100, passingMarks: 35 } },
+  MEDICAL_FOUNDATION: { Objective: { maxMarks: 100, passingMarks: 35 } },
+  CA_FOUNDATION: { Objective: { maxMarks: 100, passingMarks: 35 } },
+};
+const getMarksConfig = (exam, subject) => {
+  const config = MARKS_CONFIG[exam?.examPatternId]?.[exam?.examType];
+  return config && subjectsFor(exam).some((item) => String(item.id) === String(subject?.id))
+    ? { ...config }
+    : null;
+};
+const getCandidateSchedule = (schedule, exam, editingId, sessionId) => ({
+  ...schedule,
+  examId: exam?.id,
+  scheduleMode: getScheduleMode(exam),
+  sessionId: getScheduleMode(exam) === "COMBINED" ? sessionId || "" : "",
+  editingId,
+});
+const hasHallConflict = (candidate, schedules) =>
+  Boolean(
+    candidate.roomId &&
+    candidate.date &&
+    candidate.startTime &&
+    candidate.endTime &&
+    schedules.some(
+      (entry) =>
+        String(entry.id) !== String(candidate.editingId) &&
+        String(entry.roomId) === String(candidate.roomId) &&
+        entry.date === candidate.date &&
+        overlaps(candidate.startTime, candidate.endTime, entry.startTime, entry.endTime) &&
+        !isSameCombinedSession(entry, candidate),
+    ),
+  );
+const hasInvigilatorConflict = (candidate, schedules) =>
+  Boolean(
+    candidate.invigilatorId &&
+    candidate.date &&
+    candidate.startTime &&
+    candidate.endTime &&
+    schedules.some(
+      (entry) =>
+        String(entry.id) !== String(candidate.editingId) &&
+        String(entry.invigilatorId) === String(candidate.invigilatorId) &&
+        entry.date === candidate.date &&
+        overlaps(candidate.startTime, candidate.endTime, entry.startTime, entry.endTime) &&
+        !isSameCombinedSession(entry, candidate),
+    ),
+  );
+const getAvailableRooms = (candidate, schedules) =>
+  ROOMS.filter(
+    (room) =>
+      room.status === "Active" && !hasHallConflict({ ...candidate, roomId: room.id }, schedules),
+  );
+const getEligibleInvigilators = (candidate, schedules, includedIds = []) =>
+  FACULTY.filter(
+    (faculty) =>
+      faculty.status === "Active" &&
+      !(candidate.scheduleMode === "COMBINED"
+        ? faculty.subjectIds.some((id) => includedIds.includes(Number(id)))
+        : faculty.subjectIds.includes(Number(candidate.subjectId))) &&
+      !hasInvigilatorConflict({ ...candidate, invigilatorId: faculty.id }, schedules),
+  );
+const buildExportRows = (targetExams, schedules) =>
+  targetExams
+    .flatMap((exam) => {
+      const records = schedules.filter((schedule) => String(schedule.examId) === String(exam.id)),
+        groups = new Map();
+      records.forEach((schedule) => {
+        const key =
+          schedule.scheduleMode === "COMBINED" && schedule.sessionId
+            ? `combined-${exam.id}-${schedule.sessionId}`
+            : `subject-${schedule.id}`;
+        const group = groups.get(key) || [];
+        group.push(schedule);
+        groups.set(key, group);
+      });
+      return [...groups.values()].map((group) => {
+        const first = group[0];
+        return {
+          examId: exam.id,
+          sessionId: first.sessionId || "",
+          examCode: exam.code || "—",
+          examName: exam.name,
+          boardName: nameOf(BOARDS, exam.boardId),
+          academicYear: nameOf(YEARS, exam.yearId),
+          academicLevel: nameOf(LEVELS, exam.levelId),
+          programName: nameOf(PROGRAMS, exam.programId),
+          patternName: nameOf(EXAM_PATTERNS, exam.examPatternId),
+          examType: exam.examType || exam.type,
+          groupName: nameOf(GROUPS, exam.groupId),
+          totalMarks: hasValidExamMarks(exam) ? exam.totalMarks : exam.totalMarks || "—",
+          passPercentage: hasValidExamMarks(exam) ? `${exam.passPercentage}%` : "—",
+          passingScore: getExamPassingMarks(exam) ?? "—",
+          subjectName: group.map((item) => item.subjectName).join(", "),
+          examDate: first.date,
+          startTime: first.startTime,
+          endTime: first.endTime,
+          hallName: nameOf(ROOMS, first.roomId),
+          invigilatorName: nameOf(FACULTY, first.invigilatorId),
+          examMode: first.mode || "—",
+          status: exam.status,
+          description: exam.description || "—",
+        };
+      });
+    })
+    .sort(
+      (a, b) =>
+        a.examDate.localeCompare(b.examDate) ||
+        a.startTime.localeCompare(b.startTime) ||
+        a.examName.localeCompare(b.examName) ||
+        a.subjectName.localeCompare(b.subjectName),
+    );
+const duration = (a, b) => {
+  if (!a || !b || b <= a) return "";
+  const min = +b.slice(0, 2) * 60 + +b.slice(3) - (+a.slice(0, 2) * 60 + +a.slice(3));
+  return `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
+};
 export const pageConfig = {
   title: "Examination Management",
-  subtitle: "Create examinations and publish subject-wise schedules.",
+  subtitle: "Configure examinations and build conflict-free subject schedules.",
   breadcrumb: ["Examinations"],
 };
 
 export default function ExaminationPage() {
-  const { confirm, confirmationDialog } = useConfirmDialog();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { id } = useParams();
-  const [exams, setExams] = useState(safeExaminations);
-  const [schedules, setSchedules] = useState(() => read(SCHEDULES_KEY, []));
-  const [form, setForm] = useState(() => {
-    const existing = id ? safeExaminations().find((exam) => String(exam.id) === id) : null;
-    return existing
-      ? {
-          ...initialForm(),
-          ...existing,
-          sessions: existing.sessions || (existing.session ? [existing.session] : ["Morning"]),
-        }
-      : { ...initialForm(), code: makeCode(safeExaminations()) };
-  });
-  const [errors, setErrors] = useState({});
-  const [selectedExam, setSelectedExam] = useState(null);
-  const [scheduleExam, setScheduleExam] = useState(null);
-  const [schedule, setSchedule] = useState(initialSchedule);
-  const [scheduleError, setScheduleError] = useState("");
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [editingScheduleId, setEditingScheduleId] = useState(null);
-  const [deletingSchedule, setDeletingSchedule] = useState(null);
-  const [deleting, setDeleting] = useState(null);
-  const [toast, setToast] = useState("");
-  const isForm = Boolean(id) || location.pathname.endsWith("/add");
-
+  const nav = useNavigate(),
+    loc = useLocation(),
+    { id } = useParams(),
+    isForm = Boolean(id) || loc.pathname.endsWith("/add");
+  const initialFilters = {
+    boardId: "",
+    yearId: "",
+    levelId: "",
+    groupId: "",
+    programId: "",
+    type: "",
+    status: "",
+  };
+  const [exams, setExams] = useState(() => get(EK, seed)),
+    [schedules, setSchedules] = useState(() => get(SK, [])),
+    [tab, setTab] = useState("exams"),
+    [examId, setExamId] = useState(""),
+    [detail, setDetail] = useState(null),
+    [editingExam, setEditingExam] = useState(null),
+    [exportPreview, setExportPreview] = useState(null),
+    [toast, setToast] = useState(""),
+    [remove, setRemove] = useState(null),
+    [removeSchedule, setRemoveSchedule] = useState(null),
+    [editing, setEditing] = useState(null),
+    [sch, setSch] = useState(emptySchedule),
+    [errors, setErrors] = useState({}),
+    [filters, setFilters] = useState(initialFilters),
+    [appliedFilters, setAppliedFilters] = useState(initialFilters),
+    [search, setSearch] = useState(""),
+    [finalizing, setFinalizing] = useState(false);
+  useEffect(() => localStorage.setItem(EK, JSON.stringify(exams)), [exams]);
+  useEffect(() => localStorage.setItem(SK, JSON.stringify(schedules)), [schedules]);
   useEffect(() => {
-    const scheduleExamId = location.state?.scheduleExamId;
-    if (isForm || !scheduleExamId) return;
-    const exam = exams.find((item) => String(item.id) === String(scheduleExamId));
-    if (!exam) return;
-    setScheduleOpen(true);
-    setScheduleExam(exam);
-    setEditingScheduleId(null);
-    setSchedule(initialSchedule());
-    setScheduleError("");
-    navigate(location.pathname, { replace: true, state: null });
-  }, [exams, isForm, location.pathname, location.state, navigate]);
-
-  const setValue = (name, value) => {
-    setForm((current) => ({ ...current, [name]: value }));
-    setErrors((current) => ({ ...current, [name]: undefined }));
-  };
-
-  const saveExam = (event) => {
-    event.preventDefault();
-    const nextErrors = {};
-    ["code", "name", "board", "year", "level", "group", "type", "status"].forEach(
-      (field) => {
-        if (!form[field]) nextErrors[field] = "Required";
-      },
-    );
-    if (!form.sessions?.length) nextErrors.sessions = "Select at least one exam session.";
-    if (exams.some((exam) => exam.code === form.code && String(exam.id) !== String(id)))
-      nextErrors.code = "Exam code must be unique.";
-    if (Object.keys(nextErrors).length) {
-      setErrors(nextErrors);
-      return;
+    const next = loc.state?.scheduleExamId;
+    if (!isForm && next) {
+      setExamId(String(next));
+      setTab("schedule");
+      nav(loc.pathname, { replace: true, state: null });
     }
-    const { session, start, end, registrationDeadline, hallTicketRelease, resultPublication, ...examForm } = form;
-    const record = { ...examForm, id: id || Date.now() };
-    const next = id
-      ? exams.map((exam) => (String(exam.id) === String(id) ? record : exam))
-      : [record, ...exams];
-    setExams(next);
-    write(EXAMS_KEY, next);
-    setToast(`Examination ${id ? "updated" : "created"} successfully.`);
-    navigate("/dashboard/examinations", { state: { scheduleExamId: record.id } });
-  };
-
-  const saveSchedule = (event) => {
-    event.preventDefault();
-    setScheduleError("");
-    const subject = data.subjects.find((item) => String(item.id) === String(schedule.subjectId));
-    if (
-      !subject ||
-      !schedule.date ||
-      !schedule.startTime ||
-      !schedule.endTime ||
-      !schedule.invigilator
-    )
-      return setScheduleError("Complete all required schedule details.");
-    if (!scheduleExam) return setScheduleError("Select an examination before creating a schedule.");
-    if (schedule.endTime <= schedule.startTime)
-      return setScheduleError("End time must be after start time.");
-    const conflicts = schedules.filter(
-      (item) =>
-        item.id !== editingScheduleId &&
-        item.examId !== scheduleExam.id &&
-        item.date === schedule.date &&
-        overlaps(schedule.startTime, schedule.endTime, item.startTime, item.endTime),
+  }, [isForm, loc, nav]);
+  if (isForm && id && !exams.some((e) => String(e.id) === String(id)))
+    return (
+      <DashboardLayout
+        title="Examination not found"
+        subtitle="The requested examination is unavailable."
+        breadcrumb={["Examinations"]}
+      >
+        <div className="cms-card">
+          <div className="cms-card-body">
+            <p>Examination not found.</p>
+            <button
+              className="cms-btn cms-btn-ghost exam-back-btn"
+              onClick={() => nav("/dashboard/examinations")}
+            >
+              <ArrowLeft size={15} /> Back to Examinations
+            </button>
+          </div>
+        </div>
+      </DashboardLayout>
     );
-    if (
-      schedules.some(
-        (item) =>
-          item.id !== editingScheduleId &&
-          item.examId === scheduleExam.id &&
-          String(item.subjectId) === String(subject.id),
-      )
-    )
-      return setScheduleError("This subject is already scheduled for this examination.");
-    if (conflicts.some((item) => item.invigilator === schedule.invigilator))
-      return setScheduleError("This invigilator already has an overlapping schedule.");
-    const item = {
-      ...schedule,
-      id: editingScheduleId || Date.now(),
-      examId: scheduleExam.id,
-      examCode: scheduleExam.code,
-      subjectId: subject.id,
-      subject: subject.name,
-      subjectCode: subject.code,
-    };
-    const next = editingScheduleId
-      ? schedules.map((entry) => (entry.id === editingScheduleId ? item : entry))
-      : [...schedules, item];
-    setSchedules(next);
-    write(SCHEDULES_KEY, next);
-    setSchedule(initialSchedule());
-    setEditingScheduleId(null);
-    setToast(`Schedule ${editingScheduleId ? "updated" : "saved"} successfully.`);
-  };
-
-  const publish = async (exam) => {
-    const confirmed = await confirm({
-      title: "Publish examination schedule",
-      message: `Publish the schedule for ${exam.name}?`,
-      confirmLabel: "Publish",
-    });
-    if (!confirmed) return;
-    const next = exams.map((item) =>
-      item.id === exam.id ? { ...item, status: "Published" } : item,
-    );
-    setExams(next);
-    write(EXAMS_KEY, next);
-    setToast("Examination schedule published.");
-  };
-
   if (isForm)
     return (
       <ExamForm
-        form={form}
-        errors={errors}
-        setValue={setValue}
-        saveExam={saveExam}
-        navigate={navigate}
-        editing={Boolean(id)}
+        exams={exams}
+        schedules={schedules}
+        editId={id}
+        onSave={(record) => {
+          setExams((x) =>
+            id ? x.map((e) => (String(e.id) === String(id) ? record : e)) : [record, ...x],
+          );
+          nav("/dashboard/examinations", { state: { scheduleExamId: record.id } });
+        }}
       />
     );
+  const reset = (n, v) =>
+    setFilters((x) => ({
+      ...x,
+      [n]: v,
+      ...(n === "boardId"
+        ? { yearId: "", levelId: "", groupId: "", programId: "" }
+        : n === "yearId"
+          ? { levelId: "", groupId: "", programId: "" }
+          : n === "levelId"
+            ? { groupId: "", programId: "" }
+            : n === "groupId"
+              ? { programId: "" }
+              : {}),
+    }));
+  const list = exams.filter(
+    (e) =>
+      (!appliedFilters.boardId || String(e.boardId) === appliedFilters.boardId) &&
+      (!appliedFilters.yearId || String(e.yearId) === appliedFilters.yearId) &&
+      (!appliedFilters.levelId || String(e.levelId) === appliedFilters.levelId) &&
+      (!appliedFilters.groupId || String(e.groupId) === appliedFilters.groupId) &&
+      (!appliedFilters.programId || String(e.programId) === appliedFilters.programId) &&
+      (!appliedFilters.type || e.type === appliedFilters.type) &&
+      (!appliedFilters.status || e.status === appliedFilters.status) &&
+      (!search || `${e.code} ${e.name}`.toLowerCase().includes(search.toLowerCase())),
+  );
+  const exam = exams.find((e) => String(e.id) === examId);
+  const printSchedule = () => {
+    const physicalRows = buildExportRows(
+      exams.filter((item) => item.status === "SCHEDULED"),
+      schedules,
+    );
+    if (!physicalRows.length)
+      return setToast("No scheduled examinations are available to export.");
+    const rows = physicalRows;
+    setExportPreview({ title: "Scheduled Examination Export", rows, scope: "global" });
+  };
   return (
     <DashboardLayout
-      title="Examination Management"
-      subtitle="Create examinations and publish subject-wise schedules."
-      breadcrumb={["Examinations"]}
+      title={tab === "schedule" ? "Exam Schedule" : "Examination Management"}
+      subtitle={
+        tab === "schedule"
+          ? "Configure subject-wise examination dates, timings, halls and invigilators."
+          : "Create and manage academic examinations."
+      }
+      breadcrumb={tab === "schedule" ? ["Examinations", "Exam Schedule"] : ["Examinations"]}
     >
-      <div className="exam-page-actions">
-        <button
-          className="cms-btn cms-btn-primary"
-          onClick={() => navigate("/dashboard/examinations/add")}
-        >
-          <Plus size={16} /> Create Examination
+      <div className="exam-tabs">
+        <button className={tab === "exams" ? "active" : ""} onClick={() => setTab("exams")}>
+          Examinations
         </button>
-        <button
-          className="cms-btn cms-btn-ghost"
-          onClick={() => {
-            setScheduleOpen(true);
-            setScheduleExam(null);
-            setEditingScheduleId(null);
-            setSchedule(initialSchedule());
-            setScheduleError("");
-          }}
-        >
-          <CalendarDays size={16} /> Create Schedule
+        <button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>
+          Exam Schedule
         </button>
       </div>
-      <div className="cms-card">
-        <div className="cms-table-wrap">
-          <table className="cms-table">
-            <thead>
-              <tr>
-                <th>Exam Code</th>
-                <th>Exam Name</th>
-                <th>Board</th>
-                <th>Academic Year</th>
-                <th>Level / Group</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exams.length ? (
-                exams.map((exam) => (
-                  <tr key={exam.id}>
-                    <td className="cms-strong">{exam.code}</td>
-                    <td>
-                      {exam.name}
-                      <small className="exam-muted">{exam.type}</small>
-                    </td>
-                    <td>{exam.board}</td>
-                    <td>{exam.year}</td>
-                    <td>
-                      {exam.level} / {exam.group}
-                    </td>
-                    <td>
-                      <StatusBadge value={exam.status} />
-                    </td>
-                    <td>
-                      <div className="cms-actions">
-                        <button
-                          className="cms-action-btn view"
-                          title="View"
-                          onClick={() => setSelectedExam(exam)}
-                        >
-                          <Eye size={15} />
-                        </button>
-                        <button
-                          className="cms-action-btn edit"
-                          title="Edit"
-                          onClick={() => navigate(`/dashboard/examinations/${exam.id}/edit`)}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          className="cms-action-btn"
-                          title="Schedule"
-                          onClick={() => {
-                            setScheduleOpen(true);
-                            setScheduleExam(exam);
-                            setEditingScheduleId(null);
-                            setSchedule(initialSchedule());
-                            setScheduleError("");
-                          }}
-                        >
-                          <CalendarDays size={15} />
-                        </button>
-                        <button
-                          className="cms-action-btn"
-                          title="Publish"
-                          onClick={() => publish(exam)}
-                          disabled={exam.status === "Published"}
-                        >
-                          <ClipboardList size={15} />
-                        </button>
-                        <button
-                          className="cms-action-btn danger"
-                          title="Delete"
-                          onClick={() => setDeleting(exam)}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
+      {tab === "exams" ? (
+        <>
+          <div className="exam-toolbar">
+            <div>
+              <h2>Examinations</h2>
+              <p>Choose academic criteria, then check the matching examinations.</p>
+            </div>
+          </div>
+          <Filters
+            f={filters}
+            change={reset}
+            onCheck={() => setAppliedFilters({ ...filters })}
+            onReset={() => {
+              setFilters(initialFilters);
+              setAppliedFilters(initialFilters);
+            }}
+          />
+          <div className="cms-card">
+            <div className="exam-table-toolbar">
+              <div className="exam-search">
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search examinations..."
+                />
+              </div>
+              <div className="exam-toolbar-actions">
+                <button className="cms-btn cms-btn-ghost exam-export-btn" onClick={printSchedule}>
+                  <Printer size={15} /> Export
+                </button>
+                <button
+                  className="cms-btn cms-btn-primary"
+                  onClick={() => nav("/dashboard/examinations/add")}
+                >
+                  <Plus size={16} /> Create Examination
+                </button>
+              </div>
+            </div>
+            <div className="cms-table-wrap">
+              <table className="cms-table">
+                <thead>
+                  <tr>
+                    <th>Exam Code</th>
+                    <th>Exam Name</th>
+                    <th>Academic Year</th>
+                    <th>Level</th>
+                    <th>Group</th>
+                    <th>Program</th>
+                    <th>Exam Type</th>
+                    <th>Exam Period</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="7">
-                    <div className="cms-empty">
-                      No examinations yet. Create an examination to begin scheduling.
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {scheduleOpen && (
-        <SchedulePanel
-          exam={scheduleExam}
-          exams={exams}
+                </thead>
+                <tbody>
+                  {list.length ? (
+                    list.map((e) => (
+                      <tr key={e.id}>
+                        <td className="cms-strong">{e.code}</td>
+                        <td>{e.name}</td>
+                        <td>{nameOf(YEARS, e.yearId)}</td>
+                        <td>{nameOf(LEVELS, e.levelId)}</td>
+                        <td>{nameOf(GROUPS, e.groupId)}</td>
+                        <td>{nameOf(PROGRAMS, e.programId)}</td>
+                        <td>{e.type}</td>
+                        <td>
+                          {d(e.startDate)}
+                          <small className="exam-muted">to {d(e.endDate)}</small>
+                        </td>
+                        <td>
+                          <StatusBadge value={e.status} />
+                        </td>
+                        <td>
+                          <div className="cms-actions">
+                            <button
+                              className="cms-action-btn view"
+                              title="View"
+                              onClick={() => setDetail(e)}
+                            >
+                              <Eye size={15} />
+                            </button>
+                            <button
+                              className="cms-action-btn edit"
+                              title="Edit"
+                              disabled={!["DRAFT", "SCHEDULED"].includes(e.status)}
+                              onClick={() => setEditingExam(e)}
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              className="cms-action-btn"
+                              title="Schedule"
+                              disabled={e.status !== "DRAFT"}
+                              onClick={() => {
+                                setExamId(String(e.id));
+                                setTab("schedule");
+                                setEditing(null);
+                                setSch(emptySchedule());
+                              }}
+                            >
+                              <CalendarDays size={15} />
+                            </button>
+                            {e.status === "SCHEDULED" && (
+                              <button
+                                className="cms-action-btn"
+                                title="Export examination"
+                                onClick={() => {
+                                  const rows = buildExportRows([e], schedules);
+                                  if (!rows.length)
+                                    return setToast(
+                                      "No schedules are available to export for this examination.",
+                                    );
+                                  setExportPreview({ title: e.name, rows, scope: "individual" });
+                                }}
+                              >
+                                <Printer size={15} />
+                              </button>
+                            )}
+                            {e.status === "DRAFT" && (
+                              <button
+                                className="cms-action-btn danger"
+                                title="Cancel"
+                                onClick={() =>
+                                  setExams((x) =>
+                                    x.map((y) =>
+                                      y.id === e.id ? { ...y, status: "CANCELLED" } : y,
+                                    ),
+                                  )
+                                }
+                              >
+                                <X size={15} />
+                              </button>
+                            )}
+                            {e.status === "DRAFT" && !schedules.some((s) => s.examId === e.id) && (
+                              <button
+                                className="cms-action-btn danger"
+                                title="Delete draft"
+                                onClick={() => setRemove(e)}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="10">
+                        <div className="cms-empty">No examinations match the current filters.</div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <button
+            className="cms-btn cms-btn-ghost exam-back-btn"
+            onClick={() => {
+              setTab("exams");
+              setEditing(null);
+              setSch(emptySchedule());
+              setErrors({});
+            }}
+          >
+            <ArrowLeft size={15} /> Back to Examinations
+          </button>
+          <Schedule
+            exam={exam}
+            exams={exams}
+            schedules={schedules}
+            examId={examId}
+            setExamId={(v) => {
+              setExamId(v);
+              setEditing(null);
+              setSch(emptySchedule());
+              setErrors({});
+            }}
+            sch={sch}
+            setSch={setSch}
+            errors={errors}
+            setErrors={setErrors}
+            editing={editing}
+            onEdit={(s) => {
+              setExamId(String(s.examId));
+              setSch({
+                ...s,
+                subjectId: String(s.subjectId),
+                roomId: String(s.roomId),
+                invigilatorId: String(s.invigilatorId),
+              });
+              setEditing(s.id);
+              setErrors({});
+            }}
+            onSave={(records) => {
+              const wasEditing = Boolean(editing),
+                nextRecords = Array.isArray(records) ? records : [records],
+                candidate = nextRecords[0];
+              setSchedules((current) => {
+                if (!wasEditing) return [...current, ...nextRecords];
+                if (candidate.scheduleMode === "COMBINED") {
+                  const existingIds = current
+                      .filter(
+                        (s) =>
+                          String(s.examId) === String(candidate.examId) &&
+                          s.sessionId === candidate.sessionId,
+                      )
+                      .map((s) => String(s.subjectId)),
+                    missing = nextRecords.filter(
+                      (record) => !existingIds.includes(String(record.subjectId)),
+                    );
+                  return [
+                    ...current.map((s) =>
+                      String(s.examId) === String(candidate.examId) &&
+                      s.sessionId === candidate.sessionId
+                        ? {
+                            ...s,
+                            date: candidate.date,
+                            startTime: candidate.startTime,
+                            endTime: candidate.endTime,
+                            roomId: candidate.roomId,
+                            invigilatorId: candidate.invigilatorId,
+                            mode: candidate.mode,
+                          }
+                        : s,
+                    ),
+                    ...missing,
+                  ];
+                }
+                return current.map((s) => (s.id === editing ? candidate : s));
+              });
+              setToast(wasEditing ? "Schedule updated." : "Schedule saved.");
+              setEditing(null);
+              setSch(
+                wasEditing || candidate.scheduleMode === "COMBINED"
+                  ? emptySchedule()
+                  : nextScheduleFromPrevious(candidate),
+              );
+              setErrors({});
+            }}
+            onRemove={setRemoveSchedule}
+            finalizing={finalizing}
+            finalize={async () => {
+              if (finalizing || !exam) return;
+              if (!hasValidExamMarks(exam))
+                return setErrors({
+                  form: "Configure valid Total Marks and Pass Percentage before finalizing this examination.",
+                });
+              if (validateExamConfiguration(exam))
+                return setErrors({ form: "Select a valid Program, Exam Pattern and Exam Type." });
+              const expected = subjectsFor(exam),
+                records = schedules.filter((item) => String(item.examId) === String(exam.id));
+              if (getScheduleMode(exam) !== "COMBINED") {
+                const missing = expected.filter(
+                  (subject) =>
+                    !records.some((item) => String(item.subjectId) === String(subject.id)),
+                );
+                if (missing.length)
+                  return setErrors({
+                    form: `${missing.length} subject${missing.length > 1 ? "s are" : " is"} not scheduled yet: ${missing.map((subject) => subject.name).join(", ")}.`,
+                  });
+                if (new Set(records.map((item) => item.date)).size !== records.length)
+                  return setErrors({
+                    form: "Each subject in a Regular Academic examination must be scheduled on a different date.",
+                  });
+                const expectedIds = expected.map((subject) => String(subject.id)).sort(),
+                  actualIds = records.map((item) => String(item.subjectId)).sort(),
+                  invalidRecord = records.some((item) => {
+                    const subject = expected.find(
+                      (candidateSubject) => String(candidateSubject.id) === String(item.subjectId),
+                    );
+                    return (
+                      item.scheduleMode !== "SUBJECT_WISE" ||
+                      !subject ||
+                      !getMarksConfig(exam, subject) ||
+                      item.date < exam.startDate ||
+                      item.date > exam.endDate ||
+                      !item.startTime ||
+                      item.startTime >= item.endTime ||
+                      !ROOMS.some(
+                        (room) => String(room.id) === String(item.roomId) && room.status === "Active",
+                      ) ||
+                      !FACULTY.some(
+                        (faculty) =>
+                          String(faculty.id) === String(item.invigilatorId) &&
+                          faculty.status === "Active" &&
+                          !faculty.subjectIds.includes(Number(item.subjectId)),
+                      ) ||
+                      hasHallConflict({ ...item, editingId: item.id }, schedules) ||
+                      hasInvigilatorConflict({ ...item, editingId: item.id }, schedules)
+                    );
+                  });
+                if (
+                  actualIds.length !== expectedIds.length ||
+                  actualIds.some((item, index) => item !== expectedIds[index]) ||
+                  invalidRecord
+                )
+                  return setErrors({
+                    form: "The Regular Academic schedule is inconsistent. Edit the affected subject schedule before finalizing.",
+                  });
+              } else {
+                const combinedRecords = records.filter((item) => item.scheduleMode === "COMBINED"),
+                  sessionIds = [
+                    ...new Set(combinedRecords.map((item) => item.sessionId).filter(Boolean)),
+                  ],
+                  expectedIds = expected.map((subject) => String(subject.id)).sort(),
+                  actualIds = combinedRecords.map((item) => String(item.subjectId)).sort(),
+                  first = combinedRecords[0],
+                  invigilator = FACULTY.find(
+                    (faculty) => String(faculty.id) === String(first?.invigilatorId),
+                  ),
+                  sameSession =
+                    first &&
+                    combinedRecords.every((item) =>
+                      [
+                        "sessionId",
+                        "date",
+                        "startTime",
+                        "endTime",
+                        "roomId",
+                        "invigilatorId",
+                        "mode",
+                      ].every((key) => String(item[key]) === String(first[key])),
+                    ),
+                  validSession =
+                    first &&
+                    first.date >= exam.startDate &&
+                    first.date <= exam.endDate &&
+                    first.startTime < first.endTime &&
+                    first.mode === "Objective" &&
+                    invigilator?.status === "Active" &&
+                    !invigilator.subjectIds.some((id) => expectedIds.includes(String(id))) &&
+                    !hasHallConflict({ ...first, editingId: first.id }, schedules) &&
+                    !hasInvigilatorConflict({ ...first, editingId: first.id }, schedules);
+                if (
+                  !expected.length ||
+                  records.length !== combinedRecords.length ||
+                  sessionIds.length !== 1 ||
+                  actualIds.length !== expectedIds.length ||
+                  actualIds.some((item, index) => item !== expectedIds[index]) ||
+                  !sameSession ||
+                  !validSession
+                )
+                  return setErrors({
+                    form: "The combined objective schedule is inconsistent. Edit the combined session before finalizing.",
+                  });
+              }
+              setFinalizing(true);
+              try {
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+                setExams((x) =>
+                  x.map((e) => (e.id === exam.id ? { ...e, status: "SCHEDULED" } : e)),
+                );
+                setToast("Schedule finalized. Examination is now scheduled.");
+              } finally {
+                setFinalizing(false);
+              }
+            }}
+          />
+        </>
+      )}
+      {detail && <ExamDetails exam={detail} schedules={schedules} close={() => setDetail(null)} />}{" "}
+      {editingExam && (
+        <EditExamModal
+          exam={editingExam}
           schedules={schedules}
-          schedule={schedule}
-          setSchedule={setSchedule}
-          error={scheduleError}
-          onSave={saveSchedule}
-          onExamChange={(examId) => {
-            setScheduleExam(exams.find((exam) => String(exam.id) === String(examId)) || null);
-            setSchedule((current) => ({ ...current, subjectId: "" }));
-          }}
-          editing={Boolean(editingScheduleId)}
-          onClose={() => {
-            setScheduleOpen(false);
-            setScheduleExam(null);
-            setEditingScheduleId(null);
-            setSchedule(initialSchedule());
+          onClose={() => setEditingExam(null)}
+          onSave={(period) => {
+            setExams((current) =>
+              current.map((item) =>
+                String(item.id) === String(editingExam.id) ? { ...item, ...period } : item,
+              ),
+            );
+            setEditingExam(null);
+            setToast("Examination period updated successfully.");
           }}
         />
       )}
-      <h2 className="exam-schedule-heading">Saved Schedules</h2>
-      <div className="cms-card">
-        <div className="cms-table-wrap">
-          <table className="cms-table">
-            <thead>
-              <tr>
-                <th>Examination</th>
-                <th>Exam Code</th>
-                <th>Subject</th>
-                <th>Date & Time</th>
-                <th>Invigilator</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.length ? (
-                schedules.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>
-                      {exams.find((exam) => exam.id === entry.examId)?.name || "Saved examination"}
-                    </td>
-                    <td>{entry.examCode}</td>
-                    <td>
-                      {entry.subject}
-                      <small className="exam-muted">{entry.subjectCode}</small>
-                    </td>
-                    <td>
-                      {entry.date}
-                      <small className="exam-muted">
-                        {entry.startTime} - {entry.endTime}
-                      </small>
-                    </td>
-                    <td>{entry.invigilator}</td>
-                    <td>
-                      <div className="cms-actions">
-                        <button
-                          className="cms-action-btn edit"
-                          title="Edit schedule"
-                          onClick={() => {
-                            setScheduleOpen(true);
-                            setScheduleExam(exams.find((exam) => exam.id === entry.examId) || null);
-                            setSchedule({ ...entry, subjectId: String(entry.subjectId) });
-                            setEditingScheduleId(entry.id);
-                            setScheduleError("");
-                          }}
-                        >
-                          <Pencil size={15} />
-                        </button>
-                        <button
-                          className="cms-action-btn danger"
-                          title="Delete schedule"
-                          onClick={() => setDeletingSchedule(entry)}
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="6">
-                    <div className="cms-empty">
-                      No schedules saved yet. Select Create Schedule to begin.
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {selectedExam && (
-        <ExamDetails
-          exam={selectedExam}
-          schedules={schedules}
-          onClose={() => setSelectedExam(null)}
-        />
-      )}
-      {confirmationDialog}
-      {deleting && (
+      {exportPreview && (
+        <ExportPreviewModal preview={exportPreview} onClose={() => setExportPreview(null)} />
+      )}{" "}
+      {remove && (
         <ConfirmDialog
-          message={`Delete "${deleting.name}" and its saved schedules?`}
-          onCancel={() => setDeleting(null)}
+          title="Delete draft examination"
+          message={`Delete ${remove.name}? This draft has no schedules.`}
+          onCancel={() => setRemove(null)}
           onConfirm={() => {
-            const next = exams.filter((exam) => exam.id !== deleting.id);
-            setExams(next);
-            write(EXAMS_KEY, next);
-            const remaining = schedules.filter((item) => item.examId !== deleting.id);
-            setSchedules(remaining);
-            write(SCHEDULES_KEY, remaining);
-            setDeleting(null);
-            setToast("Examination deleted.");
+            setExams((x) => x.filter((e) => e.id !== remove.id));
+            setRemove(null);
+            setToast("Draft examination deleted.");
           }}
         />
       )}
-      {deletingSchedule && (
+      {removeSchedule && (
         <ConfirmDialog
-          title="Delete schedule"
-          message={`Delete the ${deletingSchedule.subject} schedule?`}
-          onCancel={() => setDeletingSchedule(null)}
+          title="Remove schedule"
+          message={
+            removeSchedule.scheduleMode === "COMBINED"
+              ? "Remove this combined objective schedule? All included subject schedules will be removed."
+              : `Remove the ${removeSchedule.subjectName} schedule?`
+          }
+          onCancel={() => setRemoveSchedule(null)}
           onConfirm={() => {
-            const next = schedules.filter((entry) => entry.id !== deletingSchedule.id);
-            setSchedules(next);
-            write(SCHEDULES_KEY, next);
-            setDeletingSchedule(null);
-            setToast("Schedule deleted.");
+            setSchedules((x) =>
+              x.filter((s) =>
+                removeSchedule.scheduleMode === "COMBINED"
+                  ? !(
+                      String(s.examId) === String(removeSchedule.examId) &&
+                      s.sessionId === removeSchedule.sessionId
+                    )
+                  : s.id !== removeSchedule.id,
+              ),
+            );
+            setRemoveSchedule(null);
+            setToast("Schedule removed.");
           }}
         />
       )}
       <Toast message={toast} onClose={() => setToast("")} />
+      <PrintableSchedule preview={exportPreview} />
     </DashboardLayout>
   );
 }
-
-function ExamForm({ form, errors, setValue, saveExam, navigate, editing }) {
-  const fields = [
-    ["name", "Exam Name"],
-    ["code", "Exam Code"],
-    ["board", "Board", data.options.board],
-    ["year", "Academic Year", data.options.year],
-    ["level", "Academic Level", data.options.level],
-    ["group", "Group", data.options.group],
+function Filters({ f, change, onCheck, onReset }) {
+  const y = YEARS.filter((x) => !f.boardId || String(x.boardId) === f.boardId),
+    l = LEVELS.filter((x) => String(x.yearId) === f.yearId),
+    g = GROUPS.filter((x) => String(x.levelId) === f.levelId),
+    p = programsForGroup(f.groupId);
+  return (
+    <div className="cms-card exam-filters">
+      <div className="exam-filter-grid">
+        <Select
+          label="Board"
+          value={f.boardId}
+          onChange={(v) => change("boardId", v)}
+          options={BOARDS}
+        />
+        <Select
+          label="Academic Year"
+          value={f.yearId}
+          disabled={!f.boardId}
+          onChange={(v) => change("yearId", v)}
+          options={y}
+        />
+        <Select
+          label="Academic Level"
+          value={f.levelId}
+          disabled={!f.yearId}
+          onChange={(v) => change("levelId", v)}
+          options={l}
+        />
+        <Select
+          label="Group"
+          value={f.groupId}
+          disabled={!f.levelId}
+          onChange={(v) => change("groupId", v)}
+          options={g}
+        />
+        <Select
+          label="Program"
+          value={f.programId}
+          disabled={!f.groupId}
+          onChange={(v) => change("programId", v)}
+          options={p}
+        />
+        <Select
+          label="Exam Type"
+          value={f.type}
+          onChange={(v) => change("type", v)}
+          options={TYPES}
+        />
+        <Select
+          label="Status"
+          value={f.status}
+          onChange={(v) => change("status", v)}
+          options={["DRAFT", "SCHEDULED", "ONGOING", "COMPLETED", "CANCELLED"]}
+        />
+      </div>
+      <div className="exam-filter-actions">
+        <button className="cms-btn cms-btn-ghost" type="button" onClick={onReset}>
+          Reset
+        </button>
+        <button className="cms-btn cms-btn-primary" type="button" onClick={onCheck}>
+          Check Examinations
+        </button>
+      </div>
+    </div>
+  );
+}
+function ExamForm({ exams, schedules, editId, onSave }) {
+  const nav = useNavigate(),
+    existing = exams.find((e) => String(e.id) === String(editId)),
+    [form, setForm] = useState(() =>
+      existing
+        ? { ...existing, programId: String(existing.programId) }
+        : { ...emptyExam(), code: `EXM-2026-${String(exams.length + 1).padStart(3, "0")}` },
+    ),
+    [errors, setErrors] = useState({}),
+    [saving, setSaving] = useState(false),
+    locked = !!(existing && schedules.some((s) => s.examId === existing.id));
+  const change = (n, v) =>
+      setForm((x) => ({
+        ...x,
+        [n]: v,
+        ...(n === "boardId"
+          ? { yearId: "", levelId: "", groupId: "", programId: "", examPatternId: "", examType: "" }
+          : n === "yearId"
+            ? { levelId: "", groupId: "", programId: "", examPatternId: "", examType: "" }
+            : n === "levelId"
+              ? { groupId: "", programId: "", examPatternId: "", examType: "" }
+              : n === "groupId"
+                ? { programId: "", examPatternId: "", examType: "" }
+                : n === "programId"
+                  ? { examPatternId: "", examType: "" }
+                  : n === "examPatternId"
+                    ? { examType: "" }
+                    : {}),
+      })),
+    y = YEARS.filter((x) => String(x.boardId) === String(form.boardId)),
+    l = LEVELS.filter((x) => String(x.yearId) === String(form.yearId)),
+    g = GROUPS.filter((x) => String(x.levelId) === String(form.levelId)),
+    p = programsForGroup(form.groupId),
+    patterns = patternsForProgram(form.programId),
+    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(form.examPatternId));
+  const save = async (e) => {
+    e.preventDefault();
+    if (saving) return;
+    const x = {};
     [
-      "type",
-      "Exam Type",
-      ["Internal", "Quarterly", "Half-Yearly", "Annual", "Semester", "Supplementary"],
-    ],
-    [
-      "status",
-      "Exam Status",
-      ["Draft", "Scheduled", "Published", "Ongoing", "Completed", "Cancelled"],
-    ],
-  ];
+      "name",
+      "boardId",
+      "yearId",
+      "levelId",
+      "groupId",
+      "programId",
+      "examPatternId",
+      "examType",
+      "startDate",
+      "endDate",
+    ].forEach((k) => {
+      if (!String(form[k] || "").trim())
+        x[k] = k === "programId" ? "Please select a Program." : "Required";
+    });
+    const configurationError = validateExamConfiguration(form);
+    if (configurationError) x.examPatternId = configurationError;
+    if (form.startDate && form.endDate && form.startDate > form.endDate)
+      x.endDate = "End date must be on or after the start date.";
+    if (!Number.isInteger(Number(form.totalMarks)) || Number(form.totalMarks) <= 0)
+      x.totalMarks = "Total Marks must be a positive whole number.";
+    if (
+      !Number.isFinite(Number(form.passPercentage)) ||
+      Number(form.passPercentage) <= 0 ||
+      Number(form.passPercentage) > 100
+    )
+      x.passPercentage = "Pass Percentage must be greater than 0 and not exceed 100.";
+    if (
+      exams.some(
+        (q) =>
+          q.id !== existing?.id &&
+          q.name.trim().toLowerCase() === form.name.trim().toLowerCase() &&
+          [
+            "boardId",
+            "yearId",
+            "levelId",
+            "groupId",
+            "programId",
+            "examPatternId",
+            "examType",
+            "startDate",
+            "endDate",
+          ].every((k) => String(q[k]) === String(form[k])),
+      )
+    )
+      x.name = "An examination with this academic configuration and type already exists.";
+    if (
+      existing &&
+      schedules.some(
+        (s) => s.examId === existing.id && (s.date < form.startDate || s.date > form.endDate),
+      )
+    )
+      x.endDate =
+        "The new examination period excludes existing scheduled subjects. Update those schedules first.";
+    if (Object.keys(x).length) return setErrors(x);
+    setSaving(true);
+    try {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      onSave({
+        ...form,
+        type: form.examType,
+        id: existing?.id || Date.now(),
+        name: form.name.trim(),
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <DashboardLayout
-      title={`${editing ? "Edit" : "Create"} Examination`}
-      subtitle="Set the examination details and workflow state."
+      title={existing ? "Edit Examination" : "Create Examination"}
+      subtitle="Board → Academic Year → Academic Level → Group → Program"
       breadcrumb={["Examinations"]}
     >
-      <form className="cms-form-page examination-form-page" onSubmit={saveExam}>
+      <form className="cms-form-page examination-form-page" onSubmit={save}>
         <div className="cms-card">
           <div className="cms-card-body">
             <section className="cms-form-section">
               <div className="cms-form-section-heading">
-                <h2>Examination Information</h2>
-                <p>Identification, academic configuration and workflow state.</p>
-              </div>
-              <div className="cms-form-grid cols-3">
-                {fields.map(([name, label, options]) => (
-                  <FormControl
-                    key={name}
-                    name={name}
-                    label={label}
-                    value={form[name]}
-                    options={options}
-                    error={errors[name]}
-                    onChange={setValue}
-                  />
-                ))}
-                <div className="cms-field">
-                  <label>Exam Sessions</label>
-                  <div className="exam-toggles">
-                    {["Morning", "Afternoon"].map((session) => (
-                      <label key={session}>
-                        <input
-                          type="checkbox"
-                          checked={(form.sessions || []).includes(session)}
-                          onChange={(event) =>
-                            setValue(
-                              "sessions",
-                              event.target.checked
-                                ? [...(form.sessions || []), session]
-                                : (form.sessions || []).filter((item) => item !== session),
-                            )
-                          }
-                        />{" "}
-                        {session}
-                      </label>
-                    ))}
-                  </div>
-                  {errors.sessions && <span className="cms-error">{errors.sessions}</span>}
+                <div>
+                  <h2>Academic Configuration</h2>
+                  <p>Each selection unlocks valid dependent configurations.</p>
                 </div>
+              </div>
+              {locked && (
+                <p className="exam-help">
+                  Academic configuration is locked because subjects have already been scheduled.
+                </p>
+              )}
+              <div className="cms-form-grid cols-3">
+                <Select
+                  label="Board *"
+                  value={form.boardId}
+                  disabled={locked || saving}
+                  onChange={(v) => change("boardId", v)}
+                  options={BOARDS}
+                  error={errors.boardId}
+                />
+                <Select
+                  label="Academic Year *"
+                  value={form.yearId}
+                  disabled={saving || locked || !form.boardId}
+                  onChange={(v) => change("yearId", v)}
+                  options={y}
+                  error={errors.yearId}
+                />
+                <Select
+                  label="Academic Level *"
+                  value={form.levelId}
+                  disabled={saving || locked || !form.yearId}
+                  onChange={(v) => change("levelId", v)}
+                  options={l}
+                  error={errors.levelId}
+                />
+                <Select
+                  label="Group *"
+                  value={form.groupId}
+                  disabled={saving || locked || !form.levelId}
+                  onChange={(v) => change("groupId", v)}
+                  options={g}
+                  error={errors.groupId}
+                />
+                <Select
+                  label="Program *"
+                  value={form.programId}
+                  disabled={saving || locked || !form.groupId}
+                  onChange={(v) => change("programId", v)}
+                  options={p}
+                  error={errors.programId}
+                />
+                <Select
+                  label="Exam Pattern *"
+                  value={form.examPatternId}
+                  disabled={saving || locked || !form.programId}
+                  onChange={(v) => change("examPatternId", v)}
+                  options={patterns}
+                  error={errors.examPatternId}
+                />
+                <Select
+                  label="Exam Type *"
+                  value={form.examType}
+                  disabled={saving || locked || !form.examPatternId}
+                  onChange={(v) => change("examType", v)}
+                  options={pattern?.allowedExamTypes || []}
+                  error={errors.examType}
+                />
               </div>
             </section>
             <section className="cms-form-section">
-              {/*
-                        <small>
-                          {subject.code} · {subject.type} · Max {subject.max} · Pass {subject.pass}
-                        </small>
-                      </span>
-                    </label>
-                  ))
-                ) : (
-                  <div className="cms-empty">
-                    Choose board, academic level and group to see eligible subjects.
-                  </div>
-                )}
+              <div className="cms-form-section-heading">
+                <div>
+                  <h2>Examination Information</h2>
+                  <p>Dates determine the permitted schedule window.</p>
+                </div>
               </div>
-              */}
+              <div className="cms-form-grid cols-3">
+                <Field
+                  label="Exam Name *"
+                  value={form.name}
+                  onChange={(v) => change("name", v)}
+                  error={errors.name}
+                />
+                <Field label="Exam Code" value={form.code} readOnly />
+                <Field
+                  label="Start Date *"
+                  type="date"
+                  value={form.startDate}
+                  onChange={(v) => change("startDate", v)}
+                  error={errors.startDate}
+                />
+                <Field
+                  label="End Date *"
+                  type="date"
+                  min={form.startDate}
+                  value={form.endDate}
+                  onChange={(v) => change("endDate", v)}
+                  error={errors.endDate}
+                />
+                <Field
+                  label="Total Marks *"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={form.totalMarks}
+                  onChange={(v) => change("totalMarks", v)}
+                  error={errors.totalMarks}
+                />
+                <Field
+                  label="Pass Percentage *"
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="any"
+                  value={form.passPercentage}
+                  onChange={(v) => change("passPercentage", v)}
+                  error={errors.passPercentage}
+                />
+                <Select label="Status" value={form.status} disabled options={[form.status]} />
+                <Field
+                  label="Description"
+                  type="textarea"
+                  value={form.description}
+                  onChange={(v) => change("description", v)}
+                />
+              </div>
             </section>
             <div className="cms-form-actions">
               <button
                 type="button"
                 className="cms-btn cms-btn-ghost"
-                onClick={() => navigate("/dashboard/examinations")}
+                disabled={saving}
+                onClick={() => nav("/dashboard/examinations")}
               >
                 Cancel
               </button>
-              <button className="cms-btn cms-btn-primary" type="submit">
-                {editing ? "Update Examination" : "Save Examination"}
+              <button className="cms-btn cms-btn-primary" disabled={saving} aria-busy={saving}>
+                {saving ? "Saving..." : existing ? "Update Examination" : "Save Examination"}
               </button>
             </div>
           </div>
@@ -575,243 +1357,651 @@ function ExamForm({ form, errors, setValue, saveExam, navigate, editing }) {
     </DashboardLayout>
   );
 }
-function FormControl({ name, label, value, options, type = "text", error, onChange }) {
+function Schedule({
+  exam,
+  exams,
+  schedules,
+  examId,
+  setExamId,
+  sch,
+  setSch,
+  errors,
+  setErrors,
+  editing,
+  onEdit,
+  onSave,
+  onRemove,
+  finalize,
+  finalizing,
+}) {
+  const [savingSchedule, setSavingSchedule] = useState(false),
+    entries = exam ? schedules.filter((s) => String(s.examId) === String(exam.id)) : [],
+    combined = getScheduleMode(exam) === "COMBINED",
+    included = subjectsFor(exam),
+    includedIds = included.map((s) => Number(s.id)),
+    subs = included.filter(
+      (s) =>
+        !entries.some(
+          (x) => String(x.subjectId) === String(s.id) && String(x.id) !== String(editing),
+        ),
+    ),
+    canEdit = exam?.status === "DRAFT",
+    currentSessionId = editing
+      ? entries.find((s) => String(s.id) === String(editing))?.sessionId
+      : "",
+    candidate = getCandidateSchedule(sch, exam, editing, currentSessionId),
+    faculty = getEligibleInvigilators(candidate, schedules, includedIds),
+    rooms = getAvailableRooms(candidate, schedules);
+  useEffect(() => {
+    setSch((current) => {
+      const next = { ...current };
+      if (next.roomId && !rooms.some((room) => String(room.id) === String(next.roomId)))
+        next.roomId = "";
+      if (
+        next.invigilatorId &&
+        !faculty.some((person) => String(person.id) === String(next.invigilatorId))
+      )
+        next.invigilatorId = "";
+      return next.roomId === current.roomId && next.invigilatorId === current.invigilatorId
+        ? current
+        : next;
+    });
+  }, [rooms, faculty, setSch]);
+  useEffect(() => {
+    if (combined && exam?.examType === "Objective")
+      setSch((current) => (current.mode === "Objective" ? current : { ...current, mode: "Objective" }));
+  }, [combined, exam?.id, exam?.examType, setSch]);
+  const change = (n, v) => {
+    setSch((x) => ({
+      ...x,
+      [n]: v,
+      mode: combined && exam?.examType === "Objective" ? "Objective" : x.mode,
+    }));
+    setErrors((x) => ({ ...x, [n]: undefined, form: undefined }));
+  };
+  const save = async (e) => {
+    e.preventDefault();
+    if (savingSchedule) return;
+    const x = {};
+    (combined
+      ? ["date", "startTime", "endTime", "roomId", "invigilatorId"]
+      : ["subjectId", "date", "startTime", "endTime", "roomId", "invigilatorId"]
+    ).forEach((k) => {
+      if (!sch[k]) x[k] = "Required";
+    });
+    if (!exam) x.form = "Select an examination.";
+    if (combined && !included.length)
+      x.form = "No eligible subjects are configured for this examination.";
+    if (sch.startTime && sch.endTime && sch.startTime >= sch.endTime)
+      x.endTime = "End time must be after start time.";
+    if (exam && sch.date && (sch.date < exam.startDate || sch.date > exam.endDate))
+      x.date = "Exam date must be within the examination period.";
+    if (
+      combined &&
+      entries.some((s) => s.scheduleMode === "COMBINED" && s.sessionId !== currentSessionId)
+    )
+      x.form =
+        "A combined schedule already exists for this examination. Edit the existing schedule instead.";
+    if (
+      !combined &&
+      entries.some(
+        (s) => String(s.id) !== String(editing) && String(s.subjectId) === String(sch.subjectId),
+      )
+    )
+      x.subjectId = "This subject is already scheduled for this examination.";
+    if (
+      !combined &&
+      sch.date &&
+      entries.some(
+        (existing) =>
+          String(existing.id) !== String(editing) && existing.date === sch.date,
+      )
+    )
+      x.date =
+        "Another subject is already scheduled on this date for this examination. Please select a different exam date.";
+    if (hasHallConflict(candidate, schedules))
+      x.roomId = "This hall is already in use during the selected time.";
+    if (hasInvigilatorConflict(candidate, schedules))
+      x.invigilatorId = "This invigilator is already assigned during the selected time.";
+    const selectedSubjects = combined
+      ? included
+      : [SUBJECTS.find((s) => String(s.id) === String(sch.subjectId))];
+    if (selectedSubjects.some((subject) => !getMarksConfig(exam, subject)))
+      x.form = "Marks configuration is unavailable for this subject and examination type.";
+    if (Object.keys(x).length) return setErrors(x);
+    const savedSessionId = combined
+      ? currentSessionId || createCombinedSessionId(exam.id)
+      : "";
+    const make = (subject) => {
+      const marks = getMarksConfig(exam, subject);
+      return {
+        ...sch,
+        id: editing && !combined ? editing : Date.now() + subject.id,
+        examId: exam.id,
+        scheduleMode: combined ? "COMBINED" : "SUBJECT_WISE",
+        sessionId: savedSessionId,
+        subjectId: subject.id,
+        subjectIds: combined ? included.map((s) => s.id) : [],
+        subjectName: subject.name,
+        subjectCode: subject.code,
+        roomId: Number(sch.roomId),
+        invigilatorId: Number(sch.invigilatorId),
+        mode: combined && exam.examType === "Objective" ? "Objective" : sch.mode,
+        maxMarks: marks.maxMarks,
+        passingMarks: marks.passingMarks,
+      };
+    };
+    setSavingSchedule(true);
+    try {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      onSave(combined ? included.map(make) : [make(selectedSubjects[0])]);
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
   return (
-    <div className={`cms-field ${error ? "has-error" : ""}`}>
-      <label htmlFor={`exam-${name}`}>{label}</label>
-      {options ? (
-        <select
-          id={`exam-${name}`}
-          value={value || ""}
-          onChange={(e) => onChange(name, e.target.value)}
-        >
-          <option value="">Select {label}</option>
-          {options.map((option) => {
-            const optionValue = typeof option === "object" ? option.value : option;
-            return (
-              <option key={optionValue} value={optionValue}>
-                {typeof option === "object" ? option.label : option}
-              </option>
-            );
-          })}
-        </select>
-      ) : type === "textarea" ? (
-        <textarea
-          id={`exam-${name}`}
-          value={value || ""}
-          onChange={(e) => onChange(name, e.target.value)}
-        />
-      ) : (
-        <input
-          id={`exam-${name}`}
-          type={type}
-          value={value || ""}
-          onChange={(e) => onChange(name, e.target.value)}
-        />
-      )}
-      {error && <span className="cms-error">{error}</span>}
+    <>
+      <div className="exam-toolbar">
+        <div>
+          <h2>Exam Schedule</h2>
+          <p>Select an examination; its academic context is locked into every schedule.</p>
+        </div>
+      </div>
+      <div className="cms-card exam-schedule-card">
+        <div className="cms-card-body">
+          <Select
+            label="Examination *"
+            value={examId}
+            onChange={setExamId}
+            options={exams.filter((e) => e.status === "DRAFT")}
+            placeholder="Select an examination"
+          />
+          {exam ? (
+            <>
+              <div className="exam-context">
+                <strong>{exam.name}</strong>
+                <span>
+                  {nameOf(BOARDS, exam.boardId)} · {nameOf(YEARS, exam.yearId)} ·{" "}
+                  {nameOf(LEVELS, exam.levelId)} · {nameOf(GROUPS, exam.groupId)} ·{" "}
+                  {nameOf(PROGRAMS, exam.programId)}
+                </span>
+                <span>
+                  {d(exam.startDate)} – {d(exam.endDate)}
+                </span>
+              </div>
+              {canEdit ? (
+                <form onSubmit={save}>
+                  <div className="cms-form-grid cols-3">
+                    {combined ? (
+                      <div className="cms-field exam-included-subjects">
+                        <label>Included Subjects ({included.length})</label>
+                        <div>{included.map((s) => s.name).join(" · ")}</div>
+                      </div>
+                    ) : (
+                      <Select
+                        label="Subject *"
+                        value={sch.subjectId}
+                        onChange={(v) => change("subjectId", v)}
+                        options={subs}
+                        error={errors.subjectId}
+                      />
+                    )}
+                    <Field
+                      label="Exam Date *"
+                      type="date"
+                      min={exam.startDate}
+                      max={exam.endDate}
+                      value={sch.date}
+                      onChange={(v) => change("date", v)}
+                      error={errors.date}
+                    />
+                    <Field
+                      label="Start Time *"
+                      type="time"
+                      value={sch.startTime}
+                      onChange={(v) => change("startTime", v)}
+                      error={errors.startTime}
+                    />
+                    <Field
+                      label="End Time *"
+                      type="time"
+                      value={sch.endTime}
+                      onChange={(v) => change("endTime", v)}
+                      error={errors.endTime}
+                    />
+                    <Select
+                      label="Hall / Room *"
+                      value={sch.roomId}
+                      onChange={(v) => change("roomId", v)}
+                      options={rooms}
+                      error={errors.roomId}
+                    />
+                    <Select
+                      label="Invigilator *"
+                      value={sch.invigilatorId}
+                      onChange={(v) => change("invigilatorId", v)}
+                      options={faculty}
+                      error={errors.invigilatorId}
+                    />
+                    {combined && exam.examType === "Objective" ? (
+                      <Field label="Exam Mode" value="Objective" readOnly />
+                    ) : (
+                      <Select
+                        label="Exam Mode"
+                        value={sch.mode}
+                        onChange={(v) => change("mode", v)}
+                        options={["Written", "Practical", "Viva"]}
+                      />
+                    )}
+                  </div>
+                  {errors.form && <p className="cms-error">{errors.form}</p>}
+                  <div className="cms-form-actions">
+                    <button
+                      type="button"
+                      className="cms-btn cms-btn-ghost"
+                      disabled={savingSchedule}
+                      onClick={() => {
+                        setSch(emptySchedule());
+                        setErrors({});
+                      }}
+                    >
+                      {editing ? "Cancel Edit" : "Clear"}
+                    </button>
+                    <button
+                      className="cms-btn cms-btn-primary"
+                      disabled={savingSchedule || !faculty.length || !rooms.length}
+                      aria-busy={savingSchedule}
+                    >
+                      {savingSchedule ? "Saving..." : editing ? "Update Schedule" : "Save Schedule"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <p className="exam-help">
+                  This examination is {exam.status.toLowerCase()} and its schedule is read-only.
+                </p>
+              )}
+              <ScheduleTable entries={entries} canEdit={canEdit} edit={onEdit} remove={onRemove} />
+              {canEdit && (
+                <div className="exam-finalize">
+                  <span>
+                    {entries.length} of {included.length} eligible subjects scheduled
+                  </span>
+                  <button
+                    className="cms-btn cms-btn-primary"
+                    disabled={finalizing}
+                    aria-busy={finalizing}
+                    onClick={finalize}
+                  >
+                    {finalizing ? "Finalizing..." : "Finalize Schedule"}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="cms-empty">Choose a draft examination to begin scheduling.</div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+function ScheduleTable({ entries, canEdit, edit, remove }) {
+  return (
+    <div className="cms-table-wrap exam-schedule-table">
+      <table className="cms-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Exam Date</th>
+            <th>Start Time</th>
+            <th>End Time</th>
+            <th>Hall</th>
+            <th>Invigilator</th>
+            <th>Exam Mode</th>
+            {canEdit && <th>Actions</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {entries.length ? (
+            entries.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  {s.subjectName}
+                  <small className="exam-muted">{s.subjectCode}</small>
+                </td>
+                <td>{d(s.date)}</td>
+                <td>{s.startTime}</td>
+                <td>{s.endTime}</td>
+                <td>{nameOf(ROOMS, s.roomId)}</td>
+                <td>{nameOf(FACULTY, s.invigilatorId)}</td>
+                <td>{s.mode}</td>
+                {canEdit && (
+                  <td>
+                    <div className="cms-actions">
+                      <button
+                        className="cms-action-btn edit"
+                        title="Edit schedule"
+                        onClick={() => edit(s)}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        className="cms-action-btn danger"
+                        title="Remove schedule"
+                        onClick={() => remove(s)}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))
+          ) : (
+            <tr>
+              <td colSpan={canEdit ? 8 : 7}>
+                <div className="cms-empty">No subjects have been scheduled yet.</div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
-function ExamDetails({ exam, schedules, onClose }) {
-  const entries = schedules.filter((item) => item.examId === exam.id);
+function ExamDetails({ exam, schedules, close }) {
+  const entries = schedules.filter((s) => s.examId === exam.id);
   return (
-    <Modal title="Examination Details" onClose={onClose}>
-      <div className="exam-detail-summary">
-        <div>
-          <span>Exam code</span>
-          <strong>{exam.code}</strong>
-        </div>
-        <div>
-          <span>Academic setup</span>
-          <strong>
-            {exam.board} · {exam.year} · {exam.level} · {exam.group}
-          </strong>
-        </div>
-        <div>
-          <span>Status</span>
-          <StatusBadge value={exam.status} />
-        </div>
-      </div>
-      <div className="exam-summary">
-        <span>
-          Scheduled subjects: <strong>{entries.length}</strong>
-        </span>
-        <span>
-          Examination status: <strong>{exam.status}</strong>
-        </span>
-      </div>
-      <div className="cms-table-wrap">
-        <table className="cms-table">
-          <thead>
-            <tr>
-              <th>Subject</th>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.length ? (
-              entries.map((entry) => (
-                <tr key={entry.id}>
-                  <td>
-                    {entry.subject}
-                    <small className="exam-muted">{entry.subjectCode}</small>
-                  </td>
-                  <td>{entry.date}</td>
-                  <td>
-                    {entry.startTime} - {entry.endTime}
-                  </td>
-                  <td>
-                    <StatusBadge value={entry.status} />
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="4">
-                  <div className="cms-empty">No subjects are scheduled yet.</div>
+    <Modal title="Examination Details" onClose={close}>
+      <section className="exam-view-summary">
+        <strong>{exam.name}</strong>
+        <p>
+          {nameOf(BOARDS, exam.boardId)} · {nameOf(YEARS, exam.yearId)} ·{" "}
+          {nameOf(LEVELS, exam.levelId)} · {nameOf(GROUPS, exam.groupId)} ·{" "}
+          {nameOf(PROGRAMS, exam.programId)}
+        </p>
+        <p>
+          {d(exam.startDate)} – {d(exam.endDate)}
+        </p>
+        <p>
+          Total Marks: {exam.totalMarks || "—"} · Pass Percentage:{" "}
+          {exam.passPercentage ? `${exam.passPercentage}%` : "—"} · Passing Score:{" "}
+          {getExamPassingMarks(exam) ?? "—"}
+        </p>
+      </section>
+      <CompactScheduleTable entries={entries} />
+    </Modal>
+  );
+}
+function CompactScheduleTable({ entries }) {
+  return (
+    <div className="cms-table-wrap exam-view-schedule">
+      <table className="cms-table">
+        <thead>
+          <tr>
+            <th>Subject</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Hall</th>
+            <th>Invigilator</th>
+            <th>Mode</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.length ? (
+            entries.map((s) => (
+              <tr key={s.id}>
+                <td>{s.subjectName}</td>
+                <td>{d(s.date)}</td>
+                <td>
+                  {s.startTime} - {s.endTime}
                 </td>
+                <td>{nameOf(ROOMS, s.roomId)}</td>
+                <td>{nameOf(FACULTY, s.invigilatorId)}</td>
+                <td>{s.mode}</td>
               </tr>
-            )}
-          </tbody>
-        </table>
+            ))
+          ) : (
+            <tr>
+              <td colSpan="6">
+                <div className="cms-empty">No subjects have been scheduled yet.</div>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function EditExamModal({ exam, schedules, onClose, onSave }) {
+  const [form, setForm] = useState({ startDate: exam.startDate, endDate: exam.endDate }),
+    [errors, setErrors] = useState({}),
+    [saving, setSaving] = useState(false);
+  const change = (name, value) => {
+    setForm((current) => ({ ...current, [name]: value }));
+    setErrors((current) => ({ ...current, [name]: undefined, form: undefined }));
+  };
+  const save = async (event) => {
+    event.preventDefault();
+    const next = {};
+    if (!form.startDate) next.startDate = "Start date is required.";
+    if (!form.endDate) next.endDate = "End date is required.";
+    if (form.startDate && form.endDate && form.endDate < form.startDate)
+      next.endDate = "End date must be on or after the start date.";
+    if (
+      schedules.some(
+        (schedule) =>
+          String(schedule.examId) === String(exam.id) &&
+          (schedule.date < form.startDate || schedule.date > form.endDate),
+      )
+    )
+      next.form =
+        "The new examination period excludes existing scheduled subjects. Update those schedules before changing the examination period.";
+    if (Object.keys(next).length) return setErrors(next);
+    setSaving(true);
+    try {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      onSave(form);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const details = [
+    ["Exam Name", exam.name],
+    ["Exam Code", exam.code],
+    ["Board", nameOf(BOARDS, exam.boardId)],
+    ["Academic Year", nameOf(YEARS, exam.yearId)],
+    ["Academic Level", nameOf(LEVELS, exam.levelId)],
+    ["Group", nameOf(GROUPS, exam.groupId)],
+    ["Program", nameOf(PROGRAMS, exam.programId)],
+    ["Exam Type", exam.type],
+    ["Status", exam.status],
+    ["Description", exam.description || "No description provided."],
+  ];
+  return (
+    <Modal title="Edit Examination" onClose={saving ? undefined : onClose}>
+      <form className="exam-edit-modal" onSubmit={save}>
+        <div className="exam-edit-summary">
+          {details.map(([label, value]) => (
+            <div className="exam-edit-detail" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+        <section className="exam-edit-period">
+          <h3>Examination Period</h3>
+          <div className="cms-form-grid">
+            <Field
+              label="Start Date *"
+              type="date"
+              value={form.startDate}
+              onChange={(value) => change("startDate", value)}
+              error={errors.startDate}
+            />
+            <Field
+              label="End Date *"
+              type="date"
+              min={form.startDate}
+              value={form.endDate}
+              onChange={(value) => change("endDate", value)}
+              error={errors.endDate}
+            />
+          </div>
+          {errors.form && <p className="cms-error">{errors.form}</p>}
+        </section>
+        <div className="exam-edit-actions">
+          <button
+            type="button"
+            className="cms-btn cms-btn-ghost"
+            disabled={saving}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className="cms-btn cms-btn-primary exam-save-btn"
+            disabled={saving}
+            aria-busy={saving}
+          >
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+function ExportPreviewModal({ preview, onClose }) {
+  return (
+    <Modal title={preview.title} onClose={onClose}>
+      <div className="exam-export-preview">
+        <ExportTable rows={preview.rows} scope={preview.scope} />
+      </div>
+      <div className="exam-edit-actions">
+        <button className="cms-btn cms-btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="cms-btn cms-btn-primary" onClick={() => window.print()}>
+          Download PDF
+        </button>
       </div>
     </Modal>
   );
 }
-function SchedulePanel({
-  exam,
-  exams,
-  schedules,
-  schedule,
-  setSchedule,
-  error,
-  onSave,
-  onExamChange,
-  editing,
-  onClose,
-}) {
-  const subjects = exam ? data.subjects.filter((subject) => subject.status !== "Inactive") : [];
-  const entries = exam ? schedules.filter((item) => item.examId === exam.id) : [];
-  const selectedSubject = data.subjects.find(
-    (subject) => String(subject.id) === String(schedule.subjectId),
-  );
-  const change = (name, value) => setSchedule((current) => ({ ...current, [name]: value }));
+function PrintableSchedule({ preview }) {
+  if (!preview) return null;
   return (
-    <section
-      className="exam-schedule-panel"
-      title={editing ? `Edit Schedule · ${exam?.name || ""}` : "Create Schedule"}
-    >
-      <div className="cms-form-section-heading">
-        <div>
-          <h2>{editing ? "Edit Schedule" : "Create Schedule"}</h2>
-          <p>Schedule a subject for the selected examination.</p>
-        </div>
-        <button className="cms-btn cms-btn-ghost" type="button" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
-      <form onSubmit={onSave}>
-        <p className="exam-schedule-context">
-          {exam
-            ? `${exam.code} · ${exam.name}`
-            : "Select an examination to load its exam code and subjects."}
-        </p>
-        {error && <p className="cms-error">{error}</p>}
-        <div className="cms-form-grid">
-          <FormControl
-            name="examination"
-            label="Examination"
-            value={exam?.id || ""}
-            options={exams.map((item) => ({ value: item.id, label: item.name }))}
-            onChange={(_, value) => onExamChange(value)}
-          />
-          <div className="cms-field">
-            <label>Exam Code</label>
-            <input value={exam?.code || ""} readOnly />
-          </div>
-          <FormControl
-            name="subjectId"
-            label="Subject"
-            value={schedule.subjectId}
-            options={subjects
-              .filter(
-                (subject) =>
-                  !entries.some((entry) => entry.subjectId === subject.id) ||
-                  String(subject.id) === String(schedule.subjectId),
-              )
-              .map((subject) => ({
-                value: subject.id,
-                label: `${subject.name} (${subject.code})`,
-              }))}
-            onChange={change}
-          />
-          <div className="cms-field">
-            <label>Subject Code</label>
-            <input value={selectedSubject?.code || ""} readOnly />
-          </div>
-          <FormControl
-            name="date"
-            label="Exam Date"
-            value={schedule.date}
-            type="date"
-            onChange={change}
-          />
-          <FormControl
-            name="startTime"
-            label="Start Time"
-            value={schedule.startTime}
-            type="time"
-            onChange={change}
-          />
-          <FormControl
-            name="endTime"
-            label="End Time"
-            value={schedule.endTime}
-            type="time"
-            onChange={change}
-          />
-          <FormControl
-            name="duration"
-            label="Duration"
-            value={schedule.duration}
-            onChange={change}
-          />
-          <FormControl
-            name="invigilator"
-            label="Invigilator"
-            value={schedule.invigilator}
-            options={data.options.faculty}
-            onChange={change}
-          />
-          <FormControl
-            name="status"
-            label="Schedule Status"
-            value={schedule.status}
-            options={["Draft", "Scheduled", "Published", "Completed", "Cancelled"]}
-            onChange={change}
-          />
-        </div>
-        <div className="cms-form-actions">
-          <button className="cms-btn cms-btn-primary" type="submit">
-            Save Schedule
-          </button>
-        </div>
-      </form>
-      <h4 className="exam-schedule-heading">Saved schedules</h4>
-      {entries.length ? (
-        <ul className="exam-schedule-list">
-          {entries.map((entry) => (
-            <li key={entry.id}>
-              <strong>{entry.subject}</strong> — {entry.date}, {entry.startTime}-{entry.endTime}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="cms-empty">No schedules saved for this examination.</div>
-      )}
+    <section className="exam-print-area">
+      <h1>Pirnav Junior College</h1>
+      <h2>{preview.title}</h2>
+      <ExportTable rows={preview.rows} scope={preview.scope} />
     </section>
+  );
+}
+const EXPORT_COLUMNS = [
+  ["Exam Code", "examCode"],
+  ["Exam Name", "examName"],
+  ["Board", "boardName"],
+  ["Academic Year", "academicYear"],
+  ["Academic Level", "academicLevel"],
+  ["Group", "groupName"],
+  ["Program", "programName"],
+  ["Exam Pattern", "patternName"],
+  ["Exam Type", "examType"],
+  ["Total Marks", "totalMarks"],
+  ["Pass %", "passPercentage"],
+  ["Passing Score", "passingScore"],
+  ["Subject(s)", "subjectName"],
+  ["Exam Date", "examDate", d],
+  ["Start Time", "startTime"],
+  ["End Time", "endTime"],
+  ["Hall", "hallName"],
+  ["Invigilator", "invigilatorName"],
+  ["Mode", "examMode"],
+  ["Status", "status"],
+  ["Description", "description"],
+];
+function ExportTable({ rows, scope }) {
+  return (
+    <table className={`exam-export-table exam-export-table-${scope || "individual"}`}>
+      <thead>
+        <tr>{EXPORT_COLUMNS.map(([label]) => <th key={label}>{label}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={`${row.examId}-${row.sessionId || row.subjectName}-${index}`}>
+            {EXPORT_COLUMNS.map(([label, key, format]) => (
+              <td key={label}>{format ? format(row[key]) : row[key] ?? "—"}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+function Detail({ label, value }) {
+  return (
+    <div className="exam-detail">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+function Select({ label, value, onChange, options = [], disabled, error, placeholder }) {
+  return (
+    <div className={`cms-field ${error ? "has-error" : ""}`}>
+      <label>{label}</label>
+      <select value={value ?? ""} disabled={disabled} onChange={(e) => onChange?.(e.target.value)}>
+        <option value="">{placeholder || `Select ${label.replace(" *", "")}`}</option>
+        {options.map((x) => {
+          const o = typeof x === "string" ? { id: x, name: x } : x;
+          return (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          );
+        })}
+      </select>
+      {error && <span className="cms-error">{error}</span>}
+    </div>
+  );
+}
+function Field({
+  label,
+  value,
+  onChange,
+  type = "text",
+  error,
+  readOnly,
+  placeholder,
+  min,
+  max,
+  step,
+}) {
+  return (
+    <div className={`cms-field ${error ? "has-error" : ""}`}>
+      <label>{label}</label>
+      {type === "textarea" ? (
+        <textarea
+          value={value || ""}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          onChange={(e) => onChange?.(e.target.value)}
+        />
+      ) : (
+        <input
+          type={type}
+          value={value || ""}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(e) => onChange?.(e.target.value)}
+        />
+      )}{" "}
+      {error && <span className="cms-error">{error}</span>}
+    </div>
   );
 }

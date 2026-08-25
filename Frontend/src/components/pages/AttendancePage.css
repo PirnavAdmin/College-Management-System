@@ -23,8 +23,28 @@
   background: var(--cms-surface, #fff);
   border: 1px solid var(--cms-border, #e5e7eb);
   border-radius: 12px;
-  padding: 14px;
+  padding: 16px;
 }
+.att-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+.att-summary > div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid var(--cms-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--cms-surface, #fff);
+}
+.att-summary span { color: var(--cms-muted); font-size: 12px; font-weight: 650; }
+.att-summary b { font-size: 22px; }
+.att-edit-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: rgb(16 32 60 / 42%); }
+.att-edit-modal { display: grid; gap: 15px; width: min(100%, 410px); padding: 20px; border: 1px solid var(--cms-border); border-radius: var(--cms-radius, 14px); background: var(--cms-surface); box-shadow: var(--cms-shadow-lg); }
+.att-edit-modal h3, .att-edit-modal p { margin: 0; }
+.att-edit-modal p { color: var(--cms-muted); font-size: 13px; }
+.att-edit-modal > div { display: flex; justify-content: flex-end; gap: 10px; }
 .att-nav {
   display: flex;
   gap: 8px;
@@ -65,18 +85,20 @@
   color: #fff;
 }
 .att-staff-details {
-  display: grid;
+  display: flex;
+  align-items: end;
   gap: 12px;
 }
 .att-staff-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  flex: 1;
+  gap: 10px;
 }
 .att-detail-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 .att-compact:not(.att-staff-designation) th:nth-child(1),
 .att-compact:not(.att-staff-designation) td:nth-child(1) {
@@ -116,7 +138,7 @@
 }
 .att-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   font-size: 12px;
   font-weight: 650;
@@ -124,7 +146,7 @@
 .att-field input,
 .att-field select {
   width: 100%;
-  height: 38px;
+  height: 41px;
   min-width: 0;
   border: 1px solid var(--cms-border, #dce3ec);
   border-radius: 8px;
@@ -133,12 +155,13 @@
   font: inherit;
 }
 .att-filter-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  gap: 12px;
+  gap: 10px;
 }
 .att-filter-card .att-field {
-  width: min(210px, 100%);
+  width: 100%;
 }
 .att-context {
   flex: 1;
@@ -146,8 +169,8 @@
 }
 .att-context-fields {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
 }
 .att-report-filters {
   display: grid;
@@ -162,7 +185,7 @@
 .att-report-card:has(.att-student-report-filters) {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 .att-student-report-actions {
   grid-column: 8;
@@ -185,7 +208,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 10px 16px;
 }
 .att-table-top b {
   min-width: 0;
@@ -202,7 +225,7 @@
   min-width: 0;
   max-width: 100%;
   max-height: 510px;
-  overflow: visible;
+  overflow: auto;
 }
 .att-table {
   width: 100%;
@@ -210,6 +233,7 @@
   margin: 0;
   border-collapse: collapse;
 }
+.att-table-card .att-table:not(.att-compact) { min-width: 900px; }
 .att-table th {
   position: sticky;
   top: 0;
@@ -219,7 +243,7 @@
 }
 .att-table td,
 .att-table th {
-  padding: 9px 12px;
+  padding: 10px 12px;
   vertical-align: middle;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -377,8 +401,13 @@
   font-size: 11px;
 }
 @media (max-width: 1000px) {
+  .att-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .att-context-fields {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .att-staff-details {
+    display: grid;
   }
 
   .att-report-card:has(.att-student-report-filters) {
@@ -390,6 +419,7 @@
   }
 }
 @media (max-width: 760px) {
+  .att-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .att-staff-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -407,16 +437,20 @@
   }
   .att-filter-card {
     align-items: stretch;
-    flex-direction: column;
+    grid-template-columns: 1fr;
+  }
+  .att-detail-actions {
+    justify-content: flex-end;
   }
   .att-filter-card .att-field {
     width: 100%;
   }
   .att-filter-card > .cms-btn {
-    align-self: flex-start;
+    width: 100%;
   }
 }
 @media (max-width: 500px) {
+  .att-summary { grid-template-columns: 1fr; }
   .att-staff-fields {
     grid-template-columns: 1fr;
   }

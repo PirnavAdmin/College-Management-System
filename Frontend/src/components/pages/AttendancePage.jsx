@@ -1,94 +1,110 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./AttendancePage.css";
 
-const TODAY = "2026-08-24";
 const STATUS = [
-  ["Present", "P"],
-  ["Absent", "A"],
-  ["Late", "L"],
+  ["Present", 1, "P"],
+  ["Absent", 2, "A"],
+  ["Late", 3, "L"],
+  ["Leave", 4, "LV"],
 ];
-const STUDENT_MARK_STATUS = STATUS.slice(0, 2);
-const STAFF_MARK_STATUS = [
-  ["Present", "P"],
-  ["Absent", "A"],
-  ["Leave", "LV"],
-  ["Late", "L"],
-];
-const students = [
-  ["101", "Aarav Kumar", "MPC", "A"],
-  ["102", "Rahul Sharma", "MPC", "A"],
-  ["103", "Priya Reddy", "MPC", "A"],
-  ["104", "Anil Kumar", "MPC", "B"],
-  ["105", "Sneha Rao", "BIPC", "A"],
-  ["106", "Kiran Kumar", "CEC", "A"],
-].map(([code, name, group, section], i) => ({ id: i + 1, code, name, group, section }));
-const staff = [
-  ["FAC001", "Ramesh Kumar", "Mathematics", "Lecturer", "Teaching Staff"],
-  ["FAC002", "Suresh Rao", "Physics", "Lecturer", "Teaching Staff"],
-  ["FAC003", "Priya Sharma", "Chemistry", "Lecturer", "Teaching Staff"],
-  ["NTS001", "Ravi Teja", "Administration", "Office Assistant", "Non-Teaching Staff"],
-  ["NTS002", "Lakshmi Devi", "Accounts", "Accountant", "Non-Teaching Staff"],
-].map(([code, name, department, designation, staffType], i) => ({
-  id: `s${i + 1}`,
-  code,
-  name,
-  department,
-  designation,
-  staffType,
-}));
-const dates = (month) => {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return Array.from(
-    { length: new Date(year, monthNumber, 0).getDate() },
-    (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`,
+const TODAY = new Date().toISOString().slice(0, 10);
+const list = (x) => (Array.isArray(x) ? x : (x?.data ?? x?.items ?? x?.result ?? x?.results ?? []));
+const val = (x, ...keys) => keys.map((k) => x?.[k]).find((v) => v !== undefined && v !== null);
+const status = (x) =>
+  STATUS.find(
+    ([n, id]) => String(id) === String(x) || n.toLowerCase() === String(x ?? "").toLowerCase(),
+  )?.[0] ?? "Present";
+const toOptions = (data, ids, names) =>
+  list(data)
+    .map((x) => ({ id: String(val(x, ...ids) ?? ""), name: val(x, ...names) ?? "", raw: x }))
+    .filter((x, index, all) => x.id && x.name && all.findIndex((item) => item.id === x.id) === index);
+const activeYearsForBoard = (data, boardId) =>
+  toOptions(
+    list(data).filter(
+      (year) =>
+        String(val(year, "boardId", "BoardId") ?? "") === String(boardId) &&
+        val(year, "isActive", "IsActive") === true,
+    ),
+    ["academicYearId", "id", "Id"],
+    ["academicYearName", "yearName", "name", "Name"],
   );
+const levelsForBoard = (levels, board) => {
+  const ids = board?.academicLevelIds ?? board?.AcademicLevelIds ?? [];
+  const names = board?.academicLevelNames ?? board?.AcademicLevelNames ?? board?.academicLevels ?? board?.AcademicLevels ?? [];
+  const idSet = new Set((Array.isArray(ids) ? ids : []).map(String));
+  const nameSet = new Set(
+    (Array.isArray(names) ? names : [])
+      .map((level) => (typeof level === "string" ? level : val(level, "levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name")))
+      .filter(Boolean)
+      .map((name) => String(name).toLowerCase()),
+  );
+  return levels.filter((level) => idSet.has(String(level.id)) || nameSet.has(String(level.name).toLowerCase()));
 };
-const defaultStatus = (id, date, isStaff = false) => {
-  const value = (String(id).length * 7 + Number(date.slice(-2)) * 3) % 11;
-  if (value === 2) return "Absent";
-  if (value === 5) return isStaff ? "Late" : "Absent";
-  return "Present";
-};
+const student = (x) => ({
+  id: val(x, "studentId", "StudentId", "id", "Id"),
+  code: val(x, "rollNo", "RollNo", "admissionNo", "AdmissionNo", "studentCode") ?? "—",
+  name: val(x, "studentName", "StudentName", "name", "Name", "fullName") ?? "—",
+  group: val(x, "groupName", "GroupName", "group") ?? "—",
+  status: status(val(x, "status", "Status", "attendanceStatus")),
+});
+const staff = (x) => ({
+  id: val(x, "facultyId", "FacultyId", "staffId", "StaffId", "id", "Id"),
+  code: val(x, "employeeId", "EmployeeId", "staffCode", "StaffCode") ?? "—",
+  name: val(x, "facultyName", "FacultyName", "staffName", "StaffName", "name", "Name") ?? "—",
+  department: val(x, "departmentName", "DepartmentName", "department") ?? "—",
+  status: status(val(x, "status", "Status", "attendanceStatus")),
+});
 
 export default function AttendancePage() {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const [records, setRecords] = useState([]);
+  const { pathname } = useLocation(),
+    navigate = useNavigate();
   const [toast, setToast] = useState("");
   const isStaff = pathname.includes("/staff"),
-    isReports = pathname.endsWith("/reports"),
+    reports = pathname.endsWith("/reports"),
     area = isStaff ? "staff" : "student";
-  const go = (reports) => navigate(`/dashboard/attendance/${area}${reports ? "/reports" : ""}`);
-  const title = `${isStaff ? "Staff" : "Student"} Attendance${isReports ? " Reports" : ""}`;
   return (
     <>
       <DashboardLayout
-        title={title}
+        title={`${isStaff ? "Staff" : "Student"} Attendance`}
         subtitle={
-          isReports
+          reports
             ? "Monthly date-wise attendance history."
             : isStaff
-              ? "Mark daily attendance for teaching and non-teaching staff."
-              : "Today's attendance"
+              ? "View and manage staff attendance."
+              : "View and manage student attendance."
         }
         breadcrumb={["Academic Management", "Attendance", isStaff ? "Staff" : "Student"]}
       >
         <main className="attendance-module">
           <nav className="att-nav">
-            <button type="button" className={!isReports ? "active" : ""} onClick={() => go(false)}>
-              Mark Attendance
+            <button
+              className={!reports ? "active" : ""}
+              onClick={() => navigate(`/dashboard/attendance/${area}`)}
+            >
+              Attendance
             </button>
-            <button type="button" className={isReports ? "active" : ""} onClick={() => go(true)}>
+            <button
+              className={reports ? "active" : ""}
+              onClick={() => navigate(`/dashboard/attendance/${area}/reports`)}
+            >
               Reports
             </button>
           </nav>
-          {isReports ? (
-            <Reports isStaff={isStaff} records={records} />
+          {reports ? (
+            isStaff ? (
+              <StaffReports say={setToast} />
+            ) : (
+              <Reports staffMode={false} say={setToast} />
+            )
+          ) : isStaff ? (
+            <StaffMark say={setToast} />
           ) : (
-            <Mark isStaff={isStaff} records={records} setRecords={setRecords} say={setToast} />
+            <StudentMark say={setToast} />
           )}
         </main>
       </DashboardLayout>
@@ -97,580 +113,1109 @@ export default function AttendancePage() {
   );
 }
 
-function Mark({ isStaff, records, setRecords, say }) {
-  const list = isStaff ? staff : students;
-  const [date, setDate] = useState(TODAY);
-  const [group, setGroup] = useState("MPC");
-  const [section, setSection] = useState("A");
-  const [subject, setSubject] = useState("Mathematics");
-  const [period, setPeriod] = useState("Period 1");
-  const [staffMember, setStaffMember] = useState("Dr. Ramesh Kumar");
-  const [rows, setRows] = useState(() => list.map((person) => ({ ...person, status: "Present" })));
-  const visibleRows = isStaff
-    ? rows
-    : rows.filter((person) => person.group === group && person.section === section);
-  const load = () =>
-    setRows(
-      list.map((person) => ({
-        ...person,
-        status:
-          records.find((record) => record.id === person.id && record.date === date)?.status ||
-          "Present",
+function StudentMark({ say }) {
+  const [m, setM] = useState({
+      boards: [],
+      years: [],
+      levels: [],
+      groups: [],
+      sections: [],
+      subjects: [],
+      periods: [],
+      teachers: [],
+    }),
+    [f, setF] = useState({
+      date: TODAY,
+      boardId: "",
+      academicYearId: "",
+      academicLevelId: "",
+      groupId: "",
+      sectionId: "",
+      subjectId: "",
+      periodId: "",
+      classTeacherId: "",
+    }),
+    [rows, setRows] = useState([]),
+    [yearLoading, setYearLoading] = useState(false),
+    [levelLoading, setLevelLoading] = useState(false),
+    [loading, setLoading] = useState(false),
+    [saving, setSaving] = useState(false);
+  const change = (k) => (e) =>
+    setF((c) => {
+      const value = e.target.value;
+      if (k === "boardId")
+        return {
+          ...c,
+          boardId: value,
+          academicYearId: "",
+          academicLevelId: "",
+          groupId: "",
+          sectionId: "",
+          subjectId: "",
+          periodId: "",
+          classTeacherId: "",
+        };
+      if (k === "academicYearId")
+        return {
+          ...c,
+          academicYearId: value,
+          academicLevelId: "",
+          groupId: "",
+          sectionId: "",
+          subjectId: "",
+          periodId: "",
+          classTeacherId: "",
+        };
+      if (k === "academicLevelId")
+        return {
+          ...c,
+          academicLevelId: value,
+          groupId: "",
+          sectionId: "",
+          subjectId: "",
+          periodId: "",
+          classTeacherId: "",
+        };
+      if (k === "groupId")
+        return {
+          ...c,
+          groupId: value,
+          sectionId: "",
+          subjectId: "",
+          periodId: "",
+          classTeacherId: "",
+        };
+      if (k === "sectionId")
+        return { ...c, sectionId: value, subjectId: "", periodId: "", classTeacherId: "" };
+      if (k === "periodId") return { ...c, periodId: value, classTeacherId: "" };
+      return { ...c, [k]: value };
+    });
+  useEffect(() => {
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.boards.list),
+      apiClient.get(apiEndpoints.academicYears.list),
+      apiClient.get(apiEndpoints.boards.academicLevels),
+      apiClient.get(apiEndpoints.groups.getAll),
+      apiClient.get(apiEndpoints.periods.getAll),
+      apiClient.get(apiEndpoints.faculty.getAll),
+    ]).then((r) =>
+      setM((c) => ({
+        ...c,
+        boards:
+          r[0].status === "fulfilled"
+            ? toOptions(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"])
+            : [],
+        years:
+          r[1].status === "fulfilled"
+            ? toOptions(
+                r[1].value.data,
+                ["academicYearId", "id", "Id"],
+                ["academicYearName", "yearName", "name", "Name"],
+              )
+            : [],
+        levels:
+          r[2].status === "fulfilled"
+            ? toOptions(
+                r[2].value.data,
+                ["academicLevelId", "levelId", "id", "Id"],
+                ["levelName", "academicLevelName", "name", "Name"],
+              )
+            : [],
+        groups:
+          r[3].status === "fulfilled"
+            ? toOptions(r[3].value.data, ["groupId", "id", "Id"], ["groupName", "name", "Name"])
+            : [],
+        periods:
+          r[4].status === "fulfilled"
+            ? toOptions(r[4].value.data, ["periodId", "id", "Id"], ["periodName", "name", "Name"])
+            : [],
+        teachers:
+          r[5].status === "fulfilled"
+            ? toOptions(
+                r[5].value.data,
+                ["facultyId", "id", "Id"],
+                ["facultyName", "name", "Name", "fullName"],
+              )
+            : [],
       })),
     );
-  const save = () => {
-    setRecords((current) => [
-      ...current.filter(
-        (record) =>
-          !(record.date === date && visibleRows.some((person) => person.id === record.id)),
-      ),
-      ...visibleRows.map(({ id, status }) => ({ id, date, status })),
-    ]);
-    say("Attendance saved successfully.");
+  }, []);
+  useEffect(() => {
+    if (!f.boardId) return;
+    let active = true;
+    setYearLoading(true);
+    apiClient
+      .get(apiEndpoints.academicYears.list)
+      .then((r) => {
+        if (!active) return;
+        const years = activeYearsForBoard(r.data, f.boardId);
+        setM((c) => ({ ...c, years }));
+        setF((c) => ({ ...c, academicYearId: years[0]?.id ?? "" }));
+        if (!years.length) say("No active academic year available for this board.");
+      })
+      .catch((e) => active && say(getApiErrorMessage(e)))
+      .finally(() => active && setYearLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [f.boardId]);
+  useEffect(() => {
+    if (!f.boardId || !f.academicYearId) return;
+    let active = true;
+    setLevelLoading(true);
+    Promise.all([apiClient.get(apiEndpoints.boards.academicLevels), apiClient.get(apiEndpoints.boards.getById(f.boardId))])
+      .then(([levelsResult, boardResult]) => {
+        if (!active) return;
+        const levels = levelsForBoard(
+          toOptions(
+            levelsResult.data,
+            ["academicLevelId", "levelId", "id", "Id"],
+            ["levelName", "academicLevelName", "name", "Name"],
+          ),
+          boardResult.data?.data ?? boardResult.data,
+        );
+        setM((c) => ({ ...c, levels }));
+        if (!levels.length) say("No academic levels available for this board.");
+      })
+      .catch((e) => active && say(getApiErrorMessage(e)))
+      .finally(() => active && setLevelLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [f.boardId, f.academicYearId]);
+  useEffect(() => {
+    if (!f.groupId || !f.boardId || !f.academicLevelId) {
+      setM((c) => ({ ...c, sections: [], subjects: [] }));
+      return;
+    }
+    let active = true;
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.sections.byGroup(f.groupId)),
+      apiClient.get(apiEndpoints.subjects.context, {
+        params: { boardId: f.boardId, groupId: f.groupId, academicLevelId: f.academicLevelId },
+      }),
+    ]).then((r) => {
+      if (!active) return;
+      setM((c) => ({
+        ...c,
+        sections:
+          r[0].status === "fulfilled"
+            ? toOptions(r[0].value.data, ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            : [],
+        subjects:
+          r[1].status === "fulfilled"
+            ? toOptions(r[1].value.data, ["subjectId", "id", "Id"], ["subjectName", "name", "Name"])
+            : [],
+      }));
+      setF((c) => ({ ...c, sectionId: "", subjectId: "", periodId: "", classTeacherId: "" }));
+    });
+    return () => { active = false; };
+  }, [f.boardId, f.academicLevelId, f.groupId]);
+  useEffect(() => {
+    if (!f.groupId || !f.sectionId) return;
+    apiClient
+      .get(apiEndpoints.attendance.academicContext, {
+        params: { groupId: f.groupId, sectionId: f.sectionId },
+      })
+      .then((r) =>
+        setF((c) => ({
+          ...c,
+          classTeacherId: String(
+            val(
+              r.data?.data ?? r.data,
+              "classTeacherId",
+              "ClassTeacherId",
+              "facultyId",
+              "FacultyId",
+            ) ?? c.classTeacherId,
+          ),
+        })),
+      )
+      .catch(() => {});
+  }, [f.groupId, f.sectionId]);
+  useEffect(() => {
+    if (!f.groupId || !f.sectionId || !f.periodId) return;
+    apiClient
+      .get(apiEndpoints.attendance.facultySubject, {
+        params: { date: f.date, groupId: f.groupId, sectionId: f.sectionId, periodId: f.periodId },
+      })
+      .then((r) => {
+        const context = r.data?.data ?? r.data;
+        setF((c) => ({
+          ...c,
+          subjectId: String(val(context, "subjectId", "SubjectId") ?? c.subjectId),
+          classTeacherId: String(
+            val(context, "facultyId", "FacultyId", "classTeacherId", "ClassTeacherId") ??
+              c.classTeacherId,
+          ),
+        }));
+      })
+      .catch(() => {});
+  }, [f.date, f.groupId, f.sectionId, f.periodId]);
+  const load = async () => {
+    if ([f.academicYearId, f.academicLevelId, f.groupId, f.sectionId, f.subjectId, f.periodId].some((v) => !v))
+      return say("Select all attendance fields.");
+    setLoading(true);
+    try {
+      const r = await apiClient.post(apiEndpoints.attendance.students, {
+        attendanceDate: f.date,
+        academicYearId: +f.academicYearId,
+        groupId: +f.groupId,
+        sectionId: +f.sectionId,
+        subjectId: +f.subjectId,
+        periodId: +f.periodId,
+      });
+      setRows(
+        list(r.data)
+          .map(student)
+          .filter((x) => x.id),
+      );
+    } catch (e) {
+      say(getApiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
   };
-  if (isStaff) return <StaffMark records={records} setRecords={setRecords} say={say} />;
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiClient.post(apiEndpoints.attendance.bulk, {
+        attendanceDate: f.date,
+        groupId: +f.groupId,
+        sectionId: +f.sectionId,
+        students: rows.map((x) => ({
+          studentId: +x.id,
+          status: STATUS.find((s) => s[0] === x.status)[1],
+        })),
+      });
+      say("Attendance updated successfully.");
+      await load();
+    } catch (e) {
+      say(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <>
       <section className="att-card att-filter-card">
-        {isStaff ? (
-          <Field label="Date">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </Field>
-        ) : (
-          <div className="att-context">
-            <div className="att-context-fields">
-              <Field label="Date">
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              </Field>
-              <Field label="Academic Year">
-                <select>
-                  <option>2026-2027</option>
-                </select>
-              </Field>
-              <Field label="Group">
-                <select value={group} onChange={(e) => setGroup(e.target.value)}>
-                  <option>MPC</option>
-                  <option>BIPC</option>
-                  <option>CEC</option>
-                </select>
-              </Field>
-              <Field label="Section">
-                <select value={section} onChange={(e) => setSection(e.target.value)}>
-                  <option>A</option>
-                  <option>B</option>
-                </select>
-              </Field>
-              <Field label="Subject">
-                <select value={subject} onChange={(e) => setSubject(e.target.value)}>
-                  <option>Mathematics</option>
-                  <option>Physics</option>
-                </select>
-              </Field>
-              <Field label="Period">
-                <select value={period} onChange={(e) => setPeriod(e.target.value)}>
-                  <option>Period 1</option>
-                  <option>Period 2</option>
-                </select>
-              </Field>
-              <Field label="Staff">
-                <select value={staffMember} onChange={(e) => setStaffMember(e.target.value)}>
-                  <option>Dr. Ramesh Kumar</option>
-                  <option>Dr. Suresh Rao</option>
-                </select>
-              </Field>
-            </div>
+        <div className="att-context">
+          <div className="att-context-fields">
+            <Field l="Date">
+              <input type="date" value={f.date} onChange={change("date")} />
+            </Field>
+            <Select l="Board" v={f.boardId} on={change("boardId")} o={m.boards} empty="All boards" />
+            <Select
+              l="Academic Year"
+              v={f.academicYearId}
+              on={change("academicYearId")}
+              o={m.years}
+              empty={yearLoading ? "Loading..." : "No active year"}
+              disabled
+            />
+            <Select
+              l="Academic Level"
+              v={f.academicLevelId}
+              on={change("academicLevelId")}
+              o={m.levels}
+              empty={levelLoading ? "Loading..." : "All levels"}
+              disabled={!f.boardId || !f.academicYearId || levelLoading}
+            />
+            <Select l="Group" v={f.groupId} on={change("groupId")} o={m.groups} empty="All groups" />
+            <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" />
+            <Select l="Subject" v={f.subjectId} on={change("subjectId")} o={m.subjects} empty="All subjects" />
+            <Select l="Period" v={f.periodId} on={change("periodId")} o={m.periods} empty="All periods" />
+            <Field l="Class Teacher">
+              <input
+                value={m.teachers.find((x) => x.id === f.classTeacherId)?.name ?? "Not assigned"}
+                readOnly
+              />
+            </Field>
           </div>
-        )}
-        <button type="button" className="cms-btn cms-btn-ghost" onClick={load}>
-          Load Attendance
+        </div>
+        <button className="cms-btn cms-btn-ghost" disabled={loading} onClick={load}>
+          {loading ? "Loading..." : "Load Records"}
         </button>
       </section>
+      <Table rows={rows} setRows={setRows} loading={loading} saving={saving} save={save} />
+    </>
+  );
+}
+
+function StaffMark({ say }) {
+  const [date, setDate] = useState(TODAY),
+    [type, setType] = useState(1),
+    [board, setBoard] = useState(""),
+    [boards, setBoards] = useState([]),
+    [year, setYear] = useState(""),
+    [years, setYears] = useState([]),
+    [dept, setDept] = useState(""),
+    [depts, setDepts] = useState([]),
+    [rows, setRows] = useState([]),
+    [yearLoading, setYearLoading] = useState(false),
+    [loading, setLoading] = useState(false),
+    [saving, setSaving] = useState(false);
+  useEffect(() => {
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.boards.list),
+      apiClient.get(apiEndpoints.departments.getAll),
+      apiClient.get(apiEndpoints.academicYears.list),
+    ]).then((r) => {
+      if (r[0].status === "fulfilled")
+        setBoards(
+          toOptions(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"]),
+        );
+      if (r[1].status === "fulfilled")
+        setDepts(
+          toOptions(
+            r[1].value.data,
+            ["departmentId", "id", "Id"],
+            ["departmentName", "name", "Name"],
+          ),
+        );
+      if (r[2].status === "fulfilled")
+        setYears(
+          toOptions(
+            r[2].value.data,
+            ["academicYearId", "id", "Id"],
+            ["academicYearName", "yearName", "name", "Name"],
+          ),
+        );
+    });
+  }, []);
+  useEffect(() => {
+    if (!board) return;
+    let active = true;
+    setYearLoading(true);
+    apiClient
+      .get(apiEndpoints.academicYears.list)
+      .then((r) => {
+        if (!active) return;
+        const options = activeYearsForBoard(r.data, board);
+        setYears(options);
+        setYear(options[0]?.id ?? "");
+        if (!options.length) say("No active academic year available for this board.");
+      })
+      .catch((e) => active && say(getApiErrorMessage(e)))
+      .finally(() => active && setYearLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [board]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await apiClient.post(apiEndpoints.staffAttendance.load, {
+        attendanceDate: date,
+        staffType: type,
+        departmentId: dept ? +dept : null,
+      });
+      setRows(
+        list(r.data)
+          .map(staff)
+          .filter((x) => x.id),
+      );
+    } catch (e) {
+      say(getApiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      await apiClient.post(apiEndpoints.staffAttendance.bulk, {
+        attendanceDate: date,
+        staffType: type,
+        staffAttendances: rows.map((x) => ({
+          facultyId: +x.id,
+          status: STATUS.find((s) => s[0] === x.status)[1],
+        })),
+      });
+      say("Staff attendance saved successfully.");
+    } catch (e) {
+      say(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <>
+      <section className="att-card att-staff-details">
+        <div className="att-staff-fields">
+          <Field l="Date">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+          <Select
+            l="Board"
+            v={board}
+            on={(e) => {
+              setBoard(e.target.value);
+              setYear("");
+              setDept("");
+              setRows([]);
+            }}
+            o={boards}
+          />
+          <Select l="Academic Year" v={year} on={(e) => { setYear(e.target.value); setRows([]); }} o={years} empty={yearLoading ? "Loading..." : "No active year"} disabled />
+          <Field l="Staff Type">
+            <select
+              value={type}
+              onChange={(e) => {
+                setType(Number(e.target.value));
+                setDept("");
+                setRows([]);
+              }}
+            >
+              <option value={1}>Teaching Staff</option>
+              <option value={2}>Non-Teaching Staff</option>
+            </select>
+          </Field>
+          <Select
+            l="Department"
+            v={dept}
+            on={(e) => { setDept(e.target.value); setRows([]); }}
+            o={depts}
+            empty="All Departments"
+          />
+        </div>
+        <div className="att-detail-actions">
+          <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
+            {loading ? "Loading..." : "Load Staff"}
+          </button>
+        </div>
+      </section>
+      <Table
+        rows={rows}
+        setRows={setRows}
+        loading={loading}
+        saving={saving}
+        save={save}
+        staffMode
+      />
+    </>
+  );
+}
+
+function Table({ rows, setRows, loading, saving, save, staffMode = false }) {
+  const [editing, setEditing] = useState(null);
+  const statuses = staffMode ? STATUS : STATUS;
+  const update = (name) =>
+    setRows((x) => x.map((y) => (y.id === editing.id ? { ...y, status: name } : y)));
+  return (
+    <>
       <section className="att-card att-table-card">
         <div className="att-table-top">
-          <b>{isStaff ? "Today’s Attendance" : `Students: ${group} • Section ${section}`}</b>
-          <button
-            type="button"
-            className="cms-btn cms-btn-ghost"
-            onClick={() =>
-              setRows((current) => current.map((row) => ({ ...row, status: "Present" })))
-            }
-          >
-            Mark All Present
-          </button>
+          <b>{staffMode ? "Staff" : "Students"}</b>
+          {staffMode && (
+            <button
+              className="cms-btn cms-btn-ghost"
+              disabled={!rows.length}
+              onClick={() => setRows((x) => x.map((y) => ({ ...y, status: "Present" })))}
+            >
+              Mark All Present
+            </button>
+          )}
         </div>
         <div className="att-scroll">
           <table className="cms-table att-table att-compact">
             <thead>
               <tr>
-                <th>{isStaff ? "Employee ID" : "Roll No"}</th>
-                <th>{isStaff ? "Staff Name" : "Student Name"}</th>
-                <th>{isStaff ? "Department" : "Group"}</th>
-                <th>Attendance</th>
+                <th>{staffMode ? "Staff ID" : "Roll No"}</th>
+                <th>{staffMode ? "Staff Name" : "Student Name"}</th>
+                <th>{staffMode ? "Department" : "Status"}</th>
+                <th>{staffMode ? "Attendance" : "Action"}</th>
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.code}</td>
-                  <td>{row.name}</td>
-                  <td>{isStaff ? row.department : row.group}</td>
-                  <td>
-                    <div className="att-status">
-                      {STUDENT_MARK_STATUS.map(([label, short]) => (
-                        <button
-                          type="button"
-                          key={label}
-                          className={row.status === label ? `is-${label.toLowerCase()}` : ""}
-                          onClick={() =>
-                            setRows((current) =>
-                              current.map((item) =>
-                                item.id === row.id ? { ...item, status: label } : item,
-                              ),
-                            )
-                          }
-                        >
-                          {short}
-                        </button>
-                      ))}
-                    </div>
-                  </td>
+              {loading ? (
+                <tr>
+                  <td colSpan="4">Loading attendance...</td>
                 </tr>
-              ))}
+              ) : rows.length ? (
+                rows.map((r) => (
+                  <tr key={r.id}>
+                    <td>{r.code}</td>
+                    <td>{r.name}</td>
+                    <td>{staffMode ? r.department : r.status}</td>
+                    <td>
+                      {staffMode ? (
+                        <div className="att-status">
+                          {statuses.map(([n, , s]) => (
+                            <button
+                              key={n}
+                              className={r.status === n ? `is-${n.toLowerCase()}` : ""}
+                              onClick={() =>
+                                setRows((x) =>
+                                  x.map((y) => (y.id === r.id ? { ...y, status: n } : y)),
+                                )
+                              }
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <button className="cms-btn cms-btn-ghost" onClick={() => setEditing(r)}>
+                          Edit
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="4">Load attendance to view records.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-        <div className="att-save">
-          <button type="button" className="cms-btn cms-btn-primary" onClick={save}>
-            Save Attendance
-          </button>
-        </div>
+        {staffMode && (
+          <div className="att-save">
+            <button
+              className="cms-btn cms-btn-primary"
+              disabled={!rows.length || saving}
+              onClick={save}
+            >
+              {saving ? "Saving..." : "Save Attendance"}
+            </button>
+          </div>
+        )}
       </section>
+      {editing && (
+        <div className="att-edit-overlay">
+          <section className="att-edit-modal">
+            <h3>Edit Attendance</h3>
+            <p>
+              <b>{editing.name}</b> · Roll No: {editing.code}
+            </p>
+            <Field l="Current Status">
+              <select
+                value={rows.find((x) => x.id === editing.id)?.status ?? editing.status}
+                onChange={(e) => update(e.target.value)}
+              >
+                {STATUS.map(([n]) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </Field>
+            <div>
+              <button className="cms-btn cms-btn-ghost" onClick={() => setEditing(null)}>
+                Cancel
+              </button>
+              <button
+                className="cms-btn cms-btn-primary"
+                disabled={saving}
+                onClick={async () => {
+                  await save();
+                  setEditing(null);
+                }}
+              >
+                {saving ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
-
-function StaffMark({ records, setRecords, say }) {
-  const [staffType, setStaffType] = useState("Teaching Staff");
+function StaffReports({ say }) {
+  const [staffType, setStaffType] = useState(1);
   const [date, setDate] = useState(TODAY);
-  const [department, setDepartment] = useState("All Departments");
-  const [rows, setRows] = useState(() => staff.map((person) => ({ ...person, status: "Present" })));
-  const typeRows = rows.filter((person) => person.staffType === staffType);
-  const departments = [
-    ...new Set(
-      staff.filter((person) => person.staffType === staffType).map((person) => person.department),
-    ),
-  ];
-  const visibleRows = typeRows.filter(
-    (person) => department === "All Departments" || person.department === department,
+  const [board, setBoard] = useState("");
+  const [year, setYear] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
+  const [years, setYears] = useState([]);
+  const [boards, setBoards] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [yearLoading, setYearLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.boards.list),
+      apiClient.get(apiEndpoints.academicYears.list),
+      apiClient.get(apiEndpoints.departments.getAll),
+    ]).then((results) => {
+      if (results[0].status === "fulfilled")
+        setBoards(
+          toOptions(results[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"]),
+        );
+      if (results[1].status === "fulfilled")
+        setYears(
+          toOptions(
+            results[1].value.data,
+            ["academicYearId", "id", "Id"],
+            ["academicYearName", "yearName", "name", "Name"],
+          ),
+        );
+      if (results[2].status === "fulfilled")
+        setDepartments(
+          toOptions(
+            results[2].value.data,
+            ["departmentId", "id", "Id"],
+            ["departmentName", "name", "Name"],
+          ),
+        );
+    });
+  }, []);
+  useEffect(() => {
+    if (!board) return;
+    let active = true;
+    setYearLoading(true);
+    apiClient
+      .get(apiEndpoints.academicYears.list)
+      .then((r) => {
+        if (!active) return;
+        const options = activeYearsForBoard(r.data, board);
+        setYears(options);
+        setYear(options[0]?.id ?? "");
+        if (!options.length) say("No active academic year available for this board.");
+      })
+      .catch((e) => active && say(getApiErrorMessage(e)))
+      .finally(() => active && setYearLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [board]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.post(apiEndpoints.staffAttendance.monthlyReport, {
+        date,
+        staffType,
+        departmentId: departmentId ? Number(departmentId) : null,
+      });
+      setRows(list(response.data));
+    } catch (error) {
+      say(getApiErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const totals = rows.reduce(
+    (summary, row) => ({
+      total: summary.total + 1,
+      present: summary.present + Number(val(row, "present", "presentCount", "Present") ?? 0),
+      absent: summary.absent + Number(val(row, "absent", "absentCount", "Absent") ?? 0),
+      leave: summary.leave + Number(val(row, "leave", "leaveCount", "Leave") ?? 0),
+      percentage:
+        summary.percentage +
+        Number(val(row, "attendancePercentage", "percentage", "AttendancePercentage") ?? 0),
+    }),
+    { total: 0, present: 0, absent: 0, leave: 0, percentage: 0 },
   );
-  const load = () =>
-    setRows(
-      staff.map((person) => ({
-        ...person,
-        status:
-          records.find((record) => record.id === person.id && record.date === date)?.status ||
-          "Present",
-      })),
-    );
-  const reset = () => {
-    setDate(TODAY);
-    setDepartment("All Departments");
-  };
-  const markAllPresent = () =>
-    setRows((current) =>
-      current.map((person) =>
-        visibleRows.some((row) => row.id === person.id) ? { ...person, status: "Present" } : person,
-      ),
-    );
-  const save = () => {
-    setRecords((current) => [
-      ...current.filter(
-        (record) =>
-          !(record.date === date && visibleRows.some((person) => person.id === record.id)),
-      ),
-      ...visibleRows.map(({ id, status }) => ({ id, date, status })),
-    ]);
-    say("Staff attendance saved successfully.");
-  };
-  const nonTeaching = staffType === "Non-Teaching Staff";
+  const reportRows = rows.map((row) => ({
+    id: val(row, "facultyId", "staffId", "id", "Id"),
+    code: val(row, "employeeId", "staffCode", "facultyCode", "EmployeeId") ?? "—",
+    name: val(row, "facultyName", "staffName", "name", "Name") ?? "—",
+    department: val(row, "departmentName", "department", "Department") ?? "—",
+    workingDays: val(row, "totalWorkingDays", "workingDays", "TotalWorkingDays") ?? "—",
+    present: val(row, "present", "presentCount", "Present") ?? 0,
+    absent: val(row, "absent", "absentCount", "Absent") ?? 0,
+    leave: val(row, "leave", "leaveCount", "Leave") ?? 0,
+    percentage: val(row, "attendancePercentage", "percentage", "AttendancePercentage") ?? "—",
+  }));
   return (
     <>
-      <div className="att-staff-types" role="tablist" aria-label="Staff type">
-        <button
-          type="button"
-          className={staffType === "Teaching Staff" ? "active" : ""}
-          onClick={() => {
-            setStaffType("Teaching Staff");
-            setDepartment("All Departments");
-          }}
-        >
-          Teaching Staff
-        </button>
-        <button
-          type="button"
-          className={nonTeaching ? "active" : ""}
-          onClick={() => {
-            setStaffType("Non-Teaching Staff");
-            setDepartment("All Departments");
-          }}
-        >
-          Non-Teaching Staff
-        </button>
-      </div>
       <section className="att-card att-staff-details">
-        <b>Attendance Details</b>
         <div className="att-staff-fields">
-          <Field label="Date">
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          <Field l="Date / Month">
+            <input
+              type="month"
+              value={date.slice(0, 7)}
+              onChange={(e) => setDate(`${e.target.value}-01`)}
+            />
           </Field>
-          <Field label="Academic Year">
-            <select>
-              <option>2026-2027</option>
+          <Select
+            l="Board"
+            v={board}
+            on={(e) => {
+              setBoard(e.target.value);
+              setYear("");
+              setDepartmentId("");
+              setRows([]);
+            }}
+            o={boards}
+          />
+          <Select
+            l="Academic Year"
+            v={year}
+            on={(e) => { setYear(e.target.value); setRows([]); }}
+            o={years}
+            empty={yearLoading ? "Loading..." : "No active year"}
+            disabled
+          />
+          <Field l="Staff Type">
+            <select
+              value={staffType}
+              onChange={(e) => {
+                setStaffType(Number(e.target.value));
+                setDepartmentId("");
+                setRows([]);
+              }}
+            >
+              <option value={1}>Teaching Staff</option>
+              <option value={2}>Non-Teaching Staff</option>
             </select>
           </Field>
-          <Field label="Department">
-            <select value={department} onChange={(event) => setDepartment(event.target.value)}>
-              <option>All Departments</option>
-              {departments.map((value) => (
-                <option key={value}>{value}</option>
-              ))}
-            </select>
-          </Field>
+          <Select
+            l="Department"
+            v={departmentId}
+            on={(e) => { setDepartmentId(e.target.value); setRows([]); }}
+            o={departments}
+            empty="All Departments"
+          />
         </div>
         <div className="att-detail-actions">
-          <button type="button" className="cms-btn cms-btn-ghost" onClick={reset}>
-            Reset
-          </button>
-          <button type="button" className="cms-btn cms-btn-primary" onClick={load}>
-            Load Staff
+          <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
+            {loading ? "Loading..." : "Apply"}
           </button>
         </div>
       </section>
       <section className="att-card att-table-card">
         <div className="att-table-top">
-          <b>
-            {staffType} — {department}
-          </b>
-          <button type="button" className="cms-btn cms-btn-ghost" onClick={markAllPresent}>
-            Mark All Present
-          </button>
+          <b>Attendance Report</b>
         </div>
         <div className="att-scroll">
-          <table className="cms-table att-table att-compact">
+          <table className="cms-table att-table">
             <thead>
               <tr>
                 <th>Staff ID</th>
                 <th>Staff Name</th>
                 <th>Department</th>
-                <th>Attendance</th>
+                <th>Total Working Days</th>
+                <th>Present</th>
+                <th>Absent</th>
+                <th>Leave</th>
+                <th>Attendance %</th>
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.code}</td>
-                  <td>{row.name}</td>
-                  <td>{row.department}</td>
-                  <td>
-                    <div className="att-status">
-                      {STAFF_MARK_STATUS.map(([label, short]) => (
-                        <button
-                          type="button"
-                          key={label}
-                          className={row.status === label ? `is-${label.toLowerCase()}` : ""}
-                          onClick={() =>
-                            setRows((current) =>
-                              current.map((person) =>
-                                person.id === row.id ? { ...person, status: label } : person,
-                              ),
-                            )
-                          }
-                        >
-                          {short}
-                        </button>
-                      ))}
-                    </div>
-                  </td>
+              {loading ? (
+                <tr>
+                  <td colSpan="8">Loading report...</td>
                 </tr>
-              ))}
+              ) : reportRows.length ? (
+                reportRows.map((row, index) => (
+                  <tr key={row.id ?? index}>
+                    <td>{row.code}</td>
+                    <td>{row.name}</td>
+                    <td>{row.department}</td>
+                    <td>{row.workingDays}</td>
+                    <td>{row.present}</td>
+                    <td>{row.absent}</td>
+                    <td>{row.leave}</td>
+                    <td>
+                      {row.percentage}
+                      {String(row.percentage).includes("%") ? "" : "%"}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="8">Apply filters to load the report.</td>
+                </tr>
+              )}
             </tbody>
           </table>
-        </div>
-        <div className="att-save">
-          <button type="button" className="cms-btn cms-btn-primary" onClick={save}>
-            Save Attendance
-          </button>
         </div>
       </section>
     </>
   );
 }
 
-function Reports({ isStaff, records }) {
-  const [filters, setFilters] = useState({
-    date: TODAY,
-    month: TODAY.slice(0, 7),
-    group: "All",
-    section: "All",
-    subject: "Mathematics",
-    period: "Period 1",
-    staffType: "Teaching Staff",
-    department: "All",
-    student: "All Students",
-    staff: "All Staff",
-  });
-  const [applied, setApplied] = useState(filters);
-  const set = (key) => (e) => setFilters((current) => ({ ...current, [key]: e.target.value }));
-  const setStaffType = (staffType) => {
-    const next = {
-      ...filters,
-      staffType,
-      department: "All",
-      staff: "All Staff",
+function Reports({ staffMode, say }) {
+  const [f, setF] = useState({
+      date: TODAY,
+      board: "",
+      year: "",
+      level: "",
+      group: "",
+      section: "",
+      subject: "",
+      period: "",
+      teacher: "",
+    }),
+    [m, setM] = useState({
+      boards: [],
+      years: [],
+      levels: [],
+      groups: [],
+      sections: [],
+      subjects: [],
+      periods: [],
+      teachers: [],
+    }),
+    [rows, setRows] = useState([]),
+    [yearLoading, setYearLoading] = useState(false),
+    [levelLoading, setLevelLoading] = useState(false),
+    [loading, setLoading] = useState(false);
+  const change = (k) => (e) =>
+    setF((x) => {
+      const value = e.target.value;
+      if (k === "board")
+        return { ...x, board: value, year: "", level: "", group: "", section: "", subject: "", period: "", teacher: "" };
+      if (k === "year")
+        return { ...x, year: value, level: "", group: "", section: "", subject: "", period: "", teacher: "" };
+      if (k === "level")
+        return { ...x, level: value, group: "", section: "", subject: "", period: "", teacher: "" };
+      if (k === "group")
+        return { ...x, group: value, section: "", subject: "", period: "", teacher: "" };
+      if (k === "section") return { ...x, section: value, subject: "", period: "", teacher: "" };
+      return { ...x, [k]: value };
+    });
+  useEffect(() => {
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.boards.list),
+      apiClient.get(apiEndpoints.academicYears.list),
+      apiClient.get(apiEndpoints.boards.academicLevels),
+      apiClient.get(apiEndpoints.groups.getAll),
+      apiClient.get(apiEndpoints.periods.getAll),
+      apiClient.get(apiEndpoints.faculty.getAll),
+    ]).then((r) =>
+      setM((x) => ({
+        ...x,
+        boards:
+          r[0].status === "fulfilled"
+            ? toOptions(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"])
+            : [],
+        years:
+          r[1].status === "fulfilled"
+            ? toOptions(
+                r[1].value.data,
+                ["academicYearId", "id", "Id"],
+                ["academicYearName", "yearName", "name", "Name"],
+              )
+            : [],
+        levels:
+          r[2].status === "fulfilled"
+            ? toOptions(
+                r[2].value.data,
+                ["academicLevelId", "levelId", "id", "Id"],
+                ["levelName", "academicLevelName", "name", "Name"],
+              )
+            : [],
+        groups:
+          r[3].status === "fulfilled"
+            ? toOptions(r[3].value.data, ["groupId", "id", "Id"], ["groupName", "name", "Name"])
+            : [],
+        periods:
+          r[4].status === "fulfilled"
+            ? toOptions(r[4].value.data, ["periodId", "id", "Id"], ["periodName", "name", "Name"])
+            : [],
+        teachers:
+          r[5].status === "fulfilled"
+            ? toOptions(r[5].value.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])
+            : [],
+      })),
+    );
+  }, []);
+  useEffect(() => {
+    if (!f.board) return;
+    let active = true;
+    setYearLoading(true);
+    apiClient
+      .get(apiEndpoints.academicYears.list)
+      .then((r) => {
+        if (!active) return;
+        const years = activeYearsForBoard(r.data, f.board);
+        setM((c) => ({ ...c, years }));
+        setF((c) => ({ ...c, year: years[0]?.id ?? "" }));
+        if (!years.length) say("No active academic year available for this board.");
+      })
+      .catch((e) => active && say(getApiErrorMessage(e)))
+      .finally(() => active && setYearLoading(false));
+    return () => {
+      active = false;
     };
-    setFilters(next);
-    setApplied((current) => ({
-      ...current,
-      staffType,
-      department: "All",
-      staff: "All Staff",
-    }));
-  };
-  const people = useMemo(
-    () =>
-      !isStaff
-        ? students.filter(
-            (person) =>
-              (applied.student === "All Students" || person.name === applied.student) &&
-              (applied.group === "All" || person.group === applied.group) &&
-              (applied.section === "All" || person.section === applied.section),
-          )
-        : staff.filter(
-            (person) =>
-              (applied.staffType === "All" || person.staffType === applied.staffType) &&
-              (applied.department === "All" || person.department === applied.department) &&
-              (applied.staff === "All Staff" || person.name === applied.staff),
+  }, [f.board]);
+  useEffect(() => {
+    if (!f.board || !f.year) return;
+    let active = true;
+    setLevelLoading(true);
+    Promise.all([apiClient.get(apiEndpoints.boards.academicLevels), apiClient.get(apiEndpoints.boards.getById(f.board))])
+      .then(([levelsResult, boardResult]) => {
+        if (!active) return;
+        const levels = levelsForBoard(
+          toOptions(
+            levelsResult.data,
+            ["academicLevelId", "levelId", "id", "Id"],
+            ["levelName", "academicLevelName", "name", "Name"],
           ),
-    [applied, isStaff],
-  );
-  const days = useMemo(
-    () => dates(isStaff ? applied.month : applied.date.slice(0, 7)),
-    [applied.date, applied.month, isStaff],
-  );
-  const matchingStaff = staff.filter(
-    (person) => filters.staffType === "All" || person.staffType === filters.staffType,
-  );
+          boardResult.data?.data ?? boardResult.data,
+        );
+        setM((c) => ({ ...c, levels }));
+        if (!levels.length) say("No academic levels available for this board.");
+      })
+      .catch((e) => active && say(getApiErrorMessage(e)))
+      .finally(() => active && setLevelLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [f.board, f.year]);
+  useEffect(() => {
+    if (!f.group || !f.board || !f.level) {
+      setM((x) => ({ ...x, sections: [], subjects: [] }));
+      return;
+    }
+    let active = true;
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.sections.byGroup(f.group)),
+      apiClient.get(apiEndpoints.subjects.context, {
+        params: { boardId: f.board, groupId: f.group, academicLevelId: f.level },
+      }),
+    ]).then((r) => {
+      if (!active) return;
+      setM((x) => ({
+        ...x,
+        sections:
+          r[0].status === "fulfilled"
+            ? toOptions(r[0].value.data, ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            : [],
+        subjects:
+          r[1].status === "fulfilled"
+            ? toOptions(r[1].value.data, ["subjectId", "id", "Id"], ["subjectName", "name", "Name"])
+            : [],
+      }));
+    });
+    return () => { active = false; };
+  }, [f.board, f.level, f.group]);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await apiClient.post(
+        staffMode
+          ? apiEndpoints.staffAttendance.monthlyReport
+          : apiEndpoints.attendance.studentMonthlyReport,
+        staffMode
+          ? { date: f.date, staffType: 1, departmentId: null }
+          : {
+              date: f.date,
+              groupId: f.group ? +f.group : null,
+              sectionId: f.section ? +f.section : null,
+            },
+      );
+      setRows(list(r.data));
+    } catch (e) {
+      say(getApiErrorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  const columns = rows.length ? Object.keys(rows[0]) : [];
   return (
     <>
-      {isStaff ? (
-        <div className="att-staff-types" role="tablist" aria-label="Staff type">
-          <button
-            type="button"
-            className={filters.staffType === "Teaching Staff" ? "active" : ""}
-            onClick={() => setStaffType("Teaching Staff")}
-          >
-            Teaching Staff
-          </button>
-          <button
-            type="button"
-            className={filters.staffType === "Non-Teaching Staff" ? "active" : ""}
-            onClick={() => setStaffType("Non-Teaching Staff")}
-          >
-            Non-Teaching Staff
-          </button>
-        </div>
-      ) : null}
       <section className="att-card att-report-card">
-        <div className={`att-report-filters ${!isStaff ? "att-student-report-filters" : ""}`}>
-          {isStaff ? (
+        <div className="att-report-filters att-student-report-filters">
+          <Field l="Date">
+            <input type="date" value={f.date} onChange={change("date")} />
+          </Field>
+          <Select l="Board" v={f.board} on={change("board")} o={m.boards} empty="All boards" />
+          {!staffMode && (
             <>
-              <Field label="Academic Year">
-                <select>
-                  <option>2026-2027</option>
-                </select>
-              </Field>
-              <Field label="Month">
-                <input type="month" value={filters.month} onChange={set("month")} />
-              </Field>
-            </>
-          ) : null}
-          {isStaff ? (
-            <>
-              <Field label="Department">
-                <select value={filters.department} onChange={set("department")}>
-                  <option value="All">All Departments</option>
-                  {[...new Set(matchingStaff.map((person) => person.department))].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Staff">
-                <select value={filters.staff} onChange={set("staff")}>
-                  <option>All Staff</option>
-                  {matchingStaff.map((person) => (
-                    <option key={person.id}>{person.name}</option>
-                  ))}
-                </select>
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label="Date">
-                <input type="date" value={filters.date} onChange={set("date")} />
-              </Field>
-              <Field label="Academic Year">
-                <select>
-                  <option>2026-2027</option>
-                </select>
-              </Field>
-              <Field label="Group">
-                <select value={filters.group} onChange={set("group")}>
-                  <option>All</option>
-                  <option>MPC</option>
-                  <option>BIPC</option>
-                  <option>CEC</option>
-                </select>
-              </Field>
-              <Field label="Section">
-                <select value={filters.section} onChange={set("section")}>
-                  <option>All</option>
-                  <option>A</option>
-                  <option>B</option>
-                </select>
-              </Field>
-              <Field label="Subject">
-                <select value={filters.subject} onChange={set("subject")}>
-                  <option>Mathematics</option>
-                  <option>Physics</option>
-                </select>
-              </Field>
-              <Field label="Period">
-                <select value={filters.period} onChange={set("period")}>
-                  <option>Period 1</option>
-                  <option>Period 2</option>
-                </select>
-              </Field>
-              <Field label="Staff">
-                <select>
-                  <option>Dr. Ramesh Kumar</option>
-                  <option>Dr. Suresh Rao</option>
-                </select>
+              <Select
+                l="Academic Year"
+                v={f.year}
+                on={change("year")}
+                o={m.years}
+                empty={yearLoading ? "Loading..." : "No active year"}
+                disabled
+              />
+              <Select l="Academic Level" v={f.level} on={change("level")} o={m.levels} empty={levelLoading ? "Loading..." : "All levels"} disabled={!f.board || !f.year || levelLoading} />
+              <Select l="Group" v={f.group} on={change("group")} o={m.groups} empty="All groups" />
+              <Select
+                l="Section"
+                v={f.section}
+                on={change("section")}
+                o={m.sections}
+                empty="All sections"
+              />
+              <Select
+                l="Subject"
+                v={f.subject}
+                on={change("subject")}
+                o={m.subjects}
+                empty="All subjects"
+              />
+              <Select
+                l="Period"
+                v={f.period}
+                on={change("period")}
+                o={m.periods}
+                empty="All periods"
+              />
+              <Field l="Class Teacher">
+                <input value="All Class Teachers" readOnly />
               </Field>
             </>
           )}
         </div>
-        <div className={`att-report-actions ${!isStaff ? "att-student-report-actions" : ""}`}>
-          <button
-            type="button"
-            className="cms-btn cms-btn-primary"
-            onClick={() => setApplied(filters)}
-          >
-            Apply Filters
+        <div className="att-report-actions att-student-report-actions">
+          <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
+            {loading ? "Loading..." : "Apply Filters"}
           </button>
         </div>
       </section>
-      <MonthlyTable isStaff={isStaff} people={people} days={days} records={records} />
+      <section className="att-card att-table-card">
+        <div className="att-table-top">
+          <b>Attendance Report</b>
+        </div>
+        <div className="att-scroll">
+          <table className="cms-table att-table att-month-table">
+            <thead>
+              <tr>
+                {columns.map((c) => (
+                  <th key={c}>{c.replace(/([A-Z])/g, " $1")}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td>Loading report...</td>
+                </tr>
+              ) : rows.length ? (
+                rows.map((row, i) => (
+                  <tr key={val(row, "studentId", "facultyId", "id", "Id") ?? i}>
+                    {columns.map((c) => (
+                      <td key={c}>{String(row[c] ?? "—")}</td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td>Apply filters to load the monthly report.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   );
 }
-function Field({ label, children }) {
+function Field({ l, children }) {
   return (
     <label className="att-field">
-      <span>{label}</span>
+      <span>{l}</span>
       {children}
     </label>
   );
 }
-function MonthlyTable({ isStaff, people, days, records }) {
-  const reportStatuses = isStaff ? STAFF_MARK_STATUS : STUDENT_MARK_STATUS;
+function Select({ l, v, on, o, empty = "Select", disabled = false }) {
   return (
-    <section className="att-card att-table-card">
-      <div className="att-table-top">
-        <div>
-          <b>
-            Monthly Attendance{" "}
-            <span className="att-days-label">
-              {days.length
-                ? `${new Date(`${days[0]}T00:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" })} · ${days.length} days`
-                : "Selected month"}
-            </span>
-          </b>
-          <div className="att-legend">
-            {reportStatuses.map(([label, short]) => (
-              <span key={label}>
-                {short} {label}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="att-scroll">
-        <table
-          className={`cms-table att-table att-month-table ${isStaff ? "att-staff-month-table" : "att-student-month-table"}`}
-        >
-          <thead>
-            <tr>
-              <th>{isStaff ? "Employee ID" : "Roll No"}</th>
-              <th>{isStaff ? "Staff Name" : "Student Name"}</th>
-              {isStaff ? <th>Department</th> : <th>Section</th>}
-              {days.map((day) => (
-                <th key={day} className="att-day-header">
-                  <span>{Number(day.slice(-2))}</span>
-                  <small>
-                    {new Date(`${day}T00:00:00`).toLocaleDateString("en-US", { weekday: "short" })}
-                  </small>
-                </th>
-              ))}
-              {reportStatuses.map(([label]) => (
-                <th key={label}>{label}</th>
-              ))}
-              <th>Attendance %</th>
-            </tr>
-          </thead>
-          <tbody>
-            {people.map((person) => {
-              const attendance = Object.fromEntries(
-                days.map((day) => [
-                  day,
-                  records.find((record) => record.id === person.id && record.date === day)
-                    ?.status || defaultStatus(person.id, day, isStaff),
-                ]),
-              );
-              const counts = Object.fromEntries(
-                reportStatuses.map(([label]) => [
-                  label,
-                  Object.values(attendance).filter((value) => value === label).length,
-                ]),
-              );
-              const percent = Math.round(
-                ((counts.Present + (counts.Late || 0) * 0.5) / days.length) * 100,
-              );
-              return (
-                <tr key={person.id}>
-                  <td>{person.code}</td>
-                  <td>{person.name}</td>
-                  <td>{isStaff ? person.department : person.section}</td>
-                  {days.map((day) => (
-                    <td key={day}>
-                      {new Date(`${day}T00:00:00`).getDay() === 0 ? (
-                        <span className="att-status-dash">-</span>
-                      ) : (
-                        <span className={`att-status-pill att-${attendance[day].toLowerCase()}`}>
-                          {(reportStatuses.find(([label]) => label === attendance[day]) || ["Absent", "A"])[1]}
-                        </span>
-                      )}
-                    </td>
-                  ))}
-                  {reportStatuses.map(([label]) => (
-                    <td key={label}>{counts[label]}</td>
-                  ))}
-                  <td>{percent}%</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <Field l={l}>
+      <select value={v} onChange={on} disabled={disabled}>
+        <option value="">{empty}</option>
+        {o.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.name}
+          </option>
+        ))}
+      </select>
+    </Field>
   );
 }

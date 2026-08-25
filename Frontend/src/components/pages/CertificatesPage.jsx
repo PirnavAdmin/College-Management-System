@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FaArrowLeft, FaArrowRight, FaArrowsRotate, FaAward, FaBan, FaCheck, FaEraser, FaEye, FaFileCirclePlus, FaMagnifyingGlass, FaPaperPlane, FaPrint, FaRotateLeft, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaMagnifyingGlass, FaPaperPlane, FaPen, FaPlus, FaPrint, FaRotateLeft, FaXmark } from "react-icons/fa6";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
@@ -517,6 +517,33 @@ function getGenerationEndpoint(certificateType) {
   return null;
 }
 
+const CERTIFICATE_ORIENTATION_STORAGE_KEY = "pjc-certificate-orientations";
+
+function getCertificateOrientation(certificateType, explicitOrientation = "") {
+  const type = String(certificateType || "").trim().toLowerCase();
+  if (type.includes("transfer")) return "landscape";
+  if (type.includes("bonafide") || type.includes("study") || type.includes("conduct")) return "portrait";
+  if (["portrait", "landscape"].includes(String(explicitOrientation).toLowerCase())) {
+    return String(explicitOrientation).toLowerCase();
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(CERTIFICATE_ORIENTATION_STORAGE_KEY) || "{}");
+    return saved[type] === "landscape" ? "landscape" : "portrait";
+  } catch {
+    return "portrait";
+  }
+}
+
+function rememberCertificateOrientation(certificateType, orientation) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CERTIFICATE_ORIENTATION_STORAGE_KEY) || "{}");
+    saved[String(certificateType || "").trim().toLowerCase()] = orientation === "landscape" ? "landscape" : "portrait";
+    localStorage.setItem(CERTIFICATE_ORIENTATION_STORAGE_KEY, JSON.stringify(saved));
+  } catch {
+    // Orientation still works for the current form when browser storage is unavailable.
+  }
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
@@ -599,26 +626,31 @@ const CERTIFICATE_PRINT_CSS = `
   body {
     margin: 0;
     font-family: "Times New Roman", Georgia, serif;
-    background: #eef3fb;
-    color: #18253f;
+    background: #f3f0e6;
+    color: #17170f;
   }
   .page {
-    min-height: 297mm;
+    min-height: 210mm;
     display: grid;
     place-items: center;
     box-sizing: border-box;
-    padding: 14mm;
+    padding: 8mm;
   }
   .cert {
     width: 100%;
-    max-width: 820px;
-    min-height: 1080px;
+    max-width: 1120px;
+    min-height: 720px;
     box-sizing: border-box;
-    background: #fff;
-    border: 1px solid #c5d3ec;
-    border-radius: 8px;
-    box-shadow: 0 14px 36px rgba(17, 38, 74, 0.14);
-    padding: 42px 44px;
+    background-color: #fffdf4;
+    background-image:
+      radial-gradient(circle at 0 0, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px),
+      radial-gradient(circle at 100% 0, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px),
+      radial-gradient(circle at 0 100%, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px),
+      radial-gradient(circle at 100% 100%, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px);
+    border: 4px double #9d8528;
+    border-radius: 2px;
+    box-shadow: 0 14px 36px rgba(83, 66, 12, 0.14);
+    padding: 48px 62px 42px;
     position: relative;
     overflow: hidden;
   }
@@ -633,84 +665,90 @@ const CERTIFICATE_PRINT_CSS = `
     font-size: 120px;
     letter-spacing: 4px;
     font-weight: 700;
-    color: #21437f;
+    color: #8c7420;
     text-transform: uppercase;
   }
   .cert::before,
   .cert::after {
     content: "";
     position: absolute;
-    border: 2px solid #d5e0f5;
+    border: 2px solid #b59a36;
     pointer-events: none;
   }
-  .cert::before { inset: 14px; }
-  .cert::after { inset: 24px; }
+  .cert::before { inset: 10px; border-width: 2px; }
+  .cert::after { inset: 18px; border: 3px double #b59a36; }
   .inner {
     position: relative;
     z-index: 1;
   }
   .head {
     text-align: center;
-    border-bottom: 1px solid #cdd9ef;
-    padding-bottom: 14px;
+    padding-bottom: 10px;
   }
+  body.certificate-portrait .page { min-height: 297mm; }
+  body.certificate-portrait .cert {
+    max-width: 760px;
+    min-height: 1040px;
+    padding: 58px 62px 50px;
+  }
+  body.certificate-portrait .certificate-title { margin-top: 62px; }
+  body.certificate-portrait .body { max-width: 610px; margin-top: 48px; }
+  body.certificate-portrait .footer { margin-top: 82px; }
   .college-row {
-    display: inline-flex;
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr) 84px;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    margin: 0 auto 10px;
+    gap: 18px;
+    margin: 0 auto;
   }
   .seal {
-    width: 56px;
-    height: 56px;
-    margin: 0;
+    width: 70px;
+    height: 70px;
+    margin: auto;
     border-radius: 50%;
-    border: 1px solid #b9cbec;
-    background: #edf3ff;
-    color: #2954a8;
+    border: 3px double #8c7420;
+    outline: 1px solid #bca34b;
+    outline-offset: 3px;
+    background: #fffdf4;
+    color: #6f5b16;
     display: grid;
     place-items: center;
     font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.8px;
   }
-  .head h1 {
+  .college-name {
     margin: 0;
-    font-size: 34px;
-    letter-spacing: 0.3px;
+    font-size: 30px;
+    letter-spacing: 0.8px;
     font-weight: 800;
-    color: #14366e;
+    color: #17170f;
     text-transform: uppercase;
     line-height: 1.05;
   }
-  .head p {
-    margin: 0;
-    font-size: 16px;
-    letter-spacing: 0.3px;
-    color: #37527f;
-    font-weight: 700;
-  }
-  .motto {
-    margin-top: 10px;
-    font-size: 12px;
-    color: #5a6f93;
-    letter-spacing: 0.3px;
-    font-style: italic;
+  .college-copy p { margin: 6px 0 0; font-size: 12px; color: #302d20; font-weight: 700; }
+  .certificate-title {
+    margin: 46px 0 0;
+    font-size: 30px;
+    letter-spacing: 1px;
+    font-weight: 800;
+    text-transform: uppercase;
   }
   .meta {
     display: flex;
     justify-content: space-between;
-    margin-top: 16px;
+    margin-top: 6px;
     font-size: 13px;
-    color: #2e4269;
+    color: #5b5232;
   }
   .body {
-    margin-top: 28px;
-    font-size: 20px;
-    line-height: 1.8;
-    text-align: justify;
-    color: #1d3156;
+    max-width: 760px;
+    margin: 38px auto 0;
+    font-size: 18px;
+    line-height: 1.9;
+    text-align: center;
+    color: #1c1b15;
   }
   .subject {
     margin-top: 22px;
@@ -722,26 +760,26 @@ const CERTIFICATE_PRINT_CSS = `
     font-weight: 700;
   }
   .body strong {
-    color: #13284c;
+    color: #111411;
   }
   .footer {
-    margin-top: 52px;
+    margin-top: 48px;
     display: grid;
     grid-template-columns: 1fr auto;
     align-items: end;
     column-gap: 24px;
-    text-align: center;
+    text-align: left;
   }
   .issue-note {
     text-align: left;
     font-size: 12px;
-    color: #4f6388;
+    color: #242116;
     line-height: 1.5;
   }
   .footer strong {
     display: block;
     margin-top: 42px;
-    border-top: 1px solid #354f7f;
+    border-top: 1px solid #5d563d;
     padding-top: 10px;
     min-width: 250px;
     font-size: 15px;
@@ -759,7 +797,7 @@ const CERTIFICATE_PRINT_CSS = `
     margin: 0 auto 8px;
     font-family: "Segoe Script", "Brush Script MT", cursive;
     font-size: 24px;
-    color: #18253f;
+    color: #17170f;
   }
   .authorized-signatory {
     display: block;
@@ -769,16 +807,23 @@ const CERTIFICATE_PRINT_CSS = `
   }
   @media print {
     body { background: #fff; }
-    .page { padding: 14mm; min-height: 297mm; }
+    .page { padding: 0; min-height: 194mm; }
     .cert {
       max-width: none;
-      min-height: auto;
+      min-height: 194mm;
       border-radius: 0;
       box-shadow: none;
-      border-color: #cfd8ea;
-      padding: 28px;
+      border-color: #9d8528;
+      padding: 12mm 16mm 10mm;
       break-inside: avoid;
-      min-height: 269mm;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body.certificate-portrait .page { min-height: 281mm; }
+    body.certificate-portrait .cert {
+      max-width: 194mm;
+      min-height: 281mm;
+      padding: 14mm 16mm 12mm;
     }
   }
 `;
@@ -794,15 +839,16 @@ function buildPrintHtml(record) {
   const status = escapeHtml(record.status || "Draft");
   const signature = renderSignatureHtml(record.signature);
   const remarks = record.remarks ? `<p><strong>Remarks:</strong> ${escapeHtml(record.remarks)}</p>` : "";
+  const orientation = getCertificateOrientation(record.type, record.orientation);
 
   return `<!doctype html>
 <html>
 <head>
 <meta charset="UTF-8" />
 <title>Certificate ${certificateNo}</title>
-<style>${CERTIFICATE_PRINT_CSS}</style>
+<style>${CERTIFICATE_PRINT_CSS}\n@page { size: A4 ${orientation}; margin: 8mm; }</style>
 </head>
-<body>
+<body class="certificate-${orientation}">
   <div class="page">
     <section class="cert">
       <div class="watermark">PJC</div>
@@ -810,35 +856,35 @@ function buildPrintHtml(record) {
       <header class="head">
         <div class="college-row">
           <div class="seal">PJC</div>
-          <p>Pirnav Junior College</p>
+          <div class="college-copy">
+            <div class="college-name">Pirnav Junior College</div>
+            <p>Affiliated to Board of Intermediate Education, Andhra Pradesh</p>
+            <p>College Code: 12345 &nbsp; | &nbsp; Certificate No: ${certificateNo}</p>
+          </div>
+          <div class="seal">ESTD<br />1990</div>
         </div>
-        <h1>${templateHeading}</h1>
-        <div class="motto">Empowering learners with integrity, discipline and excellence</div>
+        <h1 class="certificate-title">${templateHeading}</h1>
       </header>
 
       <div class="meta">
-        <span>Certificate No: <strong>${certificateNo}</strong></span>
         <span>Status: <strong>${status}</strong></span>
       </div>
-
-      <div class="subject">To Whom It May Concern</div>
 
       <div class="body">
         This is to certify that <strong>${student}</strong> ${templateParaOne}
         ${templateParaTwo}
-        <br /><br />
-        <strong>Issue Date:</strong> ${issueDate}
         ${remarks}
       </div>
 
       <footer class="footer">
         <div class="issue-note">
-          This is a system-generated institutional certificate and is valid without alteration.
+          <strong>Date:</strong> ${issueDate}<br />
+          <strong>Place:</strong> Pirnav
         </div>
         <div>
           ${signature}
-          <span class="authorized-signatory">Authorized Signatory</span>
-          <strong>Principal, Pirnav Junior College</strong>
+          <span class="authorized-signatory">Principal</span>
+          <strong>Pirnav Junior College</strong>
         </div>
       </footer>
       </div>
@@ -868,6 +914,7 @@ export default function CertificatesPage() {
     academicYear: "",
     type: "",
     customType: "",
+    orientation: "portrait",
     purpose: "",
     requestDate: todayIso(),
     remarks: "",
@@ -875,6 +922,11 @@ export default function CertificatesPage() {
   const [errors, setErrors] = useState({});
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [yearFilter, setYearFilter] = useState("All");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [showRecordFilters, setShowRecordFilters] = useState(false);
   const [activeTab, setActiveTab] = useState("generate");
   const [page, setPage] = useState(1);
   const [actionPage, setActionPage] = useState(1);
@@ -1172,6 +1224,7 @@ export default function CertificatesPage() {
       academicYear: "",
       type: "",
       customType: "",
+      orientation: "portrait",
       purpose: "",
       requestDate: todayIso(),
       remarks: "",
@@ -1197,6 +1250,8 @@ export default function CertificatesPage() {
     const purpose = normalizeText(form.purpose);
     const requestDate = String(form.requestDate || "").trim();
     const remarks = normalizeText(form.remarks);
+    const orientation = getCertificateOrientation(type, form.orientation);
+    if (selectedType === "Others") rememberCertificateOrientation(type, orientation);
     const selectedStudent = findStudentByAdmission(admissionNo);
     if (!selectedStudent) {
       setErrors((prev) => ({ ...prev, admissionNo: "Select a valid admission number" }));
@@ -1248,6 +1303,7 @@ export default function CertificatesPage() {
           issueDate: requestDate,
           status: "Generated",
           remarks,
+          orientation,
         }, studentRows);
 
         setRows((currentRows) => [demoCertificate, ...currentRows]);
@@ -1800,17 +1856,48 @@ export default function CertificatesPage() {
     const q = query.trim().toLowerCase();
     return rows.filter((row) => {
       const passStatus = status === "All" || row.status === status;
-      if (!passStatus) return false;
+      const passType = typeFilter === "All" || row.type === typeFilter;
+      const passYear = yearFilter === "All" || row.academicYear === yearFilter;
+      const requestDate = maybeIsoDate(row.requestDate);
+      const passFromDate = !fromDate || (requestDate && requestDate >= fromDate);
+      const passToDate = !toDate || (requestDate && requestDate <= toDate);
+      if (!passStatus || !passType || !passYear || !passFromDate || !passToDate) return false;
       if (!q) return true;
       return [row.number, row.student, row.admissionNo, row.level, row.group, row.academicYear, row.type, row.purpose, row.status]
         .some((v) => String(v || "").toLowerCase().includes(q));
     });
-  }, [rows, query, status]);
+  }, [rows, query, status, typeFilter, yearFilter, fromDate, toDate]);
+
+  const recordTypes = useMemo(() => [...new Set(rows.map((row) => row.type).filter(Boolean))].sort(), [rows]);
+  const recordYears = useMemo(() => [...new Set(rows.map((row) => row.academicYear).filter(Boolean))].sort().reverse(), [rows]);
+
+  const clearRecordFilters = () => {
+    setStatus("All");
+    setTypeFilter("All");
+    setYearFilter("All");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+  };
+
+  const exportCertificateRecords = () => {
+    const headers = ["Certificate No.", "Admission No.", "Student", "Type", "Request Date", "Issue Date", "Status"];
+    const csvRows = filtered.map((row) => [row.number, row.admissionNo, row.student, row.type, formatDateDdMmYyyy(row.requestDate), formatDateDdMmYyyy(row.issue), row.status]);
+    const csv = [headers, ...csvRows]
+      .map((values) => values.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `certificate-records-${todayIso()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const actionRows = rows.filter((row) => ["Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status));
+  const actionRows = rows.filter((row) => ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status));
   const actionTotalPages = Math.max(1, Math.ceil(actionRows.length / PAGE_SIZE));
   const currentActionPage = Math.min(actionPage, actionTotalPages);
   const actionPageRows = actionRows.slice((currentActionPage - 1) * PAGE_SIZE, currentActionPage * PAGE_SIZE);
@@ -1818,17 +1905,6 @@ export default function CertificatesPage() {
   const printTemplate = printPreview ? getCertificateTemplate(printPreview.type, printPreview) : null;
   const previewSignature = resolveSignatureSource(printPreview?.signature);
   const previewSignatureIsImage = /^(data:image\/|https?:\/\/|blob:)/i.test(previewSignature);
-  const tabButtonStyle = (tab) => ({
-    border: "1px solid var(--cms-border)",
-    borderRadius: "var(--cms-radius)",
-    padding: "9px 14px",
-    font: "inherit",
-    fontSize: "13px",
-    fontWeight: 700,
-    cursor: "pointer",
-    color: activeTab === tab ? "#ffffff" : "var(--cms-text)",
-    background: activeTab === tab ? "var(--cms-primary)" : "var(--cms-surface)",
-  });
   const workflowButtonStyle = (action, enabled) => {
     const styles = {
       review: { background: "#e0f2fe", borderColor: "#7dd3fc", color: "#0369a1" },
@@ -1837,11 +1913,15 @@ export default function CertificatesPage() {
     };
     const current = styles[action];
     return {
-      minWidth: 38,
+      width: 34,
+      minWidth: 34,
+      height: 34,
       minHeight: 34,
-      padding: 6,
+      display: "inline-grid",
+      placeItems: "center",
+      padding: 0,
       border: "1px solid",
-      borderRadius: 7,
+      borderRadius: 9,
       font: "inherit",
       fontSize: 12,
       fontWeight: 700,
@@ -1858,15 +1938,15 @@ export default function CertificatesPage() {
       breadcrumb={["Administration"]}
     >
       <div className="cert-page">
-        <nav className="cert-internal-tabs" aria-label="Certificate sections" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          <button type="button" style={tabButtonStyle("generate")} title="Generate Certificate" aria-label="Generate Certificate" aria-current={activeTab === "generate" ? "page" : undefined} onClick={() => setActiveTab("generate")}>
-            <FaAward size={14} aria-hidden="true" /> Generate Certificate
+        <nav className="cert-primary-tabs" aria-label="Certificate sections">
+          <button type="button" className={`cert-primary-tab ${activeTab === "generate" ? "is-active" : ""}`} title="Create Certificate" aria-label="Create Certificate" aria-current={activeTab === "generate" ? "page" : undefined} onClick={() => setActiveTab("generate")}>
+            <FaFileCirclePlus aria-hidden="true" /> <span>Create Certificate</span>
           </button>
-          <button type="button" style={tabButtonStyle("certificates")} title="Certificates" aria-label="Certificates" aria-current={activeTab === "certificates" ? "page" : undefined} onClick={() => setActiveTab("certificates")}>
-            <FaMagnifyingGlass size={13} aria-hidden="true" /> Certificates
+          <button type="button" className={`cert-primary-tab ${activeTab === "certificates" ? "is-active" : ""}`} title="Certificate Records" aria-label="Certificate Records" aria-current={activeTab === "certificates" ? "page" : undefined} onClick={() => { setActiveTab("certificates"); setShowRecordFilters(false); }}>
+            <FaFileLines aria-hidden="true" /> <span>Certificate Records</span>
           </button>
-          <button type="button" style={tabButtonStyle("actions")} title="Approve, Issue" aria-label="Approve, Issue" aria-current={activeTab === "actions" ? "page" : undefined} onClick={() => setActiveTab("actions")}>
-            <FaCheck size={14} aria-hidden="true" /> Approve, Issue
+          <button type="button" className={`cert-primary-tab ${activeTab === "actions" ? "is-active" : ""}`} title="Review & Issue" aria-label="Review and Issue" aria-current={activeTab === "actions" ? "page" : undefined} onClick={() => setActiveTab("actions")}>
+            <FaClipboardCheck aria-hidden="true" /> <span>Review &amp; Issue</span>
           </button>
         </nav>
 
@@ -1875,7 +1955,7 @@ export default function CertificatesPage() {
           <div className="cms-card cert-form-card">
             <div className="cms-card-head cert-section-head">
               <div>
-                <h2>Generate Certificate</h2>
+                <h2>Create Certificate</h2>
                 <p>Enter request details and generate a certificate request.</p>
               </div>
             </div>
@@ -1918,7 +1998,13 @@ export default function CertificatesPage() {
                             className={form.type ? "" : "cert-field-placeholder"}
                             value={form.type}
                             onChange={(e) => {
-                              setForm((prev) => ({ ...prev, type: e.target.value, customType: "" }));
+                              const nextType = e.target.value;
+                              setForm((prev) => ({
+                                ...prev,
+                                type: nextType,
+                                customType: "",
+                                orientation: nextType === "Transfer Certificate" ? "landscape" : "portrait",
+                              }));
                               setErrors((prev) => ({ ...prev, type: undefined, customType: undefined }));
                             }}
                           >
@@ -1970,20 +2056,33 @@ export default function CertificatesPage() {
                   );
                 })}
                 {form.type === "Others" ? (
-                  <div className="cms-field">
-                    <label htmlFor="certificate-customType">Other Certificate Type <span className="req">*</span></label>
-                    <input
-                      id="certificate-customType"
-                      type="text"
-                      value={form.customType}
-                      placeholder="Enter certificate type"
-                      onChange={(e) => {
-                        setForm((prev) => ({ ...prev, customType: e.target.value }));
-                        setErrors((prev) => ({ ...prev, customType: undefined }));
-                      }}
-                    />
-                    {errors.customType ? <span className="cms-error">{errors.customType}</span> : null}
-                  </div>
+                  <>
+                    <div className="cms-field">
+                      <label htmlFor="certificate-customType">Other Certificate Type <span className="req">*</span></label>
+                      <input
+                        id="certificate-customType"
+                        type="text"
+                        value={form.customType}
+                        placeholder="Enter certificate type"
+                        onChange={(e) => {
+                          setForm((prev) => ({ ...prev, customType: e.target.value }));
+                          setErrors((prev) => ({ ...prev, customType: undefined }));
+                        }}
+                      />
+                      {errors.customType ? <span className="cms-error">{errors.customType}</span> : null}
+                    </div>
+                    <div className="cms-field">
+                      <label htmlFor="certificate-orientation">Certificate Orientation</label>
+                      <select
+                        id="certificate-orientation"
+                        value={form.orientation}
+                        onChange={(e) => setForm((prev) => ({ ...prev, orientation: e.target.value }))}
+                      >
+                        <option value="portrait">Portrait / Vertical</option>
+                        <option value="landscape">Landscape / Horizontal</option>
+                      </select>
+                    </div>
+                  </>
                 ) : null}
               </div>
 
@@ -2006,9 +2105,8 @@ export default function CertificatesPage() {
                 </div>
               </div>
               <div className="cms-form-actions">
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} title="Reset form" aria-label="Reset form"><FaEraser size={14} aria-hidden="true" /></button>
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={refreshCertificates} disabled={loadingList || creating} title="Refresh certificate list" aria-label="Refresh certificate list">
-                  <FaArrowsRotate size={14} aria-hidden="true" />
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} disabled={creating} title="Clear certificate form" aria-label="Clear certificate form">
+                  <FaEraser size={14} aria-hidden="true" /> Clear
                 </button>
                 <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents} title="Generate certificate draft" aria-label="Generate certificate draft">
                   <FaFileCirclePlus size={14} aria-hidden="true" /> {form.type === "Others" ? "Create Draft" : "Generate"}
@@ -2021,39 +2119,52 @@ export default function CertificatesPage() {
 
         {activeTab === "certificates" ? <>
         <section className="cert-records-card">
-        <div className="cms-toolbar cert-toolbar-modern">
-          <div className="cms-search cert-search-box">
-            <FaMagnifyingGlass size={16} aria-hidden="true" />
-            <input
-              value={query}
-              placeholder="Search Certificate Number, Admission Number, Student, Type, Purpose..."
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(1);
-              }}
-            />
+        <div className="cert-records-toolbar">
+          <div className="cert-records-toolbar-main">
+            <label className="cms-search cert-search-box">
+              <FaMagnifyingGlass size={15} aria-hidden="true" />
+              <input
+                value={query}
+                placeholder="Search by certificate no., admission no., or student name..."
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+            <div className="cert-records-toolbar-actions">
+              <button type="button" className="cms-btn cms-btn-ghost" onClick={() => setShowRecordFilters((value) => !value)} aria-expanded={showRecordFilters}>
+                <FaFilter size={13} aria-hidden="true" /> Filters
+              </button>
+              <button type="button" className="cms-btn cms-btn-ghost" onClick={exportCertificateRecords}>
+                <FaDownload size={13} aria-hidden="true" /> Export <FaChevronDown size={11} aria-hidden="true" />
+              </button>
+              <button type="button" className="cms-btn cms-btn-primary" onClick={() => setActiveTab("generate")}>
+                <FaPlus size={13} aria-hidden="true" /> New Request
+              </button>
+            </div>
           </div>
-          <div className="cms-toolbar-right cert-toolbar-right">
-            <button
-              type="button"
-              className="cms-btn cms-btn-primary"
-              onClick={() => handleBulkWorkflow("review")}
-              disabled={Boolean(bulkAction) || Boolean(busyAction.id) || !rows.some((row) => row.status === "Generated")}
-            >
-              <FaEye size={13} aria-hidden="true" /> {bulkAction === "review" ? "Reviewing..." : "Review All"}
-            </button>
-            <select
-              className="cert-toolbar-select"
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                setPage(1);
-              }}
-              aria-label="Filter certificates by status"
-            >
-              {statusChoices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-            </select>
-          </div>
+          {showRecordFilters ? (
+            <div className="cert-records-filters">
+              <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1); }} aria-label="Filter by certificate type">
+                <option value="All">All Certificate Types</option>
+                {recordTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+              <select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} aria-label="Filter by status">
+                {statusChoices.map((choice) => <option key={choice} value={choice}>{choice === "All" ? "All Status" : choice}</option>)}
+              </select>
+              <select value={yearFilter} onChange={(event) => { setYearFilter(event.target.value); setPage(1); }} aria-label="Filter by academic year">
+                <option value="All">All Academic Years</option>
+                {recordYears.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+              <div className="cert-records-date-range">
+                <input type="date" value={fromDate} onChange={(event) => { setFromDate(event.target.value); setPage(1); }} aria-label="From date" />
+                <span>→</span>
+                <input type="date" value={toDate} min={fromDate || undefined} onChange={(event) => { setToDate(event.target.value); setPage(1); }} aria-label="To date" />
+              </div>
+              <button type="button" className="cert-clear-filters" onClick={clearRecordFilters}><FaXmark size={12} aria-hidden="true" /> Clear</button>
+            </div>
+          ) : null}
         </div>
 
         <div className="cms-table-wrap cert-table-wrap-modern">
@@ -2089,23 +2200,23 @@ export default function CertificatesPage() {
                 <tr key={row.id}>
                   <td className="cms-strong">{row.number}</td>
                   <td>{row.admissionNo || "-"}</td>
-                  <td>{row.student}</td>
+                  <td><strong>{row.student}</strong>{row.level ? <small className="cert-student-meta">{row.level}</small> : null}</td>
                   <td>{row.type}</td>
                   <td>{formatDateDdMmYyyy(row.requestDate)}</td>
                   <td>{formatDateDdMmYyyy(row.issue)}</td>
                   <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
                   <td>
-                    <div className="cms-actions cert-view-action">
+                    <div className="cms-actions cert-record-row-actions">
                       <button
                         type="button"
-                        style={workflowButtonStyle("review", row.status === "Generated" && hasServerCertificateId(row) && !isRowBusy(row.id))}
                         onClick={() => openPrintPreview(row)}
-                        disabled={row.status !== "Generated" || !hasServerCertificateId(row) || isRowBusy(row.id)}
-                        title="Review Preview"
-                        aria-label="Review Preview"
+                        disabled={isRowBusy(row.id)}
+                        title="View certificate"
+                        aria-label="View certificate"
                       >
                         <FaEye size={12} aria-hidden="true" />
                       </button>
+                      <button type="button" onClick={() => openEditDialog(row)} disabled={isRowBusy(row.id)} title="Edit certificate" aria-label="Edit certificate"><FaPen size={12} aria-hidden="true" /></button>
                     </div>
                   </td>
                 </tr>
@@ -2113,6 +2224,16 @@ export default function CertificatesPage() {
             </tbody>
           </table>
         </div>
+        <footer className="cert-table-footer">
+          <span>Showing {filtered.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} records</span>
+          <nav aria-label="Certificate records pagination">
+            <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Prev</button>
+            {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+              <button type="button" key={pageNumber} className={pageNumber === currentPage ? "active" : ""} aria-current={pageNumber === currentPage ? "page" : undefined} onClick={() => setPage(pageNumber)}>{pageNumber}</button>
+            ))}
+            <button type="button" disabled={currentPage === totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>Next</button>
+          </nav>
+        </footer>
         </section>
         </> : null}
 
@@ -2142,6 +2263,20 @@ export default function CertificatesPage() {
                 </button>
               </div>
             </div>
+            <div className="cert-workflow-summary" aria-label="Certificate workflow summary">
+              {[
+                ["Generated", `${rows.filter((row) => row.status === "Generated").length} Pending`],
+                ["Reviewed", `${rows.filter((row) => row.status === "Reviewed").length} Pending`],
+                ["Approved", `${rows.filter((row) => row.status === "Approved").length} Ready to issue`],
+                ["Issued", `${rows.filter((row) => row.status === "Issued").length} Completed`],
+                ["Cancelled", `${rows.filter((row) => row.status === "Cancelled").length} Request${rows.filter((row) => row.status === "Cancelled").length === 1 ? "" : "s"}`],
+              ].map(([label, value]) => (
+                <div key={label} className={`cert-workflow-summary-card ${certStatusClass(label)}`}>
+                  <strong>{label}</strong>
+                  <span>{value}</span>
+                </div>
+              ))}
+            </div>
             <div className="cms-table-wrap cert-table-wrap-modern">
               <table className="cms-table cert-table-fit">
                 <thead>
@@ -2151,14 +2286,15 @@ export default function CertificatesPage() {
                     <th>Student</th>
                     <th>Type</th>
                     <th>Status</th>
+                    <th>Request Date</th>
                     <th className="cert-actions-header">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingList ? (
-                    <tr><td colSpan={6}><Loader label="Loading certificates..." /></td></tr>
+                    <tr><td colSpan={7}><Loader label="Loading certificates..." /></td></tr>
                   ) : !actionPageRows.length ? (
-                    <tr><td colSpan={6}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No actionable certificates found</h4><p>Review a generated certificate or cancel an issued certificate to make workflow actions available.</p></div></td></tr>
+                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No workflow certificates found</h4><p>Certificate requests will appear here as they move through the workflow.</p></div></td></tr>
                   ) : actionPageRows.map((row) => (
                     <tr key={row.id}>
                       <td className="cms-strong">{row.number}</td>
@@ -2166,20 +2302,23 @@ export default function CertificatesPage() {
                       <td>{row.student}</td>
                       <td>{row.type}</td>
                       <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
+                      <td>{formatDateDdMmYyyy(row.requestDate)}</td>
                       <td>
                         <div className="cms-actions cert-actions-right cert-action-buttons" style={{ display: "flex", flexWrap: "nowrap", justifyContent: "flex-end", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                           <button
                             type="button"
-                            style={workflowButtonStyle("approve", row.status === "Reviewed" && hasServerCertificateId(row) && !isRowBusy(row.id))}
-                            onClick={() => handleWorkflowChange(row, "approve")}
-                            disabled={row.status !== "Reviewed" || !hasServerCertificateId(row) || isRowBusy(row.id)}
-                            title="Approve Certificate"
-                            aria-label="Approve Certificate"
+                            className="cms-action-btn cert-workflow-step"
+                            style={workflowButtonStyle("approve", ["Generated", "Reviewed"].includes(row.status) && hasServerCertificateId(row) && !isRowBusy(row.id))}
+                            onClick={() => handleWorkflowChange(row, row.status === "Generated" ? "review" : "approve")}
+                            disabled={!(["Generated", "Reviewed"].includes(row.status)) || !hasServerCertificateId(row) || isRowBusy(row.id)}
+                            title={row.status === "Generated" ? "Mark as Reviewed" : "Approve Certificate"}
+                            aria-label={row.status === "Generated" ? "Mark as Reviewed" : "Approve Certificate"}
                           >
                             <FaCheck size={12} aria-hidden="true" />
                           </button>
                           <button
                             type="button"
+                            className="cms-action-btn cert-workflow-step cert-workflow-issue"
                             style={workflowButtonStyle("issue", row.status === "Approved" && hasServerCertificateId(row) && !isRowBusy(row.id))}
                             onClick={() => handleWorkflowChange(row, "issue")}
                             disabled={row.status !== "Approved" || !hasServerCertificateId(row) || isRowBusy(row.id)}
@@ -2189,12 +2328,14 @@ export default function CertificatesPage() {
                             <FaPaperPlane size={12} aria-hidden="true" />
                           </button>
                           <button
-                            className="cms-action-btn"
-                            title={row.status === "Issued" ? "Print Certificate" : "Available after certificate is issued"}
+                            type="button"
+                            className="cms-action-btn cert-workflow-print"
+                            title={row.status === "Issued" ? "Print Certificate" : "Print is available after the certificate is issued"}
+                            aria-label={row.status === "Issued" ? `Print ${row.number}` : `Print unavailable for ${row.number}`}
                             onClick={() => printCertificate(row)}
                             disabled={row.status !== "Issued" || printingId === row.id || isRowBusy(row.id)}
                           >
-                            <FaPrint size={15} aria-hidden="true" />
+                            <FaPrint size={13} aria-hidden="true" />
                           </button>
                           {row.status !== "Cancelled" ? (
                             <button className="cms-action-btn danger" title="Cancel" onClick={() => cancelCertificate(row)} disabled={isRowBusy(row.id) || !hasServerCertificateId(row)}><FaBan size={15} aria-hidden="true" /></button>
@@ -2215,35 +2356,17 @@ export default function CertificatesPage() {
                 </tbody>
               </table>
             </div>
+            <footer className="cert-table-footer">
+              <span>Showing {actionRows.length ? (currentActionPage - 1) * PAGE_SIZE + 1 : 0}–{Math.min(currentActionPage * PAGE_SIZE, actionRows.length)} of {actionRows.length} records</span>
+              <nav aria-label="Certificate workflow pagination">
+                <button type="button" disabled={currentActionPage === 1} onClick={() => setActionPage((value) => Math.max(1, value - 1))}>Prev</button>
+                {Array.from({ length: actionTotalPages }, (_, index) => index + 1).map((pageNumber) => (
+                  <button type="button" key={pageNumber} className={pageNumber === currentActionPage ? "active" : ""} aria-current={pageNumber === currentActionPage ? "page" : undefined} onClick={() => setActionPage(pageNumber)}>{pageNumber}</button>
+                ))}
+                <button type="button" disabled={currentActionPage === actionTotalPages} onClick={() => setActionPage((value) => Math.min(actionTotalPages, value + 1))}>Next</button>
+              </nav>
+            </footer>
           </section>
-        ) : null}
-
-        {activeTab === "certificates" || activeTab === "actions" ? (
-        <div className="cms-pagination">
-          <button
-            className="cms-page-btn"
-            title="Previous page"
-            aria-label="Previous page"
-            disabled={activeTab === "certificates" ? currentPage === 1 : currentActionPage === 1}
-            onClick={() => activeTab === "certificates" ? setPage(currentPage - 1) : setActionPage(currentActionPage - 1)}
-          >
-            <FaArrowLeft size={13} aria-hidden="true" />
-          </button>
-
-          <span>Page</span>
-          <strong>{activeTab === "certificates" ? currentPage : currentActionPage}</strong>
-          <span>of {activeTab === "certificates" ? totalPages : actionTotalPages}</span>
-
-          <button
-            className="cms-page-btn"
-            title="Next page"
-            aria-label="Next page"
-            disabled={activeTab === "certificates" ? currentPage === totalPages : currentActionPage === actionTotalPages}
-            onClick={() => activeTab === "certificates" ? setPage(currentPage + 1) : setActionPage(currentActionPage + 1)}
-          >
-            <FaArrowRight size={13} aria-hidden="true" />
-          </button>
-        </div>
         ) : null}
       </div>
 
@@ -2275,25 +2398,29 @@ export default function CertificatesPage() {
             </div>
 
             <div className="cert-print-body">
-              <section className="cert-preview-paper cert-print-paper">
+              <section className={`cert-preview-paper cert-print-paper certificate-${getCertificateOrientation(printPreview.type, printPreview.orientation)}`}>
                 <div className="watermark">PJC</div>
                 <header className="cert-doc-head">
-                  <div className="cert-doc-brand">
-                    <div className="cert-doc-college-row">
-                      <span className="cert-doc-mark">PJC</span>
-                      <p className="cert-doc-college">Pirnav Junior College</p>
+                  <div className="cert-doc-identity">
+                    <div className="cert-doc-seal cert-doc-seal-left" aria-hidden="true">
+                      <span>PJC</span><small>EXCELLENCE</small>
                     </div>
-                    <h2 className="cert-doc-title">{printTemplate?.heading || "Official Student Certificate"}</h2>
-                    <small className="cert-doc-motto">Empowering learners with integrity, discipline and excellence</small>
+                    <div className="cert-doc-brand">
+                      <p className="cert-doc-college">Pirnav Junior College</p>
+                      <p className="cert-doc-affiliation">Affiliated to Board of Intermediate Education, Andhra Pradesh</p>
+                      <p className="cert-doc-code">College Code: 12345 <span aria-hidden="true">|</span> Certificate No: {printPreview.number}</p>
+                    </div>
+                    <div className="cert-doc-seal cert-doc-seal-right" aria-hidden="true">
+                      <span>ESTD</span><small>1990</small>
+                    </div>
                   </div>
+                  <h2 className="cert-doc-title">{printTemplate?.heading || "Official Student Certificate"}</h2>
                 </header>
 
                 <div className="cert-preview-meta">
-                  <span>Certificate No: <strong>{printPreview.number}</strong></span>
-                  <span>Status: <strong>{printPreview.status}</strong></span>
+                  <span>Admission No: <strong>{printPreview.admissionNo || "—"}</strong></span>
+                  <span>Academic Year: <strong>{printPreview.academicYear || "—"}</strong></span>
                 </div>
-
-                <div className="cert-doc-subject">To Whom It May Concern</div>
 
                 <div className="cert-doc-body">
                   <p>
@@ -2301,9 +2428,6 @@ export default function CertificatesPage() {
                   </p>
                   <p>
                     {printTemplate?.paragraphTwo || "This certificate is issued for official purpose."}
-                  </p>
-                  <p>
-                    <strong>Issue Date:</strong> {formatDateDdMmYyyy(printPreview.issue)}
                   </p>
                 </div>
 
@@ -2314,7 +2438,11 @@ export default function CertificatesPage() {
                 </p>
 
                 <footer>
-                  <div>
+                  <div className="cert-doc-date-block">
+                    <p><strong>Date:</strong> {formatDateDdMmYyyy(printPreview.issue)}</p>
+                    <p><strong>Place:</strong> Pirnav</p>
+                  </div>
+                  <div className="cert-doc-signature-block">
                     {previewSignature && previewSignatureIsImage ? (
                       <img
                         className="certificate-signature"
@@ -2325,8 +2453,8 @@ export default function CertificatesPage() {
                         }}
                       />
                     ) : null}
-                    <span>Authorized Signatory</span>
-                    <strong>Principal, Pirnav Junior College</strong>
+                    <span>Principal</span>
+                    <strong>Pirnav Junior College</strong>
                   </div>
                 </footer>
               </section>

@@ -119,7 +119,7 @@ body {
 .cms-nav-link.is-active {
   background: linear-gradient(90deg, #6F8400, #6F8400);
   color: #fff;
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+  box-shadow: none;
 }
 
 .cms-main {
@@ -1110,9 +1110,10 @@ html, body { max-width: 100%; overflow-x: hidden; }
   --cms-surface: #FFFFFF;
   --cms-secondary: #F7F7F2;
   --cms-subtle: #F7F8EF;
+  --cms-table-header: #F7F8EF;
   --cms-hover: #F1F4E2;
   --cms-elevated: #FFFFFF;
-  --cms-sidebar: #FCFCF8;
+  --cms-sidebar: var(--cms-table-header);
   --cms-header: #FFFFFF;
   --cms-text: #1C2416;
   --cms-text-secondary: #586154;
@@ -1145,6 +1146,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
   --cms-surface: #171A17;
   --cms-secondary: #1C201A;
   --cms-subtle: #1C201A;
+  --cms-table-header: #1C201A;
   --cms-hover: #21261F;
   --cms-elevated: #21261F;
   --cms-sidebar: #171B14;
@@ -1201,6 +1203,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 
 .cms-table thead th { color: var(--cms-text-secondary); }
+.cms-table thead,
+.cms-table thead th { background: var(--cms-table-header); }
 .cms-table tbody tr { background: var(--cms-surface); }
 .cms-table tbody tr:hover { background: var(--cms-hover); }
 .cms-table th, .cms-table td { border-bottom-color: var(--cms-border); }
@@ -1380,3 +1384,11 @@ textarea:focus {
 }
 
 
+/* Keep buttons flat across every module and interaction state. */
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  box-shadow: none !important;
+}

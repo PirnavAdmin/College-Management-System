@@ -1,32 +1,464 @@
-/* Attendance marking controls moved from src/cms.css. */
-.cms-attendance-table td:last-child,
-.cms-attendance-table th:last-child {
-  width: 310px;
-  min-width: 310px;
+*,
+.attendance-module * {
+  box-sizing: border-box;
 }
 
-.cms-attendance-table .cms-radio-row {
+.att-days-label {
+  margin-left: 8px;
+  color: var(--cms-muted, #64748b);
+  font-size: 12px;
+  font-weight: 500;
+}
+.attendance-module {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 1280px;
+  min-width: 0;
+  overflow-x: hidden;
+}
+.att-card {
+  width: 100%;
+  min-width: 0;
+  background: var(--cms-surface, #fff);
+  border: 1px solid var(--cms-border, #e5e7eb);
+  border-radius: 12px;
+  padding: 14px;
+}
+.att-nav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--cms-border, #e5e7eb);
+  padding-bottom: 10px;
+}
+.att-nav button {
+  border: 1px solid var(--cms-border, #dce3ec);
+  background: #fff;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.att-nav .active {
+  background: var(--cms-primary, #2563eb);
+  border-color: var(--cms-primary, #2563eb);
+  color: #fff;
+}
+.att-staff-types {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.att-staff-types button {
+  border: 1px solid var(--cms-border, #dce3ec);
+  background: #fff;
+  border-radius: 7px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.att-staff-types .active {
+  background: var(--cms-primary, #2563eb);
+  border-color: var(--cms-primary, #2563eb);
+  color: #fff;
+}
+.att-staff-details {
+  display: grid;
+  gap: 12px;
+}
+.att-staff-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.att-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.att-compact:not(.att-staff-designation) th:nth-child(1),
+.att-compact:not(.att-staff-designation) td:nth-child(1) {
+  width: 16%;
+}
+.att-compact:not(.att-staff-designation) th:nth-child(2),
+.att-compact:not(.att-staff-designation) td:nth-child(2) {
+  width: 36%;
+}
+.att-compact:not(.att-staff-designation) th:nth-child(3),
+.att-compact:not(.att-staff-designation) td:nth-child(3) {
+  width: 22%;
+}
+.att-compact:not(.att-staff-designation) th:nth-child(4),
+.att-compact:not(.att-staff-designation) td:nth-child(4) {
+  width: 26%;
+}
+.att-staff-designation th:nth-child(1),
+.att-staff-designation td:nth-child(1) {
+  width: 15%;
+}
+.att-staff-designation th:nth-child(2),
+.att-staff-designation td:nth-child(2) {
+  width: 25%;
+}
+.att-staff-designation th:nth-child(3),
+.att-staff-designation td:nth-child(3) {
+  width: 22%;
+}
+.att-staff-designation th:nth-child(4),
+.att-staff-designation td:nth-child(4) {
+  width: 20%;
+}
+.att-staff-designation th:nth-child(5),
+.att-staff-designation td:nth-child(5) {
+  width: 18%;
+}
+.att-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.att-field input,
+.att-field select {
+  width: 100%;
+  height: 38px;
+  min-width: 0;
+  border: 1px solid var(--cms-border, #dce3ec);
+  border-radius: 8px;
+  padding: 8px;
+  background: #fff;
+  font: inherit;
+}
+.att-filter-card {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+.att-filter-card .att-field {
+  width: min(210px, 100%);
+}
+.att-context {
+  flex: 1;
+  min-width: 0;
+}
+.att-context-fields {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+.att-report-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.att-student-report-filters {
+  display: contents;
+}
+
+.att-report-card:has(.att-student-report-filters) {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 12px;
+}
+.att-student-report-actions {
+  grid-column: 8;
+  grid-row: 1;
+  margin: 0;
+  align-self: end;
+}
+.att-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.att-table-card {
+  padding: 0;
+  overflow: hidden;
+}
+.att-table-top,
+.att-save {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.att-table-top b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.att-save {
+  border-top: 1px solid var(--cms-border, #e5e7eb);
+  justify-content: flex-end;
+}
+.att-scroll {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 510px;
+  overflow: visible;
+}
+.att-table {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+}
+.att-table th {
+  position: sticky;
+  top: 0;
+  background: var(--cms-surface, #fff);
+  z-index: 1;
+  white-space: nowrap;
+}
+.att-table td,
+.att-table th {
+  padding: 9px 12px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.att-compact {
+  table-layout: fixed;
+}
+.att-compact th:nth-child(1),
+.att-compact td:nth-child(1) {
+  width: 13%;
+}
+.att-compact th:nth-child(2),
+.att-compact td:nth-child(2) {
+  width: 43%;
+}
+.att-compact th:nth-child(3),
+.att-compact td:nth-child(3) {
+  width: 16%;
+}
+.att-compact th:nth-child(4),
+.att-compact td:nth-child(4) {
+  width: 28%;
+}
+.att-status {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid var(--cms-border, #dce3ec);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.att-status button {
+  border: 0;
+  border-right: 1px solid var(--cms-border, #dce3ec);
+  background: #fff;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.att-status button:last-child {
+  border: 0;
+}
+.att-status .is-present {
+  background: var(--cms-primary, #2563eb);
+  color: #fff;
+}
+.att-status .is-absent {
+  background: #dc2626;
+  color: #fff;
+}
+.att-status .is-late {
+  background: #d97706;
+  color: #fff;
 }
 
-.cms-radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--cms-border);
-  cursor: pointer;
-  font-size: 12.5px;
-  background: var(--cms-surface);
-  transition: all 0.15s ease;
+.att-status .is-leave {
+  background: #7c3aed;
+  color: #fff;
 }
-.cms-radio:hover { border-color: var(--cms-primary-border); }
-.cms-radio.on-present { background: var(--cms-green-soft); border-color: #bbf7d0; color: var(--cms-green); font-weight: 600; }
-.cms-radio.on-absent { background: var(--cms-red-soft); border-color: #f6c9c9; color: var(--cms-red); font-weight: 600; }
-.cms-radio.on-late { background: var(--cms-amber-soft); border-color: #f3ddb0; color: var(--cms-amber); font-weight: 600; }
-.cms-radio.on-leave { background: var(--cms-violet-soft); border-color: #ddd0fb; color: var(--cms-violet); font-weight: 600; }
-[data-theme="dark"] .cms-radio { background: var(--cms-surface); color: var(--cms-text); }
+.att-table-card:has(.att-month-table) .att-scroll {
+  overflow: auto;
+}
+.att-month-table {
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+}
+.att-month-table th,
+.att-month-table td {
+  padding: 7px 8px !important;
+  white-space: nowrap;
+  text-align: center;
+  overflow: visible;
+  text-overflow: clip;
+}
+.att-month-table th:nth-child(1),
+.att-month-table td:nth-child(1) {
+  min-width: 100px;
+}
+.att-month-table th:nth-child(2),
+.att-month-table td:nth-child(2) {
+  min-width: 160px;
+  text-align: left;
+}
+.att-month-table th:nth-child(3),
+.att-month-table td:nth-child(3) {
+  min-width: 120px;
+  text-align: left;
+}
+.att-month-table th:nth-child(4),
+.att-month-table td:nth-child(4) {
+  min-width: 110px;
+  text-align: left;
+}
+.att-month-table th:nth-child(n + 5),
+.att-month-table td:nth-child(n + 5) {
+  width: 36px;
+  min-width: 36px;
+}
+
+/* Student and staff reports now have three identity columns; day 1 starts at column four. */
+.att-student-month-table th:nth-child(4),
+.att-student-month-table td:nth-child(4),
+.att-staff-month-table th:nth-child(4),
+.att-staff-month-table td:nth-child(4) {
+  width: 36px;
+  min-width: 36px;
+  text-align: center;
+}
+
+.att-day-header span,
+.att-day-header small {
+  display: block;
+}
+
+.att-day-header small {
+  margin-top: 2px;
+  color: var(--cms-muted, #64748b);
+  font-size: 9px;
+  font-weight: 600;
+}
+.att-status-pill {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.att-status-pill.att-present {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.att-status-pill.att-absent {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.att-status-pill.att-late {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.att-status-pill.att-leave {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+.att-status-dash { display: inline-grid; place-items: center; width: 24px; height: 24px; color: var(--cms-muted, #64748b); font-weight: 700; }
+.att-legend {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+  color: var(--cms-muted, #64748b);
+  font-size: 11px;
+}
+@media (max-width: 1000px) {
+  .att-context-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .att-report-card:has(.att-student-report-filters) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .att-student-report-actions {
+    grid-column: 4;
+    grid-row: 2;
+  }
+}
+@media (max-width: 760px) {
+  .att-staff-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .att-context-fields,
+  .att-report-filters,
+  .att-student-report-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .att-report-card:has(.att-student-report-filters) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .att-student-report-actions {
+    grid-column: 2;
+    grid-row: auto;
+  }
+  .att-filter-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .att-filter-card .att-field {
+    width: 100%;
+  }
+  .att-filter-card > .cms-btn {
+    align-self: flex-start;
+  }
+}
+@media (max-width: 500px) {
+  .att-staff-fields {
+    grid-template-columns: 1fr;
+  }
+  .att-detail-actions {
+    justify-content: stretch;
+  }
+  .att-detail-actions .cms-btn {
+    flex: 1;
+  }
+  .att-context-fields,
+  .att-report-filters {
+    grid-template-columns: 1fr;
+  }
+  .att-table-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .att-table-top .cms-btn,
+  .att-save .cms-btn {
+    width: 100%;
+  }
+  .att-save {
+    padding: 12px;
+  }
+  .att-compact th:nth-child(1),
+  .att-compact td:nth-child(1) {
+    width: 18%;
+  }
+  .att-compact th:nth-child(2),
+  .att-compact td:nth-child(2) {
+    width: 38%;
+  }
+  .att-compact th:nth-child(3),
+  .att-compact td:nth-child(3) {
+    width: 16%;
+  }
+  .att-compact th:nth-child(4),
+  .att-compact td:nth-child(4) {
+    width: 28%;
+  }
+  .att-table td,
+  .att-table th {
+    padding: 8px 6px;
+  }
+}

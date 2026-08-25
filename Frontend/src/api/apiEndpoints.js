@@ -58,6 +58,7 @@
   academicYears: {
     list: "/api/v1/academic-years",
     getAll: "/api/v1/academic-years",
+    active: "/api/v1/academic-years/active",
     create: "/api/v1/academic-years",
     getById: (yearId) => `/api/v1/academic-years/${yearId}`,
     update: (yearId) => `/api/v1/academic-years/${yearId}`,

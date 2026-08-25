@@ -16,7 +16,7 @@ export const menu = [
   {
     section: "Academics",
     items: [
-      { to: "/dashboard/boards", label: "Board & Academic Year Management", icon: Landmark },
+      { to: "/dashboard/board-academic-year", label: "Board & Academic Year Management", icon: Landmark },
       { to: "/dashboard/courses", label: "Group Management", icon: BookOpen },
       { to: "/dashboard/subjects", label: "Subject Management", icon: Library },
       { to: "/dashboard/sections", label: "Section Management", icon: Layers3 },
@@ -27,7 +27,7 @@ export const menu = [
     items: [
       {
         to: "/dashboard/faculty",
-        label: "Faculty Management",
+        label: "Staff Management",
         icon: Users,
       },
       { to: "/dashboard/admission", label: "Student Admission", icon: UserPlus },
@@ -38,7 +38,10 @@ export const menu = [
     section: "Operations",
     items: [
       { to: "/dashboard/timetable", label: "Timetable", icon: CalendarClock },
-      { to: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck },
+      { to: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck, children: [
+        { to: "/dashboard/attendance/student", label: "Student", icon: ClipboardCheck },
+        { to: "/dashboard/attendance/staff", label: "Staff", icon: ClipboardCheck },
+      ] },
       { to: "/dashboard/assignments", label: "Assignments", icon: FileText, children: [{ to: "/dashboard/assignments", label: "Assignment Creation", icon: FileText }, { to: "/dashboard/assignments/submissions", label: "Submissions", icon: ClipboardCheck }] },
     ],
   },
@@ -84,6 +87,7 @@ function initials(name = "CMS Admin") {
 
 export default function DashboardLayout({ title, subtitle, breadcrumb = [], actions, children }) {
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
+  const [attendanceOpen, setAttendanceOpen] = useState(true);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -127,6 +131,7 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
   useEffect(() => {
     if (pathname.startsWith("/dashboard/faculty")) setFacultyOpen(true);
     if (pathname.startsWith("/dashboard/assignments")) setAssignmentsOpen(true);
+    if (pathname.startsWith("/dashboard/attendance")) setAttendanceOpen(true);
   }, [pathname, setAssignmentsOpen, setFacultyOpen]);
 
   useEffect(() => {
@@ -197,8 +202,9 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
                 const active = isActive(item.to);
                 if (item.children) {
                   const isFacultyMenu = item.to === "/dashboard/faculty";
-                  const isOpen = isFacultyMenu ? facultyOpen : assignmentsOpen;
-                  const setOpen = isFacultyMenu ? setFacultyOpen : setAssignmentsOpen;
+                  const isAttendanceMenu = item.to === "/dashboard/attendance";
+                  const isOpen = isFacultyMenu ? facultyOpen : isAttendanceMenu ? attendanceOpen : assignmentsOpen;
+                  const setOpen = isFacultyMenu ? setFacultyOpen : isAttendanceMenu ? setAttendanceOpen : setAssignmentsOpen;
                   const childIsActive = (child) => child.to === "/dashboard/assignments" ? pathname === child.to : isActive(child.to);
                   return (
                     <div key={item.to}>

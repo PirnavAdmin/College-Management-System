@@ -9,7 +9,7 @@ import BoardAcademicYearManagementPage from "@/components/pages/BoardAcademicYea
 import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig } from "@/components/pages/CourseGroupPage.jsx";
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
-import FacultyManagementPage from "@/components/pages/FacultyManagementPage.jsx";
+import StaffManagementPage from "@/components/pages/StaffManagementPage.jsx";
 import StudentAdmissionPage from "@/components/pages/StudentAdmissionPage.jsx";
 import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/components/pages/StudentManagementPage.jsx";
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
@@ -36,8 +36,8 @@ const moduleConfigs = {
   courses: courseGroupConfig,
   subjects: SubjectManagementPage.pageConfig,
   sections: sectionManagementConfig,
-  faculty: FacultyManagementPage.pageConfig,
-  "faculty-allocation": FacultyManagementPage.facultySubjectAllocationConfig,
+  faculty: StaffManagementPage.pageConfig,
+  "faculty-allocation": StaffManagementPage.facultySubjectAllocationConfig,
   assignments: assignmentsMaterialsConfig,
   examinations: examinationConfig,
   certificates: certificatesConfig,
@@ -90,9 +90,9 @@ export default function AppRoutes() {
         <Route path="/dashboard/subjects/add" element={<SubjectManagementPage screen="assign" />} />
         <Route path="/dashboard/subjects/assign" element={<SubjectManagementPage screen="assign" />} />
         <Route path="/dashboard/sections" element={<SectionManagementPage />} />
-        <Route path="/dashboard/faculty" element={<FacultyManagementPage />} />
-        <Route path="/dashboard/faculty/add" element={<FacultyManagementPage />} />
-        <Route path="/dashboard/faculty/:id/edit" element={<FacultyManagementPage />} />
+        <Route path="/dashboard/faculty" element={<StaffManagementPage />} />
+        <Route path="/dashboard/faculty/add" element={<StaffManagementPage />} />
+        <Route path="/dashboard/faculty/:id/edit" element={<StaffManagementPage />} />
         <Route path="/dashboard/faculty-allocation" element={<Navigate to="/dashboard/faculty" replace />} />
         <Route path="/dashboard/admission" element={<StudentAdmissionPage />} />
         <Route path="/dashboard/students" element={<StudentManagementPage />} />
@@ -100,7 +100,9 @@ export default function AppRoutes() {
         <Route path="/dashboard/timetable/setup" element={<TimetablePage screen="setup" />} />
         <Route path="/dashboard/timetable/draft" element={<TimetablePage screen="draft" />} />
         <Route path="/dashboard/timetable/faculty" element={<TimetablePage screen="faculty" />} />
-        <Route path="/dashboard/attendance" element={<AttendancePage />} />
+        <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
+        <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
+        <Route path="/dashboard/attendance/:area/reports" element={<AttendancePage />} />
         <Route path="/dashboard/assignments" element={<AssignmentsMaterialsPage />} />
         <Route path="/dashboard/assignments/submissions" element={<AssignmentSubmissionsPage />} />
         <Route path="/dashboard/assignments/add" element={<AssignmentsMaterialsPage />} />

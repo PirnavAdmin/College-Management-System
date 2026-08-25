@@ -16,7 +16,7 @@ export const menu = [
   {
     section: "Academics",
     items: [
-      { to: "/dashboard/boards", label: "Board & Academic Year Management", icon: Landmark },
+      { to: "/dashboard/board-academic-year", label: "Board & Academic Year Management", icon: Landmark },
       { to: "/dashboard/courses", label: "Group Management", icon: BookOpen },
       { to: "/dashboard/subjects", label: "Subject Management", icon: Library },
       { to: "/dashboard/sections", label: "Section Management", icon: Layers3 },

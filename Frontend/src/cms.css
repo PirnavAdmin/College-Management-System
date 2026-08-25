@@ -119,7 +119,7 @@ body {
 .cms-nav-link.is-active {
   background: linear-gradient(90deg, #6F8400, #6F8400);
   color: #fff;
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+  box-shadow: none;
 }
 
 .cms-main {
@@ -1384,3 +1384,11 @@ textarea:focus {
 }
 
 
+/* Keep buttons flat across every module and interaction state. */
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"] {
+  box-shadow: none !important;
+}

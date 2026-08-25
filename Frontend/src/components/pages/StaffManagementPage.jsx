@@ -164,11 +164,24 @@ const DESIGNATIONS = {
   "Teaching Staff": ["Junior Lecturer", "Lecturer", "Senior Lecturer", "Subject Teacher", "Academic Coordinator", "Examination Coordinator", "Vice Principal", "Principal"],
   "Non-Teaching Staff": ["Principal", "Administrative Officer", "Accountant", "Librarian", "Lab Assistant", "Office Assistant", "Clerk", "Receptionist"],
 };
-const FRONTEND_DEPARTMENTS = [
+const TEACHING_DEPARTMENTS = [
   "Mathematics", "Physics", "Chemistry", "Botany", "Zoology", "Biology", "Statistics", "English",
   "Telugu", "Hindi", "Sanskrit", "Commerce", "Accountancy", "Economics", "Business Studies",
   "Civics", "History", "Political Science", "Computer Science", "Computer Applications",
   "Physical Education", "Environmental Studies",
+];
+const NON_TEACHING_DEPARTMENTS = [
+  "Administration",
+  "Accounts & Finance",
+  "Admissions",
+  "Examinations",
+  "Library",
+  "Transport",
+  "Hostel",
+  "Security",
+  "Maintenance",
+  "Student Support Services",
+  "Campus Operations",
 ];
 const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 const EMPLOYEE_ID_PATTERN = /^[A-Za-z0-9-]+$/;
@@ -191,7 +204,7 @@ const cleanFacultyValues = (source) => {
     experience: text("experience"),
   };
 };
-const facultyValidation = (source, { departments = [], genders = [] } = {}) => {
+const facultyValidation = (source, { departments = [], genders = [], allowCustomDepartment = false } = {}) => {
   const values = cleanFacultyValues(source);
   const errors = {};
   if (!EMPLOYEE_ID_PATTERN.test(values.empId) || values.empId.length < 3 || values.empId.length > 20) errors.empId = "Employee ID must be 3–20 letters, numbers, or hyphens.";
@@ -209,7 +222,9 @@ const facultyValidation = (source, { departments = [], genders = [] } = {}) => {
   if (!values.qualification || values.qualification.length > 100) errors.qualification = "Qualification is required.";
   if (!values.designation || values.designation.length > 100) errors.designation = "Please select or enter a valid designation.";
   if (!["Teaching Staff", "Non-Teaching Staff"].includes(values.facultyType)) errors.facultyType = "Please select a faculty type.";
-  if (!departments.includes(values.department)) errors.department = "Please select a department.";
+  if (!values.department || values.department.length > 100 || (!allowCustomDepartment && !departments.includes(values.department))) {
+    errors.department = allowCustomDepartment ? "Please select or enter a valid department." : "Please select a department.";
+  }
   if (!values.joining) errors.joining = "Joining date is required.";
   else if (values.dob && values.joining <= values.dob) errors.joining = "Joining date cannot be before date of birth.";
   else if (Number.isNaN(new Date(`${values.joining}T00:00:00`).getTime())) errors.joining = "Please enter a valid joining date.";
@@ -288,7 +303,7 @@ function Steps({ step, staffType, onSelect }) {
     <div className="faculty-steps">
       {[
         [teaching ? "Faculty Details" : "Staff Details", UserRound, 0],
-        [teaching ? "Subjects & Classes" : "Employment & Documents", GraduationCap, 1],
+        [teaching ? "Subject Allocation" : "Employment & Documents", GraduationCap, 1],
       ].map(([label, Icon, targetStep]) => (
         <button type="button" disabled={targetStep > step} className={targetStep <= step ? "is-active" : ""} key={label} onClick={() => onSelect(targetStep)}>
           <span>
@@ -374,7 +389,6 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const [removing, setRemoving] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedFacultyType, setSelectedFacultyType] = useState(staffType);
-  const [allocationTab, setAllocationTab] = useState("subjects");
   const [subjectSearch, setSubjectSearch] = useState("");
   const [pendingSubjects, setPendingSubjects] = useState([]);
   const [loadingAllocation, setLoadingAllocation] = useState(false);
@@ -406,10 +420,10 @@ function Workflow({ existingId, staffTab = "teaching" }) {
       .finally(() => setGeneratingEmployeeId(false));
   }, [existingId, staffType]);
   useEffect(() => {
-    setDepartments(FRONTEND_DEPARTMENTS);
+    setDepartments(teaching ? TEACHING_DEPARTMENTS : NON_TEACHING_DEPARTMENTS);
     setGenders(["Male", "Female", "Other"]);
     setLoadingDepartments(false);
-  }, []);
+  }, [teaching]);
   useEffect(() => {
     if (!existingId) return;
     apiClient
@@ -481,7 +495,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     }
   }, [step, saved, teaching]);
   const validateAndShow = (source = values) => {
-    const result = facultyValidation(source, { departments, genders });
+    const result = facultyValidation(source, { departments, genders, allowCustomDepartment: !teaching });
     setErrors(result.errors);
     return result;
   };
@@ -489,11 +503,11 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     const sanitized = name === "mobile" ? String(value).replace(/\D/g, "").slice(0, 10) : name === "aadhaar" ? String(value).replace(/\D/g, "").slice(0, 12) : value;
     setValue(name, sanitized);
     if (name === "facultyType") { setSelectedFacultyType(sanitized); if (values.designation) setValue("designation", ""); }
-    const result = facultyValidation({ ...values, [name]: sanitized }, { departments, genders });
+    const result = facultyValidation({ ...values, [name]: sanitized }, { departments, genders, allowCustomDepartment: !teaching });
     if (!result.errors[name]) setErrors((current) => ({ ...current, [name]: undefined }));
   };
   const handleFieldBlur = (name) => {
-    const result = facultyValidation(values, { departments, genders });
+    const result = facultyValidation(values, { departments, genders, allowCustomDepartment: !teaching });
     setValues(result.values);
     setErrors((current) => ({ ...current, [name]: result.errors[name] }));
   };
@@ -665,7 +679,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                   required={field.required}
                   disabled={field.disabled}
                   error={errors[field.name]}
-                  allowOther={field.name === "designation"}
+                  allowOther={field.name === "designation" || (field.name === "department" && !teaching)}
                   onChange={handleFieldChange}
                   onBlur={handleFieldBlur}
                 />
@@ -690,18 +704,12 @@ function Workflow({ existingId, staffTab = "teaching" }) {
             <header>
               <GraduationCap />{" "}
               <div>
-                <h2>{teaching ? "Subjects & Classes" : "Employment & Documents"}</h2>
-                <p>{teaching ? "Allocate subjects now; class allocation appears when its API is available." : "Review employment information before saving the staff profile."}</p>
+                <h2>{teaching ? "Subject Allocation" : "Employment & Documents"}</h2>
+                <p>{teaching ? "Allocate subjects to the teaching staff member." : "Review employment information before saving the staff profile."}</p>
               </div>
             </header>
             {teaching ? (
-              <>
-                <div className="staff-inner-tabs">
-                  <button type="button" className={allocationTab === "subjects" ? "is-active" : ""} onClick={() => setAllocationTab("subjects")}>Subject Allocation</button>
-                  <button type="button" className={allocationTab === "classes" ? "is-active" : ""} onClick={() => setAllocationTab("classes")}>Class Allocation</button>
-                </div>
-                {allocationTab === "subjects" ? (
-                  <div className="faculty-subject-columns">
+              <div className="faculty-subject-columns">
                     <section className="faculty-subject-list available">
                       <h3>Available Subjects <small>{available.length}</small></h3>
                       <div className="faculty-subject-selector">
@@ -716,9 +724,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                       {allocations.map((allocation, index) => <article key={allocationId(allocation) ?? `${subjectName(allocation)}-${index}`}><span>{subjectName(allocation)}</span><button type="button" className="cms-btn" onClick={() => setRemoving(allocation)}><X size={15}/> Remove</button></article>)}
                       {!allocations.length && <p className="faculty-empty">No subjects allocated yet.</p>}
                     </section>
-                  </div>
-                ) : <p className="staff-api-note">Class allocation is not available because no faculty class-allocation endpoint exists in the current API contract.</p>}
-              </>
+              </div>
             ) : (
               <>
                 <Preview values={values} />
@@ -864,7 +870,8 @@ export default function StaffManagementPage() {
     setViewLoading(true);
     try {
       const response = await apiClient.get(apiEndpoints.faculty.getById(row.id));
-      setViewing({ ...row, ...response.data });
+      const record = extractRecord(response.data) || {};
+      setViewing({ ...row, ...record, id: facultyId(record) ?? row.id });
     } catch (e) {
       setViewing(null);
       setToast(friendlyFacultyError(e));
@@ -893,13 +900,43 @@ export default function StaffManagementPage() {
   ] : [
     { key: "empId", label: "Employee ID", strong: true },
     { key: "name", label: "Staff Name" },
-    { key: "mobile", label: "Mobile" },
-    { key: "email", label: "Email" },
     { key: "department", label: "Department" },
     { key: "designation", label: "Designation" },
-    { key: "facultyType", label: "Staff Type" },
-    { key: "joining", label: "Joining Date" },
     { key: "status", label: "Status", badge: true },
+  ];
+  const previewValues = valuesFor(viewing || {});
+  const previewRows = activeTab === "teaching" ? [
+    ["Employee ID", previewValues.empId],
+    ["First Name", previewValues.firstName],
+    ["Last Name", previewValues.lastName],
+    ["Gender", previewValues.gender],
+    ["Date of Birth", previewValues.dob],
+    ["Aadhaar Number", previewValues.aadhaar],
+    ["Mobile", previewValues.mobile],
+    ["Email", previewValues.email],
+    ["Blood Group", previewValues.bloodGroup],
+    ["Qualification", previewValues.qualification],
+    ["Designation", previewValues.designation],
+    ["Department", previewValues.department],
+    ["Joining Date", previewValues.joining],
+    ["Experience (Years)", previewValues.experience],
+    ["Status", previewValues.status],
+  ] : [
+    ["Employee ID", previewValues.empId],
+    ["First Name", previewValues.firstName],
+    ["Last Name", previewValues.lastName],
+    ["Gender", previewValues.gender],
+    ["Date of Birth", previewValues.dob],
+    ["Aadhaar Number", previewValues.aadhaar],
+    ["Mobile", previewValues.mobile],
+    ["Email", previewValues.email],
+    ["Blood Group", previewValues.bloodGroup],
+    ["Qualification", previewValues.qualification],
+    ["Department", previewValues.department],
+    ["Designation", previewValues.designation],
+    ["Joining Date", previewValues.joining],
+    ["Experience (Years)", previewValues.experience],
+    ["Status", previewValues.status],
   ];
   return (
     <DashboardLayout
@@ -933,29 +970,16 @@ export default function StaffManagementPage() {
                 <button className="cms-btn cms-btn-ghost" onClick={() => setViewing(null)}>
                   Close
                 </button>
-                {activeTab !== "teaching" ? <button className="cms-btn cms-btn-primary" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit?staffTab=${activeTab}`)}><Pencil size={15} /> Edit</button> : null}
               </>
             }
           >
-            {activeTab === "teaching" ? <div className="staff-details-actions"><button type="button" className="cms-btn cms-btn-primary" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit?staffTab=teaching`)}><Pencil size={16} /> Edit Faculty Details</button></div> : null}
+            <div className="staff-details-actions"><button type="button" className="cms-btn cms-btn-primary" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit?staffTab=${activeTab}`)}><Pencil size={16} /> {activeTab === "teaching" ? "Edit Faculty Details" : "Edit Staff Details"}</button></div>
             <div className="cms-kv">
               {viewLoading ? (
                 <div className="cms-empty">Loading faculty details...</div>
               ) : (
                 <>
-                  {[
-                    ["Employee ID", viewing.employeeId ?? viewing.empId],
-                    [activeTab === "teaching" ? "Faculty Name" : "Staff Name", facultyName(viewing)],
-                    ["Mobile", viewing.mobile ?? viewing.phoneNumber],
-                    ["Email", viewing.email],
-                    ["Department", viewing.department],
-                    ["Designation", viewing.designation],
-                    ["Qualification", viewing.qualification],
-                    ["Staff Category", viewing.facultyType],
-                    ["Experience", viewing.experience],
-                    ["Joining Date", dateOnly(viewing.joiningDate ?? viewing.joining)],
-                    ["Status", viewing.status],
-                  ].map(([label, value]) => (
+                  {previewRows.map(([label, value]) => (
                     <div key={label}>
                       <span>{label}</span>
                       {label === "Status" ? (

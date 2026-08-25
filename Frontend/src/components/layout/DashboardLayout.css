@@ -108,7 +108,7 @@
 .cms-nav-link.is-active {
   background: linear-gradient(90deg, var(--cms-primary), var(--cms-primary-hover));
   color: #fff;
-  box-shadow: 0 6px 16px rgba(111, 132, 0, 0.24);
+  box-shadow: none;
 }
 
 .cms-nav-link svg {
@@ -537,21 +537,26 @@
 /* Keep light-theme sidebar navigation clearly readable. */
 [data-theme="light"] .cms-brand-title,
 [data-theme="light"] .cms-nav-link {
-  color: #10150d !important;
+  color: #090d07 !important;
+}
+
+[data-theme="light"] .cms-sidebar {
+  background: linear-gradient(180deg, #eef1e2 0%, #e7ebd8 52%, #dde4ca 100%);
+  border-right: 1px solid #cfd5bd;
 }
 
 [data-theme="light"] .cms-brand {
-  background: #e9edd9;
-  border-bottom-color: #d9dccb;
+  background: linear-gradient(135deg, #e0e6cc 0%, #d5ddbb 100%);
+  border-bottom-color: #c8d0b3;
 }
 
 [data-theme="light"] .cms-nav-group {
   color: #000000 !important;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 [data-theme="light"] .cms-nav-link {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 [data-theme="light"] .cms-nav-link:hover {

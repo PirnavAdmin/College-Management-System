@@ -16,8 +16,22 @@
 .faculty-list .cms-actions { justify-content: center !important; }
 .faculty-list .cms-action-btn { width: 30px; height: 30px; }
 .faculty-list .cms-action-btn.print { color: var(--cms-primary); background: var(--cms-primary-soft); }
-.faculty-list .cms-pagination { min-height: 0; padding: 9px 12px; }
-.faculty-list .cms-page-btn { min-width: 34px; height: 34px; border-radius: 8px; font-size: 12.5px; }
+.faculty-list .cms-pagination {
+  box-sizing: border-box;
+  min-height: 46px;
+  height: 46px;
+  max-height: 46px;
+  flex: 0 0 46px;
+  gap: 7px;
+  padding: 5px 14px;
+  border-top: 1px solid var(--cms-border);
+  background: var(--cms-subtle);
+  color: var(--cms-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.faculty-list .cms-pagination .cms-page-info { color: var(--cms-muted); font-size: 14px; font-weight: 600; }
+.faculty-list .cms-page-btn { min-width: 36px; height: 36px; padding: 0 9px; border-radius: 9px; font-size: 14px; font-weight: 700; }
 
 .faculty-steps {
   display: grid;
@@ -36,8 +50,7 @@
   background: var(--cms-surface);
   box-shadow: var(--cms-shadow);
 }
-.staff-tabs button,
-.staff-inner-tabs button {
+.staff-tabs button {
   min-height: 42px;
   padding: 0 20px;
   border: 0;
@@ -48,11 +61,8 @@
   font-weight: 700;
   cursor: pointer;
 }
-.staff-tabs button.is-active,
-.staff-inner-tabs button.is-active { background: var(--cms-primary); color: #fff; }
+.staff-tabs button.is-active { background: var(--cms-primary); color: #fff; }
 .staff-back-link { display: inline-flex; align-items: center; gap: 7px; margin: 0 0 14px; padding: 0; border: 0; background: none; color: var(--cms-primary); font: inherit; font-weight: 700; cursor: pointer; }
-.staff-inner-tabs { display: flex; gap: 6px; margin-bottom: 18px; padding: 4px; border: 1px solid var(--cms-border); border-radius: 11px; background: var(--cms-bg); }
-.staff-inner-tabs button { flex: 1; }
 .staff-api-note { margin: 0; padding: 18px; border: 1px dashed var(--cms-border); border-radius: 12px; background: var(--cms-bg); color: var(--cms-muted); line-height: 1.6; }
 .staff-search-field { position: relative; z-index: 1; }
 .staff-search-field:focus-within { z-index: 30; }
@@ -195,7 +205,6 @@
 @media (max-width: 800px) {
   .faculty-list .cms-toolbar { padding: 14px; }
   .faculty-list .cms-table-wrap { margin: 0 16px; }
-  .faculty-list .cms-pagination { padding: 12px 16px 14px; }
   .faculty-preview, .faculty-subject-columns { grid-template-columns: 1fr; }
   .faculty-steps { grid-template-columns: repeat(2, 1fr); }
   .faculty-form, .faculty-stage, .faculty-allocation { padding: 18px; }
@@ -208,7 +217,6 @@
   .faculty-list .cms-search { width: 100%; max-width: none; }
   .faculty-list .cms-toolbar-right { margin-left: 0; }
   .faculty-list .cms-table-wrap { margin: 0 16px; }
-  .faculty-list .cms-pagination { padding: 14px 16px 16px; }
   .faculty-form-grid { grid-template-columns: 1fr; }
   .staff-tabs { display: flex; width: 100%; }
   .staff-tabs button { flex: 1; padding-inline: 10px; }

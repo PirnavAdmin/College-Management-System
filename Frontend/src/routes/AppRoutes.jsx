@@ -99,7 +99,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/timetable" element={<TimetablePage />} />
         <Route path="/dashboard/timetable/setup" element={<TimetablePage screen="setup" />} />
         <Route path="/dashboard/timetable/draft" element={<TimetablePage screen="draft" />} />
-        <Route path="/dashboard/timetable/faculty" element={<TimetablePage screen="faculty" />} />
+        <Route path="/dashboard/timetable/generate" element={<TimetablePage screen="generate" />} />
+        <Route path="/dashboard/timetable/faculty" element={<Navigate to="/dashboard/timetable/generate" replace />} />
         <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
         <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
         <Route path="/dashboard/attendance/:area/reports" element={<AttendancePage />} />
@@ -111,7 +112,12 @@ export default function AppRoutes() {
         <Route path="/dashboard/examinations/add" element={<ExaminationPage />} />
         <Route path="/dashboard/marks-entry" element={<MarksEntryPage />} />
         <Route path="/dashboard/results" element={<ResultProcessingPage />} />
-        <Route path="/dashboard/promotion" element={<PromotionPage />} />
+        <Route path="/dashboard/promotion" element={<PromotionPage screen="promotion" />} />
+        <Route path="/dashboard/promotions/eligible" element={<PromotionPage screen="promotion" />} />
+        <Route path="/dashboard/promotions/single" element={<PromotionPage screen="single" />} />
+        <Route path="/dashboard/promotions/allocation" element={<PromotionPage screen="allocation" />} />
+        <Route path="/dashboard/promotions/history" element={<PromotionPage screen="history" />} />
+        <Route path="/dashboard/promotions/report" element={<PromotionPage screen="report" />} />
         <Route path="/dashboard/fee-structure" element={<FeeManagementPage />} />
         <Route path="/dashboard/certificates" element={<CertificatesPage />} />
         <Route path="/dashboard/reports" element={<ReportsAnalyticsPage />} />

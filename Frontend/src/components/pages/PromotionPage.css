@@ -1,6 +1,7 @@
 .promotion-page {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 .promotion-tabs {
   display: flex;
@@ -57,6 +58,12 @@
   gap: 18px;
   align-items: stretch;
 }
+.promotion-setup-grid > * {
+  min-width: 0;
+}
+.promotion-single-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .promotion-flow-panel {
   border: 1px solid var(--cms-border);
   border-radius: 12px;
@@ -65,6 +72,9 @@
 }
 .promotion-flow-panel h3 {
   margin-bottom: 16px;
+}
+.promotion-single-grid .promotion-flow-panel {
+  min-width: 0;
 }
 .promotion-completion-panel {
   display: grid;
@@ -87,6 +97,13 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 16px;
 }
+.promotion-field-grid .cms-field {
+  min-width: 0;
+}
+.promotion-field-grid .cms-field select,
+.promotion-field-grid .cms-field input {
+  width: 100%;
+}
 .promotion-arrow {
   display: grid;
   place-items: center;
@@ -106,6 +123,10 @@
   gap: 10px;
   padding: 0 18px 18px;
   flex-wrap: wrap;
+}
+.promotion-card > .promotion-actions:last-child,
+.promotion-card > .promotion-final-actions:last-child {
+  padding-top: 2px;
 }
 .promotion-error {
   padding: 12px 14px;
@@ -130,15 +151,15 @@
   gap: 14px;
 }
 .promotion-table-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(180px, 245px) auto auto;
   align-items: center;
   gap: 10px;
-  padding: 0 18px 14px;
-  flex-wrap: wrap;
+  padding: 14px 18px;
 }
 .promotion-table-controls > input {
-  min-width: 240px;
-  flex: 1;
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--cms-border);
   border-radius: 9px;
   padding: 9px 12px;
@@ -149,6 +170,7 @@
   outline: none;
 }
 .promotion-table-controls > select {
+  min-width: 164px;
   border: 1px solid var(--cms-border);
   border-radius: 9px;
   padding: 9px 12px;
@@ -156,6 +178,10 @@
   color: var(--cms-text);
   font: inherit;
   font-size: 13px;
+}
+.promotion-table-controls .cms-btn {
+  min-height: 38px;
+  white-space: nowrap;
 }
 .promotion-table-controls > input:focus {
   border-color: var(--cms-primary);
@@ -196,6 +222,13 @@
   white-space: normal;
   color: var(--cms-muted);
   font-size: 12px;
+}
+.promotion-table th:last-child,
+.promotion-table td:last-child {
+  text-align: right;
+}
+.promotion-table td:last-child .cms-action-link + .cms-action-link {
+  margin-left: 12px;
 }
 .cms-action-link {
   border: 0;
@@ -316,6 +349,48 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px 16px;
 }
+.promotion-history-filters .cms-field {
+  min-width: 0;
+}
+
+/* Keep the two date inputs directly below the Student ID filter. */
+.promotion-history-filters .promotion-date-range {
+  grid-column: 1 / span 2;
+  grid-row: 3;
+}
+
+.promotion-date-range-control {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
+.promotion-date-range-control label {
+  flex: 1;
+  min-width: 0;
+}
+
+.promotion-date-range-control input {
+  width: 100%;
+}
+
+.promotion-date-range-control > span {
+  padding-bottom: 10px;
+  color: var(--cms-muted);
+}
+
+/* The allocation screen contains inline selects inside the CMS table. */
+.promotion-table select {
+  width: 100%;
+  min-width: 145px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  padding: 8px 30px 8px 10px;
+  background: var(--cms-surface);
+  color: var(--cms-text);
+  font: inherit;
+  font-size: 12px;
+}
 .promotion-card .cms-field textarea {
   min-height: 96px;
   resize: vertical;
@@ -336,6 +411,16 @@
   }
   .promotion-history-filters {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1250px) {
+  .promotion-table-controls {
+    grid-template-columns: minmax(240px, 1fr) auto minmax(170px, 220px);
+  }
+}
+@media (max-width: 900px) {
+  .promotion-table-controls {
+    grid-template-columns: minmax(220px, 1fr) minmax(170px, 220px) auto;
   }
 }
 @media (max-width: 700px) {
@@ -360,7 +445,9 @@
     justify-content: center;
   }
   .promotion-table-controls {
-    padding: 0 14px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    padding: 12px 14px;
   }
   .promotion-table-controls > input {
     min-width: 100%;

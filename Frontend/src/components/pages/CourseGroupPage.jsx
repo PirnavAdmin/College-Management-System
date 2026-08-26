@@ -15,17 +15,17 @@ const PROGRAM_MAPPINGS_STORAGE_KEY = "cms.groupProgramMappings.v1";
 const CONTEXT_FIELD_NAMES = ["board", "year", "level"];
 
 const DEFAULT_PROGRAMS = [
-  { programId: "regular", programName: "Regular", programCode: "REG", status: "Active" },
-  { programId: "jee", programName: "JEE", programCode: "JEE", status: "Active" },
-  { programId: "jee-advanced", programName: "JEE Advanced", programCode: "JEEADV", status: "Active" },
-  { programId: "eapcet", programName: "EAPCET", programCode: "EAPCET", status: "Active" },
-  { programId: "neet", programName: "NEET", programCode: "NEET", status: "Active" },
-  { programId: "neet-advanced", programName: "NEET Advanced", programCode: "NEETADV", status: "Active" },
-  { programId: "ca-foundation", programName: "CA Foundation", programCode: "CAF", status: "Active" },
-  { programId: "cma-foundation", programName: "CMA Foundation", programCode: "CMAF", status: "Active" },
-  { programId: "cuet", programName: "CUET", programCode: "CUET", status: "Active" },
-  { programId: "ipmat", programName: "IPMAT", programCode: "IPMAT", status: "Active" },
-  { programId: "clat", programName: "CLAT", programCode: "CLAT", status: "Active" },
+  { programId: "regular", backendProgramId: 1, programName: "Regular", programCode: "REG", status: "Active" },
+  { programId: "jee", backendProgramId: 2, programName: "JEE", programCode: "JEE", status: "Active" },
+  { programId: "jee-advanced", backendProgramId: 3, programName: "JEE Advanced", programCode: "JEEADV", status: "Active" },
+  { programId: "eapcet", backendProgramId: 4, programName: "EAPCET", programCode: "EAPCET", status: "Active" },
+  { programId: "neet", backendProgramId: 5, programName: "NEET", programCode: "NEET", status: "Active" },
+  { programId: "neet-advanced", backendProgramId: 6, programName: "NEET Advanced", programCode: "NEETADV", status: "Active" },
+  { programId: "ca-foundation", backendProgramId: 7, programName: "CA Foundation", programCode: "CAF", status: "Active" },
+  { programId: "cma-foundation", backendProgramId: 8, programName: "CMA Foundation", programCode: "CMAF", status: "Active" },
+  { programId: "cuet", backendProgramId: 9, programName: "CUET", programCode: "CUET", status: "Active" },
+  { programId: "ipmat", backendProgramId: 10, programName: "IPMAT", programCode: "IPMAT", status: "Active" },
+  { programId: "clat", backendProgramId: 11, programName: "CLAT", programCode: "CLAT", status: "Active" },
 ];
 
 const DEFAULT_GROUP_PROGRAM_CODES = {
@@ -188,6 +188,19 @@ const optionLabel = (options, value, fallback = "-") => (
   options.find((option) => String(option.value) === String(value))?.label || fallback
 );
 
+const backendProgramIdFor = (programId) => {
+  const direct = Number(programId);
+  if (Number.isInteger(direct) && direct > 0) return direct;
+  const program = getProgramMaster().find((item) => String(item.programId) === String(programId));
+  const mapped = Number(program?.backendProgramId);
+  return Number.isInteger(mapped) && mapped > 0 ? mapped : null;
+};
+
+const programIdFromBackendId = (backendProgramId) => {
+  const program = getProgramMaster().find((item) => String(item.backendProgramId || item.programId) === String(backendProgramId));
+  return String(program?.programId || backendProgramId);
+};
+
 const buildGroupFilterFields = (masters, values) => (
   pageConfig.filters.map((field) => {
     if (field.name === "board") return { ...field, options: masters.boards || [] };
@@ -222,7 +235,9 @@ const normalizeGroupForm = (item) => {
 };
 
 const toPayload = (formData, selectedProgramIds = []) => {
-  const programIds = Array.from(new Set(selectedProgramIds.map((programId) => String(programId))));
+  const backendProgramIds = Array.from(new Set(selectedProgramIds
+    .map(backendProgramIdFor)
+    .filter((programId) => Number.isInteger(programId) && programId > 0)));
   const payload = {
     board: formData.boardName || formData.board,
     groupName: formData.name,
@@ -233,9 +248,9 @@ const toPayload = (formData, selectedProgramIds = []) => {
   if (formData.board) payload.boardId = Number(formData.board);
   if (formData.year) payload.academicYearId = Number(formData.year);
   if (formData.level) payload.academicLevelId = Number(formData.level);
-  if (programIds.length) {
-    payload.programIds = programIds;
-    payload.programs = programsForIds(programIds);
+  if (backendProgramIds.length) {
+    payload.programIds = backendProgramIds;
+    payload.programs = programsForIds(selectedProgramIds);
   }
   return payload;
 };
@@ -302,7 +317,7 @@ const programsForIds = (programIds) => {
   return getProgramMaster()
     .filter((program) => selectedIds.has(String(program.programId)))
     .map((program) => ({
-      programId: program.programId,
+      programId: backendProgramIdFor(program.programId) || program.programId,
       programName: program.programName,
       programCode: program.programCode,
       status: program.status,
@@ -321,7 +336,7 @@ const fetchProgramIdsForGroup = async (groupId, groupCode) => {
     const programIds = getCollection(response.data)
       .map((program) => read(program, "programId", "ProgramId", "id", "Id"))
       .filter((programId) => programId !== undefined && programId !== null && programId !== "")
-      .map((programId) => String(programId));
+      .map(programIdFromBackendId);
     return programIds.length ? programIds : programIdsForGroup(groupId, groupCode);
   } catch {
     return programIdsForGroup(groupId, groupCode);

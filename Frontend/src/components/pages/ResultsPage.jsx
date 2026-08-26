@@ -1,107 +1,1104 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Toast } from "@/components/common/Ui.jsx";
+import { Loader, Toast } from "@/components/common/Ui.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { CheckCircle2, Eye } from "lucide-react";
 import "./ResultProcessingPage.css";
 
-const BOARDS = [{ id: 1, name: "AP State Board" }], YEARS = [{ id: 1, boardId: 1, name: "2026-27" }], LEVELS = [{ id: 1, boardId: 1, yearId: 1, name: "1st Year" }];
-const GROUPS = [{ id: 1, levelId: 1, name: "MPC" }, { id: 2, levelId: 1, name: "BiPC" }, { id: 3, levelId: 1, name: "CEC" }];
-const PROGRAMS = [{ id: "REGULAR", name: "Regular Academic", groupIds: [1, 2, 3] }, { id: "JEE", name: "JEE Main", groupIds: [1] }, { id: "NEET", name: "NEET", groupIds: [2] }];
-const SECTIONS = [
-  { id: 1, name: "MPC-Regular-A", boardId: 1, yearId: 1, levelId: 1, groupId: 1, programId: "REGULAR", inChargeId: 1, inChargeName: "Deepa" },
-  { id: 2, name: "MPC-Regular-B", boardId: 1, yearId: 1, levelId: 1, groupId: 1, programId: "REGULAR", inChargeId: 2, inChargeName: "Kiran" },
-  { id: 3, name: "MPC-JEE-A", boardId: 1, yearId: 1, levelId: 1, groupId: 1, programId: "JEE", inChargeId: 3, inChargeName: "Priya" },
-  { id: 4, name: "BiPC-Regular-A", boardId: 1, yearId: 1, levelId: 1, groupId: 2, programId: "REGULAR", inChargeId: 4, inChargeName: "Anil" },
-  { id: 5, name: "BiPC-NEET-A", boardId: 1, yearId: 1, levelId: 1, groupId: 2, programId: "NEET", inChargeId: 2, inChargeName: "Kiran" },
-  { id: 6, name: "CEC-Regular-A", boardId: 1, yearId: 1, levelId: 1, groupId: 3, programId: "REGULAR", inChargeId: 1, inChargeName: "Deepa" },
-];
-const SUBJECTS = {
-  MPC_REG: [[101, "English", "Eng", false], [102, "Sanskrit", "San", false], [103, "Mathematics IA", "M1A", false], [104, "Mathematics IB", "M1B", false], [105, "Physics", "Phy", true], [106, "Chemistry", "Chem", true]],
-  JEE: [[103, "Mathematics IA", "M1A"], [104, "Mathematics IB", "M1B"], [105, "Physics", "Phy"], [106, "Chemistry", "Chem"]],
-  BIPC_REG: [[201, "English", "Eng", false], [202, "Botany", "Bot", true], [203, "Zoology", "Zoo", true], [204, "Physics", "Phy", true], [205, "Chemistry", "Chem", true]],
-  NEET: [[202, "Botany", "Bot"], [203, "Zoology", "Zoo"], [204, "Physics", "Phy"], [205, "Chemistry", "Chem"]],
-  CEC: [[301, "English", "Eng", false], [302, "Civics", "Civ", false], [303, "Economics", "Eco", false], [304, "Commerce", "Com", false]],
-};
-const EXAMS = [
-  { id: 1, code: "EXM-REG-01", name: "Quarterly Examination", boardId: 1, yearId: 1, levelId: 1, groupId: 1, programId: "REGULAR", programName: "Regular Academic", pattern: "Regular Academic Pattern", type: "Written", scheduleMode: "SUBJECT_WISE", totalMarks: 600, passPercentage: 35, subjectKey: "MPC_REG", status: "COMPLETED", resultReady: true },
-  { id: 2, code: "EXM-JEE-01", name: "JEE Main Mock", boardId: 1, yearId: 1, levelId: 1, groupId: 1, programId: "JEE", programName: "JEE Main", pattern: "JEE Main Pattern", type: "Objective", scheduleMode: "COMBINED", totalMarks: 300, passPercentage: 40, subjectKey: "JEE", status: "COMPLETED", resultReady: true },
-  { id: 3, code: "EXM-BIP-01", name: "BiPC Quarterly", boardId: 1, yearId: 1, levelId: 1, groupId: 2, programId: "REGULAR", programName: "Regular Academic", pattern: "Regular Academic Pattern", type: "Written", scheduleMode: "SUBJECT_WISE", totalMarks: 500, passPercentage: 35, subjectKey: "BIPC_REG", status: "COMPLETED", resultReady: true },
-  { id: 4, code: "EXM-NEET-01", name: "NEET Grand Test", boardId: 1, yearId: 1, levelId: 1, groupId: 2, programId: "NEET", programName: "NEET", pattern: "NEET Pattern", type: "Objective", scheduleMode: "COMBINED", totalMarks: 300, passPercentage: 40, subjectKey: "NEET", status: "COMPLETED", resultReady: true },
-  { id: 5, code: "EXM-CEC-01", name: "CEC Quarterly", boardId: 1, yearId: 1, levelId: 1, groupId: 3, programId: "REGULAR", programName: "Regular Academic", pattern: "Regular Academic Pattern", type: "Written", scheduleMode: "SUBJECT_WISE", totalMarks: 400, passPercentage: 35, subjectKey: "CEC", status: "COMPLETED", resultReady: true },
-  { id: 6, code: "EXM-NOTREADY", name: "Incomplete Evaluation Exam", boardId: 1, yearId: 1, levelId: 1, groupId: 1, programId: "REGULAR", totalMarks: 600, passPercentage: 35, subjectKey: "MPC_REG", status: "COMPLETED", resultReady: false },
-];
-const gradeFor = (p) => p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B+" : p >= 60 ? "B" : p >= 50 ? "C" : p >= 40 ? "D" : "F";
-const sourceStudents = [];
-SECTIONS.forEach((section) => {
-  const exams = EXAMS.filter((exam) => exam.groupId === section.groupId && exam.programId === section.programId && exam.resultReady);
-  exams.forEach((exam) => Array.from({ length: section.id <= 2 ? 12 : 6 }, (_, index) => {
-    const studentId = section.id * 100 + index + 1, subjects = SUBJECTS[exam.subjectKey].map(([id, name, short, practical], subjectIndex) => {
-      const maxMarks = exam.totalMarks / SUBJECTS[exam.subjectKey].length;
-      const totalMarks = Math.round(maxMarks * (0.42 + ((index * 7 + subjectIndex * 5 + section.id) % 50) / 100));
-      if (exam.scheduleMode === "COMBINED") return { subjectId: id, subjectName: name, short, obtainedMarks: totalMarks, maxMarks };
-      const internalMarks = Math.min(20, Math.round(totalMarks * 0.2)), practicalMarks = practical ? Math.min(20, Math.round(totalMarks * 0.2)) : null;
-      return { subjectId: id, subjectName: name, short, internalMarks, practicalMarks, theoryMarks: totalMarks - internalMarks - (practicalMarks || 0), totalMarks, maxMarks };
-    });
-    sourceStudents.push({ studentId, rollNo: `${section.id}${String(index + 1).padStart(2, "0")}`, studentName: ["Aarav", "Bhavya", "Charan", "Divya", "Eshan", "Farah", "Gautam", "Hema", "Ishaan", "Jyoti", "Karthik", "Lavanya"][index], boardId: 1, yearId: 1, levelId: 1, groupId: section.groupId, programId: section.programId, examinationId: exam.id, sectionId: section.id, subjects });
-  }));
-});
-const APPROVED_EVALUATIONS = EXAMS.filter((exam) => exam.resultReady).flatMap((exam) => SUBJECTS[exam.subjectKey].map(([subjectId]) => ({ examinationId: exam.id, subjectId, status: "APPROVED" })));
 const PAGE_SIZE = 5;
 const SUBJECT_PAGE_SIZE = 6;
-const competitionRanks = (rows, key = "total") => { let rank = 0, previous; return [...rows].sort((a, b) => b[key] - a[key] || a.studentName.localeCompare(b.studentName)).map((row, index) => { if (row[key] !== previous) rank = index + 1; previous = row[key]; return { ...row, rank }; }); };
-const buildResults = (exam, sections, statuses) => {
-  const required = SUBJECTS[exam.subjectKey], approved = APPROVED_EVALUATIONS.filter((item) => item.examinationId === exam.id && item.status === "APPROVED");
-  if (approved.length !== required.length) return [];
-  const base = sourceStudents.filter((student) => student.examinationId === exam.id && sections.some((section) => section.id === student.sectionId)).map((student) => { const total = student.subjects.reduce((sum, subject) => sum + Number(subject.totalMarks ?? subject.obtainedMarks), 0), percentage = total / exam.totalMarks * 100; return { ...student, total, maximum: exam.totalMarks, percentage, grade: gradeFor(percentage), result: percentage >= exam.passPercentage ? "PASS" : "FAIL", status: statuses[student.sectionId] || "GENERATED", isPublished: (statuses[student.sectionId] || "GENERATED") === "PUBLISHED" }; });
-  const groupRanks = new Map(competitionRanks(base).map((row) => [row.studentId, row.rank]));
-  return base.map((row) => ({ ...row, groupRank: groupRanks.get(row.studentId), sectionRank: competitionRanks(base.filter((item) => item.sectionId === row.sectionId)).find((item) => item.studentId === row.studentId).rank }));
+
+const RESULT_API = {
+  boards: "/api/v1/boards",
+  academicYears: "/api/v1/academic-years/active",
+  academicLevels: "/api/v1/boards/academic-levels",
+  groupsByBoard: (boardId) => `/api/v1/groups/board/${boardId}`,
+  programsByGroup: (groupId) => `/api/v1/programs/group/${groupId}`,
+  examinations: "/api/v1/examinations",
+  generate: "/api/v1/results/generate",
+  process: "/api/v1/results/process",
+  sectionDetail: (sectionId) => `/api/v1/results/sections/${sectionId}`,
+  publishSection: (sectionId) => `/api/v1/results/sections/${sectionId}/publish`,
+  publishGroup: "/api/v1/results/publish-group",
+  studentMemo: (studentId) => `/api/v1/results/student/${studentId}/memo`,
+  studentDetailsFallback: (studentId) => `/api/v1/student-analysis/${studentId}/details`,
+  rankList: "/api/v1/results/rank-list",
+  analytics: "/api/v1/results/analytics",
+  failedStudents: "/api/v1/results/failed-students",
 };
 
-export default function ResultsPage() {
-  const empty = { board: "", year: "", level: "", group: "", program: "", exam: "" };
-  const [filters, setFilters] = useState(empty), [applied, setApplied] = useState(null), [viewMode, setViewMode] = useState("table"), [results, setResults] = useState([]), [sectionStatuses, setSectionStatuses] = useState({ 2: "PUBLISHED" });
-  const [sectionId, setSectionId] = useState(null), [studentId, setStudentId] = useState(null), [query, setQuery] = useState(""), [page, setPage] = useState(1), [rankPage, setRankPage] = useState(1);
-  const [rankFilters, setRankFilters] = useState({ group: "", program: "", section: "", exam: "" }), [rankSearch, setRankSearch] = useState(""), [confirm, setConfirm] = useState(null), [analyticsDetail, setAnalyticsDetail] = useState(null), [toast, setToast] = useState("");
-  const exam = EXAMS.find((item) => String(item.id) === String(applied?.exam)), sections = SECTIONS.filter((item) => exam && item.boardId === exam.boardId && item.yearId === exam.yearId && item.levelId === exam.levelId && item.groupId === exam.groupId && item.programId === exam.programId);
-  const change = (key, value) => { const order = ["board", "year", "level", "group", "program", "exam"]; setFilters((current) => ({ ...current, ...Object.fromEntries(order.slice(order.indexOf(key) + 1).map((item) => [item, ""])), [key]: value })); setApplied(null); setResults([]); setSectionId(null); setStudentId(null); setQuery(""); setPage(1); setViewMode("table"); setConfirm(null); };
-  const generate = () => { if (!Object.values(filters).every(Boolean)) return setToast("Select all required result filters."); const selected = EXAMS.find((item) => String(item.id) === filters.exam); if (!selected?.resultReady) return setToast("Results cannot be generated until all required evaluations are APPROVED."); const selectedSections = SECTIONS.filter((item) => item.groupId === selected.groupId && item.programId === selected.programId); const built = buildResults(selected, selectedSections, sectionStatuses); if (!built.length) return setToast("Approved result source data is incomplete."); setApplied({ ...filters }); setResults(built); setViewMode("table"); setSectionId(null); setStudentId(null); setPage(1); };
-  const summaries = sections.map((section) => { const students = results.filter((item) => item.sectionId === section.id), passed = students.filter((item) => item.result === "PASS").length; return { ...section, students, count: students.length, passed, failed: students.length - passed, passRate: students.length ? passed / students.length * 100 : 0, average: students.length ? students.reduce((sum, item) => sum + item.percentage, 0) / students.length : 0, resultStatus: sectionStatuses[section.id] || "GENERATED" }; });
-  const selectedSection = summaries.find((item) => item.id === sectionId), selectedStudent = typeof studentId === "object" ? studentId : results.find((item) => item.studentId === studentId);
-  const validSection = (summary) => summary && exam?.resultReady && summary.count > 0 && new Set(summary.students.map((item) => item.studentId)).size === summary.count && summary.students.every((student) => student.subjects.length === SUBJECTS[exam.subjectKey].length && student.subjects.every((subject) => Number.isFinite(Number(subject.totalMarks ?? subject.obtainedMarks))) && Number.isFinite(student.total) && student.total <= exam.totalMarks && student.percentage >= 0 && student.percentage <= 100 && student.grade && ["PASS", "FAIL"].includes(student.result) && student.sectionRank);
-  const publishSection = (summary) => { if (summary.resultStatus !== "GENERATED" || !validSection(summary)) return setToast(`Section ${summary?.name || ""} contains incomplete result data.`); setConfirm({ type: "section", summary }); };
-  const publishGroup = () => { const generated = summaries.filter((item) => item.resultStatus === "GENERATED"), invalid = summaries.find((item) => !validSection(item)); if (!generated.length) return setToast("All Section results are already published."); if (invalid) return setToast(`Group results cannot be published. Section ${invalid.name} contains incomplete result data.`); setConfirm({ type: "group", generated }); };
-  const confirmPublish = () => { const ids = confirm.type === "section" ? [confirm.summary.id] : confirm.generated.map((item) => item.id); setSectionStatuses((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, "PUBLISHED"])) })); setResults((current) => current.map((item) => ids.includes(item.sectionId) ? { ...item, status: "PUBLISHED", isPublished: true } : item)); setConfirm(null); setToast(confirm.type === "section" ? "Section results published." : "Group results published successfully."); };
-  const sectionStudents = selectedSection ? selectedSection.students.filter((item) => `${item.studentName} ${item.rollNo} ${item.grade} ${item.result} ${item.status}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => a.sectionRank - b.sectionRank) : [], totalPages = Math.max(1, Math.ceil(sectionStudents.length / PAGE_SIZE)), paged = sectionStudents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const allStaticResults = useMemo(() => EXAMS.filter((item) => item.resultReady).flatMap((item) => buildResults(item, SECTIONS.filter((section) => section.groupId === item.groupId && section.programId === item.programId), sectionStatuses)), [sectionStatuses]);
-  const rankData = competitionRanks(allStaticResults.filter((item) => (!rankFilters.group || String(item.groupId) === rankFilters.group) && (!rankFilters.program || item.programId === rankFilters.program) && (!rankFilters.section || String(item.sectionId) === rankFilters.section) && (!rankFilters.exam || String(item.examinationId) === rankFilters.exam) && `${item.studentName} ${item.rollNo}`.toLowerCase().includes(rankSearch.toLowerCase())));
-  const rankPages = Math.max(1, Math.ceil(rankData.length / PAGE_SIZE)), rankRows = rankData.slice((rankPage - 1) * PAGE_SIZE, rankPage * PAGE_SIZE);
-  const analyticsRows = results.length ? results : allStaticResults, analytics = { total: analyticsRows.length, passed: analyticsRows.filter((item) => item.result === "PASS").length, failed: analyticsRows.filter((item) => item.result === "FAIL").length, average: analyticsRows.length ? analyticsRows.reduce((sum, item) => sum + item.percentage, 0) / analyticsRows.length : 0 };
-  const exportRows = (rows) => rows.map((item) => ({ Roll: item.rollNo, Student: item.studentName, Section: SECTIONS.find((section) => section.id === item.sectionId)?.name, Total: item.total, Maximum: item.maximum, Percentage: item.percentage.toFixed(2), Grade: item.grade, Result: item.result, "Section Rank": item.sectionRank, "Group Rank": item.groupRank, Status: item.status }));
-  const excel = (rows, name) => { const sheet = XLSX.utils.json_to_sheet(exportRows(rows)); const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, sheet, "Results"); XLSX.writeFile(book, `${name}.xlsx`); };
-  const pdf = (rows, name) => { const doc = new jsPDF({ orientation: "landscape" }); doc.text(name, 14, 14); const data = exportRows(rows), headers = Object.keys(data[0] || {}); autoTable(doc, { head: [headers], body: data.map((item) => headers.map((key) => item[key])), startY: 20 }); doc.save(`${name}.pdf`); };
-  const opt = (items) => items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>);
-  return <DashboardLayout title="Results Management" subtitle="Generate, publish and analyze approved examination results" breadcrumb={["Results"]}><div className="results-page">
-    <div className="cms-card"><div className="cms-card-body"><div className="results-view-tabs"><button className={`cms-btn ${viewMode === "table" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("table"); setStudentId(null); }}>Results</button><button className={`cms-btn ${viewMode === "rankList" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("rankList"); setStudentId(null); }}>Rank List</button><button className={`cms-btn ${viewMode === "analytics" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("analytics"); setStudentId(null); }}>Analytics</button></div></div></div>
-    {viewMode === "table" && !studentId && <div className="cms-card"><div className="cms-card-body"><div className="results-filter-grid"><Select label="Board" value={filters.board} onChange={(v) => change("board", v)}>{opt(BOARDS)}</Select><Select label="Academic Year" value={filters.year} disabled={!filters.board} onChange={(v) => change("year", v)}>{opt(YEARS.filter((item) => String(item.boardId) === filters.board))}</Select><Select label="Academic Level" value={filters.level} disabled={!filters.year} onChange={(v) => change("level", v)}>{opt(LEVELS.filter((item) => String(item.yearId) === filters.year))}</Select><Select label="Group" value={filters.group} disabled={!filters.level} onChange={(v) => change("group", v)}>{opt(GROUPS.filter((item) => String(item.levelId) === filters.level))}</Select><Select label="Program" value={filters.program} disabled={!filters.group} onChange={(v) => change("program", v)}>{opt(PROGRAMS.filter((item) => item.groupIds.some((id) => String(id) === filters.group)))}</Select><Select label="Examination" value={filters.exam} disabled={!filters.program} onChange={(v) => change("exam", v)}>{opt(EXAMS.filter((item) => item.status === "COMPLETED" && item.resultReady && String(item.groupId) === filters.group && item.programId === filters.program))}</Select><button className="cms-btn cms-btn-primary results-generate-btn" onClick={generate}>Generate Results</button></div></div></div>}
-    {selectedStudent ? <Memo student={selectedStudent} exam={EXAMS.find((item) => item.id === selectedStudent.examinationId)} onBack={() => setStudentId(null)} /> : viewMode === "table" && applied ? selectedSection ? <SectionView summary={selectedSection} exam={exam} subjectDefinitions={SUBJECTS[exam.subjectKey]} rows={paged} query={query} setQuery={(value) => { setQuery(value); setPage(1); }} page={page} pages={totalPages} setPage={setPage} onBack={() => { setSectionId(null); setPage(1); }} onStudent={setStudentId} onExcel={() => excel(selectedSection.students, `${exam.name}-${selectedSection.name}`)} onPdf={() => pdf(selectedSection.students, `${exam.name}-${selectedSection.name}`)} /> : <Sections summaries={summaries.filter((item) => item.name.toLowerCase().includes(query.toLowerCase()))} exam={exam} query={query} setQuery={setQuery} onView={(id) => { setSectionId(id); setPage(1); setQuery(""); }} onPublish={publishSection} onGroup={publishGroup} onExcel={() => excel(results, `${exam.name}-Group-Results`)} onPdf={() => pdf(results, `${exam.name}-Group-Results`)} /> : null}
-    {viewMode === "rankList" && !selectedStudent && <RankList rows={rankRows} filters={rankFilters} setFilters={(values) => { setRankFilters(values); setRankPage(1); }} search={rankSearch} setSearch={(value) => { setRankSearch(value); setRankPage(1); }} page={rankPage} pages={rankPages} setPage={setRankPage} onStudent={setStudentId} onExport={() => excel(rankData, "Rank-List")} />}
-    {viewMode === "analytics" && !selectedStudent && <Analytics data={analytics} rows={analyticsRows} onOpen={() => setAnalyticsDetail("failed")} />}
-    {confirm && <Confirm confirm={confirm} exam={exam} onCancel={() => setConfirm(null)} onConfirm={confirmPublish} />}{analyticsDetail === "failed" && <AnalyticsModal rows={analyticsRows} onClose={() => setAnalyticsDetail(null)} />}
-    <Toast message={toast} onClose={() => setToast("")} />
-  </div></DashboardLayout>;
+const collectionFrom = (data) => {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.data?.items)) return data.data.items;
+  if (Array.isArray(data?.result)) return data.result;
+  return [];
+};
+
+const masterCollectionFrom = (data) => {
+  const items = collectionFrom(data);
+  if (items.length) return items;
+  const item = data?.data ?? data;
+  return item && typeof item === "object" && !Array.isArray(item) ? [item] : [];
+};
+
+const isActive = (item) =>
+  item?.isActive === true || item?.status === true || String(item?.status).toLowerCase() === "active";
+
+const apiError = (error) => getApiErrorMessage(error);
+
+const normalizeBoard = (item) => ({
+  id: Number(item.boardId ?? item.id),
+  name: item.boardName ?? item.name ?? "",
+  code: item.boardCode ?? item.code ?? "",
+});
+const normalizeYear = (item) => ({
+  id: Number(item.academicYearId ?? item.id),
+  boardId: item.boardId == null ? null : Number(item.boardId),
+  name: item.academicYearName ?? item.name ?? "",
+});
+const normalizeLevel = (item) => ({
+  id: Number(item.academicLevelId ?? item.id),
+  name: item.levelName ?? item.academicLevelName ?? item.name ?? "",
+});
+const normalizeGroup = (item) => ({
+  id: Number(item.groupId ?? item.id),
+  name: item.groupName ?? item.name ?? "",
+  code: item.groupCode ?? item.code ?? "",
+});
+const normalizeProgram = (item) => ({
+  id: Number(item.programId ?? item.id),
+  name: item.programName ?? item.name ?? "",
+  code: item.programCode ?? item.code ?? "",
+});
+const normalizeExam = (item) => ({
+  id: Number(item.examinationId ?? item.id),
+  code: item.examCode ?? item.code ?? "",
+  name: item.examName ?? item.name ?? "",
+  programName: item.programName ?? "",
+  groupId: Number(item.groupId),
+  programId: Number(item.programId),
+  totalMarks: Number(item.totalMarks ?? 0),
+  passPercentage: Number(item.passPercentage ?? 0),
+  status: String(item.status ?? "").toUpperCase(),
+  resultReady: Boolean(item.resultReady ?? (item.status === "COMPLETED")),
+});
+
+const gradeFor = (p) =>
+  p >= 90 ? "A+" : p >= 80 ? "A" : p >= 70 ? "B+" : p >= 60 ? "B" : p >= 50 ? "C" : p >= 40 ? "D" : "F";
+
+export default function ResultProcessingPage() {
+  const emptyFilters = { board: "", year: "", level: "", group: "", program: "", exam: "" };
+  const [filters, setFilters] = useState(emptyFilters);
+  const [applied, setApplied] = useState(null);
+  const [viewMode, setViewMode] = useState("table");
+
+  // Master Data Dropdowns
+  const [boards, setBoards] = useState([]);
+  const [academicYears, setAcademicYears] = useState([]);
+  const [academicLevels, setAcademicLevels] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [examinations, setExaminations] = useState([]);
+
+  // Result & View States
+  const [sectionSummaries, setSectionSummaries] = useState([]);
+  const [sectionId, setSectionId] = useState(null);
+  const [selectedSectionDetails, setSelectedSectionDetails] = useState(null);
+  const [studentId, setStudentId] = useState(null);
+  const [selectedStudentMemo, setSelectedStudentMemo] = useState(null);
+
+  // Search & Pagination
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [rankPage, setRankPage] = useState(1);
+  const [rankFilters, setRankFilters] = useState({ group: "", program: "", section: "", exam: "" });
+  const [rankSearch, setRankSearch] = useState("");
+  const [rankList, setRankList] = useState([]);
+
+  // Analytics & Modals
+  const [analytics, setAnalytics] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [analyticsDetail, setAnalyticsDetail] = useState(null);
+  const [toast, setToast] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState("");
+
+  const toastRef = useRef(null);
+  const requests = useRef({ groups: 0, programs: 0, exams: 0, generate: 0, section: 0, memo: 0, rank: 0, analytics: 0 });
+
+  const showToast = useCallback((msg, type = "success") => {
+    if (toastRef.current) clearTimeout(toastRef.current);
+    setToast(msg);
+    toastRef.current = setTimeout(() => setToast(""), 3500);
+  }, []);
+
+  useEffect(() => () => toastRef.current && clearTimeout(toastRef.current), []);
+
+  // Initial Master Data Load
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.allSettled([
+      apiClient.get(RESULT_API.boards),
+      apiClient.get(RESULT_API.academicYears),
+      apiClient.get(RESULT_API.academicLevels),
+    ])
+      .then(([boardRes, yearRes, levelRes]) => {
+        if (!active) return;
+        if (boardRes.status === "fulfilled")
+          setBoards(masterCollectionFrom(boardRes.value.data).filter(isActive).map(normalizeBoard).filter((i) => i.id > 0));
+        else showToast(apiError(boardRes.reason), "error");
+
+        if (yearRes.status === "fulfilled")
+          setAcademicYears(masterCollectionFrom(yearRes.value.data).map(normalizeYear).filter((i) => i.id > 0));
+        else showToast(apiError(yearRes.reason), "error");
+
+        if (levelRes.status === "fulfilled")
+          setAcademicLevels(masterCollectionFrom(levelRes.value.data).map(normalizeLevel).filter((i) => i.id > 0));
+        else showToast(apiError(levelRes.reason), "error");
+      })
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [showToast]);
+
+  const clearResults = () => {
+    setApplied(null);
+    setSectionSummaries([]);
+    setSectionId(null);
+    setSelectedSectionDetails(null);
+    setStudentId(null);
+    setSelectedStudentMemo(null);
+    setQuery("");
+    setPage(1);
+  };
+
+  const loadGroups = async (boardId) => {
+    const seq = ++requests.current.groups;
+    setGroups([]);
+    setPrograms([]);
+    setExaminations([]);
+    const id = Number(boardId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(RESULT_API.groupsByBoard(id));
+      if (seq !== requests.current.groups) return;
+      setGroups(collectionFrom(res.data).filter(isActive).map(normalizeGroup).filter((i) => i.id > 0));
+    } catch (err) {
+      if (seq === requests.current.groups) showToast(apiError(err), "error");
+    } finally {
+      if (seq === requests.current.groups) setLoading(false);
+    }
+  };
+
+  const loadPrograms = async (groupId) => {
+    const seq = ++requests.current.programs;
+    setPrograms([]);
+    setExaminations([]);
+    const id = Number(groupId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(RESULT_API.programsByGroup(id));
+      if (seq !== requests.current.programs) return;
+      setPrograms(collectionFrom(res.data).map(normalizeProgram).filter((i) => i.id > 0));
+    } catch {
+      if (seq === requests.current.programs) showToast("Unable to load programs for the selected group.", "error");
+    } finally {
+      if (seq === requests.current.programs) setLoading(false);
+    }
+  };
+
+  const loadExaminations = async (context) => {
+    const seq = ++requests.current.exams;
+    setExaminations([]);
+    if (![context.board, context.year, context.level, context.group, context.program].every((v) => Number(v) > 0)) return;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(RESULT_API.examinations, {
+        params: {
+          BoardId: Number(context.board),
+          AcademicYearId: Number(context.year),
+          AcademicLevelId: Number(context.level),
+          GroupId: Number(context.group),
+          ProgramId: Number(context.program),
+          Status: "COMPLETED",
+        },
+      });
+      if (seq !== requests.current.exams) return;
+      setExaminations(collectionFrom(res.data).map(normalizeExam).filter((i) => i.id > 0));
+    } catch (err) {
+      if (seq === requests.current.exams) showToast(apiError(err), "error");
+    } finally {
+      if (seq === requests.current.exams) setLoading(false);
+    }
+  };
+
+  const changeFilter = (key, value) => {
+    const order = ["board", "year", "level", "group", "program", "exam"];
+    const next = {
+      ...filters,
+      ...Object.fromEntries(order.slice(order.indexOf(key) + 1).map((item) => [item, ""])),
+      [key]: value,
+    };
+    if (key === "year" || key === "level") {
+      next.group = filters.group;
+      next.program = filters.program;
+    }
+    setFilters(next);
+    clearResults();
+
+    if (key === "board") loadGroups(value);
+    if (key === "group") loadPrograms(value);
+    if (key === "program" || ((key === "year" || key === "level") && next.program)) {
+      loadExaminations(next);
+    }
+  };
+
+  const generateResults = async () => {
+    if (!Object.values(filters).every(Boolean)) return showToast("Select all required result filters.", "error");
+    const seq = ++requests.current.generate;
+    setLoading(true);
+    try {
+      const payload = {
+        boardId: Number(filters.board),
+        academicYearId: Number(filters.year),
+        academicLevelId: Number(filters.level),
+        groupId: Number(filters.group),
+        programId: Number(filters.program),
+        examId: Number(filters.exam),
+        examinationId: Number(filters.exam),
+      };
+      const res = await apiClient.post(RESULT_API.generate, payload);
+      if (seq !== requests.current.generate) return;
+      const data = collectionFrom(res.data);
+      setSectionSummaries(data);
+      setApplied({ ...filters });
+      setViewMode("table");
+      setSectionId(null);
+      setStudentId(null);
+      setPage(1);
+      showToast("Results generated successfully.");
+    } catch (err) {
+      if (seq === requests.current.generate) showToast(apiError(err), "error");
+    } finally {
+      if (seq === requests.current.generate) setLoading(false);
+    }
+  };
+
+  const loadSectionDetails = async (secId) => {
+    const seq = ++requests.current.section;
+    setSectionId(secId);
+    setSelectedSectionDetails(null);
+    setPage(1);
+    setLoading(true);
+    try {
+      const res = await apiClient.get(RESULT_API.sectionDetail(secId), {
+        params: { examId: Number(applied?.exam) },
+      });
+      if (seq !== requests.current.section) return;
+      setSelectedSectionDetails(res.data?.data ?? res.data);
+    } catch (err) {
+      if (seq === requests.current.section) {
+        setSectionId(null);
+        showToast(apiError(err), "error");
+      }
+    } finally {
+      if (seq === requests.current.section) setLoading(false);
+    }
+  };
+
+  const loadStudentMemo = async (student) => {
+    const sId = typeof student === "object" ? student.studentId : student;
+    const seq = ++requests.current.memo;
+    setStudentId(sId);
+    setSelectedStudentMemo(null);
+    setLoading(true);
+    try {
+      let res;
+      try {
+        res = await apiClient.get(RESULT_API.studentMemo(sId), { params: { examId: Number(applied?.exam || rankFilters.exam) } });
+      } catch {
+        res = await apiClient.get(RESULT_API.studentDetailsFallback(sId), { params: { examinationId: Number(applied?.exam || rankFilters.exam) } });
+      }
+      if (seq !== requests.current.memo) return;
+      setSelectedStudentMemo(res.data?.data ?? res.data);
+    } catch (err) {
+      if (seq === requests.current.memo) {
+        setStudentId(null);
+        showToast(apiError(err), "error");
+      }
+    } finally {
+      if (seq === requests.current.memo) setLoading(false);
+    }
+  };
+
+  const loadRankList = async () => {
+    const seq = ++requests.current.rank;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(RESULT_API.rankList, {
+        params: {
+          boardId: applied?.board ? Number(applied.board) : undefined,
+          academicYearId: applied?.year ? Number(applied.year) : undefined,
+          academicLevelId: applied?.level ? Number(applied.level) : undefined,
+          groupId: rankFilters.group ? Number(rankFilters.group) : undefined,
+          programId: rankFilters.program || undefined,
+          sectionId: rankFilters.section ? Number(rankFilters.section) : undefined,
+          examId: rankFilters.exam ? Number(rankFilters.exam) : applied?.exam ? Number(applied.exam) : undefined,
+          search: rankSearch.trim() || undefined,
+        },
+      });
+      if (seq !== requests.current.rank) return;
+      setRankList(collectionFrom(res.data));
+    } catch (err) {
+      if (seq === requests.current.rank) showToast(apiError(err), "error");
+    } finally {
+      if (seq === requests.current.rank) setLoading(false);
+    }
+  };
+
+  const loadAnalytics = async () => {
+    const seq = ++requests.current.analytics;
+    setLoading(true);
+    try {
+      const res = await apiClient.get(RESULT_API.analytics, {
+        params: {
+          boardId: applied?.board ? Number(applied.board) : undefined,
+          academicYearId: applied?.year ? Number(applied.year) : undefined,
+          academicLevelId: applied?.level ? Number(applied.level) : undefined,
+          groupId: applied?.group ? Number(applied.group) : undefined,
+          programId: applied?.program || undefined,
+          examId: applied?.exam ? Number(applied.exam) : undefined,
+        },
+      });
+      if (seq !== requests.current.analytics) return;
+      setAnalytics(res.data?.data ?? res.data);
+    } catch (err) {
+      if (seq === requests.current.analytics) showToast(apiError(err), "error");
+    } finally {
+      if (seq === requests.current.analytics) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (viewMode === "rankList") loadRankList();
+    if (viewMode === "analytics") loadAnalytics();
+  }, [viewMode, rankFilters, rankSearch]);
+
+  const currentExam = examinations.find((i) => String(i.id) === String(applied?.exam));
+
+  const publishSection = (summary) => {
+    setConfirm({ type: "section", summary });
+  };
+
+  const publishGroup = () => {
+    const generated = sectionSummaries.filter((i) => (i.resultStatus || i.status) === "GENERATED");
+    if (!generated.length) return showToast("All Section results are already published.", "error");
+    setConfirm({ type: "group", generated });
+  };
+
+  const confirmPublish = async () => {
+    if (!confirm || actionLoading) return;
+    setActionLoading("PUBLISH");
+    try {
+      if (confirm.type === "section") {
+        await apiClient.post(RESULT_API.publishSection(confirm.summary.sectionId || confirm.summary.id), {
+          sectionId: Number(confirm.summary.sectionId || confirm.summary.id),
+          examId: Number(applied.exam),
+          examinationId: Number(applied.exam),
+        });
+      } else {
+        await apiClient.post(RESULT_API.publishGroup, {
+          examId: Number(applied.exam),
+          examinationId: Number(applied.exam),
+          groupId: Number(applied.group),
+        });
+      }
+      showToast(confirm.type === "section" ? "Section results published." : "Group results published successfully.");
+      setConfirm(null);
+      await generateResults();
+    } catch (err) {
+      showToast(apiError(err), "error");
+    } finally {
+      setActionLoading("");
+    }
+  };
+
+  // Section Detail Rows Filtering & Pagination
+  const rawStudents = selectedSectionDetails?.students ?? selectedSectionDetails?.studentRows ?? [];
+  const sectionStudents = rawStudents
+    .filter((item) => `${item.studentName} ${item.rollNo} ${item.grade} ${item.result}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => (a.sectionRank || a.rank || 0) - (b.sectionRank || b.rank || 0));
+  const totalPages = Math.max(1, Math.ceil(sectionStudents.length / PAGE_SIZE));
+  const pagedStudents = sectionStudents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Rank List Pagination
+  const rankPages = Math.max(1, Math.ceil(rankList.length / PAGE_SIZE));
+  const pagedRanks = rankList.slice((rankPage - 1) * PAGE_SIZE, rankPage * PAGE_SIZE);
+
+  // Exports
+  const exportRows = (rows) =>
+    rows.map((item) => ({
+      Roll: item.rollNo || item.rollNumber,
+      Student: item.studentName,
+      Section: item.sectionName || item.section,
+      Total: item.total || item.totalMarks,
+      Maximum: item.maximum || item.maxMarks,
+      Percentage: Number(item.percentage || 0).toFixed(2),
+      Grade: item.grade,
+      Result: item.result,
+      "Section Rank": item.sectionRank || item.rank || "—",
+      Status: item.status || item.resultStatus,
+    }));
+
+  const exportExcel = (rows, filename) => {
+    const sheet = XLSX.utils.json_to_sheet(exportRows(rows));
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Results");
+    XLSX.writeFile(book, `${filename}.xlsx`);
+  };
+
+  const exportPdf = (rows, filename) => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.text(filename, 14, 14);
+    const data = exportRows(rows);
+    const headers = Object.keys(data[0] || {});
+    autoTable(doc, { head: [headers], body: data.map((item) => headers.map((key) => item[key])), startY: 20 });
+    doc.save(`${filename}.pdf`);
+  };
+
+  const renderSelectOptions = (items) => items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>);
+
+  if (loading)
+    return (
+      <DashboardLayout title="Results Management" subtitle="Generate, publish and analyze approved examination results" breadcrumb={["Results"]}>
+        <Loader label="Loading examination result data..." />
+      </DashboardLayout>
+    );
+
+  return (
+    <DashboardLayout title="Results Management" subtitle="Generate, publish and analyze approved examination results" breadcrumb={["Results"]}>
+      <div className="results-page">
+        {toast && <Toast message={toast} onClose={() => setToast("")} />}
+
+        <div className="cms-card">
+          <div className="cms-card-body">
+            <div className="results-view-tabs">
+              <button className={`cms-btn ${viewMode === "table" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("table"); setStudentId(null); setSelectedStudentMemo(null); }}>
+                Results
+              </button>
+              <button className={`cms-btn ${viewMode === "rankList" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("rankList"); setStudentId(null); setSelectedStudentMemo(null); }}>
+                Rank List
+              </button>
+              <button className={`cms-btn ${viewMode === "analytics" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("analytics"); setStudentId(null); setSelectedStudentMemo(null); }}>
+                Analytics
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {viewMode === "table" && !studentId && (
+          <div className="cms-card">
+            <div className="cms-card-body">
+              <div className="results-filter-grid">
+                <Select label="Board" value={filters.board} onChange={(v) => changeFilter("board", v)}>{renderSelectOptions(boards)}</Select>
+                <Select label="Academic Year" value={filters.year} disabled={!filters.board} onChange={(v) => changeFilter("year", v)}>{renderSelectOptions(academicYears.filter((i) => i.boardId == null || Number(i.boardId) === Number(filters.board)))}</Select>
+                <Select label="Academic Level" value={filters.level} disabled={!filters.year} onChange={(v) => changeFilter("level", v)}>{renderSelectOptions(academicLevels)}</Select>
+                <Select label="Group" value={filters.group} disabled={!filters.level} onChange={(v) => changeFilter("group", v)}>{renderSelectOptions(groups)}</Select>
+                <Select label="Program" value={filters.program} disabled={!filters.group} onChange={(v) => changeFilter("program", v)}>{renderSelectOptions(programs)}</Select>
+                <Select label="Examination" value={filters.exam} disabled={!filters.program} onChange={(v) => changeFilter("exam", v)}>{renderSelectOptions(examinations)}</Select>
+                <button className="cms-btn cms-btn-primary results-generate-btn" onClick={generateResults}>
+                  Generate Results
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {selectedStudentMemo ? (
+          <Memo student={selectedStudentMemo} exam={currentExam} onBack={() => { setStudentId(null); setSelectedStudentMemo(null); }} />
+        ) : viewMode === "table" && applied ? (
+          selectedSectionDetails ? (
+            <SectionView
+              details={selectedSectionDetails}
+              exam={currentExam}
+              rows={pagedStudents}
+              query={query}
+              setQuery={(v) => { setQuery(v); setPage(1); }}
+              page={page}
+              pages={totalPages}
+              setPage={setPage}
+              onBack={() => { setSectionId(null); setSelectedSectionDetails(null); setPage(1); }}
+              onStudent={loadStudentMemo}
+              onExcel={() => exportExcel(rawStudents, `${currentExam?.name || "Results"}-${selectedSectionDetails.sectionName || "Section"}`)}
+              onPdf={() => exportPdf(rawStudents, `${currentExam?.name || "Results"}-${selectedSectionDetails.sectionName || "Section"}`)}
+            />
+          ) : (
+            <Sections
+              summaries={sectionSummaries.filter((i) => (i.name || i.sectionName || "").toLowerCase().includes(query.toLowerCase()))}
+              exam={currentExam}
+              query={query}
+              setQuery={setQuery}
+              onView={(id) => loadSectionDetails(id)}
+              onPublish={publishSection}
+              onGroup={publishGroup}
+              onExcel={() => exportExcel(sectionSummaries.flatMap((s) => s.studentRows || []), `${currentExam?.name || "Results"}-Group`)}
+              onPdf={() => exportPdf(sectionSummaries.flatMap((s) => s.studentRows || []), `${currentExam?.name || "Results"}-Group`)}
+            />
+          )
+        ) : null}
+
+        {viewMode === "rankList" && !selectedStudentMemo && (
+          <RankList
+            rows={pagedRanks}
+            filters={rankFilters}
+            setFilters={(v) => { setRankFilters(v); setRankPage(1); }}
+            search={rankSearch}
+            setSearch={(v) => { setRankSearch(v); setRankPage(1); }}
+            page={rankPage}
+            pages={rankPages}
+            setPage={setRankPage}
+            groups={groups}
+            programs={programs}
+            examinations={examinations}
+            onStudent={loadStudentMemo}
+            onExport={() => exportExcel(rankList, "Rank-List")}
+          />
+        )}
+
+        {viewMode === "analytics" && !selectedStudentMemo && (
+          <Analytics data={analytics} onOpen={() => setAnalyticsDetail("failed")} />
+        )}
+
+        {confirm && <Confirm confirm={confirm} exam={currentExam} onCancel={() => setConfirm(null)} onConfirm={confirmPublish} loading={Boolean(actionLoading)} />}
+
+        {analyticsDetail === "failed" && (
+          <AnalyticsModal rows={analytics?.failedStudents || []} onClose={() => setAnalyticsDetail(null)} />
+        )}
+      </div>
+    </DashboardLayout>
+  );
 }
 
-function Select({ label, value, disabled, onChange, children }) { return <div className="cms-field-group"><label className="cms-label">{label}</label><select className="cms-select" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}><option value="">Select {label}</option>{children}</select></div>; }
-function Sections({ summaries, exam, query, setQuery, onView, onPublish, onGroup, onExcel, onPdf }) { return <div className="cms-card"><div className="cms-card-body"><h3 className="cms-card-title">Section Results</h3><p className="cms-subtitle">{exam.name} · {exam.programName}</p><div className="results-table-toolbar"><div className="results-table-search"><input className="cms-input" placeholder="Search Section..." value={query} onChange={(e) => setQuery(e.target.value)} /></div><div className="results-table-actions"><button className="cms-btn cms-btn-ghost" onClick={onExcel}>Export Excel</button><button className="cms-btn cms-btn-ghost" onClick={onPdf}>Export PDF</button>{summaries.some((item) => item.resultStatus === "GENERATED") && <button className="cms-btn cms-btn-primary" onClick={onGroup}>Publish Group Results</button>}</div></div><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>SECTION</th><th>IN-CHARGE</th><th>STUDENTS</th><th>PASSED</th><th>FAILED</th><th>PASS %</th><th>AVERAGE %</th><th>RESULT STATUS</th><th>ACTIONS</th></tr></thead><tbody>{summaries.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.inChargeName}</td><td>{item.count}</td><td>{item.passed}</td><td>{item.failed}</td><td>{item.passRate.toFixed(2)}%</td><td>{item.average.toFixed(2)}%</td><td><Badge value={item.resultStatus} /></td><td><div className="results-actions"><button className="results-action-btn" title="View Section" aria-label="View Section" onClick={() => onView(item.id)}><Eye size={15} /></button>{item.resultStatus === "GENERATED" && <button className="results-action-btn" title="Publish Section Results" aria-label="Publish Section Results" onClick={() => onPublish(item)}><CheckCircle2 size={15} /></button>}</div></td></tr>)}</tbody></table></div></div></div>; }
-function SectionView({ summary, exam, subjectDefinitions, rows, query, setQuery, page, pages, setPage, onBack, onStudent, onExcel, onPdf }) { return <div className="cms-card results-section-detail"><div className="cms-card-body"><button className="cms-btn cms-btn-ghost" onClick={onBack}>← Back to Sections</button><div className="results-detail-context"><strong>{exam.name}</strong><span>{GROUPS.find((item) => item.id === exam.groupId).name} · {exam.programName} · {summary.name} · {summary.inChargeName} · {summary.count} Students · {summary.resultStatus}</span></div><div className="results-table-toolbar"><div className="results-table-search"><input className="cms-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search student, roll, grade, result, status..." /></div><div className="results-table-actions"><button className="cms-btn cms-btn-ghost" onClick={onExcel}>Export Excel</button><button className="cms-btn cms-btn-ghost" onClick={onPdf}>Export PDF</button></div></div><div className="cms-table-wrap results-section-table-wrap"><table className="cms-table results-section-table"><thead><tr><th>ROLL NO</th><th>STUDENT</th>{subjectDefinitions.map(([subjectId, subjectName]) => <th key={subjectId}>{subjectName}</th>)}<th>TOTAL / EXAM TOTAL</th><th>PERCENTAGE</th><th>GRADE</th><th>RESULT</th><th>RANK</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>{rows.map((item) => <tr key={item.studentId}><td>{item.rollNo}</td><td>{item.studentName}</td>{subjectDefinitions.map(([subjectId]) => { const mark = item.subjects.find((subject) => String(subject.subjectId) === String(subjectId)); return <td key={subjectId}>{mark ? mark.totalMarks ?? mark.obtainedMarks : "—"}</td>; })}<td>{item.total} / {item.maximum}</td><td>{item.percentage.toFixed(2)}%</td><td>{item.grade}</td><td>{item.result}</td><td>#{item.sectionRank}</td><td><Badge value={item.status} /></td><td><div className="results-actions"><button className="results-action-btn" title="View Student" aria-label="View Student" onClick={() => onStudent(item.studentId)}><Eye size={15} /></button></div></td></tr>)}</tbody></table></div><Pagination page={page} pages={pages} setPage={setPage} /></div></div>; }
-function Memo({ student, exam, onBack }) { const objective = exam.scheduleMode === "COMBINED"; return <div className="cms-card"><div className="cms-card-body"><button className="cms-btn cms-btn-ghost" onClick={onBack}>← Back</button><h3 className="cms-card-title">Student Marks Memo</h3><p className="cms-subtitle">{student.studentName} · {student.rollNo} · {exam.name}</p><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>SUBJECT</th>{objective ? <><th>OBTAINED</th><th>MAX</th><th>PERCENTAGE</th><th>GRADE</th></> : <><th>INTERNAL</th><th>PRACTICAL</th><th>THEORY</th><th>TOTAL</th><th>GRADE</th></>}</tr></thead><tbody>{student.subjects.map((subject) => { const mark = subject.totalMarks ?? subject.obtainedMarks, percent = mark / subject.maxMarks * 100; return <tr key={subject.subjectId}><td>{subject.subjectName}</td>{objective ? <><td>{subject.obtainedMarks}</td><td>{subject.maxMarks}</td><td>{percent.toFixed(2)}%</td><td>{gradeFor(percent)}</td></> : <><td>{subject.internalMarks}</td><td>{subject.practicalMarks ?? "—"}</td><td>{subject.theoryMarks}</td><td>{subject.totalMarks}</td><td>{gradeFor(percent)}</td></>}</tr>; })}</tbody></table></div><div className="cms-memo-summary"><Summary label="Grand Total / Maximum" value={`${student.total} / ${student.maximum}`} /><Summary label="Percentage" value={`${student.percentage.toFixed(2)}%`} /><Summary label="Pass Percentage" value={`${exam.passPercentage}%`} /><Summary label="Overall Grade" value={student.grade} /><Summary label="Final Result" value={student.result} /><Summary label="Section Rank" value={`#${student.sectionRank}`} /><Summary label="Group Rank" value={`#${student.groupRank}`} /><Summary label="Publication Status" value={student.status} /></div></div></div>; }
-function RankList({ rows, filters, setFilters, search, setSearch, page, pages, setPage, onStudent, onExport }) { const update = (key, value) => setFilters({ ...filters, [key]: value, ...(key === "group" ? { program: "", section: "", exam: "" } : key === "program" ? { section: "", exam: "" } : {}) }); return <div className="cms-card"><div className="cms-card-body"><div className="results-rank-filters"><Select label="Group" value={filters.group} onChange={(v) => update("group", v)}><option value="">All Groups</option>{GROUPS.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select><Select label="Program" value={filters.program} disabled={!filters.group} onChange={(v) => update("program", v)}>{PROGRAMS.filter((item) => item.groupIds.some((id) => String(id) === filters.group)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select><Select label="Section" value={filters.section} disabled={!filters.program} onChange={(v) => update("section", v)}>{SECTIONS.filter((item) => String(item.groupId) === filters.group && item.programId === filters.program).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select><Select label="Examination" value={filters.exam} disabled={!filters.program} onChange={(v) => update("exam", v)}>{EXAMS.filter((item) => String(item.groupId) === filters.group && item.programId === filters.program && item.resultReady).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div><div className="results-table-toolbar"><div className="results-table-search"><input className="cms-input" placeholder="Search student or roll..." value={search} onChange={(e) => setSearch(e.target.value)} /></div><div className="results-table-actions"><button className="cms-btn cms-btn-ghost" onClick={onExport}>Export Rank List</button></div></div><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>RANK</th><th>ROLL</th><th>STUDENT</th><th>GROUP</th><th>PROGRAM</th><th>SECTION</th><th>TOTAL</th><th>PERCENTAGE</th><th>GRADE</th><th>RESULT</th><th>ACTIONS</th></tr></thead><tbody>{rows.map((item) => <tr key={`${item.examinationId}-${item.studentId}`}><td>#{item.rank}</td><td>{item.rollNo}</td><td>{item.studentName}</td><td>{GROUPS.find((g) => g.id === item.groupId).name}</td><td>{PROGRAMS.find((p) => p.id === item.programId).name}</td><td>{SECTIONS.find((s) => s.id === item.sectionId).name}</td><td>{item.total}</td><td>{item.percentage.toFixed(2)}%</td><td>{item.grade}</td><td>{item.result}</td><td><div className="results-actions"><button className="results-action-btn" title="View Student" aria-label="View Student" onClick={() => onStudent(item)}><Eye size={15} /></button></div></td></tr>)}</tbody></table></div><Pagination page={page} pages={pages} setPage={setPage} /></div></div>; }
-function Analytics({ data, rows, onOpen }) { const [subjectPage, setSubjectPage] = useState(1), cards = [["TOTAL STUDENTS", data.total, "total"], ["PASSED", data.passed, "passed"], ["FAILED", data.failed, "failed"], ["AVERAGE %", `${data.average.toFixed(2)}%`, "average"], ["PASS %", `${data.total ? (data.passed / data.total * 100).toFixed(2) : "0.00"}%`, "pass"]], subjectPerformance = Array.from(new Map(rows.flatMap((student) => student.subjects).map((subject) => [subject.subjectId, subject])).values()).map((subject) => { const values = rows.map((student) => student.subjects.find((item) => item.subjectId === subject.subjectId)).filter(Boolean).map((item) => ({ mark: Number(item.totalMarks ?? item.obtainedMarks), max: Number(item.maxMarks) })), average = values.reduce((sum, item) => sum + item.mark / item.max * 100, 0) / (values.length || 1), passed = values.filter((item) => item.mark / item.max * 100 >= 35).length; return { subjectId: subject.subjectId, subjectName: subject.subjectName, students: values.length, average, highest: Math.max(...values.map((item) => item.mark)), lowest: Math.min(...values.map((item) => item.mark)), passPercentage: values.length ? passed / values.length * 100 : 0 }; }), subjectPages = Math.max(1, Math.ceil(subjectPerformance.length / SUBJECT_PAGE_SIZE)), currentSubjectPage = Math.min(subjectPage, subjectPages), pagedSubjects = subjectPerformance.slice((currentSubjectPage - 1) * SUBJECT_PAGE_SIZE, currentSubjectPage * SUBJECT_PAGE_SIZE); return <div><div className="results-analytics-grid">{cards.map(([label, value, key]) => key === "failed" ? <button type="button" className="results-analytics-card results-analytics-card-button" key={key} onClick={onOpen}><span>{label}</span><strong>{value}</strong></button> : <div className="results-analytics-card" key={key}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="cms-card"><div className="cms-card-body"><h3 className="cms-card-title">Subject Performance</h3><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>SUBJECT</th><th>STUDENTS</th><th>AVERAGE</th><th>HIGHEST</th><th>LOWEST</th><th>PASS %</th></tr></thead><tbody>{pagedSubjects.map((subject) => <tr key={subject.subjectId}><td>{subject.subjectName}</td><td>{subject.students}</td><td>{subject.average.toFixed(2)}%</td><td>{subject.highest}</td><td>{subject.lowest}</td><td>{subject.passPercentage.toFixed(2)}%</td></tr>)}</tbody></table></div>{subjectPages > 1 && <Pagination page={currentSubjectPage} pages={subjectPages} setPage={setSubjectPage} />}</div></div></div>; }
-function AnalyticsModal({ rows, onClose }) { const [page, setPage] = useState(1), failedRows = rows.filter((item) => item.result === "FAIL"), pages = Math.max(1, Math.ceil(failedRows.length / PAGE_SIZE)), pagedRows = failedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE); return <div className="cms-modal-overlay results-analytics-overlay" onClick={onClose}><div className="cms-modal-content results-analytics-modal" onClick={(e) => e.stopPropagation()}><div className="cms-modal-header"><h3 className="cms-modal-title">Failed Students</h3><button className="cms-modal-close" onClick={onClose}>×</button></div><div className="cms-modal-body">{failedRows.length === 0 ? <p className="results-analytics-empty">All students are passed. No failed students found.</p> : <><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>STUDENT</th><th>SECTION</th><th>PERCENTAGE</th><th>RESULT</th></tr></thead><tbody>{pagedRows.map((item) => { const section = SECTIONS.find((s) => s.id === item.sectionId); return <tr key={`${item.examinationId}-${item.studentId}`}><td>{item.studentName}</td><td>{section.name}</td><td>{item.percentage.toFixed(2)}%</td><td>{item.result}</td></tr>; })}</tbody></table></div><Pagination page={page} pages={pages} setPage={setPage} /></>}</div></div></div>; }
-function Confirm({ confirm, exam, onCancel, onConfirm }) { const section = confirm.summary, students = confirm.type === "section" ? section.count : confirm.generated.reduce((sum, item) => sum + item.count, 0); return <div className="cms-modal-overlay"><div className="cms-modal-content results-publish-modal"><div className="cms-modal-header"><h3 className="cms-modal-title">{confirm.type === "section" ? "Publish Section Results?" : "Publish Group Results"}</h3><button className="cms-modal-close" onClick={onCancel}>×</button></div><div className="cms-modal-body"><p>Exam: <strong>{exam.name}</strong><br />Group: <strong>{GROUPS.find((item) => item.id === exam.groupId).name}</strong><br />Program: <strong>{exam.programName}</strong><br />{confirm.type === "section" ? <>Section: <strong>{section.name}</strong></> : <>Sections: <strong>{confirm.generated.length}</strong></>}<br />Students: <strong>{students}</strong></p></div><div className="cms-modal-footer"><button className="cms-btn cms-btn-secondary" onClick={onCancel}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={onConfirm}>Publish Results</button></div></div></div>; }
-function Pagination({ page, pages, setPage }) { return <div className="results-pagination"><button className="cms-btn cms-btn-ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button><span className="results-page-label">Page {page} of {pages}</span><button className="cms-btn cms-btn-ghost" disabled={page === pages} onClick={() => setPage(page + 1)}>Next</button></div>; }
-function Badge({ value }) { return <span className={`results-status results-status-${value.toLowerCase()}`}>{value}</span>; }
-function Summary({ label, value }) { return <div><div className="cms-summary-label">{label}</div><div className="cms-summary-val">{value}</div></div>; }
+function Select({ label, value, disabled, onChange, children }) {
+  return (
+    <div className="cms-field-group">
+      <label className="cms-label">{label}</label>
+      <select className="cms-select" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Select {label}</option>
+        {children}
+      </select>
+    </div>
+  );
+}
+
+function Sections({ summaries, exam, query, setQuery, onView, onPublish, onGroup, onExcel, onPdf }) {
+  return (
+    <div className="cms-card">
+      <div className="cms-card-body">
+        <h3 className="cms-card-title">Section Results</h3>
+        <p className="cms-subtitle">{exam?.name} · {exam?.programName}</p>
+        <div className="results-table-toolbar">
+          <div className="results-table-search">
+            <input className="cms-input" placeholder="Search Section..." value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          <div className="results-table-actions">
+            <button className="cms-btn cms-btn-ghost" onClick={onExcel}>Export Excel</button>
+            <button className="cms-btn cms-btn-ghost" onClick={onPdf}>Export PDF</button>
+            {summaries.some((i) => (i.resultStatus || i.status) === "GENERATED") && (
+              <button className="cms-btn cms-btn-primary" onClick={onGroup}>Publish Group Results</button>
+            )}
+          </div>
+        </div>
+        <div className="cms-table-wrap">
+          <table className="cms-table">
+            <thead>
+              <tr>
+                <th>SECTION</th>
+                <th>IN-CHARGE</th>
+                <th>STUDENTS</th>
+                <th>PASSED</th>
+                <th>FAILED</th>
+                <th>PASS %</th>
+                <th>AVERAGE %</th>
+                <th>RESULT STATUS</th>
+                <th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summaries.length ? (
+                summaries.map((item) => {
+                  const secId = item.sectionId || item.id;
+                  const secName = item.sectionName || item.name || item.section;
+                  const status = item.resultStatus || item.status || "GENERATED";
+                  const passRate = Number(item.passRate ?? item.passPercentage ?? 0);
+                  const avg = Number(item.average ?? item.averagePercentage ?? 0);
+                  return (
+                    <tr key={secId}>
+                      <td className="cms-font-semibold">{secName}</td>
+                      <td>{item.inChargeName || item.inCharge || "—"}</td>
+                      <td className="cms-text-center">{item.count ?? item.studentsCount ?? item.students ?? 0}</td>
+                      <td className="cms-text-center">{item.passed ?? 0}</td>
+                      <td className="cms-text-center">{item.failed ?? 0}</td>
+                      <td className="cms-text-center">{passRate.toFixed(2)}%</td>
+                      <td className="cms-text-center">{avg.toFixed(2)}%</td>
+                      <td className="cms-text-center"><Badge value={status} /></td>
+                      <td className="cms-text-center">
+                        <div className="results-actions">
+                          <button className="results-action-btn" title="View Section" aria-label="View Section" onClick={() => onView(secId)}>
+                            <Eye size={15} />
+                          </button>
+                          {status === "GENERATED" && (
+                            <button className="results-action-btn" title="Publish Section Results" aria-label="Publish Section Results" onClick={() => onPublish(item)}>
+                              <CheckCircle2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan={9} className="cms-empty-td">No generated section results available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionView({ details, exam, rows, query, setQuery, page, pages, setPage, onBack, onStudent, onExcel, onPdf }) {
+  const subjects = details?.subjectDefinitions ?? [];
+  return (
+    <div className="cms-card results-section-detail">
+      <div className="cms-card-body">
+        <button className="cms-btn cms-btn-ghost" onClick={onBack}>← Back to Sections</button>
+        <div className="results-detail-context">
+          <strong>{exam?.name || details?.examName}</strong>
+          <span>
+            {details?.groupName} · {details?.programName} · {details?.sectionName || details?.section} · {details?.inChargeName} · {details?.totalStudents ?? rows.length} Students · {details?.resultStatus}
+          </span>
+        </div>
+        <div className="results-table-toolbar">
+          <div className="results-table-search">
+            <input className="cms-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search student, roll, grade, result..." />
+          </div>
+          <div className="results-table-actions">
+            <button className="cms-btn cms-btn-ghost" onClick={onExcel}>Export Excel</button>
+            <button className="cms-btn cms-btn-ghost" onClick={onPdf}>Export PDF</button>
+          </div>
+        </div>
+        <div className="cms-table-wrap results-section-table-wrap">
+          <table className="cms-table results-section-table">
+            <thead>
+              <tr>
+                <th>ROLL NO</th>
+                <th>STUDENT</th>
+                {subjects.map((sub) => (
+                  <th key={sub.subjectId}>{sub.subjectName || sub.shortName}</th>
+                ))}
+                <th>TOTAL / EXAM TOTAL</th>
+                <th>PERCENTAGE</th>
+                <th>GRADE</th>
+                <th>RESULT</th>
+                <th>RANK</th>
+                <th>STATUS</th>
+                <th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length ? (
+                rows.map((item) => (
+                  <tr key={item.studentId}>
+                    <td>{item.rollNo || item.rollNumber}</td>
+                    <td>{item.studentName}</td>
+                    {subjects.map((sub) => {
+                      const markObj = item.subjects?.find((s) => String(s.subjectId) === String(sub.subjectId));
+                      const markVal = markObj ? markObj.totalMarks ?? markObj.obtainedMarks : "—";
+                      return <td className="cms-text-center" key={sub.subjectId}>{markVal}</td>;
+                    })}
+                    <td className="cms-text-center">{item.total ?? item.totalMarks} / {item.maximum ?? item.maxMarks}</td>
+                    <td className="cms-text-center">{Number(item.percentage || 0).toFixed(2)}%</td>
+                    <td className="cms-text-center">{item.grade}</td>
+                    <td className="cms-text-center">{item.result}</td>
+                    <td className="cms-text-center">#{item.sectionRank || item.rank || "—"}</td>
+                    <td className="cms-text-center"><Badge value={item.status || details?.resultStatus} /></td>
+                    <td className="cms-text-center">
+                      <div className="results-actions">
+                        <button className="results-action-btn" title="View Student" aria-label="View Student" onClick={() => onStudent(item)}>
+                          <Eye size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={9 + subjects.length} className="cms-empty-td">No student result records found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pages={pages} setPage={setPage} />
+      </div>
+    </div>
+  );
+}
+
+function Memo({ student, exam, onBack }) {
+  const objective = exam?.scheduleMode === "COMBINED" || String(exam?.examType).toLowerCase() === "objective";
+  const subjects = student?.subjects ?? [];
+  return (
+    <div className="cms-card">
+      <div className="cms-card-body">
+        <button className="cms-btn cms-btn-ghost" onClick={onBack}>← Back</button>
+        <h3 className="cms-card-title">Student Marks Memo</h3>
+        <p className="cms-subtitle">{student?.studentName} · {student?.rollNo || student?.rollNumber} · {exam?.name || student?.examName}</p>
+        <div className="cms-table-wrap">
+          <table className="cms-table">
+            <thead>
+              <tr>
+                <th>SUBJECT</th>
+                {objective ? (
+                  <>
+                    <th>OBTAINED</th>
+                    <th>MAX</th>
+                    <th>PERCENTAGE</th>
+                    <th>GRADE</th>
+                  </>
+                ) : (
+                  <>
+                    <th>INTERNAL</th>
+                    <th>PRACTICAL</th>
+                    <th>THEORY</th>
+                    <th>TOTAL</th>
+                    <th>GRADE</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {subjects.map((sub) => {
+                const mark = sub.totalMarks ?? sub.obtainedMarks ?? sub.total ?? 0;
+                const max = sub.maxMarks ?? sub.maximumMarks ?? 100;
+                const percent = Number(sub.percentage ?? (mark / max) * 100);
+                return (
+                  <tr key={sub.subjectId}>
+                    <td>{sub.subjectName}</td>
+                    {objective ? (
+                      <>
+                        <td className="cms-text-center">{sub.obtainedMarks ?? mark}</td>
+                        <td className="cms-text-center">{max}</td>
+                        <td className="cms-text-center">{percent.toFixed(2)}%</td>
+                        <td className="cms-text-center">{sub.grade || gradeFor(percent)}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="cms-text-center">{sub.internalMarks ?? sub.internal ?? "—"}</td>
+                        <td className="cms-text-center">{sub.practicalMarks ?? sub.practical ?? "—"}</td>
+                        <td className="cms-text-center">{sub.theoryMarks ?? sub.theory ?? "—"}</td>
+                        <td className="cms-text-center">{mark}</td>
+                        <td className="cms-text-center">{sub.grade || gradeFor(percent)}</td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="cms-memo-summary">
+          <Summary label="Grand Total / Maximum" value={`${student.grandTotal ?? student.total ?? 0} / ${student.maximumMarks ?? student.maximum ?? 0}`} />
+          <Summary label="Percentage" value={`${Number(student.percentage || 0).toFixed(2)}%`} />
+          <Summary label="Pass Percentage" value={`${student.passPercentage ?? exam?.passPercentage ?? 35}%`} />
+          <Summary label="Overall Grade" value={student.overallGrade || student.grade} />
+          <Summary label="Final Result" value={student.finalResult || student.result} />
+          <Summary label="Section Rank" value={`#${student.sectionRank || student.rank || "—"}`} />
+          <Summary label="Group Rank" value={`#${student.groupRank || "—"}`} />
+          <Summary label="Publication Status" value={student.resultStatus || student.status || "GENERATED"} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RankList({ rows, filters, setFilters, search, setSearch, page, pages, setPage, groups, programs, examinations, onStudent, onExport }) {
+  const update = (key, val) =>
+    setFilters({
+      ...filters,
+      [key]: val,
+      ...(key === "group" ? { program: "", section: "", exam: "" } : key === "program" ? { section: "", exam: "" } : {}),
+    });
+
+  return (
+    <div className="cms-card">
+      <div className="cms-card-body">
+        <div className="results-rank-filters">
+          <Select label="Group" value={filters.group} onChange={(v) => update("group", v)}>
+            <option value="">All Groups</option>
+            {groups.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+          <Select label="Program" value={filters.program} disabled={!filters.group} onChange={(v) => update("program", v)}>
+            {programs.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+          <Select label="Examination" value={filters.exam} disabled={!filters.program} onChange={(v) => update("exam", v)}>
+            {examinations.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+        </div>
+        <div className="results-table-toolbar">
+          <div className="results-table-search">
+            <input className="cms-input" placeholder="Search student or roll..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <div className="results-table-actions">
+            <button className="cms-btn cms-btn-ghost" onClick={onExport}>Export Rank List</button>
+          </div>
+        </div>
+        <div className="cms-table-wrap">
+          <table className="cms-table">
+            <thead>
+              <tr>
+                <th>RANK</th>
+                <th>ROLL</th>
+                <th>STUDENT</th>
+                <th>GROUP</th>
+                <th>PROGRAM</th>
+                <th>SECTION</th>
+                <th>TOTAL</th>
+                <th>PERCENTAGE</th>
+                <th>GRADE</th>
+                <th>RESULT</th>
+                <th>ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length ? (
+                rows.map((item, idx) => (
+                  <tr key={`${item.examId || item.examinationId}-${item.studentId}-${idx}`}>
+                    <td className="cms-font-semibold">#{item.rank || idx + 1}</td>
+                    <td>{item.rollNo || item.rollNumber}</td>
+                    <td>{item.studentName || item.student}</td>
+                    <td>{item.groupName || item.group}</td>
+                    <td>{item.programName || item.program}</td>
+                    <td>{item.sectionName || item.section}</td>
+                    <td className="cms-text-center">{item.total ?? item.totalMarks}</td>
+                    <td className="cms-text-center">{Number(item.percentage || 0).toFixed(2)}%</td>
+                    <td className="cms-text-center">{item.grade}</td>
+                    <td className="cms-text-center">{item.result}</td>
+                    <td className="cms-text-center">
+                      <div className="results-actions">
+                        <button className="results-action-btn" title="View Student" aria-label="View Student" onClick={() => onStudent(item)}>
+                          <Eye size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={11} className="cms-empty-td">No rank list records available.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pages={pages} setPage={setPage} />
+      </div>
+    </div>
+  );
+}
+
+function Analytics({ data, onOpen }) {
+  const [subjectPage, setSubjectPage] = useState(1);
+  const cards = [
+    ["TOTAL STUDENTS", data?.totalStudents ?? data?.total ?? 0, "total"],
+    ["PASSED", data?.passed ?? 0, "passed"],
+    ["FAILED", data?.failed ?? 0, "failed"],
+    ["AVERAGE %", `${Number(data?.averagePercentage ?? data?.average ?? 0).toFixed(2)}%`, "average"],
+    ["PASS %", `${Number(data?.passPercentage ?? data?.pass ?? 0).toFixed(2)}%`, "pass"],
+  ];
+  const subjectPerformance = data?.subjectPerformance ?? [];
+  const subjectPages = Math.max(1, Math.ceil(subjectPerformance.length / SUBJECT_PAGE_SIZE));
+  const currentSubjectPage = Math.min(subjectPage, subjectPages);
+  const pagedSubjects = subjectPerformance.slice((currentSubjectPage - 1) * SUBJECT_PAGE_SIZE, currentSubjectPage * SUBJECT_PAGE_SIZE);
+
+  return (
+    <div>
+      <div className="results-analytics-grid">
+        {cards.map(([label, value, key]) =>
+          key === "failed" ? (
+            <button type="button" className="results-analytics-card results-analytics-card-button" key={key} onClick={onOpen}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </button>
+          ) : (
+            <div className="results-analytics-card" key={key}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          )
+        )}
+      </div>
+      <div className="cms-card">
+        <div className="cms-card-body">
+          <h3 className="cms-card-title">Subject Performance</h3>
+          <div className="cms-table-wrap">
+            <table className="cms-table">
+              <thead>
+                <tr>
+                  <th>SUBJECT</th>
+                  <th>STUDENTS</th>
+                  <th>AVERAGE</th>
+                  <th>HIGHEST</th>
+                  <th>LOWEST</th>
+                  <th>PASS %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedSubjects.length ? (
+                  pagedSubjects.map((sub) => (
+                    <tr key={sub.subjectId}>
+                      <td>{sub.subjectName}</td>
+                      <td className="cms-text-center">{sub.students}</td>
+                      <td className="cms-text-center">{Number(sub.average || 0).toFixed(2)}%</td>
+                      <td className="cms-text-center">{sub.highest}</td>
+                      <td className="cms-text-center">{sub.lowest}</td>
+                      <td className="cms-text-center">{Number(sub.passPercentage || 0).toFixed(2)}%</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="cms-empty-td">No subject analytics data available.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {subjectPages > 1 && <Pagination page={currentSubjectPage} pages={subjectPages} setPage={setSubjectPage} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsModal({ rows, onClose }) {
+  const [page, setPage] = useState(1);
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pagedRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  return (
+    <div className="cms-modal-overlay results-analytics-overlay" onClick={onClose}>
+      <div className="cms-modal-content results-analytics-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="cms-modal-header">
+          <h3 className="cms-modal-title">Failed Students</h3>
+          <button className="cms-modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="cms-modal-body">
+          {rows.length === 0 ? (
+            <p className="results-analytics-empty">All students are passed. No failed students found.</p>
+          ) : (
+            <>
+              <div className="cms-table-wrap">
+                <table className="cms-table">
+                  <thead>
+                    <tr>
+                      <th>STUDENT</th>
+                      <th>SECTION</th>
+                      <th>PERCENTAGE</th>
+                      <th>RESULT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRows.map((item, idx) => (
+                      <tr key={`${item.studentId}-${idx}`}>
+                        <td>{item.studentName}</td>
+                        <td>{item.sectionName || item.section}</td>
+                        <td className="cms-text-center">{Number(item.percentage || 0).toFixed(2)}%</td>
+                        <td className="cms-text-center">{item.result || "FAIL"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination page={page} pages={pages} setPage={setPage} />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Confirm({ confirm, exam, onCancel, onConfirm, loading }) {
+  const section = confirm.summary;
+  const count = confirm.type === "section" ? (section?.count ?? section?.studentsCount ?? 0) : confirm.generated?.reduce((s, i) => s + (i.count ?? i.studentsCount ?? 0), 0);
+
+  return (
+    <div className="cms-modal-overlay">
+      <div className="cms-modal-content results-publish-modal">
+        <div className="cms-modal-header">
+          <h3 className="cms-modal-title">{confirm.type === "section" ? "Publish Section Results?" : "Publish Group Results"}</h3>
+          <button className="cms-modal-close" disabled={loading} onClick={onCancel}>×</button>
+        </div>
+        <div className="cms-modal-body">
+          <p>
+            Exam: <strong>{exam?.name || "Selected Examination"}</strong><br />
+            {confirm.type === "section" ? (
+              <>Section: <strong>{section?.sectionName || section?.name}</strong><br /></>
+            ) : (
+              <>Sections: <strong>{confirm.generated.length}</strong><br /></>
+            )}
+            Total Students: <strong>{count}</strong>
+          </p>
+        </div>
+        <div className="cms-modal-footer">
+          <button className="cms-btn cms-btn-secondary" disabled={loading} onClick={onCancel}>Cancel</button>
+          <button className="cms-btn cms-btn-primary" disabled={loading} onClick={onConfirm}>
+            {loading ? "Publishing..." : "Publish Results"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Pagination({ page, pages, setPage }) {
+  return (
+    <div className="results-pagination">
+      <button className="cms-btn cms-btn-ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>
+        Previous
+      </button>
+      <span className="results-page-label">Page {page} of {pages}</span>
+      <button className="cms-btn cms-btn-ghost" disabled={page === pages} onClick={() => setPage(page + 1)}>
+        Next
+      </button>
+    </div>
+  );
+}
+
+function Badge({ value }) {
+  const val = String(value || "GENERATED").toUpperCase();
+  const cls = val === "PUBLISHED" ? "results-status-published" : "results-status-generated";
+  return <span className={`results-status ${cls}`}>{val}</span>;
+}
+
+function Summary({ label, value }) {
+  return (
+    <div>
+      <div className="cms-summary-label">{label}</div>
+      <div className="cms-summary-val">{value}</div>
+    </div>
+  );
+}

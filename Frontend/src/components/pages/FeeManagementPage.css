@@ -34,7 +34,7 @@
 
 .cms-fee-stat-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 .cms-fee-stat {
@@ -215,6 +215,26 @@
   color: var(--cms-muted);
   font-size: 12.5px;
 }
+.cms-fee-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0 0;
+  color: var(--cms-muted);
+  font-size: 12.5px;
+}
+.cms-fee-pagination-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cms-fee-pagination-actions span {
+  color: var(--cms-text);
+  font-weight: 650;
+  white-space: nowrap;
+}
 .cms-fee-required {
   display: block;
   margin-top: 2px;
@@ -297,6 +317,14 @@
 .cms-fee-add-type-btn {
   justify-self: start;
 }
+.cms-fee-types-card > .cms-card-head p {
+  margin: 4px 0 0;
+  color: var(--cms-muted);
+  font-size: 12.5px;
+}
+.cms-fee-types-card .cms-fee-add-type {
+  margin-top: 2px;
+}
 .cms-fee-type-list {
   display: flex;
   flex-wrap: wrap;
@@ -319,8 +347,9 @@
 }
 .cms-fee-type-list span.is-inactive {
   color: var(--cms-muted);
-  text-decoration: line-through;
-  opacity: 0.72;
+  background: var(--cms-subtle);
+  border-style: dashed;
+  opacity: 0.82;
 }
 
 /* Fee Management modal alignment */
@@ -546,5 +575,12 @@
   body.cms-fee-print-student .cms-action-btn,
   body.cms-fee-print-student .cms-btn {
     display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .cms-fee-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

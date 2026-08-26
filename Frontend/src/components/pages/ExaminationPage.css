@@ -50,13 +50,22 @@
 .exam-edit-period { padding-top:16px; border-top:1px solid var(--cms-border); }
 .exam-edit-period h3 { margin:0 0 14px; color:var(--cms-text); font-size:15px; }
 .exam-edit-actions { display:flex; justify-content:flex-end; gap:10px; padding-top:16px; border-top:1px solid var(--cms-border); }
+.exam-export-actions { flex-wrap:wrap; }
 .exam-save-btn { min-width:118px; }
 .exam-export-preview { overflow:auto; max-height:52vh; color:#111; background:#fff; }
 .exam-export-preview table { width:100%; border-collapse:collapse; color:#000; background:#fff; font-size:11px; }
 .exam-export-preview .exam-export-table-global,
-.exam-export-preview .exam-export-table-individual { min-width:2200px; }
-.exam-export-preview th,.exam-export-preview td { padding:5px 6px; border:1px solid #000; color:#000; background:#fff; text-align:left; vertical-align:top; }
+.exam-export-preview .exam-export-table-individual { min-width:900px; table-layout:fixed; }
+.exam-export-preview th,.exam-export-preview td { padding:5px 6px; border:1px solid #000; color:#000; background:#fff; text-align:center; vertical-align:middle; white-space:normal; overflow-wrap:break-word; word-break:normal; }
 .exam-export-preview th { font-weight:700; }
+.exam-export-table th:nth-child(1) { width:6%; }
+.exam-export-table th:nth-child(2) { width:19%; }
+.exam-export-table th:nth-child(3) { width:12%; }
+.exam-export-table th:nth-child(4) { width:9%; }
+.exam-export-table th:nth-child(5) { width:14%; }
+.exam-export-table th:nth-child(6) { width:17%; }
+.exam-export-table th:nth-child(7) { width:12%; }
+.exam-export-table th:nth-child(8) { width:11%; }
 .exam-view-schedule .cms-table { min-width:0; font-size:11px; table-layout:fixed; }
 .exam-view-schedule .cms-table th,
 .exam-view-schedule .cms-table td { padding:7px 8px; font-size:11px; line-height:1.3; white-space:normal; overflow-wrap:anywhere; }
@@ -69,6 +78,7 @@
 .exam-view-schedule .cms-table th:nth-child(6) { width:12%; }
 @media (max-width:1100px) { .exam-filter-grid { grid-template-columns:repeat(3,minmax(150px,1fr)); } .examination-form-page .cms-form-grid.cols-3,.exam-schedule-card .cms-form-grid.cols-3 { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (max-width:700px) { .exam-tabs { width:100%; } .exam-tabs button { flex:1; } .exam-toolbar { align-items:flex-start; flex-direction:column; } .exam-toolbar .cms-btn,.exam-table-toolbar .cms-btn { width:100%; justify-content:center; } .exam-toolbar-actions { width:100%; flex-direction:column; } .exam-filter-grid,.examination-form-page .cms-form-grid.cols-3,.exam-schedule-card .cms-form-grid.cols-3,.exam-detail-grid,.exam-edit-summary { grid-template-columns:1fr; } .exam-filter-grid { padding:14px; } .exam-filter-actions,.exam-table-toolbar { align-items:stretch; flex-direction:column; padding:14px; } .exam-filter-actions .cms-btn { width:100%; justify-content:center; } .exam-search { width:100%; } .exam-finalize { align-items:stretch; flex-direction:column; } .exam-finalize .cms-btn { width:100%; justify-content:center; } .examination-form-page .cms-form-section { padding:16px; } .exam-detail { min-height:0; padding:15px 16px; } .exam-view-summary { padding:18px 19px; } .exam-view-summary strong { font-size:19px; } .exam-view-summary p { font-size:14px; } .exam-view-schedule .cms-table th,.exam-view-schedule .cms-table td { padding:6px; font-size:10px; } }
+@media (max-width:700px) { .exam-export-actions .cms-btn { flex:1 1 100%; justify-content:center; } }
 @media print {
   @page { size:A4 landscape; margin:8mm; }
   body * { visibility:hidden !important; }
@@ -80,6 +90,6 @@
   .exam-print-area p { margin:5px 0 14px; font-size:10pt; }
   .exam-print-context { display:grid; grid-template-columns:repeat(2,1fr); gap:5px 20px; margin:0 0 16px; font-size:9.5pt; }
   .exam-print-area table { width:100%; border-collapse:collapse; table-layout:auto; }
-  .exam-print-area th, .exam-print-area td { padding:3px 4px; border:1px solid #000 !important; color:#000 !important; background:#fff !important; font-size:8px; text-align:left; vertical-align:top; overflow-wrap:anywhere; }
+  .exam-print-area th, .exam-print-area td { padding:3px 4px; border:1px solid #000 !important; color:#000 !important; background:#fff !important; font-size:8px; text-align:center; vertical-align:middle; white-space:normal; overflow-wrap:break-word; word-break:normal; }
   .exam-print-area th { font-weight:700; }
 }

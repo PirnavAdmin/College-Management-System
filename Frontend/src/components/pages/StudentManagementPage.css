@@ -14,3 +14,9 @@
 .cms-progress { height: 8px; border-radius: 999px; background: #eef2f7; overflow: hidden; }
 .cms-progress i { display: block; height: 100%; background: linear-gradient(90deg, #6F8400, #9CAF27); border-radius: 999px; }
 [data-theme="dark"] .cms-progress { background: var(--cms-subtle); }
+.student-management-search { display:flex; align-items:center; gap:10px; max-width:520px; border:1px solid var(--cms-border); border-radius:10px; padding:0 13px; color:var(--cms-muted); }
+.student-management-search input { width:100%; border:0; outline:0; padding:12px 0; background:transparent; color:var(--cms-text); font:inherit; }
+.student-action-buttons { display:flex; gap:8px; white-space:nowrap; }
+.student-action-buttons a { display:inline-flex; gap:5px; align-items:center; color:var(--cms-primary); font-weight:600; font-size:13px; }
+.student-roll-preview { margin:22px 0; padding:16px 18px; border-radius:12px; background:var(--cms-subtle); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.student-roll-preview span { color:var(--cms-muted); }.student-roll-preview strong { font-size:24px; color:var(--cms-primary); }.student-roll-preview small { width:100%; color:var(--cms-muted); }

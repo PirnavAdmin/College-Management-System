@@ -711,7 +711,7 @@ export default function SectionManagementPage() {
                       "Group",
                       "Program",
                       "Academic Level",
-                      "Room Number",
+                      "Room No",
                       "Incharge",
                       "Capacity",
                       "Status",

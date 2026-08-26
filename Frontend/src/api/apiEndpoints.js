@@ -65,6 +65,9 @@
     delete: (yearId) => `/api/v1/academic-years/${yearId}`,
     activate: (yearId) => `/api/v1/academic-years/${yearId}/activate`,
   },
+  breakTypes: {
+    list: "/api/v1/break-types",
+  },
   groups: {
     getAll: "/api/v1/groups",
     dropdown: "/api/v1/groups/dropdown",
@@ -163,9 +166,24 @@
     update: (sectionId) => `/api/v1/Sections/${sectionId}`,
     delete: (sectionId) => `/api/v1/Sections/${sectionId}`,
     byGroup: (groupId) => `/api/v1/Sections/group/${groupId}`,
+    search: "/api/v1/Sections",
   },
   periods: {
     getAll: "/api/v1/periods",
+    create: "/api/v1/periods",
+    getById: (id) => `/api/v1/periods/${id}`,
+    update: (id) => `/api/v1/periods/${id}`,
+    delete: (id) => `/api/v1/periods/${id}`,
+  },
+  periodStructures: {
+    list: "/api/v1/period-structures",
+    create: "/api/v1/period-structures",
+    getById: (id) => `/api/v1/period-structures/${id}`,
+    update: (id) => `/api/v1/period-structures/${id}`,
+    delete: (id) => `/api/v1/period-structures/${id}`,
+    preview: "/api/v1/period-structures/preview",
+    assign: (id) => `/api/v1/period-structures/${id}/assign`,
+    context: "/api/v1/period-structures/context",
   },
   rooms: {
     getAll: "/api/v1/rooms",
@@ -274,6 +292,7 @@
     publishSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/publish`,
     approveSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/approve`,
     validateSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/validate`,
+    generate: "/api/v1/timetable/generate",
   },
   promotions: {
     eligible: "/api/promotions/eligible",

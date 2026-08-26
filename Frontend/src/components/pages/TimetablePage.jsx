@@ -1,30 +1,1241 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import apiClient from "@/api/axios.js";
+import { Toast } from "@/components/common/Ui.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./TimetablePage.css";
 
-const DAYS=["Mon","Tue","Wed","Thu","Fri","Sat"], OPTIONS={boards:["Board of Intermediate Education"],years:["2026-2027"],levels:["Intermediate 1st Year","Intermediate 2nd Year"],groups:["MPC","BiPC","CEC"],programs:["General / Regular","Vocational"],sections:["A","B"]};
-const BASE={id:1,name:"Intermediate Standard",start:"09:00",duration:50,count:8,breaks:[{type:"Break",after:2,duration:15},{type:"Lunch",after:6,duration:40}],active:true};
-const STRUCTURES=[BASE,{id:2,name:"High School Standard",start:"08:45",duration:45,count:7,breaks:[{type:"Break",after:3,duration:15}],active:true}];
-const MOCK_VALIDATION={errors:[],warnings:["Faculty A has a high weekly workload.","Room 101 is used in consecutive periods on Monday."]};
-const clock=n=>`${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`;
-const periods=s=>{let [h,m]=s.start.split(":").map(Number),n=h*60+m,out=[];for(let p=1;p<=+s.count;p++){out.push({type:"period",name:`P${p}`,start:clock(n),end:clock(n+(+s.duration)),id:`period-${p}`});n+=+s.duration;s.breaks.filter(x=>+x.after===p).forEach(x=>{out.push({type:"break",name:x.type.toUpperCase(),start:clock(n),end:clock(n+(+x.duration))});n+=+x.duration})}return out};
-function Page({title,subtitle,children,action}){return <DashboardLayout title={title} subtitle={subtitle} breadcrumb={["Academics","Timetable"]} actions={action}><main className="ttm-page">{children}</main></DashboardLayout>}
-function Btn({children,className="cms-btn cms-btn-primary",...p}){return <button type="button" className={className}{...p}>{children}</button>}
-function Modal({title,onClose,children}){return <div className="ttm-overlay"><section className="ttm-modal"><header><h2>{title}</h2><button onClick={onClose}>×</button></header>{children}</section></div>}
-function Field({label,children}){return <label className="ttm-field"><span>{label}</span>{children}</label>}
-function Context({data,setData,section=false}){let set=k=>e=>setData(x=>({...x,[k]:e.target.value}));return <div className="ttm-context">{[["Board","board",OPTIONS.boards],["Academic Year","year",OPTIONS.years],["Academic Level","level",OPTIONS.levels],["Group","group",OPTIONS.groups],...(section?[["Program","program",OPTIONS.programs],["Section","section",OPTIONS.sections]]:[])].map(([l,k,o])=><Field key={k} label={l}><select value={data[k]||""} onChange={set(k)}><option value="">Select {l}</option>{o.map(x=><option key={x}>{x}</option>)}</select></Field>)}</div>}
-function Preview({structure,onClose,save}){return <Modal title="Live Structure Preview" onClose={onClose}><div className="ttm-modal-body"><div className="ttm-period-list">{periods(structure).map(x=><div className={x.type} key={x.name+x.start}><b>{x.name}</b><span>{x.start} – {x.end}</span></div>)}</div><footer><Btn className="cms-btn cms-btn-ghost" onClick={onClose}>Back to Edit</Btn><Btn onClick={save}>Save Structure</Btn></footer></div></Modal>}
-function Editor({item,onClose,preview,save}){let [form,setForm]=useState(item||{...BASE,id:Date.now(),name:"",breaks:[]});let change=(k,v)=>setForm(x=>({...x,[k]:v}));return <Modal title={item?"Edit Period Structure":"Create Period Structure"} onClose={onClose}><div className="ttm-modal-body"><div className="ttm-form-grid"><Field label="Structure Name"><input value={form.name} onChange={e=>change("name",e.target.value)}/></Field><Field label="Start Time"><input type="time" value={form.start} onChange={e=>change("start",e.target.value)}/></Field><Field label="Period Duration (min)"><input type="number" value={form.duration} onChange={e=>change("duration",e.target.value)}/></Field><Field label="Teaching Periods"><input type="number" value={form.count} onChange={e=>change("count",e.target.value)}/></Field></div><div className="ttm-break-head"><b>Break configuration</b><Btn className="cms-btn cms-btn-ghost" onClick={()=>change("breaks",[...form.breaks,{type:"Break",after:2,duration:15}])}>+ Add Break</Btn></div>{form.breaks.map((b,i)=><div className="ttm-break-row" key={i}><input value={b.type} onChange={e=>change("breaks",form.breaks.map((x,n)=>n===i?{...x,type:e.target.value}:x))}/><select value={b.after} onChange={e=>change("breaks",form.breaks.map((x,n)=>n===i?{...x,after:e.target.value}:x))}>{Array.from({length:+form.count},(_,n)=><option key={n} value={n+1}>After P{n+1}</option>)}</select><input type="number" value={b.duration} onChange={e=>change("breaks",form.breaks.map((x,n)=>n===i?{...x,duration:e.target.value}:x))}/><button onClick={()=>change("breaks",form.breaks.filter((_,n)=>n!==i))}>Remove</button></div>)}<footer><Btn className="cms-btn cms-btn-ghost" onClick={()=>preview(form)}>Preview Structure</Btn><Btn onClick={()=>save(form)}>Save</Btn></footer></div></Modal>}
-function Assign({close}){let nav=useNavigate(),[c,setC]=useState({});return <Modal title="Assign Structure to Group" onClose={close}><div className="ttm-modal-body"><Context data={c} setData={setC}/><Field label="Period Structure"><select><option>Intermediate Standard</option></select></Field><footer><Btn className="cms-btn cms-btn-ghost" onClick={close}>Cancel</Btn><Btn disabled={!c.group} onClick={()=>{close();nav("/dashboard/timetable/setup")}}>Assign &amp; Continue</Btn></footer></div></Modal>}
-function Structures({open}){let [items,setItems]=useState(STRUCTURES);return <Page title="Period Structures" subtitle="Manage reusable schedules for groups." action={<Btn onClick={()=>open("editor")}>+ Create Structure</Btn>}><section className="ttm-card"><table className="cms-table ttm-table"><thead><tr><th>Structure Name</th><th>Number of Periods</th><th>Duration</th><th>Breaks</th><th>Status</th><th>Actions</th></tr></thead><tbody>{items.map(x=><tr key={x.id}><td><b>{x.name}</b></td><td>{x.count} Periods</td><td>{x.duration} min</td><td>{x.breaks.length} Breaks</td><td><span className={`ttm-badge ${x.active?"active":"inactive"}`}>{x.active?"Active":"Inactive"}</span></td><td className="ttm-actions"><button onClick={()=>open("editor",x)}>Edit</button><button onClick={()=>open("preview",x)}>Preview</button><button onClick={()=>open("assign",x)}>Assign</button><button onClick={()=>setItems(a=>a.map(i=>i.id===x.id?{...i,active:!i.active}:i))}>{x.active?"Deactivate":"Activate"}</button></td></tr>)}</tbody></table></section></Page>}
-function Group(){let[c,setC]=useState({});let contextReady=c.board&&c.year&&c.level&&c.group;return <Page title="Group Period View" subtitle="View the structure assigned to a group." action={<div className="ttm-page-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable">Back to Structures</Link>{contextReady?<Link className="cms-btn cms-btn-primary" to="/dashboard/timetable/faculty" state={{timetableContext:c}}>Continue to Generate</Link>:<Btn disabled>Continue to Generate</Btn>}</div>}><section className="ttm-card"><Context data={c} setData={setC}/>{c.group?<><div className="ttm-resolved"><b>Intermediate Standard</b><span>8 teaching periods</span></div><div className="ttm-period-list compact">{periods(BASE).map(x=><div className={x.type} key={x.name+x.start}><b>{x.name}</b><span>{x.start} – {x.end}</span></div>)}</div></>:<p className="ttm-empty">Select a group to view its assigned structure.</p>}</section></Page>}
-function Generate(){let nav=useNavigate(),location=useLocation(),[c,setC]=useState(()=>location.state?.timetableContext||{});let hasContext=c.board&&c.year&&c.level&&c.group,ready=hasContext&&c.section;return <Page title="Generate Timetable" subtitle="Generate from the group’s assigned period structure." action={<Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup">Back to Group Periods</Link>}><section className="ttm-card">{hasContext?<><div className="ttm-resolved"><b>{c.group} · Assigned structure: Intermediate Standard</b><span>{c.board} · {c.year} · {c.level}</span></div><div className="ttm-period-list compact">{periods(BASE).map(x=><div className={x.type} key={x.name+x.start}><b>{x.name}</b><span>{x.start} – {x.end}</span></div>)}</div><div className="ttm-context"><Field label="Section"><select value={c.section||""} onChange={e=>setC(x=>({...x,section:e.target.value}))}><option value="">Select Section</option>{OPTIONS.sections.map(x=><option key={x}>{x}</option>)}</select></Field></div></>:<Context data={c} setData={setC} section/>}{ready&&<div className="ttm-resolved"><b>{c.group} · Section {c.section}</b><span>Periods loaded from Intermediate Standard</span></div>}<footer className="ttm-screen-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup">Back</Link><Btn disabled={!ready} onClick={()=>nav("/dashboard/timetable/draft",{state:{timetableContext:c}})}>Generate Timetable</Btn></footer></section></Page>}
-function Draft({open,status}){let editable=status==="DRAFT", p=periods(BASE),subjects=["Mathematics","Physics","Chemistry","English","Sanskrit","Computer Science"];return <Page title="Generated Draft Grid" subtitle="Review and finalize the generated timetable." action={<div className="ttm-page-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/faculty">Back to Generate</Link><span className={`ttm-badge ${status.toLowerCase()}`}>{status}</span></div>}><section className="ttm-card"><div className="ttm-grid-head"><b>Intermediate Standard · MPC · Section A</b><div>{editable&&<><Btn className="cms-btn cms-btn-ghost" onClick={()=>open("lab")}>+ Add Lab / Practical</Btn><Btn className="cms-btn cms-btn-ghost" onClick={()=>open("validate")}>Validate</Btn></>}{status==="VALIDATED"&&<Btn onClick={()=>open("approve")}>Approve</Btn>}{status==="APPROVED"&&<Btn onClick={()=>open("publish")}>Publish</Btn>}{status==="PUBLISHED"&&<Btn className="cms-btn cms-btn-ghost" onClick={()=>open("revert")}>Revert to Draft</Btn>}</div></div><div className="ttm-grid-wrap"><table className="ttm-grid"><thead><tr><th>Day</th>{p.map(x=><th className={x.type} key={x.name}><b>{x.name}</b><small>{x.start}–{x.end}</small></th>)}</tr></thead><tbody>{DAYS.map((d,di)=><tr key={d}><th>{d}</th>{p.map((x,i)=>x.type==="break"?<td className="break" key={x.name}>{x.name}</td>:<td className="slot" key={x.name}><button disabled={!editable} onClick={()=>open("slot")}><b>{subjects[(di+i)%subjects.length]}</b><span>Faculty {String.fromCharCode(65+(di+i)%6)}</span><small>Room {101+i}</small>{editable&&<em className="ttm-slot-edit">Edit</em>}</button></td>)}</tr>)}</tbody></table></div></section></Page>}
-function Action({type,close,setStatus}){let title={slot:"Edit Draft Slot",lab:"Add Lab / Practical",validate:"Validate Timetable",approve:"Approve Timetable",publish:"Publish Timetable",revert:"Revert Timetable to Draft"}[type],hasErrors=MOCK_VALIDATION.errors.length>0,done=()=>{if(type==="validate"&&!hasErrors)setStatus("VALIDATED");if(type==="approve")setStatus("APPROVED");if(type==="publish")setStatus("PUBLISHED");if(type==="revert")setStatus("DRAFT");close()};return <Modal title={title} onClose={close}><div className="ttm-modal-body">{["slot","lab"].includes(type)?<div className="ttm-form-grid">{["Subject","Faculty","Day","Period","Room"].map(x=><Field key={x} label={x}><select><option>{x==="Subject"?"Mathematics":`Select ${x}`}</option></select></Field>)}</div>:type==="validate"?<div className={`ttm-validation-result${hasErrors?" has-errors":""}`}><b>{hasErrors?"Timetable validation failed":"Timetable is valid"}</b><span>{MOCK_VALIDATION.errors.length} Errors · {MOCK_VALIDATION.warnings.length} Warnings</span>{MOCK_VALIDATION.errors.map((error,index)=><p key={`error-${index}`} className="ttm-validation-error">Error: {error}</p>)}{MOCK_VALIDATION.warnings.map((warning,index)=><p key={`warning-${index}`} className="ttm-validation-warning">Warning: {warning}</p>)}</div>:<p>{type==="approve"?"Approve this validated timetable? Editing will be disabled.":type==="publish"?"This timetable will become visible to students and faculty.":"Reverting will remove this timetable from publication and restore all grid editing options."}</p>}<footer><Btn className="cms-btn cms-btn-ghost" onClick={close}>Cancel</Btn><Btn disabled={type==="validate"&&hasErrors} onClick={done}>{type==="validate"?hasErrors?"Fix Errors First":"Mark as Validated":type==="lab"?"Add Lab":type==="slot"?"Save Slot":type==="revert"?"Revert to Draft":type[0].toUpperCase()+type.slice(1)}</Btn></footer></div></Modal>}
-function GenerateCanonical(){const nav=useNavigate(),location=useLocation(),[context,setContext]=useState(()=>location.state?.timetableContext||{});const ready=context.board&&context.year&&context.level&&context.group&&context.program&&context.section;const set=(key)=>(event)=>setContext((current)=>({...current,[key]:event.target.value,...(key==="program"?{section:""}:{})}));return <Page title="Generate Timetable" subtitle="Select a Program and Section within the chosen Group."><section className="ttm-card"><Context data={context} setData={setContext} section/>{ready?<div className="ttm-resolved"><b>{context.level} — {context.group} — {context.program} — Section {context.section}</b><span>Periods loaded from Intermediate Standard</span></div>:null}<footer className="ttm-screen-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup">Back</Link><Btn disabled={!ready} onClick={()=>nav("/dashboard/timetable/draft",{state:{timetableContext:context}})}>Generate Timetable</Btn></footer></section></Page>}
-function DraftCanonical({open,status}){const location=useLocation(),context=location.state?.timetableContext||{level:"Intermediate 1st Year",group:"MPC",program:"General / Regular",section:"A"},editable=status==="DRAFT",staff=["Dr. Ramesh · EMP-102","Prof. Suresh · EMP-118","Ms. Kavya · EMP-126"],p=periods(BASE),subjects=["Mathematics","Physics","Chemistry","English","Sanskrit","Computer Science"];return <Page title="Generated Draft Grid" subtitle="Review and finalize the generated timetable." action={<div className="ttm-page-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate">Back to Generate</Link><span className={`ttm-badge ${status.toLowerCase()}`}>{status}</span></div>}><section className="ttm-card"><div className="ttm-grid-head"><b>{context.level} — {context.group} — {context.program} — Section {context.section}</b><div>{editable?<><Btn className="cms-btn cms-btn-ghost" onClick={()=>open("lab")}>+ Add Lab / Practical</Btn><Btn className="cms-btn cms-btn-ghost" onClick={()=>open("validate")}>Validate</Btn></>:null}{status==="VALIDATED"?<Btn onClick={()=>open("approve")}>Approve Timetable</Btn>:null}{status==="APPROVED"?<Btn onClick={()=>open("publish")}>Publish Timetable</Btn>:null}</div></div><div className="ttm-grid-wrap"><table className="ttm-grid"><thead><tr><th>Day</th>{p.map((slot)=><th className={slot.type} key={slot.name}><b>{slot.name}</b><small>{slot.start}–{slot.end}</small></th>)}</tr></thead><tbody>{DAYS.map((day,dayIndex)=><tr key={day}><th>{day}</th>{p.map((slot,index)=>slot.type==="break"?<td className="break" key={slot.name}>{slot.name}</td>:<td className="slot" key={slot.name}><button disabled={!editable} onClick={()=>open("slot")}><b>{subjects[(dayIndex+index)%subjects.length]}</b><span>{staff[(dayIndex+index)%staff.length]}</span><small>Room {101+index}</small></button></td>)}</tr>)}</tbody></table></div></section></Page>}
-function StaffAction({type,close,setStatus}){const [staff,setStaff]=useState([]);useEffect(()=>{if(type!=="lab"&&type!=="slot")return;apiClient.get(apiEndpoints.timetable.allocatedStaff).then((response)=>setStaff(Array.isArray(response.data)?response.data:response.data?.data||[])).catch(()=>setStaff([]));},[type]);const done=()=>{if(type==="validate")setStatus("VALIDATED");if(type==="approve")setStatus("APPROVED");if(type==="publish")setStatus("PUBLISHED");close();};const title={slot:"Edit Draft Slot",lab:"Add Lab / Practical",validate:"Validate Timetable",approve:"Approve Timetable",publish:"Publish Timetable"}[type];return <Modal title={title} onClose={close}><div className="ttm-modal-body">{["slot","lab"].includes(type)?<div className="ttm-form-grid"><Field label="Subject"><select><option>Mathematics</option></select></Field><Field label="Teaching Staff"><select><option value="">Select Teaching Staff</option>{staff.map((item,index)=><option key={item.staffId||item.id||index}>{item.staffName||item.name||item.fullName||"Staff"}</option>)}</select></Field><Field label="Day"><select><option>Select Day</option></select></Field><Field label="Period"><select><option>Select Period</option></select></Field><Field label="Room"><select><option>Select Room</option></select></Field></div>:<p>{type==="validate"?"Validate this timetable before approval.":type==="approve"?"Approve this validated timetable?": "Publish this approved timetable for students and staff?"}</p>}<footer><Btn className="cms-btn cms-btn-ghost" onClick={close}>Cancel</Btn><Btn onClick={done}>{type==="validate"?"Mark as Validated":type==="approve"?"Approve Timetable":type==="publish"?"Publish Timetable":"Save Slot"}</Btn></footer></div></Modal>}
-export default function TimetablePage({screen="structures"}){let[modal,setModal]=useState(null),[item,setItem]=useState(null),[status,setStatus]=useState("DRAFT"),open=(m,x=null)=>{setItem(x);setModal(m)},close=()=>setModal(null);let view=screen==="setup"?<Group/>:screen==="draft"?<DraftCanonical open={open} status={status}/>:screen==="generate"?<GenerateCanonical/>:<Structures open={open}/>;return <div className="timetable-module">{view}{modal==="editor"&&<Editor item={item} onClose={close} preview={x=>{setItem(x);setModal("preview")}} save={close}/>} {modal==="preview"&&<Preview structure={item||BASE} onClose={()=>setModal("editor")} save={close}/>} {modal==="assign"&&<Assign close={close}/>} {["slot","lab","validate","approve","publish"].includes(modal)&&<StaffAction type={modal} close={close} setStatus={setStatus}/>}</div>}
+const EMPTY = {
+  boardId: "",
+  academicYearId: "",
+  academicLevelId: "",
+  groupId: "",
+  programId: "",
+  sectionId: "",
+};
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5, 6];
+const WORKING_DAY_OPTIONS = DEFAULT_WORKING_DAYS.map((value) => ({
+  value,
+  shortLabel: DAYS[value].slice(0, 3),
+}));
+const list = (x) => {
+  const value = Array.isArray(x)
+    ? x
+    : (x?.data ?? x?.items ?? x?.result ?? x?.results ?? x?.programs ?? x?.sections ?? []);
+  return Array.isArray(value) ? value : (Array.isArray(value?.$values) ? value.$values : []);
+};
+const pick = (x, ...keys) =>
+  keys
+    .map((key) => x?.[key])
+    .find((value) => value !== undefined && value !== null && value !== "");
+const optionize = (x, ids, labels) =>
+  list(x)
+    .map((raw) => ({
+      id: String(pick(raw, ...ids) ?? ""),
+      name: String(pick(raw, ...labels) ?? ""),
+      raw,
+    }))
+    .filter((item) => item.id && item.name);
+const activeYearId = (payload) => {
+  const entries = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : payload
+          ? [payload]
+          : [];
+  const active = entries.find((entry) => {
+    const status = pick(entry, "isActive", "IsActive", "active", "Active", "status", "Status");
+    return typeof status === "string" ? status.toLowerCase() === "active" : status !== false;
+  });
+  return pick(active ?? entries[0], "academicYearId", "yearId", "id", "Id");
+};
+const valuesOf = (value) =>
+  Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+const boardMappedOptions = (options, boards, boardId, idKeys, nameKeys) => {
+  if (!boardId) return [];
+  const direct = options.filter((option) => String(pick(option.raw, "boardId", "BoardId") ?? "") === String(boardId));
+  if (direct.length) return direct;
+  const board = boards.find((option) => String(option.id) === String(boardId))?.raw;
+  if (!board) return [];
+  const ids = new Set(idKeys.flatMap((key) => valuesOf(board[key])).map(String));
+  if (ids.size) return options.filter((option) => ids.has(String(option.id)));
+  const names = new Set(nameKeys.flatMap((key) => valuesOf(board[key])).map((name) => String(name).toLowerCase()));
+  return names.size ? options.filter((option) => names.has(option.name.toLowerCase())) : [];
+};
+const structureId = (x) => pick(x, "id", "Id", "periodStructureId");
+const timetableId = (x) => pick(x, "id", "Id", "timetableId");
+const toBreakDefinitions = (items) => {
+  let precedingPeriod = 0;
+  return list(items)
+    .sort((left, right) => Number(pick(left, "sequenceOrder") ?? 0) - Number(pick(right, "sequenceOrder") ?? 0))
+    .flatMap((entry) => {
+      const breakTypeId = pick(entry, "breakTypeId");
+      const periodNumber = Number(pick(entry, "periodNumber") ?? 0);
+      if (!breakTypeId && periodNumber > 0) precedingPeriod = periodNumber;
+      if (breakTypeId === undefined || breakTypeId === null) return [];
+      const afterPeriod = Number(pick(entry, "afterPeriod") ?? precedingPeriod);
+      const durationMinutes = Number(pick(entry, "durationMinutes"));
+      if (!afterPeriod || !durationMinutes) return [];
+      return [{
+        breakTypeId: Number(breakTypeId),
+        afterPeriod,
+        durationMinutes,
+        customName: pick(entry, "name", "breakTypeName") ?? null,
+      }];
+    });
+};
+function Page({ title, subtitle, action, children }) {
+  return (
+    <DashboardLayout
+      title={title}
+      subtitle={subtitle}
+      breadcrumb={["Academics", "Timetable"]}
+      actions={action}
+    >
+      <main className="ttm-page">{children}</main>
+    </DashboardLayout>
+  );
+}
+function Btn({ children, className = "cms-btn cms-btn-primary", ...props }) {
+  return (
+    <button type="button" className={className} {...props}>
+      {children}
+    </button>
+  );
+}
+function Field({ label, children }) {
+  return (
+    <label className="ttm-field">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+function Modal({ title, onClose, children }) {
+  return (
+    <div className="ttm-overlay">
+      <section className="ttm-modal">
+        <header>
+          <h2>{title}</h2>
+          <button type="button" onClick={onClose}>
+            ×
+          </button>
+        </header>
+        {children}
+      </section>
+    </div>
+  );
+}
+function ConfirmDelete({ name, busy, error, onCancel, onConfirm }) {
+  return (
+    <Modal title="Delete Period Structure?" onClose={busy ? () => {} : onCancel}>
+      <div className="ttm-modal-body">
+        <p>
+          Are you sure you want to delete {name ? `“${name}”` : "this period structure"}? This
+          action cannot be undone.
+        </p>
+        {error && <p className="ttm-validation-error">{error}</p>}
+        <footer>
+          <Btn className="cms-btn cms-btn-ghost" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Btn>
+          <Btn disabled={busy} onClick={onConfirm}>
+            {busy ? "Deleting…" : "Delete"}
+          </Btn>
+        </footer>
+      </div>
+    </Modal>
+  );
+}
+
+function useLookups(initial = {}) {
+  const [value, setValue] = useState({ ...EMPTY, ...initial });
+  const [data, setData] = useState({
+    boards: [],
+    years: [],
+    allYears: [],
+    levels: [],
+    allLevels: [],
+    groups: [],
+    programs: [],
+    sections: [],
+    subjects: [],
+    periods: [],
+    rooms: [],
+  });
+  useEffect(() => {
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.boards.list),
+      apiClient.get(apiEndpoints.academicYears.list),
+      apiClient.get(apiEndpoints.boards.academicLevels),
+      apiClient.get(apiEndpoints.rooms.getAll),
+    ]).then((r) =>
+      setData((current) => ({
+        ...current,
+        boards:
+          r[0].status === "fulfilled"
+            ? optionize(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"])
+            : [],
+        years:
+          r[1].status === "fulfilled"
+            ? optionize(
+                r[1].value.data,
+                ["academicYearId", "id", "Id"],
+                ["academicYearName", "yearName", "name", "Name"],
+              )
+            : [],
+        allYears:
+          r[1].status === "fulfilled"
+            ? optionize(
+                r[1].value.data,
+                ["academicYearId", "id", "Id"],
+                ["academicYearName", "yearName", "name", "Name"],
+              )
+            : [],
+        levels:
+          r[2].status === "fulfilled"
+            ? optionize(
+                r[2].value.data,
+                ["academicLevelId", "levelId", "id", "Id"],
+                ["academicLevelName", "levelName", "name", "Name"],
+              )
+            : [],
+        allLevels:
+          r[2].status === "fulfilled"
+            ? optionize(
+                r[2].value.data,
+                ["academicLevelId", "levelId", "id", "Id"],
+                ["academicLevelName", "levelName", "name", "Name"],
+              )
+            : [],
+        rooms:
+          r[3].status === "fulfilled"
+            ? optionize(
+                r[3].value.data,
+                ["roomId", "id", "Id"],
+                ["roomName", "name", "Name", "roomCode"],
+              )
+            : [],
+      })),
+    );
+  }, []);
+  useEffect(() => {
+    if (!value.boardId) return undefined;
+    let cancelled = false;
+    apiClient
+      .get(apiEndpoints.academicYears.active, { params: { boardId: value.boardId } })
+      .then((response) => {
+        const yearId = activeYearId(response.data);
+        if (!cancelled) {
+          const mappedYears = boardMappedOptions(
+            data.allYears,
+            data.boards,
+            value.boardId,
+            ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
+            ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
+          );
+          const selectedYear = yearId ? String(yearId) : mappedYears[0]?.id;
+          setValue((current) =>
+            current.boardId === value.boardId && selectedYear
+              ? { ...current, academicYearId: selectedYear, academicLevelId: "", groupId: "", programId: "", sectionId: "" }
+              : current,
+          );
+        }
+      })
+      .catch(() => {
+        const mappedYears = boardMappedOptions(
+          data.allYears,
+          data.boards,
+          value.boardId,
+          ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
+          ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
+        );
+        if (!cancelled && mappedYears[0]?.id) {
+          setValue((current) =>
+            current.boardId === value.boardId
+              ? { ...current, academicYearId: mappedYears[0].id, academicLevelId: "", groupId: "", programId: "", sectionId: "" }
+              : current,
+          );
+        }
+      });
+    return () => { cancelled = true; };
+  }, [value.boardId, data.allYears, data.boards]);
+  useEffect(() => {
+    if (!value.boardId) return;
+    apiClient
+      .get(apiEndpoints.groups.list, {
+        params: {
+          boardId: value.boardId,
+          academicYearId: value.academicYearId || undefined,
+          academicLevelId: value.academicLevelId || undefined,
+          isActive: true,
+        },
+      })
+      .then((r) =>
+        setData((current) => ({
+          ...current,
+          years: boardMappedOptions(
+            current.allYears,
+            current.boards,
+            value.boardId,
+            ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
+            ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
+          ),
+          levels: boardMappedOptions(
+            current.allLevels,
+            current.boards,
+            value.boardId,
+            ["academicLevelIds", "AcademicLevelIds", "levelIds", "LevelIds"],
+            ["academicLevelNames", "AcademicLevelNames", "levelNames", "LevelNames"],
+          ),
+          groups: optionize(r.data, ["groupId", "id", "Id"], ["groupName", "name", "Name"]),
+        })),
+      )
+      .catch(() => setData((current) => ({ ...current, groups: [] })));
+  }, [
+    value.boardId,
+    value.academicYearId,
+    value.academicLevelId,
+    data.allYears,
+    data.allLevels,
+    data.boards,
+  ]);
+  useEffect(() => {
+    if (!value.groupId) return;
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.groups.programs(value.groupId)),
+      value.programId
+        ? apiClient.get(apiEndpoints.sections.search, {
+            params: {
+              BoardId: value.boardId,
+              AcademicYearId: value.academicYearId,
+              AcademicLevelId: value.academicLevelId,
+              GroupId: value.groupId,
+              ProgramId: value.programId,
+              IsActive: true,
+            },
+          })
+        : Promise.resolve({ data: [] }),
+      apiClient.get(apiEndpoints.subjects.context, {
+        params: {
+          boardId: value.boardId,
+          groupId: value.groupId,
+          academicLevelId: value.academicLevelId,
+        },
+      }),
+      apiClient.get(apiEndpoints.periods.getAll, {
+        params: {
+          boardId: value.boardId,
+          academicYearId: value.academicYearId,
+          academicLevelId: value.academicLevelId,
+          groupId: value.groupId,
+        },
+      }),
+    ]).then((r) =>
+      setData((current) => ({
+        ...current,
+        programs:
+          r[0].status === "fulfilled"
+            ? optionize(r[0].value.data, ["programId", "id", "Id"], ["programName", "name", "Name"])
+            : [],
+        sections:
+          r[1].status === "fulfilled"
+            ? optionize(r[1].value.data, ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            : [],
+        subjects:
+          r[2].status === "fulfilled"
+            ? optionize(r[2].value.data, ["subjectId", "id", "Id"], ["subjectName", "name", "Name"])
+            : [],
+        periods:
+          r[3].status === "fulfilled"
+            ? optionize(r[3].value.data, ["periodId", "id", "Id"], ["periodName", "name", "Name"])
+            : [],
+      })),
+    );
+  }, [value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId]);
+  const change = (key) => (event) =>
+    setValue((current) => {
+      const next = event.target.value;
+      if (key === "boardId") return { ...EMPTY, boardId: next };
+      if (key === "academicYearId")
+        return {
+          ...current,
+          academicYearId: next,
+          academicLevelId: "",
+          groupId: "",
+          programId: "",
+          sectionId: "",
+        };
+      if (key === "academicLevelId")
+        return { ...current, academicLevelId: next, groupId: "", programId: "", sectionId: "" };
+      if (key === "groupId") return { ...current, groupId: next, programId: "", sectionId: "" };
+      if (key === "programId") return { ...current, programId: next, sectionId: "" };
+      return { ...current, [key]: next };
+    });
+  return { value, data, change };
+}
+function Context({ state, section = true }) {
+  const { value, data, change } = state;
+  const select = (label, key, values, disabled) => (
+    <Field label={label}>
+      <select value={value[key]} onChange={change(key)} disabled={disabled}>
+        <option value="">Select {label}</option>
+        {values.map((entry) => (
+          <option key={entry.id} value={entry.id}>
+            {entry.name}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+  return (
+    <div className="ttm-context">
+      {select("Board", "boardId", data.boards)}
+      {select("Academic Year", "academicYearId", data.years, !value.boardId)}
+      {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
+      {select("Group", "groupId", data.groups, !value.academicLevelId)}
+      {section && (
+        <>
+          {select("Programme", "programId", data.programs, !value.groupId)}
+          {select("Section", "sectionId", data.sections, !value.programId)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function StructureForm({ item, close, saved }) {
+  const [form, setForm] = useState({
+    name: pick(item, "name") ?? "",
+    dayStartTime: pick(item, "dayStartTime") ?? "",
+    periodDurationMinutes: pick(item, "periodDurationMinutes") ?? "",
+    totalTeachingPeriods: pick(item, "totalTeachingPeriods") ?? "",
+    isActive: pick(item, "isActive") ?? true,
+    breaks: [],
+  });
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [breakTypes, setBreakTypes] = useState([]);
+  useEffect(() => {
+    apiClient
+      .get(apiEndpoints.breakTypes.list)
+      .then((response) => setBreakTypes(optionize(response.data, ["id", "breakTypeId", "Id"], ["name", "breakTypeName", "Name"])))
+      .catch((requestError) => setError(getApiErrorMessage(requestError)));
+    if (!structureId(item)) return;
+    apiClient
+      .get(apiEndpoints.periodStructures.getById(structureId(item)))
+      .then((response) => {
+        const detail = response.data;
+        const breaks = toBreakDefinitions(detail?.items).map((entry) => ({
+          ...entry,
+          breakTypeId: String(entry.breakTypeId),
+          afterPeriod: String(entry.afterPeriod),
+          durationMinutes: String(entry.durationMinutes),
+        }));
+        setForm((current) => ({ ...current, breaks }));
+      })
+      .catch((requestError) => setError(getApiErrorMessage(requestError)));
+  }, [item]);
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const payload = {
+        ...form,
+        dayStartTime: /^\d{2}:\d{2}$/.test(form.dayStartTime)
+          ? `${form.dayStartTime}:00`
+          : form.dayStartTime,
+        periodDurationMinutes: Number(form.periodDurationMinutes),
+        totalTeachingPeriods: Number(form.totalTeachingPeriods),
+        breaks: form.breaks.map((breakItem) => ({
+          breakTypeId: Number(breakItem.breakTypeId),
+          afterPeriod: Number(breakItem.afterPeriod),
+          durationMinutes: Number(breakItem.durationMinutes),
+          customName: breakItem.customName || null,
+        })),
+      };
+      structureId(item)
+        ? await apiClient.put(apiEndpoints.periodStructures.update(structureId(item)), payload)
+        : await apiClient.post(apiEndpoints.periodStructures.create, payload);
+      saved();
+    } catch (e) {
+      setError(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const set = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
+  return (
+    <Modal
+      title={structureId(item) ? "Edit Period Structure" : "Create Period Structure"}
+      onClose={close}
+    >
+      <div className="ttm-modal-body">
+        <div className="ttm-form-grid">
+          <Field label="Structure Name">
+            <input value={form.name} onChange={set("name")} />
+          </Field>
+          <Field label="Day Start Time">
+            <input type="time" value={form.dayStartTime} onChange={set("dayStartTime")} />
+          </Field>
+          <Field label="Period Duration (minutes)">
+            <input
+              type="number"
+              min="1"
+              value={form.periodDurationMinutes}
+              onChange={set("periodDurationMinutes")}
+            />
+          </Field>
+          <Field label="Teaching Periods">
+            <input
+              type="number"
+              min="1"
+              value={form.totalTeachingPeriods}
+              onChange={set("totalTeachingPeriods")}
+            />
+          </Field>
+        </div>
+        <div className="ttm-break-head">
+          <b>Break configuration</b>
+          <Btn
+            className="cms-btn cms-btn-ghost"
+            disabled={!breakTypes.length}
+            onClick={() =>
+              setForm((current) => ({
+                ...current,
+                breaks: [
+                  ...current.breaks,
+                  { breakTypeId: String(breakTypes[0]?.id ?? ""), afterPeriod: "", durationMinutes: "", customName: "" },
+                ],
+              }))
+            }
+          >
+            + Add Break
+          </Btn>
+        </div>
+        {form.breaks.map((breakItem, index) => (
+          <div className="ttm-break-row" key={`${breakItem.breakTypeId}-${index}`}>
+            <select
+              value={breakItem.breakTypeId}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  breaks: current.breaks.map((entry, entryIndex) =>
+                    entryIndex === index ? { ...entry, breakTypeId: event.target.value } : entry,
+                  ),
+                }))
+              }
+            >
+              <option value="">Select break type</option>
+              {breakTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+            </select>
+            <select
+              value={breakItem.afterPeriod}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  breaks: current.breaks.map((entry, entryIndex) =>
+                    entryIndex === index ? { ...entry, afterPeriod: event.target.value } : entry,
+                  ),
+                }))
+              }
+            >
+              <option value="">After period</option>
+              {Array.from({ length: Number(form.totalTeachingPeriods) || 0 }, (_, number) => (
+                <option key={number + 1} value={number + 1}>After P{number + 1}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="1"
+              aria-label="Break duration in minutes"
+              placeholder="Minutes"
+              value={breakItem.durationMinutes}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  breaks: current.breaks.map((entry, entryIndex) =>
+                    entryIndex === index ? { ...entry, durationMinutes: event.target.value } : entry,
+                  ),
+                }))
+              }
+            />
+            <button
+              type="button"
+              onClick={() =>
+                setForm((current) => ({ ...current, breaks: current.breaks.filter((_, entryIndex) => entryIndex !== index) }))
+              }
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        {error && <p className="ttm-validation-error">{error}</p>}
+        <footer>
+          <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>
+            Cancel
+          </Btn>
+          <Btn
+            disabled={
+              saving ||
+              !form.name ||
+              !form.dayStartTime ||
+              !form.periodDurationMinutes ||
+              !form.totalTeachingPeriods
+            }
+            onClick={save}
+          >
+            {saving ? "Saving…" : "Save Structure"}
+          </Btn>
+        </footer>
+      </div>
+    </Modal>
+  );
+}
+
+function StructurePreview({ item, close, notify }) {
+  const [preview, setPreview] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const loadPreview = async () => {
+      try {
+        const detail = await apiClient.get(apiEndpoints.periodStructures.getById(structureId(item)));
+        const breaks = toBreakDefinitions(detail.data?.items);
+        const response = await apiClient.post(apiEndpoints.periodStructures.preview, {
+          dayStartTime: pick(item, "dayStartTime"),
+          periodDurationMinutes: Number(pick(item, "periodDurationMinutes")),
+          totalTeachingPeriods: Number(pick(item, "totalTeachingPeriods")),
+          breaks,
+        });
+        setPreview(response.data);
+      } catch (requestError) {
+        const message = getApiErrorMessage(requestError);
+        setError(message);
+        notify(message);
+      }
+    };
+    loadPreview();
+  }, [item, notify]);
+  return (
+    <Modal title={`Preview: ${pick(item, "name")}`} onClose={close}>
+      <div className="ttm-modal-body">
+        {error ? <p className="ttm-validation-error">{error}</p> : null}
+        {!preview && !error ? <p>Loading preview…</p> : null}
+        {preview?.timeline?.length ? (
+          <div className="ttm-period-list">
+            {preview.timeline.map((slot) => (
+              <div className={slot.isBreak ? "break" : ""} key={slot.sequenceOrder}>
+                <b>{slot.slotName ?? `Period ${slot.periodNumber}`}</b>
+                <span>{slot.startTime} – {slot.endTime}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <footer>
+          <Btn className="cms-btn cms-btn-ghost" onClick={close}>Close</Btn>
+        </footer>
+      </div>
+    </Modal>
+  );
+}
+
+function AssignStructureForm({ item, close, assigned, notify }) {
+  const state = useLookups();
+  const { value, data, change } = state;
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const ready = value.boardId && value.academicYearId && value.academicLevelId && value.groupId;
+  const assign = async () => {
+    if (!ready || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiClient.post(apiEndpoints.periodStructures.assign(structureId(item)), {
+        periodStructureId: Number(structureId(item)),
+        boardId: Number(value.boardId),
+        academicYearId: Number(value.academicYearId),
+        academicLevelId: Number(value.academicLevelId),
+        groupId: Number(value.groupId),
+        isActive: true,
+      });
+      assigned(value);
+    } catch (requestError) {
+      const message = getApiErrorMessage(requestError);
+      setError(message);
+      notify(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const select = (label, key, values, disabled) => (
+    <Field label={label}>
+      <select value={value[key]} onChange={change(key)} disabled={disabled}>
+        <option value="">Select {label}</option>
+        {values.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+      </select>
+    </Field>
+  );
+  return (
+    <Modal title="Assign Structure to Group" onClose={saving ? () => {} : close}>
+      <div className="ttm-modal-body">
+        <div className="ttm-form-grid">
+          {select("Board", "boardId", data.boards)}
+          {select("Academic Year", "academicYearId", data.years, true)}
+          {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
+          {select("Group", "groupId", data.groups, !value.academicLevelId)}
+        </div>
+        <Field label="Period Structure">
+          <input value={pick(item, "name") ?? ""} readOnly />
+        </Field>
+        {error ? <p className="ttm-validation-error">{error}</p> : null}
+        <footer>
+          <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>Cancel</Btn>
+          <Btn disabled={!ready || saving} onClick={assign}>
+            {saving ? "Assigning…" : "Assign & Continue"}
+          </Btn>
+        </footer>
+      </div>
+    </Modal>
+  );
+}
+function Structures({ notify }) {
+  const [items, setItems] = useState([]);
+  const [modal, setModal] = useState(null);
+  const [item, setItem] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const navigate = useNavigate();
+  const load = () =>
+    apiClient
+      .get(apiEndpoints.periodStructures.list)
+      .then((r) => setItems(list(r.data)))
+      .catch((e) => notify(getApiErrorMessage(e)));
+  useEffect(() => {
+    load();
+  }, []);
+  const remove = async () => {
+    if (deleting || !item) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await apiClient.delete(apiEndpoints.periodStructures.delete(structureId(item)));
+      setModal(null);
+      notify("Period structure deleted.");
+      load();
+    } catch (e) {
+      setDeleteError(getApiErrorMessage(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+  return (
+    <Page
+      title="Period Structures"
+      subtitle="Manage reusable schedules for groups."
+      action={
+        <Btn onClick={() => { setItem(null); setModal("form"); }}>
+          + Create Structure
+        </Btn>
+      }
+    >
+      <section className="ttm-card">
+        {!items.length ? (
+          <p className="ttm-empty">No period structures are available.</p>
+        ) : (
+          <table className="cms-table ttm-table">
+            <thead>
+              <tr>
+                <th>Structure Name</th>
+                <th>Periods</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row) => (
+                <tr key={structureId(row)}>
+                  <td>
+                    <b>{pick(row, "name")}</b>
+                  </td>
+                  <td>{pick(row, "totalTeachingPeriods")}</td>
+                  <td>{pick(row, "periodDurationMinutes")} min</td>
+                  <td>
+                    <span className="ttm-badge">
+                      {pick(row, "isActive") ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="ttm-actions">
+                    <button
+                      onClick={() => {
+                        setItem(row);
+                        setModal("form");
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button onClick={() => { setItem(row); setModal("preview"); }}>Preview</button>
+                    <button onClick={() => { setItem(row); setModal("assign"); }}>Assign</button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const detail = await apiClient.get(apiEndpoints.periodStructures.getById(structureId(row)));
+                          const breaks = toBreakDefinitions(detail.data?.items);
+                          await apiClient.put(apiEndpoints.periodStructures.update(structureId(row)), {
+                            name: pick(row, "name"),
+                            dayStartTime: pick(row, "dayStartTime"),
+                            periodDurationMinutes: Number(pick(row, "periodDurationMinutes")),
+                            totalTeachingPeriods: Number(pick(row, "totalTeachingPeriods")),
+                            breaks,
+                            isActive: !pick(row, "isActive"),
+                          });
+                          notify(`Period structure ${pick(row, "isActive") ? "deactivated" : "activated"}.`);
+                          load();
+                        } catch (requestError) {
+                          notify(getApiErrorMessage(requestError));
+                        }
+                      }}
+                    >
+                      {pick(row, "isActive") ? "Deactivate" : "Activate"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setItem(row);
+                        setDeleteError("");
+                        setModal("delete");
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+      {modal === "form" && (
+        <StructureForm
+          item={item}
+          close={() => setModal(null)}
+          saved={() => {
+            setModal(null);
+            notify("Period structure saved.");
+            load();
+          }}
+        />
+      )}
+      {modal === "preview" && <StructurePreview item={item} close={() => setModal(null)} notify={notify} />}
+      {modal === "assign" && (
+        <AssignStructureForm
+          item={item}
+          close={() => setModal(null)}
+          notify={notify}
+          assigned={(context) => {
+            setModal(null);
+            notify("Period structure assigned.");
+            navigate("/dashboard/timetable/generate", { state: { timetableContext: context } });
+          }}
+        />
+      )}
+      {modal === "delete" && (
+        <ConfirmDelete
+          name={pick(item, "name")}
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => setModal(null)}
+          onConfirm={remove}
+        />
+      )}
+    </Page>
+  );
+}
+
+function Generate({ goDraft, notify, initial }) {
+  const state = useLookups(initial);
+  const { value, data } = state;
+  const [requirements, setRequirements] = useState({});
+  const [workingDays, setWorkingDays] = useState(() =>
+    (initial?.workingDays?.length ? initial.workingDays : DEFAULT_WORKING_DAYS).map(Number),
+  );
+  const [capacityError, setCapacityError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const periodsPerDay = data.periods.length;
+  const weeklyCapacity = periodsPerDay * workingDays.length;
+  const totalRequiredPeriods = Object.values(requirements).reduce(
+    (total, weeklyPeriods) => total + (Number(weeklyPeriods) || 0),
+    0,
+  );
+  const ready =
+    value.boardId &&
+    value.academicYearId &&
+    value.academicLevelId &&
+    value.groupId &&
+    value.sectionId &&
+    workingDays.length;
+  const toggleWorkingDay = (day) => {
+    setWorkingDays((current) =>
+      current.includes(day) ? current.filter((value) => value !== day) : [...current, day].sort((a, b) => a - b),
+    );
+    setCapacityError("");
+  };
+  const generate = async () => {
+    if (busy) return;
+    if (totalRequiredPeriods > weeklyCapacity) {
+      setCapacityError(`Subject requirements total ${totalRequiredPeriods} periods, but the selected working days allow only ${weeklyCapacity} periods.`);
+      return;
+    }
+    try {
+      setBusy(true);
+      const subjectRequirements = data.subjects
+        .map((subject) => ({
+          subjectId: Number(subject.id),
+          weeklyPeriods: Number(requirements[subject.id] || 0),
+        }))
+        .filter((entry) => entry.weeklyPeriods > 0);
+      const response = await apiClient.post(apiEndpoints.timetable.generate, {
+        boardId: Number(value.boardId),
+        academicYearId: Number(value.academicYearId),
+        academicLevelId: Number(value.academicLevelId),
+        groupId: Number(value.groupId),
+        sectionIds: [Number(value.sectionId)],
+        workingDays,
+        subjectRequirements,
+      });
+      notify(response.data?.message ?? "Timetable generated.");
+      goDraft({ ...value, workingDays });
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Page
+      title="Generate Timetable"
+      subtitle="Generate a conflict-free theory timetable in DRAFT state."
+    >
+      <section className="ttm-card">
+        <Context state={state} />
+        {value.programId && value.sectionId ? (
+          <>
+            <div className="ttm-working-days" aria-labelledby="working-days-label">
+              <span id="working-days-label">Working Days</span>
+              <div className="ttm-day-toggles">
+                {WORKING_DAY_OPTIONS.map((day) => (
+                  <button
+                    type="button"
+                    key={day.value}
+                    className={workingDays.includes(day.value) ? "active" : ""}
+                    aria-pressed={workingDays.includes(day.value)}
+                    onClick={() => toggleWorkingDay(day.value)}
+                  >
+                    {day.shortLabel}
+                  </button>
+                ))}
+              </div>
+              <span className="ttm-capacity">Weekly Capacity: {weeklyCapacity} periods</span>
+            </div>
+            <p className="ttm-generation-help">
+              Set the weekly teaching periods for each subject. These values tell the generator how many slots to create for the selected section.
+            </p>
+            <div className="ttm-form-grid">
+              {data.subjects.map((subject) => (
+                <Field key={subject.id} label={`${subject.name} weekly periods`}>
+                  <input
+                    type="number"
+                    min="0"
+                    value={requirements[subject.id] ?? ""}
+                    onChange={(e) => {
+                      setRequirements((current) => ({ ...current, [subject.id]: e.target.value }));
+                      setCapacityError("");
+                    }}
+                  />
+                </Field>
+              ))}
+            </div>
+            {capacityError ? <p className="ttm-validation-error ttm-capacity-error">{capacityError}</p> : null}
+          </>
+        ) : null}
+        <footer className="ttm-screen-actions">
+          <Btn disabled={!ready || busy} onClick={generate}>
+            {busy ? "Generating…" : "Generate Timetable"}
+          </Btn>
+        </footer>
+      </section>
+    </Page>
+  );
+}
+
+function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) {
+  const [form, setForm] = useState({
+    dayOfWeek: String(pick(slot, "dayOfWeek") ?? ""),
+    periodId: String(pick(slot, "periodId") ?? ""),
+    subjectId: String(pick(slot, "subjectId") ?? ""),
+    facultyId: String(pick(slot, "facultyId") ?? ""),
+    roomId: String(pick(slot, "roomId") ?? ""),
+    remarks: pick(slot, "remarks") ?? "",
+  });
+  const [faculty, setFaculty] = useState([]);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!form.subjectId) return;
+    apiClient
+      .get(apiEndpoints.timetable.getAllocatedFaculties, {
+        params: { ...context, subjectId: form.subjectId },
+      })
+      .then((r) =>
+        setFaculty(optionize(r.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])),
+      )
+      .catch((e) => notify(getApiErrorMessage(e)));
+  }, [form.subjectId]);
+  const set = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
+  const save = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const payload = {
+        ...Object.fromEntries(Object.entries(context).map(([key, val]) => [key, Number(val)])),
+        ...Object.fromEntries(
+          Object.entries(form).map(([key, val]) => [
+            key === "remarks" ? key : key,
+            key === "remarks" ? val : Number(val),
+          ]),
+        ),
+        isPublished: Boolean(pick(slot, "isPublished") ?? false),
+      };
+      timetableId(slot)
+        ? await apiClient.put(apiEndpoints.timetable.update(timetableId(slot)), payload)
+        : await apiClient.post(apiEndpoints.timetable.create, payload);
+      saved();
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const select = (label, key, values) => (
+    <Field label={label}>
+      <select value={form[key]} onChange={set(key)}>
+        <option value="">Select {label}</option>
+        {values.map((entry) => (
+          <option key={entry.id ?? entry.value} value={entry.id ?? entry.value}>
+            {entry.name ?? entry.label}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+  return (
+    <Modal title={timetableId(slot) ? "Edit Timetable Slot" : "Add Timetable Slot"} onClose={close}>
+      <div className="ttm-modal-body">
+        <div className="ttm-form-grid">
+          {select(
+            "Day",
+            "dayOfWeek",
+            workingDays.map((day) => ({ id: day, name: DAYS[day] })),
+          )}
+          {select("Period", "periodId", data.periods)}
+          {select("Subject", "subjectId", data.subjects)}
+          {select("Faculty", "facultyId", faculty)}
+          {select("Room", "roomId", data.rooms)}
+          <Field label="Remarks">
+            <input value={form.remarks} onChange={set("remarks")} />
+          </Field>
+        </div>
+        <footer>
+      <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>
+            Cancel
+          </Btn>
+      <Btn disabled={saving} onClick={save}>{saving ? "Saving…" : "Save Slot"}</Btn>
+        </footer>
+      </div>
+    </Modal>
+  );
+}
+function Draft({ initial, notify }) {
+  const state = useLookups(initial);
+  const { value, data } = state;
+  const [slots, setSlots] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [validation, setValidation] = useState(null);
+  const workingDays = (initial?.workingDays?.length ? initial.workingDays : DEFAULT_WORKING_DAYS)
+    .map(Number)
+    .filter((day) => WORKING_DAY_OPTIONS.some((option) => option.value === day));
+  const load = () =>
+    value.sectionId &&
+    apiClient
+      .get(apiEndpoints.timetable.getBySection(value.sectionId), {
+        params: { academicYearId: value.academicYearId },
+      })
+      .then((r) => setSlots(list(r.data)))
+      .catch((e) => notify(getApiErrorMessage(e)));
+  useEffect(load, [value.sectionId, value.academicYearId]);
+  const find = (day, periodId) =>
+    slots.find(
+      (slot) =>
+        String(pick(slot, "dayOfWeek")) === String(day) &&
+        String(pick(slot, "periodId")) === String(periodId),
+    );
+  const action = async (path, method = "post", body) => {
+    try {
+      const r = await apiClient[method](path, body, {
+        params: { academicYearId: value.academicYearId },
+      });
+      if (method === "post" && path.includes("validate")) setValidation(r.data);
+      else notify(r.data?.message ?? "Timetable updated.");
+      load();
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    }
+  };
+  return (
+    <Page
+      title="Generated Draft Grid"
+      subtitle="Review, validate, approve and publish the section timetable."
+      action={
+        <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate">
+          Back to Generate
+        </Link>
+      }
+    >
+      <section className="ttm-card">
+        <Context state={state} />
+        {value.sectionId && (
+          <>
+            <div className="ttm-grid-head">
+              <b>Section timetable</b>
+              <div>
+                <Btn className="cms-btn cms-btn-ghost" onClick={() => setEditing({})}>
+                  + Add Slot
+                </Btn>
+                <Btn
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => action(apiEndpoints.timetable.validateSection(value.sectionId))}
+                >
+                  Validate
+                </Btn>
+                <Btn onClick={() => action(apiEndpoints.timetable.approveSection(value.sectionId))}>
+                  Approve
+                </Btn>
+                <Btn
+                  onClick={() =>
+                    action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", {
+                      isPublished: true,
+                    })
+                  }
+                >
+                  Publish
+                </Btn>
+              </div>
+            </div>
+            {validation && (
+              <div className={`ttm-validation-result${validation.isValid ? "" : " has-errors"}`}>
+                <b>{validation.isValid ? "Timetable is valid" : "Validation failed"}</b>
+                {[...(validation.errors ?? []), ...(validation.warnings ?? [])].map(
+                  (entry, index) => (
+                    <p key={index}>{entry.message}</p>
+                  ),
+                )}
+              </div>
+            )}
+            <div className="ttm-grid-wrap">
+              <table className="ttm-grid">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    {data.periods.map((period) => (
+                      <th key={period.id}>{period.name}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {workingDays.map((dayOfWeek) => (
+                    (() => {
+                      const dayName = DAYS[dayOfWeek];
+                      return (
+                    <tr key={dayName}>
+                      <th>{dayName}</th>
+                      {data.periods.map((period) => {
+                        const slot = find(dayOfWeek, period.id);
+                        return (
+                          <td className="slot" key={period.id}>
+                            <button
+                              onClick={() =>
+                                setEditing(
+                                  slot ?? { dayOfWeek, periodId: period.id },
+                                )
+                              }
+                            >
+                              {slot ? (
+                                <>
+                                  <b>{pick(slot, "subjectName") ?? "—"}</b>
+                                  <span>{pick(slot, "facultyName") ?? "Unassigned"}</span>
+                                  <small>{pick(slot, "roomName") ?? "—"}</small>
+                                </>
+                              ) : (
+                                "+ Add"
+                              )}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                      );
+                    })()
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+      {editing && (
+        <SlotEditor
+          context={value}
+          data={data}
+          slot={editing}
+          workingDays={workingDays}
+          close={() => setEditing(null)}
+          notify={notify}
+          saved={() => {
+            setEditing(null);
+            notify("Timetable slot saved.");
+            load();
+          }}
+        />
+      )}
+    </Page>
+  );
+}
+export default function TimetablePage({ screen = "structures" }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [toast, setToast] = useState("");
+  const view =
+    screen === "draft" ? (
+      <Draft initial={location.state?.timetableContext} notify={setToast} />
+    ) : screen === "generate" ? (
+      <Generate
+        notify={setToast}
+        initial={location.state?.timetableContext}
+        goDraft={(context) =>
+          navigate("/dashboard/timetable/draft", { state: { timetableContext: context } })
+        }
+      />
+    ) : (
+      <Structures notify={setToast} />
+    );
+  return (
+    <div className="timetable-module">
+      {view}
+      <Toast message={toast} onClose={() => setToast("")} />
+    </div>
+  );
+}

@@ -18,6 +18,40 @@ const SUBJECT_CONTEXT = {
   academicLevelId: "",
 };
 const DEFAULT = [];
+const DEFAULT_BIPC_SUBJECTS = [
+  ["English", "ENG1", ["Language"], 20, 80, 0, 35],
+  ["Telugu", "TEL1", ["Language"], 20, 80, 0, 35],
+  ["Sanskrit", "SAN1", ["Language"], 20, 80, 0, 35],
+  ["Physics", "PHY1", ["Theory", "Practical"], 20, 50, 30, 35],
+  ["Chemistry", "CHE1", ["Theory", "Practical"], 20, 50, 30, 35],
+  ["Botany", "BOT1", ["Theory", "Practical"], 20, 50, 30, 35],
+  ["Zoology", "ZOO1", ["Theory", "Practical"], 20, 50, 30, 35],
+];
+const defaultSubjectsForContext = (context) => {
+  const group = String(context?.group ?? "").trim().toLowerCase();
+  if (group !== "bipc") return [];
+
+  return DEFAULT_BIPC_SUBJECTS.map(([subjectName, subjectCode, components, internalMarks, externalMarks, practicalMarks, passingMarks]) => ({
+    id: `new-default-${subjectCode}`,
+    subjectName,
+    subjectCode,
+    components,
+    internalMarks,
+    externalMarks,
+    practicalMarks,
+    passingMarks,
+    configured: true,
+    ...context,
+  }));
+};
+const groupContext = (group) => ({
+  boardId: group?.boardId ?? group?.BoardId ?? "",
+  board: group?.boardName ?? group?.BoardName ?? "",
+  groupId: group?.groupId ?? group?.GroupId ?? group?.id ?? group?.Id ?? "",
+  group: group?.groupName ?? group?.GroupName ?? group?.name ?? group?.Name ?? "",
+  academicLevelId: group?.academicLevelId ?? group?.AcademicLevelId ?? "",
+  academicLevel: group?.academicLevelName ?? group?.AcademicLevelName ?? "",
+});
 const itemsFromResponse = (data) => {
   const body = data?.data ?? data;
   return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? body?.$values ?? [];
@@ -174,12 +208,13 @@ export default function SubjectManagementPage({ screen = "list" }) {
         },
       });
       if (requestId !== subjectRequestId.current) return;
-      setRecords(normalize(itemsFromResponse(response.data).map((record) => ({
+      const responseRecords = itemsFromResponse(response.data).map((record) => ({
         ...record,
         boardId: subjectContext.boardId,
         groupId: subjectContext.groupId,
         academicLevelId: subjectContext.academicLevelId,
-      }))));
+      }));
+      setRecords(normalize(responseRecords.length ? responseRecords : defaultSubjectsForContext(subjectContext)));
       setApiAvailable(true);
     } catch (error) {
       if (requestId !== subjectRequestId.current) return;
@@ -286,6 +321,12 @@ function List({ records, context, assign, loading, loadSubjects }) {
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
       setGroups(nextGroups);
+      // A group carries the complete subject context. Select the first one on
+      // initial load so Subject Management immediately shows its assignments.
+      setSelectedContext((current) => {
+        if (current.groupId || !nextGroups.length) return current;
+        return groupContext(nextGroups[0]);
+      });
     }).catch(() => {});
     return () => { active = false; };
   }, []);
@@ -295,8 +336,11 @@ function List({ records, context, assign, loading, loadSubjects }) {
   useEffect(() => {
     loadSubjects({
       boardId: selectedContext.boardId,
+      board: selectedContext.board,
       groupId: selectedContext.groupId,
+      group: selectedContext.group,
       academicLevelId: selectedContext.academicLevelId,
+      academicLevel: selectedContext.academicLevel,
     });
   }, [loadSubjects, selectedContext.boardId, selectedContext.groupId, selectedContext.academicLevelId]);
   const rows = useMemo(
@@ -745,14 +789,7 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
   useEffect(() => setPage(1), [query, rows.length]);
   const applyGroupContext = (group) => {
     if (!group) return;
-    setContext({
-      boardId: group.boardId,
-      board: group.boardName,
-      groupId: group.groupId,
-      group: group.groupName,
-      academicLevelId: group.academicLevelId,
-      academicLevel: group.academicLevelName,
-    });
+    setContext(groupContext(group));
   };
   return (
     <section className="subject-table-card">
@@ -768,12 +805,15 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
           <ContextSelect
             label="Board"
             value={context.boardId}
-            options={boards.map((board) => ({ value: board.boardId, label: board.boardName }))}
+            options={boards.map((board) => ({
+              value: board.boardId ?? board.BoardId ?? board.id ?? board.Id,
+              label: board.boardName ?? board.BoardName ?? board.name ?? board.Name,
+            }))}
             onChange={(boardId) => {
-              const board = boards.find((item) => String(item.boardId) === String(boardId));
+              const board = boards.find((item) => String(item.boardId ?? item.BoardId ?? item.id ?? item.Id) === String(boardId));
               setContext({
                 boardId,
-                board: board?.boardName || "",
+                board: board?.boardName ?? board?.BoardName ?? board?.name ?? board?.Name ?? "",
                 groupId: "",
                 group: "",
                 academicLevelId: "",
@@ -785,10 +825,13 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
             label="Group"
             value={context.groupId}
             options={groups
-              .filter((group) => !context.boardId || String(group.boardId) === String(context.boardId))
-              .map((group) => ({ value: group.groupId, label: group.groupName }))}
+              .filter((group) => !context.boardId || String(group.boardId ?? group.BoardId) === String(context.boardId))
+              .map((group) => ({
+                value: group.groupId ?? group.GroupId ?? group.id ?? group.Id,
+                label: group.groupName ?? group.GroupName ?? group.name ?? group.Name,
+              }))}
             onChange={(groupId) => {
-              const group = groups.find((item) => String(item.groupId) === String(groupId));
+              const group = groups.find((item) => String(item.groupId ?? item.GroupId ?? item.id ?? item.Id) === String(groupId));
               applyGroupContext(group);
             }}
           />

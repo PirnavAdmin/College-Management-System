@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CalendarDays, Eye, Pencil, Plus, Printer, Trash2, X } from "lucide-react";
+import * as XLSX from "xlsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./ExaminationPage.css";
 
-const EK = "cms.examinationWorkflow.v3",
-  SK = "cms.examinationSchedules.v3";
 const BOARDS = [{ id: 1, name: "AP State Board", status: "Active" }];
 const YEARS = [
   { id: 1, boardId: 1, name: "2025-26" },
@@ -246,17 +245,9 @@ const seed = [
     status: "DRAFT",
   },
 ];
-const get = (key, fallback) => {
-  try {
-    const v = JSON.parse(localStorage.getItem(key));
-    return Array.isArray(v) ? v : fallback;
-  } catch {
-    return fallback;
-  }
-};
 const overlaps = (a, b, c, d) => a < d && b > c;
-const nameOf = (items, id) =>
-  items.find((x) => String(x.id) === String(id))?.name || "All Programs";
+const nameOf = (items, id, fallback = "All Programs") =>
+  items.find((x) => String(x.id) === String(id))?.name || fallback;
 const d = (value) =>
   value
     ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
@@ -437,7 +428,7 @@ const buildExportRows = (targetExams, schedules) =>
           programName: nameOf(PROGRAMS, exam.programId),
           patternName: nameOf(EXAM_PATTERNS, exam.examPatternId),
           examType: exam.examType || exam.type,
-          groupName: nameOf(GROUPS, exam.groupId),
+          groupName: nameOf(GROUPS, exam.groupId, "—"),
           totalMarks: hasValidExamMarks(exam) ? exam.totalMarks : exam.totalMarks || "—",
           passPercentage: hasValidExamMarks(exam) ? `${exam.passPercentage}%` : "—",
           passingScore: getExamPassingMarks(exam) ?? "—",
@@ -445,21 +436,34 @@ const buildExportRows = (targetExams, schedules) =>
           examDate: first.date,
           startTime: first.startTime,
           endTime: first.endTime,
-          hallName: nameOf(ROOMS, first.roomId),
-          invigilatorName: nameOf(FACULTY, first.invigilatorId),
+          examTime:
+            first.startTime && first.endTime
+              ? `${first.startTime} - ${first.endTime}`
+              : first.startTime || first.endTime || "—”",
+          hallName: nameOf(ROOMS, first.roomId, "—”"),
+          invigilatorName: nameOf(FACULTY, first.invigilatorId, "—”"),
           examMode: first.mode || "—",
           status: exam.status,
           description: exam.description || "—",
         };
       });
     })
-    .sort(
-      (a, b) =>
-        a.examDate.localeCompare(b.examDate) ||
-        a.startTime.localeCompare(b.startTime) ||
-        a.examName.localeCompare(b.examName) ||
-        a.subjectName.localeCompare(b.subjectName),
-    );
+    .sort((a, b) => {
+      const aDate = Date.parse(a.examDate),
+        bDate = Date.parse(b.examDate),
+        aDateValid = Number.isFinite(aDate),
+        bDateValid = Number.isFinite(bDate);
+      if (aDateValid !== bDateValid) return aDateValid ? -1 : 1;
+      return (
+        (aDateValid ? aDate - bDate : 0) ||
+        String(a.startTime || "").localeCompare(String(b.startTime || "")) ||
+        String(a.endTime || "").localeCompare(String(b.endTime || "")) ||
+        String(a.examName || "").localeCompare(String(b.examName || "")) ||
+        String(a.examCode || "").localeCompare(String(b.examCode || "")) ||
+        String(a.hallName || "").localeCompare(String(b.hallName || ""))
+      );
+    })
+    .map((row, index) => ({ ...row, serialNo: index + 1 }));
 const duration = (a, b) => {
   if (!a || !b || b <= a) return "";
   const min = +b.slice(0, 2) * 60 + +b.slice(3) - (+a.slice(0, 2) * 60 + +a.slice(3));
@@ -485,8 +489,8 @@ export default function ExaminationPage() {
     type: "",
     status: "",
   };
-  const [exams, setExams] = useState(() => get(EK, seed)),
-    [schedules, setSchedules] = useState(() => get(SK, [])),
+  const [exams, setExams] = useState(() => seed.map((exam) => ({ ...exam }))),
+    [schedules, setSchedules] = useState([]),
     [tab, setTab] = useState("exams"),
     [examId, setExamId] = useState(""),
     [detail, setDetail] = useState(null),
@@ -502,8 +506,6 @@ export default function ExaminationPage() {
     [appliedFilters, setAppliedFilters] = useState(initialFilters),
     [search, setSearch] = useState(""),
     [finalizing, setFinalizing] = useState(false);
-  useEffect(() => localStorage.setItem(EK, JSON.stringify(exams)), [exams]);
-  useEffect(() => localStorage.setItem(SK, JSON.stringify(schedules)), [schedules]);
   useEffect(() => {
     const next = loc.state?.scheduleExamId;
     if (!isForm && next) {
@@ -1873,16 +1875,44 @@ function EditExamModal({ exam, schedules, onClose, onSave }) {
   );
 }
 function ExportPreviewModal({ preview, onClose }) {
+  const hasRows = preview.rows.length > 0;
+  const handleDownloadPdf = () => {
+    if (!hasRows) return;
+    const previousTitle = document.title;
+    document.title = `${sanitizeFileName(preview.title)}.pdf`;
+    try {
+      window.print();
+    } finally {
+      document.title = previousTitle;
+    }
+  };
+  const handleDownloadExcel = () => {
+    if (!hasRows) return;
+    downloadExcelPreview(preview);
+  };
   return (
     <Modal title={preview.title} onClose={onClose}>
       <div className="exam-export-preview">
         <ExportTable rows={preview.rows} scope={preview.scope} />
       </div>
-      <div className="exam-edit-actions">
-        <button className="cms-btn cms-btn-ghost" onClick={onClose}>
+      <div className="exam-edit-actions exam-export-actions">
+        <button type="button" className="cms-btn cms-btn-ghost" onClick={onClose}>
           Cancel
         </button>
-        <button className="cms-btn cms-btn-primary" onClick={() => window.print()}>
+        <button
+          type="button"
+          className="cms-btn cms-btn-ghost"
+          disabled={!hasRows}
+          onClick={handleDownloadExcel}
+        >
+          Download Excel
+        </button>
+        <button
+          type="button"
+          className="cms-btn cms-btn-primary"
+          disabled={!hasRows}
+          onClick={handleDownloadPdf}
+        >
           Download PDF
         </button>
       </div>
@@ -1900,28 +1930,51 @@ function PrintableSchedule({ preview }) {
   );
 }
 const EXPORT_COLUMNS = [
-  ["Exam Code", "examCode"],
+  ["S.No", "serialNo"],
   ["Exam Name", "examName"],
-  ["Board", "boardName"],
-  ["Academic Year", "academicYear"],
-  ["Academic Level", "academicLevel"],
+  ["Exam Code", "examCode"],
   ["Group", "groupName"],
-  ["Program", "programName"],
-  ["Exam Pattern", "patternName"],
-  ["Exam Type", "examType"],
-  ["Total Marks", "totalMarks"],
-  ["Pass %", "passPercentage"],
-  ["Passing Score", "passingScore"],
-  ["Subject(s)", "subjectName"],
-  ["Exam Date", "examDate", d],
-  ["Start Time", "startTime"],
-  ["End Time", "endTime"],
-  ["Hall", "hallName"],
+  ["Hall / Room", "hallName"],
   ["Invigilator", "invigilatorName"],
-  ["Mode", "examMode"],
-  ["Status", "status"],
-  ["Description", "description"],
+  ["Exam Date", "examDate", d],
+  ["Exam Time", "examTime"],
 ];
+function formatExportValue(row, [, key, format]) {
+  return format ? format(row[key]) : row[key] ?? "-”";
+}
+function sanitizeFileName(value) {
+  const safeName = String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/^\.+|\.+$/g, "");
+  return safeName || "Examination_Schedule";
+}
+function downloadExcelPreview(preview) {
+  if (!preview.rows.length) return;
+  const excelRows = preview.rows.map((row) =>
+    Object.fromEntries(
+      EXPORT_COLUMNS.map((column) => [column[0], formatExportValue(row, column)]),
+    ),
+  );
+  const worksheet = XLSX.utils.json_to_sheet(excelRows, {
+    header: EXPORT_COLUMNS.map(([label]) => label),
+  });
+  worksheet["!cols"] = [
+    { wch: 8 },
+    { wch: 36 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 24 },
+    { wch: 32 },
+    { wch: 16 },
+    { wch: 20 },
+  ];
+  const workbook = XLSX.utils.book_new();
+  const sheetName = preview.scope === "global" ? "Exam Schedules" : "Exam Schedule";
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  XLSX.writeFile(workbook, `${sanitizeFileName(preview.title)}.xlsx`);
+}
 function ExportTable({ rows, scope }) {
   return (
     <table className={`exam-export-table exam-export-table-${scope || "individual"}`}>

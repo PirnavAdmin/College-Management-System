@@ -35,7 +35,7 @@ const normalizeSectionName = (name) => name.trim().replace(/\s+/g, " ");
 const normalizeRoomCode = (code) => String(code ?? "").trim().replace(/\s+/g, " ");
 const roomCodesMatch = (first, second) =>
   normalizeRoomCode(first).toLowerCase() === normalizeRoomCode(second).toLowerCase();
-const collectionFrom = (data) => Array.isArray(data) ? data : data?.data ?? data?.items ?? data?.result ?? [];
+const collectionFrom = (data) => Array.isArray(data) ? data : data?.items ?? data?.data ?? data?.result ?? [];
 const isActiveRecord = (item) =>
   item?.isActive === true || item?.status === true || item?.status === "Active";
 const normalizeRoom = (room) => ({
@@ -64,9 +64,6 @@ const normalizeSection = (section) => ({
   strength: section.maximumStrength ?? section.capacity ?? section.strength ?? "",
   status: section.isActive ?? section.status === "Active" ? "Active" : "Inactive",
 });
-
-// Future backend integration should relate sections to rooms by roomId, rather than roomCode.
-// `strength` remains the current data-contract name for section capacity.
 
 export const pageConfig = {
   title: "Section Management",
@@ -180,21 +177,26 @@ export default function SectionManagementPage() {
         apiClient.get(apiEndpoints.boards.list),
         apiClient.get(apiEndpoints.academicYears.list),
         apiClient.get(apiEndpoints.boards.academicLevels),
-        apiClient.get(apiEndpoints.faculty.getAll, { params: { PageNumber: 1, PageSize: 100 } }),
+        apiClient.get("/api/v1/staff", { params: { StaffType: "Teaching", Status: "Active", PageSize: 100 } })
+          .catch(() => apiClient.get("/api/v1/staff/dropdown", { params: { staffType: "Teaching" } })),
         apiClient.get(apiEndpoints.sections.list),
       ]);
       if (!active) return;
-      const [boardsResult, yearsResult, levelsResult, facultyResult, sectionsResult] = results;
+      const [boardsResult, yearsResult, levelsResult, staffResult, sectionsResult] = results;
       if (boardsResult.status === "fulfilled") setBoardsList(collectionFrom(boardsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.boardId ?? item.id), name: item.boardName ?? item.name ?? "", code: item.boardCode ?? item.code ?? "" })).filter((item) => item.id && item.name));
       if (yearsResult.status === "fulfilled") setAcademicYearsList(collectionFrom(yearsResult.value.data).filter(isActiveRecord).map((item) => ({ id: String(item.academicYearId ?? item.id), name: item.academicYearName ?? item.name ?? "" })).filter((item) => item.id && item.name));
       if (levelsResult.status === "fulfilled") setAcademicLevelsList(collectionFrom(levelsResult.value.data).map((item) => ({ id: String(item.academicLevelId ?? item.id), name: item.levelName ?? item.academicLevelName ?? item.name ?? "" })).filter((item) => item.id && item.name));
-      if (facultyResult.status === "fulfilled") {
-        const facultyItems = collectionFrom(facultyResult.value.data);
+      if (staffResult.status === "fulfilled") {
+        const staffItems = collectionFrom(staffResult.value.data);
 
-        const teachers = facultyItems
-          .filter((item) => String(item.status ?? "").toLowerCase() === "active")
+        const teachers = staffItems
+          .filter((item) => {
+            const statusStr = String(item.status ?? item.isActive ?? "Active").toLowerCase();
+            const typeStr = String(item.staffType ?? item.facultyType ?? "Teaching").toLowerCase();
+            return (statusStr === "active" || statusStr === "true") && (typeStr === "teaching" || typeStr === "");
+          })
           .map((item) => ({
-            id: String(item.facultyId ?? item.id ?? ""),
+            id: String(item.staffId ?? item.facultyId ?? item.id ?? ""),
             name:
               item.fullName ||
               `${item.firstName || ""} ${item.lastName || ""}`.trim(),
@@ -328,7 +330,6 @@ export default function SectionManagementPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
-  // `mode` is the single source of truth for add, edit, and preview states.
   const selected = selectedSectionId;
   const edit = mode === "edit";
   const preview = mode === "preview";
@@ -697,7 +698,6 @@ export default function SectionManagementPage() {
                 className="cms-btn cms-btn-primary cms-sec-compact-btn"
                 onClick={openAdd}
               >
-                {/* <Plus size={15} /> */}
                 Add Section
               </button>
             </div>
@@ -882,7 +882,6 @@ export default function SectionManagementPage() {
                               className="cms-btn cms-btn-ghost cms-sec-add-room-btn"
                               onClick={() => openRoomModal(true)}
                             >
-                              {/* <Plus size={13} /> */}
                               Add Room
                             </button>
                           )}
@@ -958,7 +957,6 @@ export default function SectionManagementPage() {
                   <input type="search" placeholder={roomSearchPlaceholder} value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} />
                 </div>
                 <button type="button" className="cms-btn cms-btn-primary cms-room-add-btn" onClick={openRoomModal}>
-                  {/* <Plus size={15} /> */}
                   Add Room
                 </button>
               </div>
@@ -1100,6 +1098,7 @@ function FilterField({ label, value, onChange, options, disabled = false }) {
     </div>
   );
 }
+
 function FormField({
   label,
   value,

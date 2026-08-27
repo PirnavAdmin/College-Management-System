@@ -223,6 +223,7 @@
     facultySubject: "/api/v1/attendance/faculty-subject",
     academicContext: "/api/v1/attendance/academic-context",
     studentMonthlyReport: "/api/v1/attendance/student-monthly-report",
+    studentMonthlyExportCsv: "/api/v1/attendance/student-monthly-report/export/csv",
     studentMonthlyExport: "/api/v1/attendance/student-monthly-report/export/excel",
     summary: "/api/v1/attendance/summary",
     percentage: "/api/v1/attendance/percentage",

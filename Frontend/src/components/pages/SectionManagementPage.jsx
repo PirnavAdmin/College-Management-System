@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Plus, Search, X, CheckCircle2, Pencil } from "lucide-react";
+import { Eye, Plus, Search, X, CheckCircle2, Pencil, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -87,6 +87,8 @@ export default function SectionManagementPage() {
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [savingSection, setSavingSection] = useState(false);
   const [savingRoom, setSavingRoom] = useState(false);
+  const [deletingSectionId, setDeletingSectionId] = useState(null);
+  const [deletingRoomId, setDeletingRoomId] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
@@ -444,6 +446,34 @@ export default function SectionManagementPage() {
     setRoomModalError(null);
     setRoomModal(true);
   };
+  const deleteSection = async (section) => {
+    if (!section?.id || deletingSectionId !== null) return;
+    if (!window.confirm(`Are you sure you want to delete section "${section.name}"?`)) return;
+    setDeletingSectionId(section.id);
+    try {
+      await apiClient.delete(`/api/v1/Sections/${section.id}`);
+      await loadSections();
+      say(`Section "${section.name}" deleted successfully!`);
+    } catch (error) {
+      say(getApiErrorMessage(error));
+    } finally {
+      setDeletingSectionId(null);
+    }
+  };
+  const deleteRoom = async (room) => {
+    if (!room?.id || deletingRoomId !== null) return;
+    if (!window.confirm(`Are you sure you want to delete room "${room.roomCode}"?`)) return;
+    setDeletingRoomId(room.id);
+    try {
+      await apiClient.delete(`/api/v1/rooms/${room.id}`);
+      await loadRooms();
+      say(`Room "${room.roomCode}" deleted successfully!`);
+    } catch (error) {
+      say(getApiErrorMessage(error));
+    } finally {
+      setDeletingRoomId(null);
+    }
+  };
   const save = async (event) => {
     event.preventDefault();
     if (savingSection) return;
@@ -732,6 +762,16 @@ export default function SectionManagementPage() {
                             >
                               <Pencil size={14} />
                             </button>
+                            <button
+                              type="button"
+                              className="cms-sec-action-btn cms-sec-delete-action"
+                              onClick={() => deleteSection(section)}
+                              disabled={deletingSectionId === section.id}
+                              aria-label={`Delete section ${section.name}`}
+                              title={deletingSectionId === section.id ? "Deleting section..." : `Delete section ${section.name}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -932,7 +972,7 @@ export default function SectionManagementPage() {
                   <tbody>{loadingRooms ? <tr><td colSpan="8"><div className="cms-sec-loading"><span className="cms-sec-loader" aria-hidden="true" /><span>Loading data...</span></div></td></tr> : shownRooms.length ? shownRooms.map((room) => <tr key={room.id}>
                     <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td><td><span className="cms-room-name-truncated" title={room.roomName}>{room.roomName}</span></td><td>{room.building}</td><td>{room.floor}</td><td>{room.roomType}</td><td>{room.capacity}</td>
                     <td><span className={`cms-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"}`}>{room.isActive ? "Active" : "Inactive"}</span></td>
-                    <td><div className="cms-sec-table-actions"><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room, true)}><Eye size={14} /></button><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room)}><Pencil size={14} /></button></div></td>
+                    <td><div className="cms-sec-table-actions"><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room, true)}><Eye size={14} /></button><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room)}><Pencil size={14} /></button><button type="button" className="cms-sec-action-btn cms-sec-delete-action" onClick={() => deleteRoom(room)} disabled={deletingRoomId === room.id} aria-label={`Delete room ${room.roomCode}`} title={deletingRoomId === room.id ? "Deleting room..." : `Delete room ${room.roomCode}`}><Trash2 size={14} /></button></div></td>
                   </tr>) : <tr><td colSpan="8" className="cms-empty">No rooms found matching your criteria.</td></tr>}</tbody>
                 </table>
               </div>

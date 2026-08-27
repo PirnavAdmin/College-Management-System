@@ -131,6 +131,9 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
   useEffect(() => {
     if (pathname.startsWith("/dashboard/faculty")) setFacultyOpen(true);
   }, [pathname, setFacultyOpen]);
+  useEffect(() => {
+    if (pathname.startsWith("/dashboard/attendance/")) setAttendanceOpen(true);
+  }, [pathname]);
 
   useEffect(() => {
     const onPointer = (e) => {
@@ -207,7 +210,17 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
                   return (
                     <div key={item.to}>
                       <div className="cms-nav-parent">
-                        <Link to={item.to} className={`cms-nav-link ${active && !item.children.some(childIsActive) ? "is-active" : ""}`} onClick={closeOnMobile}>
+                        <Link
+                          to={item.to}
+                          className={`cms-nav-link ${active && !item.children.some(childIsActive) ? "is-active" : ""}`}
+                          onClick={(event) => {
+                            if (isAttendanceMenu) {
+                              event.preventDefault();
+                              setOpen((v) => !v);
+                            }
+                            closeOnMobile();
+                          }}
+                        >
                           <Icon size={17} /> {item.label}
                         </Link>
                         <button type="button" className={`cms-nav-caret ${isOpen ? "is-open" : ""}`} aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={isOpen} onClick={() => setOpen((v) => !v)}>

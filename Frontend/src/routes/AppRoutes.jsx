@@ -24,6 +24,7 @@ import FeeManagementPage from "@/components/pages/FeeManagementPage.jsx";
 import CertificatesPage, { pageConfig as certificatesConfig } from "@/components/pages/CertificatesPage.jsx";
 import ReportsAnalyticsPage from "@/components/pages/ReportsAnalyticsPage.jsx";
 import StudentProfilePage from "@/components/pages/StudentProfilePage.jsx";
+import StudentEnrollmentPage from "@/components/pages/StudentEnrollmentPage.jsx";
 import Login from "@/features/auth/pages/Login.jsx";
 import Register from "@/features/auth/pages/Register.jsx";
 import ForgotPassword from "@/features/auth/pages/ForgotPassword.jsx";
@@ -65,6 +66,10 @@ function StudentProfileRoute() {
   const { id } = useParams();
   return <StudentProfilePage id={id} />;
 }
+function StudentEnrollmentRoute() {
+  const { id } = useParams();
+  return <StudentEnrollmentPage id={id} />;
+}
 
 export default function AppRoutes() {
   return (
@@ -96,10 +101,12 @@ export default function AppRoutes() {
         <Route path="/dashboard/faculty-allocation" element={<Navigate to="/dashboard/faculty" replace />} />
         <Route path="/dashboard/admission" element={<StudentAdmissionPage />} />
         <Route path="/dashboard/students" element={<StudentManagementPage />} />
+        <Route path="/dashboard/students/:id/enroll" element={<StudentEnrollmentRoute />} />
         <Route path="/dashboard/timetable" element={<TimetablePage />} />
         <Route path="/dashboard/timetable/setup" element={<TimetablePage screen="setup" />} />
         <Route path="/dashboard/timetable/draft" element={<TimetablePage screen="draft" />} />
-        <Route path="/dashboard/timetable/faculty" element={<TimetablePage screen="faculty" />} />
+        <Route path="/dashboard/timetable/generate" element={<TimetablePage screen="generate" />} />
+        <Route path="/dashboard/timetable/faculty" element={<Navigate to="/dashboard/timetable/generate" replace />} />
         <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
         <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
         <Route path="/dashboard/attendance/:area/reports" element={<AttendancePage />} />
@@ -111,7 +118,12 @@ export default function AppRoutes() {
         <Route path="/dashboard/examinations/add" element={<ExaminationPage />} />
         <Route path="/dashboard/marks-entry" element={<MarksEntryPage />} />
         <Route path="/dashboard/results" element={<ResultProcessingPage />} />
-        <Route path="/dashboard/promotion" element={<PromotionPage />} />
+        <Route path="/dashboard/promotion" element={<PromotionPage screen="promotion" />} />
+        <Route path="/dashboard/promotions/eligible" element={<PromotionPage screen="promotion" />} />
+        <Route path="/dashboard/promotions/single" element={<PromotionPage screen="single" />} />
+        <Route path="/dashboard/promotions/allocation" element={<PromotionPage screen="allocation" />} />
+        <Route path="/dashboard/promotions/history" element={<PromotionPage screen="history" />} />
+        <Route path="/dashboard/promotions/report" element={<PromotionPage screen="report" />} />
         <Route path="/dashboard/fee-structure" element={<FeeManagementPage />} />
         <Route path="/dashboard/certificates" element={<CertificatesPage />} />
         <Route path="/dashboard/reports" element={<ReportsAnalyticsPage />} />

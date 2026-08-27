@@ -15,17 +15,17 @@ const PROGRAM_MAPPINGS_STORAGE_KEY = "cms.groupProgramMappings.v1";
 const CONTEXT_FIELD_NAMES = ["board", "year", "level"];
 
 const DEFAULT_PROGRAMS = [
-  { programId: "regular", programName: "Regular", programCode: "REG", status: "Active" },
-  { programId: "jee", programName: "JEE", programCode: "JEE", status: "Active" },
-  { programId: "jee-advanced", programName: "JEE Advanced", programCode: "JEEADV", status: "Active" },
-  { programId: "eapcet", programName: "EAPCET", programCode: "EAPCET", status: "Active" },
-  { programId: "neet", programName: "NEET", programCode: "NEET", status: "Active" },
-  { programId: "neet-advanced", programName: "NEET Advanced", programCode: "NEETADV", status: "Active" },
-  { programId: "ca-foundation", programName: "CA Foundation", programCode: "CAF", status: "Active" },
-  { programId: "cma-foundation", programName: "CMA Foundation", programCode: "CMAF", status: "Active" },
-  { programId: "cuet", programName: "CUET", programCode: "CUET", status: "Active" },
-  { programId: "ipmat", programName: "IPMAT", programCode: "IPMAT", status: "Active" },
-  { programId: "clat", programName: "CLAT", programCode: "CLAT", status: "Active" },
+  { programId: "regular", backendProgramId: 1, programName: "Regular", programCode: "REG", status: "Active" },
+  { programId: "jee", backendProgramId: 2, programName: "JEE", programCode: "JEE", status: "Active" },
+  { programId: "jee-advanced", backendProgramId: 3, programName: "JEE Advanced", programCode: "JEEADV", status: "Active" },
+  { programId: "eapcet", backendProgramId: 4, programName: "EAPCET", programCode: "EAPCET", status: "Active" },
+  { programId: "neet", backendProgramId: 5, programName: "NEET", programCode: "NEET", status: "Active" },
+  { programId: "neet-advanced", backendProgramId: 6, programName: "NEET Advanced", programCode: "NEETADV", status: "Active" },
+  { programId: "ca-foundation", backendProgramId: 7, programName: "CA Foundation", programCode: "CAF", status: "Active" },
+  { programId: "cma-foundation", backendProgramId: 8, programName: "CMA Foundation", programCode: "CMAF", status: "Active" },
+  { programId: "cuet", backendProgramId: 9, programName: "CUET", programCode: "CUET", status: "Active" },
+  { programId: "ipmat", backendProgramId: 10, programName: "IPMAT", programCode: "IPMAT", status: "Active" },
+  { programId: "clat", backendProgramId: 11, programName: "CLAT", programCode: "CLAT", status: "Active" },
 ];
 
 const DEFAULT_GROUP_PROGRAM_CODES = {
@@ -106,15 +106,20 @@ const normalizeAcademicLevelOption = (item) => optionFrom(
 
 const uniqueByValue = (options) => Array.from(new Map(options.filter(Boolean).map((item) => [String(item.value), item])).values());
 
-const getMappedLevelsForBoard = (masters, boardId) => {
-  const levels = masters.levels || [];
-  const board = (masters.boards || []).find((item) => String(item.value) === String(boardId));
-  if (!boardId || !board) return [];
+const getLevelsForBoardOption = (levels, board) => {
+  if (!board) return [];
   const mappedIds = new Set(board.academicLevelIds || []);
   if (mappedIds.size) return levels.filter((level) => mappedIds.has(String(level.value)));
   const mappedNames = new Set((board.academicLevelNames || []).map((name) => name.toLowerCase()));
   if (mappedNames.size) return levels.filter((level) => mappedNames.has(String(level.label).toLowerCase()));
   return [];
+};
+
+const getMappedLevelsForBoard = (masters, boardId) => {
+  const levels = masters.levels || [];
+  const board = (masters.boards || []).find((item) => String(item.value) === String(boardId));
+  if (!boardId || !board) return [];
+  return getLevelsForBoardOption(levels, board);
 };
 
 const getMappedYearsForBoard = (masters, boardId) => {
@@ -139,7 +144,7 @@ const pickActiveYear = (masters, boardId, currentYear = "") => {
 const pickMappedLevel = (masters, boardId, currentLevel = "") => {
   const levels = getMappedLevelsForBoard(masters, boardId);
   if (currentLevel && levels.some((level) => String(level.value) === String(currentLevel))) return currentLevel;
-  return levels.length === 1 ? levels[0].value : "";
+  return levels[0]?.value || "";
 };
 
 const normalizeStatus = (item) => {
@@ -183,6 +188,19 @@ const optionLabel = (options, value, fallback = "-") => (
   options.find((option) => String(option.value) === String(value))?.label || fallback
 );
 
+const backendProgramIdFor = (programId) => {
+  const direct = Number(programId);
+  if (Number.isInteger(direct) && direct > 0) return direct;
+  const program = getProgramMaster().find((item) => String(item.programId) === String(programId));
+  const mapped = Number(program?.backendProgramId);
+  return Number.isInteger(mapped) && mapped > 0 ? mapped : null;
+};
+
+const programIdFromBackendId = (backendProgramId) => {
+  const program = getProgramMaster().find((item) => String(item.backendProgramId || item.programId) === String(backendProgramId));
+  return String(program?.programId || backendProgramId);
+};
+
 const buildGroupFilterFields = (masters, values) => (
   pageConfig.filters.map((field) => {
     if (field.name === "board") return { ...field, options: masters.boards || [] };
@@ -216,14 +234,26 @@ const normalizeGroupForm = (item) => {
   };
 };
 
-const toPayload = (formData) => ({
-  boardId: Number(formData.board),
-  academicYearId: Number(formData.year),
-  academicLevelId: Number(formData.level),
-  groupName: formData.name,
-  groupCode: formData.code,
-  isActive: formData.status === "Active",
-});
+const toPayload = (formData, selectedProgramIds = []) => {
+  const backendProgramIds = Array.from(new Set(selectedProgramIds
+    .map(backendProgramIdFor)
+    .filter((programId) => Number.isInteger(programId) && programId > 0)));
+  const payload = {
+    board: formData.boardName || formData.board,
+    groupName: formData.name,
+    groupCode: formData.code,
+    academicLevel: formData.levelName || formData.level,
+    isActive: formData.status === "Active",
+  };
+  if (formData.board) payload.boardId = Number(formData.board);
+  if (formData.year) payload.academicYearId = Number(formData.year);
+  if (formData.level) payload.academicLevelId = Number(formData.level);
+  if (backendProgramIds.length) {
+    payload.programIds = backendProgramIds;
+    payload.programs = programsForIds(selectedProgramIds);
+  }
+  return payload;
+};
 
 const readCreatedGroupId = (response) => read(responseData(response) || {}, "groupId", "GroupId", "id", "Id");
 
@@ -282,9 +312,35 @@ const saveProgramMapping = (groupId, groupCode, programIds) => {
   storageSet(PROGRAM_MAPPINGS_STORAGE_KEY, mappings);
 };
 
+const programsForIds = (programIds) => {
+  const selectedIds = new Set(programIds.map((programId) => String(programId)));
+  return getProgramMaster()
+    .filter((program) => selectedIds.has(String(program.programId)))
+    .map((program) => ({
+      programId: backendProgramIdFor(program.programId) || program.programId,
+      programName: program.programName,
+      programCode: program.programCode,
+      status: program.status,
+    }));
+};
+
 const programIdsForGroup = (groupId, groupCode) => {
   const mapping = groupId ? getProgramMappings()[String(groupId)] : null;
   return mapping?.programIds?.length ? mapping.programIds : defaultProgramIdsForCode(groupCode);
+};
+
+const fetchProgramIdsForGroup = async (groupId, groupCode) => {
+  if (!groupId) return defaultProgramIdsForCode(groupCode);
+  try {
+    const response = await apiClient.get(apiEndpoints.groups.getPrograms(groupId));
+    const programIds = getCollection(response.data)
+      .map((program) => read(program, "programId", "ProgramId", "id", "Id"))
+      .filter((programId) => programId !== undefined && programId !== null && programId !== "")
+      .map(programIdFromBackendId);
+    return programIds.length ? programIds : programIdsForGroup(groupId, groupCode);
+  } catch {
+    return programIdsForGroup(groupId, groupCode);
+  }
 };
 
 function programNamesForGroup(groupId, groupCode) {
@@ -309,7 +365,7 @@ const findSavedGroupId = async (values) => {
       groupCodeKey(group.code) === groupCodeKey(values.code)
       && String(group.boardId) === String(values.board)
       && String(group.year) === String(values.year)
-      && String(group.levelId) === String(values.level)
+      && (!values.level || String(group.levelId) === String(values.level))
     ));
   return savedGroup?.id;
 };
@@ -324,6 +380,7 @@ const matchesFilters = (row, search, filters) => {
 
 let groupMastersPromise = null;
 const activeYearByBoardPromises = new Map();
+const academicLevelByBoardPromises = new Map();
 
 const readActiveYearFromResponse = (payload, boardId) => {
   const direct = normalizeAcademicYearOption(responseData({ data: payload }) || payload);
@@ -346,6 +403,28 @@ const loadActiveYearForBoard = async (boardId, masters) => {
   }
   const activeYear = await activeYearByBoardPromises.get(key);
   return activeYear || pickActiveYear(masters, boardId);
+};
+
+const readAcademicLevelFromBoardResponse = (payload, boardId, masters) => {
+  const board = normalizeBoardOption(responseData({ data: payload }) || payload);
+  if (board?.value && String(board.value) !== String(boardId)) return "";
+  return getLevelsForBoardOption(masters.levels || [], board)[0]?.value || "";
+};
+
+const loadAcademicLevelForBoard = async (boardId, masters, currentLevel = "") => {
+  if (!boardId) return "";
+  const mappedLevel = pickMappedLevel(masters, boardId, currentLevel);
+  if (mappedLevel) return mappedLevel;
+  const key = String(boardId);
+  if (!academicLevelByBoardPromises.has(key)) {
+    academicLevelByBoardPromises.set(key, apiClient.get(apiEndpoints.boards.getById(boardId))
+      .then((response) => readAcademicLevelFromBoardResponse(response.data, boardId, masters))
+      .catch((error) => {
+        academicLevelByBoardPromises.delete(key);
+        throw error;
+      }));
+  }
+  return academicLevelByBoardPromises.get(key);
 };
 
 const loadGroupMasters = async () => {
@@ -380,14 +459,16 @@ const loadGroupMasters = async () => {
 
 const groupApi = {
   fetchRows: async ({ search = "", filters = {} } = {}) => {
+    const endpoint = filters.board
+      ? apiEndpoints.groups.getByBoard(filters.board)
+      : apiEndpoints.groups.getAll;
     const params = {
       search: search || undefined,
-      boardId: filters.board || undefined,
       academicYearId: filters.year || undefined,
       academicLevelId: filters.level || undefined,
       isActive: filters.status ? filters.status === "Active" : undefined,
     };
-    const response = await apiClient.get(apiEndpoints.groups.getAll, { params });
+    const response = await apiClient.get(endpoint, { params });
     return getCollection(response.data)
       .map(normalizeGroup)
       .filter((row) => row.id)
@@ -398,7 +479,7 @@ const groupApi = {
     return normalizeGroupForm(responseData(response));
   },
   saveRow: async (values, groupId, selectedProgramIds) => {
-    const payload = toPayload(values);
+    const payload = toPayload(values, selectedProgramIds);
     if (groupId) {
       const response = await apiClient.put(apiEndpoints.groups.update(groupId), payload);
       saveProgramMapping(groupId, values.code, selectedProgramIds);
@@ -611,15 +692,18 @@ function CourseGroupFormPage() {
         setContextOptions(masters);
         if (loadedGroup) {
           setValues(loadedGroup);
-          setSelectedProgramIds(programIdsForGroup(id, loadedGroup.code));
+          setSelectedProgramIds(await fetchProgramIdsForGroup(id, loadedGroup.code));
         } else if (initialContext.board) {
-          const activeYear = await loadActiveYearForBoard(initialContext.board, masters);
+          const [activeYear, academicLevel] = await Promise.all([
+            loadActiveYearForBoard(initialContext.board, masters),
+            loadAcademicLevelForBoard(initialContext.board, masters, initialContext.level),
+          ]);
           if (ignore) return;
           setValues((current) => ({
             ...current,
             board: initialContext.board,
             year: activeYear,
-            level: pickMappedLevel(masters, initialContext.board, initialContext.level),
+            level: academicLevel,
           }));
         }
       } catch (error) {
@@ -644,10 +728,18 @@ function CourseGroupFormPage() {
     if (id || !values.board) return undefined;
     const currentRequest = activeYearRequest.current + 1;
     activeYearRequest.current = currentRequest;
-    loadActiveYearForBoard(values.board, contextOptions)
-      .then((year) => {
-        if (activeYearRequest.current === currentRequest && year && values.year !== year) {
-          setValues((current) => ({ ...current, year }));
+    Promise.all([
+      loadActiveYearForBoard(values.board, contextOptions),
+      loadAcademicLevelForBoard(values.board, contextOptions, values.level),
+    ])
+      .then(([year, academicLevel]) => {
+        if (activeYearRequest.current === currentRequest && (year || academicLevel)) {
+          setValues((current) => {
+            const nextYear = year || current.year;
+            const nextLevel = academicLevel || current.level;
+            if (current.year === nextYear && current.level === nextLevel) return current;
+            return { ...current, year: nextYear, level: nextLevel };
+          });
         }
       })
       .catch((error) => {
@@ -661,23 +753,24 @@ function CourseGroupFormPage() {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!values.board || !values.year || !values.level) {
-      setToastType("error");
-      setToast("Please select Board, Academic Year and Academic Level before adding a group.");
-      return;
-    }
     if (!validate()) return;
     setSaving(true);
     try {
-      const validationErrors = await groupApi.validateValues(values, id);
+      const saveValues = { ...values };
+      if (saveValues.board && !saveValues.level) {
+        saveValues.level = await loadAcademicLevelForBoard(saveValues.board, contextOptions, saveValues.level);
+      }
+      saveValues.boardName = optionLabel(contextOptions.boards, saveValues.board, saveValues.board);
+      saveValues.levelName = optionLabel(contextOptions.levels, saveValues.level, saveValues.level);
+      const validationErrors = await groupApi.validateValues(saveValues, id);
       if (validationErrors && Object.keys(validationErrors).length) {
         setErrors(validationErrors);
         return;
       }
-      await groupApi.saveRow(values, id, selectedProgramIds);
+      await groupApi.saveRow(saveValues, id, selectedProgramIds);
       setToastType("success");
       setToast(`Group ${id ? "updated" : "created"} successfully`);
-      navigate(listPath);
+      navigate(`/dashboard/courses${makeContextQuery(saveValues)}`);
     } catch (error) {
       setToastType("error");
       setToast(getApiErrorMessage(error));
@@ -774,8 +867,11 @@ function CourseGroupListPage() {
         setMasterOptions(masters);
         let nextFilters = filters;
         if (filters.board) {
-          const activeYear = await loadActiveYearForBoard(filters.board, masters);
-          nextFilters = { ...filters, year: activeYear };
+          const [activeYear, academicLevel] = await Promise.all([
+            loadActiveYearForBoard(filters.board, masters),
+            loadAcademicLevelForBoard(filters.board, masters, filters.level),
+          ]);
+          nextFilters = { ...filters, year: activeYear, level: academicLevel };
           setFilters(nextFilters);
           updateRouteContext(nextFilters);
         }
@@ -811,15 +907,18 @@ function CourseGroupListPage() {
       const currentRequest = activeYearRequest.current + 1;
       activeYearRequest.current = currentRequest;
       if (value) {
-        loadActiveYearForBoard(value, masterOptions)
-          .then((year) => {
+        Promise.all([
+          loadActiveYearForBoard(value, masterOptions),
+          loadAcademicLevelForBoard(value, masterOptions, filters.level),
+        ])
+          .then(([year, academicLevel]) => {
             if (activeYearRequest.current !== currentRequest) return;
             setFilters((current) => {
               if (current.board !== value) return current;
-              const withYear = { ...current, year };
-              updateRouteContext(withYear);
-              loadRows(search, withYear);
-              return withYear;
+              const withContext = { ...current, year, level: academicLevel };
+              updateRouteContext(withContext);
+              loadRows(search, withContext);
+              return withContext;
             });
           })
           .catch((err) => {

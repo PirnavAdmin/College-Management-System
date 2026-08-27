@@ -1,435 +1,88 @@
-.timetable-module{--tt-blue:#2554d9;--tt-ink:#14233c;--tt-muted:#7B8275;--tt-line:#d7dfeb;--tt-soft:#f6f8fc;max-width:1435px;margin:0 auto;padding:0 0 30px;color:var(--tt-ink)}
-.timetable-module *{box-sizing:border-box}.ttm-card{overflow:hidden;border:1px solid var(--tt-line);border-radius:16px;background:#fff;box-shadow:0 10px 28px #171A170b}.ttm-card-title{display:flex;gap:13px;padding:22px 26px;border-bottom:1px solid var(--tt-line)}.ttm-card-title svg{color:var(--tt-blue)}.ttm-card-title h2,.ttm-card-title p{margin:0}.ttm-card-title p,.ttm-draft-meta span,.ttm-faculty-select span{color:var(--tt-muted);font-size:13px}.ttm-setup,.ttm-generate{padding-bottom:24px}.ttm-setup h3,.ttm-generate h3{margin:25px 26px 12px;font-size:14px}.ttm-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;padding:22px 26px}.timetable-module label{display:grid;gap:7px;color:#52647e;font-size:12px;font-weight:700;text-transform:capitalize}.timetable-module select{width:100%;min-height:42px;padding:0 11px;border:1px solid var(--tt-line);border-radius:9px;background:#fff;color:var(--tt-ink);font:14px inherit}.ttm-days,.ttm-check-list{display:flex;flex-wrap:wrap;gap:10px;padding:0 26px}.ttm-days label,.ttm-check-list label{display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid var(--tt-line);border-radius:9px;background:var(--tt-soft);font-size:13px}.ttm-days input,.ttm-check-list input{accent-color:var(--tt-blue)}
-.ttm-primary,.ttm-secondary{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border:1px solid var(--tt-line);border-radius:10px;background:#fff;color:var(--tt-ink);font:600 14px inherit;text-decoration:none;white-space:nowrap;cursor:pointer;transition:.18s ease}.ttm-primary{border-color:var(--tt-blue);background:var(--tt-blue);color:#fff;box-shadow:0 6px 14px #2554d933}.ttm-primary:hover{background:#1e46c5}.ttm-secondary:hover{border-color:#aebed4;background:var(--tt-soft)}.ttm-primary:disabled,.ttm-secondary:disabled{opacity:.45;cursor:not-allowed}.ttm-screen-nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:24px 26px 0;padding-top:20px;border-top:1px solid var(--tt-line)}.ttm-screen-nav .ttm-primary,.ttm-screen-nav .ttm-secondary{min-width:100px}.ttm-info{display:flex;gap:9px;align-items:flex-start;margin:20px 26px;padding:12px 14px;border-radius:9px;background:#edf4ff;color:#31568f;font-size:13px}.ttm-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.ttm-success{margin:14px 26px 0;color:#078654;font-size:13px}
-.ttm-period-table{display:grid;grid-template-columns:100px 1fr 1fr 100px;margin:0 26px 20px;border-top:1px solid var(--tt-line);border-left:1px solid var(--tt-line)}.ttm-period-table>*{padding:11px;border-right:1px solid var(--tt-line);border-bottom:1px solid var(--tt-line);font-size:13px}.ttm-period-table>div{background:var(--tt-soft);color:var(--tt-muted);font-size:11px;font-weight:800;text-transform:uppercase}.ttm-period-table .break,.ttm-cell.is-break,.ttm-period.is-break{background:#fff8e8;color:#9a6700}.ttm-draft-meta{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid var(--tt-line)}.ttm-draft-meta div{display:grid;gap:4px}.ttm-draft-meta b{padding:5px 9px;border-radius:99px;background:#fff5d9;color:#9a6700;font-size:11px}.ttm-draft-meta b[data-status="APPROVED"]{background:#e8f7ef;color:#078654}.ttm-draft-meta b[data-status="PUBLISHED"]{background:#eaf1ff;color:#2554d9}.ttm-tabs{display:flex;gap:6px;padding:15px 20px}.ttm-tabs button{padding:8px 13px;border:0;border-radius:8px;background:transparent;color:var(--tt-muted);font-weight:700;cursor:pointer}.ttm-tabs .active{background:#eaf1ff;color:var(--tt-blue)}.ttm-grid-wrap{overflow:auto;border-top:1px solid var(--tt-line)}.ttm-grid{display:grid;grid-template-columns:110px repeat(6,minmax(150px,1fr));min-width:1010px}.ttm-grid-head{padding:14px;border-right:1px solid var(--tt-line);border-bottom:1px solid var(--tt-line);background:var(--tt-soft);color:var(--tt-muted);font-size:11px;font-weight:800;text-transform:uppercase}.ttm-period{min-height:98px;padding:14px;border-right:1px solid var(--tt-line);border-bottom:1px solid var(--tt-line);background:#fbfcfe;font-weight:800}.ttm-period small{display:block;margin-top:5px;color:var(--tt-muted);font-size:11px;font-weight:500}.ttm-cell{min-height:98px;padding:7px;border-right:1px solid var(--tt-line);border-bottom:1px solid var(--tt-line)}.ttm-slot,.ttm-empty-slot{position:relative;width:100%;min-height:82px;padding:10px;border:0;border-left:3px solid var(--tt-blue);border-radius:7px;background:#eef3ff;text-align:left;cursor:pointer}.ttm-slot strong,.ttm-slot span,.ttm-slot small{display:block}.ttm-slot strong{font-size:13px}.ttm-slot span,.ttm-slot small{margin-top:3px;color:#52647e;font-size:11px}.ttm-slot svg{position:absolute;right:8px;top:8px;width:13px;color:var(--tt-blue);opacity:0}.ttm-slot:hover svg{opacity:1}.ttm-empty-slot{display:grid;place-items:center;border-left-color:#E6E7DE;background:#fafcff;color:#8F9789;font-size:12px}.ttm-empty-slot svg{width:15px}.ttm-overlay{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:18px;background:#11141180}.ttm-modal{width:min(100%,520px);max-height:90vh;overflow:auto;border-radius:14px;background:#fff;box-shadow:0 24px 64px #11141140}.ttm-modal header{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;border-bottom:1px solid var(--tt-line)}.ttm-modal header h2{margin:0;font-size:18px}.ttm-modal header button{border:0;background:transparent;font-size:23px;cursor:pointer}.ttm-modal-body{display:grid;gap:15px;padding:20px}.ttm-modal-body p{margin:0;color:var(--tt-muted)}.ttm-modal-body label{font-size:12px}.ttm-validation{display:grid;gap:10px;margin:0;padding:0;list-style:none;color:#078654;font-size:14px}.ttm-warning{padding:12px;border-radius:8px;background:#fff8e8;color:#9a6700;font-size:13px}.ttm-faculty-select{display:flex;align-items:center;gap:28px;padding:22px 24px;border-bottom:1px solid var(--tt-line)}.ttm-faculty-select label{width:260px}.ttm-faculty-select>div{display:grid;grid-template-columns:30px 1fr;gap:2px}.ttm-faculty-select svg{grid-row:span 2;color:var(--tt-blue)}
-@media(max-width:850px){.ttm-fields{grid-template-columns:repeat(2,1fr)}}@media(max-width:560px){.ttm-fields{grid-template-columns:1fr}.ttm-period-table{grid-template-columns:70px 1fr 1fr 70px;margin:0 14px 18px}.ttm-period-table>*{padding:8px;font-size:11px}.ttm-faculty-select{align-items:stretch;flex-direction:column}.ttm-faculty-select label{width:100%}.ttm-actions{width:100%}.ttm-actions button{flex:1}.ttm-card-title,.ttm-fields{padding-left:14px;padding-right:14px}.ttm-days,.ttm-check-list{padding:0 14px}.ttm-screen-nav{margin:20px 14px 0;gap:8px}.ttm-screen-nav .ttm-primary,.ttm-screen-nav .ttm-secondary{flex:1;padding:0 12px}.ttm-screen-nav .ttm-secondary{margin-right:0}}
-
-/* Board Management theme alignment for every Timetable workflow screen. */
-.timetable-module {
-  --tt-blue: var(--cms-primary);
-  --tt-ink: var(--cms-text);
-  --tt-muted: var(--cms-muted);
-  --tt-line: var(--cms-border);
-  --tt-soft: var(--cms-subtle);
-  color: var(--cms-text);
-}
-
-.timetable-module .ttm-card {
-  border-color: var(--cms-border);
-  border-radius: var(--cms-radius);
-  background: var(--cms-surface);
-  box-shadow: var(--cms-shadow);
-}
-
-.timetable-module .ttm-card-title,
-.timetable-module .ttm-draft-meta,
-.timetable-module .ttm-faculty-select,
-.timetable-module .ttm-grid-wrap,
-.timetable-module .ttm-screen-nav {
-  border-color: var(--cms-border);
-}
-
-.timetable-module .ttm-card-title svg,
-.timetable-module .ttm-faculty-select svg,
-.timetable-module .ttm-slot svg {
-  color: var(--cms-primary);
-}
-
-.timetable-module label,
-.timetable-module .ttm-card-title h2,
-.timetable-module .ttm-period,
-.timetable-module .ttm-slot strong {
-  color: var(--cms-text);
-}
-
-.timetable-module select,
-.timetable-module input,
-.timetable-module textarea {
-  border-color: var(--cms-border) !important;
-  background: var(--cms-surface) !important;
-  color: var(--cms-text) !important;
-}
-
-.timetable-module select:focus,
-.timetable-module input:focus,
-.timetable-module textarea:focus {
-  border-color: var(--cms-primary-border) !important;
-  outline: none;
-  box-shadow: 0 0 0 3px var(--cms-primary-soft);
-}
-
-.timetable-module .ttm-days label,
-.timetable-module .ttm-check-list label {
-  border-color: var(--cms-border);
-  background: var(--cms-subtle);
-  color: var(--cms-text);
-}
-
-.timetable-module .ttm-period-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 24px 26px 12px;
-}
-
-.timetable-module .ttm-period-header h3 { margin: 0; }
-.timetable-module .ttm-period-table-editing {
-  grid-template-columns: 1fr 1.2fr 1.2fr 1.2fr 50px;
-  align-items: center;
-  gap: 8px;
-}
-.timetable-module .ttm-period-input {
-  width: 100%;
-  min-height: 38px;
-  padding: 6px 9px;
-  border-radius: 9px;
-  font-size: 13px;
-}
-.timetable-module .ttm-period-action-heading { text-align: center; }
-.timetable-module .ttm-period-delete {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  margin: auto;
-  padding: 0;
-  border: 1px solid var(--cms-red-soft);
-  border-radius: 10px;
-  background: var(--cms-red-soft);
-  color: var(--cms-red);
-  cursor: pointer;
-}
-.timetable-module .ttm-period-delete:disabled { opacity: 0.45; cursor: not-allowed; }
-.timetable-module .ttm-period-add { display: flex; justify-content: flex-start; margin-top: 12px; }
-
-.timetable-module .ttm-primary,
-.timetable-module .ttm-secondary {
-  min-height: 40px;
-  padding: 0 15px;
-  border-radius: 10px;
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
-.timetable-module .ttm-primary {
-  border-color: var(--cms-primary) !important;
-  background: var(--cms-primary) !important;
-  color: #fff !important;
-  box-shadow: 0 6px 14px rgba(111, 132, 0, 0.22);
-}
-
-.timetable-module .ttm-primary:hover:not(:disabled) {
-  border-color: var(--cms-primary-dark) !important;
-  background: var(--cms-primary-dark) !important;
-  transform: translateY(-1px);
-}
-
-.timetable-module .ttm-secondary {
-  border-color: var(--cms-border) !important;
-  background: var(--cms-surface) !important;
-  color: var(--cms-text) !important;
-  box-shadow: none;
-}
-
-.timetable-module .ttm-secondary:hover:not(:disabled) {
-  border-color: var(--cms-primary-border) !important;
-  background: var(--cms-primary-soft) !important;
-  color: var(--cms-primary) !important;
-}
-
-.timetable-module :is(.ttm-primary, .ttm-secondary):focus-visible {
-  outline: 3px solid var(--cms-primary-soft);
-  outline-offset: 2px;
-}
-
-.timetable-module :is(.ttm-primary, .ttm-secondary):disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.timetable-module .ttm-info {
-  border: 1px solid var(--cms-primary-border);
-  background: var(--cms-primary-soft);
-  color: var(--cms-primary-dark);
-}
-
-.timetable-module .ttm-period-table > div,
-.timetable-module .ttm-grid-head,
-.timetable-module .ttm-tabs .active {
-  background: var(--cms-subtle);
-  color: var(--cms-muted);
-}
-
-.timetable-module .ttm-tabs .active {
-  color: var(--cms-primary);
-}
-
-.timetable-module .ttm-draft-meta b[data-status="PUBLISHED"] {
-  background: var(--cms-primary-soft);
-  color: var(--cms-primary);
-}
-
-.timetable-module .ttm-view-switcher {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 20px;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--cms-border);
-}
-
-.timetable-module .ttm-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--cms-border);
-  border-radius: 10px;
-  background: var(--cms-surface);
-  color: var(--cms-text);
-  font-size: 13.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.timetable-module .ttm-tab-btn:hover:not(.active) {
-  border-color: var(--cms-primary-border);
-  background: var(--cms-primary-soft);
-  color: var(--cms-primary);
-}
-
-.timetable-module .ttm-tab-btn.active {
-  border-color: var(--cms-primary);
-  background: var(--cms-primary);
-  color: #fff;
-  box-shadow: 0 6px 14px rgba(111, 132, 0, 0.2);
-}
-
-.timetable-module .ttm-period,
-.timetable-module .ttm-cell,
-.timetable-module .ttm-empty-slot {
-  border-color: var(--cms-border);
-  background: var(--cms-surface);
-}
-
-.timetable-module .ttm-slot {
-  border-left-color: var(--cms-primary);
-  background: var(--cms-primary-soft);
-  color: var(--cms-text);
-}
-
-.timetable-module .ttm-slot span,
-.timetable-module .ttm-slot small {
-  color: var(--cms-muted);
-}
-
-.timetable-module .ttm-modal {
-  border: 1px solid var(--cms-border);
-  background: var(--cms-elevated);
-  color: var(--cms-text);
-  box-shadow: var(--cms-shadow-lg);
-}
-
-.timetable-module .ttm-modal header {
-  border-color: var(--cms-border);
-  background: var(--cms-subtle);
-}
-
-.timetable-module .ttm-modal header button {
-  color: var(--cms-muted);
-}
-
-[data-theme="dark"] .timetable-module .ttm-info {
-  color: #c7d882;
-}
-
-[data-theme="dark"] .timetable-module .ttm-period-table .break,
-[data-theme="dark"] .timetable-module .ttm-cell.is-break,
-[data-theme="dark"] .timetable-module .ttm-period.is-break {
-  background: rgba(183, 121, 31, 0.12);
-  color: #f0c36d;
-}
-
-/* Generate Timetable: Board & Academic Year Management visual contract. */
-.ttm-generate-back {
-  min-height: 40px;
-  padding-inline: 15px;
-  border-radius: 10px;
-}
-
-.timetable-module:has(.ttm-generate) {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-  padding-bottom: 24px;
-}
-
-.timetable-module .ttm-generate {
-  padding: 0;
-  border: 1px solid var(--cms-border);
-  border-radius: 12px;
-  background: var(--cms-surface);
-  color: var(--cms-text);
-  box-shadow: 0 3px 12px rgba(15, 23, 42, 0.04);
-}
-
-.timetable-module .ttm-generate .ttm-fields {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 18px;
-  padding: 24px 26px 20px;
-}
-
-.timetable-module .ttm-generate label {
-  gap: 8px;
-  color: var(--cms-text);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.timetable-module .ttm-generate select {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--cms-border) !important;
-  border-radius: 10px;
-  background-color: var(--cms-surface) !important;
-  color: var(--cms-text) !important;
-  font-size: 13.5px;
-  font-weight: 550;
-  cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.timetable-module .ttm-generate select:hover:not(:disabled) {
-  border-color: var(--cms-primary-border) !important;
-  background-color: var(--cms-hover) !important;
-}
-
-.timetable-module .ttm-generate select:focus {
-  border-color: var(--cms-primary) !important;
-  outline: none;
-  box-shadow: 0 0 0 3px var(--cms-primary-soft);
-}
-
-.timetable-module .ttm-generate select:disabled {
-  border-color: var(--cms-border) !important;
-  background-color: var(--cms-subtle) !important;
-  color: var(--cms-muted) !important;
-  -webkit-text-fill-color: var(--cms-muted);
-  opacity: 0.75;
-  cursor: not-allowed;
-}
-
-.timetable-module .ttm-generate h3 {
-  margin: 22px 26px 12px;
-  color: var(--cms-text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.timetable-module .ttm-generate .ttm-check-list {
-  min-height: 24px;
-  padding: 0 26px;
-  color: var(--cms-muted);
-}
-
-.timetable-module .ttm-generate .ttm-check-list > span,
-.timetable-module .ttm-generate .ttm-empty {
-  margin: 0;
-  color: var(--cms-muted);
-  font-size: 13.5px;
-}
-
-.timetable-module .ttm-generate .ttm-check-list label {
-  padding: 8px 12px;
-  border-color: var(--cms-border);
-  background: var(--cms-subtle);
-}
-
-.timetable-module .ttm-generate .ttm-check-list input {
-  accent-color: var(--cms-primary);
-}
-
-.timetable-module .ttm-generate .ttm-info {
-  align-items: center;
-  margin: 22px 26px 0;
-  padding: 14px 16px;
-  border: 1px solid var(--cms-primary-border);
-  border-radius: 10px;
-  background: var(--cms-primary-soft);
-  color: var(--cms-text);
-  font-size: 13.5px;
-  line-height: 1.45;
-}
-
-.timetable-module .ttm-generate .ttm-info svg {
-  flex: 0 0 auto;
-  color: var(--cms-primary);
-}
-
-.timetable-module .ttm-generate .ttm-screen-nav {
-  min-height: 66px;
-  margin: 24px 0 0;
-  padding: 12px 26px;
-  border-top: 1px solid var(--cms-border);
-  background: var(--cms-subtle);
-}
-
-.timetable-module .ttm-generate .ttm-screen-nav .cms-btn {
-  min-width: 112px;
-  min-height: 40px;
-  border-radius: 10px;
-  font-weight: 700;
-}
-
-.timetable-module .ttm-generate .ttm-screen-nav .cms-btn-primary:disabled {
-  border-color: var(--cms-border);
-  background: var(--cms-hover);
-  color: var(--cms-muted);
-  opacity: 0.6;
-}
-
-[data-theme="dark"] .ttm-generate-back {
-  border-color: var(--cms-border);
-  background: var(--cms-surface);
-  color: var(--cms-text);
-}
-
-[data-theme="dark"] .timetable-module .ttm-generate,
-[data-theme="dark"] .timetable-module .ttm-generate select:not(:disabled) {
-  background: var(--cms-surface) !important;
-}
-
-[data-theme="dark"] .timetable-module .ttm-generate select {
-  color-scheme: dark;
-}
-
-@media (max-width: 1100px) {
-  .timetable-module .ttm-generate .ttm-fields {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 560px) {
-  .timetable-module .ttm-generate .ttm-fields {
-    grid-template-columns: 1fr;
-    gap: 14px;
-    padding: 18px 14px;
-  }
-  .timetable-module .ttm-generate h3 { margin: 18px 14px 10px; }
-  .timetable-module .ttm-generate .ttm-check-list { padding-inline: 14px; }
-  .timetable-module .ttm-generate .ttm-info { margin: 18px 14px 0; }
-  .timetable-module .ttm-generate .ttm-screen-nav {
-    align-items: stretch;
-    flex-direction: column;
-    padding: 14px;
-  }
-  .timetable-module .ttm-generate .ttm-screen-nav .cms-btn { width: 100%; }
-}
+.timetable-module { width: 100%; min-width: 0; color: var(--cms-text); }
+.timetable-module, .timetable-module *, .timetable-module *::before, .timetable-module *::after { box-sizing: border-box; }
+.timetable-module .ttm-page { width: min(100%, 1280px); margin: 0 auto; padding: 4px 0 28px; }
+.timetable-module .ttm-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.timetable-module .ttm-card { min-width: 0; overflow: hidden; border: 1px solid var(--cms-border); border-radius: var(--cms-radius); background: var(--cms-surface); box-shadow: var(--cms-shadow); }
+.timetable-module .ttm-context, .timetable-module .ttm-form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 20px 22px; }
+.timetable-module .ttm-form-grid { padding: 0; }
+.timetable-module .ttm-field { display: grid; min-width: 0; gap: 6px; color: var(--cms-text); font-size: 12px; font-weight: 650; }
+/* Reserve the same label height in modal form grids so every control shares one baseline. */
+.timetable-module .ttm-form-grid .ttm-field { grid-template-rows: 32px 40px; }
+.timetable-module .ttm-form-grid .ttm-field > span { display: flex; align-items: end; line-height: 1.35; }
+.timetable-module .ttm-field > input, .timetable-module .ttm-field > select, .timetable-module .ttm-break-row > input, .timetable-module .ttm-break-row > select { width: 100%; min-width: 0; height: 40px; padding: 8px 10px; border: 1px solid var(--cms-border); border-radius: 8px; outline: 0; background: var(--cms-surface); color: var(--cms-text); font: inherit; }
+.timetable-module .ttm-field > input:focus, .timetable-module .ttm-field > select:focus, .timetable-module .ttm-break-row > input:focus, .timetable-module .ttm-break-row > select:focus { border-color: var(--cms-primary) !important; box-shadow: 0 0 0 3px var(--cms-primary-soft); }
+.timetable-module .cms-btn, .timetable-module .ttm-actions > button, .timetable-module .ttm-break-row > button { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 8px 13px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); color: var(--cms-text); font: 650 13px/1.2 inherit; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.timetable-module .cms-btn-primary { border-color: var(--cms-primary); background: var(--cms-primary); color: #fff; }
+.timetable-module .cms-btn-primary:hover:not(:disabled) { background: var(--cms-primary-hover); }
+.timetable-module .cms-btn-ghost:hover:not(:disabled), .timetable-module .ttm-actions > button:hover, .timetable-module .ttm-break-row > button:hover { border-color: var(--cms-primary-border); background: var(--cms-primary-soft); color: var(--cms-primary); }
+.timetable-module button:disabled { cursor: not-allowed; opacity: .58; }
+.timetable-module .ttm-screen-actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0 22px 22px; }
+.timetable-module .ttm-resolved { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 22px; border-top: 1px solid var(--cms-border); border-bottom: 1px solid var(--cms-border); background: var(--cms-subtle); }
+.timetable-module .ttm-resolved span { color: var(--cms-muted); font-size: 13px; }
+.timetable-module .ttm-assignment-details { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 22px 0; }
+.timetable-module .ttm-assignment-details > div { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; padding: 9px 12px; border: 1px solid var(--cms-border); border-radius: 999px; background: var(--cms-subtle); }
+.timetable-module .ttm-assignment-details span { color: var(--cms-text); font-size: 12px; font-weight: 700; }
+.timetable-module .ttm-assignment-details strong { color: var(--cms-muted); font-size: 12px; font-weight: 400; line-height: 1.25; }
+.timetable-module .ttm-empty { margin: 0; padding: 34px 22px; color: var(--cms-muted); text-align: center; }
+.timetable-module .ttm-generation-help { margin: 0; padding: 0 22px 4px; color: var(--cms-muted); font-size: 13px; line-height: 1.45; }
+.timetable-module .ttm-working-days { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 0 22px; color: var(--cms-text); font-size: 12px; font-weight: 650; }
+.timetable-module .ttm-day-toggles { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.timetable-module .ttm-day-toggles > button { min-width: 42px; height: 32px; padding: 5px 9px; border: 1px solid var(--cms-border); border-radius: 7px; background: var(--cms-surface); color: var(--cms-text); font: inherit; cursor: pointer; }
+.timetable-module .ttm-day-toggles > button.active { border-color: var(--cms-primary); background: var(--cms-primary); color: #fff; }
+.timetable-module .ttm-capacity { color: var(--cms-muted); font-weight: 600; }
+.timetable-module .ttm-capacity-error { margin: 0 22px; }
+.timetable-module .ttm-table { width: 100%; min-width: 760px; margin: 0; border-collapse: collapse; }
+.timetable-module .ttm-card:has(.ttm-table) { overflow-x: auto; }
+.timetable-module .ttm-table th, .timetable-module .ttm-table td { padding: 12px 14px; border-bottom: 1px solid var(--cms-border); vertical-align: middle; text-align: left; }
+.timetable-module .ttm-table th { background: var(--cms-subtle); color: var(--cms-muted); font-size: 11px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.timetable-module .ttm-table td { font-size: 13px; }
+.timetable-module .ttm-table th:last-child, .timetable-module .ttm-table td:last-child { text-align: right; }
+.timetable-module .ttm-actions { white-space: nowrap; }
+.timetable-module .ttm-actions > button { min-height: 32px; margin: 3px 0 3px 7px; padding: 6px 9px; font-size: 12px; }
+.timetable-module .ttm-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 4px 8px; border-radius: 999px; background: var(--cms-primary-soft); color: var(--cms-primary); font-size: 11px; font-weight: 750; letter-spacing: .04em; }
+.timetable-module .ttm-badge.active, .timetable-module .ttm-badge.approved { background: var(--cms-green-soft); color: var(--cms-green); }
+.timetable-module .ttm-badge.inactive { background: var(--cms-secondary); color: var(--cms-muted); }
+.timetable-module .ttm-badge.draft { background: var(--cms-amber-soft); color: var(--cms-amber); }
+.timetable-module .ttm-period-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 20px 22px; }
+.timetable-module .ttm-period-list > div { display: grid; gap: 4px; min-height: 64px; padding: 12px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); }
+.timetable-module .ttm-period-list > div.break { background: var(--cms-amber-soft); border-color: var(--cms-border); color: var(--cms-amber); }
+.timetable-module .ttm-period-list span { color: var(--cms-muted); font-size: 12px; }
+.timetable-module .ttm-grid-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--cms-border); background: var(--cms-subtle); }
+.timetable-module .ttm-grid-head > div { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.timetable-module .ttm-grid-wrap { max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; }
+.timetable-module .ttm-grid { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
+.timetable-module .ttm-grid th, .timetable-module .ttm-grid td { border-right: 1px solid var(--cms-border); border-bottom: 1px solid var(--cms-border); vertical-align: middle; }
+.timetable-module .ttm-grid tr > :last-child { border-right: 0; }
+.timetable-module .ttm-grid thead th { height: 62px; padding: 10px; background: var(--cms-subtle); color: var(--cms-text); font-size: 12px; text-align: center; }
+.timetable-module .ttm-grid thead th:first-child, .timetable-module .ttm-grid tbody > tr > th { width: 110px; text-align: left; }
+.timetable-module .ttm-grid thead small { display: block; margin-top: 4px; color: var(--cms-muted); font-size: 10px; font-weight: 500; }
+.timetable-module .ttm-grid tbody > tr > th { padding: 12px; background: var(--cms-subtle); font-size: 12px; }
+.timetable-module .ttm-grid td { height: 98px; padding: 8px; }
+.timetable-module .ttm-grid td.break { background: var(--cms-amber-soft); color: var(--cms-amber); font-size: 12px; font-weight: 700; text-align: center; }
+.timetable-module .ttm-grid td.slot > button { position: relative; display: block; width: 100%; min-height: 80px; overflow: hidden; padding: 10px; border: 1px solid var(--cms-primary-border); border-left: 3px solid var(--cms-primary); border-radius: 7px; background: var(--cms-primary-soft); color: var(--cms-text); text-align: left; cursor: pointer; }
+.timetable-module .ttm-grid td.slot > button:hover:not(:disabled) { border-color: var(--cms-primary); }
+.timetable-module .ttm-grid td.slot > button:disabled { color: var(--cms-text); opacity: 1; }
+.timetable-module .ttm-grid td.slot b, .timetable-module .ttm-grid td.slot span, .timetable-module .ttm-grid td.slot small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timetable-module .ttm-grid td.slot b { font-size: 12px; }
+.timetable-module .ttm-grid td.slot span, .timetable-module .ttm-grid td.slot small { margin-top: 4px; color: var(--cms-muted); font-size: 11px; }
+.timetable-module .ttm-grid td.slot .ttm-slot-edit { position: absolute; right: 8px; bottom: 7px; padding: 2px 5px; border-radius: 4px; background: var(--cms-surface); color: var(--cms-primary); font-size: 10px; font-style: normal; font-weight: 750; }
+.timetable-module .ttm-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: rgb(16 32 60 / 46%); }
+.timetable-module .ttm-modal { display: flex; flex-direction: column; width: min(100%, 620px); max-height: calc(100dvh - 32px); overflow: hidden; border: 1px solid var(--cms-border); border-radius: var(--cms-radius); background: var(--cms-surface); box-shadow: var(--cms-shadow-lg); }
+.timetable-module .ttm-modal > header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--cms-border); }
+.timetable-module .ttm-modal > header h2 { margin: 0; font-size: 17px; }
+.timetable-module .ttm-modal > header button { display: inline-grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--cms-muted); font-size: 24px; line-height: 1; cursor: pointer; }
+.timetable-module .ttm-modal-body { display: grid; min-height: 0; gap: 16px; overflow: auto; padding: 18px; }
+.timetable-module .ttm-modal-body > footer { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid var(--cms-border); }
+.timetable-module .ttm-modal-body > p { margin: 0; color: var(--cms-muted); line-height: 1.55; }
+.timetable-module .ttm-validation-result { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--cms-green); border-radius: 8px; background: var(--cms-green-soft); color: var(--cms-green); }
+.timetable-module .ttm-validation-result.has-errors { border-color: var(--cms-red); background: var(--cms-red-soft); color: var(--cms-red); }
+.timetable-module .ttm-validation-result > span { font-size: 12px; font-weight: 650; }
+.timetable-module .ttm-validation-result > p { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--cms-surface); color: var(--cms-text); font-size: 12px; line-height: 1.45; }
+.timetable-module .ttm-validation-warning { border-left: 3px solid var(--cms-amber); }
+.timetable-module .ttm-validation-error { border-left: 3px solid var(--cms-red); }
+.timetable-module .ttm-break-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.timetable-module .ttm-break-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(130px, 1fr) 100px auto; gap: 10px; align-items: end; }
+.timetable-module .ttm-break-row > button { height: 40px; }
+@media (max-width: 900px) { .timetable-module .ttm-context, .timetable-module .ttm-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .timetable-module .ttm-period-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .timetable-module .ttm-page { padding-bottom: 20px; } .timetable-module .ttm-page-actions { width: 100%; justify-content: stretch; } .timetable-module .ttm-page-actions > .cms-btn { flex: 1; } .timetable-module .ttm-context { padding: 16px; } .timetable-module .ttm-grid-head, .timetable-module .ttm-resolved { align-items: stretch; flex-direction: column; padding: 14px 16px; } .timetable-module .ttm-screen-actions { padding: 0 16px 16px; } .timetable-module .ttm-period-list { padding: 16px; } .timetable-module .ttm-modal-body { padding: 16px; } .timetable-module .ttm-break-row { grid-template-columns: 1fr 1fr; } .timetable-module .ttm-break-row > button { grid-column: span 2; } }
+@media (max-width: 420px) { .timetable-module .ttm-context, .timetable-module .ttm-form-grid, .timetable-module .ttm-period-list { grid-template-columns: 1fr; } .timetable-module .ttm-modal > header { padding: 14px 16px; } .timetable-module .ttm-modal-body > footer > .cms-btn { flex: 1; } }

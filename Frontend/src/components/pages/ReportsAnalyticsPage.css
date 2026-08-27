@@ -647,7 +647,8 @@
 }
 
 .reports-audit-pagination {
-  border-top: 1px solid #e7ecf3;
+  border-top: 1px solid var(--cms-border);
+  background: var(--cms-subtle);
 }
 
 .reports-page-size {

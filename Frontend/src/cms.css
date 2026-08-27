@@ -1392,3 +1392,126 @@ input[type="submit"],
 input[type="reset"] {
   box-shadow: none !important;
 }
+
+/* ============================================================
+   Shared olive glass theme
+   ============================================================ */
+:root[data-theme="light"] {
+  --cms-bg: transparent;
+  --cms-surface: rgba(255, 255, 255, 0.72);
+  --cms-secondary: rgba(247, 248, 239, 0.66);
+  --cms-subtle: rgba(241, 244, 226, 0.62);
+  --cms-table-header: rgba(239, 243, 224, 0.76);
+  --cms-hover: rgba(228, 235, 202, 0.64);
+  --cms-elevated: rgba(255, 255, 255, 0.8);
+  --cms-sidebar: rgba(238, 242, 224, 0.72);
+  --cms-header: rgba(231, 236, 213, 0.72);
+  --cms-border: rgba(111, 132, 78, 0.22);
+  --cms-border-strong: rgba(95, 115, 55, 0.34);
+  --cms-shadow: 0 10px 30px rgba(49, 61, 31, 0.08);
+  --cms-shadow-lg: 0 22px 52px rgba(49, 61, 31, 0.14);
+}
+
+:root[data-theme="dark"] {
+  --cms-bg: transparent;
+  --cms-surface: rgba(27, 33, 25, 0.72);
+  --cms-secondary: rgba(35, 43, 31, 0.68);
+  --cms-subtle: rgba(41, 49, 36, 0.6);
+  --cms-table-header: rgba(43, 52, 38, 0.76);
+  --cms-hover: rgba(57, 68, 47, 0.66);
+  --cms-elevated: rgba(37, 45, 33, 0.82);
+  --cms-sidebar: rgba(32, 40, 29, 0.74);
+  --cms-header: rgba(40, 49, 35, 0.74);
+  --cms-border: rgba(177, 194, 139, 0.2);
+  --cms-border-strong: rgba(187, 204, 148, 0.32);
+  --cms-shadow: 0 12px 34px rgba(0, 0, 0, 0.2);
+  --cms-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.3);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html[data-theme="light"] {
+  background: linear-gradient(135deg, #e3e9c9 0%, #f8faf1 42%, #d5dfb7 100%) fixed;
+}
+
+html[data-theme="dark"] {
+  background: linear-gradient(135deg, #101510 0%, #293323 48%, #151b13 100%) fixed;
+}
+
+body,
+.cms-shell,
+.cms-main,
+.cms-content {
+  background: transparent;
+}
+
+.cms-card,
+.cms-stat,
+.cms-modal,
+.cms-dropdown,
+.cms-search-panel,
+.cms-table-wrap,
+.cms-auth-card,
+.cms-toast,
+.cms-drawer,
+.cms-search,
+.cms-search-top,
+.cms-field input,
+.cms-field select,
+.cms-field textarea {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  box-shadow: var(--cms-shadow);
+  -webkit-backdrop-filter: blur(16px) saturate(118%);
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+.cms-card-head,
+.cms-modal-head,
+.cms-modal-foot,
+.cms-table thead,
+.cms-table thead th,
+.cms-table tfoot,
+.cms-toolbar {
+  background: var(--cms-secondary);
+  -webkit-backdrop-filter: blur(12px) saturate(112%);
+  backdrop-filter: blur(12px) saturate(112%);
+}
+
+.cms-table tbody tr {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+[data-theme="dark"] .cms-table tbody tr {
+  background: rgba(22, 28, 20, 0.24);
+}
+
+.cms-overlay {
+  background: rgba(24, 31, 20, 0.38);
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+}
+
+:where([class$="-card"], [class$="-panel"], [class$="-drawer"]) {
+  background: var(--cms-surface) !important;
+  border-color: var(--cms-border) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(116%);
+  backdrop-filter: blur(16px) saturate(116%);
+}
+
+input,
+select,
+textarea {
+  background-color: var(--cms-surface);
+  -webkit-backdrop-filter: blur(10px) saturate(110%);
+  backdrop-filter: blur(10px) saturate(110%);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root[data-theme="light"] { --cms-surface: rgba(255, 255, 255, 0.92); }
+  :root[data-theme="dark"] { --cms-surface: rgba(27, 33, 25, 0.94); }
+}

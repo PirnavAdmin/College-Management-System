@@ -16,7 +16,7 @@ React + Vite frontend for the Pirnav Junior College Management System. This vers
 Create one local `.env` file using `.env.example`:
 
 ```env
-VITE_API_BASE_URL=https://heroics-ambush-baton.ngrok-free.dev
+VITE_API_BASE_URL=http://localhost:5167
 VITE_USE_DEV_PROXY=true
 ```
 
@@ -52,8 +52,7 @@ src/
 
 ## Authentication
 
-- Admin email `Admin@CMS.com` calls only `POST /api/Admin/login` with `{ email, password }`.
-- Student/user emails call only `POST /api/Auth/login` with `{ emailOrMobile, password }`.
+- Admin email `Admin@CMS.com` and student/user emails call `POST /api/Auth/login` with `{ emailOrMobile, password }`.
 - One login attempt must never call both login APIs.
 - Register calls `POST /api/Auth/register`.
 - Register no longer shows a role field.
@@ -167,7 +166,7 @@ copy .env.example .env
 Confirm `Frontend/.env` contains:
 
 ```env
-VITE_API_BASE_URL=https://heroics-ambush-baton.ngrok-free.dev
+VITE_API_BASE_URL=http://localhost:5167
 VITE_USE_DEV_PROXY=true
 ```
 
@@ -184,4 +183,4 @@ If login still behaves like old code:
 - Refresh the browser with `Ctrl + Shift + R`.
 - Run `git log -1 --oneline` and compare the commit hash with the project lead.
 - Open DevTools Console and confirm it prints `CMS Frontend build loaded from latest role login fix`.
-- During login, confirm the console prints only one selected endpoint: `/api/Admin/login` for `Admin@CMS.com`, or `/api/Auth/login` for other users.
+- During login, confirm the console prints the selected `/api/Auth/login` endpoint.

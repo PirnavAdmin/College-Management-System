@@ -267,18 +267,16 @@ app.UseMiddleware<GlobalExceptionMiddleware>();
 
 #region Database Migration
 
-using (var scope = app.Services.CreateScope())
+if (builder.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
 {
+    using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
-
     try
     {
         var context =
             services.GetRequiredService<AppDbContext>();
 
         context.Database.Migrate();
-
-       
     }
     catch (Exception ex)
     {

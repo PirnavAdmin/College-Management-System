@@ -2,13 +2,12 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 const NAV_KEY = "cms_sidebar_collapsed";
 const FACULTY_KEY = "cms_sidebar_faculty_open";
-const ASSIGNMENTS_KEY = "cms_sidebar_assignments_open";
 const listeners = new Set();
 
 const state = {
   navOpen: null,
   facultyOpen: readBoolean(FACULTY_KEY, false),
-  assignmentsOpen: readBoolean(ASSIGNMENTS_KEY, false),
+  assignmentsOpen: false,
 };
 
 function readBoolean(key, fallback) {
@@ -87,7 +86,6 @@ export function useSidebar() {
       const next = typeof value === "function" ? value(state.assignmentsOpen) : value;
       if (next === state.assignmentsOpen) return;
       state.assignmentsOpen = next;
-      writeBoolean(ASSIGNMENTS_KEY, next);
       emit();
     },
   };

@@ -271,7 +271,8 @@
 .cms-fee-block { border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); padding: 14px; }
 .cms-fee-block h3 { margin: 0 0 12px; font-size: 13.5px; font-weight: 600; }
 .cms-fee-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.cms-fee-table th, .cms-fee-table td { padding: 8px 10px; border-bottom: 1px solid var(--cms-border); text-align: left; }
+.cms-fee-table th { padding: 12px 16px; border-bottom: 1px solid var(--cms-border); text-align: left; }
+.cms-fee-table td { padding: 13px 16px; border-bottom: 1px solid var(--cms-border); text-align: left; }
 .cms-fee-table th { font-size: 11.5px; color: var(--cms-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .cms-fee-table .num { text-align: right; }
 .cms-fee-table tfoot td { font-weight: 600; border-bottom: none; }

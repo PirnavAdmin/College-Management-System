@@ -110,7 +110,7 @@
 }
 .bay-table-wrap {
   width: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
   border-top: 1px solid var(--cms-border);
 }
 .bay-table-wrap table {
@@ -220,12 +220,12 @@
   gap: clamp(3px, 0.3vw, 5px);
 }
 .bay-actions button {
-  width: clamp(28px, 2vw, 31px);
-  height: clamp(28px, 2vw, 31px);
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -1140,4 +1140,79 @@
   .bay-form-actions .cms-btn {
     width: 100%;
   }
+}
+
+/* Board workspace: use the same dark glass surfaces as every dashboard module. */
+[data-theme="dark"] .bay-page .bay-card,
+[data-theme="dark"] .bay-page .bay-tabs,
+[data-theme="dark"] .bay-page .bay-search,
+[data-theme="dark"] .bay-page .bay-table-wrap,
+[data-theme="dark"] .bay-page .bay-bottom,
+[data-theme="dark"] .bay-page .bay-details,
+[data-theme="dark"] .bay-page .bay-form {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+
+[data-theme="dark"] .bay-page .ay-list-card tbody tr,
+[data-theme="dark"] .bay-page .bay-board-list-card tbody tr {
+  background: transparent;
+}
+
+[data-theme="dark"] .bay-page .ay-list-card tbody tr:hover,
+[data-theme="dark"] .bay-page .bay-board-list-card tbody tr:hover {
+  background: var(--cms-hover);
+}
+
+[data-theme="dark"] .bay-page .bay-table-wrap th,
+[data-theme="dark"] .bay-page .bay-card > footer {
+  background: var(--cms-subtle);
+  border-color: var(--cms-border);
+}
+
+[data-theme="dark"] .bay-page .bay-table-wrap td,
+[data-theme="dark"] .bay-page .bay-table-wrap td strong,
+[data-theme="dark"] .bay-page .bay-empty {
+  background: transparent;
+  color: var(--cms-text);
+  border-color: var(--cms-border);
+}
+
+[data-theme="dark"] .bay-page .bay-table-wrap th,
+[data-theme="dark"] .bay-page .bay-card > footer,
+[data-theme="dark"] .bay-page .bay-empty {
+  color: var(--cms-muted);
+}
+
+[data-theme="dark"] .bay-page .bay-card > footer button,
+[data-theme="dark"] .bay-page .bay-form input,
+[data-theme="dark"] .bay-page .bay-form select,
+[data-theme="dark"] .bay-page .bay-form textarea,
+[data-theme="dark"] .bay-page .ay-form-card input,
+[data-theme="dark"] .bay-page .ay-form-card select,
+[data-theme="dark"] .bay-page .ay-form-card textarea,
+[data-theme="dark"] .bay-page .bay-api-picker-input,
+[data-theme="dark"] .bay-page .bay-api-options,
+[data-theme="dark"] .bay-page .bay-state-combobox,
+[data-theme="dark"] .bay-page .bay-state-options,
+[data-theme="dark"] .bay-page .bay-level-combobox,
+[data-theme="dark"] .bay-page .bay-level-options,
+[data-theme="dark"] .bay-page .bay-level-selected {
+  background: var(--cms-elevated);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+
+[data-theme="dark"] .bay-page .bay-bottom header,
+[data-theme="dark"] .bay-page .bay-form header,
+[data-theme="dark"] .bay-page .ay-form-card header,
+[data-theme="dark"] .bay-page .ay-year-details-card header {
+  background: var(--cms-subtle) !important;
+  border-color: var(--cms-border);
+}
+
+[data-theme="dark"] .bay-page input::placeholder,
+[data-theme="dark"] .bay-page textarea::placeholder {
+  color: var(--cms-muted);
 }

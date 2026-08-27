@@ -2,15 +2,29 @@
 /* ResultsPage.css - Dynamic Theme & Compact Styles */
 
 .results-page { display:grid; gap:14px; }
-.results-view-tabs,.results-toolbar,.results-pagination { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.results-view-tabs { display:inline-flex; align-items:center; width:fit-content; max-width:100%; padding:4px; gap:4px; border:1px solid var(--cms-border); border-radius:12px; background:var(--cms-surface); overflow-x:auto; }
+.results-view-tab { min-height:32px; padding:0 13px; border:0; border-radius:8px; background:transparent; color:var(--cms-muted); font:inherit; font-size:12px; font-weight:700; white-space:nowrap; cursor:pointer; transition:background-color .2s ease,color .2s ease; }
+.results-view-tab:hover { color:var(--cms-text); background:var(--cms-subtle); }
+.results-view-tab-active,.results-view-tab-active:hover { color:#fff; background:var(--cms-primary); }
+.results-toolbar,.results-pagination { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .results-toolbar { justify-content:flex-end; margin-bottom:12px; }
 .results-toolbar > div:first-child { margin-right:auto; }
 .results-toolbar .cms-input { width:min(280px,100%); }
-.results-filter-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; align-items:end; }
-.results-generate-btn { justify-self:start; }
+.results-filter-grid { display:flex; align-items:flex-end; flex-wrap:wrap; gap:8px; width:100%; }
+.results-filter-grid .cms-field-group { flex:1 1 130px; width:100%; min-width:120px; max-width:160px; }
+.results-filter-grid .cms-select { width:100%; height:32px; padding-right:26px; }
+.results-generate-btn { flex:0 0 auto; margin-left:auto; align-self:flex-end; }
 .results-detail-context { display:grid; gap:4px; margin:12px 0; padding:12px 14px; border:1px solid var(--cms-border); border-radius:8px; background:var(--cms-subtle); }
 .results-detail-context span { color:var(--cms-muted); font-size:12px; }
-.results-rank-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; align-items:end; }
+.results-rank-card { overflow:hidden; }
+.results-rank-toolbar { display:flex; align-items:center; gap:10px; min-height:64px; padding:12px 16px; border-bottom:1px solid var(--cms-border); background:var(--cms-surface); flex-wrap:wrap; }
+.results-rank-search { flex:0 1 290px; min-width:220px; }
+.results-rank-search .cms-input { width:100%; }
+.results-rank-toolbar > .cms-field-group { flex:1 1 150px; min-width:130px; max-width:190px; }
+.results-rank-toolbar .cms-select { width:100%; }
+.results-rank-toolbar-spacer { flex:1 1 16px; }
+.results-rank-table-wrap { margin:0; }
+.results-rank-card > .results-pagination { margin:0; padding:12px 16px; border-top:1px solid var(--cms-border); }
 .results-table-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; flex-wrap:wrap; }
 .results-table-search { width:min(300px,100%); }
 .results-table-search .cms-input { width:100%; }
@@ -65,12 +79,21 @@
 .results-page .cms-table td { padding:6px 8px; font-size:11px; line-height:1.35; white-space:nowrap; }
 
 @media (max-width:992px) {
-  .results-filter-grid,.results-rank-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .results-rank-search { flex:1 1 260px; }
+  .results-rank-toolbar-spacer { display:none; }
   .results-analytics-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .results-analytics-modal { transform:none; }
 }
 @media (max-width:640px) {
-  .results-filter-grid,.results-rank-filters,.results-analytics-grid { grid-template-columns:1fr; }
+  .results-view-tabs { display:flex; width:100%; box-sizing:border-box; }
+  .results-view-tab { flex:1 0 auto; padding:0 10px; }
+  .results-filter-grid { align-items:stretch; flex-direction:column; }
+  .results-filter-grid .cms-field-group,.results-generate-btn { width:100%; min-width:0; max-width:none; }
+  .results-generate-btn { margin-left:0; }
+  .results-analytics-grid { grid-template-columns:1fr; }
+  .results-rank-toolbar { align-items:stretch; flex-direction:column; padding:14px; }
+  .results-rank-search,.results-rank-toolbar > .cms-field-group { flex:none; width:100%; min-width:0; max-width:none; }
+  .results-rank-toolbar > .cms-btn { width:100%; }
   .results-toolbar { align-items:stretch; flex-direction:column; }
   .results-toolbar > div:first-child { margin-right:0; }
   .results-toolbar .cms-input,.results-toolbar .cms-btn { width:100%; }

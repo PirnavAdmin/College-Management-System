@@ -26,7 +26,7 @@
   font-family: "Segoe UI", "Inter", "Avenir Next", "Poppins", sans-serif;
   background: transparent;
   color: var(--cert-text);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .cert-primary-tabs {
@@ -160,6 +160,49 @@
   width: 100%;
   max-width: none;
 }
+
+.cert-admission-search { z-index: 2; }
+.cert-admission-search:focus-within { z-index: 60; }
+.cert-admission-search-control { position: relative; display: flex; align-items: center; }
+.cert-admission-search-control > svg { position: absolute; z-index: 3; left: 14px; color: var(--cms-muted); pointer-events: none; }
+.cert-form-card .cert-admission-search-control input[type="search"] { padding-left: 42px !important; padding-right: 12px !important; }
+.cert-admission-search-control input::-webkit-search-cancel-button { cursor: pointer; }
+.cert-admission-options {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  display: grid;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--cms-border);
+  border-radius: 10px;
+  background: #fff;
+  color: #1c2416;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+}
+.cert-admission-options button {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--cms-border);
+  background: #fff;
+  color: #1c2416;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cert-admission-options button:last-of-type { border-bottom: 0; }
+.cert-admission-options button:hover,
+.cert-admission-options button[aria-selected="true"] { background: var(--cms-primary-soft); color: var(--cms-primary-dark); }
+.cert-admission-options button strong { font-size: 13px; }
+.cert-admission-options button span,
+.cert-admission-options > p { margin: 0; color: var(--cms-muted); font-size: 11px; }
+.cert-admission-options > p { padding: 12px; }
+[data-theme="dark"] .cert-admission-options,
+[data-theme="dark"] .cert-admission-options button { background: var(--cms-surface); color: var(--cms-text); }
 
 .cert-form-card .cms-field input,
 .cert-form-card .cms-field select,
@@ -380,7 +423,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .cert-records-date-range input {

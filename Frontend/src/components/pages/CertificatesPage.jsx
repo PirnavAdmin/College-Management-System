@@ -462,6 +462,88 @@ const baseFormFields = [
   { name: "remarks", label: "Remarks" },
 ];
 
+function CertificateStudentSearch({ students, value, loading, error, onQueryChange, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [highlighted, setHighlighted] = useState(0);
+  const query = String(value || "").trim().toLowerCase();
+  const matches = useMemo(() => {
+    if (!query) return students.slice(0, 8);
+    return students.filter((student) => [student.admissionNo, student.name, student.rollNo]
+      .some((entry) => String(entry || "").toLowerCase().includes(query))).slice(0, 8);
+  }, [query, students]);
+
+  const choose = (student) => {
+    onSelect(student);
+    setOpen(false);
+    setHighlighted(0);
+  };
+
+  return (
+    <div className={`cms-field cert-admission-search ${error ? "has-error" : ""}`} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
+      <label htmlFor="certificate-admissionNo">Admission No. <span className="req">*</span></label>
+      <div className="cert-admission-search-control">
+        <FaMagnifyingGlass size={16} aria-hidden="true" />
+        <input
+          id="certificate-admissionNo"
+          type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls="certificate-student-options"
+          aria-activedescendant={open && matches[highlighted] ? `certificate-student-${matches[highlighted].id || highlighted}` : undefined}
+          value={value}
+          disabled={loading || !students.length}
+          placeholder={loading ? "Loading admissions..." : (students.length ? "Search admission no., student, or roll no." : "No students available")}
+          autoComplete="off"
+          onFocus={() => setOpen(true)}
+          onChange={(event) => {
+            onQueryChange(event.target.value);
+            setHighlighted(0);
+            setOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setOpen(true);
+              setHighlighted((index) => Math.min(index + 1, Math.max(0, matches.length - 1)));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setHighlighted((index) => Math.max(0, index - 1));
+            } else if (event.key === "Enter" && open && matches[highlighted]) {
+              event.preventDefault();
+              choose(matches[highlighted]);
+            } else if (event.key === "Escape") {
+              setOpen(false);
+            }
+          }}
+        />
+      </div>
+      {open ? (
+        <div id="certificate-student-options" className="cert-admission-options" role="listbox">
+          {matches.length ? matches.map((student, index) => (
+            <button
+              id={`certificate-student-${student.id || index}`}
+              type="button"
+              role="option"
+              aria-selected={index === highlighted}
+              key={student.id || student.admissionNo}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setHighlighted(index)}
+              onClick={() => choose(student)}
+            >
+              <strong>{student.admissionNo}</strong>
+              <span>{student.name || "Student"}{student.rollNo ? ` · Roll ${student.rollNo}` : ""}</span>
+            </button>
+          )) : <p>No matching students found.</p>}
+        </div>
+      ) : null}
+      {error ? <span className="cms-error">{error}</span> : null}
+    </div>
+  );
+}
+
 function certStatusClass(value) {
   const status = String(value || "").toLowerCase();
   if (status === "issued") return "cert-status-success";
@@ -1593,44 +1675,33 @@ export default function CertificatesPage() {
             <div className="cms-card-body">
               <div className="cms-form-grid cols-3">
                 {formFields.map((field) => {
-                  const isThemeControlledField = field.name === "admissionNo" || field.name === "type" || field.name === "requestDate";
+                  if (field.name === "admissionNo") {
+                    return (
+                      <CertificateStudentSearch
+                        key={field.name}
+                        students={studentRows}
+                        value={form.admissionNo}
+                        loading={loadingStudents}
+                        error={errors.admissionNo}
+                        onQueryChange={(admissionNo) => {
+                          setForm((prev) => ({ ...prev, admissionNo, student: "", group: "", level: "", academicYear: "", rollNo: "", section: "" }));
+                          setErrors((prev) => ({ ...prev, admissionNo: undefined }));
+                        }}
+                        onSelect={(student) => {
+                          setForm((prev) => ({ ...prev, admissionNo: student.admissionNo, student: student.name || "", group: student.group || "", level: student.level || "", academicYear: student.academicYear || "", rollNo: student.rollNo || "", section: student.section || "" }));
+                          setErrors((prev) => ({ ...prev, admissionNo: undefined }));
+                        }}
+                      />
+                    );
+                  }
+                  const isThemeControlledField = field.name === "type" || field.name === "requestDate";
                   if (isThemeControlledField) {
                     return (
                       <div key={field.name} className="cms-field">
                         <label htmlFor={`certificate-${field.name}`}>
                           {field.label} {field.required ? <span className="req">*</span> : null}
                         </label>
-                        {field.name === "admissionNo" ? (
-                          <>
-                          <input
-                            id="certificate-admissionNo"
-                            type="text"
-                            value={form.admissionNo}
-                            list="certificate-students"
-                            disabled={loadingStudents || !studentRows.length}
-                            placeholder={loadingStudents ? "Loading admissions..." : (studentRows.length ? "Select admission number" : "No students available")}
-                            autoComplete="off"
-                            onChange={(e) => {
-                              const admissionNo = e.target.value;
-                              const selectedStudent = findStudentByAdmission(admissionNo);
-                              setForm((prev) => ({
-                                ...prev,
-                                admissionNo,
-                                student: selectedStudent?.name || "",
-                                group: selectedStudent?.group || "",
-                                level: selectedStudent?.level || "",
-                                academicYear: selectedStudent?.academicYear || "",
-                                rollNo: selectedStudent?.rollNo || "",
-                                section: selectedStudent?.section || "",
-                              }));
-                              setErrors((prev) => ({ ...prev, admissionNo: undefined }));
-                            }}
-                          />
-                          <datalist id="certificate-students">
-                            {studentRows.map((student) => <option key={student.id || student.admissionNo} value={student.admissionNo}>{student.name}</option>)}
-                          </datalist>
-                          </>
-                        ) : field.name === "type" ? (
+                        {field.name === "type" ? (
                           <select
                             id="certificate-type"
                             className={form.type ? "" : "cert-field-placeholder"}

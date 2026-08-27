@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
@@ -13,6 +13,8 @@ const STATUS = [
   ["Leave", 4, "LV"],
 ];
 const TODAY = new Date().toISOString().slice(0, 10);
+const MORNING_SESSION = "__morning_session__";
+const AFTERNOON_SESSION = "__afternoon_session__";
 const list = (x) => (Array.isArray(x) ? x : (x?.data ?? x?.items ?? x?.result ?? x?.results ?? []));
 const val = (x, ...keys) => keys.map((k) => x?.[k]).find((v) => v !== undefined && v !== null);
 const status = (x) =>
@@ -59,6 +61,11 @@ const staff = (x) => ({
   department: val(x, "departmentName", "DepartmentName", "department") ?? "—",
   status: status(val(x, "status", "Status", "attendanceStatus")),
 });
+const isMorningSlot = (slot) => {
+  const time = String(val(slot, "startTime", "StartTime", "periodStartTime", "PeriodStartTime") ?? "");
+  const hour = Number(time.match(/\d{1,2}/)?.[0]);
+  return Number.isFinite(hour) && hour < 12;
+};
 
 export default function AttendancePage() {
   const { pathname } = useLocation(),
@@ -123,6 +130,7 @@ function StudentMark({ say }) {
       subjects: [],
       periods: [],
       teachers: [],
+      sectionTimetable: [],
     }),
     [f, setF] = useState({
       date: TODAY,
@@ -133,13 +141,42 @@ function StudentMark({ say }) {
       sectionId: "",
       subjectId: "",
       periodId: "",
-      classTeacherId: "",
+      sectionClassTeacherId: "",
+      sectionClassTeacherName: "",
+      periodFacultyId: "",
+      periodFacultyName: "",
     }),
     [rows, setRows] = useState([]),
     [yearLoading, setYearLoading] = useState(false),
     [levelLoading, setLevelLoading] = useState(false),
     [loading, setLoading] = useState(false),
     [saving, setSaving] = useState(false);
+  const periodOptions = useMemo(() => {
+    const subjectSlots = m.sectionTimetable.filter(
+      (slot) => !f.subjectId || String(val(slot, "subjectId", "SubjectId")) === String(f.subjectId),
+    );
+    const seen = new Set();
+    return subjectSlots.flatMap((slot) => {
+      const id = String(val(slot, "periodId", "PeriodId") ?? "");
+      if (!id || seen.has(id)) return [];
+      seen.add(id);
+      const period = m.periods.find((entry) => entry.id === id);
+      const periodName = val(slot, "periodName", "PeriodName") ?? period?.name ?? `Period ${id}`;
+      const subjectName = val(slot, "subjectName", "SubjectName") ?? "";
+      return [{ id, name: subjectName ? `${periodName} — ${subjectName}` : periodName }];
+    });
+  }, [f.subjectId, m.periods, m.sectionTimetable]);
+  const attendancePeriodOptions = useMemo(() => {
+    const scheduledIds = new Set(periodOptions.map((period) => period.id));
+    return [
+      { id: MORNING_SESSION, name: "Morning session", group: "Sessions" },
+      { id: AFTERNOON_SESSION, name: "Afternoon session", group: "Sessions" },
+      ...m.periods
+        .filter((period) => !scheduledIds.has(period.id))
+        .map((period) => ({ ...period, group: "All periods" })),
+      ...periodOptions.map((period) => ({ ...period, group: "Scheduled subject periods" })),
+    ];
+  }, [m.periods, periodOptions]);
   const change = (k) => (e) =>
     setF((c) => {
       const value = e.target.value;
@@ -153,7 +190,7 @@ function StudentMark({ say }) {
           sectionId: "",
           subjectId: "",
           periodId: "",
-          classTeacherId: "",
+          sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "",
         };
       if (k === "academicYearId")
         return {
@@ -164,7 +201,7 @@ function StudentMark({ say }) {
           sectionId: "",
           subjectId: "",
           periodId: "",
-          classTeacherId: "",
+          sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "",
         };
       if (k === "academicLevelId")
         return {
@@ -174,7 +211,7 @@ function StudentMark({ say }) {
           sectionId: "",
           subjectId: "",
           periodId: "",
-          classTeacherId: "",
+          sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "",
         };
       if (k === "groupId")
         return {
@@ -183,11 +220,12 @@ function StudentMark({ say }) {
           sectionId: "",
           subjectId: "",
           periodId: "",
-          classTeacherId: "",
+          sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "",
         };
       if (k === "sectionId")
-        return { ...c, sectionId: value, subjectId: "", periodId: "", classTeacherId: "" };
-      if (k === "periodId") return { ...c, periodId: value, classTeacherId: "" };
+        return { ...c, sectionId: value, subjectId: "", periodId: "", sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "" };
+      if (k === "subjectId") return { ...c, subjectId: value, periodId: "", periodFacultyId: "", periodFacultyName: "" };
+      if (k === "periodId") return { ...c, periodId: value, periodFacultyId: "", periodFacultyName: "" };
       return { ...c, [k]: value };
     });
   useEffect(() => {
@@ -307,54 +345,138 @@ function StudentMark({ say }) {
             ? toOptions(r[1].value.data, ["subjectId", "id", "Id"], ["subjectName", "name", "Name"])
             : [],
       }));
-      setF((c) => ({ ...c, sectionId: "", subjectId: "", periodId: "", classTeacherId: "" }));
+      setF((c) => ({ ...c, sectionId: "", subjectId: "", periodId: "", sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "" }));
     });
     return () => { active = false; };
   }, [f.boardId, f.academicLevelId, f.groupId]);
   useEffect(() => {
-    if (!f.groupId || !f.sectionId) return;
-    apiClient
-      .get(apiEndpoints.attendance.academicContext, {
+    if (!f.groupId || !f.sectionId) {
+      setM((c) => ({ ...c, sectionTimetable: [] }));
+      return;
+    }
+    let active = true;
+    const selectedSection = m.sections.find((section) => section.id === f.sectionId)?.raw;
+    const fallbackTeacherId = val(selectedSection, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId");
+    const fallbackTeacherName = val(selectedSection, "classTeacherName", "ClassTeacherName", "teacher", "Teacher");
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.attendance.academicContext, {
         params: { groupId: f.groupId, sectionId: f.sectionId },
-      })
-      .then((r) =>
-        setF((c) => ({
-          ...c,
-          classTeacherId: String(
-            val(
-              r.data?.data ?? r.data,
-              "classTeacherId",
-              "ClassTeacherId",
-              "facultyId",
-              "FacultyId",
-            ) ?? c.classTeacherId,
-          ),
-        })),
-      )
-      .catch(() => {});
-  }, [f.groupId, f.sectionId]);
+      }),
+      apiClient.get(apiEndpoints.timetable.getBySection(f.sectionId), {
+        params: { academicYearId: f.academicYearId || undefined },
+      }),
+    ]).then((results) => {
+      if (!active) return;
+      const context = results[0].status === "fulfilled" ? results[0].value.data?.data ?? results[0].value.data : {};
+      const teacherId = val(context, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId") ?? fallbackTeacherId ?? "";
+      const teacherName = val(context, "classTeacherName", "ClassTeacherName", "facultyName", "FacultyName", "staffName", "StaffName") ?? fallbackTeacherName ?? "";
+      setF((c) => ({
+        ...c,
+        sectionClassTeacherId: String(teacherId),
+        sectionClassTeacherName: teacherName || "",
+        periodFacultyId: "",
+        periodFacultyName: "",
+      }));
+      setM((c) => ({
+        ...c,
+        sectionTimetable: results[1].status === "fulfilled" ? list(results[1].value.data) : [],
+      }));
+    });
+    return () => { active = false; };
+  }, [f.academicYearId, f.groupId, f.sectionId, m.sections]);
   useEffect(() => {
-    if (!f.groupId || !f.sectionId || !f.periodId) return;
+    if (!f.sectionId || !f.periodId) return;
+    let active = true;
+    const applyFaculty = (entry) => {
+      if (!active) return;
+      setF((c) => ({
+        ...c,
+        periodFacultyId: String(val(entry, "facultyId", "FacultyId", "staffId", "StaffId") ?? ""),
+        periodFacultyName: val(entry, "facultyName", "FacultyName", "staffName", "StaffName") ?? "",
+      }));
+    };
+    if (f.periodId === MORNING_SESSION || f.periodId === AFTERNOON_SESSION) {
+      const sessionSlots = m.sectionTimetable.filter((slot) => {
+        if (f.subjectId && String(val(slot, "subjectId", "SubjectId")) !== String(f.subjectId)) return false;
+        return f.periodId === MORNING_SESSION ? isMorningSlot(slot) : !isMorningSlot(slot);
+      });
+      const facultyNames = [...new Set(sessionSlots.map((slot) => val(slot, "facultyName", "FacultyName", "staffName", "StaffName")).filter(Boolean))];
+      applyFaculty({ facultyName: facultyNames.join(", ") });
+      return () => { active = false; };
+    }
+    if (!f.subjectId) return () => { active = false; };
+    const slot = m.sectionTimetable.find(
+      (entry) => String(val(entry, "subjectId", "SubjectId")) === String(f.subjectId)
+        && String(val(entry, "periodId", "PeriodId")) === String(f.periodId),
+    );
+    if (slot) {
+      applyFaculty(slot);
+      return () => { active = false; };
+    }
     apiClient
       .get(apiEndpoints.attendance.facultySubject, {
-        params: { date: f.date, groupId: f.groupId, sectionId: f.sectionId, periodId: f.periodId },
+        params: { date: f.date, groupId: f.groupId, sectionId: f.sectionId, subjectId: f.subjectId, periodId: f.periodId },
       })
       .then((r) => {
         const context = r.data?.data ?? r.data;
-        setF((c) => ({
-          ...c,
-          subjectId: String(val(context, "subjectId", "SubjectId") ?? c.subjectId),
-          classTeacherId: String(
-            val(context, "facultyId", "FacultyId", "classTeacherId", "ClassTeacherId") ??
-              c.classTeacherId,
-          ),
+        const returnedSubjectId = val(context, "subjectId", "SubjectId");
+        if (returnedSubjectId && String(returnedSubjectId) !== String(f.subjectId)) return applyFaculty({});
+        applyFaculty(context);
+      })
+      .catch(() => applyFaculty({}));
+    return () => { active = false; };
+  }, [f.date, f.groupId, f.sectionId, f.subjectId, f.periodId, m.sectionTimetable]);
+  // Resolve the attendance subject/faculty from the timetable context API.
+  // This keeps the student attendance form aligned with the selected section
+  // and period instead of requiring the admin to re-enter the assignment.
+  useEffect(() => {
+    if (!f.date || !f.groupId || !f.sectionId) return;
+    let active = true;
+    const sessionType = f.periodId === MORNING_SESSION
+      ? "Morning session"
+      : f.periodId === AFTERNOON_SESSION
+        ? "Afternoon session"
+        : f.periodId
+          ? "Scheduled period"
+          : "All periods";
+    apiClient
+      .get(apiEndpoints.attendance.facultySubject, {
+        params: {
+          date: f.date,
+          groupId: Number(f.groupId),
+          sectionId: Number(f.sectionId),
+          ...(f.periodId && ![MORNING_SESSION, AFTERNOON_SESSION].includes(f.periodId)
+            ? { periodId: Number(f.periodId) }
+            : {}),
+          sessionType,
+        },
+      })
+      .then((r) => {
+        if (!active) return;
+        const context = r.data?.data ?? r.data ?? {};
+        const subjectId = val(context, "subjectId", "SubjectId");
+        const facultyId = val(context, "facultyId", "FacultyId", "staffId", "StaffId");
+        const facultyName = val(context, "facultyName", "FacultyName", "staffName", "StaffName");
+        setF((current) => ({
+          ...current,
+          ...(subjectId && String(subjectId) !== "0" && !current.subjectId
+            ? { subjectId: String(subjectId) }
+            : {}),
+          periodFacultyId: facultyId ? String(facultyId) : current.periodFacultyId,
+          periodFacultyName: facultyName || current.periodFacultyName,
         }));
       })
-      .catch(() => {});
+      .catch(() => {
+        // Timetable lookup is supplemental; attendance loading still uses its
+        // existing validation and student APIs when no assignment is found.
+      });
+    return () => { active = false; };
   }, [f.date, f.groupId, f.sectionId, f.periodId]);
   const load = async () => {
     if ([f.academicYearId, f.academicLevelId, f.groupId, f.sectionId, f.subjectId, f.periodId].some((v) => !v))
       return say("Select all attendance fields.");
+    if ([MORNING_SESSION, AFTERNOON_SESSION].includes(f.periodId))
+      return say("Select a scheduled subject period to load attendance records.");
     setLoading(true);
     try {
       const r = await apiClient.post(apiEndpoints.attendance.students, {
@@ -381,8 +503,13 @@ function StudentMark({ say }) {
     try {
       await apiClient.post(apiEndpoints.attendance.bulk, {
         attendanceDate: f.date,
+        academicYearId: +f.academicYearId,
+        academicLevelId: +f.academicLevelId,
         groupId: +f.groupId,
         sectionId: +f.sectionId,
+        subjectId: +f.subjectId,
+        periodId: +f.periodId,
+        facultyId: f.periodFacultyId ? +f.periodFacultyId : null,
         students: rows.map((x) => ({
           studentId: +x.id,
           status: STATUS.find((s) => s[0] === x.status)[1],
@@ -396,6 +523,8 @@ function StudentMark({ say }) {
       setSaving(false);
     }
   };
+  const teacherName = (id, name) =>
+    name || m.teachers.find((teacher) => teacher.id === id)?.name || "Not assigned";
   return (
     <>
       <section className="att-card att-filter-card">
@@ -424,10 +553,21 @@ function StudentMark({ say }) {
             <Select l="Group" v={f.groupId} on={change("groupId")} o={m.groups} empty="All groups" />
             <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" />
             <Select l="Subject" v={f.subjectId} on={change("subjectId")} o={m.subjects} empty="All subjects" />
-            <Select l="Period" v={f.periodId} on={change("periodId")} o={m.periods} empty="All periods" />
+            <Select
+              l="Period"
+              v={f.periodId}
+              on={change("periodId")}
+              o={attendancePeriodOptions}
+              empty="All periods"
+              disabled={!f.sectionId}
+            />
             <Field l="Class Teacher">
               <input
-                value={m.teachers.find((x) => x.id === f.classTeacherId)?.name ?? "Not assigned"}
+                value={
+                  teacherName(f.periodFacultyId, f.periodFacultyName) !== "Not assigned"
+                    ? teacherName(f.periodFacultyId, f.periodFacultyName)
+                    : teacherName(f.sectionClassTeacherId, f.sectionClassTeacherName)
+                }
                 readOnly
               />
             </Field>
@@ -1147,9 +1287,6 @@ function Reports({ staffMode, say }) {
                 o={m.periods}
                 empty="All periods"
               />
-              <Field l="Class Teacher">
-                <input value="All Class Teachers" readOnly />
-              </Field>
             </>
           )}
         </div>
@@ -1206,15 +1343,23 @@ function Field({ l, children }) {
   );
 }
 function Select({ l, v, on, o, empty = "Select", disabled = false }) {
+  const groups = o.reduce((result, option) => {
+    const key = option.group ?? "";
+    if (!result[key]) result[key] = [];
+    result[key].push(option);
+    return result;
+  }, {});
   return (
     <Field l={l}>
       <select value={v} onChange={on} disabled={disabled}>
         <option value="">{empty}</option>
-        {o.map((x) => (
-          <option key={x.id} value={x.id}>
-            {x.name}
-          </option>
-        ))}
+        {Object.entries(groups).map(([group, options]) =>
+          group ? (
+            <optgroup key={group} label={group}>
+              {options.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </optgroup>
+          ) : options.map((x) => <option key={x.id} value={x.id}>{x.name}</option>),
+        )}
       </select>
     </Field>
   );

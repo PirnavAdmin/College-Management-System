@@ -27,12 +27,13 @@ const EMPTY_ROOM = {
   floor: "",
   isActive: true,
 };
-const EMPTY_FILTERS = { board: "", academicYear: "", group: "", program: "", academicLevel: "" };
-const EMPTY_ROOM_FILTERS = { building: "", floor: "", roomType: "", status: "" };
+const EMPTY_FILTERS = { board: "", academicYear: "", academicLevel: "" };
+const EMPTY_ROOM_FILTERS = { building: "", floor: "", roomType: "" };
 const ROOM_TYPES = ["Classroom", "Laboratory", "Computer Lab", "Seminar Hall", "Library", "Examination Hall", "Staff Room", "Other"];
 const label = (room) => room.roomCode;
 const normalizeSectionName = (name) => name.trim().replace(/\s+/g, " ");
 const normalizeRoomCode = (code) => String(code ?? "").trim().replace(/\s+/g, " ");
+const normalizedValue = (value) => String(value ?? "").trim().toLowerCase();
 const roomCodesMatch = (first, second) =>
   normalizeRoomCode(first).toLowerCase() === normalizeRoomCode(second).toLowerCase();
 const collectionFrom = (data) => Array.isArray(data) ? data : data?.items ?? data?.data ?? data?.result ?? [];
@@ -74,7 +75,6 @@ export const pageConfig = {
 export default function SectionManagementPage() {
   const [activeTab, setActiveTab] = useState("sections");
   const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
   const [sections, setSections] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [boardsList, setBoardsList] = useState([]);
@@ -87,8 +87,6 @@ export default function SectionManagementPage() {
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [savingSection, setSavingSection] = useState(false);
   const [savingRoom, setSavingRoom] = useState(false);
-  const [checkingSections, setCheckingSections] = useState(false);
-  const [checkingRooms, setCheckingRooms] = useState(false);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [modal, setModal] = useState(false);
@@ -102,12 +100,13 @@ export default function SectionManagementPage() {
   const [roomModalFromSection, setRoomModalFromSection] = useState(false);
   const [roomSearch, setRoomSearch] = useState("");
   const [roomFilters, setRoomFilters] = useState(EMPTY_ROOM_FILTERS);
-  const [appliedRoomFilters, setAppliedRoomFilters] = useState(EMPTY_ROOM_FILTERS);
   const [roomPage, setRoomPage] = useState(1);
   const [toast, setToast] = useState(null);
   const [modalError, setModalError] = useState(null);
   const [roomModalError, setRoomModalError] = useState(null);
   const toastTimer = useRef(null);
+  const groupsRequest = useRef(0);
+  const programsRequest = useRef(0);
 
   const say = (message) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -133,40 +132,62 @@ export default function SectionManagementPage() {
     setSections(collectionFrom(response.data).map(normalizeSection).filter((section) => section.id));
   };
   const loadGroups = async (boardName, selectedGroupName = "") => {
+    const requestId = ++groupsRequest.current;
     const board = boardsList.find((item) => item.name === boardName);
-    if (!board) return setGroupsList([]);
+    if (!board) {
+      setGroupsList([]);
+      setProgramsList([]);
+      return null;
+    }
     try {
       const response = await apiClient.get(apiEndpoints.groups.getAll, { params: { boardId: board.id } });
       const groups = collectionFrom(response.data)
         .filter(isActiveRecord)
         .map((item) => ({ id: String(item.groupId ?? item.id), name: item.groupName ?? item.name ?? "", boardId: String(item.boardId ?? "") }))
         .filter((item) => item.id && item.name);
+      if (requestId !== groupsRequest.current) return null;
       setGroupsList(groups);
       const selectedGroup = groups.find((item) => item.name === selectedGroupName);
       if (selectedGroup) {
+        const programsRequestId = ++programsRequest.current;
         const programsResponse = await apiClient.get(apiEndpoints.groups.programs(selectedGroup.id));
+        if (requestId !== groupsRequest.current || programsRequestId !== programsRequest.current) return null;
         setProgramsList(collectionFrom(programsResponse.data)
           .filter(isActiveRecord)
           .map((item) => ({ id: String(item.programId ?? item.id), name: item.programName ?? item.name ?? "" }))
           .filter((item) => item.id && item.name));
+      } else {
+        setProgramsList([]);
       }
+      return groups;
     } catch (error) {
+      if (requestId !== groupsRequest.current) return null;
       setGroupsList([]);
       say(getApiErrorMessage(error));
+      return null;
     }
   };
   const loadPrograms = async (groupName) => {
+    const requestId = ++programsRequest.current;
     const group = groupsList.find((item) => item.name === groupName);
-    if (!group) return setProgramsList([]);
+    if (!group) {
+      setProgramsList([]);
+      return null;
+    }
     try {
       const response = await apiClient.get(apiEndpoints.groups.programs(group.id));
-      setProgramsList(collectionFrom(response.data)
+      const programs = collectionFrom(response.data)
         .filter(isActiveRecord)
         .map((item) => ({ id: String(item.programId ?? item.id), name: item.programName ?? item.name ?? "" }))
-        .filter((item) => item.id && item.name));
+        .filter((item) => item.id && item.name);
+      if (requestId !== programsRequest.current) return null;
+      setProgramsList(programs);
+      return programs;
     } catch (error) {
+      if (requestId !== programsRequest.current) return null;
       setProgramsList([]);
       say(getApiErrorMessage(error));
+      return null;
     }
   };
   useEffect(() => {
@@ -214,41 +235,34 @@ export default function SectionManagementPage() {
     return () => { active = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial API load is intentionally one-time.
   const updateFilter = (key, value) => {
-    if (key === "board") loadGroups(value);
-    if (key === "group") loadPrograms(value);
-    setFilters((current) => {
-      const next = { ...current, [key]: value };
-      if (key === "board")
-        Object.assign(next, { academicYear: "", group: "", program: "", academicLevel: "" });
-      if (key === "academicYear")
-        Object.assign(next, { group: "", program: "", academicLevel: "" });
-      if (key === "group") Object.assign(next, { program: "", academicLevel: "" });
-      if (key === "program") next.academicLevel = "";
-      return next;
-    });
+    setFilters((previous) => ({ ...previous, [key]: value }));
   };
-  const change = (key, value) => {
+  const change = async (key, value) => {
     setModalError(null);
-    if (key === "board") loadGroups(value);
-    if (key === "group") loadPrograms(value);
-    setForm((current) => {
-      const next = { ...current, [key]: value };
-      if (key === "board")
-        Object.assign(next, {
-          academicYear: "",
-          group: "",
-          program: "",
-          academicLevel: "",
-          room: "",
-          teacher: "",
-        });
-      if (key === "academicYear")
-        Object.assign(next, { group: "", program: "", academicLevel: "", room: "", teacher: "" });
-      if (key === "group") Object.assign(next, { program: "", academicLevel: "", room: "" });
-      if (key === "program") Object.assign(next, { academicLevel: "", room: "" });
-      if (key === "academicLevel") next.room = "";
-      return next;
-    });
+    if (key === "room") {
+      const selectedRoom = rooms.find((room) => roomCodesMatch(room.roomCode, value));
+      const roomCapacity = Number(selectedRoom?.capacity);
+      setForm((previous) => ({
+        ...previous,
+        room: value,
+        strength: selectedRoom && Number.isFinite(roomCapacity) && roomCapacity > 0
+          ? String(selectedRoom.capacity)
+          : "",
+      }));
+      return;
+    }
+    const current = form;
+    setForm((previous) => ({ ...previous, [key]: value }));
+    if (key === "board") {
+      const groups = await loadGroups(value, current.group);
+      if (groups && current.group && !groups.some((item) => item.name === current.group))
+        setForm((previous) => previous.board === value ? { ...previous, group: "" } : previous);
+    }
+    if (key === "group") {
+      const programs = await loadPrograms(value);
+      if (programs && current.program && !programs.some((item) => item.name === current.program))
+        setForm((previous) => previous.group === value ? { ...previous, program: "" } : previous);
+    }
   };
   const changeRoom = (key, value) => {
     setRoomModalError(null);
@@ -258,12 +272,10 @@ export default function SectionManagementPage() {
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
     return sections.filter((section) => {
-      if (appliedFilters.board && section.board !== appliedFilters.board) return false;
-      if (appliedFilters.academicYear && section.academicYear !== appliedFilters.academicYear)
+      if (filters.board && section.board !== filters.board) return false;
+      if (filters.academicYear && section.academicYear !== filters.academicYear)
         return false;
-      if (appliedFilters.group && section.group !== appliedFilters.group) return false;
-      if (appliedFilters.program && section.program !== appliedFilters.program) return false;
-      if (appliedFilters.academicLevel && section.academicLevel !== appliedFilters.academicLevel)
+      if (filters.academicLevel && section.academicLevel !== filters.academicLevel)
         return false;
       return (
         !query ||
@@ -278,40 +290,38 @@ export default function SectionManagementPage() {
         )
       );
     });
-  }, [sections, appliedFilters, search]);
+  }, [sections, filters, search]);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sectionRangeStart = rows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const sectionRangeEnd = Math.min(page * PAGE_SIZE, rows.length);
   const roomRows = useMemo(() => {
     const query = roomSearch.trim().toLowerCase();
     return rooms.filter((room) => {
-      if (appliedRoomFilters.building && room.building !== appliedRoomFilters.building) return false;
-      if (appliedRoomFilters.floor && String(room.floor) !== appliedRoomFilters.floor) return false;
-      if (appliedRoomFilters.roomType && room.roomType !== appliedRoomFilters.roomType) return false;
-      if (appliedRoomFilters.status && (room.isActive ? "Active" : "Inactive") !== appliedRoomFilters.status) return false;
-      return !query || [room.roomCode, room.roomName, room.building, room.floor, room.roomType]
+      if (roomFilters.building && room.building !== roomFilters.building) return false;
+      if (roomFilters.floor && String(room.floor) !== roomFilters.floor) return false;
+      if (roomFilters.roomType && room.roomType !== roomFilters.roomType) return false;
+      return !query || [room.roomCode, room.roomName, room.building, room.floor, room.roomType, room.isActive ? "Active" : "Inactive"]
         .some((value) => String(value ?? "").toLowerCase().includes(query));
     });
-  }, [rooms, roomSearch, appliedRoomFilters]);
+  }, [rooms, roomSearch, roomFilters]);
   const roomPages = Math.max(1, Math.ceil(roomRows.length / PAGE_SIZE));
   const shownRooms = roomRows.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE);
-  const sectionSearchPlaceholder = useMemo(
-    () => appliedFilters.group || appliedFilters.program ? "Search sections by name, group or program..." : "Search sections...",
-    [appliedFilters.group, appliedFilters.program],
-  );
-  const roomSearchPlaceholder = useMemo(
-    () => appliedRoomFilters.roomType || appliedRoomFilters.building ? "Search rooms by code, name or type..." : "Search rooms...",
-    [appliedRoomFilters.roomType, appliedRoomFilters.building],
-  );
+  const roomRangeStart = roomRows.length ? (roomPage - 1) * PAGE_SIZE + 1 : 0;
+  const roomRangeEnd = Math.min(roomPage * PAGE_SIZE, roomRows.length);
+  const sectionSearchPlaceholder = "Search by section,group,pr...";
+  const roomSearchPlaceholder = "Search by block,status,name...";
   const roomBuildings = useMemo(() => [...new Set(rooms.map((room) => room.building).filter(Boolean))], [rooms]);
   const roomFloors = useMemo(() => [...new Set(rooms.map((room) => String(room.floor)).filter(Boolean))], [rooms]);
+  const roomFilterTypes = useMemo(() => [...new Set(rooms.map((room) => room.roomType).filter(Boolean))], [rooms]);
   const roomTypes = ROOM_TYPES;
   const boardOptions = useMemo(() => boardsList.map((item) => item.name), [boardsList]);
   const academicYearOptions = useMemo(() => academicYearsList.map((item) => item.name), [academicYearsList]);
   const groupOptions = useMemo(() => groupsList.map((item) => item.name), [groupsList]);
   const programOptions = useMemo(() => programsList.map((item) => item.name), [programsList]);
   const academicLevelOptions = useMemo(() => academicLevelsList.map((item) => item.name), [academicLevelsList]);
-  useEffect(() => setPage(1), [appliedFilters, search]);
-  useEffect(() => setRoomPage(1), [appliedRoomFilters, roomSearch]);
+  useEffect(() => setPage(1), [filters, search]);
+  useEffect(() => setRoomPage(1), [roomFilters, roomSearch]);
   useEffect(() => {
     if (page > pages) setPage(pages);
   }, [page, pages]);
@@ -353,7 +363,24 @@ export default function SectionManagementPage() {
       })(),
     [rooms, sections, selectedSectionId, form.room],
   );
-  const availableTeachers = teachersList.map((teacher) => teacher.name);
+  const availableTeachers = useMemo(() => {
+    const assignedTeachers = new Set(
+      sections
+        .filter((section) =>
+          section.id !== selectedSectionId &&
+          section.status === "Active" &&
+          normalizedValue(section.board) === normalizedValue(form.board) &&
+          normalizedValue(section.academicYear) === normalizedValue(form.academicYear))
+        .map((section) => normalizedValue(section.teacher)),
+    );
+    return teachersList
+      .map((teacher) => teacher.name)
+      .filter((teacher) =>
+        !form.board ||
+        !form.academicYear ||
+        normalizedValue(teacher) === normalizedValue(form.teacher) ||
+        !assignedTeachers.has(normalizedValue(teacher)));
+  }, [teachersList, sections, selectedSectionId, form.board, form.academicYear, form.teacher]);
 
   const close = () => {
     setModal(false);
@@ -365,7 +392,13 @@ export default function SectionManagementPage() {
   const openAdd = () => {
     setSelectedSectionId(null);
     setMode("add");
-    setForm(EMPTY);
+    setForm({
+      ...EMPTY,
+      board: filters.board || "",
+      academicYear: filters.academicYear || "",
+      academicLevel: filters.academicLevel || "",
+    });
+    if (filters.board) loadGroups(filters.board);
     setModalError(null);
     setModal(true);
   };
@@ -382,7 +415,13 @@ export default function SectionManagementPage() {
     setMode("edit");
   };
   const openRoomModal = (fromSection = false) => {
-    setRoomForm(EMPTY_ROOM);
+    setRoomForm(fromSection ? EMPTY_ROOM : {
+      ...EMPTY_ROOM,
+      building: roomFilters.building || "",
+      floor: roomFilters.floor || "",
+      roomType: roomFilters.roomType || "",
+      isActive: EMPTY_ROOM.isActive,
+    });
     setSelectedRoomId(null);
     setRoomMode("add");
     setRoomModalFromSection(fromSection);
@@ -436,10 +475,20 @@ export default function SectionManagementPage() {
         return setModalError("Only Classroom rooms can be assigned to a section.");
       if (capacity > Number(selectedRoom.capacity))
         return setModalError(`Section capacity cannot exceed room capacity (${selectedRoom.capacity}).`);
-      if (!availableTeachers.includes(form.teacher))
+      if (!teachersList.some((teacher) => normalizedValue(teacher.name) === normalizedValue(form.teacher)))
         return setModalError("Please select an available active class teacher.");
     }
     const other = (section) => section.id !== selectedSectionId;
+    const conflictingSection = form.status === "Active" && sections.find(
+      (section) =>
+        other(section) &&
+        section.status === "Active" &&
+        normalizedValue(section.board) === normalizedValue(form.board) &&
+        normalizedValue(section.academicYear) === normalizedValue(form.academicYear) &&
+        normalizedValue(section.teacher) === normalizedValue(form.teacher),
+    );
+    if (conflictingSection)
+      return setModalError(`The selected Incharge is already assigned to active section "${conflictingSection.name}" for this Board and Academic Year.`);
     if (
       sections.some(
         (section) =>
@@ -572,7 +621,7 @@ export default function SectionManagementPage() {
       else await apiClient.post(apiEndpoints.rooms.getAll, payload);
       await loadRooms();
       if (!isEditingRoom && roomModalFromSection && room.isActive && room.roomType === "Classroom")
-        setForm((current) => ({ ...current, room: room.roomCode }));
+        setForm((current) => ({ ...current, room: room.roomCode, strength: String(room.capacity ?? "") }));
       closeRoomModal();
       setRoomSearch("");
       setRoomPage(1);
@@ -583,29 +632,6 @@ export default function SectionManagementPage() {
       setSavingRoom(false);
     }
   };
-  const checkSections = async () => {
-    if (checkingSections) return;
-    setCheckingSections(true);
-    try {
-      await Promise.resolve();
-      setAppliedFilters({ ...filters });
-      setPage(1);
-    } finally {
-      setCheckingSections(false);
-    }
-  };
-  const checkRooms = async () => {
-    if (checkingRooms) return;
-    setCheckingRooms(true);
-    try {
-      await Promise.resolve();
-      setAppliedRoomFilters({ ...roomFilters });
-      setRoomPage(1);
-    } finally {
-      setCheckingRooms(false);
-    }
-  };
-
   return (
     <DashboardLayout
       title={activeTab === "sections" ? pageConfig.title : "Room Management"}
@@ -622,66 +648,6 @@ export default function SectionManagementPage() {
           </button>
         </div>
         {activeTab === "sections" && <>
-          <div className="cms-card cms-sec-filter-card">
-            <div className="cms-sec-filter-grid">
-              <FilterField
-                label="Board"
-                value={filters.board}
-                onChange={(value) => updateFilter("board", value)}
-                options={boardOptions}
-              />
-              <FilterField
-                label="Academic Year"
-                value={filters.academicYear}
-                onChange={(value) => updateFilter("academicYear", value)}
-                options={academicYearOptions}
-                disabled={!filters.board}
-              />
-              <FilterField
-                label="Group"
-                value={filters.group}
-                onChange={(value) => updateFilter("group", value)}
-                options={groupOptions}
-                disabled={!filters.academicYear}
-              />
-              <FilterField
-                label="Program"
-                value={filters.program}
-                onChange={(value) => updateFilter("program", value)}
-                options={filters.group ? programOptions : []}
-                disabled={!filters.group}
-              />
-              <FilterField
-                label="Academic Level"
-                value={filters.academicLevel}
-                onChange={(value) => updateFilter("academicLevel", value)}
-                options={academicLevelOptions}
-                disabled={!filters.program}
-              />
-            </div>
-            <div className="cms-sec-filter-actions">
-              <button
-                type="button"
-                className="cms-btn cms-btn-ghost"
-                onClick={() => {
-                  setFilters(EMPTY_FILTERS);
-                  setAppliedFilters(EMPTY_FILTERS);
-                  setSearch("");
-                  setPage(1);
-                }}
-              >
-                Reset
-              </button>
-              <button
-                type="button"
-                className="cms-btn cms-btn-primary"
-                disabled={checkingSections}
-                onClick={checkSections}
-              >
-                {checkingSections ? "Checking..." : "Check Sections"}
-              </button>
-            </div>
-          </div>
           <div className="cms-card">
             <div className="cms-toolbar cms-sec-toolbar">
               <div className="cms-search cms-sec-search">
@@ -693,6 +659,12 @@ export default function SectionManagementPage() {
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
+              <div className="cms-sec-toolbar-filters">
+                <ConstrainedFilterField label="Board" value={filters.board} onChange={(value) => updateFilter("board", value)} options={boardOptions} />
+                <FilterField label="Academic Year" value={filters.academicYear} onChange={(value) => updateFilter("academicYear", value)} options={academicYearOptions} showLabel={false} />
+                <ConstrainedFilterField label="Academic Level" value={filters.academicLevel} onChange={(value) => updateFilter("academicLevel", value)} options={academicLevelOptions} />
+              </div>
+              <div className="cms-sec-toolbar-spacer" />
               <button
                 type="button"
                 className="cms-btn cms-btn-primary cms-sec-compact-btn"
@@ -722,7 +694,9 @@ export default function SectionManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.length ? (
+                  {loading ? (
+                    <tr><td colSpan="10"><div className="cms-sec-loading"><span className="cms-sec-loader" aria-hidden="true" /><span>Loading data...</span></div></td></tr>
+                  ) : shown.length ? (
                     shown.map((section) => (
                       <tr key={section.id}>
                         <td className="cms-strong cms-sec-name-cell">{section.name}</td>
@@ -773,6 +747,7 @@ export default function SectionManagementPage() {
               </table>
             </div>
             <div className="cms-sec-pagination">
+              <span className="cms-sec-record-summary">Showing {sectionRangeStart}–{sectionRangeEnd} of {rows.length} records</span>
               <button
                 type="button"
                 className="cms-btn cms-btn-ghost"
@@ -795,7 +770,7 @@ export default function SectionManagementPage() {
             </div>
           </div>
           {modal && (
-            <div className="cms-sec-overlay" onClick={close}>
+            <div className={`cms-sec-overlay ${mode === "add" ? "cms-sec-add-overlay" : ""}`} onClick={close}>
               <div className="cms-modal cms-sec-modal" onClick={(event) => event.stopPropagation()}>
                 <div className="cms-modal-head">
                   <h3>{preview ? "Preview Section" : selected ? (edit ? "Edit Section" : "View Section") : "Add Section"}</h3>
@@ -820,7 +795,6 @@ export default function SectionManagementPage() {
                         value={form.academicYear}
                         field="academicYear"
                         options={academicYearOptions}
-                        disabled={!form.board}
                         readOnly={readOnly}
                         change={change}
                       />
@@ -829,7 +803,6 @@ export default function SectionManagementPage() {
                         value={form.group}
                         field="group"
                         options={groupOptions}
-                        disabled={!form.academicYear}
                         readOnly={readOnly}
                         change={change}
                       />
@@ -837,8 +810,7 @@ export default function SectionManagementPage() {
                         label="Program"
                         value={form.program}
                         field="program"
-                        options={form.group ? programOptions : []}
-                        disabled={!form.group}
+                        options={programOptions}
                         readOnly={readOnly}
                         change={change}
                       />
@@ -847,7 +819,6 @@ export default function SectionManagementPage() {
                         value={form.academicLevel}
                         field="academicLevel"
                         options={academicLevelOptions}
-                        disabled={!form.program}
                         readOnly={readOnly}
                         change={change}
                       />
@@ -871,7 +842,7 @@ export default function SectionManagementPage() {
                             onChange={(value) => change("room", value)}
                             options={availableRooms}
                             placeholder="Select Room Number"
-                            disabled={!form.academicLevel || readOnly}
+                            disabled={readOnly}
                           />
                           {!readOnly && form.academicLevel && !availableRooms.length && (
                             <div className="cms-modal-empty-state">No active classroom rooms available. Add an active classroom room before assigning a room to this section.</div>
@@ -891,11 +862,12 @@ export default function SectionManagementPage() {
                         <label>
                           Incharge <span className="req">*</span>
                         </label>
-                        <SearchableTeacherSelect
+                        <Select
                           value={form.teacher}
                           onChange={(value) => change("teacher", value)}
                           options={availableTeachers}
-                          disabled={!form.academicYear || readOnly}
+                          placeholder="Select Incharge"
+                          disabled={readOnly}
                         />
                       </div>
                       <div className="cms-field">
@@ -938,39 +910,33 @@ export default function SectionManagementPage() {
         </>}
         {activeTab === "rooms" && (
           <>
-            <div className="cms-card cms-sec-filter-card cms-room-filter-card">
-              <div className="cms-room-filter-grid">
-                <FilterField label="Block Name" value={roomFilters.building} onChange={(value) => setRoomFilters((current) => ({ ...current, building: value }))} options={roomBuildings} />
-                <FilterField label="Floor" value={roomFilters.floor} onChange={(value) => setRoomFilters((current) => ({ ...current, floor: value }))} options={roomFloors} />
-                <FilterField label="Room Type" value={roomFilters.roomType} onChange={(value) => setRoomFilters((current) => ({ ...current, roomType: value }))} options={roomTypes} />
-                <FilterField label="Status" value={roomFilters.status} onChange={(value) => setRoomFilters((current) => ({ ...current, status: value }))} options={["Active", "Inactive"]} />
-              </div>
-              <div className="cms-sec-filter-actions">
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={() => { setRoomFilters(EMPTY_ROOM_FILTERS); setAppliedRoomFilters(EMPTY_ROOM_FILTERS); setRoomSearch(""); setRoomPage(1); }}>Reset</button>
-                <button type="button" className="cms-btn cms-btn-primary" disabled={checkingRooms} onClick={checkRooms}>{checkingRooms ? "Checking..." : "Check Rooms"}</button>
-              </div>
-            </div>
             <div className="cms-card">
               <div className="cms-toolbar cms-sec-toolbar cms-room-toolbar">
                 <div className="cms-search cms-sec-search">
                   <Search size={16} />
                   <input type="search" placeholder={roomSearchPlaceholder} value={roomSearch} onChange={(event) => setRoomSearch(event.target.value)} />
                 </div>
-                <button type="button" className="cms-btn cms-btn-primary cms-room-add-btn" onClick={openRoomModal}>
+                <div className="cms-sec-toolbar-filters cms-room-toolbar-filters">
+                  <FilterField label="Block Name" value={roomFilters.building} onChange={(value) => setRoomFilters((current) => ({ ...current, building: value }))} options={roomBuildings} showLabel={false} />
+                  <FilterField label="Floor" value={roomFilters.floor} onChange={(value) => setRoomFilters((current) => ({ ...current, floor: value }))} options={roomFloors} showLabel={false} />
+                  <FilterField label="Room Type" value={roomFilters.roomType} onChange={(value) => setRoomFilters((current) => ({ ...current, roomType: value }))} options={roomFilterTypes} showLabel={false} />
+                </div>
+                <div className="cms-sec-toolbar-spacer" />
+                <button type="button" className="cms-btn cms-btn-primary cms-sec-compact-btn cms-room-add-btn" onClick={() => openRoomModal(false)}>
                   Add Room
                 </button>
               </div>
               <div className="cms-table-wrap cms-sec-table-wrap">
                 <table className="cms-table cms-sec-table cms-room-table">
                   <thead><tr>{["Room Code", "Room Name", "Block Name", "Floor", "Room Type", "Capacity", "Status", "Actions"].map((title) => <th key={title}>{title}</th>)}</tr></thead>
-                  <tbody>{shownRooms.length ? shownRooms.map((room) => <tr key={room.id}>
-                    <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td><td>{room.roomName}</td><td>{room.building}</td><td>{room.floor}</td><td>{room.roomType}</td><td>{room.capacity}</td>
+                  <tbody>{loadingRooms ? <tr><td colSpan="8"><div className="cms-sec-loading"><span className="cms-sec-loader" aria-hidden="true" /><span>Loading data...</span></div></td></tr> : shownRooms.length ? shownRooms.map((room) => <tr key={room.id}>
+                    <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td><td><span className="cms-room-name-truncated" title={room.roomName}>{room.roomName}</span></td><td>{room.building}</td><td>{room.floor}</td><td>{room.roomType}</td><td>{room.capacity}</td>
                     <td><span className={`cms-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"}`}>{room.isActive ? "Active" : "Inactive"}</span></td>
                     <td><div className="cms-sec-table-actions"><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room, true)}><Eye size={14} /></button><button type="button" className="cms-sec-action-btn" onClick={() => openRoom(room)}><Pencil size={14} /></button></div></td>
                   </tr>) : <tr><td colSpan="8" className="cms-empty">No rooms found matching your criteria.</td></tr>}</tbody>
                 </table>
               </div>
-              <div className="cms-sec-pagination"><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === 1} onClick={() => setRoomPage((current) => current - 1)}>Previous</button><span>{roomPage} / {roomPages}</span><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === roomPages} onClick={() => setRoomPage((current) => current + 1)}>Next</button></div>
+              <div className="cms-sec-pagination"><span className="cms-sec-record-summary">Showing {roomRangeStart}–{roomRangeEnd} of {roomRows.length} records</span><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === 1} onClick={() => setRoomPage((current) => current - 1)}>Previous</button><span>{roomPage} / {roomPages}</span><button type="button" className="cms-btn cms-btn-ghost" disabled={roomPage === roomPages} onClick={() => setRoomPage((current) => current + 1)}>Next</button></div>
             </div>
           </>
         )}
@@ -1084,10 +1050,10 @@ export default function SectionManagementPage() {
   );
 }
 
-function FilterField({ label, value, onChange, options, disabled = false }) {
+function FilterField({ label, value, onChange, options, disabled = false, showLabel = true }) {
   return (
     <div className="cms-field cms-sec-field">
-      <label>{label}</label>
+      {showLabel && <label>{label}</label>}
       <Select
         value={value}
         onChange={onChange}
@@ -1095,6 +1061,62 @@ function FilterField({ label, value, onChange, options, disabled = false }) {
         placeholder={`Select ${label}`}
         disabled={disabled}
       />
+    </div>
+  );
+}
+
+function ConstrainedFilterField({ label, value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+  const placeholder = `Select ${label}`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const selectOption = (nextValue) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="cms-field cms-sec-field cms-constrained-filter">
+      <button
+        type="button"
+        className="cms-sec-select-trigger cms-constrained-filter-trigger"
+        aria-label={placeholder}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={value || placeholder}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{value || placeholder}</span>
+        <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="cms-constrained-filter-menu" role="listbox" aria-label={`${label} options`}>
+          <button type="button" role="option" aria-selected={!value} title={placeholder} onClick={() => selectOption("")}>
+            {placeholder}
+          </button>
+          {options.length ? options.map((option) => (
+            <button type="button" role="option" aria-selected={option === value} title={option} key={option} onClick={() => selectOption(option)}>
+              {option}
+            </button>
+          )) : <span className="cms-constrained-filter-empty">No options available</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1124,69 +1146,6 @@ function FormField({
   );
 }
 
-function SearchableTeacherSelect({ value, onChange, options, disabled = false }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const containerRef = useRef(null);
-  const searchRef = useRef(null);
-  const filteredOptions = options.filter((teacher) =>
-    teacher.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const closeOnOutsideClick = (event) => {
-      if (!containerRef.current?.contains(event.target)) {
-        setOpen(false);
-        setSearch("");
-      }
-    };
-    document.addEventListener("mousedown", closeOnOutsideClick);
-    searchRef.current?.focus();
-    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
-  }, [open]);
-
-  const selectTeacher = (teacher) => {
-    onChange(teacher);
-    setOpen(false);
-    setSearch("");
-  };
-
-  return (
-    <div ref={containerRef} className={`cms-sec-select cms-teacher-select ${disabled ? "is-disabled" : ""}`}>
-      <button
-        type="button"
-        className="cms-sec-select-trigger"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        {value || "Select Incharge"}
-      </button>
-      {open && (
-        <div className="cms-sec-select-menu cms-teacher-select-menu">
-          <input
-            ref={searchRef}
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search Teacher..."
-            aria-label="Search Incharge"
-          />
-          <div className="cms-sec-select-options" role="listbox" aria-label="Incharge options">
-            {filteredOptions.length ? filteredOptions.map((teacher) => (
-              <button type="button" role="option" aria-selected={teacher === value} key={teacher} onClick={() => selectTeacher(teacher)}>
-                {teacher}
-              </button>
-            )) : <span>No faculty found.</span>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function Select({ value, onChange, options, placeholder, disabled = false }) {
   return (
     <div className={`cms-sec-select ${disabled ? "is-disabled" : ""}`}>
@@ -1195,11 +1154,12 @@ function Select({ value, onChange, options, placeholder, disabled = false }) {
         value={value}
         disabled={disabled}
         aria-label={placeholder}
+        title={value || placeholder}
         onChange={(event) => onChange(event.target.value)}
       >
-        {!value && <option value="">{placeholder}</option>}
+        <option value="">{options.length ? placeholder : `${placeholder}`}</option>
         {options.map((option) => (
-          <option key={option} value={option}>
+          <option key={option} value={option} title={option}>
             {option}
           </option>
         ))}

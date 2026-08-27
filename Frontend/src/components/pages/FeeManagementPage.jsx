@@ -5,7 +5,6 @@ import {
   CheckCircle,
   Copy,
   Eye,
-  Filter,
   Pencil,
   Plus,
   Printer,
@@ -56,7 +55,6 @@ import "./FeeManagementPage.css";
 
 const TABS = ["Overview", "Student Fee Ledger", "Fee Setup", "Fee Collection", "Payment History"];
 const FEE_SETUP_TABS = ["Fee Types", "Fee Structure", "Scholarships"];
-const PAYMENT_TYPES = ["Admission Fee", "Full Course Fee", "Course Fee", "Full Remaining Balance", "Installment 1", "Installment 2", "Installment 3", "Installment 4"];
 const FEE_TYPE_MASTER_STORAGE_KEY = "cms.feeTypeMaster.v1";
 const SCHOLARSHIP_STORAGE_KEY = "cms.scholarships.v1";
 const PROGRAMS_STORAGE_KEY = "cms.groupPrograms.v1";
@@ -220,7 +218,12 @@ const mergeFeeTypeMasters = (apiTypes, localTypes) => {
   const byName = new Map();
   [...defaultFeeTypes(), ...apiTypes, ...localTypes].forEach((item) => {
     if (!item?.name) return;
-    byName.set(item.name.trim().toLowerCase(), { ...item, id: item.id || `local-${item.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}` });
+    const key = item.name.trim().toLowerCase();
+    if (item.deleted) {
+      byName.delete(key);
+      return;
+    }
+    byName.set(key, { ...item, id: item.id || `local-${key.replace(/[^a-z0-9]+/g, "-")}` });
   });
   return Array.from(byName.values());
 };
@@ -821,7 +824,7 @@ function StudentFeeDrawer({ account, onClose, onCollect, onReceipt }) {
 }
 
 /* ----------------------------- Student ledger ---------------------------- */
-function LedgerTab({ accounts, onView, onCollect, onPrint, masters }) {
+function LedgerTab({ accounts, onView, onPrint, masters }) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ academicYear: "", group: "", section: "", paymentPlan: "", feeStatus: "" });
   const [page, setPage] = useState(1);
@@ -870,13 +873,12 @@ function LedgerTab({ accounts, onView, onCollect, onPrint, masters }) {
         <h2>Student Fee Ledger</h2>
         <span className="cms-badge cms-badge-info">{rows.length} of {accounts.length} students</span>
       </div>
-      <div className="cms-card-body cms-fee-toolbar">
+      <div className="cms-card-body cms-fee-toolbar cms-fee-controls">
         <div className="cms-fee-search">
           <Search size={15} />
           <input value={search} placeholder="Search by student name or admission number" onChange={(event) => setSearchTerm(event.target.value)} />
         </div>
         <div className="cms-fee-filter-row">
-          <span className="cms-fee-filter-label"><Filter size={14} /> Filters</span>
           <SelectFilter label="Academic Year" value={filters.academicYear} options={masters.years} onChange={setFilter("academicYear")} />
           <SelectFilter label="Group" value={filters.group} options={groupOptions} onChange={setFilter("group")} />
           <SelectFilter label="Section" value={filters.section} options={sectionOptions} onChange={setFilter("section")} />
@@ -913,9 +915,6 @@ function LedgerTab({ accounts, onView, onCollect, onPrint, masters }) {
                     <button className="cms-action-btn" title="View fee account" aria-label="View fee account" onClick={() => onView(item.id)}>
                       <Eye size={15} />
                     </button>
-                    <button className="cms-action-btn" title="Collect payment" aria-label="Collect payment" disabled={item.balance === 0} onClick={() => onCollect(item.id)}>
-                      <WalletCards size={15} />
-                    </button>
                     <button className="cms-action-btn" title="Print fee statement" aria-label="Print fee statement" onClick={() => onPrint(item.id)}>
                       <Printer size={15} />
                     </button>
@@ -931,39 +930,18 @@ function LedgerTab({ accounts, onView, onCollect, onPrint, masters }) {
   );
 }
 
-function FeeCollectionTab({ accounts, onCollect, masters }) {
+function FeeCollectionTab({ accounts, onCollect }) {
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ academicYear: "", group: "", section: "", feeStatus: "" });
   const [page, setPage] = useState(1);
   const setSearchTerm = (value) => {
     setSearch(value);
     setPage(1);
   };
-  const setFilter = (key) => (value) => {
-    setFilters((current) => ({ ...current, [key]: value, ...(key === "group" ? { section: "" } : {}) }));
-    setPage(1);
-  };
-
-  const optionLabel = (list, value) => list?.find((option) => String(option.value) === String(value))?.label || "";
-  const selectedYearLabel = optionLabel(masters.years, filters.academicYear);
-  const selectedGroupLabel = optionLabel(masters.groups, filters.group);
-  const groupOptions = masters.groups.filter((item) => (
-    !filters.academicYear || !item.academicYearId || item.academicYearId === String(filters.academicYear)
-  ));
-  const sectionOptions = masters.sections.filter((item) => (
-    (!filters.academicYear || !item.academicYearId || item.academicYearId === String(filters.academicYear))
-    && (!filters.group || !item.groupId || item.groupId === String(filters.group))
-  ));
   const rows = accounts.filter((item) => {
     const term = search.trim().toLowerCase();
-    const matchesSearch = !term
+    return !term
       || item.studentName.toLowerCase().includes(term)
       || item.admissionNo.toLowerCase().includes(term);
-    return matchesSearch
-      && (!filters.academicYear || item.academicYearId === filters.academicYear || item.academicYear === selectedYearLabel || item.academicYear === filters.academicYear)
-      && (!filters.group || item.groupId === filters.group || item.group === selectedGroupLabel || item.group === filters.group)
-      && (!filters.section || item.sectionId === filters.section || item.section === optionLabel(sectionOptions, filters.section) || item.section === filters.section)
-      && (!filters.feeStatus || item.feeStatus === filters.feeStatus);
   });
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
@@ -978,17 +956,10 @@ function FeeCollectionTab({ accounts, onCollect, masters }) {
         <h2>Fee Collection</h2>
         <span className="cms-badge cms-badge-info">{rows.length} accounts</span>
       </div>
-      <div className="cms-card-body cms-fee-toolbar">
+      <div className="cms-card-body cms-fee-toolbar cms-fee-controls cms-fee-search-only">
         <div className="cms-fee-search">
           <Search size={15} />
           <input value={search} placeholder="Search by student name or admission number" onChange={(event) => setSearchTerm(event.target.value)} />
-        </div>
-        <div className="cms-fee-filter-row">
-          <span className="cms-fee-filter-label"><Filter size={14} /> Filters</span>
-          <SelectFilter label="Academic Year" value={filters.academicYear} options={masters.years} onChange={setFilter("academicYear")} />
-          <SelectFilter label="Group" value={filters.group} options={groupOptions} onChange={setFilter("group")} />
-          <SelectFilter label="Section" value={filters.section} options={sectionOptions} onChange={setFilter("section")} />
-          <SelectFilter label="Fee Status" value={filters.feeStatus} options={["Paid", "Partial", "Due", "Overdue"]} onChange={setFilter("feeStatus")} />
         </div>
       </div>
       <div className="cms-table-wrap">
@@ -1228,13 +1199,6 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
             {programOptions.map((program) => <option key={program.value} value={program.value}>{program.label}</option>)}
           </select>
         </div>
-        <div className="cms-field">
-          <label htmlFor="fs-status">Status</label>
-          <select id="fs-status" value={values.status} onChange={(event) => update("status", event.target.value)}>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-        </div>
       </div>
       <div className="cms-fee-structure-items">
         <div className="cms-fee-structure-items-head">
@@ -1242,15 +1206,14 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
           <span>{values.academicYear} / {values.group || "Group"} / {programOptions.find((item) => item.value === values.programId)?.label || "Program"}</span>
         </div>
         <div className="cms-table-wrap cms-fee-config-wrap">
-          <table className="cms-table cms-fee-config-table">
+          <table className="cms-table cms-fee-config-table cms-fee-setup-table cms-fee-types-table">
             <colgroup>
+              <col style={{ width: "40%" }} />
               <col style={{ width: "30%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "26%" }} />
+              <col style={{ width: "30%" }} />
             </colgroup>
             <thead>
-              <tr><th>Fee Type</th><th>Rule</th><th className="num">Amount</th><th>Status</th></tr>
+              <tr><th>Fee Type</th><th>Rule</th><th className="num">Amount</th></tr>
             </thead>
             <tbody>
               {values.feeItems.map((item) => (
@@ -1274,16 +1237,6 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
                       value={item.originalAmount}
                       onChange={(event) => updateFeeItem(item.id, { originalAmount: Number(event.target.value || 0), selected: Number(event.target.value || 0) > 0 || item.required })}
                     />
-                  </td>
-                  <td>
-                    <select
-                      className="cms-mini-input"
-                      value={item.selected ? "Active" : "Inactive"}
-                      onChange={(event) => updateFeeItem(item.id, { selected: event.target.value === "Active" })}
-                    >
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                    </select>
                   </td>
                 </tr>
               ))}
@@ -1368,10 +1321,20 @@ function FeeTypesTab({ feeTypes, onChange, onToast }) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(feeTypes.length / PAGE_SIZE));
   const paginatedFeeTypes = pageItems(feeTypes, page);
+  const defaultNames = useMemo(() => new Set(defaultFeeTypes().map((item) => item.name.toLowerCase())), []);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  const deleteType = (item) => {
+    const tombstone = defaultNames.has(item.name.toLowerCase())
+      ? { ...item, deleted: true }
+      : null;
+    const nextTypes = feeTypes.filter((feeType) => feeType.id !== item.id);
+    onChange(tombstone ? [...nextTypes, tombstone] : nextTypes);
+    onToast("Fee type deleted");
+  };
 
   return (
     <div className="cms-card cms-fee-types-card">
@@ -1386,7 +1349,7 @@ function FeeTypesTab({ feeTypes, onChange, onToast }) {
         <div className="cms-table-wrap cms-fee-config-wrap">
           <table className="cms-table cms-fee-config-table">
             <thead>
-              <tr><th>Fee Type</th><th>Category</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Fee Type</th><th>Category</th><th>Status</th><th className="cms-fee-actions-col">Actions</th></tr>
             </thead>
             <tbody>
               {paginatedFeeTypes.map((item) => (
@@ -1394,8 +1357,11 @@ function FeeTypesTab({ feeTypes, onChange, onToast }) {
                   <td><strong>{item.name}</strong>{String(item.id).startsWith("custom-") ? <small className="cms-fee-required">Local only</small> : null}</td>
                   <td>{item.category || "Other"}</td>
                   <td><span className={`cms-badge ${item.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}>{item.status}</span></td>
-                  <td>
-                    <button type="button" className="cms-action-btn" title="Edit fee type" aria-label="Edit fee type" onClick={() => setFormItem(item)}><Pencil size={15} /></button>
+                  <td className="cms-fee-actions-col">
+                    <div className="cms-actions">
+                      <button type="button" className="cms-action-btn" title="Edit fee type" aria-label="Edit fee type" onClick={() => setFormItem(item)}><Pencil size={15} /></button>
+                      <button type="button" className="cms-action-btn" title="Delete fee type" aria-label="Delete fee type" onClick={() => deleteType(item)}><Trash2 size={15} /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1427,7 +1393,6 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
     name: initial?.name || "",
     discountType: initial?.discountType || "Percentage",
     discountValue: initial?.discountValue ?? "",
-    status: initial?.status || "Active",
   });
   const [error, setError] = useState("");
 
@@ -1444,7 +1409,7 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
       name,
       discountType: draft.discountType,
       discountValue,
-      status: draft.status || "Active",
+      status: initial?.status || "Active",
     };
     const nextScholarships = initial?.id
       ? scholarships.map((item) => (item.id === initial.id ? { ...item, ...nextScholarship } : item))
@@ -1481,13 +1446,6 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
           <label htmlFor="sch-value">Discount Value</label>
           <input id="sch-value" type="number" min="0" max={draft.discountType === "Percentage" ? "100" : undefined} value={draft.discountValue} onChange={(event) => setDraft((current) => ({ ...current, discountValue: event.target.value }))} />
         </div>
-        <div className="cms-field">
-          <label htmlFor="sch-status">Status</label>
-          <select id="sch-status" value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-        </div>
       </div>
       {error ? <p className="cms-error">{error}</p> : null}
     </Modal>
@@ -1504,6 +1462,11 @@ function ScholarshipsTab({ scholarships, onChange, onToast }) {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  const deleteScholarship = (item) => {
+    onChange(scholarships.filter((scholarship) => scholarship.id !== item.id));
+    onToast("Scholarship deleted");
+  };
+
   return (
     <div className="cms-card cms-fee-types-card">
       <div className="cms-card-head">
@@ -1515,23 +1478,31 @@ function ScholarshipsTab({ scholarships, onChange, onToast }) {
       </div>
       <div className="cms-card-body cms-fee-toolbar">
         <div className="cms-table-wrap">
-          <table className="cms-table">
+          <table className="cms-table cms-fee-setup-table cms-fee-scholarship-table">
+            <colgroup>
+              <col className="cms-fee-scholarship-name-col" />
+              <col className="cms-fee-scholarship-type-col" />
+              <col className="cms-fee-scholarship-value-col" />
+              <col className="cms-fee-scholarship-actions-col" />
+            </colgroup>
             <thead>
-              <tr><th>Scholarship</th><th>Type</th><th className="num">Value</th><th>Status</th><th>Actions</th></tr>
+              <tr><th>Scholarship</th><th>Type</th><th className="cms-fee-value-col">Value</th><th className="cms-fee-actions-col">Actions</th></tr>
             </thead>
             <tbody>
               {paginatedScholarships.map((item) => (
                 <tr key={item.id}>
                   <td><strong>{item.name}</strong></td>
                   <td>{item.discountType}</td>
-                  <td className="num">{scholarshipValueLabel(item)}</td>
-                  <td><span className={`cms-badge ${item.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}>{item.status}</span></td>
-                  <td>
-                    <button type="button" className="cms-action-btn" title="Edit scholarship" aria-label="Edit scholarship" onClick={() => setFormItem(item)}><Pencil size={15} /></button>
+                  <td className="cms-fee-value-col">{scholarshipValueLabel(item)}</td>
+                  <td className="cms-fee-actions-col">
+                    <div className="cms-actions">
+                      <button type="button" className="cms-action-btn" title="Edit scholarship" aria-label="Edit scholarship" onClick={() => setFormItem(item)}><Pencil size={15} /></button>
+                      <button type="button" className="cms-action-btn" title="Delete scholarship" aria-label="Delete scholarship" onClick={() => deleteScholarship(item)}><Trash2 size={15} /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
-              {!scholarships.length ? <tr><td colSpan={5} className="cms-fee-empty-row">No scholarships found.</td></tr> : null}
+              {!scholarships.length ? <tr><td colSpan={4} className="cms-fee-empty-row">No scholarships found.</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -1599,15 +1570,15 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
         <button className="cms-btn cms-btn-primary" onClick={() => setEditing({})}><Plus size={14} /> Add Fee Structure</button>
       </div>
       <div className="cms-table-wrap">
-        <table className="cms-table">
+        <table className="cms-table cms-fee-setup-table cms-fee-structure-table">
           <thead>
-            <tr><th>Academic Year</th><th>Group</th><th>Program</th><th>Configured Fee Types</th><th className="num">Total Fee</th><th>Status</th><th>Actions</th></tr>
+            <tr><th>Academic Year</th><th>Group</th><th>Program</th><th>Configured Fee Types</th><th className="num">Total Fee</th><th className="cms-fee-actions-col">Actions</th></tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="cms-fee-empty-row">Loading fee structures...</td></tr>
+              <tr><td colSpan={6} className="cms-fee-empty-row">Loading fee structures...</td></tr>
             ) : structures.length === 0 ? (
-              <tr><td colSpan={7} className="cms-fee-empty-row">{error || "No fee structures found."}</td></tr>
+              <tr><td colSpan={6} className="cms-fee-empty-row">{error || "No fee structures found."}</td></tr>
             ) : paginatedStructures.map((row) => {
               const feeItems = row.feeItems?.length ? row.feeItems : feeItemsForStructure(row, row.group, row.section);
               const activeItems = feeItems.filter((item) => item.selected);
@@ -1629,8 +1600,7 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
                     </div>
                   </td>
                   <td className="num">{formatCurrency(activeTotal)}</td>
-                  <td><span className={`cms-badge ${row.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}>{row.status}</span></td>
-                  <td>
+                  <td className="cms-fee-actions-col">
                     <div className="cms-actions">
                       <button className="cms-action-btn" title="Edit fee structure" aria-label="Edit fee structure" onClick={() => setEditing(row)}><Pencil size={15} /></button>
                       <button className="cms-action-btn" title="Copy fee structure" aria-label="Copy fee structure" onClick={() => copyStructure(row)}><Copy size={15} /></button>
@@ -1698,36 +1668,21 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
 }
 
 /* ---------------------------- Payment history ---------------------------- */
-function HistoryTab({ accounts, onReceipt, masters }) {
+function HistoryTab({ accounts, onReceipt }) {
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ date: "", group: "", section: "", type: "", method: "" });
   const [page, setPage] = useState(1);
   const setSearchTerm = (value) => {
     setSearch(value);
     setPage(1);
   };
-  const setFilter = (key) => (value) => {
-    setFilters((current) => ({ ...current, [key]: value, ...(key === "group" ? { section: "" } : {}) }));
-    setPage(1);
-  };
   const transactions = useMemo(() => allTransactions(accounts), [accounts]);
-  const optionLabel = (list, value) => list?.find((option) => String(option.value) === String(value))?.label || "";
-  const selectedGroupLabel = optionLabel(masters.groups, filters.group);
-  const sectionOptions = masters.sections.filter((item) => !filters.group || !item.groupId || item.groupId === String(filters.group));
-  const paymentTypeOptions = PAYMENT_TYPES.map((type) => ({ value: type, label: feeScheduleLabel(type) }));
 
   const rows = transactions.filter((row) => {
     const term = search.trim().toLowerCase();
-    const matchesSearch = !term
+    return !term
       || row.studentName.toLowerCase().includes(term)
       || row.admissionNo.toLowerCase().includes(term)
       || row.receiptNo.toLowerCase().includes(term);
-    return matchesSearch
-      && (!filters.date || String(row.date).slice(0, 10) === filters.date)
-      && (!filters.group || row.groupId === filters.group || row.group === selectedGroupLabel || row.group === filters.group)
-      && (!filters.section || row.sectionId === filters.section || row.section === optionLabel(sectionOptions, filters.section) || row.section === filters.section)
-      && (!filters.type || row.type === filters.type)
-      && (!filters.method || row.method === filters.method);
   });
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
@@ -1742,20 +1697,10 @@ function HistoryTab({ accounts, onReceipt, masters }) {
         <h2>Payment History</h2>
         <span className="cms-badge cms-badge-info">{rows.length} transactions</span>
       </div>
-      <div className="cms-card-body cms-fee-toolbar">
+      <div className="cms-card-body cms-fee-toolbar cms-fee-controls cms-fee-search-only">
         <div className="cms-fee-search">
           <Search size={15} />
           <input value={search} placeholder="Search by student, admission number or receipt number" onChange={(event) => setSearchTerm(event.target.value)} />
-        </div>
-        <div className="cms-fee-filter-row">
-          <label className="cms-fee-filter">
-            <span>Date</span>
-            <input type="date" value={filters.date} onChange={(event) => setFilter("date")(event.target.value)} />
-          </label>
-          <SelectFilter label="Group" value={filters.group} options={masters.groups} onChange={setFilter("group")} />
-          <SelectFilter label="Section" value={filters.section} options={sectionOptions} onChange={setFilter("section")} />
-          <SelectFilter label="Payment Type" value={filters.type} options={paymentTypeOptions} onChange={setFilter("type")} />
-          <SelectFilter label="Payment Method" value={filters.method} options={PAYMENT_METHODS} onChange={setFilter("method")} />
         </div>
       </div>
       <div className="cms-table-wrap">
@@ -1816,8 +1761,15 @@ export default function FeeManagementPage() {
   const modalOpen = Boolean(selected || collecting || receipt);
 
   const saveFeeTypes = (nextTypes) => {
-    setFeeTypes(nextTypes);
-    storageSet(FEE_TYPE_MASTER_STORAGE_KEY, nextTypes);
+    const storedDeleted = storageGet(FEE_TYPE_MASTER_STORAGE_KEY, [])
+      .filter((item) => item?.deleted && item?.name);
+    const incomingNames = new Set(nextTypes.map((item) => item.name?.trim().toLowerCase()).filter(Boolean));
+    const nextWithDeleted = [
+      ...nextTypes,
+      ...storedDeleted.filter((item) => !incomingNames.has(item.name.trim().toLowerCase())),
+    ];
+    setFeeTypes(mergeFeeTypeMasters([], nextWithDeleted));
+    storageSet(FEE_TYPE_MASTER_STORAGE_KEY, nextWithDeleted);
   };
 
   const saveScholarships = (nextScholarships) => {
@@ -1913,7 +1865,7 @@ export default function FeeManagementPage() {
       </div>
 
       {tab === "Overview" ? <OverviewTab accounts={accounts} /> : null}
-      {tab === "Student Fee Ledger" ? <LedgerTab accounts={accounts} onView={setSelectedId} onCollect={openCollectPayment} onPrint={printStudentStatement} masters={masters} /> : null}
+      {tab === "Student Fee Ledger" ? <LedgerTab accounts={accounts} onView={setSelectedId} onPrint={printStudentStatement} masters={masters} /> : null}
       {tab === "Fee Setup" ? (
         <FeeSetupTab
           setupTab={setupTab}
@@ -1930,8 +1882,8 @@ export default function FeeManagementPage() {
           masters={masters}
         />
       ) : null}
-      {tab === "Fee Collection" ? <FeeCollectionTab accounts={accounts} onCollect={openCollectPayment} masters={masters} /> : null}
-      {tab === "Payment History" ? <HistoryTab accounts={accounts} onReceipt={setReceipt} masters={masters} /> : null}
+      {tab === "Fee Collection" ? <FeeCollectionTab accounts={accounts} onCollect={openCollectPayment} /> : null}
+      {tab === "Payment History" ? <HistoryTab accounts={accounts} onReceipt={setReceipt} /> : null}
 
       {selected ? (
         <StudentFeeDrawer

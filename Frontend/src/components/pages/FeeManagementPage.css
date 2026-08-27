@@ -152,13 +152,29 @@
   overflow: hidden;
 }
 
-.cms-fee-toolbar { display: grid; gap: 12px; }
+.cms-fee-toolbar {
+  display: grid;
+  gap: 12px;
+}
+.cms-card-body.cms-fee-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  align-items: end;
+  column-gap: 16px;
+  row-gap: 10px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.cms-card-body.cms-fee-search-only {
+  grid-template-columns: minmax(220px, 320px);
+}
 .cms-fee-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: 420px;
-  padding: 0 12px;
+  width: 100%;
+  max-width: 300px;
+  padding: 0 10px;
   border: 1px solid var(--cms-border);
   border-radius: 10px;
   background: var(--cms-surface);
@@ -167,7 +183,7 @@
 .cms-fee-search input {
   flex: 1;
   min-width: 0;
-  min-height: 38px;
+  min-height: 34px;
   border: 0;
   background: transparent;
   color: var(--cms-text);
@@ -176,25 +192,23 @@
 }
 .cms-fee-filter-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
+  flex-wrap: nowrap;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
 }
-.cms-fee-filter-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding-bottom: 8px;
-  color: var(--cms-muted);
-  font-size: 12px;
-  font-weight: 600;
+.cms-fee-filter {
+  display: grid;
+  gap: 3px;
+  flex: 1 1 0;
+  min-width: 0;
 }
-.cms-fee-filter { display: grid; gap: 4px; min-width: 140px; }
-.cms-fee-filter > span { color: var(--cms-muted); font-size: 11.5px; font-weight: 600; }
+.cms-fee-filter > span { color: var(--cms-muted); font-size: 11px; font-weight: 600; }
 .cms-fee-filter select,
 .cms-fee-filter input {
-  min-height: 36px;
-  padding: 6px 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 9px;
   border: 1px solid var(--cms-border);
   border-radius: 8px;
   background: var(--cms-surface);
@@ -205,6 +219,117 @@
 .cms-table .num, .cms-fee-table .num { text-align: right; }
 .cms-table-wrap { max-width: 100%; overflow-x: auto; }
 .cms-table { min-width: max-content; }
+.cms-table .cms-fee-actions-col {
+  width: 132px;
+  min-width: 132px;
+  text-align: left;
+}
+.cms-table .cms-fee-actions-col .cms-actions {
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.cms-fee-setup-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+.cms-fee-setup-table th,
+.cms-fee-setup-table td {
+  vertical-align: middle;
+}
+.cms-fee-setup-table .cms-fee-actions-col {
+  width: 124px;
+  min-width: 124px;
+}
+.cms-fee-setup-table .cms-fee-actions-col .cms-actions {
+  justify-content: flex-start;
+}
+.cms-fee-types-table th:nth-child(1),
+.cms-fee-types-table td:nth-child(1) {
+  width: 34%;
+}
+.cms-fee-types-table th:nth-child(2),
+.cms-fee-types-table td:nth-child(2) {
+  width: 24%;
+}
+.cms-fee-types-table th:nth-child(3),
+.cms-fee-types-table td:nth-child(3) {
+  width: 18%;
+}
+.cms-fee-types-table th:nth-child(4),
+.cms-fee-types-table td:nth-child(4) {
+  width: 124px;
+}
+.cms-fee-scholarship-table th:nth-child(1),
+.cms-fee-scholarship-table td:nth-child(1) {
+  width: 32%;
+}
+.cms-fee-scholarship-table th:nth-child(2),
+.cms-fee-scholarship-table td:nth-child(2) {
+  width: 28%;
+}
+.cms-fee-scholarship-table th:nth-child(3),
+.cms-fee-scholarship-table td:nth-child(3) {
+  width: 20%;
+}
+.cms-fee-scholarship-table th:nth-child(4),
+.cms-fee-scholarship-table td:nth-child(4) {
+  width: 20%;
+}
+.cms-fee-scholarship-table col.cms-fee-scholarship-name-col {
+  width: 32%;
+}
+.cms-fee-scholarship-table col.cms-fee-scholarship-type-col {
+  width: 28%;
+}
+.cms-fee-scholarship-table col.cms-fee-scholarship-value-col {
+  width: 20%;
+}
+.cms-fee-scholarship-table col.cms-fee-scholarship-actions-col {
+  width: 20%;
+}
+.cms-fee-scholarship-table .cms-fee-value-col {
+  text-align: left;
+  padding-left: 18px;
+}
+.cms-fee-scholarship-table .cms-fee-actions-col {
+  padding-left: 18px;
+}
+.cms-fee-structure-table {
+  min-width: 0;
+}
+.cms-fee-structure-table th:nth-child(1),
+.cms-fee-structure-table td:nth-child(1) {
+  width: 14%;
+}
+.cms-fee-structure-table th:nth-child(2),
+.cms-fee-structure-table td:nth-child(2) {
+  width: 10%;
+}
+.cms-fee-structure-table th:nth-child(3),
+.cms-fee-structure-table td:nth-child(3) {
+  width: 13%;
+}
+.cms-fee-structure-table th:nth-child(4),
+.cms-fee-structure-table td:nth-child(4) {
+  width: 31%;
+}
+.cms-fee-structure-table th:nth-child(5),
+.cms-fee-structure-table td:nth-child(5) {
+  width: 14%;
+}
+.cms-fee-structure-table th:nth-child(6),
+.cms-fee-structure-table td:nth-child(6) {
+  width: 18%;
+}
+.cms-fee-structure-table .cms-fee-actions-col {
+  padding-left: 18px;
+  padding-right: 18px;
+}
+.cms-fee-structure-table .cms-fee-actions-col .cms-actions {
+  gap: 8px;
+}
 .cms-fee-empty-row { padding: 22px 12px; color: var(--cms-muted); text-align: center; }
 .cms-fee-mini-btn { min-height: 32px; padding: 6px 10px; font-size: 12.5px; }
 .cms-fee-note {
@@ -286,6 +411,22 @@
 .cms-fee-config-wrap .cms-fee-config-table th:nth-child(4),
 .cms-fee-config-wrap .cms-fee-config-table td:nth-child(4) {
   width: 26%;
+}
+.cms-fee-config-wrap .cms-fee-types-table th:nth-child(1),
+.cms-fee-config-wrap .cms-fee-types-table td:nth-child(1) {
+  width: 34%;
+}
+.cms-fee-config-wrap .cms-fee-types-table th:nth-child(2),
+.cms-fee-config-wrap .cms-fee-types-table td:nth-child(2) {
+  width: 24%;
+}
+.cms-fee-config-wrap .cms-fee-types-table th:nth-child(3),
+.cms-fee-config-wrap .cms-fee-types-table td:nth-child(3) {
+  width: 18%;
+}
+.cms-fee-config-wrap .cms-fee-types-table th:nth-child(4),
+.cms-fee-config-wrap .cms-fee-types-table td:nth-child(4) {
+  width: 124px;
 }
 .cms-fee-config-wrap .cms-fee-config-table .cms-mini-input {
   width: 100%;
@@ -483,7 +624,10 @@
 @media (max-width: 760px) {
   .cms-fee-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cms-fee-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cms-fee-filter { min-width: 130px; flex: 1 1 130px; }
+  .cms-card-body.cms-fee-controls { grid-template-columns: 1fr; align-items: stretch; }
+  .cms-fee-search { max-width: none; }
+  .cms-fee-filter-row { flex-wrap: wrap; }
+  .cms-fee-filter { flex-basis: 130px; }
   .cms-overlay { padding: 12px; }
   .cms-fee-drawer { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
   .cms-fee-drawer > header { align-items: flex-start; }

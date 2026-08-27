@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Pencil, Trash2, Eye, Printer, FileSpreadsheet, ChevronDown, Download } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Eye, Printer, FileSpreadsheet, FileText, ChevronDown, Download } from "lucide-react";
 import { StatusBadge, Loader } from "./Ui.jsx";
 
 const PAGE_SIZE = 5;
@@ -38,6 +38,7 @@ export default function DataTable({
   toolbarExtra,
   emptyMessage,
   paginationCurrentOnly = false,
+  enablePdfExport = false,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -90,6 +91,36 @@ export default function DataTable({
     popup.document.close();
   };
 
+  const exportPdf = async () => {
+    const exportColumns = columns.filter((column) => column.exportable !== false);
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const document = new jsPDF({
+      orientation: exportColumns.length > 5 ? "landscape" : "portrait",
+      unit: "pt",
+      format: "a4",
+    });
+    const exportDate = new Date();
+    document.setFontSize(16);
+    document.text(title || "Records", 36, 38);
+    document.setFontSize(9);
+    document.setTextColor(88, 97, 84);
+    document.text(`Exported ${exportDate.toLocaleString()}`, 36, 54);
+    autoTable(document, {
+      startY: 68,
+      head: [exportColumns.map((column) => column.label)],
+      body: filtered.map((row) => exportColumns.map((column) => textValue(row[column.key]))),
+      styles: { fontSize: 8, cellPadding: 5, textColor: [28, 36, 22] },
+      headStyles: { fillColor: [111, 132, 0], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [247, 248, 239] },
+      margin: { left: 28, right: 28 },
+    });
+    document.save(`${safeFileName(title)}-${exportDate.toISOString().slice(0, 10)}.pdf`);
+    setExportOpen(false);
+  };
+
   return (
     <div className="cms-card">
       <div className="cms-toolbar">
@@ -106,9 +137,37 @@ export default function DataTable({
         </div>
         <div className="cms-toolbar-right">
           {toolbarExtra}
-          <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
-            <Download size={15} /> Export
-          </button>
+          <div
+            className="cms-export-control"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+              onClick={() => setExportOpen((open) => !open)}
+            >
+              <Download size={15} /> Export <ChevronDown size={14} />
+            </button>
+            {exportOpen ? (
+              <div className="cms-export-menu" role="menu">
+                <button type="button" role="menuitem" onClick={exportExcel}>
+                  <FileSpreadsheet size={15} /> Export Excel
+                </button>
+                {enablePdfExport ? (
+                  <button type="button" role="menuitem" onClick={exportPdf}>
+                    <FileText size={15} /> Export PDF
+                  </button>
+                ) : null}
+                <button type="button" role="menuitem" onClick={printRows}>
+                  <Printer size={15} /> Print table
+                </button>
+              </div>
+            ) : null}
+          </div>
           {onAdd ? (
             <button className="cms-btn cms-btn-primary" onClick={onAdd}>
               <Plus size={16} /> {addLabel}
@@ -117,21 +176,22 @@ export default function DataTable({
         </div>
       </div>
 
-      {loading ? (
-        <Loader />
-      ) : (
-        <div className="cms-table-wrap">
+      <div className="cms-table-wrap">
           <table className="cms-table">
             <thead>
               <tr>
                 {columns.map((c) => (
                   <th key={c.key}>{c.label}</th>
                 ))}
-                <th style={{ textAlign: "right" }}>Actions</th>
+                <th className="cms-actions-heading">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={columns.length + 1}><Loader /></td>
+                </tr>
+              ) : pageRows.length === 0 ? (
                 <tr>
                   <td colSpan={columns.length + 1}>
                     <div className="cms-empty">{emptyMessage || "No records found for your search."}</div>
@@ -146,7 +206,7 @@ export default function DataTable({
                       </td>
                     ))}
                     <td>
-                      <div className="cms-actions" style={{ justifyContent: "flex-end" }}>
+                      <div className="cms-actions">
                         {onView ? (
                           <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
                             <Eye size={15} />
@@ -174,8 +234,7 @@ export default function DataTable({
               )}
             </tbody>
           </table>
-        </div>
-      )}
+      </div>
 
       <div className="cms-pagination">
         <span className="cms-page-info">

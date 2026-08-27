@@ -1144,7 +1144,7 @@ function AssignmentsTable({
                       </td>
                     ))}
                     <td>
-                      <div className="cms-actions" style={{ justifyContent: "flex-end" }}>
+                      <div className="cms-actions">
                         <button
                           type="button"
                           className="cms-action-btn view"

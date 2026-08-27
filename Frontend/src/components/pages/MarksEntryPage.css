@@ -720,7 +720,7 @@
 }
 
 /* ---------- Pagination Controls ---------- */
-.cms-pagination {
+.cms-marks-entry .cms-pagination {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -731,7 +731,7 @@
   font-weight: 600;
 }
 
-.cms-page-btn {
+.cms-marks-entry .cms-page-btn {
   min-width: 36px;
   height: 36px;
   padding: 0 12px;
@@ -744,12 +744,12 @@
   transition: all 0.18s ease;
 }
 
-.cms-page-btn:hover:not(:disabled) {
+.cms-marks-entry .cms-page-btn:hover:not(:disabled) {
   border-color: var(--cms-primary-border);
   color: var(--cms-primary);
 }
 
-.cms-page-btn:disabled {
+.cms-marks-entry .cms-page-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }

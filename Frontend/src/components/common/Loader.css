@@ -11,6 +11,7 @@
 @keyframes cms-spin {
   to { transform: rotate(360deg); }
 }
+
 .cms-skeleton {
   height: 14px;
   border-radius: 7px;

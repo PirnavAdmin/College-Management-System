@@ -11,11 +11,11 @@
 }
 .attendance-module {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
-  max-width: 1280px;
   min-width: 0;
   overflow-x: hidden;
+  color: var(--cms-text);
 }
 .att-card {
   width: 100%;
@@ -29,16 +29,23 @@
   display: flex;
   gap: 8px;
   border-bottom: 1px solid var(--cms-border, #e5e7eb);
-  padding-bottom: 10px;
+  padding-bottom: 12px;
 }
 .att-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 118px;
+  min-height: 42px;
   border: 1px solid var(--cms-border, #dce3ec);
-  background: #fff;
-  border-radius: 7px;
-  padding: 7px 14px;
+  background: var(--cms-surface, #fff);
+  color: var(--cms-text);
+  border-radius: 9px;
+  padding: 9px 16px;
   font: inherit;
   font-weight: 650;
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .att-nav .active {
   background: var(--cms-primary, #2563eb);
@@ -52,7 +59,8 @@
 }
 .att-staff-types button {
   border: 1px solid var(--cms-border, #dce3ec);
-  background: #fff;
+  background: var(--cms-surface, #fff);
+  color: var(--cms-text);
   border-radius: 7px;
   padding: 8px 14px;
   font: inherit;
@@ -124,18 +132,27 @@
 .att-field input,
 .att-field select {
   width: 100%;
-  height: 38px;
+  height: 42px;
   min-width: 0;
   border: 1px solid var(--cms-border, #dce3ec);
   border-radius: 8px;
   padding: 8px;
-  background: #fff;
+  background: var(--cms-surface, #fff);
+  color: var(--cms-text);
   font: inherit;
 }
+.att-field input:focus,
+.att-field select:focus {
+  border-color: var(--cms-primary);
+  outline: 3px solid var(--cms-primary-soft);
+  outline-offset: 0;
+}
 .att-filter-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 12px;
+  padding: 18px;
 }
 .att-filter-card .att-field {
   width: min(210px, 100%);
@@ -146,8 +163,19 @@
 }
 .att-context-fields {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns:
+    minmax(142px, 1fr)
+    minmax(142px, 1fr)
+    minmax(112px, 0.85fr)
+    minmax(112px, 0.85fr)
+    minmax(142px, 1fr)
+    minmax(130px, 0.9fr)
+    minmax(170px, 1.15fr);
   gap: 10px;
+}
+.att-filter-card > .cms-btn {
+  min-height: 42px;
+  white-space: nowrap;
 }
 .att-report-filters {
   display: grid;
@@ -247,14 +275,17 @@
   display: inline-flex;
   max-width: 100%;
   border: 1px solid var(--cms-border, #dce3ec);
-  border-radius: 7px;
+  border-radius: 8px;
   overflow: hidden;
 }
 .att-status button {
   border: 0;
   border-right: 1px solid var(--cms-border, #dce3ec);
-  background: #fff;
-  padding: 5px 8px;
+  min-width: 36px;
+  min-height: 34px;
+  background: var(--cms-surface, #fff);
+  color: var(--cms-text);
+  padding: 6px 9px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -406,14 +437,14 @@
     grid-row: auto;
   }
   .att-filter-card {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-direction: column;
   }
   .att-filter-card .att-field {
     width: 100%;
   }
   .att-filter-card > .cms-btn {
-    align-self: flex-start;
+    width: 100%;
   }
 }
 @media (max-width: 500px) {
@@ -429,6 +460,10 @@
   .att-context-fields,
   .att-report-filters {
     grid-template-columns: 1fr;
+  }
+  .att-nav button {
+    flex: 1;
+    min-width: 0;
   }
   .att-table-top {
     align-items: flex-start;

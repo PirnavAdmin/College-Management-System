@@ -247,9 +247,10 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  min-height: 56px;
-  padding: 8px 26px;
+  min-height: 46px;
+  padding: 5px 14px;
   border-top: 1px solid var(--cms-border, #E6E7DE);
+  background: var(--cms-subtle);
   color: var(--cms-muted, #7B8275);
   font-size: 12.5px;
 }

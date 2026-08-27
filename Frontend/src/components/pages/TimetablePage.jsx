@@ -147,15 +147,14 @@ function Setup({ academicYears, academicYearId, onAcademicYearChange, loadingAca
           ))}
         </div>
 
-        {/* Period Schedule Header & Edit Button */}
-        <div className="ttm-period-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.5rem", marginBottom: "0.75rem" }}>
-          <h3 style={{ margin: 0 }}>Period schedule</h3>
+        <div className="ttm-period-header">
+          <h3>Period schedule</h3>
           {!isEditingPeriods ? (
-            <button className="ttm-secondary" type="button" onClick={handleStartEdit} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <button className="ttm-secondary" type="button" onClick={handleStartEdit}>
               <Edit3 size={16} /> Edit Schedule
             </button>
           ) : (
-            <div style={{ display: "flex", gap: "8px" }}>
+            <div className="ttm-actions">
               <button className="ttm-secondary" type="button" onClick={handleCancelEdit}>
                 Cancel
               </button>
@@ -166,41 +165,40 @@ function Setup({ academicYears, academicYearId, onAcademicYearChange, loadingAca
           )}
         </div>
 
-        {/* Period Schedule Table */}
         {isEditingPeriods ? (
           <div className="ttm-period-edit-wrapper">
-            <div className="ttm-period-table ttm-period-table-editing" style={{ gridTemplateColumns: "1fr 1.2fr 1.2fr 1.2fr 50px", gap: "8px", alignItems: "center" }}>
+            <div className="ttm-period-table ttm-period-table-editing">
               <div>Period</div>
               <div>Start time</div>
               <div>End time</div>
               <div>Type</div>
-              <div style={{ textAlign: "center" }}>Action</div>
+              <div className="ttm-period-action-heading">Action</div>
               
               {draftPeriods.map((period, index) => (
                 <React.Fragment key={index}>
                   <input
                     type="text"
-                    style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "0.875rem", width: "100%" }}
+                    className="ttm-period-input"
                     value={period.id}
                     onChange={(e) => handleUpdatePeriod(index, "id", e.target.value)}
                     placeholder="ID"
                   />
                   <input
                     type="text"
-                    style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "0.875rem", width: "100%" }}
+                    className="ttm-period-input"
                     value={period.start}
                     onChange={(e) => handleUpdatePeriod(index, "start", e.target.value)}
                     placeholder="09:00"
                   />
                   <input
                     type="text"
-                    style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "0.875rem", width: "100%" }}
+                    className="ttm-period-input"
                     value={period.end}
                     onChange={(e) => handleUpdatePeriod(index, "end", e.target.value)}
                     placeholder="09:45"
                   />
                   <select
-                    style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "0.875rem", width: "100%", background: "#fff" }}
+                    className="ttm-period-input"
                     value={period.type}
                     onChange={(e) => handleUpdatePeriod(index, "type", e.target.value)}
                   >
@@ -209,7 +207,7 @@ function Setup({ academicYears, academicYearId, onAcademicYearChange, loadingAca
                   </select>
                   <button
                     type="button"
-                    style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: "4px" }}
+                    className="ttm-period-delete"
                     onClick={() => handleRemovePeriod(index)}
                     title="Delete period"
                     disabled={draftPeriods.length <= 1}
@@ -220,12 +218,11 @@ function Setup({ academicYears, academicYearId, onAcademicYearChange, loadingAca
               ))}
             </div>
 
-            <div style={{ marginTop: "12px", display: "flex", justifyContent: "flex-start" }}>
+            <div className="ttm-period-add">
               <button
                 type="button"
                 className="ttm-secondary"
                 onClick={handleAddPeriod}
-                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 <Plus size={16} /> Add Period
               </button>
@@ -298,7 +295,7 @@ function Generate({ onGenerate, academicYears, academicYearId, onAcademicYearCha
       setBusy(false);
     }
   };
-  return <Page title="Generate Timetable" subtitle="Generate a theory timetable for all selected sections together." action={<Link className="ttm-secondary" to="/dashboard/timetable/setup">Back: Setup</Link>}><section className="ttm-card ttm-generate"><AcademicContextFields academicYears={academicYears} academicYearId={academicYearId} onAcademicYearChange={onAcademicYearChange} loadingAcademicYears={loadingAcademicYears} boards={boards} boardId={boardId} onBoardChange={onBoardChange} loadingBoards={loadingBoards} academicLevels={academicLevels} academicLevelId={academicLevelId} onAcademicLevelChange={onAcademicLevelChange} loadingAcademicLevels={loadingAcademicLevels} groups={groups} groupId={groupId} onGroupChange={onGroupChange} loadingGroups={loadingGroups}/><h3>Sections</h3><div className="ttm-check-list">{loadingSections ? <span>Loading sections...</span> : sections.map((section) => <label key={section.id}><input type="checkbox" checked={selected.includes(section.name)} disabled/>{section.name}</label>)}</div>{!loadingSections && !sections.length && <p className="ttm-empty">No active sections are available for this group.</p>}{generateError && <p className="ttm-warning">{generateError}</p>}<div className="ttm-info"><Sparkles/> Theory timetable only. Labs and practicals can be added manually after the draft is generated.</div><div className="ttm-screen-nav"><Link className="ttm-secondary" to="/dashboard/timetable/setup">Back</Link><button className="ttm-primary" disabled={!selected.length || busy || loadingSections} onClick={generate}>{busy ? "Generating draft..." : <><Sparkles/> Generate Timetable</>}</button></div></section></Page>;
+  return <Page title="Generate Timetable" subtitle="Generate a theory timetable for all selected sections together." action={<Link className="cms-btn cms-btn-ghost ttm-generate-back" to="/dashboard/timetable/setup">Back: Setup</Link>}><section className="ttm-card ttm-generate"><AcademicContextFields academicYears={academicYears} academicYearId={academicYearId} onAcademicYearChange={onAcademicYearChange} loadingAcademicYears={loadingAcademicYears} boards={boards} boardId={boardId} onBoardChange={onBoardChange} loadingBoards={loadingBoards} academicLevels={academicLevels} academicLevelId={academicLevelId} onAcademicLevelChange={onAcademicLevelChange} loadingAcademicLevels={loadingAcademicLevels} groups={groups} groupId={groupId} onGroupChange={onGroupChange} loadingGroups={loadingGroups}/><h3>Sections</h3><div className="ttm-check-list">{loadingSections ? <span>Loading sections...</span> : sections.map((section) => <label key={section.id}><input type="checkbox" checked={selected.includes(section.name)} disabled/>{section.name}</label>)}</div>{!loadingSections && !sections.length && <p className="ttm-empty">No active sections are available for this group.</p>}{generateError && <p className="ttm-warning">{generateError}</p>}<div className="ttm-info"><Sparkles/> Theory timetable only. Labs and practicals can be added manually after the draft is generated.</div><div className="ttm-screen-nav"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup">Back</Link><button className="cms-btn cms-btn-primary" disabled={!selected.length || busy || loadingSections} onClick={generate}>{busy ? "Generating draft..." : <><Sparkles/> Generate Timetable</>}</button></div></section></Page>;
 }
 
 function FacultyView({ periods = PERIODS, academicYearId = "" }) {
@@ -525,7 +522,7 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
 
   // Header Actions
   const headerActions = activeTab === "section" ? (
-    <div className="ttm-actions" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+    <div className="ttm-actions">
       <button className="ttm-secondary" disabled={validating} onClick={() => { setDialog("validate"); validateSection(); }}>
         <ClipboardCheck size={16}/> {validating ? "Validating..." : "Validate"}
       </button>
@@ -536,26 +533,12 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
         {approving ? "Approving..." : "Approve"}
       </button>
 
-      {/* Styled Publish Button (Always legible and clearly formatted) */}
       <button
         className="ttm-primary"
         disabled={status !== "APPROVED" || publishing}
         onClick={() => setDialog("publish")}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "6px",
-          opacity: status !== "APPROVED" && !publishing ? 0.65 : 1,
-          cursor: status !== "APPROVED" && !publishing ? "not-allowed" : "pointer",
-          backgroundColor: status === "APPROVED" ? "#2563eb" : "#cbd5e1",
-          color: status === "APPROVED" ? "#ffffff" : "#475569",
-          border: "none",
-          padding: "8px 16px",
-          borderRadius: "6px",
-          fontWeight: 600,
-        }}
       >
-        <Send size={16} color={status === "APPROVED" ? "#ffffff" : "#475569"} />
+        <Send size={16} />
         {publishing ? "Publishing..." : "Publish"}
       </button>
     </div>
@@ -566,26 +549,10 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
   return (
     <Page title="Timetable Management" subtitle="Review, swap views, validate and publish the generated timetable." action={headerActions}>
       <section className="ttm-card">
-        {/* Single-Screen View Switcher Bar */}
-        <div className="ttm-view-switcher" style={{ display: "flex", gap: "12px", marginBottom: "1.25rem", borderBottom: "2px solid #e2e8f0", paddingBottom: "12px" }}>
+        <div className="ttm-view-switcher">
           <button
             type="button"
             className={`ttm-tab-btn ${activeTab === "section" ? "active" : ""}`}
-            style={{
-              padding: "8px 18px",
-              borderRadius: "8px",
-              border: "1px solid",
-              borderColor: activeTab === "section" ? "#2563eb" : "#cbd5e1",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              background: activeTab === "section" ? "#2563eb" : "#ffffff",
-              color: activeTab === "section" ? "#ffffff" : "#475569",
-              boxShadow: activeTab === "section" ? "0 2px 4px rgba(37,99,235,0.15)" : "none",
-              transition: "all 0.2s ease",
-            }}
             onClick={() => setActiveTab("section")}
           >
             Section Timetable
@@ -593,21 +560,6 @@ function Draft({ slots, periods = PERIODS, sections = [], academicYearId = "", b
           <button
             type="button"
             className={`ttm-tab-btn ${activeTab === "faculty" ? "active" : ""}`}
-            style={{
-              padding: "8px 18px",
-              borderRadius: "8px",
-              border: "1px solid",
-              borderColor: activeTab === "faculty" ? "#2563eb" : "#cbd5e1",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              background: activeTab === "faculty" ? "#2563eb" : "#ffffff",
-              color: activeTab === "faculty" ? "#ffffff" : "#475569",
-              boxShadow: activeTab === "faculty" ? "0 2px 4px rgba(37,99,235,0.15)" : "none",
-              transition: "all 0.2s ease",
-            }}
             onClick={() => setActiveTab("faculty")}
           >
             <GraduationCap size={18} /> Faculty Timetable

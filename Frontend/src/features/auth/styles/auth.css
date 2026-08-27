@@ -434,3 +434,18 @@
   background: var(--cms-primary);
   border-color: var(--cms-primary);
 }
+
+/* Olive glass treatment for every authentication card. */
+[data-theme="light"] .cms-auth-card {
+  background: rgba(239, 243, 222, 0.9) !important;
+  border-color: rgba(111, 132, 78, 0.24) !important;
+  box-shadow: 0 22px 54px rgba(31, 43, 22, 0.2);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+[data-theme="dark"] .cms-auth-card {
+  background: rgba(42, 55, 36, 0.88) !important;
+  border-color: rgba(178, 197, 134, 0.26) !important;
+  box-shadow: 0 24px 58px rgba(0, 0, 0, 0.34);
+}

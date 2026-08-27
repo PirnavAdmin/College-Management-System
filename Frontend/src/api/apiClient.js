@@ -1,6 +1,34 @@
 ﻿import axios from "axios";
 import { env } from "@/config/env.js";
 
+let activeApiRequests = 0;
+const apiLoadingListeners = new Set();
+
+const notifyApiLoading = () => {
+  apiLoadingListeners.forEach((listener) => listener());
+};
+
+const beginApiLoading = (config) => {
+  if (config.skipGlobalLoader || config.__globalLoadingTracked) return;
+  config.__globalLoadingTracked = true;
+  activeApiRequests += 1;
+  notifyApiLoading();
+};
+
+const finishApiLoading = (config) => {
+  if (!config?.__globalLoadingTracked) return;
+  config.__globalLoadingTracked = false;
+  activeApiRequests = Math.max(0, activeApiRequests - 1);
+  notifyApiLoading();
+};
+
+export const subscribeToApiLoading = (listener) => {
+  apiLoadingListeners.add(listener);
+  return () => apiLoadingListeners.delete(listener);
+};
+
+export const getApiLoadingSnapshot = () => activeApiRequests > 0;
+
 const isHtmlResponse = (data) =>
   typeof data === "string" && /^\s*(<!doctype html|<html)/i.test(data);
 
@@ -56,29 +84,38 @@ const apiClient = axios.create({
   },
 });
 
-apiClient.interceptors.request.use((config) => {
-  const token = getStoredAccessToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  if (import.meta.env.DEV) {
-    const expiry = token ? getJwtExpiryState(token) : {};
-    console.log("API request:", {
-      url: config.url,
-      method: config.method,
-      hasToken: Boolean(token),
-      tokenLength: token.length || 0,
-      hasBearer: Boolean(config.headers?.Authorization?.startsWith("Bearer ")),
-      tokenExpired: expiry.isJwt ? expiry.isExpired : undefined,
-    });
-  }
-  return config;
-});
+apiClient.interceptors.request.use(
+  (config) => {
+    beginApiLoading(config);
+    const token = getStoredAccessToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (import.meta.env.DEV) {
+      const expiry = token ? getJwtExpiryState(token) : {};
+      console.log("API request:", {
+        url: config.url,
+        method: config.method,
+        hasToken: Boolean(token),
+        tokenLength: token.length || 0,
+        hasBearer: Boolean(config.headers?.Authorization?.startsWith("Bearer ")),
+        tokenExpired: expiry.isJwt ? expiry.isExpired : undefined,
+      });
+    }
+    return config;
+  },
+  (error) => {
+    finishApiLoading(error.config);
+    return Promise.reject(error);
+  },
+);
 
 apiClient.interceptors.response.use(
   (response) => {
+    finishApiLoading(response.config);
     if (!isHtmlResponse(response.data)) return response;
     return Promise.reject(new Error("Backend returned HTML instead of JSON. Check API base URL or proxy."));
   },
   (error) => {
+    finishApiLoading(error.config);
     if (import.meta.env.DEV) {
       console.error("API response error:", {
         url: error.config?.url,

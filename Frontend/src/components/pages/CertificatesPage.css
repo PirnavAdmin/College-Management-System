@@ -289,12 +289,13 @@
 
 .cert-records-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 18px;
+  min-height: 96px;
+  padding: 18px 24px;
   border-bottom: 1px solid var(--cert-border);
-  background: #ffffff;
+  background: var(--cert-surface);
 }
 
 .cert-records-head > .cert-action-buttons {
@@ -306,6 +307,12 @@
   gap: 10px;
   margin-left: auto;
   white-space: nowrap;
+}
+
+.cert-records-head > .cert-action-buttons .cms-btn {
+  min-height: 42px;
+  min-width: 138px;
+  justify-content: center;
 }
 
 .cert-records-head h3 {
@@ -900,9 +907,34 @@
   white-space: nowrap;
 }
 
+/* Keep every certificate table visually stable while its records are loading. */
+.cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader),
+.cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader) > td {
+  background: var(--cms-surface) !important;
+}
+
+.cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader) > td {
+  height: 274px;
+  padding: 0;
+  border-top-color: var(--cms-border);
+  color: var(--cms-muted);
+}
+
+.cert-page .cert-records-card .cert-table-fit .cms-loader {
+  width: 100%;
+  min-height: 274px;
+  padding: 40px 16px;
+  color: var(--cms-muted);
+}
+
+.cert-page .cert-records-card .cert-table-fit .cms-loader .cms-spinner {
+  border-color: var(--cms-primary-soft);
+  border-top-color: var(--cms-primary);
+}
+
 .cert-table-fit tbody tr td:first-child {
   font-weight: 700;
-  color: #1C2416;
+  color: var(--cms-text);
 }
 
 .cert-student-meta {
@@ -916,7 +948,7 @@
 .cert-record-row-actions {
   flex-wrap: nowrap;
   justify-content: center;
-  min-width: 76px;
+  min-width: 148px;
 }
 
 .cert-record-row-actions button {
@@ -937,13 +969,19 @@
   opacity: 0.45;
 }
 
+.cert-record-row-actions button.danger {
+  border-color: color-mix(in srgb, var(--cms-red) 35%, transparent);
+  background: color-mix(in srgb, var(--cms-red) 8%, var(--cms-surface));
+  color: var(--cms-red);
+}
+
 .cert-table-fit tbody tr {
   background: var(--cms-surface);
   transition: background-color 0.15s ease;
 }
 
 .cert-table-fit tbody tr:hover {
-  background: color-mix(in srgb, var(--cms-primary-soft) 35%, #fff);
+  background: color-mix(in srgb, var(--cms-primary-soft) 35%, var(--cms-surface));
   box-shadow: none;
   transform: none;
 }
@@ -953,7 +991,7 @@
 }
 
 .cert-page .cert-records-card .cert-table-fit tbody tr:hover > td {
-  background: color-mix(in srgb, var(--cms-primary-soft) 35%, #fff);
+  background: color-mix(in srgb, var(--cms-primary-soft) 35%, var(--cms-surface));
 }
 
 .cert-records-card > .cert-table-footer {
@@ -1003,8 +1041,9 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
-  padding: 14px 20px;
+  padding: 18px 24px;
   border-top: 1px solid var(--cms-border);
+  background: var(--cms-surface);
 }
 
 .cert-workflow-summary-card {
@@ -1034,18 +1073,18 @@
   .cert-table-footer nav { align-self: flex-end; }
 }
 
-.cms-pagination {
+.cert-page .cms-pagination {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   padding: 12px 16px;
   flex-wrap: wrap;
-  border-top: 1px solid var(--cert-border);
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.82) 0%, rgba(255, 255, 255, 1) 100%);
+  border-top: 1px solid var(--cms-border);
+  background: var(--cms-subtle);
 }
 
-.cms-page-info {
+.cert-page .cms-page-info {
   margin-right: 0;
   color: var(--cert-muted);
   font-size: 12.5px;
@@ -1057,12 +1096,12 @@
   padding: 0 2px;
 }
 
-.cms-page-info strong {
+.cert-page .cms-page-info strong {
   color: #566900;
   font-weight: 800;
 }
 
-.cms-page-btn {
+.cert-page .cms-page-btn {
   min-width: 40px;
   height: 34px;
   padding: 0 10px;
@@ -1076,7 +1115,7 @@
   transition: all 0.18s ease;
 }
 
-.cms-page-btn:hover:not(:disabled) {
+.cert-page .cms-page-btn:hover:not(:disabled) {
   background: linear-gradient(180deg, #F7F8EF 0%, #F1F4E2 100%);
   border-color: #9CAF27;
   color: #566900;
@@ -1084,19 +1123,19 @@
   transform: translateY(-1px);
 }
 
-.cms-page-btn.is-active {
+.cert-page .cms-page-btn.is-active {
   background: #6F8400;
   border-color: #6F8400;
   color: #ffffff;
 }
 
-.cms-page-btn.is-active:hover {
+.cert-page .cms-page-btn.is-active:hover {
   background: #6F8400;
   border-color: #6F8400;
   color: #ffffff;
 }
 
-.cms-page-btn:disabled {
+.cert-page .cms-page-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
@@ -1112,7 +1151,7 @@
   gap: 8px;
 }
 
-.cms-actions {
+.cert-page .cms-actions {
   display: grid;
   grid-template-columns: 156px 38px 38px 38px 38px;
   align-items: center;
@@ -1120,7 +1159,7 @@
   gap: 8px;
 }
 
-.cms-action-btn {
+.cert-page .cms-action-btn {
   width: 38px;
   min-width: 38px;
   height: 34px;
@@ -1134,16 +1173,16 @@
   transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.cms-action-btn:disabled,
-.cms-action-btn[disabled] {
+.cert-page .cms-action-btn:disabled,
+.cert-page .cms-action-btn[disabled] {
   opacity: 0.5;
   cursor: not-allowed;
   box-shadow: none;
   transform: none;
 }
 
-.cms-action-btn:disabled:hover,
-.cms-action-btn[disabled]:hover {
+.cert-page .cms-action-btn:disabled:hover,
+.cert-page .cms-action-btn[disabled]:hover {
   transform: none;
   box-shadow: none;
 }
@@ -1154,11 +1193,11 @@
   display: block;
 }
 
-.cms-action-btn svg {
+.cert-page .cms-action-btn svg {
   stroke-width: 2.2;
 }
 
-.cms-action-btn:hover {
+.cert-page .cms-action-btn:hover {
   background: linear-gradient(180deg, #F1F4E2 0%, #D9DCCB 100%);
   border-color: #9CAF27;
   color: #1e3a8a;
@@ -1171,13 +1210,13 @@
   box-shadow: 0 10px 22px rgba(37, 99, 235, 0.18);
 }
 
-.cms-action-btn.danger {
+.cert-page .cms-action-btn.danger {
   background: linear-gradient(180deg, #fff1f2 0%, #ffe4e6 100%);
   border-color: #fecdd3;
   color: #b91c1c;
 }
 
-.cms-action-btn.danger:hover {
+.cert-page .cms-action-btn.danger:hover {
   background: linear-gradient(180deg, #ffe4e6 0%, #fecdd3 100%);
   border-color: #fda4af;
   color: #7f1d1d;
@@ -1796,15 +1835,15 @@
 }
 
 [data-theme="dark"] .cert-table-fit thead th {
-  background: #172033;
-  color: #E6E7DE;
-  border-bottom-color: #171A17;
+  background: var(--cms-subtle);
+  color: var(--cms-text-secondary);
+  border-bottom-color: var(--cms-border);
 }
 
 [data-theme="dark"] .cert-table-fit tbody td {
-  background: #1C2416;
-  border-bottom-color: #171A17;
-  color: #F2F3EE;
+  background: var(--cms-surface);
+  border-bottom-color: var(--cms-border);
+  color: var(--cms-text);
 }
 
 [data-theme="dark"] .cert-table-fit tbody tr:hover {
@@ -1813,32 +1852,57 @@
 }
 
 [data-theme="dark"] .cert-table-fit tbody tr td:first-child {
-  color: #93c5fd;
+  color: var(--cms-text);
 }
 
-[data-theme="dark"] .cms-pagination {
-  background: linear-gradient(180deg, rgba(17, 24, 39, 0.9) 0%, rgba(15, 23, 42, 1) 100%);
-  border-top-color: #171A17;
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader),
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader) > td,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit .cms-loader {
+  background: #111411 !important;
+  color: var(--cms-muted);
 }
 
-[data-theme="dark"] .cms-page-info {
+/* Match Board & Academic Year tables and never highlight a loading row. */
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr {
+  background: transparent;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:not(:has(.cms-loader)):hover,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:not(:has(.cms-loader)):hover > td {
+  background: var(--cms-hover) !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader):hover,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:has(.cms-loader):hover > td,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td:has(> .cms-loader):hover,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td:has(> .cms-loader):hover .cms-loader {
+  background: #111411 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="dark"] .cert-page .cms-pagination {
+  background: var(--cms-subtle);
+  border-top-color: var(--cms-border);
+}
+
+[data-theme="dark"] .cert-page .cms-page-info {
   color: #8F9789;
 }
 
-[data-theme="dark"] .cms-page-btn {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(96, 165, 250, 0.35);
-  color: #F1F4E2;
+[data-theme="dark"] .cert-page .cms-page-btn {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
 }
 
-[data-theme="dark"] .cms-page-btn:hover:not(:disabled) {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.2) 0%, rgba(30, 64, 175, 0.2) 100%);
+[data-theme="dark"] .cert-page .cms-page-btn:hover:not(:disabled) {
+  background: var(--cms-hover);
   border-color: #9CAF27;
   color: #F7F8EF;
   box-shadow: 0 8px 18px rgba(59, 130, 246, 0.12);
 }
 
-[data-theme="dark"] .cms-page-btn.is-active {
+[data-theme="dark"] .cert-page .cms-page-btn.is-active {
   background: linear-gradient(180deg, #6F8400 0%, #6F8400 100%);
   border-color: #9CAF27;
   box-shadow: 0 8px 18px rgba(59, 130, 246, 0.2);
@@ -1888,27 +1952,27 @@
   border-top-color: #171A17;
 }
 
-[data-theme="dark"] .cms-action-btn {
+[data-theme="dark"] .cert-page .cms-action-btn {
   background: rgba(59, 130, 246, 0.12);
   border-color: rgba(96, 165, 250, 0.35);
   color: #F1F4E2;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-[data-theme="dark"] .cms-action-btn:hover {
+[data-theme="dark"] .cert-page .cms-action-btn:hover {
   background: linear-gradient(180deg, rgba(59, 130, 246, 0.2) 0%, rgba(30, 64, 175, 0.2) 100%);
   border-color: #9CAF27;
   color: #F7F8EF;
   box-shadow: 0 8px 18px rgba(59, 130, 246, 0.14);
 }
 
-[data-theme="dark"] .cms-action-btn.danger {
+[data-theme="dark"] .cert-page .cms-action-btn.danger {
   background: rgba(220, 38, 38, 0.12);
   border-color: rgba(248, 113, 113, 0.35);
   color: #fca5a5;
 }
 
-[data-theme="dark"] .cms-action-btn.danger:hover {
+[data-theme="dark"] .cert-page .cms-action-btn.danger:hover {
   background: rgba(127, 29, 29, 0.2);
   border-color: rgba(248, 113, 113, 0.5);
   color: #fee2e2;
@@ -2049,6 +2113,165 @@
   }
 
   .cert-records-filters { grid-template-columns: 1fr; }
+}
+
+/* Board & Academic Year visual parity for Certificate Management. */
+.cert-page .cert-records-card,
+.cert-page .cert-records-toolbar,
+.cert-page .cert-table-wrap-modern,
+.cert-page .cert-table-fit {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+}
+
+.cert-page .cert-records-card .cert-table-fit thead,
+.cert-page .cert-records-card .cert-table-fit thead th {
+  background: var(--cms-subtle);
+  border-color: var(--cms-border);
+  color: var(--cms-text-secondary);
+}
+
+.cert-page .cert-records-card .cert-table-fit tbody tr,
+.cert-page .cert-records-card .cert-table-fit tbody td {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+
+.cert-page .cert-records-card .cert-table-fit tbody tr:hover,
+.cert-page .cert-records-card .cert-table-fit tbody tr:hover > td {
+  background: var(--cms-hover) !important;
+}
+
+/* Loading and empty colspan rows must never inherit the generic white hover. */
+.cert-page .cert-records-card .cert-table-fit tbody td[colspan],
+.cert-page .cert-records-card .cert-table-fit tbody tr:hover > td[colspan],
+.cert-page .cert-records-card .cert-table-fit tbody td[colspan] > .cms-loader,
+.cert-page .cert-records-card .cert-table-fit tbody td[colspan]:hover > .cms-loader {
+  background: var(--cms-surface) !important;
+  color: var(--cms-muted) !important;
+  box-shadow: none !important;
+}
+
+.cert-page .cert-records-card > .cert-table-footer {
+  background: var(--cms-subtle);
+  border-color: var(--cms-border);
+  color: var(--cms-muted);
+}
+
+.cert-page .cert-records-card > .cert-table-footer button {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+
+.cert-page .cert-records-card > .cert-table-footer button:hover:not(:disabled) {
+  background: var(--cms-primary-soft);
+  border-color: var(--cms-primary-border);
+  color: var(--cms-primary);
+}
+
+.cert-page .cert-records-card > .cert-table-footer button.active {
+  background: var(--cms-primary);
+  border-color: var(--cms-primary);
+  color: #fff;
+}
+
+.cert-page .cms-btn-ghost,
+.cert-page .cms-action-btn,
+.cert-page .cert-record-row-actions button {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+
+.cert-page .cms-btn-ghost:hover:not(:disabled),
+.cert-page .cms-action-btn:hover:not(:disabled),
+.cert-page .cert-record-row-actions button:hover:not(:disabled) {
+  background: var(--cms-primary-soft);
+  border-color: var(--cms-primary-border);
+  color: var(--cms-primary);
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td[colspan],
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:hover > td[colspan],
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td[colspan] > .cms-loader,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td[colspan]:hover > .cms-loader {
+  background: #111411 !important;
+}
+
+/* Explicit Certificate dark palette; prevents light card styles from leaking through. */
+[data-theme="dark"] .cert-page .cert-records-card,
+[data-theme="dark"] .cert-page .cert-records-head,
+[data-theme="dark"] .cert-page .cert-records-toolbar,
+[data-theme="dark"] .cert-page .cert-workflow-summary,
+[data-theme="dark"] .cert-page .cert-table-wrap-modern,
+[data-theme="dark"] .cert-page .cert-table-fit,
+[data-theme="dark"] .cert-page .cert-records-card > .cert-table-footer {
+  background: #171A17 !important;
+  border-color: #343C2C !important;
+  color: #F2F3EE !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-head h3 {
+  color: #F2F3EE !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-head p,
+[data-theme="dark"] .cert-page .cert-records-card > .cert-table-footer {
+  color: #9EA697 !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit thead,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit thead th {
+  background: #22291F !important;
+  border-color: #343C2C !important;
+  color: #9EA697 !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td {
+  background: #171A17 !important;
+  border-color: #343C2C !important;
+  color: #F2F3EE !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:not(:has(.cms-loader)):hover,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:not(:has(.cms-loader)):hover > td {
+  background: #252D21 !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td[colspan],
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody tr:hover > td[colspan],
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td[colspan] > .cms-loader,
+[data-theme="dark"] .cert-page .cert-records-card .cert-table-fit tbody td[colspan]:hover > .cms-loader {
+  background: #111411 !important;
+  color: #9EA697 !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card > .cert-table-footer button,
+[data-theme="dark"] .cert-page .cms-btn-ghost,
+[data-theme="dark"] .cert-page .cms-action-btn,
+[data-theme="dark"] .cert-page .cert-record-row-actions button {
+  background: #171A17 !important;
+  border-color: #343C2C !important;
+  color: #F2F3EE !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card > .cert-table-footer button:hover:not(:disabled),
+[data-theme="dark"] .cert-page .cms-btn-ghost:hover:not(:disabled),
+[data-theme="dark"] .cert-page .cms-action-btn:hover:not(:disabled),
+[data-theme="dark"] .cert-page .cert-record-row-actions button:hover:not(:disabled) {
+  background: #252D21 !important;
+  border-color: #879D19 !important;
+  color: #B5C851 !important;
+}
+
+[data-theme="dark"] .cert-page .cert-records-card > .cert-table-footer button.active,
+[data-theme="dark"] .cert-page .cms-btn-primary {
+  background: #879D19 !important;
+  border-color: #879D19 !important;
+  color: #FFFFFF !important;
 }
 
 @media print {

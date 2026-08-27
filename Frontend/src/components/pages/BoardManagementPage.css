@@ -14,6 +14,30 @@
 .board-list-header{border-bottom:0!important}
 .board-toolbar--simple{grid-template-columns:minmax(280px,460px) 1fr;align-items:center}.board-toolbar--simple .board-toolbar-actions{justify-self:end}.board-toolbar--simple .board-add-button{margin-left:0}
 @media(max-width:720px){.board-toolbar--simple{grid-template-columns:1fr}.board-toolbar--simple .board-toolbar-actions{grid-column:1;justify-self:stretch;justify-content:flex-end}}
+.board-list-view .board-toolbar--simple{padding:14px 18px}.board-list-view .board-search{min-height:40px;border-radius:10px}.board-list-view .board-table th{padding:12px 16px}.board-list-view .board-table td{padding:13px 16px}.board-list-view .board-row-actions button{width:34px;height:34px;border-radius:10px}
+
+/* Keep this standalone board view consistent with the dashboard dark theme. */
+[data-theme="dark"] .board-page .board-panel,
+[data-theme="dark"] .board-page .board-summary-card,
+[data-theme="dark"] .board-page .board-search,
+[data-theme="dark"] .board-page .board-choice-box,
+[data-theme="dark"] .board-page .board-row-actions button {
+  background: var(--cms-surface);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
+[data-theme="dark"] .board-page .board-table tbody tr { background: transparent; }
+[data-theme="dark"] .board-page .board-table tbody tr:hover { background: var(--cms-hover); }
+[data-theme="dark"] .board-page .board-edit-header,
+[data-theme="dark"] .board-page .board-panel > header { background: var(--cms-subtle) !important; }
+[data-theme="dark"] .board-page .board-field input,
+[data-theme="dark"] .board-page .board-field select,
+[data-theme="dark"] .board-page .board-field textarea,
+[data-theme="dark"] .board-page .board-history-footer button {
+  background: var(--cms-elevated);
+  border-color: var(--cms-border);
+  color: var(--cms-text);
+}
 .board-edit-header{min-height:56px!important;padding:11px 18px!important;justify-content:flex-start!important;gap:10px;background:linear-gradient(90deg,#faf7ff,#fff)}.board-edit-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;background:#f1eaff;color:#7c3aed}.board-form-grid--reference{grid-template-columns:repeat(4,minmax(0,1fr));gap:13px 18px;padding:18px}.board-form-grid--reference .board-span-3{grid-column:span 3}.board-form-grid--reference .board-multi-field{grid-column:span 2}.board-multi-field{min-width:0;margin:0;padding:0;border:0}.board-multi-field legend{margin-bottom:7px;padding:0;font-size:12px;font-weight:650}.board-multi-field legend b,.board-default-field>span:first-child b{color:#dc2626}.board-choice-box{display:flex;align-items:center;gap:6px;min-height:42px;padding:5px 8px;border:1px solid var(--cms-border);border-radius:9px;background:var(--cms-surface)}.board-choice-box label{display:inline-flex;align-items:center;padding:5px 8px;border:1px solid transparent;border-radius:5px;background:var(--cms-subtle);color:var(--cms-muted);font-size:11px;cursor:pointer}.board-choice-box label.is-selected{border-color:#c9d4ea;background:#eef3ff;color:var(--cms-text)}.board-choice-box input{position:absolute;opacity:0;pointer-events:none}.board-help{margin-top:1px;color:var(--cms-muted)!important;font-size:10px!important}.board-default-field{display:grid;gap:7px;color:var(--cms-text);font-size:12px;font-weight:650}.board-default-control{display:flex;align-items:center;gap:8px}.board-default-control input{position:absolute;opacity:0;pointer-events:none}.board-default-control i{position:relative;width:34px;height:19px;border-radius:999px;background:#E6E7DE;cursor:pointer}.board-default-control i:after{content:"";position:absolute;top:3px;left:3px;width:13px;height:13px;border-radius:50%;background:#fff;transition:transform .18s}.board-default-control input:checked+i{background:var(--cms-primary)}.board-default-control input:checked+i:after{transform:translateX(15px)}.board-default-control small{color:var(--cms-muted);font-size:10px;font-weight:500}.board-form-grid--reference .board-form-actions{justify-content:flex-start}.board-form-grid--reference .board-form-actions .cms-btn{gap:7px;min-width:128px}
 @media(max-width:1000px){.board-form-grid--reference{grid-template-columns:repeat(2,minmax(0,1fr))}.board-form-grid--reference .board-span-3{grid-column:span 1}.board-form-grid--reference .board-multi-field{grid-column:span 1}}
 @media(max-width:620px){.board-form-grid--reference{grid-template-columns:1fr}.board-form-grid--reference .board-span-3,.board-form-grid--reference .board-multi-field{grid-column:1}.board-choice-box{flex-wrap:wrap}.board-form-grid--reference .board-form-actions{flex-direction:column}.board-form-grid--reference .board-form-actions .cms-btn{width:100%}}

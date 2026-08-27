@@ -87,7 +87,7 @@ function initials(name = "CMS Admin") {
 
 export default function DashboardLayout({ title, subtitle, breadcrumb = [], actions, children }) {
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
-  const [attendanceOpen, setAttendanceOpen] = useState(true);
+  const [attendanceOpen, setAttendanceOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -130,9 +130,7 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
   }, [pathname]);
   useEffect(() => {
     if (pathname.startsWith("/dashboard/faculty")) setFacultyOpen(true);
-    if (pathname.startsWith("/dashboard/assignments")) setAssignmentsOpen(true);
-    if (pathname.startsWith("/dashboard/attendance")) setAttendanceOpen(true);
-  }, [pathname, setAssignmentsOpen, setFacultyOpen]);
+  }, [pathname, setFacultyOpen]);
 
   useEffect(() => {
     const onPointer = (e) => {
@@ -219,7 +217,7 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
                       {isOpen
                         ? item.children.map((child) => {
                             const ChildIcon = child.icon;
-                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={closeOnMobile}><ChildIcon size={15} /> {child.label}</Link>;
+                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={() => { if (item.to === "/dashboard/assignments") setAssignmentsOpen(false); if (item.to === "/dashboard/attendance") setAttendanceOpen(false); closeOnMobile(); }}><ChildIcon size={15} /> {child.label}</Link>;
                           })
                         : null}
                     </div>

@@ -12,7 +12,7 @@ const EXAM_API = {
   activeYear: "/api/v1/academic-years/active",
   academicLevels: "/api/v1/boards/academic-levels",
   groups: "/api/v1/groups",
-  programsByGroup: (groupId) => `/api/v1/programs/group/${groupId}`,
+  programsByGroup: (groupId) => `/api/v1/groups/${groupId}/programs`,
   list: "/api/v1/examinations",
   byId: (id) => `/api/v1/examinations/${id}`,
   eligibleSubjects: (id) => `/api/v1/examinations/${id}/eligible-subjects`,
@@ -54,6 +54,12 @@ const isActiveMaster = (item) =>
   String(item?.status).toLowerCase() === "active";
 const normalizeDateInput = (value) => (value ? String(value).slice(0, 10) : "");
 const normalizeTimeInput = (value) => (value ? String(value).slice(0, 5) : "");
+const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
+const hasUnsupportedControlCharacters = (value) =>
+  Array.from(String(value ?? "")).some((character) => {
+    const code = character.charCodeAt(0);
+    return code === 127 || (code < 32 && ![9, 10, 13].includes(code));
+  });
 const toApiTime = (value) =>
   value && /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value;
 const apiError = (error) =>
@@ -91,11 +97,17 @@ const normalizeExamination = (item) => ({
   boardId: item.boardId,
   yearId: item.academicYearId ?? item.yearId,
   levelId: item.academicLevelId ?? item.levelId,
+  boardName: item.boardName ?? item.board ?? "",
+  academicYearName: item.academicYearName ?? item.yearName ?? "",
+  academicLevelName: item.academicLevelName ?? item.academicLevel ?? item.levelName ?? "",
   groupId: item.groupId,
+  groupName: item.groupName ?? item.group ?? "",
   programId: item.programId,
+  programName: item.programName ?? item.programme ?? item.program ?? "",
   assessmentTypeId: item.assessmentTypeId ?? null,
   examPatternId: item.examPatternId ?? "",
   examPattern: item.examPattern ?? "",
+  allowedExamTypes: item.allowedExamTypes ?? item.examTypes ?? [],
   examType: item.examType ?? item.type ?? "",
   type: item.examType ?? item.type ?? "",
   startDate: normalizeDateInput(item.startDate),
@@ -116,7 +128,6 @@ let EXAM_PATTERNS = [];
 let SUBJECTS = [];
 let FACULTY = [];
 let ROOMS = [];
-let TYPES = [];
 const emptyExam = () => ({
   code: "",
   name: "",
@@ -135,6 +146,7 @@ const emptyExam = () => ({
   description: "",
   status: "DRAFT",
 });
+const EXAM_PAGE_SIZE = 5;
 const emptySchedule = () => ({
   subjectId: "",
   date: "",
@@ -339,15 +351,7 @@ export default function ExaminationPage() {
     loc = useLocation(),
     { id } = useParams(),
     isForm = Boolean(id) || loc.pathname.endsWith("/add");
-  const initialFilters = {
-    boardId: "",
-    yearId: "",
-    levelId: "",
-    groupId: "",
-    programId: "",
-    type: "",
-    status: "",
-  };
+  const initialFilters = { boardId: "", yearId: "", levelId: "" };
   const [exams, setExams] = useState([]),
     [schedules, setSchedules] = useState([]),
     [tab, setTab] = useState("exams"),
@@ -362,8 +366,8 @@ export default function ExaminationPage() {
     [sch, setSch] = useState(emptySchedule),
     [errors, setErrors] = useState({}),
     [filters, setFilters] = useState(initialFilters),
-    [appliedFilters, setAppliedFilters] = useState(initialFilters),
     [search, setSearch] = useState(""),
+    [page, setPage] = useState(1),
     [finalizing, setFinalizing] = useState(false),
     [loading, setLoading] = useState(true),
     [, setMasterRevision] = useState(0);
@@ -489,21 +493,9 @@ export default function ExaminationPage() {
       }
     }
   };
-  const loadExaminations = async (nextFilters = appliedFilters) => {
-    const params = Object.fromEntries(
-      Object.entries({
-        BoardId: nextFilters.boardId,
-        AcademicYearId: nextFilters.yearId,
-        AcademicLevelId: nextFilters.levelId,
-        GroupId: nextFilters.groupId,
-        ProgramId: nextFilters.programId,
-        ExamType: nextFilters.type,
-        Status: nextFilters.status,
-        SearchTerm: search.trim(),
-      }).filter(([, value]) => value !== "" && value != null),
-    );
+  const loadExaminations = async () => {
     try {
-      const response = await apiClient.get(EXAM_API.list, { params });
+      const response = await apiClient.get(EXAM_API.list);
       const normalized = collectionFrom(response.data).map(normalizeExamination).filter((item) => item.id);
       setExams(normalized);
       setSchedules(normalized.flatMap((item) => item.schedules));
@@ -518,11 +510,11 @@ export default function ExaminationPage() {
                 name: item.examPattern,
                 programId: item.programId,
                 scheduleMode: item.scheduleMode,
+                allowedExamTypes: item.allowedExamTypes ?? [],
               },
             ]),
         ).values(),
       );
-      TYPES = [...new Set(normalized.map((item) => item.examType).filter(Boolean))];
       setMasterRevision((value) => value + 1);
       return normalized;
     } catch (error) {
@@ -549,10 +541,10 @@ export default function ExaminationPage() {
   };
   useEffect(() => {
     let active = true;
-    Promise.all([loadMasterData(), loadExaminations(initialFilters)]).finally(() => {
+    Promise.all([loadMasterData(), loadExaminations()]).finally(() => {
       if (active) setLoading(false);
     });
-    // Initial API load is intentionally one-time; filters are applied by Check Examinations.
+    // Initial API load is intentionally one-time; list filters are applied client-side.
     return () => {
       active = false;
     };
@@ -599,7 +591,6 @@ export default function ExaminationPage() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId]);
   useEffect(() => {
     if (!sch.date || !sch.startTime || !sch.endTime) {
@@ -645,7 +636,6 @@ export default function ExaminationPage() {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sch.date, sch.startTime, sch.endTime, editing]);
   useEffect(() => {
     const next = loc.state?.scheduleExamId;
@@ -656,7 +646,32 @@ export default function ExaminationPage() {
       nav(loc.pathname, { replace: true, state: null });
     }
   }, [isForm, loc, nav]);
-  if (loading)
+  const query = search.trim().toLowerCase();
+  const list = exams.filter((exam) =>
+    (!filters.boardId || String(exam.boardId) === filters.boardId) &&
+    (!filters.yearId || String(exam.yearId) === filters.yearId) &&
+    (!filters.levelId || String(exam.levelId) === filters.levelId) &&
+    (!query || [
+      exam.code,
+      exam.name,
+      exam.groupName,
+      exam.groupName || nameOf(GROUPS, exam.groupId, ""),
+      exam.programName,
+      exam.programName || nameOf(PROGRAMS, exam.programId, ""),
+      exam.examType,
+      exam.type,
+      exam.status,
+    ].some((value) => String(value ?? "").toLowerCase().includes(query))),
+  );
+  const pages = Math.max(1, Math.ceil(list.length / EXAM_PAGE_SIZE));
+  const shownExams = list.slice((page - 1) * EXAM_PAGE_SIZE, page * EXAM_PAGE_SIZE);
+  const rangeStart = list.length ? (page - 1) * EXAM_PAGE_SIZE + 1 : 0;
+  const rangeEnd = Math.min(page * EXAM_PAGE_SIZE, list.length);
+  useEffect(() => setPage(1), [filters, search]);
+  useEffect(() => {
+    if (page > pages) setPage(pages);
+  }, [page, pages]);
+  if (loading && isForm)
     return (
       <DashboardLayout {...pageConfig}>
         <Loader label="Loading examination data..." />
@@ -688,6 +703,7 @@ export default function ExaminationPage() {
         exams={exams}
         schedules={schedules}
         editId={id}
+        initialExamFilters={loc.state?.initialExamFilters}
         onAcademicChange={loadGroups}
         onGroupChange={loadPrograms}
         onSave={async (record) => {
@@ -696,40 +712,17 @@ export default function ExaminationPage() {
         }}
       />
     );
-  const reset = (n, v) => {
-    const nextContext = {
-      boardId: n === "boardId" ? v : filters.boardId,
-      yearId: n === "boardId" ? "" : n === "yearId" ? v : filters.yearId,
-      levelId:
-        n === "boardId" || n === "yearId" ? "" : n === "levelId" ? v : filters.levelId,
-    };
-    if (["boardId", "yearId", "levelId"].includes(n)) loadGroups(nextContext);
-    if (n === "groupId") loadPrograms(v);
+  const changeFilter = (n, v) => {
     setFilters((x) => ({
       ...x,
       [n]: v,
       ...(n === "boardId"
-        ? { yearId: "", levelId: "", groupId: "", programId: "" }
+        ? { yearId: "", levelId: "" }
         : n === "yearId"
-          ? { levelId: "", groupId: "", programId: "" }
-          : n === "levelId"
-            ? { groupId: "", programId: "" }
-            : n === "groupId"
-              ? { programId: "" }
-              : {}),
+          ? { levelId: "" }
+          : {}),
     }));
   };
-  const list = exams.filter(
-    (e) =>
-      (!appliedFilters.boardId || String(e.boardId) === appliedFilters.boardId) &&
-      (!appliedFilters.yearId || String(e.yearId) === appliedFilters.yearId) &&
-      (!appliedFilters.levelId || String(e.levelId) === appliedFilters.levelId) &&
-      (!appliedFilters.groupId || String(e.groupId) === appliedFilters.groupId) &&
-      (!appliedFilters.programId || String(e.programId) === appliedFilters.programId) &&
-      (!appliedFilters.type || e.type === appliedFilters.type) &&
-      (!appliedFilters.status || e.status === appliedFilters.status) &&
-      (!search || `${e.code} ${e.name}`.toLowerCase().includes(search.toLowerCase())),
-  );
   const exam = exams.find((e) => String(e.id) === examId);
   const printSchedule = () => {
     const physicalRows = buildExportRows(
@@ -751,58 +744,59 @@ export default function ExaminationPage() {
       }
       breadcrumb={tab === "schedule" ? ["Examinations", "Exam Schedule"] : ["Examinations"]}
     >
-      <div className="exam-tabs">
-        <button className={tab === "exams" ? "active" : ""} onClick={() => setTab("exams")}>
+      <div className="exam-tabs" role="tablist" aria-label="Examination modules">
+        <button role="tab" aria-selected={tab === "exams"} className={tab === "exams" ? "active" : ""} onClick={() => setTab("exams")}>
           Examinations
         </button>
-        <button className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>
+        <button role="tab" aria-selected={tab === "schedule"} className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>
           Exam Schedule
         </button>
       </div>
       {tab === "exams" ? (
         <>
-          <div className="exam-toolbar">
-            <div>
-              <h2>Examinations</h2>
-              <p>Choose academic criteria, then check the matching examinations.</p>
-            </div>
-          </div>
-          <Filters
-            f={filters}
-            change={reset}
-            onCheck={() => {
-              const next = { ...filters };
-              setAppliedFilters(next);
-              loadExaminations(next);
-            }}
-            onReset={() => {
-              setFilters(initialFilters);
-              setAppliedFilters(initialFilters);
-            }}
-          />
           <div className="cms-card">
             <div className="exam-table-toolbar">
               <div className="exam-search">
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search examinations..."
+                  placeholder="Search by code, name, group, program, type or status..."
                 />
               </div>
+              <div className="exam-toolbar-filters">
+                <ConstrainedFilterSelect label="Board" value={filters.boardId} onChange={(value) => changeFilter("boardId", value)} options={BOARDS} />
+                <ToolbarSelect
+                  label="Academic Year"
+                  value={filters.yearId}
+                  disabled={!filters.boardId}
+                  onChange={(value) => changeFilter("yearId", value)}
+                  options={YEARS.filter((year) => year.isActive && (year.boardId == null || Number(year.boardId) === Number(filters.boardId)))}
+                />
+                <ConstrainedFilterSelect label="Academic Level" value={filters.levelId} disabled={!filters.yearId} onChange={(value) => changeFilter("levelId", value)} options={LEVELS} />
+              </div>
+              <div className="exam-toolbar-spacer" />
               <div className="exam-toolbar-actions">
                 <button className="cms-btn cms-btn-ghost exam-export-btn" onClick={printSchedule}>
                   <Printer size={15} /> Export
                 </button>
                 <button
                   className="cms-btn cms-btn-primary"
-                  onClick={() => nav("/dashboard/examinations/add")}
+                  onClick={() => nav("/dashboard/examinations/add", {
+                    state: {
+                      initialExamFilters: {
+                        boardId: filters.boardId,
+                        yearId: filters.yearId,
+                        levelId: filters.levelId,
+                      },
+                    },
+                  })}
                 >
                   <Plus size={16} /> Create Examination
                 </button>
               </div>
             </div>
             <div className="cms-table-wrap">
-              <table className="cms-table">
+              <table className="cms-table exam-list-table">
                 <thead>
                   <tr>
                     <th>Exam Code</th>
@@ -818,16 +812,18 @@ export default function ExaminationPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {list.length ? (
-                    list.map((e) => (
+                  {loading ? (
+                    <tr><td colSpan="10"><div className="exam-list-loading"><span className="exam-list-spinner" aria-hidden="true" /><span>Loading data...</span></div></td></tr>
+                  ) : shownExams.length ? (
+                    shownExams.map((e) => (
                       <tr key={e.id}>
                         <td className="cms-strong">{e.code}</td>
-                        <td>{e.name}</td>
-                        <td>{nameOf(YEARS, e.yearId)}</td>
-                        <td>{nameOf(LEVELS, e.levelId)}</td>
-                        <td>{nameOf(GROUPS, e.groupId)}</td>
-                        <td>{nameOf(PROGRAMS, e.programId)}</td>
-                        <td>{e.type}</td>
+                        <td><span className="exam-cell-truncate" title={e.name}>{e.name}</span></td>
+                        <td><span className="exam-cell-truncate" title={e.academicYearName || nameOf(YEARS, e.yearId, "—")}>{e.academicYearName || nameOf(YEARS, e.yearId, "—")}</span></td>
+                        <td><span className="exam-cell-truncate" title={e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}>{e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}</span></td>
+                        <td><span className="exam-cell-truncate" title={e.groupName || nameOf(GROUPS, e.groupId, "—")}>{e.groupName || nameOf(GROUPS, e.groupId, "—")}</span></td>
+                        <td><span className="exam-cell-truncate" title={e.programName || nameOf(PROGRAMS, e.programId, "—")}>{e.programName || nameOf(PROGRAMS, e.programId, "—")}</span></td>
+                        <td><span className="exam-cell-truncate" title={e.type}>{e.type}</span></td>
                         <td>
                           {d(e.startDate)}
                           <small className="exam-muted">to {d(e.endDate)}</small>
@@ -931,6 +927,12 @@ export default function ExaminationPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="exam-list-pagination">
+              <span className="exam-record-summary">Showing {rangeStart}–{rangeEnd} of {list.length} records</span>
+              <button type="button" className="cms-btn cms-btn-ghost" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button>
+              <span>{page} / {pages}</span>
+              <button type="button" className="cms-btn cms-btn-ghost" disabled={page === pages} onClick={() => setPage((current) => current + 1)}>Next</button>
             </div>
           </div>
         </>
@@ -1195,85 +1197,82 @@ export default function ExaminationPage() {
     </DashboardLayout>
   );
 }
-function Filters({ f, change, onCheck, onReset }) {
-  const y = YEARS.filter(
-      (x) => x.isActive && (x.boardId == null || Number(x.boardId) === Number(f.boardId)),
-    ),
-    l = LEVELS,
-    g = GROUPS,
-    p = PROGRAMS;
+function ToolbarSelect({ label, value, onChange, options, disabled = false }) {
   return (
-    <div className="cms-card exam-filters">
-      <div className="exam-filter-grid">
-        <Select
-          label="Board"
-          value={f.boardId}
-          onChange={(v) => change("boardId", v)}
-          options={BOARDS}
-        />
-        <Select
-          label="Academic Year"
-          value={f.yearId}
-          disabled={!f.boardId}
-          onChange={(v) => change("yearId", v)}
-          options={y}
-        />
-        <Select
-          label="Academic Level"
-          value={f.levelId}
-          disabled={!f.yearId}
-          onChange={(v) => change("levelId", v)}
-          options={l}
-        />
-        <Select
-          label="Group"
-          value={f.groupId}
-          disabled={!f.levelId}
-          onChange={(v) => change("groupId", v)}
-          options={g}
-        />
-        <Select
-          label="Program"
-          value={f.programId}
-          disabled={!f.groupId}
-          onChange={(v) => change("programId", v)}
-          options={p}
-        />
-        <Select
-          label="Exam Type"
-          value={f.type}
-          onChange={(v) => change("type", v)}
-          options={TYPES}
-        />
-        <Select
-          label="Status"
-          value={f.status}
-          onChange={(v) => change("status", v)}
-          options={["DRAFT", "SCHEDULED", "ONGOING", "COMPLETED", "CANCELLED"]}
-        />
-      </div>
-      <div className="exam-filter-actions">
-        <button className="cms-btn cms-btn-ghost" type="button" onClick={onReset}>
-          Reset
-        </button>
-        <button className="cms-btn cms-btn-primary" type="button" onClick={onCheck}>
-          Check Examinations
-        </button>
-      </div>
+    <div className="exam-toolbar-select">
+      <select
+        value={value}
+        disabled={disabled}
+        aria-label={`Select ${label}`}
+        title={options.find((option) => String(option.id) === String(value))?.name || `Select ${label}`}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        <option value="">Select {label}</option>
+        {options.map((option) => <option key={option.id} value={option.id} title={option.name}>{option.name}</option>)}
+      </select>
     </div>
   );
 }
-function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupChange }) {
+
+function ConstrainedFilterSelect({ label, value, onChange, options, disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+  const placeholder = `Select ${label}`;
+  const selectedName = options.find((option) => String(option.id) === String(value))?.name || "";
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = (event) => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [open]);
+  const choose = (nextValue) => {
+    onChange(nextValue);
+    setOpen(false);
+  };
+  return (
+    <div ref={containerRef} className="exam-toolbar-select exam-constrained-select">
+      <button type="button" disabled={disabled} aria-label={placeholder} aria-haspopup="listbox" aria-expanded={open} title={selectedName || placeholder} onClick={() => setOpen((current) => !current)}>
+        <span>{selectedName || placeholder}</span><span aria-hidden="true">▾</span>
+      </button>
+      {open && <div className="exam-constrained-menu" role="listbox" aria-label={`${label} options`}>
+        <button type="button" role="option" aria-selected={!value} title={placeholder} onClick={() => choose("")}>{placeholder}</button>
+        {options.length ? options.map((option) => <button type="button" role="option" aria-selected={String(option.id) === String(value)} key={option.id} title={option.name} onClick={() => choose(String(option.id))}>{option.name}</button>) : <span>No options available</span>}
+      </div>}
+    </div>
+  );
+}
+
+function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcademicChange, onGroupChange }) {
   const nav = useNavigate(),
     existing = exams.find((e) => String(e.id) === String(editId)),
     [form, setForm] = useState(() =>
       existing
         ? { ...existing, programId: String(existing.programId) }
-        : emptyExam(),
+        : {
+            ...emptyExam(),
+            boardId: initialExamFilters?.boardId || "",
+            yearId: initialExamFilters?.yearId || "",
+            levelId: initialExamFilters?.levelId || "",
+          },
     ),
     [errors, setErrors] = useState({}),
     [saving, setSaving] = useState(false),
     locked = !!(existing && schedules.some((s) => s.examId === existing.id));
+  useEffect(() => {
+    if (!existing && form.boardId && form.yearId && form.levelId)
+      onAcademicChange({ boardId: form.boardId, yearId: form.yearId, levelId: form.levelId });
+    // Prefilled create-form dependencies are loaded once when the form opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const change = (n, v) => {
       const nextContext = {
         boardId: n === "boardId" ? v : form.boardId,
@@ -1313,6 +1312,8 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
     e.preventDefault();
     if (saving) return;
     const x = {};
+    const normalizedExamName = normalizeText(form.name);
+    const normalizedDescription = normalizeText(form.description);
     [
       "name",
       "boardId",
@@ -1328,6 +1329,18 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
       if (!String(form[k] || "").trim())
         x[k] = k === "programId" ? "Please select a Program." : "Required";
     });
+    if (!normalizedExamName)
+      x.name = "Exam Name is required.";
+    else if (normalizedExamName.length < 2)
+      x.name = "Exam Name must contain at least 2 characters.";
+    else if (normalizedExamName.length > 150)
+      x.name = "Exam Name must not exceed 150 characters.";
+    else if (!/^[\p{L}\p{N}\s&'().,/-]+$/u.test(normalizedExamName))
+      x.name = "Exam Name contains unsupported characters.";
+    if (normalizedDescription.length > 500)
+      x.description = "Description must not exceed 500 characters.";
+    else if (hasUnsupportedControlCharacters(form.description))
+      x.description = "Description contains unsupported control characters.";
     const configurationError = validateExamConfiguration(form);
     if (configurationError) x.examPatternId = configurationError;
     if (form.startDate && form.endDate && form.startDate > form.endDate)
@@ -1341,10 +1354,11 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
     )
       x.passPercentage = "Pass Percentage must be greater than 0 and not exceed 100.";
     if (
+      !x.name &&
       exams.some(
         (q) =>
           q.id !== existing?.id &&
-          q.name.trim().toLowerCase() === form.name.trim().toLowerCase() &&
+          normalizeText(q.name).toLocaleLowerCase() === normalizedExamName.toLocaleLowerCase() &&
           [
             "boardId",
             "yearId",
@@ -1372,7 +1386,7 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
     try {
       const payload = {
         examCode: form.code.trim(),
-        examName: form.name.trim(),
+        examName: normalizedExamName,
         boardId: Number(form.boardId),
         academicYearId: Number(form.yearId),
         academicLevelId: Number(form.levelId),
@@ -1387,7 +1401,7 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
         examPatternId: String(form.examPatternId ?? ""),
         totalMarks: Number(form.totalMarks),
         passPercentage: Number(form.passPercentage),
-        description: form.description.trim(),
+        description: normalizedDescription,
         status: existing?.status ?? "DRAFT",
         ...(!existing ? { allocatedSubjectIds: [] } : {}),
       };
@@ -1537,9 +1551,11 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
                   type="textarea"
                   value={form.description}
                   onChange={(v) => change("description", v)}
+                  error={errors.description}
                 />
               </div>
             </section>
+            {errors.form && <p className="cms-error exam-form-error" role="alert">{errors.form}</p>}
             <div className="cms-form-actions">
               <button
                 type="button"
@@ -1550,7 +1566,7 @@ function ExamForm({ exams, schedules, editId, onSave, onAcademicChange, onGroupC
                 Cancel
               </button>
               <button className="cms-btn cms-btn-primary" disabled={saving} aria-busy={saving}>
-                {saving ? "Saving..." : existing ? "Update Examination" : "Save Examination"}
+                {saving ? (existing ? "Updating..." : "Adding...") : existing ? "Update Examination" : "Save Examination"}
               </button>
             </div>
           </div>
@@ -2126,7 +2142,7 @@ function EditExamModal({ exam, schedules, onClose, onSave }) {
             disabled={saving}
             aria-busy={saving}
           >
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? "Updating..." : "Save Changes"}
           </button>
         </div>
       </form>
@@ -2261,19 +2277,18 @@ function Detail({ label, value }) {
   );
 }
 function Select({ label, value, onChange, options = [], disabled, error, placeholder }) {
+  const normalizedOptions = options.map((option) =>
+    typeof option === "string" ? { id: option, name: option } : option,
+  );
+  const selectedLabel = normalizedOptions.find((option) => String(option.id) === String(value))?.name;
   return (
     <div className={`cms-field ${error ? "has-error" : ""}`}>
       <label>{label}</label>
-      <select value={value ?? ""} disabled={disabled} onChange={(e) => onChange?.(e.target.value)}>
+      <select value={value ?? ""} disabled={disabled} title={selectedLabel || placeholder || `Select ${label.replace(" *", "")}`} onChange={(e) => onChange?.(e.target.value)}>
         <option value="">{placeholder || `Select ${label.replace(" *", "")}`}</option>
-        {options.map((x) => {
-          const o = typeof x === "string" ? { id: x, name: x } : x;
-          return (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          );
-        })}
+        {normalizedOptions.map((option) => (
+          <option key={option.id} value={option.id} title={option.name}>{option.name}</option>
+        ))}
       </select>
       {error && <span className="cms-error">{error}</span>}
     </div>

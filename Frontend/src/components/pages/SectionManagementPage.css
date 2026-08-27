@@ -65,6 +65,8 @@
 
 /* Toolbar & Search */
 .cms-sec-toolbar {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -72,6 +74,7 @@
   min-height: 64px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--cms-border, #E6E7DE);
+  overflow: visible;
 }
 
 .cms-sec-search {
@@ -114,6 +117,7 @@
 
 .cms-constrained-filter {
   position: relative;
+  z-index: 21;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -152,11 +156,15 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  max-height: 240px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 6px;
   border: 1px solid var(--cms-border);
   border-radius: 8px;
-  background: var(--cms-surface);
+  background: var(--cms-surface, #fff);
+  opacity: 1;
   box-shadow: 0 10px 24px rgb(15 23 42 / 18%);
 }
 
@@ -223,6 +231,8 @@
 
 /* Table */
 .cms-sec-table-wrap {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -291,13 +301,13 @@
 .cms-section-table th:nth-child(1) { width: 12%; }
 .cms-section-table th:nth-child(2) { width: 7%; }
 .cms-section-table th:nth-child(3) { width: 7%; }
-.cms-section-table th:nth-child(4) { width: 13%; }
-.cms-section-table th:nth-child(5) { width: 13%; }
+.cms-section-table th:nth-child(4) { width: 12%; }
+.cms-section-table th:nth-child(5) { width: 12%; }
 .cms-section-table th:nth-child(6) { width: 9%; }
 .cms-section-table th:nth-child(7) { width: 13%; }
 .cms-section-table th:nth-child(8) { width: 10%; }
 .cms-section-table th:nth-child(9) { width: 9%; }
-.cms-section-table th:nth-child(10) { width: 7%; }
+.cms-section-table th:nth-child(10) { width: 9%; }
 
 .cms-section-table th {
   font-size: 9.5px;
@@ -400,6 +410,23 @@
 .cms-sec-action-btn:hover {
   background: var(--cms-primary, #0f766e);
   color: #fff;
+}
+
+.cms-sec-delete-action {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.cms-sec-delete-action:hover:not(:disabled) {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #fff;
+}
+
+.cms-sec-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* Pagination */
@@ -638,7 +665,7 @@
   .cms-sec-modal,
   .cms-room-modal,
   .cms-sec-room-modal {
-    width: min(520px, calc(100vw - 24px)) !important;
+    width: min(520px, calc(100vw - 24px));
     max-height: calc(100vh - 24px);
   }
 

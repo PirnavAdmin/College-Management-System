@@ -1153,7 +1153,7 @@ export default function AdmissionPage() {
   const [admissions, setAdmissions] = useState([]);
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ year: "", group: "", section: "", status: "" });
+  const [filters, setFilters] = useState({ year: "", group: "", program: "", status: "" });
   const [page, setPage] = useState(1);
   const [approveTarget, setApproveTarget] = useState(null);
   const [rejectTarget, setRejectTarget] = useState(null);
@@ -1247,11 +1247,12 @@ export default function AdmissionPage() {
         || row.admissionNo.toLowerCase().includes(term);
       const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
       const matchesGroup = !filters.group || String(row.group) === String(filters.group);
-      const matchesSection = !filters.section || String(row.section) === String(filters.section);
+      const rowProgram = row.program || row.section;
+      const matchesProgram = !filters.program || String(rowProgram) === String(filters.program);
       const matchesStatus = !filters.status || row.status === filters.status;
-      return matchesSearch && matchesYear && matchesGroup && matchesSection && matchesStatus;
+      return matchesSearch && matchesYear && matchesGroup && matchesProgram && matchesStatus;
     });
-  }, [admissionRows, filters.group, filters.section, filters.status, filters.year, search]);
+  }, [admissionRows, filters.group, filters.program, filters.status, filters.year, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1623,13 +1624,18 @@ export default function AdmissionPage() {
     const optionsFromRows = (masterOptions.groups || []).map((item) => ({ value: item.label, label: item.label }));
     return Array.from(new Map(optionsFromRows.filter((item) => item.value).map((item) => [item.value, item])).values());
   }, [masterOptions.groups]);
-  const sectionFilterOptions = useMemo(() => {
-    const rows = masterOptions.sections || [];
+  const programFilterOptions = useMemo(() => {
     const filteredRows = filters.group
-      ? rows.filter((item) => item.groupName === filters.group || item.groupId === filters.group)
-      : rows;
-    return Array.from(new Map(filteredRows.map((item) => ({ value: item.label, label: item.label })).filter((item) => item.value).map((item) => [item.value, item])).values());
-  }, [filters.group, masterOptions.sections]);
+      ? admissionRows.filter((item) => String(item.group) === String(filters.group))
+      : admissionRows;
+    return Array.from(new Map(filteredRows
+      .map((item) => {
+        const value = item.program || item.section;
+        return value ? { value, label: value } : null;
+      })
+      .filter(Boolean)
+      .map((item) => [item.value, item])).values());
+  }, [admissionRows, filters.group]);
 
   const feeContext = [
     { label: "Student", value: [values.firstName, values.lastName].filter(Boolean).join(" ") },
@@ -2032,8 +2038,8 @@ export default function AdmissionPage() {
             </div>
             <div className="cms-admission-filters">
               <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || options.year }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
-              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, section: name === "group" ? "" : current.section })); setPage(1); }} />
-              <Field field={{ name: "section", label: "Section", type: "select", options: sectionFilterOptions }} value={filters.section} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, program: name === "group" ? "" : current.program })); setPage(1); }} />
+              <Field field={{ name: "program", label: "Program", type: "select", options: programFilterOptions }} value={filters.program} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
             </div>
           </div>
@@ -2047,8 +2053,8 @@ export default function AdmissionPage() {
                   <th>Admission Date</th>
                   <th>Academic Year</th>
                   <th>Board</th>
-                    <th>Group</th>
-                  <th>Section</th>
+                  <th>Group</th>
+                  <th>Program</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -2064,7 +2070,7 @@ export default function AdmissionPage() {
                     <td>{optionLabel(masterOptions.years, row.academicYear) || row.academicYear || "-"}</td>
                     <td>{optionLabel(masterOptions.boards, row.board) || row.board || "-"}</td>
                     <td>{row.group || "-"}</td>
-                    <td>{row.section || "-"}</td>
+                    <td>{row.program || row.section || "-"}</td>
                     <td><span className={`cms-badge ${admissionStatusClass(row.status)}`}>{row.status}</span></td>
                     <td>
                       <div className="cms-actions cms-admission-actions">

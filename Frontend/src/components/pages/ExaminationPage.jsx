@@ -13,11 +13,14 @@ const EXAM_API = {
   academicLevels: "/api/v1/boards/academic-levels",
   groups: "/api/v1/groups",
   programsByGroup: (groupId) => `/api/v1/groups/${groupId}/programs`,
+  patterns: "/api/v1/examinations/patterns",
+  types: "/api/v1/examinations/types",
   list: "/api/v1/examinations",
   byId: (id) => `/api/v1/examinations/${id}`,
   eligibleSubjects: (id) => `/api/v1/examinations/${id}/eligible-subjects`,
   finalize: (id) => `/api/v1/examinations/${id}/finalize-schedule`,
   cancel: (id) => `/api/v1/examinations/${id}/cancel`,
+  reschedule: (id) => `/api/v1/examinations/${id}/reschedule`,
   schedules: "/api/v1/examinations/schedules",
   scheduleById: (id) => `/api/v1/examinations/schedules/${id}`,
   batchSchedules: "/api/v1/examinations/schedules/batch",
@@ -62,6 +65,28 @@ const hasUnsupportedControlCharacters = (value) =>
   });
 const toApiTime = (value) =>
   value && /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value;
+const normalizeScheduleMode = (value) => {
+  const mode = String(value ?? "").trim().toUpperCase();
+  return ["COMBINED", "COMBINED_OBJECTIVE", "OBJECTIVE_COMBINED", "JEE_MAIN", "JEE_ADVANCED", "NEET"].includes(mode)
+    ? "COMBINED_OBJECTIVE"
+    : "SUBJECT_WISE";
+};
+const findPattern = (value) => {
+  const target = String(value ?? "").trim().toLowerCase();
+  return EXAM_PATTERNS.find((pattern) =>
+    [pattern.id, pattern.code, pattern.name].some(
+      (candidate) => String(candidate ?? "").trim().toLowerCase() === target,
+    ),
+  );
+};
+const findExamType = (value) => {
+  const target = String(value ?? "").trim().toLowerCase();
+  return EXAM_TYPES.find((type) =>
+    [type.id, type.name, type.examType].some(
+      (candidate) => String(candidate ?? "").trim().toLowerCase() === target,
+    ),
+  );
+};
 const apiError = (error) =>
   error?.response?.data?.detail ||
   error?.response?.data?.message ||
@@ -78,7 +103,7 @@ const normalizeSchedule = (item) => ({
   startTime: normalizeTimeInput(item.startTime),
   endTime: normalizeTimeInput(item.endTime),
   sessionId: item.sessionId ?? "",
-  scheduleMode: String(item.scheduleMode ?? "SUBJECT_WISE").toUpperCase(),
+  scheduleMode: normalizeScheduleMode(item.scheduleMode),
   roomId: item.roomId ?? "",
   invigilatorId: item.invigilatorId ?? "",
   hall: item.hall ?? item.roomNumber ?? "",
@@ -98,18 +123,25 @@ const normalizeExamination = (item) => ({
   yearId: item.academicYearId ?? item.yearId,
   levelId: item.academicLevelId ?? item.levelId,
   boardName: item.boardName ?? item.board ?? "",
-  academicYearName: item.academicYearName ?? item.yearName ?? "",
+  academicYearName: item.academicYearName ?? item.academicYear ?? item.yearName ?? "",
   academicLevelName: item.academicLevelName ?? item.academicLevel ?? item.levelName ?? "",
   groupId: item.groupId,
   groupName: item.groupName ?? item.group ?? "",
   programId: item.programId,
   programName: item.programName ?? item.programme ?? item.program ?? "",
-  assessmentTypeId: item.assessmentTypeId ?? null,
-  examPatternId: item.examPatternId ?? "",
-  examPattern: item.examPattern ?? "",
+  assessmentTypeId:
+    item.assessmentTypeId ??
+    item.examTypeId ??
+    findExamType(item.examType ?? item.assessmentTypeName ?? item.assessmentType ?? item.type)?.id ??
+    null,
+  examPatternId:
+    item.examPatternId ??
+    findPattern(item.examPattern ?? item.pattern ?? item.patternName)?.id ??
+    "",
+  examPattern: item.examPattern ?? item.pattern ?? item.patternName ?? "",
   allowedExamTypes: item.allowedExamTypes ?? item.examTypes ?? [],
-  examType: item.examType ?? item.type ?? "",
-  type: item.examType ?? item.type ?? "",
+  examType: item.examType ?? item.assessmentTypeName ?? item.assessmentType ?? item.type ?? "",
+  type: item.examType ?? item.assessmentTypeName ?? item.assessmentType ?? item.type ?? "",
   startDate: normalizeDateInput(item.startDate),
   endDate: normalizeDateInput(item.endDate),
   totalMarks: item.totalMarks ?? "",
@@ -125,6 +157,7 @@ let LEVELS = [];
 let GROUPS = [];
 let PROGRAMS = [];
 let EXAM_PATTERNS = [];
+let EXAM_TYPES = [];
 let SUBJECTS = [];
 let FACULTY = [];
 let ROOMS = [];
@@ -137,6 +170,7 @@ const emptyExam = () => ({
   groupId: "",
   programId: "",
   examPatternId: "",
+  assessmentTypeId: "",
   examType: "",
   type: "",
   startDate: "",
@@ -188,9 +222,11 @@ const validateExamConfiguration = (exam) => {
   return "";
 };
 const getScheduleMode = (exam) =>
-  exam?.scheduleMode ||
-  EXAM_PATTERNS.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
-  "SUBJECT_WISE";
+  normalizeScheduleMode(
+    exam?.scheduleMode ||
+      EXAM_PATTERNS.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
+      exam?.examPattern,
+  );
 const createCombinedSessionId = (examId) => `COMBINED-${examId}-${Date.now()}`;
 const getExamPassingMarks = (exam) => {
   const total = Number(exam?.totalMarks);
@@ -212,13 +248,17 @@ const hasValidExamMarks = (exam) =>
   Number(exam?.passPercentage) > 0 &&
   Number(exam?.passPercentage) <= 100;
 const isSameCombinedSession = (existing, candidate) =>
-  existing?.scheduleMode === "COMBINED" &&
-  candidate?.scheduleMode === "COMBINED" &&
+  normalizeScheduleMode(existing?.scheduleMode) === "COMBINED_OBJECTIVE" &&
+  normalizeScheduleMode(candidate?.scheduleMode) === "COMBINED_OBJECTIVE" &&
   String(existing.examId) === String(candidate.examId) &&
   Boolean(existing.sessionId) &&
   existing.sessionId === candidate.sessionId;
 const getMarksConfig = (exam, subject) => {
   if (!subjectsFor(exam).some((item) => String(item.id) === String(subject?.id))) return null;
+  const subjectTotal = Number(subject?.totalMarks),
+    subjectPassing = Number(subject?.passingMarks);
+  if (Number.isFinite(subjectTotal) && subjectTotal > 0 && Number.isFinite(subjectPassing) && subjectPassing >= 0)
+    return { maxMarks: subjectTotal, passingMarks: subjectPassing };
   const passingMarks = getExamPassingMarks(exam);
   return passingMarks == null
     ? null
@@ -228,7 +268,7 @@ const getCandidateSchedule = (schedule, exam, editingId, sessionId) => ({
   ...schedule,
   examId: exam?.id,
   scheduleMode: getScheduleMode(exam),
-  sessionId: getScheduleMode(exam) === "COMBINED" ? sessionId || "" : "",
+  sessionId: getScheduleMode(exam) === "COMBINED_OBJECTIVE" ? sessionId || "" : "",
   editingId,
 });
 const hasHallConflict = (candidate, schedules) =>
@@ -279,7 +319,7 @@ const buildExportRows = (targetExams, schedules) =>
         groups = new Map();
       records.forEach((schedule) => {
         const key =
-          schedule.scheduleMode === "COMBINED" && schedule.sessionId
+          normalizeScheduleMode(schedule.scheduleMode) === "COMBINED_OBJECTIVE" && schedule.sessionId
             ? `combined-${exam.id}-${schedule.sessionId}`
             : `subject-${schedule.id}`;
         const group = groups.get(key) || [];
@@ -370,6 +410,7 @@ export default function ExaminationPage() {
     [page, setPage] = useState(1),
     [finalizing, setFinalizing] = useState(false),
     [loading, setLoading] = useState(true),
+    [eligibleSubjectsLoaded, setEligibleSubjectsLoaded] = useState(false),
     [, setMasterRevision] = useState(0);
   const groupRequestRef = useRef(0),
     programRequestRef = useRef(0);
@@ -382,6 +423,8 @@ export default function ExaminationPage() {
     else if (key === "subjects") SUBJECTS = items;
     else if (key === "faculty") FACULTY = items;
     else if (key === "rooms") ROOMS = items;
+    else if (key === "patterns") EXAM_PATTERNS = items;
+    else if (key === "types") EXAM_TYPES = items;
     setMasterRevision((value) => value + 1);
   };
   const loadMasterData = async () => {
@@ -389,6 +432,8 @@ export default function ExaminationPage() {
       ["boards", EXAM_API.boards, ["boardId", "id"], ["boardName", "name"]],
       ["years", EXAM_API.activeYear, ["academicYearId", "id"], ["academicYearName", "yearName", "name"]],
       ["levels", EXAM_API.academicLevels, ["academicLevelId", "id"], ["levelName", "academicLevelName", "name"]],
+      ["patterns", EXAM_API.patterns, ["patternId", "id"], ["patternName", "name"]],
+      ["types", EXAM_API.types, ["assessmentTypeId", "examTypeId", "id"], ["assessmentTypeName", "examType", "name"]],
     ];
     const results = await Promise.allSettled(
       requests.map(([, url]) => apiClient.get(url)),
@@ -401,6 +446,20 @@ export default function ExaminationPage() {
         const normalized = source
           .map((item) => {
             const master = normalizeMaster(item, idKeys, nameKeys);
+            if (key === "patterns")
+              return {
+                ...item,
+                id: Number(item.patternId ?? item.id),
+                code: item.patternCode ?? item.code ?? "",
+                name: item.patternName ?? item.name ?? "",
+                description: item.description ?? "",
+                allowedExamTypes: Array.isArray(item.allowedExamTypes) ? item.allowedExamTypes : [],
+              };
+            if (key === "types") {
+              const id = Number(item.assessmentTypeId ?? item.examTypeId ?? item.id);
+              const name = item.assessmentTypeName ?? item.examType ?? item.name ?? "";
+              return { ...item, id, assessmentTypeId: id, name, examType: name };
+            }
             return key === "years"
               ? {
                   ...master,
@@ -418,7 +477,7 @@ export default function ExaminationPage() {
             (item) =>
               Number.isInteger(item.id) &&
               item.id > 0 &&
-              (key === "levels" || item.isActive),
+              (["levels", "patterns", "types"].includes(key) || item.isActive),
           );
         replaceMaster(key, normalized);
       } else {
@@ -499,24 +558,7 @@ export default function ExaminationPage() {
       const normalized = collectionFrom(response.data).map(normalizeExamination).filter((item) => item.id);
       setExams(normalized);
       setSchedules(normalized.flatMap((item) => item.schedules));
-      EXAM_PATTERNS = Array.from(
-        new Map(
-          normalized
-            .filter((item) => item.examPatternId && item.examPattern)
-            .map((item) => [
-              String(item.examPatternId),
-              {
-                id: item.examPatternId,
-                name: item.examPattern,
-                programId: item.programId,
-                scheduleMode: item.scheduleMode,
-                allowedExamTypes: item.allowedExamTypes ?? [],
-              },
-            ]),
-        ).values(),
-      );
-      setMasterRevision((value) => value + 1);
-      return normalized;
+       return normalized;
     } catch (error) {
       setToast(apiError(error));
       return [];
@@ -541,7 +583,7 @@ export default function ExaminationPage() {
   };
   useEffect(() => {
     let active = true;
-    Promise.all([loadMasterData(), loadExaminations()]).finally(() => {
+    loadMasterData().then(loadExaminations).finally(() => {
       if (active) setLoading(false);
     });
     // Initial API load is intentionally one-time; list filters are applied client-side.
@@ -566,8 +608,10 @@ export default function ExaminationPage() {
   useEffect(() => {
     if (!examId) {
       replaceMaster("subjects", []);
+      setEligibleSubjectsLoaded(false);
       return;
     }
+    setEligibleSubjectsLoaded(false);
     let active = true;
     apiClient
       .get(EXAM_API.eligibleSubjects(examId))
@@ -581,10 +625,12 @@ export default function ExaminationPage() {
             )
             .filter((item) => item.id != null),
         );
+        setEligibleSubjectsLoaded(true);
       })
       .catch((error) => {
         if (active) {
           replaceMaster("subjects", []);
+          setEligibleSubjectsLoaded(false);
           setToast(apiError(error));
         }
       });
@@ -614,8 +660,17 @@ export default function ExaminationPage() {
         replaceMaster(
           "rooms",
           collectionFrom(hallResult.value.data)
-            .map((item) => normalizeMaster(item, ["roomId", "id"], ["roomName", "roomNumber", "name"]))
-            .filter((item) => item.id != null),
+            .map((item) => ({
+              ...normalizeMaster(item, ["roomId", "id"], ["roomName", "roomNumber", "name"]),
+              id: item.roomId ?? item.id,
+              roomNumber: item.roomNumber ?? "",
+              blockName: item.blockName ?? "",
+              floor: item.floor,
+              capacity: item.capacity,
+              roomType: item.roomType ?? "",
+              isAvailable: item.isAvailable,
+            }))
+            .filter((item) => item.id != null && item.isAvailable !== false),
         );
       } else {
         replaceMaster("rooms", []);
@@ -625,8 +680,15 @@ export default function ExaminationPage() {
         replaceMaster(
           "faculty",
           collectionFrom(facultyResult.value.data)
-            .map((item) => normalizeMaster(item, ["facultyId", "id"], ["facultyName", "name"]))
-            .filter((item) => item.id != null),
+            .map((item) => ({
+              ...normalizeMaster(item, ["facultyId", "id"], ["fullName", "facultyName", "name"]),
+              id: item.facultyId ?? item.id,
+              employeeId: item.employeeId ?? "",
+              designation: item.designation ?? "",
+              facultyType: item.facultyType ?? "",
+              isAvailable: item.isAvailable,
+            }))
+            .filter((item) => item.id != null && item.isAvailable !== false),
         );
       } else {
         replaceMaster("faculty", []);
@@ -985,7 +1047,7 @@ export default function ExaminationPage() {
               setToast(wasEditing ? "Schedule updated." : "Schedule saved.");
               setEditing(null);
               setSch(
-                wasEditing || candidate.scheduleMode === "COMBINED"
+                wasEditing || normalizeScheduleMode(candidate.scheduleMode) === "COMBINED_OBJECTIVE"
                   ? emptySchedule()
                   : nextScheduleFromPrevious(candidate),
               );
@@ -1001,9 +1063,11 @@ export default function ExaminationPage() {
                 });
               if (validateExamConfiguration(exam))
                 return setErrors({ form: "Select a valid Program, Exam Pattern and Exam Type." });
+              if (!eligibleSubjectsLoaded)
+                return setErrors({ form: "Eligible subjects could not be loaded. Please try again before finalizing." });
               const expected = subjectsFor(exam),
                 records = schedules.filter((item) => String(item.examId) === String(exam.id));
-              if (getScheduleMode(exam) !== "COMBINED") {
+              if (getScheduleMode(exam) !== "COMBINED_OBJECTIVE") {
                 const missing = expected.filter(
                   (subject) =>
                     !records.some((item) => String(item.subjectId) === String(subject.id)),
@@ -1045,7 +1109,9 @@ export default function ExaminationPage() {
                     form: "The Regular Academic schedule is inconsistent. Edit the affected subject schedule before finalizing.",
                   });
               } else {
-                const combinedRecords = records.filter((item) => item.scheduleMode === "COMBINED"),
+                const combinedRecords = records.filter(
+                    (item) => normalizeScheduleMode(item.scheduleMode) === "COMBINED_OBJECTIVE",
+                  ),
                   sessionIds = [
                     ...new Set(combinedRecords.map((item) => item.sessionId).filter(Boolean)),
                   ],
@@ -1119,12 +1185,12 @@ export default function ExaminationPage() {
               academicLevel: nameOf(LEVELS, updated.levelId, ""),
               groupId: Number(updated.groupId),
               programId: Number(updated.programId),
-              assessmentTypeId: Number(updated.assessmentTypeId || 0),
+              assessmentTypeId: Number(updated.assessmentTypeId),
               examType: updated.examType,
               startDate: updated.startDate,
               endDate: updated.endDate,
-              examPattern: updated.examPattern || nameOf(EXAM_PATTERNS, updated.examPatternId, ""),
-              examPatternId: String(updated.examPatternId || ""),
+              examPattern: findPattern(updated.examPatternId)?.code || updated.examPattern,
+              examPatternId: Number(updated.examPatternId),
               totalMarks: Number(updated.totalMarks),
               passPercentage: Number(updated.passPercentage),
               description: updated.description || "",
@@ -1161,7 +1227,7 @@ export default function ExaminationPage() {
         <ConfirmDialog
           title="Remove schedule"
           message={
-            removeSchedule.scheduleMode === "COMBINED"
+            normalizeScheduleMode(removeSchedule.scheduleMode) === "COMBINED_OBJECTIVE"
               ? "Remove this combined objective schedule? All included subject schedules will be removed."
               : `Remove the ${removeSchedule.subjectName} schedule?`
           }
@@ -1169,7 +1235,7 @@ export default function ExaminationPage() {
           onConfirm={async () => {
             try {
               const targets =
-                removeSchedule.scheduleMode === "COMBINED"
+                normalizeScheduleMode(removeSchedule.scheduleMode) === "COMBINED_OBJECTIVE"
                   ? schedules.filter(
                       (item) =>
                         String(item.examId) === String(removeSchedule.examId) &&
@@ -1286,17 +1352,17 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
         ...x,
         [n]: v,
         ...(n === "boardId"
-          ? { yearId: "", levelId: "", groupId: "", programId: "", examPatternId: "", examType: "" }
+          ? { yearId: "", levelId: "", groupId: "", programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
           : n === "yearId"
-            ? { levelId: "", groupId: "", programId: "", examPatternId: "", examType: "" }
+            ? { levelId: "", groupId: "", programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
             : n === "levelId"
-              ? { groupId: "", programId: "", examPatternId: "", examType: "" }
+              ? { groupId: "", programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
               : n === "groupId"
-                ? { programId: "", examPatternId: "", examType: "" }
+                ? { programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
                 : n === "programId"
-                  ? { examPatternId: "", examType: "" }
+                  ? { examPatternId: "", assessmentTypeId: "", examType: "" }
                   : n === "examPatternId"
-                    ? { examType: "" }
+                    ? { assessmentTypeId: "", examType: "" }
                     : {}),
       }));
     },
@@ -1307,7 +1373,18 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
     g = GROUPS,
     p = PROGRAMS,
     patterns = patternsForProgram(form.programId),
-    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(form.examPatternId));
+    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(form.examPatternId)),
+    allowedTypes = Array.isArray(pattern?.allowedExamTypes) && pattern.allowedExamTypes.length
+      ? pattern.allowedExamTypes.map((value) => {
+          const supplied = typeof value === "object" ? value : { name: value, examType: value };
+          const master = EXAM_TYPES.find((item) =>
+            [item.id, item.name, item.examType].some(
+              (candidate) => String(candidate ?? "").trim().toLowerCase() === String(supplied.id ?? supplied.name ?? supplied.examType ?? "").trim().toLowerCase(),
+            ),
+          );
+          return master ?? supplied;
+        })
+      : EXAM_TYPES;
   const save = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -1343,6 +1420,8 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
       x.description = "Description contains unsupported control characters.";
     const configurationError = validateExamConfiguration(form);
     if (configurationError) x.examPatternId = configurationError;
+    if (!Number.isInteger(Number(form.assessmentTypeId)) || Number(form.assessmentTypeId) <= 0)
+      x.examType = "Select a valid Exam Type.";
     if (form.startDate && form.endDate && form.startDate > form.endDate)
       x.endDate = "End date must be on or after the start date.";
     if (!Number.isInteger(Number(form.totalMarks)) || Number(form.totalMarks) <= 0)
@@ -1393,17 +1472,16 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
         academicLevel: nameOf(LEVELS, form.levelId, ""),
         groupId: Number(form.groupId),
         programId: Number(form.programId),
-        assessmentTypeId: form.assessmentTypeId ? Number(form.assessmentTypeId) : 0,
-        examType: form.examType,
+        assessmentTypeId: Number(form.assessmentTypeId),
+        examType: EXAM_TYPES.find((item) => String(item.id) === String(form.assessmentTypeId))?.examType ?? form.examType,
         startDate: form.startDate,
         endDate: form.endDate,
-        examPattern: pattern?.name ?? form.examPattern ?? "",
-        examPatternId: String(form.examPatternId ?? ""),
+        examPattern: pattern?.code ?? form.examPattern ?? "",
+        examPatternId: Number(form.examPatternId),
         totalMarks: Number(form.totalMarks),
         passPercentage: Number(form.passPercentage),
         description: normalizedDescription,
         status: existing?.status ?? "DRAFT",
-        ...(!existing ? { allocatedSubjectIds: [] } : {}),
       };
       const response = existing
         ? await apiClient.put(EXAM_API.byId(existing.id), payload)
@@ -1488,10 +1566,14 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
                 />
                 <Select
                   label="Exam Type *"
-                  value={form.examType}
+                  value={form.assessmentTypeId}
                   disabled={saving || locked || !form.examPatternId}
-                  onChange={(v) => change("examType", v)}
-                  options={pattern?.allowedExamTypes || []}
+                  onChange={(v) => {
+                    const selected = allowedTypes.find((item) => String(item.id) === String(v));
+                    setForm((current) => ({ ...current, assessmentTypeId: v, examType: selected?.examType ?? selected?.name ?? "" }));
+                    setErrors((current) => ({ ...current, examType: undefined, form: undefined }));
+                  }}
+                  options={allowedTypes}
                   error={errors.examType}
                 />
               </div>
@@ -1594,7 +1676,7 @@ function Schedule({
 }) {
   const [savingSchedule, setSavingSchedule] = useState(false),
     entries = exam ? schedules.filter((s) => String(s.examId) === String(exam.id)) : [],
-    combined = getScheduleMode(exam) === "COMBINED",
+    combined = getScheduleMode(exam) === "COMBINED_OBJECTIVE",
     included = subjectsFor(exam),
     subs = included.filter(
       (s) =>
@@ -1655,7 +1737,7 @@ function Schedule({
       x.date = "Exam date must be within the examination period.";
     if (
       combined &&
-      entries.some((s) => s.scheduleMode === "COMBINED" && s.sessionId !== currentSessionId)
+      entries.some((s) => normalizeScheduleMode(s.scheduleMode) === "COMBINED_OBJECTIVE" && s.sessionId !== currentSessionId)
     )
       x.form =
         "A combined schedule already exists for this examination. Edit the existing schedule instead.";
@@ -1695,7 +1777,7 @@ function Schedule({
         ...sch,
         id: editing && !combined ? editing : Date.now() + subject.id,
         examId: exam.id,
-        scheduleMode: combined ? "COMBINED" : "SUBJECT_WISE",
+        scheduleMode: combined ? "COMBINED_OBJECTIVE" : "SUBJECT_WISE",
         sessionId: savedSessionId,
         subjectId: subject.id,
         subjectIds: combined ? included.map((s) => s.id) : [],
@@ -1730,12 +1812,17 @@ function Schedule({
         };
       if (editing) {
         const targets = combined
-          ? entries.filter((item) => item.sessionId === savedSessionId)
+          ? entries.filter(
+              (item) =>
+                normalizeScheduleMode(item.scheduleMode) === "COMBINED_OBJECTIVE" &&
+                item.sessionId === savedSessionId,
+            )
           : entries.filter((item) => String(item.id) === String(editing));
         await Promise.all(
           targets.map((item) =>
             apiClient.put(EXAM_API.scheduleById(item.id), {
               ...commonPayload,
+              examinationId: Number(exam.id),
               subjectId: Number(item.subjectId),
               sessionId: item.sessionId || null,
               scheduleMode: item.scheduleMode,
@@ -1750,7 +1837,7 @@ function Schedule({
           examinationId: Number(exam.id),
           subjectIds: included.map((subject) => Number(subject.id)),
           sessionId: savedSessionId,
-          scheduleMode: "COMBINED",
+          scheduleMode: "COMBINED_OBJECTIVE",
           maxMarks: Number(exam.totalMarks),
           passingMarks: Math.ceil(
             (Number(exam.totalMarks) * Number(exam.passPercentage)) / 100,

@@ -104,6 +104,20 @@ const normalizeAcademicLevelOption = (item) => optionFrom(
   ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"],
 );
 
+const normalizeProgram = (item) => {
+  const programId = read(item, "programId", "ProgramId", "id", "Id");
+  const programName = read(item, "programName", "ProgramName", "name", "Name") || "";
+  const programCode = read(item, "programCode", "ProgramCode", "code", "Code") || programName;
+  const status = read(item, "status", "Status", "isActive", "IsActive");
+  return {
+    programId: String(programId || programCode || programName),
+    backendProgramId: Number(programId) || undefined,
+    programName: String(programName || programCode || "Program"),
+    programCode: String(programCode || programName || "PGM").toUpperCase(),
+    status: typeof status === "string" ? (status.toLowerCase() === "inactive" ? "Inactive" : "Active") : status === false ? "Inactive" : "Active",
+  };
+};
+
 const uniqueByValue = (options) => Array.from(new Map(options.filter(Boolean).map((item) => [String(item.value), item])).values());
 
 const getLevelsForBoardOption = (levels, board) => {
@@ -282,6 +296,16 @@ const getProgramMaster = () => {
   return Array.from(byCode.values());
 };
 
+const loadProgramMaster = async () => {
+  const response = await apiClient.get(apiEndpoints.programs.list);
+  const apiPrograms = getCollection(response.data).map(normalizeProgram).filter((program) => program.programId);
+  if (apiPrograms.length) {
+    saveProgramMaster(apiPrograms);
+    return apiPrograms;
+  }
+  return getProgramMaster();
+};
+
 const saveProgramMaster = (programs) => {
   const defaults = new Set(DEFAULT_PROGRAMS.map((program) => program.programCode.toUpperCase()));
   const customPrograms = programs.filter((program) => !defaults.has(program.programCode.toUpperCase()));
@@ -332,7 +356,7 @@ const programIdsForGroup = (groupId, groupCode) => {
 const fetchProgramIdsForGroup = async (groupId, groupCode) => {
   if (!groupId) return defaultProgramIdsForCode(groupCode);
   try {
-    const response = await apiClient.get(apiEndpoints.groups.getPrograms(groupId));
+    const response = await apiClient.get(apiEndpoints.programs.byGroup(groupId));
     const programIds = getCollection(response.data)
       .map((program) => read(program, "programId", "ProgramId", "id", "Id"))
       .filter((programId) => programId !== undefined && programId !== null && programId !== "")
@@ -341,6 +365,19 @@ const fetchProgramIdsForGroup = async (groupId, groupCode) => {
   } catch {
     return programIdsForGroup(groupId, groupCode);
   }
+};
+
+const createProgramPayload = (values, groupId) => {
+  const name = String(values.programName || "").trim();
+  const code = String(values.programCode || name || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const payload = {
+    programName: name,
+    programCode: code || `PGM${Date.now()}`,
+    isActive: values.status !== "Inactive",
+  };
+  // Verify groupId against the backend CreateProgram DTO; Swagger only lists the endpoint, not the request body.
+  if (Number(groupId)) payload.groupId = Number(groupId);
+  return payload;
 };
 
 function programNamesForGroup(groupId, groupCode) {
@@ -558,9 +595,10 @@ export const pageConfig = {
     ],
   };
 
-function AddProgramModal({ onCancel, onAdd }) {
+function AddProgramModal({ onCancel, onAdd, saving = false }) {
   const fields = [
     { name: "programName", label: "Program Name", required: true },
+    { name: "programCode", label: "Program Code" },
     { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
   ];
   const { values, errors, setValue, validate } = useForm(fields, { status: "Active" });
@@ -578,7 +616,7 @@ function AddProgramModal({ onCancel, onAdd }) {
       footer={(
         <>
           <button type="button" className="cms-btn cms-btn-ghost" onClick={onCancel}>Cancel</button>
-          <button type="button" className="cms-btn cms-btn-primary" onClick={submit}>Add Program</button>
+          <button type="button" className="cms-btn cms-btn-primary" onClick={submit} disabled={saving}>{saving ? "Adding..." : "Add Program"}</button>
         </>
       )}
     >
@@ -591,11 +629,29 @@ function AddProgramModal({ onCancel, onAdd }) {
   );
 }
 
-function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
+function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onChange, onError }) {
   const [programs, setPrograms] = useState(getProgramMaster);
   const [adding, setAdding] = useState(false);
+  const [loadingPrograms, setLoadingPrograms] = useState(false);
+  const [savingProgram, setSavingProgram] = useState(false);
   const selected = new Set(selectedProgramIds);
   const headingName = String(groupCode || groupName || "this Group").trim();
+
+  useEffect(() => {
+    let ignore = false;
+    setLoadingPrograms(true);
+    loadProgramMaster()
+      .then((items) => {
+        if (!ignore) setPrograms(items);
+      })
+      .catch((error) => {
+        if (!ignore) onError?.(getApiErrorMessage(error) || "Unable to load programs.");
+      })
+      .finally(() => {
+        if (!ignore) setLoadingPrograms(false);
+      });
+    return () => { ignore = true; };
+  }, [onError]);
 
   const toggleProgram = (programId, checked) => {
     const next = checked
@@ -604,23 +660,30 @@ function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
     onChange(Array.from(new Set(next)));
   };
 
-  const addProgram = (values) => {
+  const addProgram = async (values) => {
     const code = String(values.programCode || values.programName || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     const name = String(values.programName || "").trim();
     const existing = programs.find((program) => (
       program.programCode.toUpperCase() === code || program.programName.toLowerCase() === name.toLowerCase()
     ));
-    const program = existing || {
-      programId: `program-${Date.now()}`,
-      programName: name,
-      programCode: code || `PGM${Date.now()}`,
-      status: values.status,
-    };
-    const nextPrograms = existing ? programs : [...programs, program];
-    saveProgramMaster(nextPrograms);
-    setPrograms(nextPrograms);
-    onChange(Array.from(new Set([...selectedProgramIds, program.programId])));
-    setAdding(false);
+    if (existing) {
+      onChange(Array.from(new Set([...selectedProgramIds, existing.programId])));
+      setAdding(false);
+      return;
+    }
+    setSavingProgram(true);
+    try {
+      const response = await apiClient.post(apiEndpoints.programs.create, createProgramPayload(values, groupId));
+      const program = normalizeProgram(responseData(response) || createProgramPayload(values, groupId));
+      const nextPrograms = await loadProgramMaster().catch(() => [...programs, program]);
+      setPrograms(nextPrograms);
+      onChange(Array.from(new Set([...selectedProgramIds, program.programId])));
+      setAdding(false);
+    } catch (error) {
+      onError?.(getApiErrorMessage(error) || "Unable to add program.");
+    } finally {
+      setSavingProgram(false);
+    }
   };
 
   return (
@@ -635,7 +698,8 @@ function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
         </button>
       </div>
       <div className="course-program-grid">
-        {programs.map((program) => (
+        {loadingPrograms ? <p className="cms-muted">Loading programs...</p> : null}
+        {!loadingPrograms && programs.map((program) => (
           <label key={program.programId} className="course-program-option">
             <input
               type="checkbox"
@@ -650,7 +714,7 @@ function ProgramsPanel({ groupCode, groupName, selectedProgramIds, onChange }) {
           </label>
         ))}
       </div>
-      {adding ? <AddProgramModal onCancel={() => setAdding(false)} onAdd={addProgram} /> : null}
+      {adding ? <AddProgramModal onCancel={() => setAdding(false)} onAdd={addProgram} saving={savingProgram} /> : null}
     </section>
   );
 }
@@ -678,6 +742,10 @@ function CourseGroupFormPage() {
     { label: "Board", value: optionLabel(contextOptions.boards, values.board, values.board || "-") },
     { label: "Academic Year", value: optionLabel(contextOptions.years, values.year, values.year || "-") },
   ];
+  const showProgramError = useCallback((message) => {
+    setToastType("error");
+    setToast(message);
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -803,10 +871,12 @@ function CourseGroupFormPage() {
                   ))}
                 </div>
                 <ProgramsPanel
+                  groupId={id}
                   groupCode={values.code}
                   groupName={values.name}
                   selectedProgramIds={selectedProgramIds}
                   onChange={setSelectedProgramIds}
+                  onError={showProgramError}
                 />
               </>
             )}

@@ -297,38 +297,35 @@
   padding-left: 18px;
 }
 .cms-fee-structure-table {
-  min-width: 0;
+  width: 100%;
+  min-width: 980px;
 }
-.cms-fee-structure-table th:nth-child(1),
-.cms-fee-structure-table td:nth-child(1) {
-  width: 14%;
+.cms-fee-structure-table col.cms-fee-structure-year-col { width: 14%; }
+.cms-fee-structure-table col.cms-fee-structure-group-col { width: 10%; }
+.cms-fee-structure-table col.cms-fee-structure-program-col { width: 13%; }
+.cms-fee-structure-table col.cms-fee-structure-types-col { width: auto; }
+.cms-fee-structure-table col.cms-fee-structure-total-col { width: 140px; }
+.cms-fee-structure-table col.cms-fee-structure-actions-col { width: 168px; }
+.cms-fee-structure-table th,
+.cms-fee-structure-table td {
+  padding-left: 16px;
+  padding-right: 16px;
 }
-.cms-fee-structure-table th:nth-child(2),
-.cms-fee-structure-table td:nth-child(2) {
-  width: 10%;
-}
-.cms-fee-structure-table th:nth-child(3),
-.cms-fee-structure-table td:nth-child(3) {
-  width: 13%;
-}
-.cms-fee-structure-table th:nth-child(4),
-.cms-fee-structure-table td:nth-child(4) {
-  width: 31%;
-}
-.cms-fee-structure-table th:nth-child(5),
-.cms-fee-structure-table td:nth-child(5) {
-  width: 14%;
-}
-.cms-fee-structure-table th:nth-child(6),
-.cms-fee-structure-table td:nth-child(6) {
-  width: 18%;
+.cms-fee-structure-table .cms-fee-total-col {
+  text-align: right;
+  padding-right: 24px;
+  white-space: nowrap;
 }
 .cms-fee-structure-table .cms-fee-actions-col {
-  padding-left: 18px;
-  padding-right: 18px;
+  width: 168px;
+  min-width: 168px;
+  padding-left: 14px;
+  padding-right: 12px;
 }
 .cms-fee-structure-table .cms-fee-actions-col .cms-actions {
   gap: 8px;
+  justify-content: flex-start;
+  width: max-content;
 }
 .cms-fee-empty-row { padding: 22px 12px; color: var(--cms-muted); text-align: center; }
 .cms-fee-mini-btn { min-height: 32px; padding: 6px 10px; font-size: 12.5px; }
@@ -470,8 +467,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  min-width: 320px;
-  max-width: 520px;
+  min-width: 0;
+  max-width: 100%;
 }
 .cms-fee-type-list span {
   display: inline-flex;

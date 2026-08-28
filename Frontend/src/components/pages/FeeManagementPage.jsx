@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CalendarClock,
@@ -29,16 +29,11 @@ import { Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import {
-  ADMISSION_FEE,
   COLLEGE_NAME,
   PAYMENT_METHODS,
   PAYMENT_PLANS,
   allTransactions,
-  collectPayment,
-  courseFeeFor,
-  feeAccountsDerived,
-  feeItemsForStructure,
-  FEE_TYPE_TEMPLATES,
+  deriveAccount,
   feeScheduleLabel,
   feeStatusTone,
   formatCompactCurrency,
@@ -46,38 +41,15 @@ import {
   formatDate,
   groupWiseTotals,
   overviewTotals,
-  STORAGE_KEY,
   todayISO,
   upcomingInstallments,
-  useFeeState,
 } from "@/data/feeManagementData.js";
 import "./FeeManagementPage.css";
 
 const TABS = ["Overview", "Student Fee Ledger", "Fee Setup", "Fee Collection", "Payment History"];
 const FEE_SETUP_TABS = ["Fee Types", "Fee Structure", "Scholarships"];
-const FEE_TYPE_MASTER_STORAGE_KEY = "cms.feeTypeMaster.v1";
-const SCHOLARSHIP_STORAGE_KEY = "cms.scholarships.v1";
-const PROGRAMS_STORAGE_KEY = "cms.groupPrograms.v1";
-const PROGRAM_MAPPINGS_STORAGE_KEY = "cms.groupProgramMappings.v1";
 const FEE_TYPE_CATEGORIES = ["Admission", "Academic", "Examination", "Facility", "Activity", "Other"];
 const PAGE_SIZE = 5;
-const DEFAULT_PROGRAMS = [
-  { programId: "regular", programName: "Regular", programCode: "REG", status: "Active" },
-  { programId: "jee", programName: "JEE", programCode: "JEE", status: "Active" },
-  { programId: "jee-advanced", programName: "JEE Advanced", programCode: "JEEADV", status: "Active" },
-  { programId: "eapcet", programName: "EAPCET", programCode: "EAPCET", status: "Active" },
-  { programId: "neet", programName: "NEET", programCode: "NEET", status: "Active" },
-  { programId: "ca-foundation", programName: "CA Foundation", programCode: "CAF", status: "Active" },
-  { programId: "cuet", programName: "CUET", programCode: "CUET", status: "Active" },
-  { programId: "ipmat", programName: "IPMAT", programCode: "IPMAT", status: "Active" },
-  { programId: "clat", programName: "CLAT", programCode: "CLAT", status: "Active" },
-];
-const DEFAULT_GROUP_PROGRAM_CODES = {
-  MPC: ["REG", "JEE", "JEEADV", "EAPCET"],
-  BIPC: ["REG", "NEET", "EAPCET"],
-  MEC: ["REG", "CAF", "CUET", "IPMAT"],
-  CEC: ["REG", "CLAT", "CUET", "IPMAT", "CAF"],
-};
 const OVERVIEW_TABS = [
   { id: "upcoming", label: "Upcoming Fee Schedules", icon: CalendarClock },
   { id: "recent", label: "Recent Payments", icon: ReceiptText },
@@ -96,24 +68,17 @@ const getCollection = (payload) => {
   return [];
 };
 
+const getObject = (payload) => {
+  const data = payload?.data ?? payload?.Data ?? payload;
+  if (data?.data && !Array.isArray(data.data)) return data.data;
+  if (data?.Data && !Array.isArray(data.Data)) return data.Data;
+  if (data && !Array.isArray(data)) return data;
+  return {};
+};
+
 const read = (item, ...keys) => {
   const key = keys.find((candidate) => item?.[candidate] !== undefined && item?.[candidate] !== null && item?.[candidate] !== "");
   return key ? item[key] : undefined;
-};
-
-const storageGet = (key, fallback) => {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const value = window.localStorage.getItem(key);
-    return value ? JSON.parse(value) : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const storageSet = (key, value) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
 };
 
 const textValue = (item, ...keys) => {
@@ -139,15 +104,24 @@ const toSelectOptions = (rows, idKeys, labelKeys) => rows
   .filter(Boolean);
 
 const groupOption = (item) => {
+  const board = read(item, "board", "Board");
+  const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
+  const academicLevel = read(item, "academicLevel", "AcademicLevel", "level", "Level");
   const option = toSelectOptions([item], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"])[0];
   return option ? {
     ...option,
     code: textValue(item, "groupCode", "GroupCode", "code", "Code") || option.label,
-    boardId: textValue(item, "boardId", "BoardId"),
-    academicYearId: textValue(item, "academicYearId", "AcademicYearId"),
-    academicLevelId: textValue(item, "academicLevelId", "AcademicLevelId"),
+    boardId: textValue(item, "boardId", "BoardId") || textValue(board, "boardId", "BoardId", "id", "Id"),
+    academicYearId: textValue(item, "academicYearId", "AcademicYearId") || textValue(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
+    academicLevelId: textValue(item, "academicLevelId", "AcademicLevelId") || textValue(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
   } : null;
 };
+
+const programOption = (item) => toSelectOptions(
+  [item],
+  ["programId", "ProgramId", "id", "Id"],
+  ["programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"],
+)[0] || null;
 
 const sectionOption = (item) => {
   const group = read(item, "group", "Group");
@@ -170,78 +144,42 @@ const categoryForFeeType = (name = "") => {
   return "Academic";
 };
 
+const feeTypeCodeFor = (name = "") => {
+  const normalized = String(name)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 30);
+  return normalized.length >= 2 ? normalized : `FT${normalized}`.slice(0, 30);
+};
+
 const feeTypeOption = (item) => {
-  const name = textValue(item, "feeTypeName", "FeeTypeName", "name", "Name", "type", "Type", "label", "Label") || "Fee Type";
-  const status = read(item, "isActive", "IsActive", "active", "Active", "status", "Status");
+  const feeType = read(item, "feeType", "FeeType");
+  const name = textValue(item, "feeTypeName", "FeeTypeName", "name", "Name", "type", "Type", "label", "Label")
+    || textValue(feeType, "feeTypeName", "FeeTypeName", "name", "Name", "type", "Type", "label", "Label")
+    || "Fee Type";
+  const status = read(item, "isActive", "IsActive", "active", "Active", "status", "Status") ?? read(feeType, "isActive", "IsActive", "active", "Active", "status", "Status");
   return {
-    id: String(read(item, "feeTypeId", "FeeTypeId", "id", "Id", "typeId", "TypeId") ?? ""),
+    id: String(read(item, "feeTypeId", "FeeTypeId", "typeId", "TypeId") ?? read(feeType, "feeTypeId", "FeeTypeId", "id", "Id", "typeId", "TypeId") ?? read(item, "id", "Id") ?? ""),
     name,
-    category: textValue(item, "category", "Category", "feeCategory", "FeeCategory") || categoryForFeeType(name),
+    code: textValue(item, "feeTypeCode", "FeeTypeCode", "code", "Code") || textValue(feeType, "feeTypeCode", "FeeTypeCode", "code", "Code") || feeTypeCodeFor(name),
+    category: textValue(item, "category", "Category", "feeCategory", "FeeCategory") || textValue(feeType, "category", "Category", "feeCategory", "FeeCategory") || categoryForFeeType(name),
     status: typeof status === "string" ? (status.toLowerCase() === "inactive" ? "Inactive" : "Active") : status === false ? "Inactive" : "Active",
   };
 };
 
-const groupCodeKey = (code) => {
-  const normalized = String(code || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return normalized === "BIPC" || normalized === "BIPCALT" ? "BIPC" : normalized;
-};
-
-const getProgramMaster = () => {
-  const stored = storageGet(PROGRAMS_STORAGE_KEY, []);
-  const byCode = new Map([...DEFAULT_PROGRAMS, ...stored].map((program) => [String(program.programCode).toUpperCase(), program]));
-  return Array.from(byCode.values()).filter((program) => program.status !== "Inactive");
-};
-
-const programOptionsForGroup = (group) => {
-  const master = getProgramMaster();
-  const mappings = storageGet(PROGRAM_MAPPINGS_STORAGE_KEY, {});
-  const mappedIds = mappings[String(group?.value)]?.programIds;
-  const codes = DEFAULT_GROUP_PROGRAM_CODES[groupCodeKey(group?.code || group?.label)] || ["REG"];
-  const idsByCode = new Map(master.map((program) => [String(program.programCode).toUpperCase(), program.programId]));
-  const programIds = mappedIds?.length ? mappedIds : codes.map((code) => idsByCode.get(code)).filter(Boolean);
-  const selected = master.filter((program) => programIds.includes(program.programId));
-  return (selected.length ? selected : master.slice(0, 1)).map((program) => ({
-    value: program.programId,
-    label: program.programName,
-    code: program.programCode,
-  }));
-};
-
-const defaultFeeTypes = () => FEE_TYPE_TEMPLATES.map((item) => feeTypeOption({
-  id: item.key,
-  name: item.type,
-  category: categoryForFeeType(item.type),
-  status: "Active",
-}));
-
-const mergeFeeTypeMasters = (apiTypes, localTypes) => {
-  const byName = new Map();
-  [...defaultFeeTypes(), ...apiTypes, ...localTypes].forEach((item) => {
-    if (!item?.name) return;
-    const key = item.name.trim().toLowerCase();
-    if (item.deleted) {
-      byName.delete(key);
-      return;
-    }
-    byName.set(key, { ...item, id: item.id || `local-${key.replace(/[^a-z0-9]+/g, "-")}` });
-  });
-  return Array.from(byName.values());
-};
-
 const feeTypeRowsFromMaster = (feeTypes) => {
-  const source = feeTypes.length
-    ? feeTypes.filter((item) => item.status !== "Inactive")
-    : defaultFeeTypes();
+  const source = feeTypes.filter((item) => item.status !== "Inactive");
   return source.map((item) => {
-    const template = FEE_TYPE_TEMPLATES.find((row) => row.type.toLowerCase() === item.name.toLowerCase());
     return {
       id: String(item.id),
       feeTypeId: String(item.id).startsWith("custom-") ? "" : String(item.id),
       type: item.name,
-      originalAmount: Number(template?.amount || 0),
-      payableAmount: Number(template?.amount || 0),
+      originalAmount: 0,
+      payableAmount: 0,
       selected: true,
-      required: Boolean(template?.required),
+      required: false,
     };
   });
 };
@@ -254,49 +192,41 @@ const scholarshipValueLabel = (item) => (
   item.discountType === "Percentage" ? `${Number(item.discountValue || 0)}%` : formatCurrency(item.discountValue || 0)
 );
 
-const saveLocalFeeStructure = (values, id) => {
-  const state = storageGet(STORAGE_KEY, {});
-  const feeStructures = Array.isArray(state.feeStructures) ? state.feeStructures : [];
-  const row = {
-    id: id || `FS-${Date.now()}`,
-    boardId: values.boardId,
-    academicYear: values.academicYear,
-    academicYearId: values.academicYearId,
-    group: values.group,
-    groupId: values.groupId,
-    program: values.program,
-    programId: values.programId,
-    section: "",
-    sectionId: "",
-    admissionFee: Number(values.admissionFee || 0),
-    courseFee: Number(values.courseFee || 0),
-    feeItems: values.feeItems,
-    status: values.status || "Active",
+const normalizeScholarshipRows = (rows) => rows.map((item, index) => {
+  const id = read(item, "scholarshipId", "ScholarshipId", "id", "Id");
+  const type = textValue(item, "discountType", "DiscountType", "type", "Type") || "Percentage";
+  const status = read(item, "isActive", "IsActive", "active", "Active", "status", "Status");
+  return {
+    id: String(id ?? `SCH-${index + 1}`),
+    name: textValue(item, "scholarshipName", "ScholarshipName", "name", "Name", "title", "Title") || "Scholarship",
+    discountType: type === "%" ? "Percentage" : type,
+    discountValue: numberValue(item, "discountValue", "DiscountValue", "value", "Value", "percentage", "Percentage", "amount", "Amount"),
+    status: typeof status === "string" ? (status.toLowerCase() === "inactive" ? "Inactive" : "Active") : status === false ? "Inactive" : "Active",
   };
-  const nextStructures = id
-    ? feeStructures.map((item) => (item.id === id ? { ...item, ...row } : item))
-    : [...feeStructures, row];
-  storageSet(STORAGE_KEY, { ...state, feeStructures: nextStructures });
-};
+});
 
 const normalizeFeeStructureRows = (rows) => {
   const grouped = new Map();
   rows.forEach((item, index) => {
+    const itemGroup = read(item, "group", "Group");
+    const itemProgram = read(item, "program", "Program");
+    const itemAcademicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
+    const itemBoard = read(item, "board", "Board");
     const feeType = feeTypeOption(item);
     const amount = numberValue(item, "amount", "Amount", "feeAmount", "FeeAmount");
-    const groupId = textValue(item, "groupId", "GroupId");
-    const group = textValue(item, "groupName", "GroupName", "group", "Group", "courseName", "CourseName") || groupId;
-    const academicYearId = textValue(item, "academicYearId", "AcademicYearId");
-    const academicYear = textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || academicYearId;
-    const programId = textValue(item, "programId", "ProgramId");
-    const program = textValue(item, "programName", "ProgramName", "program", "Program") || programId || "Regular";
+    const groupId = textValue(item, "groupId", "GroupId") || textValue(itemGroup, "groupId", "GroupId", "id", "Id");
+    const group = textValue(item, "groupName", "GroupName", "courseName", "CourseName") || textValue(itemGroup, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode") || groupId;
+    const academicYearId = textValue(item, "academicYearId", "AcademicYearId") || textValue(itemAcademicYear, "academicYearId", "AcademicYearId", "id", "Id");
+    const academicYear = textValue(item, "academicYearName", "AcademicYearName") || textValue(itemAcademicYear, "academicYearName", "AcademicYearName", "name", "Name") || academicYearId;
+    const programId = textValue(item, "programId", "ProgramId") || textValue(itemProgram, "programId", "ProgramId", "id", "Id");
+    const program = textValue(item, "programName", "ProgramName") || textValue(itemProgram, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode") || programId || "Regular";
     const structureId = String(read(item, "feeStructureId", "FeeStructureId", "id", "Id") ?? `api-${index}`);
     const key = [academicYearId || academicYear, groupId || group, programId || program].join("|");
     const existing = grouped.get(key);
     const row = existing || {
       id: structureId,
-      boardId: textValue(item, "boardId", "BoardId"),
-      board: textValue(item, "boardName", "BoardName", "board", "Board") || textValue(item, "boardId", "BoardId"),
+      boardId: textValue(item, "boardId", "BoardId") || textValue(itemBoard, "boardId", "BoardId", "id", "Id"),
+      board: textValue(item, "boardName", "BoardName") || textValue(itemBoard, "boardName", "BoardName", "name", "Name") || textValue(item, "boardId", "BoardId"),
       academicYearId,
       academicYear,
       groupId,
@@ -309,6 +239,7 @@ const normalizeFeeStructureRows = (rows) => {
     row.feeItems.push({
       id: feeType.id || `type-${index}`,
       feeTypeId: feeType.id,
+      structureItemId: textValue(item, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId"),
       type: feeType.name,
       originalAmount: amount,
       payableAmount: amount,
@@ -320,6 +251,91 @@ const normalizeFeeStructureRows = (rows) => {
   });
   return Array.from(grouped.values());
 };
+
+const normalizeTransactionRows = (rows, account) => rows.map((item, index) => ({
+  id: String(read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id") ?? `${account.id}-TXN-${index + 1}`),
+  feePaymentId: read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id"),
+  receiptNo: textValue(item, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber"),
+  studentName: account.studentName,
+  admissionNo: account.admissionNo,
+  group: account.group,
+  groupId: account.groupId,
+  section: account.section,
+  sectionId: account.sectionId,
+  academicYear: account.academicYear,
+  academicYearId: account.academicYearId,
+  type: textValue(item, "paymentType", "PaymentType", "feeType", "FeeType", "type", "Type") || "Fee Payment",
+  amount: numberValue(item, "amount", "Amount", "paidAmount", "PaidAmount", "paymentAmount", "PaymentAmount"),
+  baseAmount: numberValue(item, "baseAmount", "BaseAmount", "amount", "Amount"),
+  discount: numberValue(item, "discount", "Discount", "discountAmount", "DiscountAmount"),
+  fine: numberValue(item, "fine", "Fine", "fineAmount", "FineAmount"),
+  method: textValue(item, "paymentMethod", "PaymentMethod", "paymentMode", "PaymentMode", "method", "Method") || "-",
+  reference: textValue(item, "transactionNumber", "TransactionNumber", "reference", "Reference", "transactionReference", "TransactionReference"),
+  date: textValue(item, "paymentDate", "PaymentDate", "date", "Date", "createdAt", "CreatedAt") || todayISO(),
+}));
+
+const normalizeInstallmentRows = (rows, account) => rows.map((item, index) => ({
+  no: Number(read(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "no", "No") || index + 1),
+  amount: numberValue(item, "amount", "Amount", "installmentAmount", "InstallmentAmount", "payableAmount", "PayableAmount"),
+  paid: numberValue(item, "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid"),
+  dueDate: textValue(item, "dueDate", "DueDate", "date", "Date"),
+  status: textValue(item, "status", "Status") || account.feeStatus || "Pending",
+}));
+
+const normalizeFeeAccountRows = (rows) => rows.map((item, index) => {
+  const student = read(item, "student", "Student");
+  const group = read(item, "group", "Group");
+  const section = read(item, "section", "Section");
+  const program = read(item, "program", "Program");
+  const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
+  const account = {
+    id: String(read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "assignmentId", "AssignmentId", "studentId", "StudentId", "id", "Id") ?? `fee-account-${index + 1}`),
+    assignmentId: read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "assignmentId", "AssignmentId", "id", "Id"),
+    studentFeeAssignmentId: read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "assignmentId", "AssignmentId", "id", "Id"),
+    studentId: read(item, "studentId", "StudentId") ?? read(student, "studentId", "StudentId", "id", "Id"),
+    studentName: textValue(item, "studentName", "StudentName", "name", "Name") || textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName") || "Student",
+    admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "-",
+    rollNumber: textValue(item, "rollNumber", "RollNumber") || textValue(student, "rollNumber", "RollNumber"),
+    academicYearId: textValue(item, "academicYearId", "AcademicYearId") || textValue(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
+    academicYear: textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || textValue(academicYear, "academicYearName", "AcademicYearName", "name", "Name"),
+    academicLevel: textValue(item, "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel"),
+    groupId: textValue(item, "groupId", "GroupId") || textValue(group, "groupId", "GroupId", "id", "Id"),
+    group: textValue(item, "groupName", "GroupName", "group", "Group") || textValue(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"),
+    sectionId: textValue(item, "sectionId", "SectionId") || textValue(section, "sectionId", "SectionId", "id", "Id") || textValue(program, "programId", "ProgramId", "id", "Id"),
+    section: textValue(item, "sectionName", "SectionName", "section", "Section") || textValue(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"),
+    admissionDate: textValue(item, "admissionDate", "AdmissionDate", "createdAt", "CreatedAt"),
+    paymentPlan: textValue(item, "paymentPlan", "PaymentPlan", "plan", "Plan") || "Full Payment",
+    admissionFee: numberValue(item, "admissionFee", "AdmissionFee"),
+    courseFee: numberValue(item, "courseFee", "CourseFee", "totalPayable", "TotalPayable", "payable", "Payable"),
+    totalPayable: numberValue(item, "totalPayable", "TotalPayable", "payable", "Payable", "netPayable", "NetPayable"),
+    totalPaid: numberValue(item, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount"),
+    balance: numberValue(item, "balance", "Balance", "outstanding", "Outstanding", "dueAmount", "DueAmount"),
+    concessionAmount: numberValue(item, "concessionAmount", "ConcessionAmount", "discountAmount", "DiscountAmount"),
+    feeStatus: textValue(item, "feeStatus", "FeeStatus", "status", "Status") || "Due",
+    nextDueDate: textValue(item, "nextDueDate", "NextDueDate", "dueDate", "DueDate"),
+    feeItems: getCollection(read(item, "feeItems", "FeeItems", "items", "Items")).map((feeItem, feeIndex) => ({
+      id: String(read(feeItem, "feeTypeId", "FeeTypeId", "id", "Id") ?? `${index}-${feeIndex}`),
+      type: textValue(feeItem, "feeTypeName", "FeeTypeName", "type", "Type", "name", "Name") || `Fee ${feeIndex + 1}`,
+      originalAmount: numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount"),
+      payableAmount: numberValue(feeItem, "payableAmount", "PayableAmount", "amount", "Amount"),
+      selected: read(feeItem, "selected", "Selected") !== false,
+      required: Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
+    })),
+    transactions: [],
+    installments: [],
+  };
+  account.transactions = normalizeTransactionRows(getCollection(read(item, "transactions", "Transactions", "payments", "Payments")), account);
+  account.installments = normalizeInstallmentRows(getCollection(read(item, "installments", "Installments", "schedules", "Schedules", "feeSchedules", "FeeSchedules")), account);
+  const derived = deriveAccount(account);
+  return {
+    ...derived,
+    totalPayable: account.totalPayable || derived.totalPayable,
+    totalPaid: account.totalPaid || derived.totalPaid,
+    balance: account.balance || derived.balance,
+    feeStatus: account.feeStatus || derived.feeStatus,
+    nextDueDate: account.nextDueDate || derived.nextDueDate,
+  };
+});
 
 const printFeeTarget = (target) => {
   const className = `cms-fee-print-${target}`;
@@ -535,40 +551,33 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
     if (netAmount > account.balance) return setError(`Amount cannot exceed the outstanding balance of ${formatCurrency(account.balance)}`);
     if (!method) return setError("Payment Method is required");
     if (isReferenceRequired && !reference.trim()) return setError("Transaction / Reference Number is required for this payment method");
+    const assignmentId = account.assignmentId || account.studentFeeAssignmentId;
+    if (!assignmentId) return setError("Student fee assignment ID is required to collect payment");
+    const assignmentIdValue = Number(assignmentId);
+    if (!Number.isFinite(assignmentIdValue) || assignmentIdValue <= 0) return setError("Student fee assignment ID must be a valid number");
     setSaving(true);
     try {
-      if (account.assignmentId || account.studentFeeAssignmentId) {
-        await apiClient.post(apiEndpoints.fee.collect, {
-          studentFeeAssignmentId: Number(account.assignmentId || account.studentFeeAssignmentId),
-          amount: netAmount,
-          paymentMode: method,
-          transactionNumber: reference,
-          remarks: note,
-        });
-      }
+      const response = await apiClient.post(apiEndpoints.fee.collect, {
+        studentFeeAssignmentId: assignmentIdValue,
+        amount: netAmount,
+        paymentMode: method,
+        paymentDate: date,
+        transactionNumber: reference,
+        discount: discountValue,
+        fine: fineValue,
+        remarks: note,
+      });
+      const saved = getObject(response.data);
+      setSaving(false);
+      return onSaved({
+        amount: numberValue(saved, "amount", "Amount", "paidAmount", "PaidAmount") || netAmount,
+        receiptNo: textValue(saved, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || "-",
+      });
     } catch (err) {
       setError(getApiErrorMessage(err));
       setSaving(false);
       return null;
     }
-
-    const saved = collectPayment(account.id, {
-      mode: target === "full" ? "full" : "installment",
-      installmentNo: target === "full" ? null : Number(target),
-      amount: target === "full" ? account.balance : value,
-      discount: discountValue,
-      fine: fineValue,
-      date,
-      method,
-      reference,
-      note,
-    });
-    if (!saved) {
-      setSaving(false);
-      return setError("Payment could not be recorded");
-    }
-    setSaving(false);
-    return onSaved(saved);
   };
 
   return (
@@ -999,41 +1008,78 @@ function FeeCollectionTab({ accounts, onCollect }) {
 }
 
 /* ----------------------------- Fee structure ----------------------------- */
-function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTypes, masters }) {
+function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTypes, masters, masterErrors = {}, masterLoading = false }) {
   const firstGroup = masters.groups[0];
-  const firstProgram = programOptionsForGroup(firstGroup)[0];
   const initialGroup = initial?.groupId ? masters.groups.find((item) => item.value === String(initial.groupId)) : firstGroup;
-  const initialProgram = initial?.programId || programOptionsForGroup(initialGroup)[0]?.value || firstProgram?.value || "";
+  const initialProgram = initial?.programId || "";
   const initialValues = initial || {
     boardId: masters.boards[0]?.value || "",
     academicYear: masters.years[0]?.label || "",
     academicYearId: masters.years[0]?.value || "",
     group: firstGroup?.label || "",
     groupId: firstGroup?.value || "",
-    programId: firstProgram?.value || "",
-    program: firstProgram?.label || "",
-    admissionFee: ADMISSION_FEE,
-    courseFee: courseFeeFor(firstGroup?.label || "", ""),
+    programId: "",
+    program: "",
+    admissionFee: 0,
+    courseFee: 0,
     status: "Active",
   };
   const configuredFeeItems = feeTypeRowsFromMaster(feeTypes);
   const [values, setValues] = useState({
     ...initialValues,
     programId: initialProgram,
-    program: programOptionsForGroup(initialGroup).find((item) => item.value === initialProgram)?.label || initial?.program || firstProgram?.label || "",
+    program: initial?.program || "",
     feeItems: initial?.feeItems?.length ? initial.feeItems : configuredFeeItems,
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [programOptions, setProgramOptions] = useState([]);
+  const [programLoading, setProgramLoading] = useState(false);
+  const [programError, setProgramError] = useState("");
+  const programRequestRef = useRef(0);
   const groupOptions = useMemo(() => (
     masters.groups.filter((item) => (
       (!values.boardId || !item.boardId || item.boardId === String(values.boardId))
       && (!values.academicYearId || !item.academicYearId || item.academicYearId === String(values.academicYearId))
     ))
   ), [masters.groups, values.academicYearId, values.boardId]);
-  const programOptions = useMemo(() => (
-    programOptionsForGroup(groupOptions.find((item) => item.value === values.groupId) || firstGroup)
-  ), [firstGroup, groupOptions, values.groupId]);
+
+  useEffect(() => {
+    const groupId = values.groupId;
+    const requestId = programRequestRef.current + 1;
+    programRequestRef.current = requestId;
+    setProgramOptions([]);
+    setProgramError("");
+    if (!groupId) {
+      setProgramLoading(false);
+      return undefined;
+    }
+    setProgramLoading(true);
+    apiClient.get(apiEndpoints.programs.byGroup(groupId))
+      .then((response) => {
+        if (programRequestRef.current !== requestId) return;
+        const options = getCollection(response.data).map(programOption).filter(Boolean);
+        setProgramOptions(options);
+        setValues((current) => {
+          if (String(current.groupId) !== String(groupId)) return current;
+          const selectedProgram = options.find((item) => item.value === String(current.programId));
+          if (selectedProgram) return { ...current, program: selectedProgram.label };
+          return {
+            ...current,
+            programId: options[0]?.value || "",
+            program: options[0]?.label || "",
+          };
+        });
+      })
+      .catch((err) => {
+        if (programRequestRef.current !== requestId) return;
+        setProgramError(getApiErrorMessage(err));
+      })
+      .finally(() => {
+        if (programRequestRef.current === requestId) setProgramLoading(false);
+      });
+    return undefined;
+  }, [values.groupId]);
 
   const feeItemsForContext = (currentItems = []) => (
     feeTypeRowsFromMaster(feeTypes).map((item) => {
@@ -1044,14 +1090,12 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
 
   const changeGroup = (groupId) => {
     const group = groupOptions.find((item) => item.value === groupId);
-    const nextPrograms = programOptionsForGroup(group);
-    const nextProgramId = nextPrograms[0]?.value || "";
     setValues((current) => ({
       ...current,
       groupId,
       group: group?.label || "",
-      programId: nextProgramId,
-      program: nextPrograms[0]?.label || "",
+      programId: "",
+      program: "",
       feeItems: feeItemsForContext(current.feeItems),
     }));
   };
@@ -1067,9 +1111,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
 
   const update = (key, value) => setValues((current) => {
     const nextGroup = key === "group" ? value : current.group;
-    const nextCourseFee = key === "group"
-      ? courseFeeFor(nextGroup, "")
-      : current.courseFee;
+    const nextCourseFee = current.courseFee;
     const next = {
       ...current,
       [key]: value,
@@ -1094,7 +1136,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     });
   };
 
-  const buildStructurePayload = (item) => {
+  const buildStructurePayload = () => {
     const backendCompatibilitySectionId = Number(masters.sections.find((section) => section.groupId === values.groupId)?.value || masters.sections[0]?.value || 0);
     const backendCompatibilityAcademicLevelId = Number(masters.levels[0]?.value || 0);
     return {
@@ -1106,21 +1148,26 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
       ...(Number(values.programId) ? { programId: Number(values.programId) } : {}),
       // TODO: Remove sectionId compatibility fallback when the backend supports section-independent fee structures.
       sectionId: backendCompatibilitySectionId,
-      feeTypeId: Number(item.feeTypeId || item.id || 0),
-      amount: Number(item.originalAmount || 0),
-      dueDate: new Date().toISOString(),
     };
   };
 
+  const buildStructureItemPayload = (item) => ({
+    feeTypeId: Number(item.feeTypeId || item.id || 0),
+    amount: Number(item.originalAmount || 0),
+    isMandatory: Boolean(item.required),
+    dueDate: new Date().toISOString(),
+  });
+
   const save = async () => {
-    const selectedItems = values.feeItems.filter((item) => item.selected);
+    const selectedItems = values.feeItems.filter((item) => item.selected && (item.required || Number(item.originalAmount || 0) > 0));
     if (!values.academicYear && !values.academicYearId) return setError("Academic Year is required");
     if (!values.group && !values.groupId) return setError("Group is required");
     if (!values.programId) return setError("Program is required");
     if (!selectedItems.length) return setError("Select at least one fee type for this structure");
     if (values.feeItems.some((item) => Number(item.originalAmount || 0) < 0)) return setError("Fee amount cannot be negative");
     const canUseFeeStructureApi = hasBackendFeeTypeIds(feeTypes);
-    if (canUseFeeStructureApi && selectedItems.some((item) => !Number(item.feeTypeId || item.id))) return setError("Only saved backend fee types can be used for API fee structures.");
+    if (!canUseFeeStructureApi) return setError("Fee structures require saved backend fee types. Please save fee types successfully before creating a structure.");
+    if (selectedItems.some((item) => !Number(item.feeTypeId || item.id))) return setError("Only saved backend fee types can be used for API fee structures.");
     const duplicate = structures.some((row) => (
       row.id !== initial?.id
       && row.status === "Active"
@@ -1131,25 +1178,20 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     if (duplicate) return setError("A fee structure already exists for the selected Academic Year, Group and Program.");
     setSaving(true);
     try {
-      if (canUseFeeStructureApi) {
-        await Promise.all(selectedItems.map((item) => {
-          const payload = buildStructurePayload(item);
-          const structureId = item.structureId || (selectedItems.length === 1 ? initial?.id : "");
-          return structureId
-            ? apiClient.put(apiEndpoints.fee.updateStructure(structureId), payload)
-            : apiClient.post(apiEndpoints.fee.createStructure, payload);
-        }));
-      } else {
-        saveLocalFeeStructure(values, initial?.id);
-      }
+      const structurePayload = buildStructurePayload();
+      const structureResponse = initial?.id
+        ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload)
+        : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload);
+      const feeStructureId = initial?.id || read(getObject(structureResponse.data), "feeStructureId", "FeeStructureId", "id", "Id");
+      if (!feeStructureId) throw new Error("Fee structure saved, but the structure ID was not returned.");
+      await Promise.all(selectedItems.map((item) => (
+        item.structureItemId
+          ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), buildStructureItemPayload(item))
+          : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), buildStructureItemPayload(item))
+      )));
       onSaved(initial?.id ? "Fee structure updated" : "Fee structure added", true);
     } catch (err) {
-      if (canUseFeeStructureApi) {
-        setError(getApiErrorMessage(err));
-      } else {
-        saveLocalFeeStructure(values, initial?.id);
-        onSaved(initial?.id ? "Fee structure updated locally" : "Fee structure added locally", false);
-      }
+      setError(getApiErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -1171,7 +1213,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
         <div className="cms-field">
           <label htmlFor="fs-board">Board <span className="req">*</span></label>
           <select id="fs-board" value={values.boardId || ""} onChange={(event) => update("boardId", event.target.value)}>
-            <option value="">Select Board</option>
+            <option value="">{masterErrors.boards ? "Unable to load boards" : masterLoading && !masters.boards.length ? "Loading boards..." : masters.boards.length ? "Select Board" : "No boards available"}</option>
             {masters.boards.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </div>
@@ -1181,21 +1223,21 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
             update("academicYearId", event.target.value);
             update("academicYear", masters.years.find((item) => item.value === event.target.value)?.label || event.target.value);
           }}>
-            <option value="">Select Academic Year</option>
+            <option value="">{masterErrors.years ? "Unable to load academic years" : masterLoading && !masters.years.length ? "Loading academic years..." : masters.years.length ? "Select Academic Year" : "No academic years available"}</option>
             {masters.years.map((year) => <option key={year.value} value={year.value}>{year.label}</option>)}
           </select>
         </div>
         <div className="cms-field">
           <label htmlFor="fs-group">Group <span className="req">*</span></label>
-          <select id="fs-group" value={values.groupId || ""} onChange={(event) => changeGroup(event.target.value)}>
-            <option value="">Select Group</option>
+          <select id="fs-group" value={values.groupId || ""} onChange={(event) => changeGroup(event.target.value)} disabled={!values.boardId || !values.academicYearId}>
+            <option value="">{!values.boardId || !values.academicYearId ? "Select Board/Year first" : masterErrors.groups ? "Unable to load groups" : masterLoading && !groupOptions.length ? "Loading groups..." : groupOptions.length ? "Select Group" : "No groups available"}</option>
             {groupOptions.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}
           </select>
         </div>
         <div className="cms-field">
           <label htmlFor="fs-program">Program</label>
-          <select id="fs-program" value={values.programId || ""} onChange={(event) => changeProgram(event.target.value)} disabled={!programOptions.length}>
-            <option value="">Select Program</option>
+          <select id="fs-program" value={values.programId || ""} onChange={(event) => changeProgram(event.target.value)} disabled={!values.groupId || programLoading || !programOptions.length}>
+            <option value="">{!values.groupId ? "Select Group first" : programLoading ? "Loading programs..." : programError ? "Unable to load programs" : programOptions.length ? "Select Program" : "No programs available"}</option>
             {programOptions.map((program) => <option key={program.value} value={program.value}>{program.label}</option>)}
           </select>
         </div>
@@ -1261,8 +1303,9 @@ function FeeTypeFormModal({ initial, feeTypes, onClose, onSaved }) {
     status: initial?.status || "Active",
   });
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const saveType = () => {
+  const saveType = async () => {
     const name = draft.name.trim();
     if (!name) return setError("Fee Type Name is required");
     const duplicate = feeTypes.some((item) => item.id !== initial?.id && item.name.trim().toLowerCase() === name.toLowerCase());
@@ -1273,10 +1316,14 @@ function FeeTypeFormModal({ initial, feeTypes, onClose, onSaved }) {
       category: draft.category || "Other",
       status: draft.status || "Active",
     };
-    const nextTypes = initial?.id
-      ? feeTypes.map((item) => (item.id === initial.id ? { ...item, ...nextType } : item))
-      : [...feeTypes, nextType];
-    onSaved(nextTypes, initial?.id ? "Fee type updated" : "Fee type added");
+    setSaving(true);
+    try {
+      await onSaved(nextType, initial?.id ? "Fee type updated" : "Fee type added");
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
     return null;
   };
 
@@ -1288,7 +1335,7 @@ function FeeTypeFormModal({ initial, feeTypes, onClose, onSaved }) {
       footer={(
         <>
           <button className="cms-btn cms-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="cms-btn cms-btn-primary" onClick={saveType}>Save Fee Type</button>
+          <button className="cms-btn cms-btn-primary" onClick={saveType} disabled={saving}>{saving ? "Saving..." : "Save Fee Type"}</button>
         </>
       )}
     >
@@ -1316,24 +1363,57 @@ function FeeTypeFormModal({ initial, feeTypes, onClose, onSaved }) {
   );
 }
 
-function FeeTypesTab({ feeTypes, onChange, onToast }) {
+const feeTypePayload = (item) => ({
+  FeeTypeName: item.name,
+  FeeTypeCode: item.code || feeTypeCodeFor(item.name),
+  Category: item.category || "Other",
+  IsActive: item.status !== "Inactive",
+});
+
+const scholarshipPayload = (item) => ({
+  ScholarshipName: item.name,
+  DiscountType: item.discountType,
+  DiscountValue: Number(item.discountValue || 0),
+  IsActive: item.status !== "Inactive",
+});
+
+function FeeTypesTab({ feeTypes, onChange, onToast, onRefresh }) {
   const [formItem, setFormItem] = useState(null);
+  const [deletingId, setDeletingId] = useState("");
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(feeTypes.length / PAGE_SIZE));
   const paginatedFeeTypes = pageItems(feeTypes, page);
-  const defaultNames = useMemo(() => new Set(defaultFeeTypes().map((item) => item.name.toLowerCase())), []);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  const deleteType = (item) => {
-    const tombstone = defaultNames.has(item.name.toLowerCase())
-      ? { ...item, deleted: true }
-      : null;
-    const nextTypes = feeTypes.filter((feeType) => feeType.id !== item.id);
-    onChange(tombstone ? [...nextTypes, tombstone] : nextTypes);
-    onToast("Fee type deleted");
+  const saveType = async (item, message) => {
+    if (Number(item.id)) {
+      await apiClient.put(apiEndpoints.fee.updateFeeType(item.id), feeTypePayload(item));
+    } else {
+      await apiClient.post(apiEndpoints.fee.createFeeType, feeTypePayload(item));
+    }
+    onToast(message);
+    setFormItem(null);
+    await onRefresh();
+  };
+
+  const deleteType = async (item) => {
+    setDeletingId(item.id);
+    try {
+      if (Number(item.id)) {
+        await apiClient.delete(apiEndpoints.fee.deleteFeeType(item.id));
+        await onRefresh();
+      } else {
+        onChange(feeTypes.filter((feeType) => feeType.id !== item.id));
+      }
+      onToast("Fee type deleted");
+    } catch (err) {
+      onToast(getApiErrorMessage(err));
+    } finally {
+      setDeletingId("");
+    }
   };
 
   return (
@@ -1347,7 +1427,7 @@ function FeeTypesTab({ feeTypes, onChange, onToast }) {
       </div>
       <div className="cms-card-body cms-fee-toolbar">
         <div className="cms-table-wrap cms-fee-config-wrap">
-          <table className="cms-table cms-fee-config-table">
+          <table className="cms-table cms-fee-config-table cms-fee-types-table">
             <thead>
               <tr><th>Fee Type</th><th>Category</th><th>Status</th><th className="cms-fee-actions-col">Actions</th></tr>
             </thead>
@@ -1360,7 +1440,7 @@ function FeeTypesTab({ feeTypes, onChange, onToast }) {
                   <td className="cms-fee-actions-col">
                     <div className="cms-actions">
                       <button type="button" className="cms-action-btn" title="Edit fee type" aria-label="Edit fee type" onClick={() => setFormItem(item)}><Pencil size={15} /></button>
-                      <button type="button" className="cms-action-btn" title="Delete fee type" aria-label="Delete fee type" onClick={() => deleteType(item)}><Trash2 size={15} /></button>
+                      <button type="button" className="cms-action-btn" title="Delete fee type" aria-label="Delete fee type" disabled={deletingId === item.id} onClick={() => deleteType(item)}><Trash2 size={15} /></button>
                     </div>
                   </td>
                 </tr>
@@ -1377,11 +1457,7 @@ function FeeTypesTab({ feeTypes, onChange, onToast }) {
           initial={formItem.id ? formItem : null}
           feeTypes={feeTypes}
           onClose={() => setFormItem(null)}
-          onSaved={(nextTypes, message) => {
-            onChange(nextTypes);
-            onToast(message);
-            setFormItem(null);
-          }}
+          onSaved={saveType}
         />
       ) : null}
     </div>
@@ -1395,8 +1471,9 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
     discountValue: initial?.discountValue ?? "",
   });
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const saveScholarship = () => {
+  const saveScholarship = async () => {
     const name = draft.name.trim();
     const discountValue = Number(draft.discountValue || 0);
     if (!name) return setError("Scholarship Name is required");
@@ -1414,7 +1491,14 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
     const nextScholarships = initial?.id
       ? scholarships.map((item) => (item.id === initial.id ? { ...item, ...nextScholarship } : item))
       : [...scholarships, nextScholarship];
-    onSaved(nextScholarships, initial?.id ? "Scholarship updated" : "Scholarship added");
+    setSaving(true);
+    try {
+      await onSaved(nextScholarships, initial?.id ? "Scholarship updated" : "Scholarship added", nextScholarship);
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
     return null;
   };
 
@@ -1426,7 +1510,7 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
       footer={(
         <>
           <button className="cms-btn cms-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="cms-btn cms-btn-primary" onClick={saveScholarship}>Save Scholarship</button>
+          <button className="cms-btn cms-btn-primary" onClick={saveScholarship} disabled={saving}>{saving ? "Saving..." : "Save Scholarship"}</button>
         </>
       )}
     >
@@ -1452,8 +1536,9 @@ function ScholarshipFormModal({ initial, scholarships, onClose, onSaved }) {
   );
 }
 
-function ScholarshipsTab({ scholarships, onChange, onToast }) {
+function ScholarshipsTab({ scholarships, onChange, onToast, onRefresh }) {
   const [formItem, setFormItem] = useState(null);
+  const [deletingId, setDeletingId] = useState("");
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(scholarships.length / PAGE_SIZE));
   const paginatedScholarships = pageItems(scholarships, page);
@@ -1462,9 +1547,34 @@ function ScholarshipsTab({ scholarships, onChange, onToast }) {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  const deleteScholarship = (item) => {
-    onChange(scholarships.filter((scholarship) => scholarship.id !== item.id));
-    onToast("Scholarship deleted");
+  const saveScholarship = async (nextScholarships, message, item) => {
+    const payload = scholarshipPayload(item);
+    if (Number(item.id)) {
+      await apiClient.put(apiEndpoints.fee.updateScholarship(item.id), payload);
+    } else {
+      await apiClient.post(apiEndpoints.fee.createScholarship, payload);
+    }
+    onChange(nextScholarships);
+    onToast(message);
+    setFormItem(null);
+    await onRefresh();
+  };
+
+  const deleteScholarship = async (item) => {
+    setDeletingId(item.id);
+    try {
+      if (Number(item.id)) {
+        await apiClient.delete(apiEndpoints.fee.deleteScholarship(item.id));
+        await onRefresh();
+      } else {
+        onChange(scholarships.filter((scholarship) => scholarship.id !== item.id));
+      }
+      onToast("Scholarship deleted");
+    } catch (err) {
+      onToast(getApiErrorMessage(err));
+    } finally {
+      setDeletingId("");
+    }
   };
 
   return (
@@ -1497,7 +1607,7 @@ function ScholarshipsTab({ scholarships, onChange, onToast }) {
                   <td className="cms-fee-actions-col">
                     <div className="cms-actions">
                       <button type="button" className="cms-action-btn" title="Edit scholarship" aria-label="Edit scholarship" onClick={() => setFormItem(item)}><Pencil size={15} /></button>
-                      <button type="button" className="cms-action-btn" title="Delete scholarship" aria-label="Delete scholarship" onClick={() => deleteScholarship(item)}><Trash2 size={15} /></button>
+                      <button type="button" className="cms-action-btn" title="Delete scholarship" aria-label="Delete scholarship" disabled={deletingId === item.id} onClick={() => deleteScholarship(item)}><Trash2 size={15} /></button>
                     </div>
                   </td>
                 </tr>
@@ -1513,19 +1623,16 @@ function ScholarshipsTab({ scholarships, onChange, onToast }) {
           initial={formItem.id ? formItem : null}
           scholarships={scholarships}
           onClose={() => setFormItem(null)}
-          onSaved={(nextScholarships, message) => {
-            onChange(nextScholarships);
-            onToast(message);
-            setFormItem(null);
-          }}
+          onSaved={saveScholarship}
         />
       ) : null}
     </div>
   );
 }
 
-function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes, masters }) {
+function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes, masters, masterErrors }) {
   const [editing, setEditing] = useState(null);
+  const [loadingEditId, setLoadingEditId] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(structures.length / PAGE_SIZE));
@@ -1547,13 +1654,32 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
     });
   };
 
+  const editStructure = async (row) => {
+    setLoadingEditId(row.id);
+    try {
+      const [structureResult, itemsResult] = await Promise.allSettled([
+        apiClient.get(apiEndpoints.fee.getStructureById(row.id)),
+        apiClient.get(apiEndpoints.fee.getStructureItems(row.id)),
+      ]);
+      const detail = structureResult.status === "fulfilled" ? getObject(structureResult.value.data) : row;
+      const itemRows = itemsResult.status === "fulfilled"
+        ? getCollection(itemsResult.value.data).map((item) => ({ ...row, ...detail, ...item }))
+        : [];
+      const [normalized] = normalizeFeeStructureRows(itemRows.length ? itemRows : [{ ...row, ...detail }]);
+      setEditing({ ...row, ...normalized, feeItems: normalized?.feeItems?.length ? normalized.feeItems : row.feeItems });
+    } catch (err) {
+      onToast(getApiErrorMessage(err));
+      setEditing(row);
+    } finally {
+      setLoadingEditId("");
+    }
+  };
+
   const deleteStructure = async (row) => {
-    const ids = (row.feeItems || []).map((item) => item.structureId).filter(Boolean);
-    const targets = ids.length ? ids : [row.id].filter(Boolean);
-    if (!targets.length) return;
+    if (!row.id) return;
     setDeletingId(row.id);
     try {
-      await Promise.all(targets.map((id) => apiClient.delete(apiEndpoints.fee.deleteStructure(id))));
+      await apiClient.delete(apiEndpoints.fee.deleteStructure(row.id));
       onToast("Fee structure deleted");
       onRefresh();
     } catch (err) {
@@ -1571,8 +1697,16 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
       </div>
       <div className="cms-table-wrap">
         <table className="cms-table cms-fee-setup-table cms-fee-structure-table">
+          <colgroup>
+            <col className="cms-fee-structure-year-col" />
+            <col className="cms-fee-structure-group-col" />
+            <col className="cms-fee-structure-program-col" />
+            <col className="cms-fee-structure-types-col" />
+            <col className="cms-fee-structure-total-col" />
+            <col className="cms-fee-structure-actions-col" />
+          </colgroup>
           <thead>
-            <tr><th>Academic Year</th><th>Group</th><th>Program</th><th>Configured Fee Types</th><th className="num">Total Fee</th><th className="cms-fee-actions-col">Actions</th></tr>
+            <tr><th>Academic Year</th><th>Group</th><th>Program</th><th>Configured Fee Types</th><th className="num cms-fee-total-col">Total Fee</th><th className="cms-fee-actions-col">Actions</th></tr>
           </thead>
           <tbody>
             {loading ? (
@@ -1580,7 +1714,7 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
             ) : structures.length === 0 ? (
               <tr><td colSpan={6} className="cms-fee-empty-row">{error || "No fee structures found."}</td></tr>
             ) : paginatedStructures.map((row) => {
-              const feeItems = row.feeItems?.length ? row.feeItems : feeItemsForStructure(row, row.group, row.section);
+              const feeItems = row.feeItems || [];
               const activeItems = feeItems.filter((item) => item.selected);
               const activeTotal = activeItems.reduce((sum, item) => sum + Number(item.originalAmount || 0), 0);
               return (
@@ -1590,7 +1724,6 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
                   <td>{row.program || "Regular"}</td>
                   <td>
                     <div className="cms-fee-type-list">
-                      <strong>{activeItems.length} Fee Types</strong>
                       {activeItems.slice(0, 4).map((item) => (
                         <span key={item.id} className={item.selected ? "" : "is-inactive"}>
                           {item.type}
@@ -1599,10 +1732,10 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
                       {activeItems.length > 4 ? <span>+{activeItems.length - 4} more</span> : null}
                     </div>
                   </td>
-                  <td className="num">{formatCurrency(activeTotal)}</td>
+                  <td className="num cms-fee-total-col">{formatCurrency(activeTotal)}</td>
                   <td className="cms-fee-actions-col">
                     <div className="cms-actions">
-                      <button className="cms-action-btn" title="Edit fee structure" aria-label="Edit fee structure" onClick={() => setEditing(row)}><Pencil size={15} /></button>
+                      <button className="cms-action-btn" title="Edit fee structure" aria-label="Edit fee structure" disabled={loadingEditId === row.id} onClick={() => editStructure(row)}><Pencil size={15} /></button>
                       <button className="cms-action-btn" title="Copy fee structure" aria-label="Copy fee structure" onClick={() => copyStructure(row)}><Copy size={15} /></button>
                       <button className="cms-action-btn" title="Delete fee structure" aria-label="Delete fee structure" disabled={deletingId === row.id} onClick={() => deleteStructure(row)}><Trash2 size={15} /></button>
                     </div>
@@ -1626,6 +1759,8 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
           onSaved={(message) => { setEditing(null); onToast(message); onRefresh(); }}
           feeTypes={feeTypes}
           masters={masters}
+          masterErrors={masterErrors}
+          masterLoading={loading}
           structures={structures}
         />
       ) : null}
@@ -1633,7 +1768,7 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
   );
 }
 
-function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, scholarships, onScholarshipsChange, structures, onToast, onRefresh, loading, error, masters }) {
+function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, scholarships, onScholarshipsChange, structures, onToast, onRefresh, loading, error, masters, masterErrors }) {
   return (
     <div className="cms-fee-stack">
       <div className="cms-fee-tabs" role="tablist" aria-label="Fee setup">
@@ -1650,7 +1785,7 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
           </button>
         ))}
       </div>
-      {setupTab === "Fee Types" ? <FeeTypesTab feeTypes={feeTypes} onChange={onFeeTypesChange} onToast={onToast} /> : null}
+      {setupTab === "Fee Types" ? <FeeTypesTab feeTypes={feeTypes} onChange={onFeeTypesChange} onToast={onToast} onRefresh={onRefresh} /> : null}
       {setupTab === "Fee Structure" ? (
         <StructureTab
           structures={structures}
@@ -1660,9 +1795,10 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
           error={error}
           feeTypes={feeTypes}
           masters={masters}
+          masterErrors={masterErrors}
         />
       ) : null}
-      {setupTab === "Scholarships" ? <ScholarshipsTab scholarships={scholarships} onChange={onScholarshipsChange} onToast={onToast} /> : null}
+      {setupTab === "Scholarships" ? <ScholarshipsTab scholarships={scholarships} onChange={onScholarshipsChange} onToast={onToast} onRefresh={onRefresh} /> : null}
     </div>
   );
 }
@@ -1670,6 +1806,7 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
 /* ---------------------------- Payment history ---------------------------- */
 function HistoryTab({ accounts, onReceipt }) {
   const [search, setSearch] = useState("");
+  const [loadingReceiptId, setLoadingReceiptId] = useState("");
   const [page, setPage] = useState(1);
   const setSearchTerm = (value) => {
     setSearch(value);
@@ -1690,6 +1827,26 @@ function HistoryTab({ accounts, onReceipt }) {
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  const viewReceipt = async (row) => {
+    const paymentId = row.feePaymentId || row.paymentId || row.id;
+    setLoadingReceiptId(row.id);
+    try {
+      const response = row.receiptNo
+        ? await apiClient.get(apiEndpoints.fee.receiptByNumber(row.receiptNo))
+        : await apiClient.get(apiEndpoints.fee.paymentDetails(paymentId));
+      onReceipt({ ...row, ...getObject(response.data) });
+    } catch {
+      try {
+        const response = await apiClient.get(apiEndpoints.fee.paymentDetails(paymentId));
+        onReceipt({ ...row, ...getObject(response.data) });
+      } catch {
+        onReceipt(row);
+      }
+    } finally {
+      setLoadingReceiptId("");
+    }
+  };
 
   return (
     <div className="cms-card">
@@ -1727,7 +1884,7 @@ function HistoryTab({ accounts, onReceipt }) {
                 <td>{row.reference || "-"}</td>
                 <td><StatusBadge status="Paid" /></td>
                 <td>
-                  <button className="cms-action-btn" title="View receipt" aria-label="View receipt" onClick={() => onReceipt(row)}><ReceiptText size={15} /></button>
+                  <button className="cms-action-btn" title="View receipt" aria-label="View receipt" disabled={loadingReceiptId === row.id} onClick={() => viewReceipt(row)}><ReceiptText size={15} /></button>
                 </td>
               </tr>
             ))}
@@ -1741,64 +1898,88 @@ function HistoryTab({ accounts, onReceipt }) {
 
 /* -------------------------------- Page ---------------------------------- */
 export default function FeeManagementPage() {
-  const state = useFeeState();
   const [tab, setTab] = useState(TABS[0]);
   const [setupTab, setSetupTab] = useState(FEE_SETUP_TABS[0]);
   const [selectedId, setSelectedId] = useState(null);
   const [collecting, setCollecting] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const [toast, setToast] = useState("");
-  const [feeTypes, setFeeTypes] = useState(() => mergeFeeTypeMasters([], storageGet(FEE_TYPE_MASTER_STORAGE_KEY, [])));
-  const [scholarships, setScholarships] = useState(() => storageGet(SCHOLARSHIP_STORAGE_KEY, []));
+  const [feeTypes, setFeeTypes] = useState([]);
+  const [scholarships, setScholarships] = useState([]);
   const [apiStructures, setApiStructures] = useState([]);
   const [structureLoading, setStructureLoading] = useState(false);
   const [structureError, setStructureError] = useState("");
   const [masters, setMasters] = useState({ boards: [], years: [], levels: [], groups: [], sections: [] });
+  const [masterErrors, setMasterErrors] = useState({});
+  const [ledgerAccounts, setLedgerAccounts] = useState([]);
+  const [collectionAccounts, setCollectionAccounts] = useState([]);
+  const [accountLoading, setAccountLoading] = useState({ ledger: false, collection: false });
+  const [accountErrors, setAccountErrors] = useState({ ledger: "", collection: "" });
 
-  const accounts = useMemo(() => feeAccountsDerived(state), [state]);
-  const structures = apiStructures.length ? apiStructures : state.feeStructures;
-  const selected = selectedId ? accounts.find((item) => item.id === selectedId) : null;
+  const structures = apiStructures;
+  const overviewAccounts = ledgerAccounts;
+  const selected = selectedId ? [...ledgerAccounts, ...collectionAccounts].find((item) => item.id === selectedId) : null;
   const modalOpen = Boolean(selected || collecting || receipt);
 
   const saveFeeTypes = (nextTypes) => {
-    const storedDeleted = storageGet(FEE_TYPE_MASTER_STORAGE_KEY, [])
-      .filter((item) => item?.deleted && item?.name);
-    const incomingNames = new Set(nextTypes.map((item) => item.name?.trim().toLowerCase()).filter(Boolean));
-    const nextWithDeleted = [
-      ...nextTypes,
-      ...storedDeleted.filter((item) => !incomingNames.has(item.name.trim().toLowerCase())),
-    ];
-    setFeeTypes(mergeFeeTypeMasters([], nextWithDeleted));
-    storageSet(FEE_TYPE_MASTER_STORAGE_KEY, nextWithDeleted);
+    setFeeTypes(nextTypes);
   };
 
   const saveScholarships = (nextScholarships) => {
     setScholarships(nextScholarships);
-    storageSet(SCHOLARSHIP_STORAGE_KEY, nextScholarships);
   };
 
-  const loadFeeApiData = async () => {
+  const loadFeeAccounts = useCallback(async (source) => {
+    const endpoint = source === "collection" ? apiEndpoints.fee.collection : apiEndpoints.fee.ledger;
+    setAccountLoading((current) => ({ ...current, [source]: true }));
+    setAccountErrors((current) => ({ ...current, [source]: "" }));
+    try {
+      const response = await apiClient.get(endpoint);
+      const accounts = normalizeFeeAccountRows(getCollection(response.data));
+      if (source === "collection") {
+        setCollectionAccounts(accounts);
+      } else {
+        setLedgerAccounts(accounts);
+      }
+    } catch (err) {
+      if (source === "collection") {
+        setCollectionAccounts([]);
+      } else {
+        setLedgerAccounts([]);
+      }
+      setAccountErrors((current) => ({ ...current, [source]: getApiErrorMessage(err) }));
+    } finally {
+      setAccountLoading((current) => ({ ...current, [source]: false }));
+    }
+  }, []);
+
+  const loadFeeApiData = useCallback(async () => {
     setStructureLoading(true);
     setStructureError("");
-    const [typesResult, structuresResult, boardsResult, yearsResult, levelsResult, groupsResult, sectionsResult] = await Promise.allSettled([
+    setMasterErrors({});
+    const [typesResult, structuresResult, scholarshipsResult, boardsResult, yearsResult, levelsResult, groupsResult, sectionsResult] = await Promise.allSettled([
       apiClient.get(apiEndpoints.fee.feeTypes),
       apiClient.get(apiEndpoints.fee.getStructures),
+      apiClient.get(apiEndpoints.fee.scholarships),
       apiClient.get(apiEndpoints.boards.getAll),
       apiClient.get(apiEndpoints.academicYears.getAll),
       apiClient.get(apiEndpoints.boards.getAcademicLevels),
-      apiClient.get(apiEndpoints.groups.getAll),
+      apiClient.get(apiEndpoints.groups.dropdown).catch(() => apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } })),
       apiClient.get(apiEndpoints.sections.getAll),
     ]);
 
     if (typesResult.status === "fulfilled") {
       const apiTypes = getCollection(typesResult.value.data).map(feeTypeOption).filter((item) => item.id);
-      setFeeTypes(mergeFeeTypeMasters(apiTypes, storageGet(FEE_TYPE_MASTER_STORAGE_KEY, [])));
+      setFeeTypes(apiTypes);
     }
     if (structuresResult.status === "fulfilled") {
       setApiStructures(normalizeFeeStructureRows(getCollection(structuresResult.value.data)));
     } else {
       setApiStructures([]);
       setStructureError(getApiErrorMessage(structuresResult.reason));
+    }
+    if (scholarshipsResult.status === "fulfilled") {
+      setScholarships(normalizeScholarshipRows(getCollection(scholarshipsResult.value.data)));
     }
     setMasters({
       boards: boardsResult.status === "fulfilled"
@@ -1817,8 +1998,16 @@ export default function FeeManagementPage() {
         ? getCollection(sectionsResult.value.data).map(sectionOption).filter(Boolean)
         : [],
     });
+    setMasterErrors({
+      boards: boardsResult.status === "rejected" ? getApiErrorMessage(boardsResult.reason) : "",
+      years: yearsResult.status === "rejected" ? getApiErrorMessage(yearsResult.reason) : "",
+      levels: levelsResult.status === "rejected" ? getApiErrorMessage(levelsResult.reason) : "",
+      groups: groupsResult.status === "rejected" ? getApiErrorMessage(groupsResult.reason) : "",
+      sections: sectionsResult.status === "rejected" ? getApiErrorMessage(sectionsResult.reason) : "",
+      scholarships: scholarshipsResult.status === "rejected" ? getApiErrorMessage(scholarshipsResult.reason) : "",
+    });
     setStructureLoading(false);
-  };
+  }, []);
 
   const openCollectPayment = (id) => {
     setSelectedId(id);
@@ -1841,7 +2030,13 @@ export default function FeeManagementPage() {
 
   useEffect(() => {
     loadFeeApiData();
-  }, []);
+    loadFeeAccounts("ledger");
+  }, [loadFeeApiData, loadFeeAccounts]);
+
+  useEffect(() => {
+    if (tab === "Fee Collection") loadFeeAccounts("collection");
+    if (tab === "Student Fee Ledger" || tab === "Payment History" || tab === "Overview") loadFeeAccounts("ledger");
+  }, [loadFeeAccounts, tab]);
 
   return (
     <DashboardLayout
@@ -1864,8 +2059,8 @@ export default function FeeManagementPage() {
         ))}
       </div>
 
-      {tab === "Overview" ? <OverviewTab accounts={accounts} /> : null}
-      {tab === "Student Fee Ledger" ? <LedgerTab accounts={accounts} onView={setSelectedId} onPrint={printStudentStatement} masters={masters} /> : null}
+      {tab === "Overview" ? <OverviewTab accounts={overviewAccounts} /> : null}
+      {tab === "Student Fee Ledger" ? <LedgerTab accounts={ledgerAccounts} onView={setSelectedId} onPrint={printStudentStatement} masters={masters} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
       {tab === "Fee Setup" ? (
         <FeeSetupTab
           setupTab={setupTab}
@@ -1880,10 +2075,11 @@ export default function FeeManagementPage() {
           loading={structureLoading}
           error={structureError}
           masters={masters}
+          masterErrors={masterErrors}
         />
       ) : null}
-      {tab === "Fee Collection" ? <FeeCollectionTab accounts={accounts} onCollect={openCollectPayment} /> : null}
-      {tab === "Payment History" ? <HistoryTab accounts={accounts} onReceipt={setReceipt} /> : null}
+      {tab === "Fee Collection" ? <FeeCollectionTab accounts={collectionAccounts} onCollect={openCollectPayment} loading={accountLoading.collection} error={accountErrors.collection} /> : null}
+      {tab === "Payment History" ? <HistoryTab accounts={ledgerAccounts} onReceipt={setReceipt} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
 
       {selected ? (
         <StudentFeeDrawer
@@ -1901,6 +2097,8 @@ export default function FeeManagementPage() {
           onSaved={(saved) => {
             setCollecting(false);
             setToast(`Payment of ${formatCurrency(saved.amount)} recorded - receipt ${saved.receiptNo}`);
+            loadFeeAccounts("ledger");
+            loadFeeAccounts("collection");
           }}
         />
       ) : null}

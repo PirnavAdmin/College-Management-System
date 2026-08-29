@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
@@ -21,9 +21,17 @@ const WORKING_DAY_OPTIONS = DEFAULT_WORKING_DAYS.map((value) => ({
   shortLabel: DAYS[value].slice(0, 3),
 }));
 const list = (x) => {
-  const value = Array.isArray(x)
-    ? x
-    : (x?.data ?? x?.items ?? x?.result ?? x?.results ?? x?.programs ?? x?.sections ?? []);
+  let value = x;
+  // APIs in this module return both { data: [] } and { data: { data: [] } }.
+  // Unwrap response envelopes until the collection is reached.
+  for (let depth = 0; depth < 4 && value && !Array.isArray(value); depth += 1) {
+    if (Array.isArray(value?.$values)) return value.$values;
+    const next = value?.data ?? value?.items ?? value?.result ?? value?.results
+      ?? value?.timetableSlots ?? value?.slots ?? value?.generatedSlots
+      ?? value?.programs ?? value?.sections;
+    if (next === undefined || next === value) break;
+    value = next;
+  }
   return Array.isArray(value) ? value : (Array.isArray(value?.$values) ? value.$values : []);
 };
 const pick = (x, ...keys) =>
@@ -38,6 +46,24 @@ const optionize = (x, ids, labels) =>
       raw,
     }))
     .filter((item) => item.id && item.name);
+const sameOptions = (left, right) =>
+  left.length === right.length && left.every((item, index) => item.id === right[index].id && item.name === right[index].name);
+const sectionsForProgramme = (payload, program, groupId) => {
+  if (!program) return [];
+  const programId = String(pick(program.raw, "programId", "ProgramId", "id", "Id") ?? "");
+  const groupProgramId = String(pick(program.raw, "groupProgramId", "GroupProgramId") ?? "");
+  const programmeName = String(program.name || "").trim().toLowerCase();
+  const matched = list(payload).filter((section) => {
+    const sectionProgramId = String(pick(section, "programId", "ProgramId") ?? "");
+    const sectionGroupProgramId = String(pick(section, "groupProgramId", "GroupProgramId") ?? "");
+    const sectionProgramme = String(pick(section, "programme", "program", "programName", "Programme", "Program") ?? "").trim().toLowerCase();
+    return (programId && sectionProgramId === programId)
+      || (groupProgramId && sectionGroupProgramId === groupProgramId)
+      || (programmeName && sectionProgramme === programmeName);
+  });
+  const matchingGroup = matched.filter((section) => String(pick(section, "groupId", "GroupId") ?? "") === String(groupId));
+  return matchingGroup.length ? matchingGroup : matched;
+};
 const activeYearId = (payload) => {
   const entries = Array.isArray(payload)
     ? payload
@@ -69,6 +95,28 @@ const boardMappedOptions = (options, boards, boardId, idKeys, nameKeys) => {
 };
 const structureId = (x) => pick(x, "id", "Id", "periodStructureId");
 const timetableId = (x) => pick(x, "id", "Id", "timetableId");
+const slotSubjectName = (slot, subjects) =>
+  pick(slot, "subjectName", "SubjectName")
+  ?? pick(slot?.subject, "subjectName", "SubjectName", "name", "Name")
+  ?? subjects.find((subject) => String(subject.id) === String(pick(slot, "subjectId", "SubjectId")))?.name
+  ?? "Untitled subject";
+const slotFacultyName = (slot) => pick(slot, "facultyName", "FacultyName", "staffName", "StaffName") ?? pick(slot?.faculty, "facultyName", "FacultyName", "staffName", "StaffName", "fullName", "FullName", "name", "Name") ?? "Unassigned";
+const slotRoomName = (slot) => pick(slot, "roomName", "RoomName", "roomCode", "RoomCode") ?? pick(slot?.room, "roomName", "RoomName", "roomCode", "RoomCode", "name", "Name") ?? "—";
+const isBreakPeriod = (period) => {
+  const raw = period?.raw ?? period;
+  const isBreak = pick(raw, "isBreak", "IsBreak", "isBreakPeriod", "IsBreakPeriod");
+  const type = String(pick(raw, "periodType", "PeriodType", "type", "Type", "slotType", "SlotType") ?? "").toLowerCase();
+  const name = String(pick(raw, "periodName", "name", "Name") ?? period?.name ?? "").toLowerCase();
+  return isBreak === true || isBreak === "true" || type.includes("break") || /(break|lunch|interval)/.test(name);
+};
+const newestSection = (sections) =>
+  [...sections].sort((left, right) => {
+    const createdKeys = ["createdAt", "CreatedAt", "createdOn", "CreatedOn", "createdDate", "CreatedDate"];
+    const rightCreated = Date.parse(pick(right.raw, ...createdKeys) ?? "") || 0;
+    const leftCreated = Date.parse(pick(left.raw, ...createdKeys) ?? "") || 0;
+    if (rightCreated !== leftCreated) return rightCreated - leftCreated;
+    return Number(right.id) - Number(left.id);
+  })[0];
 const toBreakDefinitions = (items) => {
   let precedingPeriod = 0;
   return list(items)
@@ -155,6 +203,7 @@ function ConfirmDelete({ name, busy, error, onCancel, onConfirm }) {
 
 function useLookups(initial = {}) {
   const [value, setValue] = useState({ ...EMPTY, ...initial });
+  const [sectionsReloadKey, setSectionsReloadKey] = useState(0);
   const [data, setData] = useState({
     boards: [],
     years: [],
@@ -164,6 +213,8 @@ function useLookups(initial = {}) {
     groups: [],
     programs: [],
     sections: [],
+    sectionsLoading: false,
+    sectionsError: false,
     subjects: [],
     periods: [],
     rooms: [],
@@ -241,7 +292,11 @@ function useLookups(initial = {}) {
           );
           const selectedYear = yearId ? String(yearId) : mappedYears[0]?.id;
           setValue((current) =>
-            current.boardId === value.boardId && selectedYear
+            // A generated draft is opened with its full context. Do not
+            // replace that context while the lookup data is refreshing,
+            // otherwise the Draft screen is left with only the board value
+            // and appears to return to the setup screen.
+            current.boardId === value.boardId && !current.academicYearId && selectedYear
               ? { ...current, academicYearId: selectedYear, academicLevelId: "", groupId: "", programId: "", sectionId: "" }
               : current,
           );
@@ -257,7 +312,7 @@ function useLookups(initial = {}) {
         );
         if (!cancelled && mappedYears[0]?.id) {
           setValue((current) =>
-            current.boardId === value.boardId
+            current.boardId === value.boardId && !current.academicYearId
               ? { ...current, academicYearId: mappedYears[0].id, academicLevelId: "", groupId: "", programId: "", sectionId: "" }
               : current,
           );
@@ -307,16 +362,23 @@ function useLookups(initial = {}) {
   ]);
   useEffect(() => {
     if (!value.groupId) return;
+    const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
+    setData((current) => ({
+      ...current,
+      sections: value.programId ? current.sections : [],
+      sectionsLoading: Boolean(value.programId),
+      sectionsError: false,
+    }));
     Promise.allSettled([
       apiClient.get(apiEndpoints.groups.programs(value.groupId)),
-      value.programId
+      value.programId && selectedProgram
         ? apiClient.get(apiEndpoints.sections.search, {
             params: {
-              BoardId: value.boardId,
-              AcademicYearId: value.academicYearId,
-              AcademicLevelId: value.academicLevelId,
-              GroupId: value.groupId,
-              ProgramId: value.programId,
+              // Programme is the required dependency for this dropdown. Do
+              // not over-constrain it with optional context IDs because older
+              // section records can carry a different year/level mapping.
+              Programme: selectedProgram?.name,
+              ProgramId: pick(selectedProgram?.raw, "programId", "ProgramId", "id", "Id"),
               IsActive: true,
             },
           })
@@ -339,14 +401,18 @@ function useLookups(initial = {}) {
     ]).then((r) =>
       setData((current) => ({
         ...current,
-        programs:
-          r[0].status === "fulfilled"
-            ? optionize(r[0].value.data, ["programId", "id", "Id"], ["programName", "name", "Name"])
-            : [],
+        programs: (() => {
+          const nextPrograms = r[0].status === "fulfilled"
+            ? optionize(r[0].value.data, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "programme", "program", "name", "Name"])
+            : [];
+          return sameOptions(current.programs, nextPrograms) ? current.programs : nextPrograms;
+        })(),
         sections:
           r[1].status === "fulfilled"
-            ? optionize(r[1].value.data, ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? optionize(sectionsForProgramme(r[1].value.data, selectedProgram, value.groupId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
             : [],
+        sectionsLoading: false,
+        sectionsError: Boolean(value.programId) && r[1].status === "rejected",
         subjects:
           r[2].status === "fulfilled"
             ? optionize(r[2].value.data, ["subjectId", "id", "Id"], ["subjectName", "name", "Name"])
@@ -357,7 +423,7 @@ function useLookups(initial = {}) {
             : [],
       })),
     );
-  }, [value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId]);
+  }, [value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId, data.programs, sectionsReloadKey]);
   const change = (key) => (event) =>
     setValue((current) => {
       const next = event.target.value;
@@ -374,10 +440,16 @@ function useLookups(initial = {}) {
       if (key === "academicLevelId")
         return { ...current, academicLevelId: next, groupId: "", programId: "", sectionId: "" };
       if (key === "groupId") return { ...current, groupId: next, programId: "", sectionId: "" };
-      if (key === "programId") return { ...current, programId: next, sectionId: "" };
+      if (key === "programId") {
+        setData((data) => ({ ...data, sections: [], sectionsLoading: Boolean(next), sectionsError: false }));
+        return { ...current, programId: next, sectionId: "" };
+      }
       return { ...current, [key]: next };
     });
-  return { value, data, change };
+  const reloadSections = () => {
+    if (value.programId) setSectionsReloadKey((key) => key + 1);
+  };
+  return { value, data, change, setValue, reloadSections };
 }
 function Context({ state, section = true }) {
   const { value, data, change } = state;
@@ -399,13 +471,32 @@ function Context({ state, section = true }) {
       {select("Academic Year", "academicYearId", data.years, !value.boardId)}
       {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
       {select("Group", "groupId", data.groups, !value.academicLevelId)}
-      {section && (
-        <>
-          {select("Programme", "programId", data.programs, !value.groupId)}
-          {select("Section", "sectionId", data.sections, !value.programId)}
-        </>
-      )}
+      {select("Programme", "programId", data.programs, !value.groupId)}
+      {section && select("Section", "sectionId", data.sections, !value.programId)}
     </div>
+  );
+}
+function ProgrammeSections({ data, onRetry }) {
+  return (
+    <section className="ttm-programme-sections" aria-live="polite">
+      <header>
+        <b>Sections for this Programme</b>
+        <span>Sections are automatically loaded from the selected programme.</span>
+      </header>
+      {data.sectionsLoading ? <p>Loading sections...</p> : null}
+      {data.sectionsError ? (
+        <div className="ttm-sections-error">
+          <p className="ttm-validation-error">Unable to load sections. Please try again.</p>
+          <Btn className="cms-btn cms-btn-ghost" onClick={onRetry}>Retry sections</Btn>
+        </div>
+      ) : null}
+      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for this programme.</p> : null}
+      {!data.sectionsLoading && data.sections.length ? (
+        <div className="ttm-section-chips">
+          {data.sections.map((section) => <span key={section.id}>{section.name}</span>)}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -709,16 +800,20 @@ function Structures({ notify }) {
   const [modal, setModal] = useState(null);
   const [item, setItem] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [deleteError, setDeleteError] = useState("");
   const navigate = useNavigate();
-  const load = () =>
-    apiClient
-      .get(apiEndpoints.periodStructures.list)
-      .then((r) => setItems(list(r.data)))
-      .catch((e) => notify(getApiErrorMessage(e)));
+  const load = useCallback(
+    () =>
+      apiClient
+        .get(apiEndpoints.periodStructures.list)
+        .then((r) => setItems(list(r.data)))
+        .catch((e) => notify(getApiErrorMessage(e))),
+    [notify],
+  );
   useEffect(() => {
-    load();
-  }, []);
+    load().finally(() => setLoading(false));
+  }, [load]);
   const remove = async () => {
     if (deleting || !item) return;
     setDeleting(true);
@@ -739,13 +834,16 @@ function Structures({ notify }) {
       title="Period Structures"
       subtitle="Manage reusable schedules for groups."
       action={
-        <Btn onClick={() => { setItem(null); setModal("form"); }}>
-          + Create Structure
-        </Btn>
+        <div className="ttm-page-actions">
+          <Btn onClick={() => { setItem(null); setModal("form"); }}>+ Create Structure</Btn>
+          <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate">Next: Generate Timetable →</Link>
+        </div>
       }
     >
       <section className="ttm-card">
-        {!items.length ? (
+        {loading ? (
+          <p className="ttm-empty">Loading period structures…</p>
+        ) : !items.length ? (
           <p className="ttm-empty">No period structures are available.</p>
         ) : (
           <table className="cms-table ttm-table">
@@ -866,7 +964,9 @@ function Generate({ goDraft, notify, initial }) {
   );
   const [capacityError, setCapacityError] = useState("");
   const [busy, setBusy] = useState(false);
-  const periodsPerDay = data.periods.length;
+  // The periods endpoint can include break slots. Capacity is based on actual
+  // teaching periods, not every timeline entry returned by the API.
+  const periodsPerDay = data.periods.filter((period) => !isBreakPeriod(period)).length;
   const weeklyCapacity = periodsPerDay * workingDays.length;
   const totalRequiredPeriods = Object.values(requirements).reduce(
     (total, weeklyPeriods) => total + (Number(weeklyPeriods) || 0),
@@ -877,7 +977,9 @@ function Generate({ goDraft, notify, initial }) {
     value.academicYearId &&
     value.academicLevelId &&
     value.groupId &&
-    value.sectionId &&
+    value.programId &&
+    data.sections.length &&
+    !data.sectionsLoading &&
     workingDays.length;
   const toggleWorkingDay = (day) => {
     setWorkingDays((current) =>
@@ -887,6 +989,19 @@ function Generate({ goDraft, notify, initial }) {
   };
   const generate = async () => {
     if (busy) return;
+    const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
+    const programId = Number(pick(selectedProgram?.raw, "programId", "ProgramId", "id", "Id"));
+    const sectionIds = data.sections
+      .map((section) => Number(pick(section.raw, "sectionId", "SectionId", "id", "Id", section.id)))
+      .filter((sectionId) => Number.isInteger(sectionId) && sectionId > 0);
+    if (!Number.isInteger(programId) || programId <= 0) {
+      notify("Please select a valid programme.");
+      return;
+    }
+    if (!sectionIds.length) {
+      notify("No sections found for this programme. Create sections in Section Management first.");
+      return;
+    }
     if (totalRequiredPeriods > weeklyCapacity) {
       setCapacityError(`Subject requirements total ${totalRequiredPeriods} periods, but the selected working days allow only ${weeklyCapacity} periods.`);
       return;
@@ -899,19 +1014,46 @@ function Generate({ goDraft, notify, initial }) {
           weeklyPeriods: Number(requirements[subject.id] || 0),
         }))
         .filter((entry) => entry.weeklyPeriods > 0);
-      const response = await apiClient.post(apiEndpoints.timetable.generate, {
-        boardId: Number(value.boardId),
-        academicYearId: Number(value.academicYearId),
-        academicLevelId: Number(value.academicLevelId),
-        groupId: Number(value.groupId),
-        sectionIds: [Number(value.sectionId)],
-        workingDays,
-        subjectRequirements,
-      });
-      notify(response.data?.message ?? "Timetable generated.");
-      goDraft({ ...value, workingDays });
+      if (!subjectRequirements.length) {
+        notify("Enter at least one subject weekly-period requirement before generating the timetable.");
+        return;
+      }
+      const response = await apiClient.post(
+        apiEndpoints.timetable.generate,
+        {
+          boardId: Number(value.boardId),
+          academicYearId: Number(value.academicYearId),
+          academicLevelId: Number(value.academicLevelId),
+          groupId: Number(value.groupId),
+          programId,
+          p_ProgramId: programId,
+          sectionIds,
+          workingDays,
+          subjectRequirements,
+        },
+        {
+          // The live endpoint reports this exact parameter name. Include it
+          // in the query collection as well as the JSON command body.
+          params: { p_ProgramId: programId },
+        },
+      );
+      const result = response.data?.data ?? response.data ?? {};
+      const generatedSlots = list(result.generatedSlots);
+      if (result.isSuccess === false || Number(result.totalSlotsGenerated ?? generatedSlots.length) <= 0) {
+        notify(result.message ?? "The timetable generator did not create any slots. Check the subject requirements and faculty assignments, then try again.");
+        return;
+      }
+      notify(result.message ?? "Timetable generated.");
+      // Draft chooses the newest section returned by the existing Section
+      // API, while the generator still receives every programme section.
+      goDraft({ ...value, sectionId: "", workingDays, generatedSlots });
     } catch (e) {
-      notify(getApiErrorMessage(e));
+      const message = getApiErrorMessage(e);
+      notify(
+        /LINQ|StaffSubjectAllocation|allocation/i.test(message)
+          ? "Timetable generation could not resolve staff-subject allocations. Allocate faculty to the requested subjects, then try again."
+          : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -920,13 +1062,18 @@ function Generate({ goDraft, notify, initial }) {
     <Page
       title="Generate Timetable"
       subtitle="Generate a conflict-free theory timetable in DRAFT state."
+      action={<Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup">← Back to Period Structures</Link>}
     >
       <section className="ttm-card">
-        <Context state={state} />
-        {value.programId && value.sectionId ? (
-          <>
-            <div className="ttm-working-days" aria-labelledby="working-days-label">
-              <span id="working-days-label">Working Days</span>
+        <Context state={state} section={false} />
+        {value.programId ? (
+          <div className="ttm-generation-content">
+            <ProgrammeSections data={data} onRetry={state.reloadSections} />
+            <section className="ttm-working-days" aria-labelledby="working-days-label">
+              <header className="ttm-working-days-head">
+                <span id="working-days-label">Working Days</span>
+                <span className="ttm-capacity">Weekly Capacity: {weeklyCapacity} periods</span>
+              </header>
               <div className="ttm-day-toggles">
                 {WORKING_DAY_OPTIONS.map((day) => (
                   <button
@@ -940,30 +1087,33 @@ function Generate({ goDraft, notify, initial }) {
                   </button>
                 ))}
               </div>
-              <span className="ttm-capacity">Weekly Capacity: {weeklyCapacity} periods</span>
-            </div>
-            <p className="ttm-generation-help">
-              Set the weekly teaching periods for each subject. These values tell the generator how many slots to create for the selected section.
-            </p>
-            <div className="ttm-form-grid">
-              {data.subjects.map((subject) => (
-                <Field key={subject.id} label={`${subject.name} weekly periods`}>
-                  <input
-                    type="number"
-                    min="0"
-                    value={requirements[subject.id] ?? ""}
-                    onChange={(e) => {
-                      setRequirements((current) => ({ ...current, [subject.id]: e.target.value }));
-                      setCapacityError("");
-                    }}
-                  />
-                </Field>
-              ))}
-            </div>
+              <p className="ttm-generation-help">
+                Set the weekly teaching periods for each subject. These values tell the generator how many slots to create for every loaded section.
+              </p>
+            </section>
+            <section className="ttm-subject-period-section">
+              <div className="ttm-subject-period-grid">
+                {data.subjects.map((subject) => (
+                  <div className="ttm-subject-card" key={subject.id}>
+                    <Field label={`${subject.name} weekly periods`}>
+                      <input
+                        type="number"
+                        min="0"
+                        value={requirements[subject.id] ?? ""}
+                        onChange={(e) => {
+                          setRequirements((current) => ({ ...current, [subject.id]: e.target.value }));
+                          setCapacityError("");
+                        }}
+                      />
+                    </Field>
+                  </div>
+                ))}
+              </div>
+            </section>
             {capacityError ? <p className="ttm-validation-error ttm-capacity-error">{capacityError}</p> : null}
-          </>
+          </div>
         ) : null}
-        <footer className="ttm-screen-actions">
+        <footer className={`ttm-screen-actions${value.programId ? " ttm-generation-footer" : ""}`}>
           <Btn disabled={!ready || busy} onClick={generate}>
             {busy ? "Generating…" : "Generate Timetable"}
           </Btn>
@@ -975,12 +1125,12 @@ function Generate({ goDraft, notify, initial }) {
 
 function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) {
   const [form, setForm] = useState({
-    dayOfWeek: String(pick(slot, "dayOfWeek") ?? ""),
-    periodId: String(pick(slot, "periodId") ?? ""),
-    subjectId: String(pick(slot, "subjectId") ?? ""),
-    facultyId: String(pick(slot, "facultyId") ?? ""),
-    roomId: String(pick(slot, "roomId") ?? ""),
-    remarks: pick(slot, "remarks") ?? "",
+    dayOfWeek: String(pick(slot, "dayOfWeek", "DayOfWeek") ?? ""),
+    periodId: String(pick(slot, "periodId", "PeriodId") ?? ""),
+    subjectId: String(pick(slot, "subjectId", "SubjectId") ?? ""),
+    facultyId: String(pick(slot, "facultyId", "FacultyId") ?? ""),
+    roomId: String(pick(slot, "roomId", "RoomId") ?? ""),
+    remarks: pick(slot, "remarks", "Remarks") ?? "",
   });
   const [faculty, setFaculty] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -994,7 +1144,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) 
         setFaculty(optionize(r.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])),
       )
       .catch((e) => notify(getApiErrorMessage(e)));
-  }, [form.subjectId]);
+  }, [context, form.subjectId, notify]);
   const set = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
   const save = async () => {
     if (saving) return;
@@ -1041,9 +1191,9 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) 
             "dayOfWeek",
             workingDays.map((day) => ({ id: day, name: DAYS[day] })),
           )}
-          {select("Period", "periodId", data.periods)}
+          {select("Period", "periodId", data.periods.filter((period) => !isBreakPeriod(period)))}
           {select("Subject", "subjectId", data.subjects)}
-          {select("Faculty", "facultyId", faculty)}
+          {select("Staff", "facultyId", faculty)}
           {select("Room", "roomId", data.rooms)}
           <Field label="Remarks">
             <input value={form.remarks} onChange={set("remarks")} />
@@ -1061,29 +1211,71 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) 
 }
 function Draft({ initial, notify }) {
   const state = useLookups(initial);
-  const { value, data } = state;
+  const { value, data, setValue } = state;
   const [slots, setSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [copying, setCopying] = useState(false);
+  const [copyTarget, setCopyTarget] = useState({ academicYearId: "", sectionId: "" });
+  const [actionBusy, setActionBusy] = useState(false);
+  const [published, setPublished] = useState(Boolean(initial?.isPublished));
   const [validation, setValidation] = useState(null);
+  const [publishedFilter, setPublishedFilter] = useState(
+    initial?.isPublished === undefined ? "" : String(Boolean(initial.isPublished)),
+  );
   const workingDays = (initial?.workingDays?.length ? initial.workingDays : DEFAULT_WORKING_DAYS)
     .map(Number)
     .filter((day) => WORKING_DAY_OPTIONS.some((option) => option.value === day));
-  const load = () =>
-    value.sectionId &&
-    apiClient
-      .get(apiEndpoints.timetable.getBySection(value.sectionId), {
-        params: { academicYearId: value.academicYearId },
-      })
-      .then((r) => setSlots(list(r.data)))
-      .catch((e) => notify(getApiErrorMessage(e)));
-  useEffect(load, [value.sectionId, value.academicYearId]);
+  const generatedSlots = useMemo(() => list(initial?.generatedSlots), [initial?.generatedSlots]);
+  useEffect(() => {
+    if (!value.programId || !data.sections.length) return;
+    if (value.sectionId) return;
+    const defaultSection = newestSection(data.sections);
+    if (!defaultSection) return;
+    setValue((current) =>
+      current.programId === value.programId
+        ? { ...current, sectionId: defaultSection.id }
+        : current,
+    );
+  }, [data.sections, setValue, value.programId, value.sectionId]);
+  const load = useCallback(async () => {
+    if (!value.sectionId) {
+      setSlots([]);
+      return;
+    }
+    setSlotsLoading(true);
+    try {
+      const r = await apiClient.get(apiEndpoints.timetable.getBySection(value.sectionId), {
+        params: {
+          academicYearId: value.academicYearId,
+          ...(publishedFilter === "true" || publishedFilter === "false" ? { isPublished: publishedFilter } : {}),
+        },
+      });
+      const fetchedSlots = list(r.data);
+      const responseSlots = generatedSlots.filter(
+        (slot) => String(pick(slot, "sectionId", "SectionId")) === String(value.sectionId),
+      );
+      setSlots(fetchedSlots.length ? fetchedSlots : responseSlots);
+    } catch (e) {
+      setSlots([]);
+      notify(getApiErrorMessage(e));
+    } finally {
+      setSlotsLoading(false);
+    }
+  }, [generatedSlots, notify, publishedFilter, value.academicYearId, value.sectionId]);
+  useEffect(() => {
+    load();
+  }, [load]);
   const find = (day, periodId) =>
     slots.find(
       (slot) =>
-        String(pick(slot, "dayOfWeek")) === String(day) &&
-        String(pick(slot, "periodId")) === String(periodId),
+        (String(pick(slot, "dayOfWeek", "DayOfWeek", "dayNumber", "DayNumber")) === String(day)
+          || String(pick(slot, "day", "Day")).toLowerCase() === String(DAYS[day]).toLowerCase()) &&
+        String(pick(slot, "periodId", "PeriodId", "periodNumber", "PeriodNumber")) === String(periodId),
     );
   const action = async (path, method = "post", body) => {
+    if (actionBusy) return;
+    setActionBusy(true);
     try {
       const r = await apiClient[method](path, body, {
         params: { academicYearId: value.academicYearId },
@@ -1093,6 +1285,57 @@ function Draft({ initial, notify }) {
       load();
     } catch (e) {
       notify(getApiErrorMessage(e));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+  const copyTimetable = async () => {
+    if (actionBusy) return;
+    if (!copyTarget.academicYearId || !copyTarget.sectionId) {
+      notify("Select a target academic year and section.");
+      return;
+    }
+    setActionBusy(true);
+    try {
+      await apiClient.post(apiEndpoints.timetable.copy, {
+        sourceAcademicYearId: Number(value.academicYearId),
+        sourceSectionId: Number(value.sectionId),
+        targetAcademicYearId: Number(copyTarget.academicYearId),
+        targetSectionId: Number(copyTarget.sectionId),
+      });
+      setCopying(false);
+      notify("Timetable copied successfully.");
+      load();
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+  const viewPublished = async (kind) => {
+    if (actionBusy) return;
+    const staffId = pick(slots[0], "facultyId", "FacultyId", "staffId", "StaffId")
+      ?? pick(JSON.parse(localStorage.getItem("user") || "{}"), "id", "userId");
+    if (kind === "faculty" && !staffId) {
+      notify("No faculty assignment is available for this timetable.");
+      return;
+    }
+    setActionBusy(true);
+    try {
+      const endpoint = kind === "student"
+        ? apiEndpoints.timetable.getBySection(value.sectionId)
+        : apiEndpoints.timetable.getByFaculty(staffId);
+      const params = kind === "student"
+        ? { academicYearId: value.academicYearId, isPublished: true }
+        : { academicYearId: value.academicYearId };
+      const response = await apiClient.get(endpoint, { params });
+      const viewed = list(response.data);
+      if (viewed.length) setSlots(viewed);
+      notify(`${kind === "student" ? "Student" : "Faculty"} timetable loaded.`);
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    } finally {
+      setActionBusy(false);
     }
   };
   return (
@@ -1100,7 +1343,7 @@ function Draft({ initial, notify }) {
       title="Generated Draft Grid"
       subtitle="Review, validate, approve and publish the section timetable."
       action={
-        <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate">
+        <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate" state={{ timetableContext: value }}>
           Back to Generate
         </Link>
       }
@@ -1112,27 +1355,46 @@ function Draft({ initial, notify }) {
             <div className="ttm-grid-head">
               <b>Section timetable</b>
               <div>
-                <Btn className="cms-btn cms-btn-ghost" onClick={() => setEditing({})}>
+                <label className="ttm-inline-filter">
+                  <span>Status</span>
+                  <select value={publishedFilter} onChange={(e) => setPublishedFilter(e.target.value)} disabled={actionBusy}>
+                    <option value="">All</option>
+                    <option value="false">Draft</option>
+                    <option value="true">Published</option>
+                  </select>
+                </label>
+                <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => setCopying(true)}>
+                  Copy Timetable
+                </Btn>
+                <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => setEditing({})}>
                   + Add Slot
                 </Btn>
                 <Btn
                   className="cms-btn cms-btn-ghost"
+                  disabled={actionBusy}
                   onClick={() => action(apiEndpoints.timetable.validateSection(value.sectionId))}
                 >
-                  Validate
+                  {actionBusy ? "Validating…" : "Validate"}
                 </Btn>
-                <Btn onClick={() => action(apiEndpoints.timetable.approveSection(value.sectionId))}>
-                  Approve
+                <Btn disabled={actionBusy} onClick={() => action(apiEndpoints.timetable.approveSection(value.sectionId))}>
+                  {actionBusy ? "Approving…" : "Approve"}
                 </Btn>
-                <Btn
+                <Btn disabled={actionBusy}
                   onClick={() =>
-                    action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", {
-                      isPublished: true,
-                    })
+                    (async () => {
+                      await action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", { isPublished: true });
+                      setPublished(true);
+                    })()
                   }
                 >
-                  Publish
+                  {actionBusy ? "Publishing…" : "Publish"}
                 </Btn>
+                {published && (
+                  <>
+                    <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => viewPublished("faculty")}>Faculty View Timetable</Btn>
+                    <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => viewPublished("student")}>Student View Timetable</Btn>
+                  </>
+                )}
               </div>
             </div>
             {validation && (
@@ -1163,24 +1425,29 @@ function Draft({ initial, notify }) {
                     <tr key={dayName}>
                       <th>{dayName}</th>
                       {data.periods.map((period) => {
+                        if (isBreakPeriod(period)) {
+                          return (
+                            <td className="break" key={period.id}>
+                              {period.name}
+                            </td>
+                          );
+                        }
                         const slot = find(dayOfWeek, period.id);
                         return (
                           <td className="slot" key={period.id}>
                             <button
-                              onClick={() =>
-                                setEditing(
-                                  slot ?? { dayOfWeek, periodId: period.id },
-                                )
-                              }
+                              onClick={() => setEditing(slot)}
+                              disabled={!slot}
                             >
                               {slot ? (
                                 <>
-                                  <b>{pick(slot, "subjectName") ?? "—"}</b>
-                                  <span>{pick(slot, "facultyName") ?? "Unassigned"}</span>
-                                  <small>{pick(slot, "roomName") ?? "—"}</small>
+                                  <b>{slotSubjectName(slot, data.subjects)}</b>
+                                  <span>{slotFacultyName(slot)}</span>
+                                  <small>{slotRoomName(slot)}</small>
+                                  <i className="ttm-slot-edit">Edit</i>
                                 </>
                               ) : (
-                                "+ Add"
+                                slotsLoading ? "Loading…" : "No generated subject"
                               )}
                             </button>
                           </td>
@@ -1211,15 +1478,87 @@ function Draft({ initial, notify }) {
           }}
         />
       )}
+      {copying && (
+        <Modal title="Copy Timetable" onClose={() => setCopying(false)}>
+          <div className="ttm-modal-body">
+            <p>Copy the currently selected timetable to another academic year and section.</p>
+            <div className="ttm-form-grid">
+              <Field label="Target Academic Year">
+                <select value={copyTarget.academicYearId} onChange={(e) => setCopyTarget((x) => ({ ...x, academicYearId: e.target.value }))}>
+                  <option value="">Select Academic Year</option>
+                  {data.years.map((year) => <option key={year.id} value={year.id}>{year.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Target Section">
+                <select value={copyTarget.sectionId} onChange={(e) => setCopyTarget((x) => ({ ...x, sectionId: e.target.value }))}>
+                  <option value="">Select Section</option>
+                  {data.sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+                </select>
+              </Field>
+            </div>
+            <footer>
+              <Btn className="cms-btn cms-btn-ghost" onClick={() => setCopying(false)}>Cancel</Btn>
+              <Btn onClick={copyTimetable}>Copy Timetable</Btn>
+            </footer>
+          </div>
+        </Modal>
+      )}
     </Page>
   );
 }
-export default function TimetablePage({ screen = "structures" }) {
+function LatestDraft({ notify }) {
+  const [state, setState] = useState({ loading: true, context: null });
+  useEffect(() => {
+    let active = true;
+    const timeout = new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error("Timetable request timed out.")), 15000);
+    });
+    Promise.race([
+      apiClient.get(apiEndpoints.timetable.getAll, { params: { pageNumber: 1, pageSize: 20 } }),
+      timeout,
+    ])
+      .then((response) => {
+        if (!active) return;
+        const rows = list(response.data);
+        const latest = [...rows].sort((a, b) => {
+          const date = (entry) => Date.parse(pick(entry, "generatedAt", "GeneratedAt", "createdAt", "CreatedAt", "updatedAt", "UpdatedAt", "date", "Date") ?? "") || 0;
+          return date(b) - date(a) || Number(pick(b, "id", "Id", "timetableId", "TimetableId") ?? 0) - Number(pick(a, "id", "Id", "timetableId", "TimetableId") ?? 0);
+        })[0];
+        if (!latest) return setState({ loading: false, context: null });
+        setState({
+          loading: false,
+          context: {
+            boardId: pick(latest, "boardId", "BoardId") ?? "",
+            academicYearId: pick(latest, "academicYearId", "AcademicYearId") ?? "",
+            academicLevelId: pick(latest, "academicLevelId", "AcademicLevelId") ?? "",
+            groupId: pick(latest, "groupId", "GroupId") ?? "",
+            programId: pick(latest, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? "",
+            sectionId: pick(latest, "sectionId", "SectionId") ?? "",
+            isPublished: pick(latest, "isPublished", "IsPublished"),
+            workingDays: latest.workingDays ?? latest.WorkingDays,
+          },
+        });
+      })
+      .catch((error) => {
+        if (active) {
+          notify(getApiErrorMessage(error));
+          setState({ loading: false, context: null });
+        }
+      });
+    return () => { active = false; };
+  }, [notify]);
+  if (state.loading) return <Page title="Generated Timetable" subtitle="Loading the latest generated timetable…"><section className="ttm-card"><p className="ttm-empty">Loading timetable…</p></section></Page>;
+  if (!state.context?.sectionId) return <Page title="Generated Timetable" subtitle="Review generated timetables."><section className="ttm-card"><p className="ttm-empty">No generated timetable available.</p><div className="ttm-screen-actions"><Link className="cms-btn cms-btn-primary" to="/dashboard/timetable/generate">Generate Timetable</Link></div></section></Page>;
+  return <Draft initial={state.context} notify={notify} />;
+}
+export default function TimetablePage({ screen = "latest" }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [toast, setToast] = useState("");
   const view =
-    screen === "draft" ? (
+    screen === "latest" ? (
+      <LatestDraft notify={setToast} />
+    ) : screen === "draft" ? (
       <Draft initial={location.state?.timetableContext} notify={setToast} />
     ) : screen === "generate" ? (
       <Generate

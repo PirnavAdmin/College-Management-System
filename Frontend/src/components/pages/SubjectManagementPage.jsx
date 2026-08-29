@@ -194,8 +194,22 @@ export default function SubjectManagementPage({ screen = "list" }) {
   const loadSubjects = useCallback(async (subjectContext) => {
     const requestId = ++subjectRequestId.current;
     if (!subjectContext?.boardId || !subjectContext?.groupId || !subjectContext?.academicLevelId) {
-      setRecords([]);
-      setApiAvailable(false);
+      // The landing view keeps Board unselected but still shows recently
+      // added subjects. Once a group is chosen, use its scoped collection.
+      try {
+        const response = await apiClient.get(
+          subjectContext?.groupId ? apiEndpoints.subjects.getByGroup(subjectContext.groupId) : apiEndpoints.subjects.getAll,
+        );
+        if (requestId !== subjectRequestId.current) return;
+        setRecords(normalize(itemsFromResponse(response.data)));
+        setApiAvailable(true);
+      } catch (error) {
+        if (requestId === subjectRequestId.current) {
+          setRecords([]);
+          setApiAvailable(false);
+          setToast(getApiErrorMessage(error) || "Unable to load subjects.");
+        }
+      }
       return;
     }
     setLoading(true);
@@ -321,12 +335,6 @@ function List({ records, context, assign, loading, loadSubjects }) {
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
       setGroups(nextGroups);
-      // A group carries the complete subject context. Select the first one on
-      // initial load so Subject Management immediately shows its assignments.
-      setSelectedContext((current) => {
-        if (current.groupId || !nextGroups.length) return current;
-        return groupContext(nextGroups[0]);
-      });
     }).catch(() => {});
     return () => { active = false; };
   }, []);
@@ -342,7 +350,15 @@ function List({ records, context, assign, loading, loadSubjects }) {
       academicLevelId: selectedContext.academicLevelId,
       academicLevel: selectedContext.academicLevel,
     });
-  }, [loadSubjects, selectedContext.boardId, selectedContext.groupId, selectedContext.academicLevelId]);
+  }, [
+    loadSubjects,
+    selectedContext.boardId,
+    selectedContext.board,
+    selectedContext.groupId,
+    selectedContext.group,
+    selectedContext.academicLevelId,
+    selectedContext.academicLevel,
+  ]);
   const rows = useMemo(
     () =>
       records
@@ -789,7 +805,9 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
   useEffect(() => setPage(1), [query, rows.length]);
   const applyGroupContext = (group) => {
     if (!group) return;
-    setContext(groupContext(group));
+    // Group metadata may contain a default academic level, but the level is
+    // intentionally a manual filter on this screen.
+    setContext({ ...groupContext(group), academicLevelId: "", academicLevel: "" });
   };
   return (
     <section className="subject-table-card">

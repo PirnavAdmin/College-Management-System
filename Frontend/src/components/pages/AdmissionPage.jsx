@@ -116,6 +116,8 @@ const textMatchesOrLoose = (selected, candidate) => (
   !selected || !candidate || String(candidate).trim().toLowerCase() === String(selected).trim().toLowerCase()
 );
 
+const isPlaceholderOption = (value) => String(value || "").startsWith("__");
+
 function optionLabel(list, value) {
   return list?.find((option) => String(option.value) === String(value))?.label || "";
 }
@@ -311,7 +313,7 @@ const steps = [
     fields: [
       { name: "level", label: "Academic Level", type: "select", options: options.level, required: true },
       { name: "group", label: "Group", type: "select", options: [], required: true },
-      { name: "section", label: "Section", type: "select", options: [], required: true },
+      { name: "program", label: "Program", type: "select", options: [], required: true },
       { name: "medium", label: "Medium", type: "select", options: ["English", "Telugu", "Hindi"] },
       { name: "secondLanguage", label: "Second Language", type: "select", options: ["Sanskrit", "Telugu", "Hindi", "French"] },
     ],
@@ -395,7 +397,7 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "AcademicLevelId", values.level);
   appendIfPresent(formData, "AcademicLevel", values.levelName || values.level);
   appendIfPresent(formData, "GroupId", values.group);
-  appendIfPresent(formData, "SectionId", values.section);
+  appendIfPresent(formData, "ProgramId", values.program);
   appendIfPresent(formData, "Medium", values.medium);
   appendIfPresent(formData, "SecondLanguage", values.secondLanguage);
   appendIfPresent(formData, "AdmissionType", values.admissionType);
@@ -567,7 +569,8 @@ const valuesToAdmissionRecord = (values, {
     academicYear: values.year || "",
     board: values.board || "",
     group: values.groupName || values.group || "",
-    section: values.sectionName || values.section || "",
+    program: values.programName || values.program || "",
+    section: values.sectionName || values.section || values.programName || values.program || "",
     status: normalizeAdmissionStatus(status),
     currentStep: safeStepIndex(currentStep),
     source,
@@ -607,6 +610,7 @@ const normalizeAdmissionRow = (item) => {
       firstName,
       lastName,
       group: readText(item, "groupId", "GroupId", "group", "Group", "groupName", "GroupName"),
+      program: readText(item, "programId", "ProgramId", "program", "Program", "programName", "ProgramName"),
       section: readText(item, "sectionId", "SectionId", "section", "Section", "sectionName", "SectionName"),
       level: readText(item, "academicLevel", "AcademicLevel", "level", "Level"),
       rollNumber: readText(item, "rollNo", "RollNo", "rollNumber", "RollNumber"),
@@ -614,16 +618,16 @@ const normalizeAdmissionRow = (item) => {
   };
 };
 
-// Derives every fee number from Group + Section + the chosen payment plan.
+// Derives every fee number from Group + Program + the chosen payment plan.
 const deriveAdmissionFee = (values) => {
   const groupForFee = values.groupName || values.group;
-  const sectionForFee = values.sectionName || values.section;
-  const snapshot = groupForFee && sectionForFee
-    ? feeSnapshot(values.year || undefined, groupForFee, sectionForFee)
-    : { admissionFee: ADMISSION_FEE, courseFee: courseFeeFor(groupForFee, sectionForFee) };
+  const programForFee = values.programName || values.program;
+  const snapshot = groupForFee && programForFee
+    ? feeSnapshot(values.year || undefined, groupForFee, programForFee)
+    : { admissionFee: ADMISSION_FEE, courseFee: courseFeeFor(groupForFee, programForFee) };
   const baseItems = Array.isArray(values.feeItems) && values.feeItems.length
     ? values.feeItems
-    : feeItemsForStructure(snapshot, groupForFee, sectionForFee);
+    : feeItemsForStructure(snapshot, groupForFee, programForFee);
   const feeItems = baseItems.map((item, index) => {
     const originalAmount = Number(item.originalAmount ?? item.amount ?? 0);
     return {
@@ -677,8 +681,8 @@ const deriveAdmissionFee = (values) => {
 
 const feeStepErrors = (values) => {
   const next = {};
-  if (!values.group || !values.section) {
-    next.feeStructure = "Group and Section are required in Academic Details before the fee can be calculated";
+  if (!values.group || !values.program) {
+    next.feeStructure = "Group and Program are required in Academic Details before the fee can be calculated";
     return next;
   }
   const fee = deriveAdmissionFee(values);
@@ -939,7 +943,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
 }
 
 function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, onPlanChange, onInstallmentCountChange }) {
-  const hasStructure = Boolean(values.group && values.section);
+  const hasStructure = Boolean(values.group && values.program);
   const isInstallment = values.paymentPlan === "Installment Payment";
   const schedule = fee.schedule;
 
@@ -957,7 +961,7 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
       {!hasStructure ? (
         <section className="cms-fee-block">
           <p className="cms-fee-empty">
-            Select Group and Section in Academic Details to load the applicable fee structure.
+            Select Group and Program in Academic Details to load the applicable fee structure.
           </p>
           {errors.feeStructure ? <span className="cms-error">{errors.feeStructure}</span> : null}
         </section>
@@ -1098,7 +1102,7 @@ function FeePreview({ fee, values }) {
     <div className="cms-fee-preview">
       <div className="cms-fee-kv-grid">
         <div><span>Group</span><strong>{values.group || "Not provided"}</strong></div>
-        <div><span>Section</span><strong>{values.section || "Not provided"}</strong></div>
+        <div><span>Program</span><strong>{values.programName || values.program || "Not provided"}</strong></div>
         <div><span>Total Selected Fees</span><strong>{formatCurrency(fee.originalTotal)}</strong></div>
         <div><span>Scheme</span><strong>{fee.concessionName || "No concession"}</strong></div>
         <div><span>Concession</span><strong>{formatCurrency(fee.concessionTotal)}</strong></div>
@@ -1149,13 +1153,13 @@ export default function AdmissionPage() {
   const [admissions, setAdmissions] = useState([]);
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ year: "", group: "", section: "", status: "" });
+  const [filters, setFilters] = useState({ year: "", group: "", program: "", status: "" });
   const [page, setPage] = useState(1);
   const [approveTarget, setApproveTarget] = useState(null);
   const [rejectTarget, setRejectTarget] = useState(null);
   const [actionBusy, setActionBusy] = useState("");
   const [masterOptions, setMasterOptions] = useState({});
-  const [masterStatus, setMasterStatus] = useState({ groupsLoading: false, groupsError: "", sectionsError: "" });
+  const [masterStatus, setMasterStatus] = useState({ groupsLoading: false, groupsError: "", sectionsError: "", programsLoading: false, programsError: "" });
   const [admissionNumberLoading, setAdmissionNumberLoading] = useState(false);
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [feeSelection, setFeeSelection] = useState(initialDraft.feeSelection);
@@ -1167,6 +1171,7 @@ export default function AdmissionPage() {
   const feeSelectionInitializedRef = useRef(initialDraft.hasFeeSelection);
   const generateAdmissionNumberRef = useRef(false);
   const pincodeRequestRef = useRef(0);
+  const programRequestRef = useRef(0);
   const autoLocationRef = useRef({ city: "", district: "", state: "" });
 
   const current = allSteps[step];
@@ -1192,6 +1197,7 @@ export default function AdmissionPage() {
       && (!values.board || idsMatchOrLoose(values.board, item.boardId) || textMatchesOrLoose(selectedBoardName, item.boardName))
     ));
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
+  const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
   const enhanceField = (field) => {
     if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
     if (field.name === "year" && masterOptions.years?.length) return { ...field, options: masterOptions.years };
@@ -1204,6 +1210,12 @@ export default function AdmissionPage() {
     if (field.name === "section") {
       if (masterStatus.sectionsError) return { ...field, options: [{ value: "__sections_error", label: "Unable to load sections. Please try again.", disabled: true }] };
       return { ...field, options: sectionOptions.length ? sectionOptions : [{ value: "__no_sections", label: "No sections available", disabled: true }] };
+    }
+    if (field.name === "program") {
+      if (!values.group) return { ...field, options: [{ value: "__select_group", label: "Select Group first", disabled: true }] };
+      if (masterStatus.programsLoading) return { ...field, options: [{ value: "__loading_programs", label: "Loading programs...", disabled: true }] };
+      if (masterStatus.programsError) return { ...field, options: [{ value: "__programs_error", label: "Unable to load programs. Please try again.", disabled: true }] };
+      return { ...field, options: programOptions.length ? programOptions : [{ value: "__no_programs", label: "No programs available", disabled: true }] };
     }
     if (field.name === "bloodGroup" && masterOptions.bloodGroups?.length) return { ...field, options: masterOptions.bloodGroups };
     return field;
@@ -1235,11 +1247,12 @@ export default function AdmissionPage() {
         || row.admissionNo.toLowerCase().includes(term);
       const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
       const matchesGroup = !filters.group || String(row.group) === String(filters.group);
-      const matchesSection = !filters.section || String(row.section) === String(filters.section);
+      const rowProgram = row.program || row.section;
+      const matchesProgram = !filters.program || String(rowProgram) === String(filters.program);
       const matchesStatus = !filters.status || row.status === filters.status;
-      return matchesSearch && matchesYear && matchesGroup && matchesSection && matchesStatus;
+      return matchesSearch && matchesYear && matchesGroup && matchesProgram && matchesStatus;
     });
-  }, [admissionRows, filters.group, filters.section, filters.status, filters.year, search]);
+  }, [admissionRows, filters.group, filters.program, filters.status, filters.year, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1291,7 +1304,7 @@ export default function AdmissionPage() {
   // Keeps the fee step consistent: default plan, and an installment schedule
   // that always matches the applicable course fee.
   useEffect(() => {
-    if (!values.group || !values.section) return;
+    if (!values.group || !values.program) return;
     const finalPayable = deriveAdmissionFee(values).totalPayable;
     setValues((current) => {
       const next = { ...current };
@@ -1472,6 +1485,50 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
+    const groupId = values.group;
+    const requestId = programRequestRef.current + 1;
+    programRequestRef.current = requestId;
+    setMasterOptions((current) => ({ ...current, programs: [] }));
+    setMasterStatus((current) => ({ ...current, programsError: "" }));
+    if (!groupId) {
+      setMasterStatus((current) => ({ ...current, programsLoading: false }));
+      return undefined;
+    }
+    setMasterStatus((current) => ({ ...current, programsLoading: true }));
+    apiClient.get(apiEndpoints.programs.byGroup(groupId))
+      .then((response) => {
+        if (programRequestRef.current !== requestId) return;
+        const programs = getCollection(response.data)
+          .map((item) => toOption(item, ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"]))
+          .filter(Boolean);
+        setMasterOptions((current) => ({ ...current, programs }));
+        setValues((current) => {
+          if (String(current.group) !== String(groupId)) return current;
+          const selectedProgram = programs.find((item) => item.value === String(current.program));
+          if (selectedProgram) return { ...current, programName: selectedProgram.label };
+          return {
+            ...current,
+            program: programs[0]?.value || "",
+            programName: programs[0]?.label || "",
+            feeItems: [],
+            installments: [],
+          };
+        });
+      })
+      .catch((err) => {
+        if (programRequestRef.current !== requestId) return;
+        setMasterStatus((current) => ({ ...current, programsError: getApiErrorMessage(err) }));
+      })
+      .finally(() => {
+        if (programRequestRef.current === requestId) {
+          setMasterStatus((current) => ({ ...current, programsLoading: false }));
+        }
+      });
+    return undefined;
+  }, [values.group, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "form") return undefined;
     const pincode = String(values.pincode || "").trim();
     if (!/^[0-9]{6}$/.test(pincode)) {
       pincodeRequestRef.current += 1;
@@ -1567,13 +1624,18 @@ export default function AdmissionPage() {
     const optionsFromRows = (masterOptions.groups || []).map((item) => ({ value: item.label, label: item.label }));
     return Array.from(new Map(optionsFromRows.filter((item) => item.value).map((item) => [item.value, item])).values());
   }, [masterOptions.groups]);
-  const sectionFilterOptions = useMemo(() => {
-    const rows = masterOptions.sections || [];
+  const programFilterOptions = useMemo(() => {
     const filteredRows = filters.group
-      ? rows.filter((item) => item.groupName === filters.group || item.groupId === filters.group)
-      : rows;
-    return Array.from(new Map(filteredRows.map((item) => ({ value: item.label, label: item.label })).filter((item) => item.value).map((item) => [item.value, item])).values());
-  }, [filters.group, masterOptions.sections]);
+      ? admissionRows.filter((item) => String(item.group) === String(filters.group))
+      : admissionRows;
+    return Array.from(new Map(filteredRows
+      .map((item) => {
+        const value = item.program || item.section;
+        return value ? { value, label: value } : null;
+      })
+      .filter(Boolean)
+      .map((item) => [item.value, item])).values());
+  }, [admissionRows, filters.group]);
 
   const feeContext = [
     { label: "Student", value: [values.firstName, values.lastName].filter(Boolean).join(" ") },
@@ -1581,11 +1643,12 @@ export default function AdmissionPage() {
     { label: "Academic Year", value: optionLabel(masterOptions.years, values.year) || values.year },
     { label: "Academic Level", value: optionLabel(masterOptions.levels, values.level) || values.levelName || values.level },
     { label: "Group", value: values.groupName || optionLabel(masterOptions.groups, values.group) || values.group },
-    { label: "Section", value: values.sectionName || optionLabel(masterOptions.sections, values.section) || values.section },
+    { label: "Program", value: values.programName || optionLabel(programOptions, values.program) || values.program },
   ];
 
   const setValue = (name, val) => {
     const field = fieldByName[name] || {};
+    if (isPlaceholderOption(val)) return;
     if (name === "feeItems") {
       setValues((v) => ({ ...v, feeItems: val, installments: v.paymentPlan === "Installment Payment"
         ? buildInstallmentSchedule(deriveAdmissionFee({ ...v, feeItems: val }).totalPayable, Number(v.installmentCount) || DEFAULT_INSTALLMENT_COUNT, v.admissionDate || todayISO())
@@ -1610,7 +1673,7 @@ export default function AdmissionPage() {
       setErrors((e) => ({ ...e, [name]: undefined, installments: undefined }));
       return;
     }
-    if (["board", "year", "level", "group", "section"].includes(name)) {
+    if (["board", "year", "level", "group", "program"].includes(name)) {
       feeSelectionInitializedRef.current = false;
       setFeeSelection([]);
     }
@@ -1623,12 +1686,12 @@ export default function AdmissionPage() {
         ...(labelKey ? { [labelKey]: labelValue } : {}),
         group: "",
         groupName: "",
-        section: "",
-        sectionName: "",
+        program: "",
+        programName: "",
         feeItems: [],
         installments: [],
       }));
-      setErrors((e) => ({ ...e, [name]: undefined, group: undefined, section: undefined }));
+      setErrors((e) => ({ ...e, [name]: undefined, group: undefined, program: undefined }));
       return;
     }
     if (name === "collectFirstInstallment") {
@@ -1637,22 +1700,22 @@ export default function AdmissionPage() {
       return;
     }
     if (name === "group") {
-      // Section depends on Group: reset the section and the fee schedule.
+      // Program depends on Group: reset the program and the fee schedule.
       setValues((v) => ({
         ...v,
         group: val,
         groupName: optionLabel(groupOptions, val),
-        section: "",
-        sectionName: "",
+        program: "",
+        programName: "",
         feeItems: [],
         installments: [],
       }));
-      setErrors((e) => ({ ...e, group: undefined, section: undefined }));
+      setErrors((e) => ({ ...e, group: undefined, program: undefined }));
       return;
     }
-    if (name === "section") {
-      setValues((v) => ({ ...v, section: val, sectionName: optionLabel(sectionOptions, val), feeItems: [], installments: [] }));
-      setErrors((e) => ({ ...e, section: undefined }));
+    if (name === "program") {
+      setValues((v) => ({ ...v, program: val, programName: optionLabel(programOptions, val), feeItems: [], installments: [] }));
+      setErrors((e) => ({ ...e, program: undefined }));
       return;
     }
     setValues((v) => ({ ...v, [name]: sanitizeValue(field, val) }));
@@ -1689,7 +1752,7 @@ export default function AdmissionPage() {
     const next = {};
     fields.forEach((f) => {
       const val = values[f.name];
-      if (f.required && !String(val ?? "").trim()) next[f.name] = `${f.label} is required`;
+      if (f.required && (!String(val ?? "").trim() || isPlaceholderOption(val))) next[f.name] = `${f.label} is required`;
       else if (f.type === "email" && val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) next[f.name] = "Enter a valid email";
       else if (MOBILE_FIELDS.has(f.name) && val && !/^[0-9]{10}$/.test(String(val))) next[f.name] = "Enter a valid 10 digit number";
       else if (f.name === "aadhaar" && val && !/^[0-9]{12}$/.test(String(val))) next[f.name] = "Enter a valid 12 digit Aadhaar number";
@@ -1880,7 +1943,8 @@ export default function AdmissionPage() {
       academicYear: optionLabel(masterOptions.years, values.year) || values.year,
       academicLevel: values.level,
       group: values.groupName || optionLabel(masterOptions.groups, values.group) || values.group,
-      section: values.sectionName || optionLabel(masterOptions.sections, values.section) || values.section,
+      program: values.programName || optionLabel(programOptions, values.program) || values.program,
+      section: values.programName || optionLabel(programOptions, values.program) || values.program,
       admissionDate: values.admissionDate || todayISO(),
       admissionFee: fee.admissionFee,
       courseFee: fee.courseFee,
@@ -1974,8 +2038,8 @@ export default function AdmissionPage() {
             </div>
             <div className="cms-admission-filters">
               <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || options.year }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
-              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, section: name === "group" ? "" : current.section })); setPage(1); }} />
-              <Field field={{ name: "section", label: "Section", type: "select", options: sectionFilterOptions }} value={filters.section} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, program: name === "group" ? "" : current.program })); setPage(1); }} />
+              <Field field={{ name: "program", label: "Program", type: "select", options: programFilterOptions }} value={filters.program} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
             </div>
           </div>
@@ -1989,8 +2053,8 @@ export default function AdmissionPage() {
                   <th>Admission Date</th>
                   <th>Academic Year</th>
                   <th>Board</th>
-                    <th>Group</th>
-                  <th>Section</th>
+                  <th>Group</th>
+                  <th>Program</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -2006,7 +2070,7 @@ export default function AdmissionPage() {
                     <td>{optionLabel(masterOptions.years, row.academicYear) || row.academicYear || "-"}</td>
                     <td>{optionLabel(masterOptions.boards, row.board) || row.board || "-"}</td>
                     <td>{row.group || "-"}</td>
-                    <td>{row.section || "-"}</td>
+                    <td>{row.program || row.section || "-"}</td>
                     <td><span className={`cms-badge ${admissionStatusClass(row.status)}`}>{row.status}</span></td>
                     <td>
                       <div className="cms-actions cms-admission-actions">

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Loader, Toast } from "@/components/common/Ui.jsx";
+import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -16,7 +16,7 @@ const RESULT_API = {
   academicYears: "/api/v1/academic-years/active",
   academicLevels: "/api/v1/boards/academic-levels",
   groupsByBoard: (boardId) => `/api/v1/groups/board/${boardId}`,
-  programsByGroup: (groupId) => `/api/v1/programs/group/${groupId}`,
+  programsByGroup: (groupId) => `/api/v1/groups/${groupId}/programs`,
   examinations: "/api/v1/examinations",
   generate: "/api/v1/results/generate",
   process: "/api/v1/results/process",
@@ -74,6 +74,10 @@ const normalizeProgram = (item) => ({
   id: Number(item.programId ?? item.id),
   name: item.programName ?? item.name ?? "",
   code: item.programCode ?? item.code ?? "",
+  active:
+    item.isActive === true ||
+    item.status === true ||
+    String(item.status ?? "").toLowerCase() === "active",
 });
 const normalizeExam = (item) => ({
   id: Number(item.examinationId ?? item.id),
@@ -125,7 +129,9 @@ export default function ResultProcessingPage() {
   const [confirm, setConfirm] = useState(null);
   const [analyticsDetail, setAnalyticsDetail] = useState(null);
   const [toast, setToast] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [generatingResults, setGeneratingResults] = useState(false);
+  const [loadingSectionId, setLoadingSectionId] = useState(null);
+  const [loadingStudentId, setLoadingStudentId] = useState(null);
   const [actionLoading, setActionLoading] = useState("");
 
   const toastRef = useRef(null);
@@ -142,7 +148,6 @@ export default function ResultProcessingPage() {
   // Initial Master Data Load
   useEffect(() => {
     let active = true;
-    setLoading(true);
     Promise.allSettled([
       apiClient.get(RESULT_API.boards),
       apiClient.get(RESULT_API.academicYears),
@@ -161,8 +166,7 @@ export default function ResultProcessingPage() {
         if (levelRes.status === "fulfilled")
           setAcademicLevels(masterCollectionFrom(levelRes.value.data).map(normalizeLevel).filter((i) => i.id > 0));
         else showToast(apiError(levelRes.reason), "error");
-      })
-      .finally(() => active && setLoading(false));
+      });
     return () => {
       active = false;
     };
@@ -186,15 +190,12 @@ export default function ResultProcessingPage() {
     setExaminations([]);
     const id = Number(boardId);
     if (!Number.isInteger(id) || id <= 0) return;
-    setLoading(true);
     try {
       const res = await apiClient.get(RESULT_API.groupsByBoard(id));
       if (seq !== requests.current.groups) return;
       setGroups(collectionFrom(res.data).filter(isActive).map(normalizeGroup).filter((i) => i.id > 0));
     } catch (err) {
       if (seq === requests.current.groups) showToast(apiError(err), "error");
-    } finally {
-      if (seq === requests.current.groups) setLoading(false);
     }
   };
 
@@ -204,15 +205,12 @@ export default function ResultProcessingPage() {
     setExaminations([]);
     const id = Number(groupId);
     if (!Number.isInteger(id) || id <= 0) return;
-    setLoading(true);
     try {
       const res = await apiClient.get(RESULT_API.programsByGroup(id));
       if (seq !== requests.current.programs) return;
-      setPrograms(collectionFrom(res.data).map(normalizeProgram).filter((i) => i.id > 0));
+      setPrograms(collectionFrom(res.data).map(normalizeProgram).filter((i) => i.id > 0 && i.name && i.active));
     } catch {
       if (seq === requests.current.programs) showToast("Unable to load programs for the selected group.", "error");
-    } finally {
-      if (seq === requests.current.programs) setLoading(false);
     }
   };
 
@@ -220,7 +218,6 @@ export default function ResultProcessingPage() {
     const seq = ++requests.current.exams;
     setExaminations([]);
     if (![context.board, context.year, context.level, context.group, context.program].every((v) => Number(v) > 0)) return;
-    setLoading(true);
     try {
       const res = await apiClient.get(RESULT_API.examinations, {
         params: {
@@ -236,36 +233,30 @@ export default function ResultProcessingPage() {
       setExaminations(collectionFrom(res.data).map(normalizeExam).filter((i) => i.id > 0));
     } catch (err) {
       if (seq === requests.current.exams) showToast(apiError(err), "error");
-    } finally {
-      if (seq === requests.current.exams) setLoading(false);
     }
   };
 
   const changeFilter = (key, value) => {
-    const order = ["board", "year", "level", "group", "program", "exam"];
-    const next = {
-      ...filters,
-      ...Object.fromEntries(order.slice(order.indexOf(key) + 1).map((item) => [item, ""])),
-      [key]: value,
-    };
-    if (key === "year" || key === "level") {
-      next.group = filters.group;
-      next.program = filters.program;
-    }
+    const next = { ...filters, [key]: value };
+    if (key === "board") Object.assign(next, { group: "", program: "", exam: "" });
+    if (key === "year" || key === "level") next.exam = "";
+    if (key === "group") Object.assign(next, { program: "", exam: "" });
+    if (key === "program") next.exam = "";
     setFilters(next);
     clearResults();
 
     if (key === "board") loadGroups(value);
     if (key === "group") loadPrograms(value);
-    if (key === "program" || ((key === "year" || key === "level") && next.program)) {
+    if (["year", "level", "program"].includes(key) && [next.board, next.year, next.level, next.group, next.program].every((item) => Number(item) > 0)) {
       loadExaminations(next);
     }
   };
 
   const generateResults = async () => {
+    if (generatingResults) return;
     if (!Object.values(filters).every(Boolean)) return showToast("Select all required result filters.", "error");
     const seq = ++requests.current.generate;
-    setLoading(true);
+    setGeneratingResults(true);
     try {
       const payload = {
         boardId: Number(filters.board),
@@ -289,16 +280,17 @@ export default function ResultProcessingPage() {
     } catch (err) {
       if (seq === requests.current.generate) showToast(apiError(err), "error");
     } finally {
-      if (seq === requests.current.generate) setLoading(false);
+      if (seq === requests.current.generate) setGeneratingResults(false);
     }
   };
 
   const loadSectionDetails = async (secId) => {
+    if (loadingSectionId !== null) return;
     const seq = ++requests.current.section;
     setSectionId(secId);
     setSelectedSectionDetails(null);
     setPage(1);
-    setLoading(true);
+    setLoadingSectionId(secId);
     try {
       const res = await apiClient.get(RESULT_API.sectionDetail(secId), {
         params: { examId: Number(applied?.exam) },
@@ -311,16 +303,17 @@ export default function ResultProcessingPage() {
         showToast(apiError(err), "error");
       }
     } finally {
-      if (seq === requests.current.section) setLoading(false);
+      if (seq === requests.current.section) setLoadingSectionId(null);
     }
   };
 
   const loadStudentMemo = async (student) => {
     const sId = typeof student === "object" ? student.studentId : student;
+    if (loadingStudentId !== null) return;
     const seq = ++requests.current.memo;
     setStudentId(sId);
     setSelectedStudentMemo(null);
-    setLoading(true);
+    setLoadingStudentId(sId);
     try {
       let res;
       try {
@@ -336,13 +329,12 @@ export default function ResultProcessingPage() {
         showToast(apiError(err), "error");
       }
     } finally {
-      if (seq === requests.current.memo) setLoading(false);
+      if (seq === requests.current.memo) setLoadingStudentId(null);
     }
   };
 
   const loadRankList = async () => {
     const seq = ++requests.current.rank;
-    setLoading(true);
     try {
       const res = await apiClient.get(RESULT_API.rankList, {
         params: {
@@ -360,14 +352,11 @@ export default function ResultProcessingPage() {
       setRankList(collectionFrom(res.data));
     } catch (err) {
       if (seq === requests.current.rank) showToast(apiError(err), "error");
-    } finally {
-      if (seq === requests.current.rank) setLoading(false);
     }
   };
 
   const loadAnalytics = async () => {
     const seq = ++requests.current.analytics;
-    setLoading(true);
     try {
       const res = await apiClient.get(RESULT_API.analytics, {
         params: {
@@ -383,8 +372,6 @@ export default function ResultProcessingPage() {
       setAnalytics(res.data?.data ?? res.data);
     } catch (err) {
       if (seq === requests.current.analytics) showToast(apiError(err), "error");
-    } finally {
-      if (seq === requests.current.analytics) setLoading(false);
     }
   };
 
@@ -477,13 +464,6 @@ export default function ResultProcessingPage() {
 
   const renderSelectOptions = (items) => items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>);
 
-  if (loading)
-    return (
-      <DashboardLayout title="Results Management" subtitle="Generate, publish and analyze approved examination results" breadcrumb={["Results"]}>
-        <Loader label="Loading examination result data..." />
-      </DashboardLayout>
-    );
-
   return (
     <DashboardLayout title="Results Management" subtitle="Generate, publish and analyze approved examination results" breadcrumb={["Results"]}>
       <div className="results-page">
@@ -491,14 +471,14 @@ export default function ResultProcessingPage() {
 
         <div className="cms-card">
           <div className="cms-card-body">
-            <div className="results-view-tabs">
-              <button className={`cms-btn ${viewMode === "table" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("table"); setStudentId(null); setSelectedStudentMemo(null); }}>
+            <div className="results-view-tabs" role="tablist" aria-label="Results views">
+              <button type="button" role="tab" aria-selected={viewMode === "table"} className={`results-view-tab ${viewMode === "table" ? "results-view-tab-active" : ""}`} onClick={() => { setViewMode("table"); setStudentId(null); setSelectedStudentMemo(null); }}>
                 Results
               </button>
-              <button className={`cms-btn ${viewMode === "rankList" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("rankList"); setStudentId(null); setSelectedStudentMemo(null); }}>
+              <button type="button" role="tab" aria-selected={viewMode === "rankList"} className={`results-view-tab ${viewMode === "rankList" ? "results-view-tab-active" : ""}`} onClick={() => { setViewMode("rankList"); setStudentId(null); setSelectedStudentMemo(null); }}>
                 Rank List
               </button>
-              <button className={`cms-btn ${viewMode === "analytics" ? "cms-btn-primary" : "cms-btn-ghost"}`} onClick={() => { setViewMode("analytics"); setStudentId(null); setSelectedStudentMemo(null); }}>
+              <button type="button" role="tab" aria-selected={viewMode === "analytics"} className={`results-view-tab ${viewMode === "analytics" ? "results-view-tab-active" : ""}`} onClick={() => { setViewMode("analytics"); setStudentId(null); setSelectedStudentMemo(null); }}>
                 Analytics
               </button>
             </div>
@@ -510,13 +490,13 @@ export default function ResultProcessingPage() {
             <div className="cms-card-body">
               <div className="results-filter-grid">
                 <Select label="Board" value={filters.board} onChange={(v) => changeFilter("board", v)}>{renderSelectOptions(boards)}</Select>
-                <Select label="Academic Year" value={filters.year} disabled={!filters.board} onChange={(v) => changeFilter("year", v)}>{renderSelectOptions(academicYears.filter((i) => i.boardId == null || Number(i.boardId) === Number(filters.board)))}</Select>
-                <Select label="Academic Level" value={filters.level} disabled={!filters.year} onChange={(v) => changeFilter("level", v)}>{renderSelectOptions(academicLevels)}</Select>
-                <Select label="Group" value={filters.group} disabled={!filters.level} onChange={(v) => changeFilter("group", v)}>{renderSelectOptions(groups)}</Select>
-                <Select label="Program" value={filters.program} disabled={!filters.group} onChange={(v) => changeFilter("program", v)}>{renderSelectOptions(programs)}</Select>
-                <Select label="Examination" value={filters.exam} disabled={!filters.program} onChange={(v) => changeFilter("exam", v)}>{renderSelectOptions(examinations)}</Select>
-                <button className="cms-btn cms-btn-primary results-generate-btn" onClick={generateResults}>
-                  Generate Results
+                <Select label="Academic Year" value={filters.year} onChange={(v) => changeFilter("year", v)}>{renderSelectOptions(academicYears.filter((i) => i.boardId == null || Number(i.boardId) === Number(filters.board)))}</Select>
+                <Select label="Academic Level" value={filters.level} onChange={(v) => changeFilter("level", v)}>{renderSelectOptions(academicLevels)}</Select>
+                <Select label="Group" value={filters.group} onChange={(v) => changeFilter("group", v)}>{renderSelectOptions(groups)}</Select>
+                <Select label="Program" value={filters.program} onChange={(v) => changeFilter("program", v)}>{renderSelectOptions(programs)}</Select>
+                <Select label="Examination" value={filters.exam} onChange={(v) => changeFilter("exam", v)}>{renderSelectOptions(examinations)}</Select>
+                <button className="cms-btn cms-btn-primary results-generate-btn" disabled={generatingResults} onClick={generateResults}>
+                  {generatingResults ? "Generating..." : "Generate Results"}
                 </button>
               </div>
             </div>
@@ -538,6 +518,7 @@ export default function ResultProcessingPage() {
               setPage={setPage}
               onBack={() => { setSectionId(null); setSelectedSectionDetails(null); setPage(1); }}
               onStudent={loadStudentMemo}
+              loadingStudentId={loadingStudentId}
               onExcel={() => exportExcel(rawStudents, `${currentExam?.name || "Results"}-${selectedSectionDetails.sectionName || "Section"}`)}
               onPdf={() => exportPdf(rawStudents, `${currentExam?.name || "Results"}-${selectedSectionDetails.sectionName || "Section"}`)}
             />
@@ -548,6 +529,7 @@ export default function ResultProcessingPage() {
               query={query}
               setQuery={setQuery}
               onView={(id) => loadSectionDetails(id)}
+              loadingSectionId={loadingSectionId}
               onPublish={publishSection}
               onGroup={publishGroup}
               onExcel={() => exportExcel(sectionSummaries.flatMap((s) => s.studentRows || []), `${currentExam?.name || "Results"}-Group`)}
@@ -570,6 +552,9 @@ export default function ResultProcessingPage() {
             programs={programs}
             examinations={examinations}
             onStudent={loadStudentMemo}
+            loadingStudentId={loadingStudentId}
+            onGroupChange={loadPrograms}
+            onProgramChange={(next) => loadExaminations({ board: applied?.board, year: applied?.year, level: applied?.level, group: next.group, program: next.program })}
             onExport={() => exportExcel(rankList, "Rank-List")}
           />
         )}
@@ -588,11 +573,11 @@ export default function ResultProcessingPage() {
   );
 }
 
-function Select({ label, value, disabled, onChange, children }) {
+function Select({ label, value, disabled, onChange, children, showLabel = true }) {
   return (
     <div className="cms-field-group">
-      <label className="cms-label">{label}</label>
-      <select className="cms-select" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      {showLabel && <label className="cms-label">{label}</label>}
+      <select className="cms-select" value={value} disabled={disabled} aria-label={label} onChange={(e) => onChange(e.target.value)}>
         <option value="">Select {label}</option>
         {children}
       </select>
@@ -600,7 +585,7 @@ function Select({ label, value, disabled, onChange, children }) {
   );
 }
 
-function Sections({ summaries, exam, query, setQuery, onView, onPublish, onGroup, onExcel, onPdf }) {
+function Sections({ summaries, exam, query, setQuery, onView, loadingSectionId, onPublish, onGroup, onExcel, onPdf }) {
   return (
     <div className="cms-card">
       <div className="cms-card-body">
@@ -653,7 +638,7 @@ function Sections({ summaries, exam, query, setQuery, onView, onPublish, onGroup
                       <td className="cms-text-center"><Badge value={status} /></td>
                       <td className="cms-text-center">
                         <div className="results-actions">
-                          <button className="results-action-btn" title="View Section" aria-label="View Section" onClick={() => onView(secId)}>
+                          <button className="results-action-btn" title="View Section" aria-label="View Section" disabled={loadingSectionId === secId} onClick={() => onView(secId)}>
                             <Eye size={15} />
                           </button>
                           {status === "GENERATED" && (
@@ -679,7 +664,7 @@ function Sections({ summaries, exam, query, setQuery, onView, onPublish, onGroup
   );
 }
 
-function SectionView({ details, exam, rows, query, setQuery, page, pages, setPage, onBack, onStudent, onExcel, onPdf }) {
+function SectionView({ details, exam, rows, query, setQuery, page, pages, setPage, onBack, onStudent, loadingStudentId, onExcel, onPdf }) {
   const subjects = details?.subjectDefinitions ?? [];
   return (
     <div className="cms-card results-section-detail">
@@ -737,7 +722,7 @@ function SectionView({ details, exam, rows, query, setQuery, page, pages, setPag
                     <td className="cms-text-center"><Badge value={item.status || details?.resultStatus} /></td>
                     <td className="cms-text-center">
                       <div className="results-actions">
-                        <button className="results-action-btn" title="View Student" aria-label="View Student" onClick={() => onStudent(item)}>
+                        <button className="results-action-btn" title="View Student" aria-label="View Student" disabled={loadingStudentId === item.studentId} onClick={() => onStudent(item)}>
                           <Eye size={15} />
                         </button>
                       </div>
@@ -835,38 +820,37 @@ function Memo({ student, exam, onBack }) {
   );
 }
 
-function RankList({ rows, filters, setFilters, search, setSearch, page, pages, setPage, groups, programs, examinations, onStudent, onExport }) {
-  const update = (key, val) =>
-    setFilters({
+function RankList({ rows, filters, setFilters, search, setSearch, page, pages, setPage, groups, programs, examinations, onStudent, loadingStudentId, onGroupChange, onProgramChange, onExport }) {
+  const update = (key, val) => {
+    const next = {
       ...filters,
       [key]: val,
       ...(key === "group" ? { program: "", section: "", exam: "" } : key === "program" ? { section: "", exam: "" } : {}),
-    });
+    };
+    setFilters(next);
+    if (key === "group") onGroupChange(val);
+    if (key === "program") onProgramChange(next);
+  };
 
   return (
-    <div className="cms-card">
-      <div className="cms-card-body">
-        <div className="results-rank-filters">
-          <Select label="Group" value={filters.group} onChange={(v) => update("group", v)}>
-            <option value="">All Groups</option>
-            {groups.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </Select>
-          <Select label="Program" value={filters.program} disabled={!filters.group} onChange={(v) => update("program", v)}>
-            {programs.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </Select>
-          <Select label="Examination" value={filters.exam} disabled={!filters.program} onChange={(v) => update("exam", v)}>
-            {examinations.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </Select>
-        </div>
-        <div className="results-table-toolbar">
-          <div className="results-table-search">
+    <div className="cms-card results-rank-card">
+        <div className="results-rank-toolbar">
+          <div className="results-rank-search">
             <input className="cms-input" placeholder="Search student or roll..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <div className="results-table-actions">
-            <button className="cms-btn cms-btn-ghost" onClick={onExport}>Export Rank List</button>
-          </div>
+          <Select label="Group" showLabel={false} value={filters.group} onChange={(v) => update("group", v)}>
+            {groups.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+          <Select label="Program" showLabel={false} value={filters.program} onChange={(v) => update("program", v)}>
+            {programs.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+          <Select label="Examination" showLabel={false} value={filters.exam} onChange={(v) => update("exam", v)}>
+            {examinations.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </Select>
+          <div className="results-rank-toolbar-spacer" />
+          <button className="cms-btn cms-btn-ghost" onClick={onExport}>Export Rank List</button>
         </div>
-        <div className="cms-table-wrap">
+        <div className="cms-table-wrap results-rank-table-wrap">
           <table className="cms-table">
             <thead>
               <tr>
@@ -899,7 +883,7 @@ function RankList({ rows, filters, setFilters, search, setSearch, page, pages, s
                     <td className="cms-text-center">{item.result}</td>
                     <td className="cms-text-center">
                       <div className="results-actions">
-                        <button className="results-action-btn" title="View Student" aria-label="View Student" onClick={() => onStudent(item)}>
+                        <button className="results-action-btn" title="View Student" aria-label="View Student" disabled={loadingStudentId === item.studentId} onClick={() => onStudent(item)}>
                           <Eye size={15} />
                         </button>
                       </div>
@@ -915,7 +899,6 @@ function RankList({ rows, filters, setFilters, search, setSearch, page, pages, s
           </table>
         </div>
         <Pagination page={page} pages={pages} setPage={setPage} />
-      </div>
     </div>
   );
 }

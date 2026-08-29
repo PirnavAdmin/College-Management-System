@@ -15,7 +15,18 @@ const STATUS = [
 const TODAY = new Date().toISOString().slice(0, 10);
 const MORNING_SESSION = "__morning_session__";
 const AFTERNOON_SESSION = "__afternoon_session__";
-const list = (x) => (Array.isArray(x) ? x : (x?.data ?? x?.items ?? x?.result ?? x?.results ?? []));
+const list = (x) => {
+  if (Array.isArray(x)) return x;
+  if (!x || typeof x !== "object") return [];
+  for (const key of ["data", "items", "result", "results", "records", "value", "$values"]) {
+    if (Array.isArray(x[key])) return x[key];
+    if (x[key] && typeof x[key] === "object") {
+      const nested = list(x[key]);
+      if (nested.length) return nested;
+    }
+  }
+  return [];
+};
 const val = (x, ...keys) => keys.map((k) => x?.[k]).find((v) => v !== undefined && v !== null);
 const status = (x) =>
   STATUS.find(
@@ -36,6 +47,9 @@ const activeYearsForBoard = (data, boardId) =>
     ["academicYearName", "yearName", "name", "Name"],
   );
 const levelsForBoard = (levels, board) => {
+  // The Academic Levels endpoint is the authoritative active-level catalogue;
+  // expose the complete list for manual selection after a board is chosen.
+  if (levels?.length) return levels;
   const ids = board?.academicLevelIds ?? board?.AcademicLevelIds ?? [];
   const names = board?.academicLevelNames ?? board?.AcademicLevelNames ?? board?.academicLevels ?? board?.AcademicLevels ?? [];
   const idSet = new Set((Array.isArray(ids) ? ids : []).map(String));
@@ -138,6 +152,7 @@ function StudentMark({ say }) {
       academicYearId: "",
       academicLevelId: "",
       groupId: "",
+      programId: "",
       sectionId: "",
       subjectId: "",
       periodId: "",
@@ -166,6 +181,15 @@ function StudentMark({ say }) {
       return [{ id, name: subjectName ? `${periodName} — ${subjectName}` : periodName }];
     });
   }, [f.subjectId, m.periods, m.sectionTimetable]);
+  const programOptions = useMemo(() => {
+    const group = m.groups.find((item) => item.id === String(f.groupId));
+    return toOptions(group?.raw?.programs ?? group?.raw?.Programs ?? [], ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name"]);
+  }, [f.groupId, m.groups]);
+  useEffect(() => {
+    if (!f.groupId || f.programId || !programOptions.length) return;
+    const regular = programOptions.find((program) => /regular/i.test(program.name));
+    setF((current) => ({ ...current, programId: (regular || programOptions[0]).id, sectionId: "" }));
+  }, [f.groupId, f.programId, programOptions]);
   const attendancePeriodOptions = useMemo(() => {
     const scheduledIds = new Set(periodOptions.map((period) => period.id));
     return [
@@ -217,11 +241,13 @@ function StudentMark({ say }) {
         return {
           ...c,
           groupId: value,
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
           sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "",
         };
+      if (k === "programId") return { ...c, programId: value, sectionId: "", subjectId: "", periodId: "" };
       if (k === "sectionId")
         return { ...c, sectionId: value, subjectId: "", periodId: "", sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "" };
       if (k === "subjectId") return { ...c, subjectId: value, periodId: "", periodFacultyId: "", periodFacultyName: "" };
@@ -328,7 +354,7 @@ function StudentMark({ say }) {
     }
     let active = true;
     Promise.allSettled([
-      apiClient.get(apiEndpoints.sections.byGroup(f.groupId)),
+      apiClient.get(apiEndpoints.sections.list, { params: { GroupId: f.groupId } }),
       apiClient.get(apiEndpoints.subjects.context, {
         params: { boardId: f.boardId, groupId: f.groupId, academicLevelId: f.academicLevelId },
       }),
@@ -338,7 +364,11 @@ function StudentMark({ say }) {
         ...c,
         sections:
           r[0].status === "fulfilled"
-            ? toOptions(r[0].value.data, ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? toOptions((() => {
+                const all = list(r[0].value.data);
+                const hasProgram = all.some((section) => val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== undefined && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== null && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== "");
+                return !f.programId || !hasProgram ? all : all.filter((section) => String(val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId")) === String(f.programId));
+              })(), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
             : [],
         subjects:
           r[1].status === "fulfilled"
@@ -348,7 +378,7 @@ function StudentMark({ say }) {
       setF((c) => ({ ...c, sectionId: "", subjectId: "", periodId: "", sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "" }));
     });
     return () => { active = false; };
-  }, [f.boardId, f.academicLevelId, f.groupId]);
+  }, [f.boardId, f.academicLevelId, f.groupId, f.programId]);
   useEffect(() => {
     if (!f.groupId || !f.sectionId) {
       setM((c) => ({ ...c, sectionTimetable: [] }));
@@ -473,20 +503,23 @@ function StudentMark({ say }) {
     return () => { active = false; };
   }, [f.date, f.groupId, f.sectionId, f.periodId]);
   const load = async () => {
-    if ([f.academicYearId, f.academicLevelId, f.groupId, f.sectionId, f.subjectId, f.periodId].some((v) => !v))
+    if ([f.academicYearId, f.academicLevelId, f.groupId, f.programId, f.sectionId, f.subjectId, f.periodId].some((v) => !v))
       return say("Select all attendance fields.");
     if ([MORNING_SESSION, AFTERNOON_SESSION].includes(f.periodId))
       return say("Select a scheduled subject period to load attendance records.");
     setLoading(true);
     try {
-      const r = await apiClient.post(apiEndpoints.attendance.students, {
-        attendanceDate: f.date,
+      const r = await apiClient.get(apiEndpoints.attendance.studentsForAttendance, { params: {
+        date: f.date,
+        boardId: +f.boardId,
         academicYearId: +f.academicYearId,
+        academicLevelId: +f.academicLevelId,
         groupId: +f.groupId,
+        programId: +f.programId,
         sectionId: +f.sectionId,
         subjectId: +f.subjectId,
         periodId: +f.periodId,
-      });
+      } });
       setRows(
         list(r.data)
           .map(student)
@@ -505,6 +538,7 @@ function StudentMark({ say }) {
         attendanceDate: f.date,
         academicYearId: +f.academicYearId,
         academicLevelId: +f.academicLevelId,
+        programId: +f.programId,
         groupId: +f.groupId,
         sectionId: +f.sectionId,
         subjectId: +f.subjectId,
@@ -551,6 +585,7 @@ function StudentMark({ say }) {
               disabled={!f.boardId || !f.academicYearId || levelLoading}
             />
             <Select l="Group" v={f.groupId} on={change("groupId")} o={m.groups} empty="All groups" />
+            <Select l="Program" v={f.programId} on={change("programId")} o={programOptions} empty="All programs" disabled={!f.groupId} />
             <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" />
             <Select l="Subject" v={f.subjectId} on={change("subjectId")} o={m.subjects} empty="All subjects" />
             <Select
@@ -1074,6 +1109,7 @@ function Reports({ staffMode, say }) {
       year: "",
       level: "",
       group: "",
+      program: "",
       section: "",
       subject: "",
       period: "",
@@ -1103,7 +1139,8 @@ function Reports({ staffMode, say }) {
       if (k === "level")
         return { ...x, level: value, group: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "group")
-        return { ...x, group: value, section: "", subject: "", period: "", teacher: "" };
+        return { ...x, group: value, program: "", section: "", subject: "", period: "", teacher: "" };
+      if (k === "program") return { ...x, program: value, section: "", subject: "", period: "", teacher: "" };
       if (k === "section") return { ...x, section: value, subject: "", period: "", teacher: "" };
       return { ...x, [k]: value };
     });
@@ -1203,7 +1240,7 @@ function Reports({ staffMode, say }) {
     }
     let active = true;
     Promise.allSettled([
-      apiClient.get(apiEndpoints.sections.byGroup(f.group)),
+      apiClient.get(apiEndpoints.sections.list, { params: { GroupId: f.group } }),
       apiClient.get(apiEndpoints.subjects.context, {
         params: { boardId: f.board, groupId: f.group, academicLevelId: f.level },
       }),
@@ -1213,7 +1250,11 @@ function Reports({ staffMode, say }) {
         ...x,
         sections:
           r[0].status === "fulfilled"
-            ? toOptions(r[0].value.data, ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? toOptions((() => {
+                const all = list(r[0].value.data);
+                const hasProgram = all.some((section) => val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== undefined && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== null && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== "");
+                return !f.program || !hasProgram ? all : all.filter((section) => String(val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId")) === String(f.program));
+              })(), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
             : [],
         subjects:
           r[1].status === "fulfilled"
@@ -1222,7 +1263,11 @@ function Reports({ staffMode, say }) {
       }));
     });
     return () => { active = false; };
-  }, [f.board, f.level, f.group]);
+  }, [f.board, f.level, f.group, f.program]);
+  const programOptions = useMemo(() => {
+    const group = m.groups.find((item) => item.id === String(f.group));
+    return toOptions(group?.raw?.programs ?? group?.raw?.Programs ?? [], ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name"]);
+  }, [f.group, m.groups]);
   const load = async () => {
     setLoading(true);
     try {
@@ -1235,6 +1280,7 @@ function Reports({ staffMode, say }) {
           : {
               date: f.date,
               groupId: f.group ? +f.group : null,
+              programId: f.program ? +f.program : null,
               sectionId: f.section ? +f.section : null,
             },
       );
@@ -1266,6 +1312,7 @@ function Reports({ staffMode, say }) {
               />
               <Select l="Academic Level" v={f.level} on={change("level")} o={m.levels} empty={levelLoading ? "Loading..." : "All levels"} disabled={!f.board || !f.year || levelLoading} />
               <Select l="Group" v={f.group} on={change("group")} o={m.groups} empty="All groups" />
+              <Select l="Program" v={f.program} on={change("program")} o={programOptions} empty="All programs" disabled={!f.group} />
               <Select
                 l="Section"
                 v={f.section}

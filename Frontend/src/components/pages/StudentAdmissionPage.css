@@ -308,6 +308,27 @@
 .cms-fee-summary { display: grid; gap: 6px; max-width: 380px; font-size: 13px; }
 .cms-fee-summary > div { display: flex; justify-content: space-between; gap: 16px; }
 .cms-fee-summary > div.is-total { border-top: 1px solid var(--cms-border); padding-top: 6px; font-weight: 600; }
+.cms-fee-readonly-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cms-fee-readonly-field span {
+  color: var(--cms-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cms-fee-readonly-field strong {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--cms-border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--cms-surface-muted, var(--cms-surface));
+  color: var(--cms-text);
+  font-size: 13.5px;
+}
 
 /* Step 8 - redesigned fee layout */
 .cms-fee-cards {

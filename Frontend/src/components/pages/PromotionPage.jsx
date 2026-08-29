@@ -7,18 +7,15 @@ import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./PromotionPage.css";
 
-const MOCK_MASTERS = { years: [{ value: "1", label: "2025-2026" }, { value: "2", label: "2026-2027" }], boards: [{ value: "1", label: "State Board" }], levels: [{ value: "Intermediate 1st Year", label: "Intermediate 1st Year" }, { value: "Intermediate 2nd Year", label: "Intermediate 2nd Year" }], groups: [{ value: "1", label: "MPC", board: "1", level: "Intermediate 1st Year", year: "1" }, { value: "2", label: "BiPC", board: "1", level: "Intermediate 1st Year", year: "1" }], sections: [{ value: "A", label: "A", group: "1", level: "Intermediate 1st Year", medium: "English" }, { value: "B", label: "B", group: "1", level: "Intermediate 1st Year", medium: "English" }, { value: "A", label: "A", group: "1", level: "Intermediate 2nd Year", medium: "English" }, { value: "B", label: "B", group: "1", level: "Intermediate 2nd Year", medium: "English" }] };
-const MOCK_STUDENTS = [{ id: 101, admissionNo: "ADM001", name: "Rahul Kumar", academicYear: "2025-2026", board: "State Board", level: "Intermediate 1st Year", group: "MPC", section: "A", medium: "English", eligibility: "Eligible", eligibleFlag: true, reason: "", attendance: "86%", result: "Pass", backlogs: 0 }, { id: 102, admissionNo: "ADM002", name: "Ravi Teja", academicYear: "2025-2026", board: "State Board", level: "Intermediate 1st Year", group: "MPC", section: "A", medium: "English", eligibility: "Not Eligible", eligibleFlag: false, reason: "Low attendance: 62%", attendance: "62%", result: "Pass", backlogs: 0 }, { id: 103, admissionNo: "ADM003", name: "Sana Fatima", academicYear: "2025-2026", board: "State Board", level: "Intermediate 1st Year", group: "MPC", section: "A", medium: "English", eligibility: "Eligible", eligibleFlag: true, reason: "", attendance: "91%", result: "Pass", backlogs: 0 }];
-const MOCK_HISTORY = [{ id: 1, student: "Arjun Kumar", admissionNo: "ADM090", sourceYear: "2025-2026", sourceLevel: "Intermediate 1st Year", sourceGroup: "MPC", sourceSection: "A", targetYear: "2026-2027", targetLevel: "Intermediate 2nd Year", targetGroup: "MPC", targetSection: "A", date: "2026-08-25", status: "Promoted", promotedBy: "Admin", canRollback: true }];
 
 const EMPTY_SETUP = {
-  fromYear: "", board: "", fromLevel: "", group: "", fromSection: "",
-  toYear: "", toBoard: "", toLevel: "", toGroup: "", toSection: "",
+  fromYear: "", board: "", fromLevel: "", group: "", program: "", fromSection: "",
+  toYear: "", toBoard: "", toLevel: "", toGroup: "", toProgram: "", toSection: "",
 };
 
 const EMPTY_HISTORY_FILTERS = {
   academicYearId: "", academicLevel: "",
-  groupId: "", section: "", studentId: "", search: "", promotionStatus: "", fromDate: "", toDate: "",
+  groupId: "", programId: "", section: "", studentId: "", search: "", promotionStatus: "", fromDate: "", toDate: "",
 };
 
 const read = (item, ...keys) => {
@@ -150,16 +147,64 @@ export default function PromotionPage({ screen = "promotion" }) {
       const dataAt = (index) => responses[index].status === "fulfilled" ? responses[index].value.data : [];
       const [yearsData, boardsData, levelsData, groupsData, sectionsData] = responses.map((_, index) => dataAt(index));
       const groupItems = unwrap(groupsData); const sectionItems = unwrap(sectionsData);
-      const levels = unique(unwrap(levelsData, ["academicLevels", "AcademicLevels"]).map((item) => typeof item === "string" ? item : read(item, "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "name", "Name")));
-      const groups = groupItems.map((item) => ({ ...option(read(item, "groupId", "GroupId", "id", "Id"), read(item, "groupName", "GroupName", "name", "Name")), board: asString(read(item, "boardId", "BoardId")), level: asString(read(item, "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName")), year: asString(read(item, "academicYearId", "AcademicYearId")) })).filter((item) => numericId(item.value));
-      const sections = sectionItems.map((item) => ({ value: asString(read(item, "section", "Section", "sectionName", "SectionName", "name", "Name")), label: asString(read(item, "section", "Section", "sectionName", "SectionName", "name", "Name")), group: asString(read(item, "groupId", "GroupId", "groupName", "GroupName")), level: asString(read(item, "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName")) })).filter((item) => item.value);
-      setMasters({ years: unwrap(yearsData).map((item) => option(read(item, "academicYearId", "AcademicYearId", "id", "Id"), read(item, "academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "name", "Name"))).filter((item) => numericId(item.value)), boards: unwrap(boardsData).map((item) => option(read(item, "boardId", "BoardId", "id", "Id"), read(item, "boardName", "BoardName", "name", "Name"))).filter((item) => numericId(item.value)), levels: levels.map((level) => option(level)), groups, sections });
+      const levels = unwrap(levelsData, ["academicLevels", "AcademicLevels"]).map((item) => ({
+        ...option(typeof item === "string" ? item : read(item, "academicLevelId", "AcademicLevelId", "id", "Id", "academicLevelName", "AcademicLevelName", "levelName", "LevelName"), typeof item === "string" ? item : read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "name", "Name")),
+        board: asString(read(item, "boardId", "BoardId")),
+      })).filter((item) => item.value);
+      const groups = groupItems.map((item) => ({ ...option(read(item, "groupId", "GroupId", "id", "Id"), read(item, "groupName", "GroupName", "name", "Name")), board: asString(read(item, "boardId", "BoardId")), level: asString(read(item, "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName")), levelId: asString(read(item, "academicLevelId", "AcademicLevelId")), year: asString(read(item, "academicYearId", "AcademicYearId")), programs: unwrap(item, ["programs", "Programs"]).map((program) => option(read(program, "programId", "ProgramId", "id", "Id"), read(program, "programName", "ProgramName", "name", "Name"))).filter((program) => numericId(program.value)) })).filter((item) => numericId(item.value));
+      const sections = sectionItems.map((item) => ({
+        value: asString(read(item, "sectionName", "SectionName", "name", "Name", "section", "Section", "sectionId", "SectionId", "id", "Id")),
+        label: asString(read(item, "sectionName", "SectionName", "name", "Name", "section", "Section")),
+        group: asString(read(item, "groupId", "GroupId")),
+        level: asString(read(item, "academicLevelId", "AcademicLevelId")),
+        board: asString(read(item, "boardId", "BoardId")),
+        year: asString(read(item, "academicYearId", "AcademicYearId")),
+        program: asString(read(item, "programId", "ProgramId", "groupProgramId", "GroupProgramId")),
+      })).filter((item) => item.value);
+      const boardOptions = unwrap(boardsData).map((item) => {
+        const ids = read(item, "academicLevelIds", "AcademicLevelIds");
+        const names = read(item, "academicLevelNames", "AcademicLevelNames", "academicLevels", "AcademicLevels");
+        return {
+          ...option(read(item, "boardId", "BoardId", "id", "Id"), read(item, "boardName", "BoardName", "name", "Name")),
+          academicLevelIds: Array.isArray(ids) ? ids.map(asString) : [],
+          academicLevelNames: Array.isArray(names) ? names.map((level) => asString(typeof level === "object" ? read(level, "levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name") : level)) : [],
+        };
+      }).filter((item) => numericId(item.value));
+      setMasters({
+        years: unwrap(yearsData).map((item) => ({
+          ...option(read(item, "academicYearId", "AcademicYearId", "id", "Id"), read(item, "academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "name", "Name")),
+          board: asString(read(item, "boardId", "BoardId")),
+          active: read(item, "isActive", "IsActive") === true || /^active$/i.test(asString(read(item, "status", "Status"))),
+        })).filter((item) => numericId(item.value)),
+        boards: boardOptions,
+        levels,
+        groups,
+        sections,
+      });
       setMasterError(getMasterFailureMessage(responses, ["academic years", "boards", "academic levels", "groups", "sections"]));
     } catch (requestError) { setMasterError(getApiErrorMessage(requestError)); }
     finally { setMasterLoading(false); }
   }, []);
 
   useEffect(() => { loadMasters(); }, [loadMasters]);
+  useEffect(() => {
+    const boardIds = [...new Set([setup.board, setup.toBoard].filter(Boolean))];
+    if (!boardIds.length) return undefined;
+    let active = true;
+    Promise.allSettled(boardIds.map((id) => apiClient.get(apiEndpoints.boards.getById(id))))
+      .then((results) => {
+        if (!active) return;
+        setMasters((current) => ({ ...current, boards: current.boards.map((board) => {
+          const index = boardIds.indexOf(board.value);
+          const payload = results[index]?.status === "fulfilled" ? (results[index].value.data?.data ?? results[index].value.data) : null;
+          if (!payload) return board;
+          const ids = read(payload, "academicLevelIds", "AcademicLevelIds");
+          const names = read(payload, "academicLevelNames", "AcademicLevelNames", "academicLevels", "AcademicLevels");
+          return { ...board, academicLevelIds: Array.isArray(ids) ? ids.map(asString) : board.academicLevelIds, academicLevelNames: Array.isArray(names) ? names.map((level) => asString(typeof level === "object" ? read(level, "levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name") : level)) : board.academicLevelNames };
+        }) }));
+      });
+    return () => { active = false; };
+  }, [setup.board, setup.toBoard]);
   useEffect(() => () => eligibleController.current?.abort(), []);
 
   const groupsFor = useCallback((prefix) => masters.groups.filter((group) => {
@@ -167,50 +212,75 @@ export default function PromotionPage({ screen = "promotion" }) {
     const levelValue = setup[prefix === "from" ? "fromLevel" : "toLevel"];
     const yearValue = setup[prefix === "from" ? "fromYear" : "toYear"];
     return (!group.board || group.board === boardValue || group.board === masters.boards.find((item) => item.value === boardValue)?.label)
-      && (!group.level || group.level === levelValue) && (!group.year || group.year === yearValue);
+      && (!group.level || group.level === levelValue || group.levelId === asString(levelValue)) && (!group.year || group.year === yearValue);
   }), [masters.boards, masters.groups, setup]);
+
+  const levelsFor = useCallback((prefix) => {
+    return masters.levels;
+  }, [masters.levels]);
+
+  const programsFor = useCallback((prefix) => {
+    const groupValue = setup[prefix === "from" ? "group" : "toGroup"];
+    const group = masters.groups.find((item) => item.value === asString(groupValue));
+    return group?.programs || [];
+  }, [masters.groups, setup]);
 
   const sectionsFor = useCallback((prefix) => {
     const groupValue = setup[prefix === "from" ? "group" : "toGroup"];
     const groupLabel = masters.groups.find((item) => item.value === groupValue)?.label;
     const levelValue = setup[prefix === "from" ? "fromLevel" : "toLevel"];
-    return masters.sections.filter((section) => (!section.group || section.group === groupValue || section.group === groupLabel) && (!section.level || section.level === levelValue));
+    const programValue = setup[prefix === "from" ? "program" : "toProgram"];
+    const boardValue = setup[prefix === "from" ? "board" : "toBoard"];
+    const yearValue = setup[prefix === "from" ? "fromYear" : "toYear"];
+    return masters.sections.filter((section) => (!section.group || section.group === groupValue || section.group === groupLabel)
+      && (!section.level || section.level === levelValue)
+      && (!programValue || !section.program || section.program === asString(programValue))
+      && (!section.board || section.board === asString(boardValue))
+      && (!section.year || section.year === asString(yearValue)));
   }, [masters.groups, masters.sections, setup]);
 
   const sourceFields = useMemo(() => [
-    { name: "fromYear", label: "From Academic Year", type: "select", options: masters.years, required: true },
     { name: "board", label: "Board", type: "select", options: masters.boards, required: true },
-    { name: "fromLevel", label: "From Academic Level", type: "select", options: masters.levels, required: true },
+    { name: "fromYear", label: "From Academic Year", type: "select", options: masters.years.filter((year) => !setup.board || !year.board || year.board === asString(setup.board)), required: true, disabled: true },
+    { name: "fromLevel", label: "From Academic Level", type: "select", options: levelsFor("from"), required: true, disabled: !setup.board },
     { name: "group", label: "Group", type: "select", options: groupsFor("from"), required: true },
+    { name: "program", label: "Program", type: "select", options: programsFor("from"), required: true, disabled: !setup.group },
     { name: "fromSection", label: "From Section", type: "select", options: sectionsFor("from"), required: true },
-  ], [groupsFor, masters, sectionsFor]);
+  ], [groupsFor, levelsFor, masters, programsFor, sectionsFor, setup.board, setup.group]);
 
   // Master data uses labels such as "Intermediate 2nd Year", so match the year
   // portion instead of relying on one exact label.
-  const isFinalYear = isSecondYearLevel(setup.fromLevel);
-  const destinationLevels = useMemo(
-    () => masters.levels.filter((level) => !/^degree$/i.test(level.label)),
-    [masters.levels],
-  );
+  const selectedSourceLevel = masters.levels.find((level) => level.value === asString(setup.fromLevel));
+  const isFinalYear = isSecondYearLevel(selectedSourceLevel?.label || setup.fromLevel);
+  const destinationLevels = useMemo(() => levelsFor("to").filter((level) => !/^degree$/i.test(level.label)), [levelsFor]);
   const targetFields = useMemo(() => [
-    { name: "toYear", label: "To Academic Year", type: "select", options: masters.years, required: true },
     { name: "toBoard", label: "Board", type: "select", options: masters.boards, required: true },
-    { name: "toLevel", label: "To Academic Level", type: "select", options: destinationLevels, required: true },
+    { name: "toYear", label: "To Academic Year", type: "select", options: masters.years.filter((year) => !setup.toBoard || !year.board || year.board === asString(setup.toBoard)), required: true, disabled: true },
+    { name: "toLevel", label: "To Academic Level", type: "select", options: destinationLevels, required: true, disabled: !setup.toBoard },
+    { name: "toGroup", label: "Group", type: "select", options: groupsFor("to"), required: true, disabled: !setup.toLevel },
+    { name: "toProgram", label: "Program", type: "select", options: programsFor("to"), required: true, disabled: !setup.toGroup },
     { name: "toSection", label: "To Section", type: "select", options: sectionsFor("to"), required: true },
-  ], [destinationLevels, masters, sectionsFor]);
+  ], [destinationLevels, groupsFor, masters, programsFor, sectionsFor, setup.toBoard, setup.toGroup, setup.toLevel]);
 
   const updateSetup = (name, value) => {
     const resets = {
-      fromYear: ["board", "fromLevel", "group", "fromSection", "toGroup", "toSection"], board: ["fromLevel", "group", "fromSection", "toGroup", "toSection"],
-      fromLevel: ["group", "fromSection", "toGroup", "toSection"], group: ["fromSection", "toSection"],
-      toYear: ["toBoard", "toLevel", "toGroup", "toSection"], toBoard: ["toLevel", "toGroup", "toSection"],
-      toLevel: ["toGroup", "toSection"], toGroup: ["toSection"],
+      fromYear: ["board", "fromLevel", "group", "program", "fromSection", "toGroup", "toProgram", "toSection"], board: ["fromLevel", "group", "program", "fromSection", "toGroup", "toProgram", "toSection"],
+      fromLevel: ["group", "program", "fromSection", "toGroup", "toProgram", "toSection"], group: ["program", "fromSection", "toSection"], program: ["fromSection"],
+      toYear: ["toBoard", "toLevel", "toGroup", "toProgram", "toSection"], toBoard: ["toLevel", "toGroup", "toProgram", "toSection"],
+      toLevel: ["toGroup", "toProgram", "toSection"], toGroup: ["toProgram", "toSection"], toProgram: ["toSection"],
+    };
+    const activeYearForBoard = (boardValue, currentYear) => {
+      if (!boardValue) return "";
+      const candidates = masters.years.filter((year) => !year.board || year.board === asString(boardValue));
+      return candidates.find((year) => year.active)?.value || candidates.find((year) => year.value === currentYear)?.value || candidates[0]?.value || "";
     };
     setSetup((current) => ({
       ...current,
       ...Object.fromEntries((resets[name] || []).map((key) => [key, ""])),
       [name]: value,
-      ...(name === "group" ? { toGroup: value } : {}),
+      ...(name === "board" ? { fromYear: activeYearForBoard(value, "") } : {}),
+      ...(name === "toBoard" ? { toYear: activeYearForBoard(value, "") } : {}),
+      ...(name === "group" ? { toGroup: value, toProgram: "" } : {}),
     }));
     setFieldErrors((current) => ({ ...current, [name]: undefined }));
     setStudentsLoaded(false);
@@ -227,8 +297,8 @@ export default function PromotionPage({ screen = "promotion" }) {
   };
 
   const eligibleParams = useCallback(() => compactParams({
-    academicYearId: numericId(setup.fromYear), academicLevel: setup.fromLevel, groupId: numericId(setup.group), section: setup.fromSection,
-    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel: setup.toLevel, targetGroupId: numericId(setup.toGroup), targetSection: setup.toSection,
+    academicYearId: numericId(setup.fromYear), academicLevelId: numericId(setup.fromLevel), groupId: numericId(setup.group), programId: numericId(setup.program), section: setup.fromSection,
+    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevelId: numericId(setup.toLevel), targetGroupId: numericId(setup.toGroup), targetProgramId: numericId(setup.toProgram), targetSection: setup.toSection,
   }), [setup]);
 
   const fetchEligibleStudents = useCallback(async () => {
@@ -260,10 +330,10 @@ export default function PromotionPage({ screen = "promotion" }) {
   const summary = useMemo(() => ({ eligible: eligibleStudents.length, ineligible: students.length - eligibleStudents.length }), [eligibleStudents.length, students.length]);
 
   const buildPayload = () => ({
-    sourceAcademicYearId: numericId(setup.fromYear), sourceAcademicLevel: setup.fromLevel,
-    sourceGroupId: numericId(setup.group), sourceSection: setup.fromSection,
-    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel: setup.toLevel,
-    targetGroupId: numericId(setup.toGroup), targetSection: setup.toSection,
+    sourceAcademicYearId: numericId(setup.fromYear), sourceAcademicLevelId: numericId(setup.fromLevel),
+    sourceGroupId: numericId(setup.group), sourceProgramId: numericId(setup.program), sourceSection: setup.fromSection,
+    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevelId: numericId(setup.toLevel),
+    targetGroupId: numericId(setup.toGroup), targetProgramId: numericId(setup.toProgram), targetSection: setup.toSection,
     studentIds: selectedStudents.map((student) => numericId(student.id)).filter(Boolean),
   });
 
@@ -329,7 +399,7 @@ export default function PromotionPage({ screen = "promotion" }) {
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true); setError("");
     try {
-      const response = await apiClient.get(apiEndpoints.promotions.history, { params: compactParams({ academicYearId: numericId(historyFilters.academicYearId), academicLevel: historyFilters.academicLevel, groupId: numericId(historyFilters.groupId), section: historyFilters.section, studentId: numericId(historyFilters.studentId), search: historyFilters.search.trim(), promotionStatus: historyFilters.promotionStatus, fromDate: historyFilters.fromDate, toDate: historyFilters.toDate }), timeout: 15000 });
+      const response = await apiClient.get(apiEndpoints.promotions.history, { params: compactParams({ academicYearId: numericId(historyFilters.academicYearId), academicLevel: historyFilters.academicLevel, groupId: numericId(historyFilters.groupId), programId: numericId(historyFilters.programId), section: historyFilters.section, studentId: numericId(historyFilters.studentId), search: historyFilters.search.trim(), promotionStatus: historyFilters.promotionStatus, fromDate: historyFilters.fromDate, toDate: historyFilters.toDate }), timeout: 15000 });
       setHistory(unwrap(response.data, ["history", "History", "promotions", "Promotions"]).map(normalizeHistory)); setHistoryLoaded(true);
     } catch (requestError) { setHistory([]); setHistoryLoaded(true); setError(getApiErrorMessage(requestError)); }
     finally { setHistoryLoading(false); }
@@ -359,7 +429,10 @@ export default function PromotionPage({ screen = "promotion" }) {
     finally { setReportLoading(false); }
   };
 
-  const setHistoryFilter = (name, value) => setHistoryFilters((current) => ({ ...current, [name]: value }));
+  const setHistoryFilter = (name, value) => setHistoryFilters((current) => ({ ...current, [name]: value, ...(name === "groupId" ? { programId: "", section: "" } : {}), ...(name === "programId" ? { section: "" } : {}) }));
+  const historyGroup = masters.groups.find((group) => group.value === asString(historyFilters.groupId));
+  const historyPrograms = historyGroup?.programs || [];
+  const historySections = masters.sections.filter((section) => (!section.group || section.group === asString(historyFilters.groupId) || section.group === historyGroup?.label) && (!historyFilters.programId || !section.program || section.program === asString(historyFilters.programId)));
   const previewStudents = unwrap(previewData, ["students", "Students", "eligibleStudents", "EligibleStudents"]);
   const previewEligibleCount = read(previewData, "eligibleCount", "EligibleCount") ?? (previewStudents.length ? previewStudents.filter((student) => isEligible(normalizeStudent(student))).length : selectedStudents.length);
 
@@ -377,7 +450,7 @@ export default function PromotionPage({ screen = "promotion" }) {
           <section className="cms-card promotion-card">
             <div className="cms-card-head"><div><h2>1. Promotion Setup</h2><p>Choose the current cohort and its destination using live master data.</p></div><button className="cms-btn cms-btn-ghost" onClick={loadMasters} disabled={masterLoading}>{masterLoading ? "Loading..." : <><RefreshCw size={16} aria-hidden="true" /> Refresh</>}</button></div>
             <div className="cms-card-body promotion-setup-grid">
-              <div className="promotion-flow-panel"><h3>Current / Source</h3><div className="promotion-field-grid">{sourceFields.map((field) => <Field key={field.name} field={{ ...field, disabled: masterLoading }} value={setup[field.name]} error={fieldErrors[field.name]} onChange={updateSetup} />)}</div></div>
+              <div className="promotion-flow-panel"><h3>Current / Source</h3><div className="promotion-field-grid">{sourceFields.map((field) => <Field key={field.name} field={{ ...field, disabled: masterLoading || field.disabled }} value={setup[field.name]} error={fieldErrors[field.name]} onChange={updateSetup} />)}</div></div>
               <div className="promotion-arrow" aria-hidden="true">→</div>
               {isFinalYear ? <div className="promotion-flow-panel promotion-completion-panel"><h3>Final Result / Course Completion</h3></div> : <div className="promotion-flow-panel"><h3>Destination</h3><div className="promotion-field-grid">{targetFields.map((field) => <Field key={field.name} field={{ ...field, disabled: masterLoading || field.disabled }} value={setup[field.name]} error={fieldErrors[field.name]} onChange={updateSetup} />)}</div></div>}
             </div>
@@ -394,14 +467,14 @@ export default function PromotionPage({ screen = "promotion" }) {
           {!isFinalYear ? <div className="promotion-final-actions"><button className="cms-btn cms-btn-primary" onClick={openPreview} disabled={!selectedIds.length || previewLoading || submitting}>{previewLoading ? "Preparing Preview..." : "Preview Promotion"}</button></div> : null}
         </> : null}
 
-        {activeTab === "single" ? <SinglePromotionScreen masters={masters} onPromote={() => setToast("Student promoted successfully.")} /> : null}
+        {activeTab === "single" ? <SinglePromotionScreen masters={masters} student={students.find(isEligible)} onPromote={() => setToast("Student promotion completed successfully.")} /> : null}
 
-        {activeTab === "allocation" ? <AllocationScreen activeTab={allocationTab} setActiveTab={setAllocationTab} masters={masters} setup={setup} onSaved={() => setToast(`${allocationTab === "group" ? "Group" : "Section"} allocation updated successfully.`)} /> : null}
+        {activeTab === "allocation" ? <AllocationScreen activeTab={allocationTab} setActiveTab={setAllocationTab} masters={masters} setup={setup} students={students} onSaved={() => setToast(`${allocationTab === "group" ? "Group" : "Section"} allocation updated successfully.`)} /> : null}
 
         {activeTab === "history" ? <section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Promotion History</h2><p>Search completed promotion activity and roll back supported records.</p></div></div><div className="cms-card-body promotion-history-filters">{[
           { name: "academicYearId", label: "Source Year", type: "select", options: masters.years },
           { name: "academicLevel", label: "Source Level", type: "select", options: masters.levels },
-          { name: "groupId", label: "Source Group", type: "select", options: masters.groups }, { name: "section", label: "Source Section", type: "select", options: masters.sections },
+          { name: "groupId", label: "Source Group", type: "select", options: masters.groups }, { name: "programId", label: "Source Program", type: "select", options: historyPrograms, disabled: !historyFilters.groupId }, { name: "section", label: "Source Section", type: "select", options: historySections, disabled: !historyFilters.programId },
           { name: "studentId", label: "Student ID", type: "number" }, { name: "search", label: "Search" }, { name: "promotionStatus", label: "Promotion Status" },
         ].map((field) => <Field key={field.name} field={field} value={historyFilters[field.name]} onChange={setHistoryFilter} />)}<HistoryDateRange fromDate={historyFilters.fromDate} toDate={historyFilters.toDate} onChange={setHistoryFilter} /></div><div className="promotion-actions"><button className="cms-btn cms-btn-ghost" onClick={() => { setHistoryFilters(EMPTY_HISTORY_FILTERS); setHistoryLoaded(false); }}>Clear Filters</button><button className="cms-btn cms-btn-primary" onClick={fetchHistory} disabled={historyLoading}>{historyLoading ? "Loading..." : "Load History"}</button></div>{historyLoading ? <div className="promotion-empty">Loading promotion history...</div> : historyLoaded ? <HistoryTable rows={history} onRollback={setRollbackRecord} /> : null}</section> : null}
 
@@ -431,17 +504,20 @@ function HistoryDateRange({ fromDate, toDate, onChange }) {
   </div>;
 }
 
-function SinglePromotionScreen({ masters, onPromote }) {
-  const [target, setTarget] = useState({ year: "", level: "", group: "", section: "", medium: "English" });
+function SinglePromotionScreen({ masters, student, onPromote }) {
+  const [target, setTarget] = useState({ year: "", level: "", group: "", program: "", section: "", medium: "English" });
   const [confirming, setConfirming] = useState(false);
-  const change = (name, value) => setTarget((current) => ({ ...current, [name]: value }));
-  const fields = [{ name: "year", label: "Target Academic Year", type: "select", options: masters.years, required: true }, { name: "level", label: "Target Academic Level", type: "select", options: masters.levels, required: true }, { name: "group", label: "Target Group", type: "select", options: masters.groups, required: true }, { name: "section", label: "Target Section", type: "select", options: masters.sections, required: true }, { name: "medium", label: "Target Medium", type: "select", options: [option("English")], required: true }];
-  return <section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Student Details</h2><p>Select a student from the eligible-students list or search by admission number.</p></div></div><div className="cms-card-body promotion-setup-grid promotion-single-grid"><div className="promotion-flow-panel"><h3>Current Details</h3><p><strong>Student:</strong> Rahul Kumar</p><p><strong>Admission No:</strong> ADM001</p><p><strong>Current:</strong> 2025-2026 / Intermediate 1st Year / MPC / A</p></div><div className="promotion-flow-panel"><h3>Target Details</h3><div className="promotion-field-grid">{fields.map((field) => <Field key={field.name} field={field} value={target[field.name]} onChange={change} />)}</div></div></div><div className="promotion-actions"><button className="cms-btn cms-btn-ghost" type="button">Cancel</button><button className="cms-btn cms-btn-primary" type="button" disabled={Object.values(target).some((value) => !value)} onClick={() => setConfirming(true)}>Promote Student</button></div>{confirming ? <Modal title="Confirm Student Promotion" onClose={() => setConfirming(false)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setConfirming(false)}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={() => { setConfirming(false); onPromote(); }}>Confirm</button></>}><p>Are you sure you want to promote Rahul Kumar?</p><strong>Intermediate 1st Year → {target.level}</strong></Modal> : null}</section>;
+  const change = (name, value) => setTarget((current) => ({ ...current, ...(name === "group" ? { program: "", section: "" } : {}), ...(name === "program" ? { section: "" } : {}), [name]: value }));
+  const targetGroup = masters.groups.find((group) => group.value === asString(target.group));
+  const targetPrograms = targetGroup?.programs || [];
+  const targetSections = masters.sections.filter((section) => (!section.group || section.group === asString(target.group) || section.group === targetGroup?.label) && (!target.program || !section.program || section.program === asString(target.program)));
+  const fields = [{ name: "year", label: "Target Academic Year", type: "select", options: masters.years, required: true }, { name: "level", label: "Target Academic Level", type: "select", options: masters.levels, required: true }, { name: "group", label: "Target Group", type: "select", options: masters.groups, required: true }, { name: "program", label: "Target Program", type: "select", options: targetPrograms, required: true, disabled: !target.group }, { name: "section", label: "Target Section", type: "select", options: targetSections, required: true, disabled: !target.program }, { name: "medium", label: "Target Medium", type: "select", options: [option("English")], required: true }];
+  return <section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Student Details</h2><p>Select a student from the eligible-students list or search by admission number.</p></div></div><div className="cms-card-body promotion-setup-grid promotion-single-grid"><div className="promotion-flow-panel"><h3>Current Details</h3>{student ? <><p><strong>Student:</strong> {student.name}</p><p><strong>Admission No:</strong> {student.admissionNo}</p><p><strong>Current:</strong> {[student.academicYear, student.level, student.group, student.section].filter((value) => value && value !== "-").join(" / ") || "-"}</p></> : <p className="promotion-empty">Load eligible students from Student Promotion first.</p>}</div><div className="promotion-flow-panel"><h3>Target Details</h3><div className="promotion-field-grid">{fields.map((field) => <Field key={field.name} field={field} value={target[field.name]} onChange={change} />)}</div></div></div><div className="promotion-actions"><button className="cms-btn cms-btn-ghost" type="button">Cancel</button><button className="cms-btn cms-btn-primary" type="button" disabled={!student || Object.values(target).some((value) => !value)} onClick={() => setConfirming(true)}>Promote Student</button></div>{confirming ? <Modal title="Confirm Student Promotion" onClose={() => setConfirming(false)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setConfirming(false)}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={() => { setConfirming(false); onPromote(); }}>Confirm</button></>}><p>Are you sure you want to promote {student?.name}?</p><strong>{student?.level || "Current level"} → {target.level}</strong></Modal> : null}</section>;
 }
 
-function AllocationScreen({ activeTab, setActiveTab, masters, setup, onSaved }) {
+function AllocationScreen({ activeTab, setActiveTab, masters, setup, students, onSaved }) {
   const [selected, setSelected] = useState([]); const [target, setTarget] = useState({}); const [saving, setSaving] = useState(false); const [message, setMessage] = useState("");
-  const rows = [{ id: 101, student: "Rahul Kumar", roll: "MPC001", group: "MPC", section: "A" }, { id: 102, student: "Ravi Teja", roll: "MPC002", group: "MPC", section: "A" }];
+  const rows = students.map((student) => ({ id: student.id, student: student.name, roll: student.admissionNo, group: student.group, section: student.section }));
   const isGroup = activeTab === "group"; const options = isGroup ? masters.groups : masters.sections;
   const save = async () => {
     const chosen = [...new Set(selected.map((id) => target[id]).filter(Boolean))];
@@ -454,9 +530,12 @@ function AllocationScreen({ activeTab, setActiveTab, masters, setup, onSaved }) 
       onSaved(); setSelected([]); setTarget({});
     } catch (error) { setMessage(getApiErrorMessage(error)); } finally { setSaving(false); }
   };
-  return <section className="cms-card promotion-card"><div className="promotion-tabs" role="tablist"><button className={isGroup ? "is-active" : ""} onClick={() => setActiveTab("group")}>Group Allocation</button><button className={!isGroup ? "is-active" : ""} onClick={() => setActiveTab("section")}>Section Allocation</button></div>{message ? <div className="promotion-error" role="alert">{message}</div> : null}<div className="cms-table-wrap"><table className="cms-table promotion-table"><thead><tr><th>Select</th><th>Student</th><th>Roll No.</th><th>Current {isGroup ? "Group" : "Section"}</th><th>Target {isGroup ? "Group" : "Section"}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><input type="checkbox" checked={selected.includes(row.id)} onChange={() => setSelected((items) => items.includes(row.id) ? items.filter((id) => id !== row.id) : [...items, row.id])} /></td><td>{row.student}</td><td>{row.roll}</td><td>{isGroup ? row.group : row.section}</td><td><select value={target[row.id] || ""} onChange={(event) => setTarget((items) => ({ ...items, [row.id]: event.target.value }))}><option value="">Select target</option>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></td></tr>)}</tbody></table></div><div className="promotion-actions"><button className="cms-btn cms-btn-primary" disabled={!selected.length || saving} onClick={save}>{saving ? "Saving..." : `Apply ${isGroup ? "Group" : "Section"} Allocation`}</button></div></section>;
+  return <section className="cms-card promotion-card"><div className="promotion-tabs" role="tablist"><button className={isGroup ? "is-active" : ""} onClick={() => setActiveTab("group")}>Group Allocation</button><button className={!isGroup ? "is-active" : ""} onClick={() => setActiveTab("section")}>Section Allocation</button></div>{message ? <div className="promotion-error" role="alert">{message}</div> : null}<div className="cms-table-wrap"><table className="cms-table promotion-table"><thead><tr><th>Select</th><th>Student</th><th>Roll No.</th><th>Current {isGroup ? "Group" : "Section"}</th><th>Target {isGroup ? "Group" : "Section"}</th></tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={row.id}><td><input type="checkbox" checked={selected.includes(row.id)} onChange={() => setSelected((items) => items.includes(row.id) ? items.filter((id) => id !== row.id) : [...items, row.id])} /></td><td>{row.student}</td><td>{row.roll}</td><td>{isGroup ? row.group : row.section}</td><td><select value={target[row.id] || ""} onChange={(event) => setTarget((items) => ({ ...items, [row.id]: event.target.value }))}><option value="">Select target</option>{options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></td></tr>) : <tr><td colSpan={5} className="promotion-empty">Load eligible students from Student Promotion first.</td></tr>}</tbody></table></div><div className="promotion-actions"><button className="cms-btn cms-btn-primary" disabled={!selected.length || saving} onClick={save}>{saving ? "Saving..." : `Apply ${isGroup ? "Group" : "Section"} Allocation`}</button></div></section>;
 }
 
 function ReportScreen({ rows, loading, loaded, onLoad }) {
-  return <><section className="promotion-summary"><div><span>Total Students</span><strong>500</strong></div><div><span>Eligible</span><strong>420</strong></div><div><span>Promoted</span><strong>390</strong></div><div><span>Rolled Back</span><strong>12</strong></div></section><section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Promotion Reports</h2><p>Review promotion statistics and records.</p></div><button className="cms-btn cms-btn-primary" onClick={onLoad} disabled={loading}>{loading ? "Loading..." : "Load Report"}</button></div>{loaded ? <HistoryTable rows={rows} /> : <div className="promotion-empty">Load the report to view promotion records.</div>}</section></>;
+  const total = rows.length;
+  const promoted = rows.filter((row) => /promot/i.test(row.status)).length;
+  const rolledBack = rows.filter((row) => /rollback/i.test(row.status)).length;
+  return <><section className="promotion-summary"><div><span>Total Students</span><strong>{total}</strong></div><div><span>Eligible</span><strong>{total - rolledBack}</strong></div><div><span>Promoted</span><strong>{promoted}</strong></div><div><span>Rolled Back</span><strong>{rolledBack}</strong></div></section><section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Promotion Reports</h2><p>Review promotion statistics and records.</p></div><button className="cms-btn cms-btn-primary" onClick={onLoad} disabled={loading}>{loading ? "Loading..." : "Load Report"}</button></div>{loaded ? <HistoryTable rows={rows} /> : <div className="promotion-empty">Load the report to view promotion records.</div>}</section></>;
 }

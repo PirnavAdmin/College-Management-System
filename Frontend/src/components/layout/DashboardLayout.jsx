@@ -33,6 +33,7 @@ export const menu = [
         icon: Users,
       },
       { to: "/dashboard/admission", label: "Student Admission", icon: UserPlus },
+      { to: "/dashboard/section-allocation", label: "Section Allocation", icon: Layers3 },
       { to: "/dashboard/students", label: "Student Management", icon: GraduationCap },
     ],
   },

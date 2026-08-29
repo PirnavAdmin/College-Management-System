@@ -241,8 +241,22 @@
   background: var(--cms-red-soft);
 }
 
+.cms-admission-address-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cms-admission-address-grid .cms-field.full {
+  grid-column: 1 / -1;
+}
+
+.cms-admission-address-grid .cms-field:nth-child(5) {
+  grid-column: 1 / span 1;
+}
+
 @media (max-width: 980px) {
   .cms-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-admission-address-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-admission-address-grid .cms-field:nth-child(5) { grid-column: auto; }
 }
 
 @media (max-width: 640px) {
@@ -252,6 +266,7 @@
   }
 
   .cms-preview-grid { grid-template-columns: 1fr; }
+  .cms-admission-address-grid { grid-template-columns: 1fr; }
 }
 
 /* Fee step (integrated Fee Management) */

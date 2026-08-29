@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
@@ -1048,9 +1048,11 @@ function Generate({ goDraft, notify, initial }) {
       // API, while the generator still receives every programme section.
       goDraft({ ...value, sectionId: "", workingDays, generatedSlots });
     } catch (e) {
-      const message = getApiErrorMessage(e);
+      const message = `${getApiErrorMessage(e)} ${e?.response?.data?.details ?? ""}`;
       notify(
-        /LINQ|StaffSubjectAllocation|allocation/i.test(message)
+        /SaveChanges|saving the entity changes|database|duplicate|constraint/i.test(message)
+          ? "The timetable could not be saved because generated data already exists or conflicts with a database rule. Refresh the Draft screen and avoid generating the same timetable again."
+          : /LINQ|StaffSubjectAllocation|allocation/i.test(message)
           ? "Timetable generation could not resolve staff-subject allocations. Allocate faculty to the requested subjects, then try again."
           : message,
       );
@@ -1123,7 +1125,7 @@ function Generate({ goDraft, notify, initial }) {
   );
 }
 
-function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) {
+function SlotEditor({ context, data, slot, workingDays, close, saved, notify, lab = false }) {
   const [form, setForm] = useState({
     dayOfWeek: String(pick(slot, "dayOfWeek", "DayOfWeek") ?? ""),
     periodId: String(pick(slot, "periodId", "PeriodId") ?? ""),
@@ -1183,7 +1185,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) 
     </Field>
   );
   return (
-    <Modal title={timetableId(slot) ? "Edit Timetable Slot" : "Add Timetable Slot"} onClose={close}>
+    <Modal title={lab ? "Add Lab / Practical" : timetableId(slot) ? "Edit Timetable Slot" : "Add Timetable Slot"} onClose={close}>
       <div className="ttm-modal-body">
         <div className="ttm-form-grid">
           {select(
@@ -1203,7 +1205,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify }) 
       <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>
             Cancel
           </Btn>
-      <Btn disabled={saving} onClick={save}>{saving ? "Saving…" : "Save Slot"}</Btn>
+      <Btn disabled={saving} onClick={save}>{saving ? "Saving…" : lab ? "Add Lab" : "Save Slot"}</Btn>
         </footer>
       </div>
     </Modal>
@@ -1218,8 +1220,12 @@ function Draft({ initial, notify }) {
   const [copying, setCopying] = useState(false);
   const [copyTarget, setCopyTarget] = useState({ academicYearId: "", sectionId: "" });
   const [actionBusy, setActionBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState("");
   const [published, setPublished] = useState(Boolean(initial?.isPublished));
+  const [approved, setApproved] = useState(Boolean(initial?.isApproved || initial?.status === "Approved"));
+  const firstSection = useRef(true);
   const [validation, setValidation] = useState(null);
+  const [validationOpen, setValidationOpen] = useState(false);
   const [publishedFilter, setPublishedFilter] = useState(
     initial?.isPublished === undefined ? "" : String(Boolean(initial.isPublished)),
   );
@@ -1266,6 +1272,23 @@ function Draft({ initial, notify }) {
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => {
+    if (publishedFilter === "true") {
+      setPublished(true);
+      setApproved(true);
+    } else if (publishedFilter === "false") {
+      setPublished(false);
+    }
+  }, [publishedFilter]);
+  useEffect(() => {
+    if (firstSection.current) {
+      firstSection.current = false;
+      return;
+    }
+    setValidation(null);
+    setApproved(false);
+    setPublished(false);
+  }, [value.sectionId]);
   const find = (day, periodId) =>
     slots.find(
       (slot) =>
@@ -1275,18 +1298,26 @@ function Draft({ initial, notify }) {
     );
   const action = async (path, method = "post", body) => {
     if (actionBusy) return;
+    const actionName = path.includes("validate") ? "validate" : path.includes("approve") ? "approve" : path.includes("publish") ? "publish" : "action";
+    setActiveAction(actionName);
     setActionBusy(true);
     try {
       const r = await apiClient[method](path, body, {
         params: { academicYearId: value.academicYearId },
       });
-      if (method === "post" && path.includes("validate")) setValidation(r.data);
+      if (method === "post" && path.includes("validate")) {
+        setValidation(r.data);
+        setValidationOpen(true);
+      }
       else notify(r.data?.message ?? "Timetable updated.");
       load();
+      return true;
     } catch (e) {
       notify(getApiErrorMessage(e));
+      return false;
     } finally {
       setActionBusy(false);
+      setActiveAction("");
     }
   };
   const copyTimetable = async () => {
@@ -1295,7 +1326,13 @@ function Draft({ initial, notify }) {
       notify("Select a target academic year and section.");
       return;
     }
+    if (String(copyTarget.academicYearId) === String(value.academicYearId) && String(copyTarget.sectionId) === String(value.sectionId)) {
+      const sectionName = data.sections.find((section) => String(section.id) === String(value.sectionId))?.name || "this section";
+      notify(`This timetable has already been copied for ${sectionName}. Select a different target section or academic year.`);
+      return;
+    }
     setActionBusy(true);
+    setActiveAction("copy");
     try {
       await apiClient.post(apiEndpoints.timetable.copy, {
         sourceAcademicYearId: Number(value.academicYearId),
@@ -1310,6 +1347,7 @@ function Draft({ initial, notify }) {
       notify(getApiErrorMessage(e));
     } finally {
       setActionBusy(false);
+      setActiveAction("");
     }
   };
   const viewPublished = async (kind) => {
@@ -1321,6 +1359,7 @@ function Draft({ initial, notify }) {
       return;
     }
     setActionBusy(true);
+    setActiveAction(kind);
     try {
       const endpoint = kind === "student"
         ? apiEndpoints.timetable.getBySection(value.sectionId)
@@ -1363,36 +1402,40 @@ function Draft({ initial, notify }) {
                     <option value="true">Published</option>
                   </select>
                 </label>
-                <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => setCopying(true)}>
+                <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "copy"} onClick={() => setCopying(true)}>
                   Copy Timetable
                 </Btn>
-                <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => setEditing({})}>
+                <Btn className="cms-btn cms-btn-ghost" onClick={() => setEditing({})}>
                   + Add Slot
+                </Btn>
+                <Btn className="cms-btn cms-btn-ghost" onClick={() => setEditing({ remarks: "Lab / Practical", __lab: true })}>
+                  + Add Lab
                 </Btn>
                 <Btn
                   className="cms-btn cms-btn-ghost"
-                  disabled={actionBusy}
+                  disabled={published || activeAction === "validate"}
                   onClick={() => action(apiEndpoints.timetable.validateSection(value.sectionId))}
                 >
-                  {actionBusy ? "Validating…" : "Validate"}
+                  {activeAction === "validate" ? "Validating…" : "Validate"}
                 </Btn>
-                <Btn disabled={actionBusy} onClick={() => action(apiEndpoints.timetable.approveSection(value.sectionId))}>
-                  {actionBusy ? "Approving…" : "Approve"}
+                <Btn disabled={published || activeAction === "approve" || !validation?.isValid || approved} onClick={async () => {
+                  const ok = await action(apiEndpoints.timetable.approveSection(value.sectionId));
+                  if (ok) setApproved(true);
+                }}>
+                  {activeAction === "approve" ? "Approving…" : "Approve"}
                 </Btn>
-                <Btn disabled={actionBusy}
-                  onClick={() =>
-                    (async () => {
-                      await action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", { isPublished: true });
-                      setPublished(true);
-                    })()
-                  }
+                <Btn disabled={activeAction === "publish" || !approved || published}
+                  onClick={async () => {
+                    const ok = await action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", { isPublished: true });
+                    if (ok) setPublished(true);
+                  }}
                 >
-                  {actionBusy ? "Publishing…" : "Publish"}
+                  {activeAction === "publish" ? "Publishing…" : published ? "Published" : approved ? "Publish" : "Approve first"}
                 </Btn>
                 {published && (
                   <>
-                    <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => viewPublished("faculty")}>Faculty View Timetable</Btn>
-                    <Btn className="cms-btn cms-btn-ghost" disabled={actionBusy} onClick={() => viewPublished("student")}>Student View Timetable</Btn>
+                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "faculty"} onClick={() => viewPublished("faculty")}>Faculty View Timetable</Btn>
+                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "student"} onClick={() => viewPublished("student")}>Student View Timetable</Btn>
                   </>
                 )}
               </div>
@@ -1463,16 +1506,34 @@ function Draft({ initial, notify }) {
           </>
         )}
       </section>
+      {validationOpen && validation && (
+        <Modal title="Validate Timetable" onClose={() => setValidationOpen(false)}>
+          <div className="ttm-modal-body">
+            <div className={`ttm-validation-result${validation.isValid ? "" : " has-errors"}`}>
+              <b>{validation.isValid ? "Timetable is valid" : "Validation failed"}</b>
+              <span>{(validation.errors ?? []).length} Errors · {(validation.warnings ?? []).length} Warnings</span>
+              {[...(validation.errors ?? []), ...(validation.warnings ?? [])].map((entry, index) => <p key={index}>{entry.message ?? entry}</p>)}
+            </div>
+            <footer><Btn className="cms-btn cms-btn-ghost" onClick={() => setValidationOpen(false)}>Close</Btn></footer>
+          </div>
+        </Modal>
+      )}
       {editing && (
         <SlotEditor
           context={value}
           data={data}
           slot={editing}
+          lab={Boolean(editing.__lab)}
           workingDays={workingDays}
           close={() => setEditing(null)}
           notify={notify}
           saved={() => {
             setEditing(null);
+            // Any change to a published slot creates a new draft revision.
+            // Require validation and approval before it can be published again.
+            setPublished(false);
+            setApproved(false);
+            setValidation(null);
             notify("Timetable slot saved.");
             load();
           }}
@@ -1498,7 +1559,9 @@ function Draft({ initial, notify }) {
             </div>
             <footer>
               <Btn className="cms-btn cms-btn-ghost" onClick={() => setCopying(false)}>Cancel</Btn>
-              <Btn onClick={copyTimetable}>Copy Timetable</Btn>
+              <Btn disabled={activeAction === "copy"} onClick={copyTimetable}>
+                {activeAction === "copy" ? "Copying…" : "Copy Timetable"}
+              </Btn>
             </footer>
           </div>
         </Modal>
@@ -1525,15 +1588,21 @@ function LatestDraft({ notify }) {
           return date(b) - date(a) || Number(pick(b, "id", "Id", "timetableId", "TimetableId") ?? 0) - Number(pick(a, "id", "Id", "timetableId", "TimetableId") ?? 0);
         })[0];
         if (!latest) return setState({ loading: false, context: null });
+        const section = latest.section ?? latest.Section ?? {};
+        const program = latest.program ?? latest.Program ?? latest.programme ?? latest.Programme ?? {};
+        const year = latest.academicYear ?? latest.AcademicYear ?? {};
+        const board = latest.board ?? latest.Board ?? {};
+        const level = latest.academicLevel ?? latest.AcademicLevel ?? {};
+        const group = latest.group ?? latest.Group ?? {};
         setState({
           loading: false,
           context: {
-            boardId: pick(latest, "boardId", "BoardId") ?? "",
-            academicYearId: pick(latest, "academicYearId", "AcademicYearId") ?? "",
-            academicLevelId: pick(latest, "academicLevelId", "AcademicLevelId") ?? "",
-            groupId: pick(latest, "groupId", "GroupId") ?? "",
-            programId: pick(latest, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? "",
-            sectionId: pick(latest, "sectionId", "SectionId") ?? "",
+            boardId: pick(latest, "boardId", "BoardId") ?? pick(board, "boardId", "BoardId", "id", "Id") ?? "",
+            academicYearId: pick(latest, "academicYearId", "AcademicYearId") ?? pick(year, "academicYearId", "AcademicYearId", "id", "Id") ?? "",
+            academicLevelId: pick(latest, "academicLevelId", "AcademicLevelId") ?? pick(level, "academicLevelId", "AcademicLevelId", "id", "Id") ?? "",
+            groupId: pick(latest, "groupId", "GroupId") ?? pick(group, "groupId", "GroupId", "id", "Id") ?? "",
+            programId: pick(latest, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? pick(program, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? "",
+            sectionId: pick(latest, "sectionId", "SectionId") ?? pick(section, "sectionId", "SectionId", "id", "Id") ?? "",
             isPublished: pick(latest, "isPublished", "IsPublished"),
             workingDays: latest.workingDays ?? latest.WorkingDays,
           },

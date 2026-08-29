@@ -66,6 +66,8 @@
 .timetable-module .ttm-period-list span { color: var(--cms-muted); font-size: 12px; }
 .timetable-module .ttm-grid-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--cms-border); background: var(--cms-subtle); }
 .timetable-module .ttm-grid-head > div { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.timetable-module .ttm-inline-filter { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; color: var(--cms-text); font-size: 13px; font-weight: 650; }
+.timetable-module .ttm-inline-filter select { height: 38px; padding: 7px 28px 7px 9px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); color: var(--cms-text); font: inherit; }
 .timetable-module .ttm-grid-wrap { max-width: 100%; overflow: auto; overscroll-behavior-inline: contain; }
 .timetable-module .ttm-grid { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
 .timetable-module .ttm-grid th, .timetable-module .ttm-grid td { border-right: 1px solid var(--cms-border); border-bottom: 1px solid var(--cms-border); vertical-align: middle; }

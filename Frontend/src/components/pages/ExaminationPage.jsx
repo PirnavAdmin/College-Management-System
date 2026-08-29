@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Loader, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./ExaminationPage.css";
 
 const EXAM_API = {
@@ -1026,10 +1027,13 @@ export default function ExaminationPage() {
                   value={filters.yearId}
                   disabled={!filters.boardId}
                   onChange={(value) => changeFilter("yearId", value)}
-                  options={YEARS.filter(
-                    (year) =>
-                      year.isActive &&
-                      (year.boardId == null || Number(year.boardId) === Number(filters.boardId)),
+                  options={uniqueAcademicYearsByName(
+                    YEARS.filter(
+                      (year) =>
+                        year.isActive &&
+                        (year.boardId == null || Number(year.boardId) === Number(filters.boardId)),
+                    ),
+                    (year) => year.name,
                   )}
                 />
                 <ConstrainedFilterSelect
@@ -1784,8 +1788,11 @@ function ExamForm({
                     : {}),
       }));
     },
-    y = YEARS.filter(
-      (x) => x.isActive && (x.boardId == null || Number(x.boardId) === Number(form.boardId)),
+    y = uniqueAcademicYearsByName(
+      YEARS.filter(
+        (x) => x.isActive && (x.boardId == null || Number(x.boardId) === Number(form.boardId)),
+      ),
+      (year) => year.name,
     ),
     l = LEVELS,
     g = GROUPS,

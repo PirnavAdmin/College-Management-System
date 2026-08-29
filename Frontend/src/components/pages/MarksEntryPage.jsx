@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
 import apiClient, { getApiErrorMessage } from "../../api/apiClient.js";
+import { uniqueAcademicYearsByName } from "../../api/apiEndpoints.js";
 import "./MarksEntryPage.css";
 
 const Check = () => <span aria-hidden="true">✓</span>;
@@ -989,14 +990,14 @@ export default function MarksEntryPage() {
   };
   const options = {
     boards: boards.map((item) => [item.boardId, item.boardName]),
-    years: academicYears
+    years: uniqueAcademicYearsByName(academicYears
       .filter(
         (item) =>
           !filters.board ||
           item.boardId == null ||
           Number(item.boardId) === Number(filters.board),
       )
-      .map((item) => [item.academicYearId, item.academicYearName]),
+      .map((item) => [item.academicYearId, item.academicYearName]), (item) => item[1]),
     levels: academicLevels.map((item) => [item.academicLevelId, item.levelName]),
     groups: groups.map((item) => [item.groupId, item.groupName]),
     programs: programs.map((item) => [item.programId, item.programName]),

@@ -521,3 +521,14 @@
     padding: 8px 6px;
   }
 }
+
+/* Board & Academic Year table-system alignment. */
+.att-table-card { overflow: hidden; border-radius: 12px; }
+.att-table-top { min-height: 55px; padding: 9px 12px; }
+.att-table th,
+.att-table td { padding: clamp(7px, .5vw, 9px) clamp(6px, .6vw, 9px); }
+.att-table th { font-size: clamp(11px, .8vw, 12.5px); line-height: 1.3; letter-spacing: .6px; }
+.att-table td { font-size: clamp(11.5px, .82vw, 13px); line-height: 1.4; overflow-wrap: anywhere; }
+/* Monthly attendance is a genuine calendar grid and retains controlled scrolling. */
+.att-month-table th,
+.att-month-table td { padding: 7px 8px !important; white-space: nowrap; }

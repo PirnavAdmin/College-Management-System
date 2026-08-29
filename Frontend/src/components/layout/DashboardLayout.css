@@ -620,6 +620,12 @@
   flex-wrap: wrap;
 }
 
+.cms-breadcrumb-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .cms-breadcrumb a {
   color: var(--cms-muted);
   text-decoration: none;

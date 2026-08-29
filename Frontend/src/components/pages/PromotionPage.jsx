@@ -4,7 +4,7 @@ import { RefreshCw } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./PromotionPage.css";
 
 
@@ -241,7 +241,7 @@ export default function PromotionPage({ screen = "promotion" }) {
 
   const sourceFields = useMemo(() => [
     { name: "board", label: "Board", type: "select", options: masters.boards, required: true },
-    { name: "fromYear", label: "From Academic Year", type: "select", options: masters.years.filter((year) => !setup.board || !year.board || year.board === asString(setup.board)), required: true, disabled: true },
+    { name: "fromYear", label: "From Academic Year", type: "select", options: uniqueAcademicYearsByName(masters.years.filter((year) => !setup.board || !year.board || year.board === asString(setup.board)), (year) => year.label), required: true, disabled: true },
     { name: "fromLevel", label: "From Academic Level", type: "select", options: levelsFor("from"), required: true, disabled: !setup.board },
     { name: "group", label: "Group", type: "select", options: groupsFor("from"), required: true },
     { name: "program", label: "Program", type: "select", options: programsFor("from"), required: true, disabled: !setup.group },
@@ -255,7 +255,7 @@ export default function PromotionPage({ screen = "promotion" }) {
   const destinationLevels = useMemo(() => levelsFor("to").filter((level) => !/^degree$/i.test(level.label)), [levelsFor]);
   const targetFields = useMemo(() => [
     { name: "toBoard", label: "Board", type: "select", options: masters.boards, required: true },
-    { name: "toYear", label: "To Academic Year", type: "select", options: masters.years.filter((year) => !setup.toBoard || !year.board || year.board === asString(setup.toBoard)), required: true, disabled: true },
+    { name: "toYear", label: "To Academic Year", type: "select", options: uniqueAcademicYearsByName(masters.years.filter((year) => !setup.toBoard || !year.board || year.board === asString(setup.toBoard)), (year) => year.label), required: true, disabled: true },
     { name: "toLevel", label: "To Academic Level", type: "select", options: destinationLevels, required: true, disabled: !setup.toBoard },
     { name: "toGroup", label: "Group", type: "select", options: groupsFor("to"), required: true, disabled: !setup.toLevel },
     { name: "toProgram", label: "Program", type: "select", options: programsFor("to"), required: true, disabled: !setup.toGroup },
@@ -472,7 +472,7 @@ export default function PromotionPage({ screen = "promotion" }) {
         {activeTab === "allocation" ? <AllocationScreen activeTab={allocationTab} setActiveTab={setAllocationTab} masters={masters} setup={setup} students={students} onSaved={() => setToast(`${allocationTab === "group" ? "Group" : "Section"} allocation updated successfully.`)} /> : null}
 
         {activeTab === "history" ? <section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Promotion History</h2><p>Search completed promotion activity and roll back supported records.</p></div></div><div className="cms-card-body promotion-history-filters">{[
-          { name: "academicYearId", label: "Source Year", type: "select", options: masters.years },
+          { name: "academicYearId", label: "Source Year", type: "select", options: uniqueAcademicYearsByName(masters.years, (year) => year.label) },
           { name: "academicLevel", label: "Source Level", type: "select", options: masters.levels },
           { name: "groupId", label: "Source Group", type: "select", options: masters.groups }, { name: "programId", label: "Source Program", type: "select", options: historyPrograms, disabled: !historyFilters.groupId }, { name: "section", label: "Source Section", type: "select", options: historySections, disabled: !historyFilters.programId },
           { name: "studentId", label: "Student ID", type: "number" }, { name: "search", label: "Search" }, { name: "promotionStatus", label: "Promotion Status" },
@@ -511,7 +511,7 @@ function SinglePromotionScreen({ masters, student, onPromote }) {
   const targetGroup = masters.groups.find((group) => group.value === asString(target.group));
   const targetPrograms = targetGroup?.programs || [];
   const targetSections = masters.sections.filter((section) => (!section.group || section.group === asString(target.group) || section.group === targetGroup?.label) && (!target.program || !section.program || section.program === asString(target.program)));
-  const fields = [{ name: "year", label: "Target Academic Year", type: "select", options: masters.years, required: true }, { name: "level", label: "Target Academic Level", type: "select", options: masters.levels, required: true }, { name: "group", label: "Target Group", type: "select", options: masters.groups, required: true }, { name: "program", label: "Target Program", type: "select", options: targetPrograms, required: true, disabled: !target.group }, { name: "section", label: "Target Section", type: "select", options: targetSections, required: true, disabled: !target.program }, { name: "medium", label: "Target Medium", type: "select", options: [option("English")], required: true }];
+  const fields = [{ name: "year", label: "Target Academic Year", type: "select", options: uniqueAcademicYearsByName(masters.years, (year) => year.label), required: true }, { name: "level", label: "Target Academic Level", type: "select", options: masters.levels, required: true }, { name: "group", label: "Target Group", type: "select", options: masters.groups, required: true }, { name: "program", label: "Target Program", type: "select", options: targetPrograms, required: true, disabled: !target.group }, { name: "section", label: "Target Section", type: "select", options: targetSections, required: true, disabled: !target.program }, { name: "medium", label: "Target Medium", type: "select", options: [option("English")], required: true }];
   return <section className="cms-card promotion-card"><div className="cms-card-head"><div><h2>Student Details</h2><p>Select a student from the eligible-students list or search by admission number.</p></div></div><div className="cms-card-body promotion-setup-grid promotion-single-grid"><div className="promotion-flow-panel"><h3>Current Details</h3>{student ? <><p><strong>Student:</strong> {student.name}</p><p><strong>Admission No:</strong> {student.admissionNo}</p><p><strong>Current:</strong> {[student.academicYear, student.level, student.group, student.section].filter((value) => value && value !== "-").join(" / ") || "-"}</p></> : <p className="promotion-empty">Load eligible students from Student Promotion first.</p>}</div><div className="promotion-flow-panel"><h3>Target Details</h3><div className="promotion-field-grid">{fields.map((field) => <Field key={field.name} field={field} value={target[field.name]} onChange={change} />)}</div></div></div><div className="promotion-actions"><button className="cms-btn cms-btn-ghost" type="button">Cancel</button><button className="cms-btn cms-btn-primary" type="button" disabled={!student || Object.values(target).some((value) => !value)} onClick={() => setConfirming(true)}>Promote Student</button></div>{confirming ? <Modal title="Confirm Student Promotion" onClose={() => setConfirming(false)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setConfirming(false)}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={() => { setConfirming(false); onPromote(); }}>Confirm</button></>}><p>Are you sure you want to promote {student?.name}?</p><strong>{student?.level || "Current level"} → {target.level}</strong></Modal> : null}</section>;
 }
 

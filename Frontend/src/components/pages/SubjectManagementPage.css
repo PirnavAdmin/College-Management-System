@@ -693,3 +693,21 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Board & Academic Year table-system alignment. */
+.subject-management .cms-toolbar { min-height: 55px; padding: 9px 12px; gap: 9px; }
+.subject-management .cms-search { width: min(650px, 100%); height: 36px; min-height: 36px; border-radius: 8px; }
+.subject-management .cms-toolbar-right { gap: 7px; }
+.subject-management .cms-toolbar-right .cms-btn { min-height: 36px; padding: 0 13px; font-size: 13px; }
+.subject-management .cms-table-wrap { margin: 0; border: 0; border-radius: 0; }
+.subject-management .cms-table th,
+.subject-management .cms-table td { padding: clamp(7px, .5vw, 9px) clamp(6px, .6vw, 9px); }
+.subject-management .cms-pagination { min-height: 46px; padding: 5px 14px; }
+.subject-table-card { border-radius: 12px; }
+.subject-table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.subject-table { width: 100%; min-width: 760px; }
+.subject-table th { padding: clamp(7px, .5vw, 9px) clamp(6px, .6vw, 9px); color: var(--cms-muted); font-size: clamp(11px, .8vw, 12.5px); line-height: 1.3; text-transform: uppercase; letter-spacing: .6px; }
+.subject-table td { min-width: 0; padding: clamp(7px, .5vw, 9px) clamp(6px, .6vw, 9px); font-size: clamp(11.5px, .82vw, 13px); line-height: 1.4; overflow-wrap: anywhere; }
+.subject-table-pagination { min-height: 46px; padding: 5px 14px; font-size: 14px; font-weight: 600; }
+.subject-table-pagination button { min-width: 36px; height: 36px; padding: 0 9px; border-radius: 9px; font-size: 14px; font-weight: 700; }
+@media (max-width: 700px) { .subject-management .cms-table-wrap { margin: 0; } }

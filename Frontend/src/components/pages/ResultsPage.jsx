@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
@@ -794,8 +795,11 @@ export default function ResultProcessingPage() {
                   onChange={(v) => changeFilter("year", v)}
                 >
                   {renderSelectOptions(
-                    academicYears.filter(
-                      (i) => i.boardId == null || Number(i.boardId) === Number(filters.board),
+                    uniqueAcademicYearsByName(
+                      academicYears.filter(
+                        (i) => i.boardId == null || Number(i.boardId) === Number(filters.board),
+                      ),
+                      (item) => item.name,
                     ),
                   )}
                 </Select>

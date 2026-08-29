@@ -364,3 +364,23 @@
     custom: "/api/reports/custom",
   },
 };
+
+export const uniqueAcademicYearsByName = (items = [], getName = (item) => (
+  item?.label
+  ?? item?.academicYearName
+  ?? item?.AcademicYearName
+  ?? item?.academicYear
+  ?? item?.AcademicYear
+  ?? item?.yearName
+  ?? item?.YearName
+  ?? item?.name
+  ?? item?.Name
+)) => {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(getName(item) ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};

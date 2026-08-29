@@ -193,3 +193,9 @@
         flex-basis: 100%;
     }
 }
+
+/* Board & Academic Year toolbar sizing. */
+.submissions-toolbar { min-height: 55px; padding: 9px 12px; gap: 9px; }
+.submissions-toolbar .cms-search { width: min(650px, 100%); max-width: 650px; height: 36px; min-height: 36px; }
+.submissions-toolbar .cms-search input { height: 100%; padding: 0; border: 0 !important; border-radius: 0; box-shadow: none; }
+.submissions-toolbar select { height: 36px; border-radius: 8px; }

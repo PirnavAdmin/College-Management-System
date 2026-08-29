@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import { options } from "@/data/mockData.js";
@@ -1184,9 +1184,13 @@ export default function AdmissionPage() {
     ));
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
   const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
+  const admissionYearOptions = useMemo(() => uniqueAcademicYearsByName(
+    (masterOptions.years || []).filter((item) => !values.board || !item.boardId || String(item.boardId) === String(values.board)),
+    (item) => item.label,
+  ), [masterOptions.years, values.board]);
   const enhanceField = (field) => {
     if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
-    if (field.name === "year" && masterOptions.years?.length) return { ...field, options: masterOptions.years };
+    if (field.name === "year" && admissionYearOptions.length) return { ...field, options: admissionYearOptions };
     if (field.name === "level" && masterOptions.levels?.length) return { ...field, options: masterOptions.levels };
     if (field.name === "group") {
       if (masterStatus.groupsLoading) return { ...field, options: [{ value: "__loading_groups", label: "Loading groups...", disabled: true }] };
@@ -1350,7 +1354,10 @@ export default function AdmissionPage() {
           : [],
         years: yearsResult.status === "fulfilled"
           ? getCollection(yearsResult.value.data)
-            .map((item) => toOption(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]))
+            .map((item) => {
+              const option = toOption(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]);
+              return option ? { ...option, boardId: readId(item, "boardId", "BoardId") } : null;
+            })
             .filter(Boolean)
           : [],
         levels: levelsResult.status === "fulfilled"
@@ -1610,6 +1617,10 @@ export default function AdmissionPage() {
     const optionsFromRows = (masterOptions.groups || []).map((item) => ({ value: item.label, label: item.label }));
     return Array.from(new Map(optionsFromRows.filter((item) => item.value).map((item) => [item.value, item])).values());
   }, [masterOptions.groups]);
+  const academicYearFilterOptions = useMemo(() => uniqueAcademicYearsByName(
+    (masterOptions.years || []).map((item) => ({ value: item.label, label: item.label })),
+    (item) => item.label,
+  ), [masterOptions.years]);
   const programFilterOptions = useMemo(() => {
     const filteredRows = filters.group
       ? admissionRows.filter((item) => String(item.group) === String(filters.group))
@@ -2024,7 +2035,7 @@ export default function AdmissionPage() {
               />
             </div>
             <div className="cms-admission-filters">
-              <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || options.year }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "year", label: "Academic Year", type: "select", options: academicYearFilterOptions.length ? academicYearFilterOptions : options.year }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, program: name === "group" ? "" : current.program })); setPage(1); }} />
               <Field field={{ name: "program", label: "Program", type: "select", options: programFilterOptions }} value={filters.program} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />

@@ -27,7 +27,7 @@ import {
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import {
   COLLEGE_NAME,
   PAYMENT_METHODS,
@@ -1986,7 +1986,10 @@ export default function FeeManagementPage() {
         ? toSelectOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
         : [],
       years: yearsResult.status === "fulfilled"
-        ? toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])
+        ? uniqueAcademicYearsByName(
+          toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
+          (item) => item.label,
+        )
         : [],
       levels: levelsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "name", "Name"])

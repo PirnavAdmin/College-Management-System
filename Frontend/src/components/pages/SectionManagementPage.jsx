@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, Plus, Search, X, CheckCircle2, Pencil, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./SectionManagementPage.css";
 
 const PAGE_SIZE = 5;
@@ -757,11 +757,11 @@ export default function SectionManagementPage() {
     );
   }, [academicYearsList, boardsList, filters.board]);
   const academicYearOptions = useMemo(
-    () => formAcademicYears.map((item) => item.name),
+    () => uniqueAcademicYearsByName(formAcademicYears.map((item) => item.name), (item) => item),
     [formAcademicYears],
   );
   const academicYearFilterOptions = useMemo(
-    () => filterAcademicYears.map((item) => item.name),
+    () => uniqueAcademicYearsByName(filterAcademicYears.map((item) => item.name), (item) => item),
     [filterAcademicYears],
   );
   const groupOptions = useMemo(() => groupsList.map((item) => item.name), [groupsList]);

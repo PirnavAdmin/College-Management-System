@@ -40,6 +40,7 @@ const STAFF_API = {
 };
 
 const API_STAFF_TYPES = { teaching: "Teaching", "non-teaching": "NonTeaching" };
+const STAFF_PAGE_SIZE = 5;
 
 const fields = [
   { name: "empId", label: "Employee ID", required: true },
@@ -80,12 +81,12 @@ const extractItems = (payload) =>
       [];
 const extractRecord = (payload) => payload?.data ?? payload?.Data ?? payload;
 const facultyName = (item = {}) =>
-  item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "Unsaved faculty";
+  item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "—";
 const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
-const getCrudId = (item = {}) => item.id ?? item.Id ?? item.staffId ?? item.StaffId;
+const getCrudId = (item = {}) => item.id ?? item.Id;
 const getStaffId = (item = {}) => item.staffId ?? item.StaffId;
 const getFacultyId = (item = {}) => item.facultyId ?? item.FacultyId;
-const facultyId = (item = {}) => getFacultyId(item) ?? getCrudId(item);
+const facultyId = (item = {}) => getFacultyId(item);
 const firstValue = (item = {}, ...keys) =>
   keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null && value !== "") ??
   Object.entries(item || {}).find(([key, value]) =>
@@ -97,22 +98,67 @@ const lookupValue = (value) => {
   if (typeof value !== "object") return value;
   return firstValue(value, "name", "Name", "value", "Value", "bloodGroup", "BloodGroup", "bloodType", "BloodType", "bloodGroupName", "BloodGroupName", "facultyTypeName", "FacultyTypeName", "typeName", "TypeName") ?? "";
 };
-const facultyTypeValue = (item = {}) => {
-  const value = lookupValue(firstValue(item, "staffType", "StaffType", "facultyType", "FacultyType", "facultyTypeName", "FacultyTypeName", "type", "Type"));
-  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s_-]/g, "");
+const normalizeStaffType = (value) => {
+  const normalized = String(lookupValue(value) ?? "").trim().toLowerCase().replace(/[\s_-]/g, "");
   if (normalized === "teaching" || normalized === "teachingstaff") return "Teaching Staff";
   if (normalized === "nonteaching" || normalized === "nonteachingstaff") return "Non-Teaching Staff";
-  return value ?? "";
+  return lookupValue(value) ?? "";
 };
-const toApiStaffType = (value) =>
-  facultyTypeValue({ staffType: value }) === "Non-Teaching Staff"
-    ? API_STAFF_TYPES["non-teaching"]
-    : API_STAFF_TYPES.teaching;
+const normalizeFacultyType = (value) => String(lookupValue(value) ?? "").trim();
+const facultyTypeValue = (item = {}) => {
+  const value = firstValue(item, "staffType", "StaffType");
+  return normalizeStaffType(value);
+};
+const toApiStaffType = (value) => {
+  const normalized = normalizeStaffType(value);
+  return normalized === "Non-Teaching Staff" ? API_STAFF_TYPES["non-teaching"] : API_STAFF_TYPES.teaching;
+};
+const normalizeStaffPage = (payload) => {
+  const source = payload?.data ?? payload?.Data ?? payload ?? {};
+  const items = Array.isArray(source.items ?? source.Items) ? source.items ?? source.Items : [];
+  return {
+    items,
+    totalCount: Number(source.totalCount ?? source.TotalCount ?? 0) || 0,
+    pageNumber: Number(source.pageNumber ?? source.PageNumber ?? 1) || 1,
+    pageSize: Number(source.pageSize ?? source.PageSize ?? STAFF_PAGE_SIZE) || STAFF_PAGE_SIZE,
+    totalPages: Math.max(1, Number(source.totalPages ?? source.TotalPages ?? 1) || 1),
+  };
+};
+const staffDropdownItem = (item = {}) => ({
+  id: getCrudId(item),
+  staffId: getStaffId(item),
+  facultyId: getFacultyId(item),
+  employeeId: firstValue(item, "employeeId", "EmployeeId"),
+  fullName: facultyName(item),
+  designation: firstValue(item, "designation", "Designation"),
+  designationId: firstValue(item, "designationId", "DesignationId"),
+  staffType: normalizeStaffType(firstValue(item, "staffType", "StaffType")),
+  facultyType: normalizeFacultyType(firstValue(item, "facultyType", "FacultyType")),
+});
 const subjectId = (item = {}) => item.subjectId ?? item.id ?? item.SubjectId ?? item.Id;
 const subjectName = (item = {}) =>
-  item.subjectName || item.name || item.SubjectName || "Unnamed subject";
+  item.subjectName || item.name || item.SubjectName || item.subject?.subjectName || item.subject?.name || item.Subject?.SubjectName || "Unnamed subject";
+const allocationSubjectId = (item = {}) =>
+  item.subjectId ?? item.SubjectId ?? item.subject?.subjectId ?? item.subject?.id ?? item.Subject?.SubjectId ?? item.Subject?.Id;
 const allocationId = (item = {}) =>
   item.assignmentId ?? item.allocationId ?? item.id ?? item.AssignmentId ?? item.AllocationId;
+const allocationItems = (payload) => {
+  const data = extractRecord(payload) ?? {};
+  return extractItems(
+    data.allocations
+      ?? data.Allocations
+      ?? data.subjectAssignments
+      ?? data.SubjectAssignments
+      ?? data.assignedSubjects
+      ?? data.AssignedSubjects
+      ?? data,
+  );
+};
+const assignedSubjectNames = (payload) => [...new Set(
+  allocationItems(payload)
+    .map((allocation) => subjectName(allocation))
+    .filter((name) => name && name !== "Unnamed subject"),
+)];
 const sharedPayloadFor = (values) => ({
   firstName: values.firstName,
   lastName: values.lastName,
@@ -148,7 +194,7 @@ const rowFor = (item) => ({
       ? item.status
         ? "Active"
         : "Inactive"
-      : item.status || "Active",
+      : item.status || "—",
   department: item.department,
   designation: item.designation,
   facultyType: facultyTypeValue(item),
@@ -199,15 +245,40 @@ const resolvePhotoSource = (payload) => {
   }
 };
 
+const photoSourceFromResponse = async (response) => {
+  if (response?.data instanceof Blob) {
+    if (!response.data.size) return { source: "", objectUrl: "" };
+    const contentType = String(response.headers?.["content-type"] || response.data.type || "").toLowerCase();
+    if (contentType.includes("json") || contentType.startsWith("text/")) {
+      const text = await response.data.text();
+      try {
+        return { source: resolvePhotoSource(JSON.parse(text)), objectUrl: "" };
+      } catch {
+        return { source: resolvePhotoSource(text), objectUrl: "" };
+      }
+    }
+    const objectUrl = URL.createObjectURL(response.data);
+    return { source: objectUrl, objectUrl };
+  }
+  return { source: resolvePhotoSource(response?.data), objectUrl: "" };
+};
+
+const requestStaffPhoto = (id) => apiClient.get(STAFF_API.photo(id), {
+  responseType: "blob",
+  skipGlobalLoader: true,
+});
+
 const staffPrintRows = (record) => {
   const values = valuesFor(record);
-  return [
+  const rows = [
     ["Employee ID", values.empId], ["Staff Name", facultyName(record)], ["Staff Category", values.facultyType],
     ["Gender", values.gender], ["Date of Birth", values.dob], ["Aadhaar Number", values.aadhaar],
     ["Mobile", values.mobile], ["Email", values.email], ["Blood Group", values.bloodGroup],
     ["Qualification", values.qualification], ["Designation", values.designation], ["Department", values.department],
     ["Joining Date", values.joining], ["Experience (Years)", values.experience], ["Status", values.status],
   ];
+  if (Array.isArray(record.assignedSubjects)) rows.push(["Subjects -", record.assignedSubjects.join(", ") || "—"]);
+  return rows;
 };
 
 const buildStaffPrintHtml = (record, photoSource, staffTypeLabel) => {
@@ -223,7 +294,7 @@ const buildStaffPrintHtml = (record, photoSource, staffTypeLabel) => {
     h1{margin:0;font-size:24px}.subtitle{margin:5px 0 0;color:#687063;font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:16px 24px 24px;column-gap:34px}
     .detail{display:grid;grid-template-columns:145px minmax(0,1fr);gap:12px;min-height:43px;align-items:center;border-bottom:1px solid #e7e9dd;font-size:12px}.detail span{color:#687063;font-weight:600}.detail strong{overflow-wrap:anywhere}
     .foot{padding:13px 24px;border-top:1px solid #d9dccb;color:#687063;font-size:10px;text-align:right}@media print{.sheet{break-inside:avoid}}
-  </style></head><body><main class="sheet"><header class="head">${photo}<div><h1>${escapePrintValue(facultyName(record))}</h1><p class="subtitle">${escapePrintValue(staffTypeLabel)} · Pirnav Junior College</p></div></header><section class="grid">${details}</section><footer class="foot">Printed ${escapePrintValue(new Date().toLocaleString())}</footer></main></body></html>`;
+  </style></head><body><main class="sheet"><header class="head">${photo}<div><h1>${escapePrintValue(facultyName(record))}</h1><p class="subtitle">${escapePrintValue(staffTypeLabel)} · Pirnav College</p></div></header><section class="grid">${details}</section><footer class="foot">Printed ${escapePrintValue(new Date().toLocaleString())}</footer></main></body></html>`;
 };
 
 const BLOOD_GROUPS = new Set(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]);
@@ -301,15 +372,24 @@ const facultyValidation = (source, { departments = [], genders = [], allowCustom
 const friendlyFacultyError = (error) => {
   console.error("Faculty operation failed:", error);
   const status = error?.response?.status;
-  const message = String(error?.response?.data?.message ?? error?.response?.data?.Message ?? "").toLowerCase();
+  const rawMessage = String(
+    error?.response?.data?.detail
+      ?? error?.response?.data?.Detail
+      ?? error?.response?.data?.message
+      ?? error?.response?.data?.Message
+      ?? error?.response?.data?.title
+      ?? error?.response?.data?.Title
+      ?? "",
+  );
+  const message = rawMessage.toLowerCase();
   if (message.includes("employee")) return "Employee ID already exists. Please use a different Employee ID.";
   if (message.includes("email")) return "Email already exists. Please use a different email address.";
   if (message.includes("mobile") || message.includes("phone")) return "Mobile number already exists. Please use a different mobile number.";
   if (status === 401) return "Your session has expired. Please log in again.";
   if (status === 403) return "You do not have permission to manage staff records.";
   if (status === 404) return "Staff record not found.";
-  if (status === 409) return "A faculty record with these details already exists.";
-  if (status === 400) return error?.response?.data?.title || error?.response?.data?.message || "Please correct the highlighted staff details.";
+  if (status === 409) return rawMessage || "A staff record with these details already exists.";
+  if (status === 400) return rawMessage || "Please correct the highlighted staff details.";
   if ([500, 502, 503, 504].includes(status)) return "Unable to complete the request right now. Please try again later.";
   if (error?.message === "Network Error") return "Unable to connect to the service. Please check your internet connection and try again.";
   return "Please check the entered information and try again.";
@@ -469,6 +549,8 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [, setStaffDropdown] = useState([]);
   const [, setLoadingStaffDropdown] = useState(false);
+  const employeeIdRequestRef = useRef(0);
+  const workflowDetailRequestRef = useRef(0);
   useEffect(() => {
     if (!photoFile) {
       setPhotoPreview("");
@@ -496,33 +578,31 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const { values, errors, setValue, setValues, setErrors } = useForm(formFields, { facultyType: staffType, status: "Active" });
   useEffect(() => {
     if (existingId) return;
+    const requestId = ++employeeIdRequestRef.current;
     setGeneratingEmployeeId(true);
     apiClient
       .get(STAFF_API.nextEmployeeId, { params: { staffType: toApiStaffType(staffType) } })
       .then((response) => {
+        if (requestId !== employeeIdRequestRef.current) return;
         const employeeId = typeof response.data === "string" ? response.data : firstValue(response.data, "employeeId", "EmployeeId", "value", "Value");
         if (!employeeId) throw new Error("Employee ID was not returned by the server.");
         setValue("empId", String(employeeId));
       })
       .catch((error) => {
+        if (requestId !== employeeIdRequestRef.current) return;
         setValue("empId", "");
         setToast(error?.message === "Employee ID was not returned by the server." ? error.message : "Unable to generate Employee ID.");
       })
-      .finally(() => setGeneratingEmployeeId(false));
-  }, [existingId, staffType]);
+      .finally(() => {
+        if (requestId === employeeIdRequestRef.current) setGeneratingEmployeeId(false);
+      });
+    return () => { employeeIdRequestRef.current += 1; };
+  }, [existingId, setValue, staffType]);
   const loadStaffDropdown = useCallback(async () => {
     setLoadingStaffDropdown(true);
     try {
       const response = await apiClient.get(STAFF_API.dropdown, { params: { staffType: toApiStaffType(staffType) } });
-      const normalized = extractItems(response.data).map((item) => ({
-        id: getCrudId(item),
-        staffId: getStaffId(item),
-        facultyId: getFacultyId(item),
-        employeeId: firstValue(item, "employeeId", "EmployeeId"),
-        fullName: facultyName(item),
-        designation: firstValue(item, "designation", "Designation"),
-        staffType: facultyTypeValue(item),
-      }));
+      const normalized = extractItems(response.data).map(staffDropdownItem);
       setStaffDropdown(normalized);
       return normalized;
     } catch (error) {
@@ -540,16 +620,23 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   }, [teaching]);
   useEffect(() => {
     if (!existingId) return;
+    const requestId = ++workflowDetailRequestRef.current;
     apiClient
       .get(STAFF_API.getById(existingId))
       .then((r) => {
+        if (requestId !== workflowDetailRequestRef.current) return;
         const record = extractRecord(r.data);
         setValues(valuesFor(record));
         setSelectedFacultyType(facultyTypeValue(record));
         setSaved(record);
       })
-      .catch((detailError) => setToast(detailError?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(detailError)))
-      .finally(() => setLoadingDetails(false));
+      .catch((detailError) => {
+        if (requestId === workflowDetailRequestRef.current) setToast(detailError?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(detailError));
+      })
+      .finally(() => {
+        if (requestId === workflowDetailRequestRef.current) setLoadingDetails(false);
+      });
+    return () => { workflowDetailRequestRef.current += 1; };
   }, [existingId, setValues]);
   const loadAllocation = async (faculty) => {
     setLoadingAllocation(true);
@@ -564,22 +651,16 @@ function Workflow({ existingId, staffTab = "teaching" }) {
       })
       .catch((e) => setToast(friendlyFacultyError(e)));
 
-    const loadWorkload = apiClient
-      .get(apiEndpoints.faculty.getWorkload(facultyId(faculty)))
+    const allocationFacultyId = facultyId(faculty);
+    const loadWorkload = allocationFacultyId ? apiClient
+      .get(apiEndpoints.faculty.getWorkload(allocationFacultyId))
       .then((workloadResponse) => {
-      const data = workloadResponse.data;
-      const list = extractItems(
-        data?.allocations ??
-          data?.Allocations ??
-          data?.subjectAssignments ??
-          data?.SubjectAssignments ??
-          data?.assignedSubjects ??
-          data?.AssignedSubjects ??
-          data,
-      );
-      setAllocations(list);
+      setAllocations(allocationItems(workloadResponse.data));
       })
-      .catch((e) => setToast(friendlyFacultyError(e)));
+      .catch((e) => setToast(friendlyFacultyError(e))) : Promise.resolve().then(() => {
+      setAllocations([]);
+      setToast("Subject allocation is unavailable because the Staff API did not return a FacultyId.");
+    });
 
     await Promise.all([loadSubjects, loadWorkload]);
     setLoadingAllocation(false);
@@ -624,6 +705,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     setStep(1);
   };
   const confirm = async () => {
+    if (saving || uploadingPhoto) return;
     const result = validateAndShow();
     setValues(result.values);
     if (Object.keys(result.errors).length) {
@@ -646,6 +728,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
         staffId: getStaffId(record),
         facultyId: getFacultyId(record),
       };
+      let photoUploadFailed = false;
       if (photoFile) {
         if (!getStaffId(next)) {
           const dropdown = await loadStaffDropdown();
@@ -653,22 +736,41 @@ function Workflow({ existingId, staffTab = "teaching" }) {
           if (match) next = { ...next, staffId: match.staffId, facultyId: getFacultyId(next) ?? match.facultyId };
         }
         const requiredStaffId = getStaffId(next);
-        if (!requiredStaffId) throw new Error("The server did not return a StaffId required for photo upload.");
-        setUploadingPhoto(true);
-        const photoData = new FormData();
-        photoData.append("StaffId", String(requiredStaffId));
-        if (getFacultyId(next)) photoData.append("FacultyId", String(getFacultyId(next)));
-        photoData.append("Photo", photoFile);
-        await apiClient.post(STAFF_API.uploadPhoto, photoData, { headers: { "Content-Type": undefined } });
-        setUploadingPhoto(false);
-      }
-      setSaved(next);
-      if (teaching && pendingSubjects.length) {
-        for (const subject of pendingSubjects) {
-          await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: facultyId(next), subjectId: subjectId(subject) });
+        try {
+          if (!requiredStaffId) throw new Error("The server did not return a StaffId required for photo upload.");
+          setUploadingPhoto(true);
+          const photoData = new FormData();
+          photoData.append("StaffId", String(requiredStaffId));
+          if (getFacultyId(next)) photoData.append("FacultyId", String(getFacultyId(next)));
+          photoData.append("Photo", photoFile);
+          await apiClient.post(STAFF_API.uploadPhoto, photoData);
+        } catch (photoError) {
+          photoUploadFailed = true;
+          console.error("Staff photo upload failed:", photoError);
+        } finally {
+          setUploadingPhoto(false);
         }
       }
-      setToast(`${staffType} ${existingId ? "updated" : "added"} successfully.`);
+      setSaved(next);
+      let allocationFailed = false;
+      if (teaching && pendingSubjects.length) {
+        try {
+          if (!facultyId(next)) throw new Error("The Staff API did not return a FacultyId required for subject allocation.");
+          for (const subject of pendingSubjects) {
+            await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: facultyId(next), subjectId: subjectId(subject) });
+          }
+        } catch (allocationError) {
+          allocationFailed = true;
+          console.error("Staff subject allocation failed:", allocationError);
+        }
+      }
+      const partialFailures = [
+        photoUploadFailed ? "profile photo upload" : "",
+        allocationFailed ? "subject allocation" : "",
+      ].filter(Boolean);
+      setToast(partialFailures.length
+        ? `${staffType} ${existingId ? "updated" : "added"} successfully, but ${partialFailures.join(" and ")} failed.`
+        : `${staffType} ${existingId ? "updated" : "added"} successfully.`);
       navigate(`/dashboard/faculty?staffTab=${staffTab}`);
     } catch (e) {
       const backendErrors = e?.response?.data?.errors ?? e?.response?.data?.Errors;
@@ -722,11 +824,13 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     }
   };
   const allocatedIds = new Set(
-    allocations.map((a) => String(a.subjectId ?? a.subject?.subjectId ?? a.subjectId)),
+    allocations.map((allocation) => String(allocationSubjectId(allocation) ?? "")).filter(Boolean),
   );
+  const pendingIds = new Set(pendingSubjects.map((subject) => String(subjectId(subject) ?? "")).filter(Boolean));
   const available = subjects.filter(
     (s) =>
       !allocatedIds.has(String(subjectId(s))) &&
+      !pendingIds.has(String(subjectId(s))) &&
       !allocations.some((a) => subjectName(a) === subjectName(s)),
   );
   const selectedAvailableSubject = available.find(
@@ -744,6 +848,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const addPendingSubject = (subject) => {
     const id = String(subjectId(subject) ?? "");
     if (!id) return setToast("Please select a valid subject.");
+    if (allocatedIds.has(id) || allocations.some((item) => subjectName(item) === subjectName(subject))) return setToast("This subject is already allocated.");
     if (pendingSubjects.some((item) => String(subjectId(item)) === id)) return setToast("This subject is already selected.");
     setPendingSubjects((current) => [...current, subject]);
   };
@@ -809,7 +914,22 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
                     disabled={saving || uploadingPhoto}
-                    onChange={(event) => setPhotoFile(event.target.files?.[0] || null)}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      if (file && !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+                        event.target.value = "";
+                        setPhotoFile(null);
+                        setToast("Select a PNG, JPEG, or WebP profile photo.");
+                        return;
+                      }
+                      if (file && file.size > 5 * 1024 * 1024) {
+                        event.target.value = "";
+                        setPhotoFile(null);
+                        setToast("Profile photo must be 5 MB or smaller.");
+                        return;
+                      }
+                      setPhotoFile(file);
+                    }}
                   />
                 </div>
                 <small>PNG, JPG, or WebP. Uploaded after the staff record is saved.</small>
@@ -833,7 +953,9 @@ function Workflow({ existingId, staffTab = "teaching" }) {
               <GraduationCap />{" "}
               <div>
                 <h2>{teaching ? "Subject Allocation" : "Employment & Documents"}</h2>
-                <p>{teaching ? "Allocate subjects to the teaching staff member." : "Review employment information before saving the staff profile."}</p>
+                <p>{teaching
+                  ? `Allocate subjects to ${[values.firstName, values.lastName].filter(Boolean).join(" ").trim() || facultyName(saved)}.`
+                  : "Review employment information before saving the staff profile."}</p>
               </div>
             </header>
             {teaching ? (
@@ -844,13 +966,13 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                         <label htmlFor="subject-search">Search subjects</label>
                         <input id="subject-search" value={subjectSearch} placeholder="Search by subject name or code" onChange={(event) => setSubjectSearch(event.target.value)} disabled={loadingAllocation} />
                         {loadingAllocation ? <p className="faculty-empty">Loading subjects...</p> : matchingSubjects.length ? <div className="faculty-search-results">{matchingSubjects.map((subject) => <button type="button" key={subjectId(subject)} onClick={() => addPendingSubject(subject)}><Plus size={14}/>{subjectName(subject)}</button>)}</div> : <p className="faculty-empty">No subjects found.</p>}
-                        {pendingSubjects.length ? <div className="faculty-subject-chips">{pendingSubjects.map((subject) => <span key={subjectId(subject)}>{subjectName(subject)}<button type="button" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))} aria-label={`Remove ${subjectName(subject)}`}><X size={13}/></button></span>)}</div> : null}
                       </div>
                     </section>
                     <section className="faculty-subject-list allocated">
-                      <h3>Allocated Subjects <small>{allocations.length}</small></h3>
+                      <h3>Allocated Subjects <small>{allocations.length + pendingSubjects.length}</small></h3>
                       {allocations.map((allocation, index) => <article key={allocationId(allocation) ?? `${subjectName(allocation)}-${index}`}><span>{subjectName(allocation)}</span><button type="button" className="cms-btn" onClick={() => setRemoving(allocation)}><X size={15}/> Remove</button></article>)}
-                      {!allocations.length && <p className="faculty-empty">No subjects allocated yet.</p>}
+                      {pendingSubjects.map((subject) => <article className="is-pending" key={`pending-${subjectId(subject)}`}><span>{subjectName(subject)}</span><button type="button" className="cms-btn" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))}><X size={15}/> Remove</button></article>)}
+                      {!allocations.length && !pendingSubjects.length ? <p className="faculty-empty">No subjects allocated yet.</p> : null}
                     </section>
               </div>
             ) : (
@@ -916,13 +1038,12 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                     <input id="subject-search" value={subjectSearch} placeholder="Search by subject name or code" onChange={(event) => setSubjectSearch(event.target.value)} disabled={loadingAllocation} />
                   </div>
                   {loadingAllocation ? <p className="faculty-empty">Loading subjects...</p> : matchingSubjects.length ? <div className="faculty-search-results">{matchingSubjects.map((subject) => <button type="button" key={subjectId(subject)} onClick={() => addPendingSubject(subject)} disabled={savingAllocation}><Plus size={14}/>{subjectName(subject)}{subject.subjectCode ?? subject.SubjectCode ? ` (${subject.subjectCode ?? subject.SubjectCode})` : ""}</button>)}</div> : <p className="faculty-empty">No subjects found.</p>}
-                  {pendingSubjects.length ? <><p className="faculty-selected-label">Selected subjects</p><div className="faculty-subject-chips">{pendingSubjects.map((subject) => <span key={subjectId(subject)}>{subjectName(subject)}<button type="button" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))} aria-label={`Remove ${subjectName(subject)}`}><X size={13}/></button></span>)}</div><button type="button" className="cms-btn" disabled={savingAllocation} onClick={savePendingSubjects}>{savingAllocation ? "Saving..." : "Save selected subjects"}</button></> : null}
                   {!available.length && <p className="faculty-empty">Add or activate subjects in Subject Management, then return here to allocate them.</p>}
                 </div>
               </section>
               <section className="faculty-subject-list allocated">
                 <h3>
-                  Allocated Subjects <small>{allocations.length}</small>
+                  Allocated Subjects <small>{allocations.length + pendingSubjects.length}</small>
                 </h3>
                 {allocations.map((allocation, index) => (
                   <article
@@ -937,7 +1058,16 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                     </button>
                   </article>
                 ))}
-                {!allocations.length && <p className="faculty-empty">No subjects allocated yet.</p>}
+                {pendingSubjects.map((subject) => (
+                  <article className="is-pending" key={`pending-${subjectId(subject)}`}>
+                    <span>{subjectName(subject)}</span>
+                    <button type="button" className="cms-btn" disabled={savingAllocation} onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))}>
+                      <X size={15} /> Remove
+                    </button>
+                  </article>
+                ))}
+                {pendingSubjects.length ? <button type="button" className="cms-btn faculty-save-subjects" disabled={savingAllocation} onClick={savePendingSubjects}>{savingAllocation ? "Saving..." : "Save selected subjects"}</button> : null}
+                {!allocations.length && !pendingSubjects.length ? <p className="faculty-empty">No subjects allocated yet.</p> : null}
               </section>
             </div>
             <footer>
@@ -971,8 +1101,11 @@ export default function StaffManagementPage() {
   const location = useLocation();
   const { id } = useParams();
   const [rows, setRows] = useState([]);
+  const [pagination, setPagination] = useState({ totalCount: 0, pageNumber: 1, pageSize: STAFF_PAGE_SIZE, totalPages: 1 });
+  const [pageNumber, setPageNumber] = useState(1);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [viewPhoto, setViewPhoto] = useState("");
@@ -983,51 +1116,66 @@ export default function StaffManagementPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const listRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
+  const photoRequestRef = useRef(0);
+  const viewPhotoObjectUrlRef = useRef("");
   const printRequestRef = useRef(false);
   const isWorkflow = location.pathname !== "/dashboard/faculty";
   const requestedTab = new URLSearchParams(location.search).get("staffTab");
   const activeTab = requestedTab === "non-teaching" ? "non-teaching" : "teaching";
   const activeStaffType = activeTab === "teaching" ? "Teaching Staff" : "Non-Teaching Staff";
+  const handleSearchChange = useCallback((value) => {
+    setSearchTerm(value);
+    setPageNumber(1);
+  }, []);
   const load = useCallback(async () => {
     const requestId = ++listRequestRef.current;
     setLoading(true);
     try {
       const response = await apiClient.get(STAFF_API.list, {
         params: {
-          PageNumber: 1,
-          PageSize: 1000,
+          PageNumber: pageNumber,
+          PageSize: STAFF_PAGE_SIZE,
           StaffType: API_STAFF_TYPES[activeTab],
-          ...(searchTerm ? { SearchTerm: searchTerm } : {}),
+          ...(searchTerm.trim() ? { SearchTerm: searchTerm.trim() } : {}),
           ...(departmentFilter ? { Department: departmentFilter } : {}),
           ...(statusFilter ? { Status: statusFilter } : {}),
         },
       });
       if (requestId !== listRequestRef.current) return;
-      setRows(extractItems(response.data).map(rowFor));
+      const page = normalizeStaffPage(response.data);
+      setRows(page.items.map(rowFor));
+      setPagination(page);
+      if (pageNumber > page.totalPages) setPageNumber(page.totalPages);
     } catch (e) {
       if (requestId !== listRequestRef.current) return;
       setRows([]);
+      setPagination({ totalCount: 0, pageNumber, pageSize: STAFF_PAGE_SIZE, totalPages: 1 });
       setToast(friendlyFacultyError(e));
     } finally {
       if (requestId === listRequestRef.current) setLoading(false);
     }
-  }, [activeTab, departmentFilter, searchTerm, statusFilter]);
+  }, [activeTab, departmentFilter, pageNumber, searchTerm, statusFilter]);
   const loadPhoto = async (record) => {
+    const requestId = ++photoRequestRef.current;
     const photoId = getCrudId(record);
+    if (viewPhotoObjectUrlRef.current) URL.revokeObjectURL(viewPhotoObjectUrlRef.current);
+    viewPhotoObjectUrlRef.current = "";
     setViewPhoto("");
     if (!photoId) return;
     setPhotoLoading(true);
     try {
-      const response = await apiClient.get(STAFF_API.photo(photoId), { skipGlobalLoader: true });
-      const value = typeof response.data === "string" ? response.data : firstValue(response.data, "url", "Url", "photoPath", "PhotoPath", "value", "Value");
-      if (value) {
-        const source = String(value);
-        setViewPhoto(/^(data:|https?:)/i.test(source) ? source : new URL(source, import.meta.env.VITE_API_BASE_URL || window.location.origin).href);
+      const response = await requestStaffPhoto(photoId);
+      const photo = await photoSourceFromResponse(response);
+      if (requestId !== photoRequestRef.current) {
+        if (photo.objectUrl) URL.revokeObjectURL(photo.objectUrl);
+        return;
       }
+      viewPhotoObjectUrlRef.current = photo.objectUrl;
+      setViewPhoto(photo.source);
     } catch (error) {
-      if (error?.response?.status !== 404) setToast(friendlyFacultyError(error));
+      if (requestId === photoRequestRef.current && error?.response?.status !== 404) setToast(friendlyFacultyError(error));
     } finally {
-      setPhotoLoading(false);
+      if (requestId === photoRequestRef.current) setPhotoLoading(false);
     }
   };
   const viewFaculty = async (row) => {
@@ -1040,7 +1188,19 @@ export default function StaffManagementPage() {
       if (requestId !== detailRequestRef.current) return;
       const normalized = rowFor({ ...row, ...record });
       setViewing(normalized);
-      await loadPhoto(normalized);
+      const detailsFacultyId = getFacultyId(normalized);
+      const workloadPromise = activeTab === "teaching" && detailsFacultyId
+        ? apiClient.get(apiEndpoints.faculty.getWorkload(detailsFacultyId), { skipGlobalLoader: true })
+        : Promise.resolve(null);
+      const [, workloadResult] = await Promise.allSettled([loadPhoto(normalized), workloadPromise]);
+      if (requestId !== detailRequestRef.current) return;
+      const assignedSubjects = workloadResult.status === "fulfilled" && workloadResult.value
+        ? assignedSubjectNames(workloadResult.value.data)
+        : [];
+      setViewing((current) => current && getCrudId(current) === getCrudId(normalized)
+        ? { ...current, assignedSubjects }
+        : current);
+      if (workloadResult.status === "rejected") setToast("Staff details loaded, but assigned subjects could not be retrieved.");
     } catch (e) {
       if (requestId !== detailRequestRef.current) return;
       setViewing(null);
@@ -1065,16 +1225,29 @@ export default function StaffManagementPage() {
     popup.document.close();
     printRequestRef.current = true;
     try {
-      const [detailsResult, photoResult] = await Promise.allSettled([
-        apiClient.get(STAFF_API.getById(recordId), { skipGlobalLoader: true }),
-        apiClient.get(STAFF_API.photo(recordId), { skipGlobalLoader: true }),
-      ]);
-      if (detailsResult.status === "rejected") throw detailsResult.reason;
-      const details = extractRecord(detailsResult.value.data) || {};
+      const detailsResponse = await apiClient.get(STAFF_API.getById(recordId), { skipGlobalLoader: true });
+      const details = extractRecord(detailsResponse.data) || {};
       const normalized = rowFor({ ...row, ...details });
-      const photoSource = photoResult.status === "fulfilled" ? resolvePhotoSource(photoResult.value.data) : "";
+      const printFacultyId = getFacultyId(normalized);
+      const [photoResult, workloadResult] = await Promise.allSettled([
+        requestStaffPhoto(recordId),
+        activeTab === "teaching" && printFacultyId
+          ? apiClient.get(apiEndpoints.faculty.getWorkload(printFacultyId), { skipGlobalLoader: true })
+          : Promise.resolve(null),
+      ]);
+      const printableRecord = {
+        ...normalized,
+        ...(activeTab === "teaching" ? {
+          assignedSubjects: workloadResult.status === "fulfilled" && workloadResult.value
+            ? assignedSubjectNames(workloadResult.value.data)
+            : [],
+        } : {}),
+      };
+      const photo = photoResult.status === "fulfilled"
+        ? await photoSourceFromResponse(photoResult.value)
+        : { source: "", objectUrl: "" };
       popup.document.open();
-      popup.document.write(buildStaffPrintHtml(normalized, photoSource, activeStaffType));
+      popup.document.write(buildStaffPrintHtml(printableRecord, photo.source, activeStaffType));
       popup.document.close();
 
       const printWhenReady = () => {
@@ -1087,6 +1260,7 @@ export default function StaffManagementPage() {
             popup.focus();
             popup.print();
           }
+          if (photo.objectUrl) window.setTimeout(() => URL.revokeObjectURL(photo.objectUrl), 1000);
         }, 150));
       };
       if (popup.document.readyState === "complete") printWhenReady();
@@ -1101,12 +1275,23 @@ export default function StaffManagementPage() {
   useEffect(() => {
     if (!isWorkflow) load();
   }, [isWorkflow, load]);
+  useEffect(() => () => {
+    listRequestRef.current += 1;
+    detailRequestRef.current += 1;
+    photoRequestRef.current += 1;
+    if (viewPhotoObjectUrlRef.current) URL.revokeObjectURL(viewPhotoObjectUrlRef.current);
+  }, []);
+
   if (isWorkflow) return <Workflow existingId={id} staffTab={activeTab} />;
-  const departmentOptions = [...new Set([...TEACHING_DEPARTMENTS, ...NON_TEACHING_DEPARTMENTS, ...rows.map((row) => row.department).filter(Boolean)])].sort();
+
+  const departmentOptions = activeTab === "teaching" ? TEACHING_DEPARTMENTS : NON_TEACHING_DEPARTMENTS;
   const switchTab = (tab) => {
     setDepartmentFilter("");
     setStatusFilter("");
     setSearchTerm("");
+    setPageNumber(1);
+    setRows([]);
+    setViewing(null);
     navigate(`/dashboard/faculty?staffTab=${tab}`);
   };
   const listColumns = activeTab === "teaching" ? [
@@ -1138,6 +1323,7 @@ export default function StaffManagementPage() {
     ["Department", previewValues.department],
     ["Joining Date", previewValues.joining],
     ["Experience (Years)", previewValues.experience],
+    ["Subjects", viewing?.assignedSubjects?.join(", ") || "—"],
     ["Status", previewValues.status],
   ] : [
     ["Employee ID", previewValues.empId],
@@ -1166,33 +1352,52 @@ export default function StaffManagementPage() {
         {!viewing ? (
           <>
             <StaffTabs active={activeTab} onChange={switchTab} />
-            <DataTable
-              key={activeTab}
-              title={activeStaffType}
-              addLabel={activeTab === "teaching" ? "Add Teaching Staff" : "Add Non-Teaching Staff"}
-              columns={listColumns}
-              rows={rows}
-              loading={loading}
-              onSearchChange={setSearchTerm}
-              enablePdfExport
-              paginationCurrentOnly
-              toolbarExtra={<div className="staff-list-filters"><label><span className="sr-only">Department</span><select aria-label="Filter by department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">All Departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label><span className="sr-only">Status</span><select aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All Status</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select></label></div>}
-              emptyMessage={`No ${activeStaffType.toLowerCase()} found.`}
-              onAdd={() => navigate(`/dashboard/faculty/add?staffTab=${activeTab}`)}
-              onView={viewFaculty}
-              onPrint={printFaculty}
-              onDelete={setDeleting}
-            />
+            <div className="staff-server-table">
+              <DataTable
+                key={activeTab}
+                title={activeStaffType}
+                addLabel={activeTab === "teaching" ? "Add Teaching Staff" : "Add Non-Teaching Staff"}
+                columns={listColumns}
+                rows={rows}
+                loading={loading}
+                onSearchChange={handleSearchChange}
+                enablePdfExport
+                paginationCurrentOnly
+                toolbarExtra={<div className="staff-list-filters"><label><span className="sr-only">Department</span><select aria-label="Filter by department" value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPageNumber(1); }}><option value="">All Departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label><span className="sr-only">Status</span><select aria-label="Filter by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageNumber(1); }}><option value="">All Status</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select></label></div>}
+                emptyMessage={`No ${activeStaffType.toLowerCase()} found.`}
+                onAdd={() => navigate(`/dashboard/faculty/add?staffTab=${activeTab}`)}
+                onView={viewFaculty}
+                onPrint={printFaculty}
+                onDelete={setDeleting}
+              />
+              <div className="cms-pagination staff-server-pagination" aria-label="Staff pagination">
+                <span className="cms-page-info">
+                  Showing {pagination.totalCount === 0 ? 0 : (pagination.pageNumber - 1) * pagination.pageSize + 1}-
+                  {Math.min(pagination.pageNumber * pagination.pageSize, pagination.totalCount)} of {pagination.totalCount} records
+                </span>
+                <button className="cms-page-btn" type="button" disabled={loading || pageNumber <= 1} onClick={() => setPageNumber((current) => Math.max(1, current - 1))}>Prev</button>
+                <button className="cms-page-btn is-active" type="button" aria-current="page">{pagination.pageNumber}</button>
+                <button className="cms-page-btn" type="button" disabled={loading || pageNumber >= pagination.totalPages} onClick={() => setPageNumber((current) => Math.min(pagination.totalPages, current + 1))}>Next</button>
+              </div>
+            </div>
           </>
         ) : (
           <section className="staff-details-screen">
-            <button type="button" className="cms-back-link staff-details-back" onClick={() => { setViewing(null); setViewPhoto(""); }}>
+            <button type="button" className="cms-back-link staff-details-back" onClick={() => {
+              detailRequestRef.current += 1;
+              photoRequestRef.current += 1;
+              if (viewPhotoObjectUrlRef.current) URL.revokeObjectURL(viewPhotoObjectUrlRef.current);
+              viewPhotoObjectUrlRef.current = "";
+              setViewing(null);
+              setViewPhoto("");
+              setPhotoLoading(false);
+            }}>
               <ArrowLeft size={15} /> Back to Staff Management
             </button>
             <article className="staff-details-card">
               <header>
                 <div><Eye size={18} /><h2>{activeTab === "teaching" ? "Teaching Staff Details" : "Non-Teaching Staff Details"}</h2></div>
-                <button type="button" className="cms-btn cms-btn-ghost staff-details-edit" onClick={() => navigate(`/dashboard/faculty/${viewing.id ?? facultyId(viewing)}/edit?staffTab=${activeTab}`)}>
+                <button type="button" className="cms-btn cms-btn-ghost staff-details-edit" onClick={() => navigate(`/dashboard/faculty/${getCrudId(viewing)}/edit?staffTab=${activeTab}`)}>
                   <Pencil size={16} /> {activeTab === "teaching" ? "Edit Faculty Details" : "Edit Staff Details"}
                 </button>
               </header>
@@ -1209,9 +1414,9 @@ export default function StaffManagementPage() {
                       <dt>{label}</dt>
                       <span className="staff-detail-separator" aria-hidden="true">–</span>
                       {label === "Status" ? (
-                        <dd><StatusBadge value={typeof value === "boolean" ? (value ? "Active" : "Inactive") : value || "Active"} /></dd>
+                        <dd><StatusBadge value={typeof value === "boolean" ? (value ? "Active" : "Inactive") : value || "—"} /></dd>
                       ) : (
-                        <dd>{value || "—"}</dd>
+                        <dd>{value === undefined || value === null || value === "" ? "—" : value}</dd>
                       )}
                     </div>
                   ))}
@@ -1224,15 +1429,24 @@ export default function StaffManagementPage() {
         {deleting && (
           <ConfirmDialog
             message={`Delete ${deleting.name}? This action cannot be undone.`}
-            onCancel={() => setDeleting(null)}
+            onCancel={() => { if (!deleteLoading) setDeleting(null); }}
             onConfirm={async () => {
+              if (deleteLoading) return;
+              const recordId = getCrudId(deleting);
+              if (!recordId) {
+                setToast("Unable to delete because the Staff API record ID is missing.");
+                return;
+              }
+              setDeleteLoading(true);
               try {
-                await apiClient.delete(STAFF_API.delete(getCrudId(deleting)));
+                await apiClient.delete(STAFF_API.delete(recordId));
                 setDeleting(null);
                 await load();
                 setToast("Staff deleted successfully.");
               } catch (e) {
                 setToast(e?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(e));
+              } finally {
+                setDeleteLoading(false);
               }
             }}
           />

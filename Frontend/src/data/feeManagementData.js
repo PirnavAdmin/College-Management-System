@@ -8,7 +8,7 @@
 import { useSyncExternalStore } from "react";
 
 export const STORAGE_KEY = "cms_fee_management_v1";
-export const COLLEGE_NAME = "Pirnav Junior College";
+export const COLLEGE_NAME = "Pirnav College";
 
 /** Fixed one-time mandatory admission fee. */
 export const ADMISSION_FEE = 3000;

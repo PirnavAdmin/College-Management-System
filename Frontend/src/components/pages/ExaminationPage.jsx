@@ -2816,7 +2816,7 @@ function PrintableSchedule({ preview }) {
   if (!preview) return null;
   return (
     <section className="exam-print-area">
-      <h1>Pirnav Junior College</h1>
+      <h1>Pirnav College</h1>
       <h2>{preview.title}</h2>
       <ExportTable rows={preview.rows} scope={preview.scope} />
     </section>

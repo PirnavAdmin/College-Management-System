@@ -32,8 +32,8 @@ export default function StudentDashboard() {
     <div className="student-dashboard">
       <header className="student-topbar">
         <div className="student-brand">
-          <img src={logo} alt="Pirnav Junior College logo" />
-          <div><strong>Pirnav Junior College</strong><span>Student Portal</span></div>
+          <img src={logo} alt="Pirnav College logo" />
+          <div><strong>Pirnav College</strong><span>Student Portal</span></div>
         </div>
         <div className="student-actions">
           <span>{user?.name || "Student"}</span>
@@ -44,7 +44,7 @@ export default function StudentDashboard() {
         <div className="student-hero">
           <span><BookOpen size={16} /> Portal</span>
           <h1>Student Dashboard</h1>
-          <p>Welcome to Pirnav Junior College portal.</p>
+          <p>Welcome to Pirnav College portal.</p>
         </div>
         <section className="student-card-grid">
           {cards.map((card) => {

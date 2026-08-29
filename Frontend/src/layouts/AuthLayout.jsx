@@ -13,7 +13,7 @@ export default function AuthLayout({ title, subtitle, children, cardClass = "" }
       </div>
       <aside className="cms-auth-aside">
         <div className="cms-landing-brand cms-anim-in" style={{ color: "#fff" }}>
-          <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav Junior College logo" /></span>
+          <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav College logo" /></span>
           <span>
             <strong style={{ color: "#fff" }}>{heroCopy.title}</strong>
           </span>

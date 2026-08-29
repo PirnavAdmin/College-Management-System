@@ -34,6 +34,9 @@
   font-weight: 600;
 }
 .faculty-list .cms-pagination .cms-page-info { color: var(--cms-muted); font-size: 12.5px; }
+.staff-server-table > .cms-card > .cms-pagination { display: none; }
+.staff-server-table > .cms-card { min-height: calc(100dvh - 271px); border-radius: 12px 12px 0 0; box-shadow: none; }
+.staff-server-pagination { border: 1px solid var(--cms-border); border-top: 0; border-radius: 0 0 12px 12px; box-shadow: var(--cms-shadow); }
 .faculty-list .cms-page-btn.is-active,
 .faculty-list .cms-page-btn.is-active:hover,
 .faculty-list .cms-page-btn.is-active:focus-visible {
@@ -206,6 +209,8 @@
 .faculty-subject-list.available h3,
 .faculty-subject-list.allocated h3 { color: var(--cms-text); }
 .faculty-subject-list article { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding: 10px; border: 1px solid var(--cms-border); border-radius: 10px; background: var(--cms-surface); }
+.faculty-subject-list article.is-pending { border-color: var(--cms-primary-border); background: var(--cms-primary-soft); }
+.faculty-save-subjects { width: 100%; margin-top: 12px; justify-content: center; }
 .faculty-subject-list .cms-btn { min-width: 94px; justify-content: center; }
 .faculty-subject-list.available .cms-btn { border-color: var(--cms-border); color: var(--cms-primary); }
 .faculty-subject-list.allocated .cms-btn { border-color: var(--cms-border); color: var(--cms-red); }

@@ -397,7 +397,7 @@ function createPdfReport({ title, columns, rows, filename, orientation = "landsc
   const document = new jsPDF({ orientation, unit: "pt", format: "a4" });
   document.setFont("helvetica", "bold");
   document.setFontSize(16);
-  document.text("Pirnav Junior College", 36, 36);
+  document.text("Pirnav College", 36, 36);
   document.setFontSize(13);
   document.text(title, 36, 57);
   document.setFont("helvetica", "normal");

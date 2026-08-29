@@ -72,7 +72,7 @@ export default function Login() {
   };
 
   return (
-    <AuthLayout title="Welcome back" subtitle="Sign in to the Pirnav Junior College management system.">
+    <AuthLayout title="Welcome back" subtitle="Sign in to the Pirnav College management system.">
       <form onSubmit={submit} noValidate>
         {error ? <div className="cms-alert-error" role="alert">{error}</div> : null}
         <div className="cms-form-grid">

@@ -905,7 +905,7 @@
   padding: 0;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: hidden;
   border-top: 1px solid var(--cms-border);
 }
@@ -913,7 +913,7 @@
 .cert-table-fit {
   width: 100%;
   max-width: 100%;
-  min-width: 0;
+  min-width: 1050px;
   table-layout: fixed;
   border-collapse: collapse;
   background: var(--cert-surface);
@@ -992,6 +992,30 @@
   flex-wrap: nowrap;
   justify-content: center;
   min-width: 148px;
+}
+
+.cert-page .cert-record-row-actions,
+.cert-page .cert-actions-right.cert-action-buttons {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: none;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: visible;
+}
+
+.cert-page .cert-records-card .cert-table-fit th:last-child,
+.cert-page .cert-records-card .cert-table-fit td:last-child {
+  width: 170px;
+  min-width: 170px;
+  overflow: visible;
+  text-align: center;
+}
+
+.cert-page .cert-records-card .cert-table-fit th.cert-actions-header {
+  text-align: center;
 }
 
 .cert-record-row-actions button {
@@ -1090,6 +1114,10 @@
 }
 
 .cert-workflow-summary-card {
+  width: 100%;
+  appearance: none;
+  text-align: left;
+  font: inherit;
   display: grid;
   gap: 4px;
   min-height: 62px;
@@ -1097,6 +1125,23 @@
   border: 1px solid var(--cms-border);
   border-radius: 9px;
   background: var(--cms-surface);
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.cert-workflow-summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 7px 16px rgba(31, 41, 24, 0.1);
+}
+
+.cert-workflow-summary-card:focus-visible {
+  outline: 3px solid rgba(128, 151, 0, 0.28);
+  outline-offset: 2px;
+}
+
+.cert-workflow-summary-card.is-active {
+  border-color: #809700;
+  box-shadow: 0 0 0 2px rgba(128, 151, 0, 0.2), 0 7px 16px rgba(31, 41, 24, 0.1);
 }
 
 .cert-workflow-summary-card strong { font-size: 13px; }
@@ -1200,6 +1245,158 @@
   align-items: center;
   justify-content: end;
   gap: 8px;
+}
+
+/* Certificate table rows use compact icon groups, not the generic workflow grid. */
+.cert-page .cert-records-card .cert-record-row-actions,
+.cert-page .cert-records-card .cert-actions-right.cert-action-buttons {
+  display: flex !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  justify-content: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  overflow: visible;
+}
+
+.cert-page .cert-records-table { min-width: 1260px; }
+.cert-page .cert-workflow-table { min-width: 1145px; }
+
+.cert-page .cert-records-table th:nth-child(1),
+.cert-page .cert-records-table td:nth-child(1) { width: 180px; }
+.cert-page .cert-records-table th:nth-child(2),
+.cert-page .cert-records-table td:nth-child(2) { width: 170px; }
+.cert-page .cert-records-table th:nth-child(3),
+.cert-page .cert-records-table td:nth-child(3) { width: 180px; }
+.cert-page .cert-records-table th:nth-child(4),
+.cert-page .cert-records-table td:nth-child(4) { width: 170px; }
+.cert-page .cert-records-table th:nth-child(5),
+.cert-page .cert-records-table td:nth-child(5),
+.cert-page .cert-records-table th:nth-child(6),
+.cert-page .cert-records-table td:nth-child(6),
+.cert-page .cert-records-table th:nth-child(7),
+.cert-page .cert-records-table td:nth-child(7) { width: 130px; }
+.cert-page .cert-records-table th:nth-child(8),
+.cert-page .cert-records-table td:nth-child(8) { width: 170px; }
+
+.cert-page .cert-workflow-table th:nth-child(1),
+.cert-page .cert-workflow-table td:nth-child(1) { width: 180px; }
+.cert-page .cert-workflow-table th:nth-child(2),
+.cert-page .cert-workflow-table td:nth-child(2) { width: 170px; }
+.cert-page .cert-workflow-table th:nth-child(3),
+.cert-page .cert-workflow-table td:nth-child(3) { width: 180px; }
+.cert-page .cert-workflow-table th:nth-child(4),
+.cert-page .cert-workflow-table td:nth-child(4) { width: 170px; }
+.cert-page .cert-workflow-table th:nth-child(5),
+.cert-page .cert-workflow-table td:nth-child(5) { width: 130px; }
+.cert-page .cert-workflow-table th:nth-child(6),
+.cert-page .cert-workflow-table td:nth-child(6) { width: 135px; }
+.cert-page .cert-workflow-table th:nth-child(7),
+.cert-page .cert-workflow-table td:nth-child(7) { width: 180px; }
+
+.cert-page .cert-records-table thead th,
+.cert-page .cert-workflow-table thead th {
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.cert-page .cert-records-table tbody td:not(:last-child),
+.cert-page .cert-workflow-table tbody td:not(:last-child) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Fit Certificate tables within the card; long values use a readable ellipsis. */
+.cert-page .cert-table-wrap-modern {
+  overflow-x: hidden;
+}
+
+.cert-page .cert-table-fit,
+.cert-page .cert-records-table,
+.cert-page .cert-workflow-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.cert-page .cert-records-table th:nth-child(1),
+.cert-page .cert-records-table td:nth-child(1) { width: 12%; }
+.cert-page .cert-records-table th:nth-child(2),
+.cert-page .cert-records-table td:nth-child(2) { width: 12%; }
+.cert-page .cert-records-table th:nth-child(3),
+.cert-page .cert-records-table td:nth-child(3) { width: 14%; }
+.cert-page .cert-records-table th:nth-child(4),
+.cert-page .cert-records-table td:nth-child(4) { width: 15%; }
+.cert-page .cert-records-table th:nth-child(5),
+.cert-page .cert-records-table td:nth-child(5),
+.cert-page .cert-records-table th:nth-child(6),
+.cert-page .cert-records-table td:nth-child(6) { width: 10%; }
+.cert-page .cert-records-table th:nth-child(7),
+.cert-page .cert-records-table td:nth-child(7) { width: 11%; }
+.cert-page .cert-records-table th:nth-child(8),
+.cert-page .cert-records-table td:nth-child(8) { width: 16%; min-width: 0; }
+
+.cert-page .cert-workflow-table th:nth-child(1),
+.cert-page .cert-workflow-table td:nth-child(1) { width: 15%; }
+.cert-page .cert-workflow-table th:nth-child(2),
+.cert-page .cert-workflow-table td:nth-child(2) { width: 14%; }
+.cert-page .cert-workflow-table th:nth-child(3),
+.cert-page .cert-workflow-table td:nth-child(3) { width: 14%; }
+.cert-page .cert-workflow-table th:nth-child(4),
+.cert-page .cert-workflow-table td:nth-child(4) { width: 16%; }
+.cert-page .cert-workflow-table th:nth-child(5),
+.cert-page .cert-workflow-table td:nth-child(5) { width: 11%; }
+.cert-page .cert-workflow-table th:nth-child(6),
+.cert-page .cert-workflow-table td:nth-child(6) { width: 12%; }
+.cert-page .cert-workflow-table th:nth-child(7),
+.cert-page .cert-workflow-table td:nth-child(7) { width: 18%; min-width: 0; }
+
+.cert-page .cert-records-table thead th,
+.cert-page .cert-workflow-table thead th,
+.cert-page .cert-records-table tbody td:not(:last-child),
+.cert-page .cert-workflow-table tbody td:not(:last-child) {
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.cert-page .cert-records-table tbody td:nth-child(3) strong,
+.cert-page .cert-records-table .cert-student-meta {
+  display: block;
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+}
+
+.cert-page .cert-records-table .cert-status-pill,
+.cert-page .cert-workflow-table .cert-status-pill {
+  min-width: min(92px, 100%);
+  max-width: 100%;
+}
+
+.cert-page .cert-records-card .cert-record-row-actions,
+.cert-page .cert-records-card .cert-actions-right.cert-action-buttons {
+  gap: 4px !important;
+}
+
+.cert-page .cert-record-row-actions button,
+.cert-page .cert-action-buttons .cert-workflow-step,
+.cert-page .cert-action-buttons .cert-workflow-print,
+.cert-page .cert-action-buttons .cms-action-btn.danger,
+.cert-page .cert-action-buttons > .cms-action-btn {
+  width: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-height: 30px !important;
+  flex: 0 0 30px !important;
+  padding: 0 !important;
 }
 
 .cert-page .cms-action-btn {

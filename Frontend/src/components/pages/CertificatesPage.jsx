@@ -652,7 +652,7 @@ function renderSignatureHtml(signature) {
 
 function getCertificateTemplate(type, record) {
   const safePurpose = record.purpose || "official purpose";
-  const institutionName = "Pirnav Junior College";
+  const institutionName = "Pirnav College";
   const admissionNo = record.admissionNo || "-";
   const year = record.year || record.level || "-";
   const group = record.group || "-";
@@ -944,7 +944,7 @@ function buildPrintHtml(record) {
         <div class="college-row">
           <div class="seal">PJC</div>
           <div class="college-copy">
-            <div class="college-name">Pirnav Junior College</div>
+            <div class="college-name">Pirnav College</div>
             <p>Affiliated to Board of Intermediate Education, Andhra Pradesh</p>
             <p>College Code: 12345 &nbsp; | &nbsp; Certificate No: ${certificateNo}</p>
           </div>
@@ -971,7 +971,7 @@ function buildPrintHtml(record) {
         <div>
           ${signature}
           <span class="authorized-signatory">Principal</span>
-          <strong>Pirnav Junior College</strong>
+          <strong>Pirnav College</strong>
         </div>
       </footer>
       </div>
@@ -1019,6 +1019,7 @@ export default function CertificatesPage() {
   const [showRecordFilters, setShowRecordFilters] = useState(false);
   const [activeTab, setActiveTab] = useState("generate");
   const [page, setPage] = useState(1);
+  const [workflowStatusFilter, setWorkflowStatusFilter] = useState("All");
   const [actionPage, setActionPage] = useState(1);
   const [printPreview, setPrintPreview] = useState(null);
   const [toast, setToast] = useState("");
@@ -1610,7 +1611,9 @@ export default function CertificatesPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const actionRows = rows.filter((row) => ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status));
+  const actionRows = rows.filter((row) =>
+    ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status)
+    && (workflowStatusFilter === "All" || row.status === workflowStatusFilter));
   const actionTotalPages = Math.max(1, Math.ceil(actionRows.length / PAGE_SIZE));
   const currentActionPage = Math.min(actionPage, actionTotalPages);
   const actionPageRows = actionRows.slice((currentActionPage - 1) * PAGE_SIZE, currentActionPage * PAGE_SIZE);
@@ -1885,7 +1888,7 @@ export default function CertificatesPage() {
         </div>
 
         <div className="cms-table-wrap cert-table-wrap-modern">
-          <table className="cms-table cert-table-fit">
+          <table className="cms-table cert-table-fit cert-records-table">
             <thead>
               <tr>
                 <th>Certificate Number</th>
@@ -1915,10 +1918,10 @@ export default function CertificatesPage() {
                 </tr>
               ) : pageRows.map((row) => (
                 <tr key={row.id}>
-                  <td className="cms-strong">{row.number}</td>
-                  <td>{row.admissionNo || "-"}</td>
-                  <td><strong>{row.student}</strong>{row.level ? <small className="cert-student-meta">{row.level}</small> : null}</td>
-                  <td>{row.type}</td>
+                  <td className="cms-strong" title={row.number}>{row.number}</td>
+                  <td title={row.admissionNo || "-"}>{row.admissionNo || "-"}</td>
+                  <td title={[row.student, row.level].filter(Boolean).join(" · ")}><strong>{row.student}</strong>{row.level ? <small className="cert-student-meta">{row.level}</small> : null}</td>
+                  <td title={row.type}>{row.type}</td>
                   <td>{formatDateDdMmYyyy(row.requestDate)}</td>
                   <td>{formatDateDdMmYyyy(row.issue)}</td>
                   <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
@@ -1990,14 +1993,24 @@ export default function CertificatesPage() {
                 ["Issued", `${workflowStats.issuedCount} Completed`],
                 ["Cancelled", `${workflowStats.cancelledCount} Request${workflowStats.cancelledCount === 1 ? "" : "s"}`],
               ].map(([label, value]) => (
-                <div key={label} className={`cert-workflow-summary-card ${certStatusClass(label)}`}>
+                <button
+                  key={label}
+                  type="button"
+                  className={`cert-workflow-summary-card ${certStatusClass(label)}${workflowStatusFilter === label ? " is-active" : ""}`}
+                  aria-pressed={workflowStatusFilter === label}
+                  onClick={() => {
+                    setWorkflowStatusFilter((current) => current === label ? "All" : label);
+                    setActionPage(1);
+                  }}
+                  title={`${workflowStatusFilter === label ? "Clear" : "Filter by"} ${label} status`}
+                >
                   <strong>{label}</strong>
                   <span>{loadingStats ? "Loading..." : value}</span>
-                </div>
+                </button>
               ))}
             </div>
             <div className="cms-table-wrap cert-table-wrap-modern">
-              <table className="cms-table cert-table-fit">
+              <table className="cms-table cert-table-fit cert-workflow-table">
                 <thead>
                   <tr>
                     <th>Certificate Number</th>
@@ -2013,13 +2026,13 @@ export default function CertificatesPage() {
                   {loadingList ? (
                     <tr><td colSpan={7}><Loader label="Loading certificates..." /></td></tr>
                   ) : !actionPageRows.length ? (
-                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No workflow certificates found</h4><p>Certificate requests will appear here as they move through the workflow.</p></div></td></tr>
+                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No {workflowStatusFilter === "All" ? "workflow" : workflowStatusFilter.toLowerCase()} certificates found</h4><p>{workflowStatusFilter === "All" ? "Certificate requests will appear here as they move through the workflow." : `There are no certificates with ${workflowStatusFilter.toLowerCase()} status.`}</p></div></td></tr>
                   ) : actionPageRows.map((row) => (
                     <tr key={row.id}>
-                      <td className="cms-strong">{row.number}</td>
-                      <td>{row.admissionNo || "-"}</td>
-                      <td>{row.student}</td>
-                      <td>{row.type}</td>
+                      <td className="cms-strong" title={row.number}>{row.number}</td>
+                      <td title={row.admissionNo || "-"}>{row.admissionNo || "-"}</td>
+                      <td title={row.student}>{row.student}</td>
+                      <td title={row.type}>{row.type}</td>
                       <td><span className={`cert-status-pill ${certStatusClass(row.status)}`}>{row.status}</span></td>
                       <td>{formatDateDdMmYyyy(row.requestDate)}</td>
                       <td>
@@ -2125,7 +2138,7 @@ export default function CertificatesPage() {
                       <span>PJC</span><small>EXCELLENCE</small>
                     </div>
                     <div className="cert-doc-brand">
-                      <p className="cert-doc-college">Pirnav Junior College</p>
+                      <p className="cert-doc-college">Pirnav College</p>
                       <p className="cert-doc-affiliation">Affiliated to Board of Intermediate Education, Andhra Pradesh</p>
                       <p className="cert-doc-code">College Code: 12345 <span aria-hidden="true">|</span> Certificate No: {printPreview.number}</p>
                     </div>
@@ -2143,7 +2156,7 @@ export default function CertificatesPage() {
 
                 <div className="cert-doc-body">
                   <p>
-                    This is to certify that <strong>{printPreview.student}</strong> {printTemplate?.paragraphOne || "is/was a bonafide student of Pirnav Junior College."}
+                    This is to certify that <strong>{printPreview.student}</strong> {printTemplate?.paragraphOne || "is/was a bonafide student of Pirnav College."}
                   </p>
                   <p>
                     {printTemplate?.paragraphTwo || "This certificate is issued for official purpose."}
@@ -2173,7 +2186,7 @@ export default function CertificatesPage() {
                       />
                     ) : null}
                     <span>Principal</span>
-                    <strong>Pirnav Junior College</strong>
+                    <strong>Pirnav College</strong>
                   </div>
                 </footer>
               </section>

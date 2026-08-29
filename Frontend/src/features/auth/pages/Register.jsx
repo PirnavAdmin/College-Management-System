@@ -54,7 +54,7 @@ export default function Register() {
   };
 
   return (
-    <AuthLayout title="Create account" subtitle="Register to access the Pirnav Junior College portal." cardClass="auth-register-card">
+    <AuthLayout title="Create account" subtitle="Register to access the Pirnav College portal." cardClass="auth-register-card">
       <form onSubmit={submit} noValidate>
         {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
         {success ? <div className="cms-alert-success" role="status">{success}</div> : null}

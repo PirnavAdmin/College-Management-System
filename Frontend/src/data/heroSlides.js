@@ -5,7 +5,7 @@ import heroClassroom from "@/assets/hero-classroom.jpg";
 import heroGraduation from "@/assets/hero-graduation.jpg";
 
 export const heroSlides = [
-  { src: campusHero, alt: "Pirnav Junior College campus at golden hour" },
+  { src: campusHero, alt: "Pirnav College campus at golden hour" },
   { src: heroLibrary, alt: "Students studying in the college library" },
   { src: heroLab, alt: "Students working in the college science laboratory" },
   { src: heroClassroom, alt: "Lecture in progress in a college classroom" },
@@ -13,7 +13,7 @@ export const heroSlides = [
 ];
 
 export const heroCopy = {
-  title: "Pirnav Junior College",
+  title: "Pirnav College",
   headline: "Smart College Management. Simple. Connected.",
   subtitle:
     "Manage academics, students, faculty, examinations, and administration from one centralized platform.",

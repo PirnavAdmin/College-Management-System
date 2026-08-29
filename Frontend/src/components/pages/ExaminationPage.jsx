@@ -26,6 +26,7 @@ const EXAM_API = {
   batchSchedules: "/api/v1/examinations/schedules/batch",
   availableHalls: "/api/v1/examinations/available-halls",
   availableInvigilators: "/api/v1/examinations/available-invigilators",
+  schedulingContext: (id) => `/api/v1/examinations/${id}/scheduling-context`,
 };
 const collectionFrom = (data) => {
   if (Array.isArray(data)) return data;
@@ -41,6 +42,17 @@ const masterCollectionFrom = (data) => {
   const item = data?.data ?? data;
   return item && typeof item === "object" && !Array.isArray(item) ? [item] : [];
 };
+const objectFrom = (data) => {
+  const value = data?.data ?? data?.result ?? data;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+};
+const firstNonEmpty = (...values) =>
+  values.find((value) => value != null && String(value).trim() !== "") ?? "";
+const activeValue = (value) => {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value == null) return false;
+  return ["true", "1", "active"].includes(String(value).trim().toLowerCase());
+};
 const normalizeMaster = (item, idKeys, nameKeys) => ({
   ...item,
   id: idKeys.map((key) => item?.[key]).find((value) => value != null) ?? item?.id,
@@ -51,39 +63,57 @@ const normalizeMaster = (item, idKeys, nameKeys) => ({
   code: item?.code ?? item?.groupCode ?? item?.programCode ?? item?.subjectCode ?? "",
   status: item?.status ?? (item?.isActive === false ? "Inactive" : "Active"),
 });
-const isActiveMaster = (item) =>
-  item?.isActive === true ||
-  item?.status === true ||
-  String(item?.status).toLowerCase() === "active";
+const isActiveMaster = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status));
 const normalizeDateInput = (value) => (value ? String(value).slice(0, 10) : "");
 const normalizeTimeInput = (value) => (value ? String(value).slice(0, 5) : "");
-const normalizeText = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
+const normalizeText = (value) =>
+  String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
 const hasUnsupportedControlCharacters = (value) =>
   Array.from(String(value ?? "")).some((character) => {
     const code = character.charCodeAt(0);
     return code === 127 || (code < 32 && ![9, 10, 13].includes(code));
   });
-const toApiTime = (value) =>
-  value && /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value;
+const toApiTime = (value) => (value && /^\d{2}:\d{2}$/.test(value) ? `${value}:00` : value);
 const normalizeScheduleMode = (value) => {
-  const mode = String(value ?? "").trim().toUpperCase();
-  return ["COMBINED", "COMBINED_OBJECTIVE", "OBJECTIVE_COMBINED", "JEE_MAIN", "JEE_ADVANCED", "NEET"].includes(mode)
+  const mode = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  return [
+    "COMBINED",
+    "COMBINED_OBJECTIVE",
+    "OBJECTIVE_COMBINED",
+    "JEE_MAIN",
+    "JEE_ADVANCED",
+    "NEET",
+  ].includes(mode)
     ? "COMBINED_OBJECTIVE"
     : "SUBJECT_WISE";
 };
-const findPattern = (value) => {
-  const target = String(value ?? "").trim().toLowerCase();
-  return EXAM_PATTERNS.find((pattern) =>
+const findPattern = (patterns, value) => {
+  const target = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return patterns.find((pattern) =>
     [pattern.id, pattern.code, pattern.name].some(
-      (candidate) => String(candidate ?? "").trim().toLowerCase() === target,
+      (candidate) =>
+        String(candidate ?? "")
+          .trim()
+          .toLowerCase() === target,
     ),
   );
 };
-const findExamType = (value) => {
-  const target = String(value ?? "").trim().toLowerCase();
-  return EXAM_TYPES.find((type) =>
+const findExamType = (types, value) => {
+  const target = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  return types.find((type) =>
     [type.id, type.name, type.examType].some(
-      (candidate) => String(candidate ?? "").trim().toLowerCase() === target,
+      (candidate) =>
+        String(candidate ?? "")
+          .trim()
+          .toLowerCase() === target,
     ),
   );
 };
@@ -105,6 +135,7 @@ const normalizeSchedule = (item) => ({
   sessionId: item.sessionId ?? "",
   scheduleMode: normalizeScheduleMode(item.scheduleMode),
   roomId: item.roomId ?? "",
+  roomName: firstNonEmpty(item.roomName, item.hall, item.roomNumber),
   invigilatorId: item.invigilatorId ?? "",
   hall: item.hall ?? item.roomNumber ?? "",
   roomNumber: item.roomNumber ?? item.hall ?? "",
@@ -113,8 +144,10 @@ const normalizeSchedule = (item) => ({
   maxMarks: item.maxMarks ?? 0,
   passingMarks: item.passingMarks ?? 0,
   status: item.status ?? "",
+  roomCapacity: item.roomCapacity ?? item.capacity ?? "",
+  rowVersion: item.rowVersion,
 });
-const normalizeExamination = (item) => ({
+const normalizeExamination = (item, patterns = [], types = []) => ({
   ...item,
   id: item.examinationId ?? item.id,
   code: item.examCode ?? item.code ?? "",
@@ -126,17 +159,21 @@ const normalizeExamination = (item) => ({
   academicYearName: item.academicYearName ?? item.academicYear ?? item.yearName ?? "",
   academicLevelName: item.academicLevelName ?? item.academicLevel ?? item.levelName ?? "",
   groupId: item.groupId,
+  groupProgramId: item.groupProgramId ?? item.groupProgrammeId ?? "",
   groupName: item.groupName ?? item.group ?? "",
   programId: item.programId,
   programName: item.programName ?? item.programme ?? item.program ?? "",
   assessmentTypeId:
     item.assessmentTypeId ??
     item.examTypeId ??
-    findExamType(item.examType ?? item.assessmentTypeName ?? item.assessmentType ?? item.type)?.id ??
+    findExamType(
+      types,
+      item.examType ?? item.assessmentTypeName ?? item.assessmentType ?? item.type,
+    )?.id ??
     null,
   examPatternId:
     item.examPatternId ??
-    findPattern(item.examPattern ?? item.pattern ?? item.patternName)?.id ??
+    findPattern(patterns, item.examPattern ?? item.pattern ?? item.patternName)?.id ??
     "",
   examPattern: item.examPattern ?? item.pattern ?? item.patternName ?? "",
   allowedExamTypes: item.allowedExamTypes ?? item.examTypes ?? [],
@@ -148,19 +185,25 @@ const normalizeExamination = (item) => ({
   passPercentage: item.passPercentage ?? "",
   description: item.description ?? "",
   status: String(item.status ?? "DRAFT").toUpperCase(),
+  scheduleMode: normalizeScheduleMode(item.scheduleMode ?? item.examPattern),
+  completedAt: item.completedAt ?? "",
+  completionMode: item.completionMode ?? "",
+  rowVersion: item.rowVersion,
   schedules: collectionFrom(item.schedules).map(normalizeSchedule),
 });
 
-let BOARDS = [];
-let YEARS = [];
-let LEVELS = [];
-let GROUPS = [];
-let PROGRAMS = [];
-let EXAM_PATTERNS = [];
-let EXAM_TYPES = [];
-let SUBJECTS = [];
-let FACULTY = [];
-let ROOMS = [];
+const EMPTY_MASTERS = {
+  boards: [],
+  years: [],
+  levels: [],
+  groups: [],
+  programs: [],
+  patterns: [],
+  types: [],
+  subjects: [],
+  faculty: [],
+  rooms: [],
+};
 const emptyExam = () => ({
   code: "",
   name: "",
@@ -168,6 +211,7 @@ const emptyExam = () => ({
   yearId: "",
   levelId: "",
   groupId: "",
+  groupProgramId: "",
   programId: "",
   examPatternId: "",
   assessmentTypeId: "",
@@ -208,23 +252,24 @@ const d = (value) =>
         new Date(value + "T00:00:00"),
       )
     : "—";
-const subjectsFor = () => SUBJECTS;
-const patternsForProgram = (programId) =>
-  EXAM_PATTERNS.filter(
+const subjectsFor = (masters) => masters.subjects;
+const patternsForProgram = (patterns, programId, groupProgramId) =>
+  patterns.filter(
     (pattern) =>
       !programId ||
       pattern.programId == null ||
-      String(pattern.programId) === String(programId),
+      String(pattern.programId) === String(programId) ||
+      (groupProgramId && String(pattern.groupProgramId) === String(groupProgramId)),
   );
 const validateExamConfiguration = (exam) => {
   if (!exam.groupId || !exam.programId || !exam.examPatternId || !exam.examType)
     return "Select a valid Program, Exam Pattern and Exam Type.";
   return "";
 };
-const getScheduleMode = (exam) =>
+const getScheduleMode = (exam, patterns = []) =>
   normalizeScheduleMode(
     exam?.scheduleMode ||
-      EXAM_PATTERNS.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
+      patterns.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
       exam?.examPattern,
   );
 const createCombinedSessionId = (examId) => `COMBINED-${examId}-${Date.now()}`;
@@ -253,22 +298,25 @@ const isSameCombinedSession = (existing, candidate) =>
   String(existing.examId) === String(candidate.examId) &&
   Boolean(existing.sessionId) &&
   existing.sessionId === candidate.sessionId;
-const getMarksConfig = (exam, subject) => {
-  if (!subjectsFor(exam).some((item) => String(item.id) === String(subject?.id))) return null;
+const getMarksConfig = (exam, subject, subjects = []) => {
+  if (!subjects.some((item) => String(item.id) === String(subject?.id))) return null;
   const subjectTotal = Number(subject?.totalMarks),
     subjectPassing = Number(subject?.passingMarks);
-  if (Number.isFinite(subjectTotal) && subjectTotal > 0 && Number.isFinite(subjectPassing) && subjectPassing >= 0)
+  if (
+    Number.isFinite(subjectTotal) &&
+    subjectTotal > 0 &&
+    Number.isFinite(subjectPassing) &&
+    subjectPassing >= 0
+  )
     return { maxMarks: subjectTotal, passingMarks: subjectPassing };
   const passingMarks = getExamPassingMarks(exam);
-  return passingMarks == null
-    ? null
-    : { maxMarks: Number(exam.totalMarks), passingMarks };
+  return passingMarks == null ? null : { maxMarks: Number(exam.totalMarks), passingMarks };
 };
-const getCandidateSchedule = (schedule, exam, editingId, sessionId) => ({
+const getCandidateSchedule = (schedule, exam, editingId, sessionId, patterns = []) => ({
   ...schedule,
   examId: exam?.id,
-  scheduleMode: getScheduleMode(exam),
-  sessionId: getScheduleMode(exam) === "COMBINED_OBJECTIVE" ? sessionId || "" : "",
+  scheduleMode: getScheduleMode(exam, patterns),
+  sessionId: getScheduleMode(exam, patterns) === "COMBINED_OBJECTIVE" ? sessionId || "" : "",
   editingId,
 });
 const hasHallConflict = (candidate, schedules) =>
@@ -301,25 +349,28 @@ const hasInvigilatorConflict = (candidate, schedules) =>
         !isSameCombinedSession(entry, candidate),
     ),
   );
-const getAvailableRooms = (candidate, schedules) =>
-  ROOMS.filter(
+const getAvailableRooms = (rooms, candidate, schedules, requiredCapacity) =>
+  rooms.filter(
     (room) =>
-      room.status === "Active" && !hasHallConflict({ ...candidate, roomId: room.id }, schedules),
+      room.status === "Active" &&
+      (!requiredCapacity || Number(room.capacity) >= Number(requiredCapacity)) &&
+      !hasHallConflict({ ...candidate, roomId: room.id }, schedules),
   );
-const getEligibleInvigilators = (candidate, schedules) =>
-  FACULTY.filter(
+const getEligibleInvigilators = (facultyItems, candidate, schedules) =>
+  facultyItems.filter(
     (faculty) =>
       faculty.status === "Active" &&
       !hasInvigilatorConflict({ ...candidate, invigilatorId: faculty.id }, schedules),
   );
-const buildExportRows = (targetExams, schedules) =>
+const buildExportRows = (targetExams, schedules, masters) =>
   targetExams
     .flatMap((exam) => {
       const records = schedules.filter((schedule) => String(schedule.examId) === String(exam.id)),
         groups = new Map();
       records.forEach((schedule) => {
         const key =
-          normalizeScheduleMode(schedule.scheduleMode) === "COMBINED_OBJECTIVE" && schedule.sessionId
+          normalizeScheduleMode(schedule.scheduleMode) === "COMBINED_OBJECTIVE" &&
+          schedule.sessionId
             ? `combined-${exam.id}-${schedule.sessionId}`
             : `subject-${schedule.id}`;
         const group = groups.get(key) || [];
@@ -333,13 +384,13 @@ const buildExportRows = (targetExams, schedules) =>
           sessionId: first.sessionId || "",
           examCode: exam.code || "—",
           examName: exam.name,
-          boardName: nameOf(BOARDS, exam.boardId),
-          academicYear: nameOf(YEARS, exam.yearId),
-          academicLevel: nameOf(LEVELS, exam.levelId),
-          programName: nameOf(PROGRAMS, exam.programId),
-          patternName: nameOf(EXAM_PATTERNS, exam.examPatternId),
+          boardName: nameOf(masters.boards, exam.boardId),
+          academicYear: nameOf(masters.years, exam.yearId),
+          academicLevel: nameOf(masters.levels, exam.levelId),
+          programName: nameOf(masters.programs, exam.programId),
+          patternName: nameOf(masters.patterns, exam.examPatternId),
           examType: exam.examType || exam.type,
-          groupName: nameOf(GROUPS, exam.groupId, "—"),
+          groupName: nameOf(masters.groups, exam.groupId, "—"),
           totalMarks: hasValidExamMarks(exam) ? exam.totalMarks : exam.totalMarks || "—",
           passPercentage: hasValidExamMarks(exam) ? `${exam.passPercentage}%` : "—",
           passingScore: getExamPassingMarks(exam) ?? "—",
@@ -350,9 +401,10 @@ const buildExportRows = (targetExams, schedules) =>
           examTime:
             first.startTime && first.endTime
               ? `${first.startTime} - ${first.endTime}`
-              : first.startTime || first.endTime || "—”",
-          hallName: nameOf(ROOMS, first.roomId, "—”"),
-          invigilatorName: nameOf(FACULTY, first.invigilatorId, "—”"),
+              : first.startTime || first.endTime || "—",
+          hallName: first.roomName || nameOf(masters.rooms, first.roomId, "—"),
+          invigilatorName:
+            first.invigilatorName || nameOf(masters.faculty, first.invigilatorId, "—"),
           examMode: first.mode || "—",
           status: exam.status,
           description: exam.description || "—",
@@ -411,34 +463,62 @@ export default function ExaminationPage() {
     [finalizing, setFinalizing] = useState(false),
     [loading, setLoading] = useState(true),
     [eligibleSubjectsLoaded, setEligibleSubjectsLoaded] = useState(false),
-    [, setMasterRevision] = useState(0);
+    [eligibleSubjectsError, setEligibleSubjectsError] = useState(""),
+    [schedulingContext, setSchedulingContext] = useState(null),
+    [masters, setMasters] = useState(EMPTY_MASTERS),
+    [busyAction, setBusyAction] = useState("");
   const groupRequestRef = useRef(0),
-    programRequestRef = useRef(0);
+    programRequestRef = useRef(0),
+    eligibleRequestRef = useRef(0),
+    availabilityRequestRef = useRef(0),
+    detailRequestRef = useRef(0),
+    scheduleRequestRef = useRef(new Map()),
+    mastersRef = useRef(EMPTY_MASTERS);
+  const {
+    boards: BOARDS,
+    years: YEARS,
+    levels: LEVELS,
+    groups: GROUPS,
+    programs: PROGRAMS,
+    patterns: EXAM_PATTERNS,
+    types: EXAM_TYPES,
+    subjects: SUBJECTS,
+    faculty: FACULTY,
+    rooms: ROOMS,
+  } = masters;
   const replaceMaster = (key, items) => {
-    if (key === "boards") BOARDS = items;
-    else if (key === "years") YEARS = items;
-    else if (key === "levels") LEVELS = items;
-    else if (key === "groups") GROUPS = items;
-    else if (key === "programs") PROGRAMS = items;
-    else if (key === "subjects") SUBJECTS = items;
-    else if (key === "faculty") FACULTY = items;
-    else if (key === "rooms") ROOMS = items;
-    else if (key === "patterns") EXAM_PATTERNS = items;
-    else if (key === "types") EXAM_TYPES = items;
-    setMasterRevision((value) => value + 1);
+    setMasters((current) => {
+      const next = { ...current, [key]: items };
+      mastersRef.current = next;
+      return next;
+    });
   };
   const loadMasterData = async () => {
     const requests = [
       ["boards", EXAM_API.boards, ["boardId", "id"], ["boardName", "name"]],
-      ["years", EXAM_API.activeYear, ["academicYearId", "id"], ["academicYearName", "yearName", "name"]],
-      ["levels", EXAM_API.academicLevels, ["academicLevelId", "id"], ["levelName", "academicLevelName", "name"]],
+      [
+        "years",
+        EXAM_API.activeYear,
+        ["academicYearId", "id"],
+        ["academicYearName", "yearName", "name"],
+      ],
+      [
+        "levels",
+        EXAM_API.academicLevels,
+        ["academicLevelId", "id"],
+        ["levelName", "academicLevelName", "name"],
+      ],
       ["patterns", EXAM_API.patterns, ["patternId", "id"], ["patternName", "name"]],
-      ["types", EXAM_API.types, ["assessmentTypeId", "examTypeId", "id"], ["assessmentTypeName", "examType", "name"]],
+      [
+        "types",
+        EXAM_API.types,
+        ["assessmentTypeId", "examTypeId", "id"],
+        ["assessmentTypeName", "examType", "name"],
+      ],
     ];
-    const results = await Promise.allSettled(
-      requests.map(([, url]) => apiClient.get(url)),
-    );
+    const results = await Promise.allSettled(requests.map(([, url]) => apiClient.get(url)));
     const errors = [];
+    const loaded = { ...EMPTY_MASTERS };
     results.forEach((result, index) => {
       const [key, , idKeys, nameKeys] = requests[index];
       if (result.status === "fulfilled") {
@@ -452,6 +532,11 @@ export default function ExaminationPage() {
                 id: Number(item.patternId ?? item.id),
                 code: item.patternCode ?? item.code ?? "",
                 name: item.patternName ?? item.name ?? "",
+                programId: item.programId ?? item.programmeId ?? null,
+                groupProgramId: item.groupProgramId ?? item.groupProgrammeId ?? "",
+                scheduleMode: normalizeScheduleMode(
+                  item.scheduleMode ?? item.patternCode ?? item.code,
+                ),
                 description: item.description ?? "",
                 allowedExamTypes: Array.isArray(item.allowedExamTypes) ? item.allowedExamTypes : [],
               };
@@ -479,16 +564,23 @@ export default function ExaminationPage() {
               item.id > 0 &&
               (["levels", "patterns", "types"].includes(key) || item.isActive),
           );
-        replaceMaster(key, normalized);
+        loaded[key] = normalized;
       } else {
-        replaceMaster(key, []);
+        loaded[key] = [];
         errors.push(apiError(result.reason));
       }
     });
+    setMasters((current) => {
+      const next = { ...current, ...loaded };
+      mastersRef.current = next;
+      return next;
+    });
     if (errors.length) setToast(errors[0]);
+    return loaded;
   };
   const loadGroups = async ({ boardId, yearId, levelId }) => {
     const requestId = ++groupRequestRef.current;
+    programRequestRef.current += 1;
     replaceMaster("groups", []);
     replaceMaster("programs", []);
     if (![boardId, yearId, levelId].every((value) => Number(value) > 0)) return;
@@ -509,10 +601,8 @@ export default function ExaminationPage() {
             ...normalizeMaster(item, ["groupId", "id"], ["groupName", "name"]),
             id: Number(item.groupId ?? item.id),
             boardId: item.boardId == null ? null : Number(item.boardId),
-            academicYearId:
-              item.academicYearId == null ? null : Number(item.academicYearId),
-            academicLevelId:
-              item.academicLevelId == null ? null : Number(item.academicLevelId),
+            academicYearId: item.academicYearId == null ? null : Number(item.academicYearId),
+            academicLevelId: item.academicLevelId == null ? null : Number(item.academicLevelId),
             isActive: isActiveMaster(item),
           }))
           .filter((item) => Number.isInteger(item.id) && item.id > 0 && item.isActive),
@@ -538,12 +628,13 @@ export default function ExaminationPage() {
           .map((item) => ({
             ...normalizeMaster(item, ["programId", "id"], ["programName", "name"]),
             id: Number(item.programId ?? item.id),
+            programId: Number(item.programId ?? item.programmeId ?? item.id),
+            groupProgramId: item.groupProgramId ?? item.groupProgrammeId ?? "",
+            groupId: Number(item.groupId ?? numericGroupId),
             category: item.category ?? item.programCategory ?? item.programType ?? "",
             isActive: isActiveMaster(item),
           }))
-          .filter(
-            (item) => Number.isInteger(item.id) && item.id > 0 && item.isActive !== false,
-          ),
+          .filter((item) => Number.isInteger(item.id) && item.id > 0 && item.isActive !== false),
       );
     } catch {
       if (requestId === programRequestRef.current) {
@@ -552,13 +643,14 @@ export default function ExaminationPage() {
       }
     }
   };
-  const loadExaminations = async () => {
+  const loadExaminations = async (catalogs = mastersRef.current) => {
     try {
       const response = await apiClient.get(EXAM_API.list);
-      const normalized = collectionFrom(response.data).map(normalizeExamination).filter((item) => item.id);
+      const normalized = collectionFrom(response.data)
+        .map((item) => normalizeExamination(item, catalogs.patterns, catalogs.types))
+        .filter((item) => Number(item.id) > 0);
       setExams(normalized);
-      setSchedules(normalized.flatMap((item) => item.schedules));
-       return normalized;
+      return normalized;
     } catch (error) {
       setToast(apiError(error));
       return [];
@@ -566,11 +658,16 @@ export default function ExaminationPage() {
   };
   const loadSchedules = async (selectedExamId) => {
     if (!selectedExamId) return [];
+    const requestId = Symbol(String(selectedExamId));
+    scheduleRequestRef.current.set(String(selectedExamId), requestId);
     try {
       const response = await apiClient.get(EXAM_API.schedules, {
         params: { examinationId: Number(selectedExamId) },
       });
-      const next = collectionFrom(response.data).map(normalizeSchedule).filter((item) => item.id);
+      const next = collectionFrom(response.data)
+        .map(normalizeSchedule)
+        .filter((item) => item.id);
+      if (scheduleRequestRef.current.get(String(selectedExamId)) !== requestId) return [];
       setSchedules((current) => [
         ...current.filter((item) => String(item.examId) !== String(selectedExamId)),
         ...next,
@@ -583,14 +680,19 @@ export default function ExaminationPage() {
   };
   useEffect(() => {
     let active = true;
-    loadMasterData().then(loadExaminations).finally(() => {
-      if (active) setLoading(false);
-    });
-    // Initial API load is intentionally one-time; list filters are applied client-side.
+    loadMasterData()
+      .then((loaded) => loadExaminations(loaded))
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    const refresh = () => loadExaminations();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
   }, []);
   useEffect(() => {
     if (!isForm || !id) return;
@@ -602,43 +704,69 @@ export default function ExaminationPage() {
       levelId: existing.levelId,
     });
     loadPrograms(existing.groupId);
-    // The edit form's academic masters are loaded once its API examination record is available.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isForm, id, exams]);
   useEffect(() => {
+    const requestId = ++eligibleRequestRef.current;
     if (!examId) {
       replaceMaster("subjects", []);
       setEligibleSubjectsLoaded(false);
+      setEligibleSubjectsError("");
+      setSchedulingContext(null);
       return;
     }
     setEligibleSubjectsLoaded(false);
+    setEligibleSubjectsError("");
+    setSchedulingContext(null);
     let active = true;
-    apiClient
-      .get(EXAM_API.eligibleSubjects(examId))
-      .then((response) => {
-        if (!active) return;
+    Promise.allSettled([
+      apiClient.get(EXAM_API.eligibleSubjects(examId)),
+      apiClient.get(EXAM_API.schedulingContext(examId)),
+    ]).then(([subjectsResult, contextResult]) => {
+      if (!active || requestId !== eligibleRequestRef.current) return;
+      if (subjectsResult.status === "fulfilled") {
         replaceMaster(
           "subjects",
-          collectionFrom(response.data)
-            .map((item) =>
-              normalizeMaster(item, ["subjectId", "id"], ["subjectName", "name"]),
-            )
-            .filter((item) => item.id != null),
+          collectionFrom(subjectsResult.value.data)
+            .map((item) => ({
+              ...normalizeMaster(item, ["subjectId", "id"], ["subjectName", "name"]),
+              id: Number(item.subjectId ?? item.id),
+              totalMarks: item.maxMarks ?? item.totalMarks ?? "",
+              passingMarks: item.passingMarks ?? item.passMarks ?? "",
+              facultyIds: collectionFrom(item.facultyIds ?? item.faculties).map((faculty) =>
+                Number(faculty.facultyId ?? faculty.id ?? faculty),
+              ),
+            }))
+            .filter((item) => Number.isInteger(item.id) && item.id > 0),
         );
         setEligibleSubjectsLoaded(true);
-      })
-      .catch((error) => {
-        if (active) {
-          replaceMaster("subjects", []);
-          setEligibleSubjectsLoaded(false);
-          setToast(apiError(error));
-        }
-      });
+      } else {
+        const message = apiError(subjectsResult.reason);
+        replaceMaster("subjects", []);
+        setEligibleSubjectsError(message);
+        setToast(message);
+      }
+      if (contextResult.status === "fulfilled") {
+        const context = objectFrom(contextResult.value.data);
+        if (context)
+          setSchedulingContext({
+            examinationId: context.examinationId ?? Number(examId),
+            sectionIds: collectionFrom(context.sectionIds)
+              .map(Number)
+              .filter((value) => value > 0),
+            sections: collectionFrom(context.sections),
+            totalEligibleStudents: Number(context.totalEligibleStudents ?? 0),
+            requiredCapacity: Number(
+              context.requiredCapacity ?? context.totalEligibleStudents ?? 0,
+            ),
+          });
+      }
+    });
     return () => {
       active = false;
     };
   }, [examId]);
   useEffect(() => {
+    const requestId = ++availabilityRequestRef.current;
     if (!sch.date || !sch.startTime || !sch.endTime) {
       replaceMaster("rooms", []);
       replaceMaster("faculty", []);
@@ -651,11 +779,22 @@ export default function ExaminationPage() {
       endTime: toApiTime(sch.endTime),
       ...(editing ? { excludeScheduleId: Number(editing) } : {}),
     };
+    const hallParams = params;
+    const selectedSubjectIds =
+      getScheduleMode(
+        exams.find((item) => String(item.id) === String(examId)),
+        EXAM_PATTERNS,
+      ) === "COMBINED_OBJECTIVE"
+        ? SUBJECTS.map((subject) => Number(subject.id))
+        : sch.subjectId
+          ? [Number(sch.subjectId)]
+          : [];
+    const facultyParams = params;
     Promise.allSettled([
-      apiClient.get(EXAM_API.availableHalls, { params }),
-      apiClient.get(EXAM_API.availableInvigilators, { params }),
+      apiClient.get(EXAM_API.availableHalls, { params: hallParams }),
+      apiClient.get(EXAM_API.availableInvigilators, { params: facultyParams }),
     ]).then(([hallResult, facultyResult]) => {
-      if (!active) return;
+      if (!active || requestId !== availabilityRequestRef.current) return;
       if (hallResult.status === "fulfilled") {
         replaceMaster(
           "rooms",
@@ -670,7 +809,13 @@ export default function ExaminationPage() {
               roomType: item.roomType ?? "",
               isAvailable: item.isAvailable,
             }))
-            .filter((item) => item.id != null && item.isAvailable !== false),
+            .filter(
+              (item) =>
+                Number(item.id) > 0 &&
+                item.isAvailable !== false &&
+                (!schedulingContext?.requiredCapacity ||
+                  Number(item.capacity) >= schedulingContext.requiredCapacity),
+            ),
         );
       } else {
         replaceMaster("rooms", []);
@@ -686,9 +831,29 @@ export default function ExaminationPage() {
               employeeId: item.employeeId ?? "",
               designation: item.designation ?? "",
               facultyType: item.facultyType ?? "",
+              staffType: item.staffType ?? item.facultyType ?? "",
+              isActive: isActiveMaster(item),
               isAvailable: item.isAvailable,
             }))
-            .filter((item) => item.id != null && item.isAvailable !== false),
+            .filter(
+              (item, index, all) =>
+                Number(item.id) > 0 &&
+                item.isAvailable !== false &&
+                item.isActive &&
+                ["teaching", "teaching staff"].includes(
+                  String(item.staffType).trim().toLowerCase(),
+                ) &&
+                all.findIndex(
+                  (candidate) =>
+                    String(candidate.employeeId || candidate.id) ===
+                    String(item.employeeId || item.id),
+                ) === index &&
+                !selectedSubjectIds.some((subjectId) =>
+                  SUBJECTS.find(
+                    (subject) => String(subject.id) === String(subjectId),
+                  )?.facultyIds?.includes(Number(item.id)),
+                ),
+            ),
         );
       } else {
         replaceMaster("faculty", []);
@@ -698,7 +863,18 @@ export default function ExaminationPage() {
     return () => {
       active = false;
     };
-  }, [sch.date, sch.startTime, sch.endTime, editing]);
+  }, [
+    sch.date,
+    sch.startTime,
+    sch.endTime,
+    sch.subjectId,
+    editing,
+    examId,
+    schedulingContext,
+    exams,
+    EXAM_PATTERNS,
+    SUBJECTS,
+  ]);
   useEffect(() => {
     const next = loc.state?.scheduleExamId;
     if (!isForm && next) {
@@ -709,21 +885,27 @@ export default function ExaminationPage() {
     }
   }, [isForm, loc, nav]);
   const query = search.trim().toLowerCase();
-  const list = exams.filter((exam) =>
-    (!filters.boardId || String(exam.boardId) === filters.boardId) &&
-    (!filters.yearId || String(exam.yearId) === filters.yearId) &&
-    (!filters.levelId || String(exam.levelId) === filters.levelId) &&
-    (!query || [
-      exam.code,
-      exam.name,
-      exam.groupName,
-      exam.groupName || nameOf(GROUPS, exam.groupId, ""),
-      exam.programName,
-      exam.programName || nameOf(PROGRAMS, exam.programId, ""),
-      exam.examType,
-      exam.type,
-      exam.status,
-    ].some((value) => String(value ?? "").toLowerCase().includes(query))),
+  const list = exams.filter(
+    (exam) =>
+      (!filters.boardId || String(exam.boardId) === filters.boardId) &&
+      (!filters.yearId || String(exam.yearId) === filters.yearId) &&
+      (!filters.levelId || String(exam.levelId) === filters.levelId) &&
+      (!query ||
+        [
+          exam.code,
+          exam.name,
+          exam.groupName,
+          exam.groupName || nameOf(GROUPS, exam.groupId, ""),
+          exam.programName,
+          exam.programName || nameOf(PROGRAMS, exam.programId, ""),
+          exam.examType,
+          exam.type,
+          exam.status,
+        ].some((value) =>
+          String(value ?? "")
+            .toLowerCase()
+            .includes(query),
+        )),
   );
   const pages = Math.max(1, Math.ceil(list.length / EXAM_PAGE_SIZE));
   const shownExams = list.slice((page - 1) * EXAM_PAGE_SIZE, page * EXAM_PAGE_SIZE);
@@ -762,6 +944,7 @@ export default function ExaminationPage() {
   if (isForm)
     return (
       <ExamForm
+        masters={masters}
         exams={exams}
         schedules={schedules}
         editId={id}
@@ -778,21 +961,17 @@ export default function ExaminationPage() {
     setFilters((x) => ({
       ...x,
       [n]: v,
-      ...(n === "boardId"
-        ? { yearId: "", levelId: "" }
-        : n === "yearId"
-          ? { levelId: "" }
-          : {}),
+      ...(n === "boardId" ? { yearId: "" } : {}),
     }));
   };
   const exam = exams.find((e) => String(e.id) === examId);
-  const printSchedule = () => {
-    const physicalRows = buildExportRows(
-      exams.filter((item) => item.status === "SCHEDULED"),
-      schedules,
-    );
-    if (!physicalRows.length)
-      return setToast("No scheduled examinations are available to export.");
+  const printSchedule = async () => {
+    const targetExams = exams.filter((item) => ["SCHEDULED", "COMPLETED"].includes(item.status));
+    const loadedSchedules = (
+      await Promise.all(targetExams.map((item) => loadSchedules(item.id)))
+    ).flat();
+    const physicalRows = buildExportRows(targetExams, loadedSchedules, masters);
+    if (!physicalRows.length) return setToast("No scheduled examinations are available to export.");
     const rows = physicalRows;
     setExportPreview({ title: "Scheduled Examination Export", rows, scope: "global" });
   };
@@ -807,10 +986,20 @@ export default function ExaminationPage() {
       breadcrumb={tab === "schedule" ? ["Examinations", "Exam Schedule"] : ["Examinations"]}
     >
       <div className="exam-tabs" role="tablist" aria-label="Examination modules">
-        <button role="tab" aria-selected={tab === "exams"} className={tab === "exams" ? "active" : ""} onClick={() => setTab("exams")}>
+        <button
+          role="tab"
+          aria-selected={tab === "exams"}
+          className={tab === "exams" ? "active" : ""}
+          onClick={() => setTab("exams")}
+        >
           Examinations
         </button>
-        <button role="tab" aria-selected={tab === "schedule"} className={tab === "schedule" ? "active" : ""} onClick={() => setTab("schedule")}>
+        <button
+          role="tab"
+          aria-selected={tab === "schedule"}
+          className={tab === "schedule" ? "active" : ""}
+          onClick={() => setTab("schedule")}
+        >
           Exam Schedule
         </button>
       </div>
@@ -826,15 +1015,30 @@ export default function ExaminationPage() {
                 />
               </div>
               <div className="exam-toolbar-filters">
-                <ConstrainedFilterSelect label="Board" value={filters.boardId} onChange={(value) => changeFilter("boardId", value)} options={BOARDS} />
+                <ConstrainedFilterSelect
+                  label="Board"
+                  value={filters.boardId}
+                  onChange={(value) => changeFilter("boardId", value)}
+                  options={BOARDS}
+                />
                 <ToolbarSelect
                   label="Academic Year"
                   value={filters.yearId}
                   disabled={!filters.boardId}
                   onChange={(value) => changeFilter("yearId", value)}
-                  options={YEARS.filter((year) => year.isActive && (year.boardId == null || Number(year.boardId) === Number(filters.boardId)))}
+                  options={YEARS.filter(
+                    (year) =>
+                      year.isActive &&
+                      (year.boardId == null || Number(year.boardId) === Number(filters.boardId)),
+                  )}
                 />
-                <ConstrainedFilterSelect label="Academic Level" value={filters.levelId} disabled={!filters.yearId} onChange={(value) => changeFilter("levelId", value)} options={LEVELS} />
+                <ConstrainedFilterSelect
+                  label="Academic Level"
+                  value={filters.levelId}
+                  disabled={!filters.yearId}
+                  onChange={(value) => changeFilter("levelId", value)}
+                  options={LEVELS}
+                />
               </div>
               <div className="exam-toolbar-spacer" />
               <div className="exam-toolbar-actions">
@@ -843,15 +1047,17 @@ export default function ExaminationPage() {
                 </button>
                 <button
                   className="cms-btn cms-btn-primary"
-                  onClick={() => nav("/dashboard/examinations/add", {
-                    state: {
-                      initialExamFilters: {
-                        boardId: filters.boardId,
-                        yearId: filters.yearId,
-                        levelId: filters.levelId,
+                  onClick={() =>
+                    nav("/dashboard/examinations/add", {
+                      state: {
+                        initialExamFilters: {
+                          boardId: filters.boardId,
+                          yearId: filters.yearId,
+                          levelId: filters.levelId,
+                        },
                       },
-                    },
-                  })}
+                    })
+                  }
                 >
                   <Plus size={16} /> Create Examination
                 </button>
@@ -875,17 +1081,60 @@ export default function ExaminationPage() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan="10"><div className="exam-list-loading"><span className="exam-list-spinner" aria-hidden="true" /><span>Loading data...</span></div></td></tr>
+                    <tr>
+                      <td colSpan="10">
+                        <div className="exam-list-loading">
+                          <span className="exam-list-spinner" aria-hidden="true" />
+                          <span>Loading data...</span>
+                        </div>
+                      </td>
+                    </tr>
                   ) : shownExams.length ? (
                     shownExams.map((e) => (
                       <tr key={e.id}>
                         <td className="cms-strong">{e.code}</td>
-                        <td><span className="exam-cell-truncate" title={e.name}>{e.name}</span></td>
-                        <td><span className="exam-cell-truncate" title={e.academicYearName || nameOf(YEARS, e.yearId, "—")}>{e.academicYearName || nameOf(YEARS, e.yearId, "—")}</span></td>
-                        <td><span className="exam-cell-truncate" title={e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}>{e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}</span></td>
-                        <td><span className="exam-cell-truncate" title={e.groupName || nameOf(GROUPS, e.groupId, "—")}>{e.groupName || nameOf(GROUPS, e.groupId, "—")}</span></td>
-                        <td><span className="exam-cell-truncate" title={e.programName || nameOf(PROGRAMS, e.programId, "—")}>{e.programName || nameOf(PROGRAMS, e.programId, "—")}</span></td>
-                        <td><span className="exam-cell-truncate" title={e.type}>{e.type}</span></td>
+                        <td>
+                          <span className="exam-cell-truncate" title={e.name}>
+                            {e.name}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className="exam-cell-truncate"
+                            title={e.academicYearName || nameOf(YEARS, e.yearId, "—")}
+                          >
+                            {e.academicYearName || nameOf(YEARS, e.yearId, "—")}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className="exam-cell-truncate"
+                            title={e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}
+                          >
+                            {e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className="exam-cell-truncate"
+                            title={e.groupName || nameOf(GROUPS, e.groupId, "—")}
+                          >
+                            {e.groupName || nameOf(GROUPS, e.groupId, "—")}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className="exam-cell-truncate"
+                            title={e.programName || nameOf(PROGRAMS, e.programId, "—")}
+                          >
+                            {e.programName || nameOf(PROGRAMS, e.programId, "—")}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="exam-cell-truncate" title={e.type}>
+                            {e.type}
+                          </span>
+                        </td>
                         <td>
                           {d(e.startDate)}
                           <small className="exam-muted">to {d(e.endDate)}</small>
@@ -899,9 +1148,24 @@ export default function ExaminationPage() {
                               className="cms-action-btn view"
                               title="View"
                               onClick={async () => {
+                                const requestId = ++detailRequestRef.current;
                                 try {
                                   const response = await apiClient.get(EXAM_API.byId(e.id));
-                                  setDetail(normalizeExamination(response.data?.data ?? response.data));
+                                  const payload = objectFrom(response.data);
+                                  if (!payload)
+                                    throw new Error("Invalid Examination detail response.");
+                                  const latest = normalizeExamination(
+                                    payload,
+                                    EXAM_PATTERNS,
+                                    EXAM_TYPES,
+                                  );
+                                  if (!Number(latest.id))
+                                    throw new Error(
+                                      "Examination detail did not contain a valid ID.",
+                                    );
+                                  const latestSchedules = await loadSchedules(latest.id);
+                                  if (requestId === detailRequestRef.current)
+                                    setDetail({ exam: latest, schedules: latestSchedules });
                                 } catch (error) {
                                   setToast(apiError(error));
                                 }
@@ -909,34 +1173,37 @@ export default function ExaminationPage() {
                             >
                               <Eye size={15} />
                             </button>
-                            <button
-                              className="cms-action-btn edit"
-                              title="Edit"
-                              disabled={!["DRAFT", "SCHEDULED"].includes(e.status)}
-                              onClick={() => setEditingExam(e)}
-                            >
-                              <Pencil size={15} />
-                            </button>
-                            <button
-                              className="cms-action-btn"
-                              title="Schedule"
-                              disabled={e.status !== "DRAFT"}
-                              onClick={() => {
-                                setExamId(String(e.id));
-                                loadSchedules(e.id);
-                                setTab("schedule");
-                                setEditing(null);
-                                setSch(emptySchedule());
-                              }}
-                            >
-                              <CalendarDays size={15} />
-                            </button>
-                            {e.status === "SCHEDULED" && (
+                            {e.status === "DRAFT" && (
+                              <>
+                                <button
+                                  className="cms-action-btn edit"
+                                  title="Edit"
+                                  onClick={() => setEditingExam(e)}
+                                >
+                                  <Pencil size={15} />
+                                </button>
+                                <button
+                                  className="cms-action-btn"
+                                  title="Schedule"
+                                  onClick={() => {
+                                    setExamId(String(e.id));
+                                    loadSchedules(e.id);
+                                    setTab("schedule");
+                                    setEditing(null);
+                                    setSch(emptySchedule());
+                                  }}
+                                >
+                                  <CalendarDays size={15} />
+                                </button>
+                              </>
+                            )}
+                            {["SCHEDULED", "COMPLETED"].includes(e.status) && (
                               <button
                                 className="cms-action-btn"
                                 title="Export examination"
-                                onClick={() => {
-                                  const rows = buildExportRows([e], schedules);
+                                onClick={async () => {
+                                  const completeSchedules = await loadSchedules(e.id);
+                                  const rows = buildExportRows([e], completeSchedules, masters);
                                   if (!rows.length)
                                     return setToast(
                                       "No schedules are available to export for this examination.",
@@ -951,7 +1218,10 @@ export default function ExaminationPage() {
                               <button
                                 className="cms-action-btn danger"
                                 title="Cancel"
+                                disabled={busyAction === "cancel-" + e.id}
                                 onClick={async () => {
+                                  if (busyAction) return;
+                                  setBusyAction("cancel-" + e.id);
                                   try {
                                     const response = await apiClient.patch(EXAM_API.cancel(e.id), {
                                       reason: "Cancelled from Examination Management",
@@ -961,21 +1231,24 @@ export default function ExaminationPage() {
                                     setToast(response.data?.message || "Examination cancelled.");
                                   } catch (error) {
                                     setToast(apiError(error));
+                                  } finally {
+                                    setBusyAction("");
                                   }
                                 }}
                               >
                                 <X size={15} />
                               </button>
                             )}
-                            {e.status === "DRAFT" && !schedules.some((s) => s.examId === e.id) && (
-                              <button
-                                className="cms-action-btn danger"
-                                title="Delete draft"
-                                onClick={() => setRemove(e)}
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            )}
+                            {e.status === "DRAFT" &&
+                              !schedules.some((s) => String(s.examId) === String(e.id)) && (
+                                <button
+                                  className="cms-action-btn danger"
+                                  title="Delete draft"
+                                  onClick={() => setRemove(e)}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              )}
                           </div>
                         </td>
                       </tr>
@@ -991,10 +1264,28 @@ export default function ExaminationPage() {
               </table>
             </div>
             <div className="exam-list-pagination">
-              <span className="exam-record-summary">Showing {rangeStart}–{rangeEnd} of {list.length} records</span>
-              <button type="button" className="cms-btn cms-btn-ghost" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button>
-              <span>{page} / {pages}</span>
-              <button type="button" className="cms-btn cms-btn-ghost" disabled={page === pages} onClick={() => setPage((current) => current + 1)}>Next</button>
+              <span className="exam-record-summary">
+                Showing {rangeStart}–{rangeEnd} of {list.length} records
+              </span>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                disabled={page === 1}
+                onClick={() => setPage((current) => current - 1)}
+              >
+                Previous
+              </button>
+              <span>
+                {page} / {pages}
+              </span>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                disabled={page === pages}
+                onClick={() => setPage((current) => current + 1)}
+              >
+                Next
+              </button>
             </div>
           </div>
         </>
@@ -1012,6 +1303,10 @@ export default function ExaminationPage() {
             <ArrowLeft size={15} /> Back to Examinations
           </button>
           <Schedule
+            masters={masters}
+            schedulingContext={schedulingContext}
+            eligibleSubjectsLoaded={eligibleSubjectsLoaded}
+            eligibleSubjectsError={eligibleSubjectsError}
             exam={exam}
             exams={exams}
             schedules={schedules}
@@ -1043,7 +1338,8 @@ export default function ExaminationPage() {
               const wasEditing = Boolean(editing),
                 nextRecords = Array.isArray(records) ? records : [records],
                 candidate = nextRecords[0];
-              await Promise.all([loadSchedules(candidate.examId), loadExaminations()]);
+              await loadExaminations();
+              await loadSchedules(candidate.examId);
               setToast(wasEditing ? "Schedule updated." : "Schedule saved.");
               setEditing(null);
               setSch(
@@ -1052,6 +1348,10 @@ export default function ExaminationPage() {
                   : nextScheduleFromPrevious(candidate),
               );
               setErrors({});
+            }}
+            onFailure={async (failedExamId) => {
+              if (failedExamId) await loadSchedules(failedExamId);
+              await loadExaminations();
             }}
             onRemove={setRemoveSchedule}
             finalizing={finalizing}
@@ -1064,10 +1364,16 @@ export default function ExaminationPage() {
               if (validateExamConfiguration(exam))
                 return setErrors({ form: "Select a valid Program, Exam Pattern and Exam Type." });
               if (!eligibleSubjectsLoaded)
-                return setErrors({ form: "Eligible subjects could not be loaded. Please try again before finalizing." });
-              const expected = subjectsFor(exam),
+                return setErrors({
+                  form: "Eligible subjects could not be loaded. Please try again before finalizing.",
+                });
+              const expected = subjectsFor(masters),
                 records = schedules.filter((item) => String(item.examId) === String(exam.id));
-              if (getScheduleMode(exam) !== "COMBINED_OBJECTIVE") {
+              if (!expected.length)
+                return setErrors({
+                  form: "No eligible subjects are available. This examination cannot be finalized.",
+                });
+              if (getScheduleMode(exam, EXAM_PATTERNS) !== "COMBINED_OBJECTIVE") {
                 const missing = expected.filter(
                   (subject) =>
                     !records.some((item) => String(item.subjectId) === String(subject.id)),
@@ -1089,7 +1395,7 @@ export default function ExaminationPage() {
                     return (
                       item.scheduleMode !== "SUBJECT_WISE" ||
                       !subject ||
-                      !getMarksConfig(exam, subject) ||
+                      !getMarksConfig(exam, subject, SUBJECTS) ||
                       item.date < exam.startDate ||
                       item.date > exam.endDate ||
                       !item.startTime ||
@@ -1157,8 +1463,11 @@ export default function ExaminationPage() {
               setFinalizing(true);
               try {
                 const response = await apiClient.post(EXAM_API.finalize(exam.id));
-                await Promise.all([loadExaminations(), loadSchedules(exam.id)]);
-                setToast(response.data?.message || "Schedule finalized. Examination is now scheduled.");
+                await loadExaminations();
+                await loadSchedules(exam.id);
+                setToast(
+                  response.data?.message || "Schedule finalized. Examination is now scheduled.",
+                );
               } catch (error) {
                 setErrors((current) => ({ ...current, form: apiError(error) }));
               } finally {
@@ -1168,9 +1477,17 @@ export default function ExaminationPage() {
           />
         </>
       )}
-      {detail && <ExamDetails exam={detail} schedules={schedules} close={() => setDetail(null)} />}{" "}
+      {detail && (
+        <ExamDetails
+          exam={detail.exam}
+          schedules={detail.schedules}
+          masters={masters}
+          close={() => setDetail(null)}
+        />
+      )}{" "}
       {editingExam && (
         <EditExamModal
+          masters={masters}
           exam={editingExam}
           schedules={schedules}
           onClose={() => setEditingExam(null)}
@@ -1189,12 +1506,15 @@ export default function ExaminationPage() {
               examType: updated.examType,
               startDate: updated.startDate,
               endDate: updated.endDate,
-              examPattern: findPattern(updated.examPatternId)?.code || updated.examPattern,
+              examPattern:
+                findPattern(EXAM_PATTERNS, updated.examPatternId)?.code || updated.examPattern,
               examPatternId: Number(updated.examPatternId),
               totalMarks: Number(updated.totalMarks),
               passPercentage: Number(updated.passPercentage),
               description: updated.description || "",
               status: updated.status,
+              ...(updated.groupProgramId ? { groupProgramId: Number(updated.groupProgramId) } : {}),
+              ...(updated.rowVersion != null ? { rowVersion: updated.rowVersion } : {}),
             });
             await loadExaminations();
             setEditingExam(null);
@@ -1211,7 +1531,14 @@ export default function ExaminationPage() {
           message={`Delete ${remove.name}? This draft has no schedules.`}
           onCancel={() => setRemove(null)}
           onConfirm={async () => {
+            if (busyAction) return;
+            setBusyAction("delete-exam-" + remove.id);
             try {
+              const currentSchedules = await loadSchedules(remove.id);
+              if (currentSchedules.length) {
+                setToast("This Draft examination has schedules and cannot be deleted.");
+                return;
+              }
               await apiClient.delete(EXAM_API.byId(remove.id));
               await loadExaminations();
               if (String(examId) === String(remove.id)) setExamId("");
@@ -1219,6 +1546,8 @@ export default function ExaminationPage() {
               setToast("Draft examination deleted.");
             } catch (error) {
               setToast(apiError(error));
+            } finally {
+              setBusyAction("");
             }
           }}
         />
@@ -1233,6 +1562,8 @@ export default function ExaminationPage() {
           }
           onCancel={() => setRemoveSchedule(null)}
           onConfirm={async () => {
+            if (busyAction) return;
+            setBusyAction("delete-schedule-" + removeSchedule.id);
             try {
               const targets =
                 normalizeScheduleMode(removeSchedule.scheduleMode) === "COMBINED_OBJECTIVE"
@@ -1245,15 +1576,15 @@ export default function ExaminationPage() {
               await Promise.all(
                 targets.map((item) => apiClient.delete(EXAM_API.scheduleById(item.id))),
               );
-              await Promise.all([
-                loadSchedules(removeSchedule.examId),
-                loadExaminations(),
-              ]);
+              await Promise.all([loadSchedules(removeSchedule.examId), loadExaminations()]);
               setEditing(null);
               setRemoveSchedule(null);
               setToast("Schedule removed.");
             } catch (error) {
               setToast(apiError(error));
+              await loadSchedules(removeSchedule.examId);
+            } finally {
+              setBusyAction("");
             }
           }}
         />
@@ -1270,11 +1601,17 @@ function ToolbarSelect({ label, value, onChange, options, disabled = false }) {
         value={value}
         disabled={disabled}
         aria-label={`Select ${label}`}
-        title={options.find((option) => String(option.id) === String(value))?.name || `Select ${label}`}
+        title={
+          options.find((option) => String(option.id) === String(value))?.name || `Select ${label}`
+        }
         onChange={(event) => onChange(event.target.value)}
       >
         <option value="">Select {label}</option>
-        {options.map((option) => <option key={option.id} value={option.id} title={option.name}>{option.name}</option>)}
+        {options.map((option) => (
+          <option key={option.id} value={option.id} title={option.name}>
+            {option.name}
+          </option>
+        ))}
       </select>
     </div>
   );
@@ -1306,23 +1643,79 @@ function ConstrainedFilterSelect({ label, value, onChange, options, disabled = f
   };
   return (
     <div ref={containerRef} className="exam-toolbar-select exam-constrained-select">
-      <button type="button" disabled={disabled} aria-label={placeholder} aria-haspopup="listbox" aria-expanded={open} title={selectedName || placeholder} onClick={() => setOpen((current) => !current)}>
-        <span>{selectedName || placeholder}</span><span aria-hidden="true">▾</span>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label={placeholder}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title={selectedName || placeholder}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{selectedName || placeholder}</span>
+        <span aria-hidden="true">▾</span>
       </button>
-      {open && <div className="exam-constrained-menu" role="listbox" aria-label={`${label} options`}>
-        <button type="button" role="option" aria-selected={!value} title={placeholder} onClick={() => choose("")}>{placeholder}</button>
-        {options.length ? options.map((option) => <button type="button" role="option" aria-selected={String(option.id) === String(value)} key={option.id} title={option.name} onClick={() => choose(String(option.id))}>{option.name}</button>) : <span>No options available</span>}
-      </div>}
+      {open && (
+        <div className="exam-constrained-menu" role="listbox" aria-label={`${label} options`}>
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            title={placeholder}
+            onClick={() => choose("")}
+          >
+            {placeholder}
+          </button>
+          {options.length ? (
+            options.map((option) => (
+              <button
+                type="button"
+                role="option"
+                aria-selected={String(option.id) === String(value)}
+                key={option.id}
+                title={option.name}
+                onClick={() => choose(String(option.id))}
+              >
+                {option.name}
+              </button>
+            ))
+          ) : (
+            <span>No options available</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcademicChange, onGroupChange }) {
+function ExamForm({
+  masters,
+  exams,
+  schedules,
+  editId,
+  initialExamFilters,
+  onSave,
+  onAcademicChange,
+  onGroupChange,
+}) {
+  const {
+    boards: BOARDS,
+    years: YEARS,
+    levels: LEVELS,
+    groups: GROUPS,
+    programs: PROGRAMS,
+    patterns: EXAM_PATTERNS,
+    types: EXAM_TYPES,
+  } = masters;
   const nav = useNavigate(),
     existing = exams.find((e) => String(e.id) === String(editId)),
     [form, setForm] = useState(() =>
       existing
-        ? { ...existing, programId: String(existing.programId) }
+        ? {
+            ...existing,
+            programId: String(existing.programId),
+            groupProgramId: String(existing.groupProgramId || ""),
+          }
         : {
             ...emptyExam(),
             boardId: initialExamFilters?.boardId || "",
@@ -1332,19 +1725,16 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
     ),
     [errors, setErrors] = useState({}),
     [saving, setSaving] = useState(false),
-    locked = !!(existing && schedules.some((s) => s.examId === existing.id));
+    locked = !!(existing && schedules.some((s) => String(s.examId) === String(existing.id)));
   useEffect(() => {
     if (!existing && form.boardId && form.yearId && form.levelId)
       onAcademicChange({ boardId: form.boardId, yearId: form.yearId, levelId: form.levelId });
-    // Prefilled create-form dependencies are loaded once when the form opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const change = (n, v) => {
       const nextContext = {
         boardId: n === "boardId" ? v : form.boardId,
         yearId: n === "boardId" ? "" : n === "yearId" ? v : form.yearId,
-        levelId:
-          n === "boardId" || n === "yearId" ? "" : n === "levelId" ? v : form.levelId,
+        levelId: n === "levelId" ? v : form.levelId,
       };
       if (["boardId", "yearId", "levelId"].includes(n)) onAcademicChange(nextContext);
       if (n === "groupId") onGroupChange(v);
@@ -1352,13 +1742,41 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
         ...x,
         [n]: v,
         ...(n === "boardId"
-          ? { yearId: "", levelId: "", groupId: "", programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
+          ? {
+              yearId: "",
+              groupId: "",
+              groupProgramId: "",
+              programId: "",
+              examPatternId: "",
+              assessmentTypeId: "",
+              examType: "",
+            }
           : n === "yearId"
-            ? { levelId: "", groupId: "", programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
+            ? {
+                groupId: "",
+                groupProgramId: "",
+                programId: "",
+                examPatternId: "",
+                assessmentTypeId: "",
+                examType: "",
+              }
             : n === "levelId"
-              ? { groupId: "", programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
+              ? {
+                  groupId: "",
+                  groupProgramId: "",
+                  programId: "",
+                  examPatternId: "",
+                  assessmentTypeId: "",
+                  examType: "",
+                }
               : n === "groupId"
-                ? { programId: "", examPatternId: "", assessmentTypeId: "", examType: "" }
+                ? {
+                    groupProgramId: "",
+                    programId: "",
+                    examPatternId: "",
+                    assessmentTypeId: "",
+                    examType: "",
+                  }
                 : n === "programId"
                   ? { examPatternId: "", assessmentTypeId: "", examType: "" }
                   : n === "examPatternId"
@@ -1372,22 +1790,33 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
     l = LEVELS,
     g = GROUPS,
     p = PROGRAMS,
-    patterns = patternsForProgram(form.programId),
+    patterns = patternsForProgram(EXAM_PATTERNS, form.programId, form.groupProgramId),
     pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(form.examPatternId)),
-    allowedTypes = Array.isArray(pattern?.allowedExamTypes) && pattern.allowedExamTypes.length
-      ? pattern.allowedExamTypes.map((value) => {
-          const supplied = typeof value === "object" ? value : { name: value, examType: value };
-          const master = EXAM_TYPES.find((item) =>
-            [item.id, item.name, item.examType].some(
-              (candidate) => String(candidate ?? "").trim().toLowerCase() === String(supplied.id ?? supplied.name ?? supplied.examType ?? "").trim().toLowerCase(),
-            ),
-          );
-          return master ?? supplied;
-        })
-      : EXAM_TYPES;
+    allowedTypes =
+      Array.isArray(pattern?.allowedExamTypes) && pattern.allowedExamTypes.length
+        ? pattern.allowedExamTypes
+            .map((value) => {
+              const supplied = typeof value === "object" ? value : { name: value, examType: value };
+              const master = EXAM_TYPES.find((item) =>
+                [item.id, item.name, item.examType].some(
+                  (candidate) =>
+                    String(candidate ?? "")
+                      .trim()
+                      .toLowerCase() ===
+                    String(supplied.id ?? supplied.name ?? supplied.examType ?? "")
+                      .trim()
+                      .toLowerCase(),
+                ),
+              );
+              return master ?? null;
+            })
+            .filter((item) => Number.isInteger(Number(item?.id)) && Number(item.id) > 0)
+        : EXAM_TYPES.filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0);
   const save = async (e) => {
     e.preventDefault();
     if (saving) return;
+    if (existing && existing.status !== "DRAFT")
+      return setErrors({ form: "Only Draft examinations can be updated from this form." });
     const x = {};
     const normalizedExamName = normalizeText(form.name);
     const normalizedDescription = normalizeText(form.description);
@@ -1406,12 +1835,10 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
       if (!String(form[k] || "").trim())
         x[k] = k === "programId" ? "Please select a Program." : "Required";
     });
-    if (!normalizedExamName)
-      x.name = "Exam Name is required.";
+    if (!normalizedExamName) x.name = "Exam Name is required.";
     else if (normalizedExamName.length < 2)
       x.name = "Exam Name must contain at least 2 characters.";
-    else if (normalizedExamName.length > 150)
-      x.name = "Exam Name must not exceed 150 characters.";
+    else if (normalizedExamName.length > 150) x.name = "Exam Name must not exceed 150 characters.";
     else if (!/^[\p{L}\p{N}\s&'().,/-]+$/u.test(normalizedExamName))
       x.name = "Exam Name contains unsupported characters.";
     if (normalizedDescription.length > 500)
@@ -1420,6 +1847,24 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
       x.description = "Description contains unsupported control characters.";
     const configurationError = validateExamConfiguration(form);
     if (configurationError) x.examPatternId = configurationError;
+    ["boardId", "yearId", "levelId", "groupId", "programId", "examPatternId"].forEach((field) => {
+      if (!Number.isInteger(Number(form[field])) || Number(form[field]) <= 0)
+        x[field] = "Select a valid option.";
+    });
+    const selectedYear = YEARS.find((item) => String(item.id) === String(form.yearId));
+    const selectedGroup = GROUPS.find((item) => String(item.id) === String(form.groupId));
+    const selectedProgram = PROGRAMS.find((item) => String(item.id) === String(form.programId));
+    if (selectedYear?.boardId != null && String(selectedYear.boardId) !== String(form.boardId))
+      x.yearId = "The selected Academic Year does not belong to this Board.";
+    if (selectedGroup?.boardId != null && String(selectedGroup.boardId) !== String(form.boardId))
+      x.groupId = "The selected Group does not belong to this Board.";
+    if (!selectedProgram || String(selectedProgram.groupId) !== String(form.groupId))
+      x.programId = "The selected Program does not belong to this Group.";
+    if (
+      form.groupProgramId &&
+      String(selectedProgram?.groupProgramId) !== String(form.groupProgramId)
+    )
+      x.programId = "The selected Group–Program association is invalid.";
     if (!Number.isInteger(Number(form.assessmentTypeId)) || Number(form.assessmentTypeId) <= 0)
       x.examType = "Select a valid Exam Type.";
     if (form.startDate && form.endDate && form.startDate > form.endDate)
@@ -1455,7 +1900,9 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
     if (
       existing &&
       schedules.some(
-        (s) => s.examId === existing.id && (s.date < form.startDate || s.date > form.endDate),
+        (s) =>
+          String(s.examId) === String(existing.id) &&
+          (s.date < form.startDate || s.date > form.endDate),
       )
     )
       x.endDate =
@@ -1464,7 +1911,6 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
     setSaving(true);
     try {
       const payload = {
-        examCode: form.code.trim(),
         examName: normalizedExamName,
         boardId: Number(form.boardId),
         academicYearId: Number(form.yearId),
@@ -1473,7 +1919,9 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
         groupId: Number(form.groupId),
         programId: Number(form.programId),
         assessmentTypeId: Number(form.assessmentTypeId),
-        examType: EXAM_TYPES.find((item) => String(item.id) === String(form.assessmentTypeId))?.examType ?? form.examType,
+        examType:
+          EXAM_TYPES.find((item) => String(item.id) === String(form.assessmentTypeId))?.examType ??
+          form.examType,
         startDate: form.startDate,
         endDate: form.endDate,
         examPattern: pattern?.code ?? form.examPattern ?? "",
@@ -1481,12 +1929,29 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
         totalMarks: Number(form.totalMarks),
         passPercentage: Number(form.passPercentage),
         description: normalizedDescription,
-        status: existing?.status ?? "DRAFT",
+        status: "DRAFT",
+        ...(form.groupProgramId ? { groupProgramId: Number(form.groupProgramId) } : {}),
+        ...(existing?.rowVersion != null ? { rowVersion: existing.rowVersion } : {}),
       };
+      if (existing?.code) payload.examCode = existing.code;
       const response = existing
         ? await apiClient.put(EXAM_API.byId(existing.id), payload)
         : await apiClient.post(EXAM_API.list, payload);
-      const record = normalizeExamination(response.data?.data ?? response.data);
+      const returned = objectFrom(response.data);
+      let record = returned ? normalizeExamination(returned, EXAM_PATTERNS, EXAM_TYPES) : null;
+      const createdId = existing?.id ?? record?.id ?? returned?.examId;
+      if (!Number.isInteger(Number(createdId)) || Number(createdId) <= 0)
+        throw new Error("The Examination API did not return a valid created Examination ID.");
+      if (!record?.id || !String(record?.code || "").trim()) {
+        const detailResponse = await apiClient.get(EXAM_API.byId(createdId));
+        const detailPayload = objectFrom(detailResponse.data);
+        if (!detailPayload) throw new Error("The created Examination detail response was invalid.");
+        record = normalizeExamination(detailPayload, EXAM_PATTERNS, EXAM_TYPES);
+      }
+      if (!String(record?.code || "").trim())
+        throw new Error(
+          "The backend did not return a generated Exam Code for the created Examination.",
+        );
       await onSave(record);
     } catch (error) {
       setErrors((current) => ({ ...current, form: apiError(error) }));
@@ -1552,7 +2017,20 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
                   label="Program *"
                   value={form.programId}
                   disabled={saving || locked || !form.groupId}
-                  onChange={(v) => change("programId", v)}
+                  onChange={(v) => {
+                    const selected = p.find((item) => String(item.id) === String(v));
+                    setForm((current) => ({
+                      ...current,
+                      programId: v,
+                      groupProgramId: selected?.groupProgramId
+                        ? String(selected.groupProgramId)
+                        : "",
+                      examPatternId: "",
+                      assessmentTypeId: "",
+                      examType: "",
+                    }));
+                    setErrors((current) => ({ ...current, programId: undefined, form: undefined }));
+                  }}
                   options={p}
                   error={errors.programId}
                 />
@@ -1570,7 +2048,11 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
                   disabled={saving || locked || !form.examPatternId}
                   onChange={(v) => {
                     const selected = allowedTypes.find((item) => String(item.id) === String(v));
-                    setForm((current) => ({ ...current, assessmentTypeId: v, examType: selected?.examType ?? selected?.name ?? "" }));
+                    setForm((current) => ({
+                      ...current,
+                      assessmentTypeId: v,
+                      examType: selected?.examType ?? selected?.name ?? "",
+                    }));
                     setErrors((current) => ({ ...current, examType: undefined, form: undefined }));
                   }}
                   options={allowedTypes}
@@ -1637,7 +2119,11 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
                 />
               </div>
             </section>
-            {errors.form && <p className="cms-error exam-form-error" role="alert">{errors.form}</p>}
+            {errors.form && (
+              <p className="cms-error exam-form-error" role="alert">
+                {errors.form}
+              </p>
+            )}
             <div className="cms-form-actions">
               <button
                 type="button"
@@ -1648,7 +2134,13 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
                 Cancel
               </button>
               <button className="cms-btn cms-btn-primary" disabled={saving} aria-busy={saving}>
-                {saving ? (existing ? "Updating..." : "Adding...") : existing ? "Update Examination" : "Save Examination"}
+                {saving
+                  ? existing
+                    ? "Updating..."
+                    : "Adding..."
+                  : existing
+                    ? "Update Examination"
+                    : "Save Examination"}
               </button>
             </div>
           </div>
@@ -1658,6 +2150,10 @@ function ExamForm({ exams, schedules, editId, initialExamFilters, onSave, onAcad
   );
 }
 function Schedule({
+  masters,
+  schedulingContext,
+  eligibleSubjectsLoaded,
+  eligibleSubjectsError,
   exam,
   exams,
   schedules,
@@ -1670,14 +2166,26 @@ function Schedule({
   editing,
   onEdit,
   onSave,
+  onFailure,
   onRemove,
   finalize,
   finalizing,
 }) {
+  const {
+    boards: BOARDS,
+    years: YEARS,
+    levels: LEVELS,
+    groups: GROUPS,
+    programs: PROGRAMS,
+    patterns: EXAM_PATTERNS,
+    subjects: SUBJECTS,
+    faculty: FACULTY,
+    rooms: ROOMS,
+  } = masters;
   const [savingSchedule, setSavingSchedule] = useState(false),
     entries = exam ? schedules.filter((s) => String(s.examId) === String(exam.id)) : [],
-    combined = getScheduleMode(exam) === "COMBINED_OBJECTIVE",
-    included = subjectsFor(exam),
+    combined = getScheduleMode(exam, EXAM_PATTERNS) === "COMBINED_OBJECTIVE",
+    included = subjectsFor(masters),
     subs = included.filter(
       (s) =>
         !entries.some(
@@ -1688,9 +2196,9 @@ function Schedule({
     currentSessionId = editing
       ? entries.find((s) => String(s.id) === String(editing))?.sessionId
       : "",
-    candidate = getCandidateSchedule(sch, exam, editing, currentSessionId),
-    faculty = getEligibleInvigilators(candidate, schedules),
-    rooms = getAvailableRooms(candidate, schedules);
+    candidate = getCandidateSchedule(sch, exam, editing, currentSessionId, EXAM_PATTERNS),
+    faculty = getEligibleInvigilators(FACULTY, candidate, schedules),
+    rooms = getAvailableRooms(ROOMS, candidate, schedules, schedulingContext?.requiredCapacity);
   useEffect(() => {
     setSch((current) => {
       const next = { ...current };
@@ -1708,7 +2216,9 @@ function Schedule({
   }, [rooms, faculty, setSch]);
   useEffect(() => {
     if (combined && exam?.examType === "Objective")
-      setSch((current) => (current.mode === "Objective" ? current : { ...current, mode: "Objective" }));
+      setSch((current) =>
+        current.mode === "Objective" ? current : { ...current, mode: "Objective" },
+      );
   }, [combined, exam?.id, exam?.examType, setSch]);
   const change = (n, v) => {
     setSch((x) => ({
@@ -1729,7 +2239,11 @@ function Schedule({
       if (!sch[k]) x[k] = "Required";
     });
     if (!exam) x.form = "Select an examination.";
+    if (!eligibleSubjectsLoaded)
+      x.form = eligibleSubjectsError || "Eligible subjects are still loading. Please try again.";
     if (combined && !included.length)
+      x.form = "No eligible subjects are configured for this examination.";
+    if (!combined && eligibleSubjectsLoaded && !included.length)
       x.form = "No eligible subjects are configured for this examination.";
     if (sch.startTime && sch.endTime && sch.startTime >= sch.endTime)
       x.endTime = "End time must be after start time.";
@@ -1737,7 +2251,11 @@ function Schedule({
       x.date = "Exam date must be within the examination period.";
     if (
       combined &&
-      entries.some((s) => normalizeScheduleMode(s.scheduleMode) === "COMBINED_OBJECTIVE" && s.sessionId !== currentSessionId)
+      entries.some(
+        (s) =>
+          normalizeScheduleMode(s.scheduleMode) === "COMBINED_OBJECTIVE" &&
+          s.sessionId !== currentSessionId,
+      )
     )
       x.form =
         "A combined schedule already exists for this examination. Edit the existing schedule instead.";
@@ -1748,16 +2266,6 @@ function Schedule({
       )
     )
       x.subjectId = "This subject is already scheduled for this examination.";
-    if (
-      !combined &&
-      sch.date &&
-      entries.some(
-        (existing) =>
-          String(existing.id) !== String(editing) && existing.date === sch.date,
-      )
-    )
-      x.date =
-        "Another subject is already scheduled on this date for this examination. Please select a different exam date.";
     if (hasHallConflict(candidate, schedules))
       x.roomId = "This hall is already in use during the selected time.";
     if (hasInvigilatorConflict(candidate, schedules))
@@ -1765,14 +2273,24 @@ function Schedule({
     const selectedSubjects = combined
       ? included
       : [SUBJECTS.find((s) => String(s.id) === String(sch.subjectId))];
-    if (selectedSubjects.some((subject) => !getMarksConfig(exam, subject)))
+    if (selectedSubjects.some((subject) => !getMarksConfig(exam, subject, SUBJECTS)))
       x.form = "Marks configuration is unavailable for this subject and examination type.";
+    if (
+      ![sch.roomId, sch.invigilatorId].every(
+        (value) => Number.isInteger(Number(value)) && Number(value) > 0,
+      )
+    )
+      x.form = "Select a valid available Hall and Invigilator.";
+    const selectedRoomForCapacity = rooms.find((item) => String(item.id) === String(sch.roomId));
+    if (
+      schedulingContext?.requiredCapacity > 0 &&
+      Number(selectedRoomForCapacity?.capacity) < schedulingContext.requiredCapacity
+    )
+      x.roomId = "The selected Hall does not have enough capacity for eligible students.";
     if (Object.keys(x).length) return setErrors(x);
-    const savedSessionId = combined
-      ? currentSessionId || createCombinedSessionId(exam.id)
-      : "";
+    const savedSessionId = combined ? currentSessionId || createCombinedSessionId(exam.id) : "";
     const make = (subject) => {
-      const marks = getMarksConfig(exam, subject);
+      const marks = getMarksConfig(exam, subject, SUBJECTS);
       return {
         ...sch,
         id: editing && !combined ? editing : Date.now() + subject.id,
@@ -1794,9 +2312,7 @@ function Schedule({
     try {
       const localRecords = combined ? included.map(make) : [make(selectedSubjects[0])],
         selectedRoom = rooms.find((item) => String(item.id) === String(sch.roomId)),
-        selectedInvigilator = faculty.find(
-          (item) => String(item.id) === String(sch.invigilatorId),
-        ),
+        selectedInvigilator = faculty.find((item) => String(item.id) === String(sch.invigilatorId)),
         commonPayload = {
           examDate: sch.date,
           startTime: toApiTime(sch.startTime),
@@ -1828,6 +2344,7 @@ function Schedule({
               scheduleMode: item.scheduleMode,
               maxMarks: Number(item.maxMarks),
               passingMarks: Number(item.passingMarks),
+              ...(item.rowVersion != null ? { rowVersion: item.rowVersion } : {}),
             }),
           ),
         );
@@ -1839,9 +2356,7 @@ function Schedule({
           sessionId: savedSessionId,
           scheduleMode: "COMBINED_OBJECTIVE",
           maxMarks: Number(exam.totalMarks),
-          passingMarks: Math.ceil(
-            (Number(exam.totalMarks) * Number(exam.passPercentage)) / 100,
-          ),
+          passingMarks: Math.ceil((Number(exam.totalMarks) * Number(exam.passPercentage)) / 100),
         });
       } else {
         const subject = selectedSubjects[0],
@@ -1859,6 +2374,7 @@ function Schedule({
       await onSave(localRecords);
     } catch (error) {
       setErrors((current) => ({ ...current, form: apiError(error) }));
+      await onFailure?.(exam?.id);
     } finally {
       setSavingSchedule(false);
     }
@@ -1973,7 +2489,13 @@ function Schedule({
                     </button>
                     <button
                       className="cms-btn cms-btn-primary"
-                      disabled={savingSchedule || !faculty.length || !rooms.length}
+                      disabled={
+                        savingSchedule ||
+                        !eligibleSubjectsLoaded ||
+                        !included.length ||
+                        !faculty.length ||
+                        !rooms.length
+                      }
                       aria-busy={savingSchedule}
                     >
                       {savingSchedule ? "Saving..." : editing ? "Update Schedule" : "Save Schedule"}
@@ -1985,7 +2507,13 @@ function Schedule({
                   This examination is {exam.status.toLowerCase()} and its schedule is read-only.
                 </p>
               )}
-              <ScheduleTable entries={entries} canEdit={canEdit} edit={onEdit} remove={onRemove} />
+              <ScheduleTable
+                entries={entries}
+                canEdit={canEdit}
+                edit={onEdit}
+                remove={onRemove}
+                masters={masters}
+              />
               {canEdit && (
                 <div className="exam-finalize">
                   <span>
@@ -1993,7 +2521,7 @@ function Schedule({
                   </span>
                   <button
                     className="cms-btn cms-btn-primary"
-                    disabled={finalizing}
+                    disabled={finalizing || !eligibleSubjectsLoaded || !included.length}
                     aria-busy={finalizing}
                     onClick={finalize}
                   >
@@ -2010,7 +2538,7 @@ function Schedule({
     </>
   );
 }
-function ScheduleTable({ entries, canEdit, edit, remove }) {
+function ScheduleTable({ entries, canEdit, edit, remove, masters }) {
   return (
     <div className="cms-table-wrap exam-schedule-table">
       <table className="cms-table">
@@ -2037,8 +2565,8 @@ function ScheduleTable({ entries, canEdit, edit, remove }) {
                 <td>{d(s.date)}</td>
                 <td>{s.startTime}</td>
                 <td>{s.endTime}</td>
-                <td>{nameOf(ROOMS, s.roomId)}</td>
-                <td>{nameOf(FACULTY, s.invigilatorId)}</td>
+                <td>{s.roomName || nameOf(masters.rooms, s.roomId)}</td>
+                <td>{s.invigilatorName || nameOf(masters.faculty, s.invigilatorId)}</td>
                 <td>{s.mode}</td>
                 {canEdit && (
                   <td>
@@ -2074,16 +2602,18 @@ function ScheduleTable({ entries, canEdit, edit, remove }) {
     </div>
   );
 }
-function ExamDetails({ exam, schedules, close }) {
-  const entries = schedules.filter((s) => s.examId === exam.id);
+function ExamDetails({ exam, schedules, masters, close }) {
+  const entries = schedules.filter((s) => String(s.examId) === String(exam.id));
   return (
     <Modal title="Examination Details" onClose={close}>
       <section className="exam-view-summary">
         <strong>{exam.name}</strong>
         <p>
-          {nameOf(BOARDS, exam.boardId)} · {nameOf(YEARS, exam.yearId)} ·{" "}
-          {nameOf(LEVELS, exam.levelId)} · {nameOf(GROUPS, exam.groupId)} ·{" "}
-          {nameOf(PROGRAMS, exam.programId)}
+          {exam.boardName || nameOf(masters.boards, exam.boardId)} ·{" "}
+          {exam.academicYearName || nameOf(masters.years, exam.yearId)} ·{" "}
+          {exam.academicLevelName || nameOf(masters.levels, exam.levelId)} ·{" "}
+          {exam.groupName || nameOf(masters.groups, exam.groupId)} ·{" "}
+          {exam.programName || nameOf(masters.programs, exam.programId)}
         </p>
         <p>
           {d(exam.startDate)} – {d(exam.endDate)}
@@ -2094,11 +2624,11 @@ function ExamDetails({ exam, schedules, close }) {
           {getExamPassingMarks(exam) ?? "—"}
         </p>
       </section>
-      <CompactScheduleTable entries={entries} />
+      <CompactScheduleTable entries={entries} masters={masters} />
     </Modal>
   );
 }
-function CompactScheduleTable({ entries }) {
+function CompactScheduleTable({ entries, masters }) {
   return (
     <div className="cms-table-wrap exam-view-schedule">
       <table className="cms-table">
@@ -2121,8 +2651,8 @@ function CompactScheduleTable({ entries }) {
                 <td>
                   {s.startTime} - {s.endTime}
                 </td>
-                <td>{nameOf(ROOMS, s.roomId)}</td>
-                <td>{nameOf(FACULTY, s.invigilatorId)}</td>
+                <td>{s.roomName || nameOf(masters.rooms, s.roomId)}</td>
+                <td>{s.invigilatorName || nameOf(masters.faculty, s.invigilatorId)}</td>
                 <td>{s.mode}</td>
               </tr>
             ))
@@ -2138,7 +2668,7 @@ function CompactScheduleTable({ entries }) {
     </div>
   );
 }
-function EditExamModal({ exam, schedules, onClose, onSave }) {
+function EditExamModal({ exam, schedules, masters, onClose, onSave }) {
   const [form, setForm] = useState({ startDate: exam.startDate, endDate: exam.endDate }),
     [errors, setErrors] = useState({}),
     [saving, setSaving] = useState(false);
@@ -2165,8 +2695,9 @@ function EditExamModal({ exam, schedules, onClose, onSave }) {
     if (Object.keys(next).length) return setErrors(next);
     setSaving(true);
     try {
-      await new Promise((resolve) => requestAnimationFrame(resolve));
-      onSave(form);
+      await onSave(form);
+    } catch (error) {
+      setErrors((current) => ({ ...current, form: apiError(error) }));
     } finally {
       setSaving(false);
     }
@@ -2174,11 +2705,11 @@ function EditExamModal({ exam, schedules, onClose, onSave }) {
   const details = [
     ["Exam Name", exam.name],
     ["Exam Code", exam.code],
-    ["Board", nameOf(BOARDS, exam.boardId)],
-    ["Academic Year", nameOf(YEARS, exam.yearId)],
-    ["Academic Level", nameOf(LEVELS, exam.levelId)],
-    ["Group", nameOf(GROUPS, exam.groupId)],
-    ["Program", nameOf(PROGRAMS, exam.programId)],
+    ["Board", exam.boardName || nameOf(masters.boards, exam.boardId)],
+    ["Academic Year", exam.academicYearName || nameOf(masters.years, exam.yearId)],
+    ["Academic Level", exam.academicLevelName || nameOf(masters.levels, exam.levelId)],
+    ["Group", exam.groupName || nameOf(masters.groups, exam.groupId)],
+    ["Program", exam.programName || nameOf(masters.programs, exam.programId)],
     ["Exam Type", exam.type],
     ["Status", exam.status],
     ["Description", exam.description || "No description provided."],
@@ -2285,7 +2816,7 @@ function PrintableSchedule({ preview }) {
   if (!preview) return null;
   return (
     <section className="exam-print-area">
-      <h1>Pirnav Junior College</h1>
+      <h1>Pirnav College</h1>
       <h2>{preview.title}</h2>
       <ExportTable rows={preview.rows} scope={preview.scope} />
     </section>
@@ -2295,14 +2826,16 @@ const EXPORT_COLUMNS = [
   ["S.No", "serialNo"],
   ["Exam Name", "examName"],
   ["Exam Code", "examCode"],
-  ["Group", "groupName"],
+  ["Subject", "subjectName"],
   ["Hall / Room", "hallName"],
   ["Invigilator", "invigilatorName"],
   ["Exam Date", "examDate", d],
-  ["Exam Time", "examTime"],
+  ["Start Time", "startTime"],
+  ["End Time", "endTime"],
+  ["Exam Mode", "examMode"],
 ];
 function formatExportValue(row, [, key, format]) {
-  return format ? format(row[key]) : row[key] ?? "-”";
+  return format ? format(row[key]) : (row[key] ?? "—");
 }
 function sanitizeFileName(value) {
   const safeName = String(value ?? "")
@@ -2315,22 +2848,22 @@ function sanitizeFileName(value) {
 function downloadExcelPreview(preview) {
   if (!preview.rows.length) return;
   const excelRows = preview.rows.map((row) =>
-    Object.fromEntries(
-      EXPORT_COLUMNS.map((column) => [column[0], formatExportValue(row, column)]),
-    ),
+    Object.fromEntries(EXPORT_COLUMNS.map((column) => [column[0], formatExportValue(row, column)])),
   );
   const worksheet = XLSX.utils.json_to_sheet(excelRows, {
     header: EXPORT_COLUMNS.map(([label]) => label),
   });
   worksheet["!cols"] = [
     { wch: 8 },
-    { wch: 36 },
-    { wch: 20 },
-    { wch: 14 },
+    { wch: 30 },
+    { wch: 18 },
     { wch: 24 },
-    { wch: 32 },
-    { wch: 16 },
     { wch: 20 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 16 },
   ];
   const workbook = XLSX.utils.book_new();
   const sheetName = preview.scope === "global" ? "Exam Schedules" : "Exam Schedule";
@@ -2341,13 +2874,17 @@ function ExportTable({ rows, scope }) {
   return (
     <table className={`exam-export-table exam-export-table-${scope || "individual"}`}>
       <thead>
-        <tr>{EXPORT_COLUMNS.map(([label]) => <th key={label}>{label}</th>)}</tr>
+        <tr>
+          {EXPORT_COLUMNS.map(([label]) => (
+            <th key={label}>{label}</th>
+          ))}
+        </tr>
       </thead>
       <tbody>
         {rows.map((row, index) => (
           <tr key={`${row.examId}-${row.sessionId || row.subjectName}-${index}`}>
             {EXPORT_COLUMNS.map(([label, key, format]) => (
-              <td key={label}>{format ? format(row[key]) : row[key] ?? "—"}</td>
+              <td key={label}>{format ? format(row[key]) : (row[key] ?? "—")}</td>
             ))}
           </tr>
         ))}
@@ -2367,14 +2904,23 @@ function Select({ label, value, onChange, options = [], disabled, error, placeho
   const normalizedOptions = options.map((option) =>
     typeof option === "string" ? { id: option, name: option } : option,
   );
-  const selectedLabel = normalizedOptions.find((option) => String(option.id) === String(value))?.name;
+  const selectedLabel = normalizedOptions.find(
+    (option) => String(option.id) === String(value),
+  )?.name;
   return (
     <div className={`cms-field ${error ? "has-error" : ""}`}>
       <label>{label}</label>
-      <select value={value ?? ""} disabled={disabled} title={selectedLabel || placeholder || `Select ${label.replace(" *", "")}`} onChange={(e) => onChange?.(e.target.value)}>
+      <select
+        value={value ?? ""}
+        disabled={disabled}
+        title={selectedLabel || placeholder || `Select ${label.replace(" *", "")}`}
+        onChange={(e) => onChange?.(e.target.value)}
+      >
         <option value="">{placeholder || `Select ${label.replace(" *", "")}`}</option>
         {normalizedOptions.map((option) => (
-          <option key={option.id} value={option.id} title={option.name}>{option.name}</option>
+          <option key={option.id} value={option.id} title={option.name}>
+            {option.name}
+          </option>
         ))}
       </select>
       {error && <span className="cms-error">{error}</span>}

@@ -1,6 +1,6 @@
-# Pirnav Junior College CMS Frontend
+# Pirnav College CMS Frontend
 
-React + Vite frontend for the Pirnav Junior College Management System. This version keeps the completed Frontendnew dashboard UI/design while replacing the TanStack Start/TypeScript runtime with a clean JavaScript + JSX Vite + React Router structure.
+React + Vite frontend for the Pirnav College Management System. This version keeps the completed Frontendnew dashboard UI/design while replacing the TanStack Start/TypeScript runtime with a clean JavaScript + JSX Vite + React Router structure.
 
 ## Tech Stack
 
@@ -133,7 +133,7 @@ All 18 dashboard modules have dedicated JSX and CSS files under `src/components/
 The current UI still reuses shared internal helpers such as `ListPage.jsx`, `FormPage.jsx`, `data/store.js`, and common table/form components where that preserves the existing behavior. Module-specific table/form configuration now lives in each module page file. Add or update endpoint constants in `src/api/apiEndpoints.js` when backend integration begins, and add module services later if a module needs them.
 ## Branding
 
-The app uses `src/assets/P_LOGO.png` and the visible college name is `Pirnav Junior College`.
+The app uses `src/assets/P_LOGO.png` and the visible college name is `Pirnav College`.
 
 ## Team Rules
 

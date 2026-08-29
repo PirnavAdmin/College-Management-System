@@ -2,8 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import HeroSlider from "@/components/common/HeroSlider.jsx";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
-import { heroCopy } from "@/data/heroSlides.js";
-import logo from "@/assets/P_LOGO.png";
+import logo from "@/assets/pirnav-colleges-logo.png";
 import "./LandingPage.css";
 
 const quickLinks = [
@@ -20,8 +19,7 @@ export default function LandingPage() {
     <div className="cms-landing">
       <header className="cms-landing-nav">
         <div className="cms-landing-brand">
-          <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav Junior College logo" /></span>
-          <span><strong>{heroCopy.title}</strong><span>College Management System</span></span>
+          <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav College logo" /></span>
         </div>
         <div className="landing-header-actions"><ThemeToggle /><Link to="/login" className="landing-login-btn">Login</Link></div>
       </header>
@@ -31,7 +29,7 @@ export default function LandingPage() {
         <div className="landing-hero-content cms-anim-up">
           <span className="cms-eyebrow"><CheckCircle2 size={14} /> A smarter campus starts here</span>
           <h1>Learn, grow and succeed with a connected college experience.</h1>
-          <p>Bring students, faculty, academics, examinations, fees and administration together in one clear, reliable platform built for Pirnav Junior College.</p>
+          <p>Bring students, faculty, academics, examinations, fees and administration together in one clear, reliable platform built for Pirnav College.</p>
           <div className="landing-trust-points" aria-label="Platform benefits">
             <span><CheckCircle2 size={15} /> Faster daily operations</span>
             <span><CheckCircle2 size={15} /> Clear academic visibility</span>
@@ -47,9 +45,8 @@ export default function LandingPage() {
       <footer className="landing-footer">
         <div className="landing-footer-inner">
           <div className="landing-footer-brand">
-            <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav Junior College logo" /></span>
+            <span className="cms-brand-mark logo-mark"><img src={logo} alt="Pirnav College logo" /></span>
             <div>
-              <strong>Pirnav Junior College</strong>
               <p>One connected platform for academics, admissions, administration and student success.</p>
             </div>
           </div>
@@ -68,7 +65,7 @@ export default function LandingPage() {
             <a href="tel:+919398649798">+91 9398649798</a>
           </div>
         </div>
-        <div className="landing-footer-bottom">&copy; 2026 Pirnav Junior College. All rights reserved.</div>
+        <div className="landing-footer-bottom">&copy; 2026 Pirnav College. All rights reserved.</div>
       </footer>
     </div>
   );

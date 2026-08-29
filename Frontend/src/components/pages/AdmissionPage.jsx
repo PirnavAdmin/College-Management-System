@@ -23,16 +23,12 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import { options } from "@/data/mockData.js";
 import {
-  ADMISSION_FEE,
   DEFAULT_INSTALLMENT_COUNT,
   INSTALLMENT_COUNTS,
   PAYMENT_METHODS,
   PAYMENT_PLANS,
   buildInstallmentSchedule,
-  courseFeeFor,
   createFeeAccountFromAdmission,
-  feeItemsForStructure,
-  feeSnapshot,
   feeScheduleLabel,
   formatCurrency,
   formatDate,
@@ -254,8 +250,8 @@ const steps = [
       { name: "admissionDate", label: "Admission Date", type: "date", required: true },
       { name: "board", label: "Board", type: "select", options: options.board, required: true },
       { name: "year", label: "Academic Year", type: "select", options: options.year, required: true },
-      { name: "admissionType", label: "Admission Type", type: "select", options: ["Regular", "Lateral Entry", "Transfer", "Re-admission"] },
-      { name: "quota", label: "Admission Quota", type: "select", options: ["Merit", "Management", "Sports", "Reserved"] },
+      { name: "admissionType", label: "Admission Type", type: "select", options: ["Regular", "Lateral Entry", "Transfer"] },
+      { name: "quota", label: "Admission Quota", type: "select", options: ["Regular", "Merit", "Management", "Sports", "Reserved","other"] },
     ],
   },
   {
@@ -312,8 +308,8 @@ const steps = [
     title: "Academic Details",
     fields: [
       { name: "level", label: "Academic Level", type: "select", options: options.level, required: true },
-      { name: "group", label: "Group", type: "select", options: [], required: true },
-      { name: "program", label: "Program", type: "select", options: [], required: true },
+      { name: "group", label: "Group", type: "select", options: [] },
+      { name: "program", label: "Program", type: "select", options: [] },
       { name: "medium", label: "Medium", type: "select", options: ["English", "Telugu", "Hindi"] },
       { name: "secondLanguage", label: "Second Language", type: "select", options: ["Sanskrit", "Telugu", "Hindi", "French"] },
     ],
@@ -618,16 +614,9 @@ const normalizeAdmissionRow = (item) => {
   };
 };
 
-// Derives every fee number from Group + Program + the chosen payment plan.
+// Derives fee numbers only from fee rows loaded into the form state.
 const deriveAdmissionFee = (values) => {
-  const groupForFee = values.groupName || values.group;
-  const programForFee = values.programName || values.program;
-  const snapshot = groupForFee && programForFee
-    ? feeSnapshot(values.year || undefined, groupForFee, programForFee)
-    : { admissionFee: ADMISSION_FEE, courseFee: courseFeeFor(groupForFee, programForFee) };
-  const baseItems = Array.isArray(values.feeItems) && values.feeItems.length
-    ? values.feeItems
-    : feeItemsForStructure(snapshot, groupForFee, programForFee);
+  const baseItems = Array.isArray(values.feeItems) ? values.feeItems : [];
   const feeItems = baseItems.map((item, index) => {
     const originalAmount = Number(item.originalAmount ?? item.amount ?? 0);
     return {
@@ -681,11 +670,8 @@ const deriveAdmissionFee = (values) => {
 
 const feeStepErrors = (values) => {
   const next = {};
-  if (!values.group || !values.program) {
-    next.feeStructure = "Group and Program are required in Academic Details before the fee can be calculated";
-    return next;
-  }
   const fee = deriveAdmissionFee(values);
+  if (!fee.feeItems.length) return next;
   if (!values.paymentPlan) next.paymentPlan = "Select a course fee payment plan";
   if (!values.paymentMethod) next.paymentMethod = "Payment Method is required when collecting money";
   if (!fee.selectedFeeItems.length) next.feeItems = "Select at least one applicable fee";
@@ -943,7 +929,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
 }
 
 function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, onPlanChange, onInstallmentCountChange }) {
-  const hasStructure = Boolean(values.group && values.program);
+  const hasStructure = fee.feeItems.length > 0;
   const isInstallment = values.paymentPlan === "Installment Payment";
   const schedule = fee.schedule;
 
@@ -961,7 +947,7 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
       {!hasStructure ? (
         <section className="cms-fee-block">
           <p className="cms-fee-empty">
-            Select Group and Program in Academic Details to load the applicable fee structure.
+            No fee structure is available for the selected academic details.
           </p>
           {errors.feeStructure ? <span className="cms-error">{errors.feeStructure}</span> : null}
         </section>
@@ -1508,8 +1494,8 @@ export default function AdmissionPage() {
           if (selectedProgram) return { ...current, programName: selectedProgram.label };
           return {
             ...current,
-            program: programs[0]?.value || "",
-            programName: programs[0]?.label || "",
+            program: "",
+            programName: "",
             feeItems: [],
             installments: [],
           };
@@ -1848,6 +1834,7 @@ export default function AdmissionPage() {
   const backOrCancel = () => {
     if (step !== 0) {
       const previousStep = step - 1;
+      
       persistAdmissionDraft({ currentStep: previousStep, formData: values, feeSelection });
       setStep(previousStep);
       return;
@@ -2217,7 +2204,7 @@ export default function AdmissionPage() {
               onInstallmentChange={changeInstallment}
             />
           ) : (
-            <div className="cms-form-grid cols-3">
+            <div className={`cms-form-grid cols-3 ${current.title === "Address" ? "cms-admission-address-grid" : ""}`}>
               {currentFields.map((f) => (
                 <AdmissionField
                   key={f.name}

@@ -42,7 +42,7 @@ export default function ResetPassword() {
   };
 
   return (
-    <AuthLayout title="Create new password" subtitle="Set a secure password for your Pirnav Junior College account.">
+    <AuthLayout title="Create new password" subtitle="Set a secure password for your Pirnav College account.">
       <form onSubmit={submit} noValidate>
         {formError ? <div className="cms-alert-error" role="alert">{formError}</div> : null}
         <div className="cms-form-grid">

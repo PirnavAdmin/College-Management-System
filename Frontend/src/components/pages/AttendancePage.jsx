@@ -99,7 +99,7 @@ export default function AttendancePage() {
               ? "View and manage staff attendance."
               : "View and manage student attendance."
         }
-        breadcrumb={["Academic Management", "Attendance", isStaff ? "Staff" : "Student"]}
+        breadcrumb={["Operations", "Attendance"]}
       >
         <main className="attendance-module">
           <nav className="att-nav">

@@ -142,7 +142,7 @@ function Page({ title, subtitle, action, children }) {
     <DashboardLayout
       title={title}
       subtitle={subtitle}
-      breadcrumb={["Academics", "Timetable"]}
+      breadcrumb={["Operations", "TimeTable"]}
       actions={action}
     >
       <main className="ttm-page">{children}</main>

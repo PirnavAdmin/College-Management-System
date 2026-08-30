@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Activity, Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, Layers3, RotateCcw, School, Users, UserRoundCheck, UserRoundCog } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -28,8 +28,29 @@ const DASHBOARD_API = {
   upcomingExaminations: "/api/v1/dashboard/upcoming-examinations",
 };
 const DASHBOARD_WIDGETS = Object.entries(DASHBOARD_API).filter(([key]) => key !== "filters");
+const FILTERED_DASHBOARD_WIDGETS = DASHBOARD_WIDGETS.filter(([key]) => key !== "recentActivity");
 const EMPTY_WIDGETS = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, null]));
 const EMPTY_LOADING = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, false]));
+const RECENT_ACTIVITY_CACHE_TTL = 60_000;
+let recentActivityRequest;
+let recentActivityCache = { payload: null, fetchedAt: 0 };
+
+function fetchRecentActivity({ force = false } = {}) {
+  const cacheIsFresh = recentActivityCache.payload !== null
+    && Date.now() - recentActivityCache.fetchedAt < RECENT_ACTIVITY_CACHE_TTL;
+  if (!force && cacheIsFresh) return Promise.resolve(recentActivityCache.payload);
+  if (!recentActivityRequest) {
+    recentActivityRequest = apiClient.get(DASHBOARD_API.recentActivity, { timeout: REQUEST_TIMEOUT })
+      .then((response) => {
+        recentActivityCache = { payload: response.data, fetchedAt: Date.now() };
+        return response.data;
+      })
+      .finally(() => {
+        recentActivityRequest = null;
+      });
+  }
+  return recentActivityRequest;
+}
 
 function unwrap(payload) {
   let value = payload;
@@ -205,26 +226,35 @@ function normalizeWeeklyAttendance(payload) {
   });
 }
 
-function normalizeActivities(payload) {
-  return findCollection(payload, ["recentActivity", "RecentActivity", "activities", "Activities", "items", "Items"])
-    .map((item, index) => ({
-      id: read(item, "auditLogId", "AuditLogId", "logId", "LogId", "id", "Id") ?? index,
-      action: String(read(item, "description", "Description", "details", "Details", "message", "Message", "action", "Action", "activity", "Activity") ?? "Activity recorded"),
-      user: String(read(item, "userName", "UserName", "performedBy", "PerformedBy", "actorName", "ActorName", "createdBy", "CreatedBy") ?? "System user"),
-      module: String(read(item, "module", "Module", "moduleName", "ModuleName", "entityName", "EntityName") ?? "System"),
-      timestamp: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "dateTime", "DateTime", "auditDate", "AuditDate"),
-    }))
-    .filter((item) => item.timestamp && !Number.isNaN(new Date(item.timestamp).getTime()))
-    .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp)).slice(0, 6);
+function normalizeActivityMessage(value) {
+  const action = String(value ?? "Activity recorded").trim();
+  const statusChange = action.match(/^(.*?)status\s+changed\s+from\s+(.+?)\s+to\s+(.+?)[.!]?$/i);
+  if (!statusChange || statusChange[2].trim().toLowerCase() !== statusChange[3].trim().toLowerCase()) return action;
+  const subject = statusChange[1].trim();
+  return `${subject ? `${subject} status` : "Status"} remained ${statusChange[2].trim()}.`;
 }
 
-function normalizeAcademicLevels(payload) {
-  return findCollection(payload, ["academicLevels", "AcademicLevels", "levelSummary", "LevelSummary", "studentsByAcademicLevel", "StudentsByAcademicLevel"])
-    .flatMap((item) => {
-      const name = String(read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name") ?? "").trim();
-      const count = numeric(item, "studentCount", "StudentCount", "count", "Count", "totalStudents", "TotalStudents", "value", "Value");
-      return name && count !== undefined ? [{ name, count }] : [];
-    });
+function normalizeActivities(payload) {
+  const seen = new Set();
+  return findCollection(payload, ["recentActivity", "RecentActivity", "activities", "Activities", "items", "Items"])
+    .map((item, index) => ({
+      id: read(item, "auditLogId", "AuditLogId", "logId", "LogId", "id", "Id"),
+      action: normalizeActivityMessage(read(item, "description", "Description", "details", "Details", "message", "Message", "action", "Action", "activity", "Activity")),
+      user: String(read(item, "userName", "UserName", "performedBy", "PerformedBy", "actorName", "ActorName", "createdBy", "CreatedBy") ?? "System user").trim(),
+      module: String(read(item, "module", "Module", "moduleName", "ModuleName", "entityName", "EntityName") ?? "System").trim(),
+      timestamp: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "dateTime", "DateTime", "auditDate", "AuditDate"),
+      sourceIndex: index,
+    }))
+    .filter((item) => item.timestamp && !Number.isNaN(new Date(item.timestamp).getTime()))
+    .filter((item) => {
+      const identity = item.id !== undefined && item.id !== null
+        ? `id:${item.id}`
+        : `${item.action.toLowerCase()}|${item.user.toLowerCase()}|${item.module.toLowerCase()}|${new Date(item.timestamp).toISOString()}`;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    })
+    .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp));
 }
 
 function normalizeCertificateRequests(payload) {
@@ -287,9 +317,32 @@ export default function DashboardPage() {
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [loading, setLoading] = useState(EMPTY_LOADING);
   const [errors, setErrors] = useState({});
+  const [showAllActivities, setShowAllActivities] = useState(false);
+  const [activityRefreshing, setActivityRefreshing] = useState(false);
   const filterRequestRef = useRef(0);
   const widgetRequestRef = useRef(0);
+  const activityRequestRef = useRef(0);
   const widgetControllerRef = useRef(null);
+
+  const loadRecentActivity = useCallback(async ({ force = false, showLoader = false } = {}) => {
+    const requestId = ++activityRequestRef.current;
+    if (showLoader) setLoading((current) => ({ ...current, recentActivity: true }));
+    if (force) setActivityRefreshing(true);
+    try {
+      const payload = await fetchRecentActivity({ force });
+      if (requestId !== activityRequestRef.current) return;
+      setWidgets((current) => ({ ...current, recentActivity: payload }));
+      setErrors((current) => ({ ...current, recentActivity: "" }));
+    } catch (error) {
+      if (requestId !== activityRequestRef.current) return;
+      setErrors((current) => ({ ...current, recentActivity: getApiErrorMessage(error, "Unable to load recent activities.") }));
+    } finally {
+      if (requestId === activityRequestRef.current) {
+        if (showLoader) setLoading((current) => ({ ...current, recentActivity: false }));
+        if (force) setActivityRefreshing(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -320,16 +373,35 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    loadRecentActivity({ showLoader: true });
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") loadRecentActivity();
+    };
+    const timer = window.setInterval(refreshWhenVisible, RECENT_ACTIVITY_CACHE_TTL);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      activityRequestRef.current += 1;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loadRecentActivity]);
+
+  useEffect(() => {
     if (loadingFilters) return undefined;
     const requestId = ++widgetRequestRef.current;
     widgetControllerRef.current?.abort();
     const controller = new AbortController();
     widgetControllerRef.current = controller;
     const params = buildDashboardParams(filters);
-    setWidgets(EMPTY_WIDGETS);
-    setLoading(Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, true])));
-    setErrors((current) => ({ filters: current.filters || "" }));
-    const requests = DASHBOARD_WIDGETS.map(([, endpoint]) => apiClient.get(endpoint, {
+    setWidgets((current) => ({ ...EMPTY_WIDGETS, recentActivity: current.recentActivity }));
+    setLoading((current) => ({
+      ...Object.fromEntries(FILTERED_DASHBOARD_WIDGETS.map(([key]) => [key, true])),
+      recentActivity: current.recentActivity,
+    }));
+    setErrors((current) => ({ filters: current.filters || "", recentActivity: current.recentActivity || "" }));
+    const requests = FILTERED_DASHBOARD_WIDGETS.map(([, endpoint]) => apiClient.get(endpoint, {
       params,
       signal: controller.signal,
       timeout: REQUEST_TIMEOUT,
@@ -338,14 +410,14 @@ export default function DashboardPage() {
       if (requestId !== widgetRequestRef.current) return;
       const next = { ...EMPTY_WIDGETS };
       const nextErrors = {};
-      DASHBOARD_WIDGETS.forEach(([key], index) => {
+      FILTERED_DASHBOARD_WIDGETS.forEach(([key], index) => {
         const result = results[index];
         if (result.status === "fulfilled") next[key] = result.value.data;
         else nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
       });
-      setWidgets(next);
-      setErrors((current) => ({ filters: current.filters || "", ...nextErrors }));
-      setLoading(EMPTY_LOADING);
+      setWidgets((current) => ({ ...next, recentActivity: current.recentActivity }));
+      setErrors((current) => ({ filters: current.filters || "", recentActivity: current.recentActivity || "", ...nextErrors }));
+      setLoading((current) => ({ ...EMPTY_LOADING, recentActivity: current.recentActivity }));
     });
     return () => {
       widgetRequestRef.current += 1;
@@ -367,7 +439,6 @@ export default function DashboardPage() {
     female: metric(widgets.studentsOverview, ["femaleStudents", "femaleCount", "female"]),
     other: metric(widgets.studentsOverview, ["otherStudents", "otherCount", "other"]),
   };
-  const academicLevels = useMemo(() => normalizeAcademicLevels(widgets.studentsOverview), [widgets.studentsOverview]);
   const groupDistribution = useMemo(() => normalizeGroupDistribution(widgets.groupDistribution), [widgets.groupDistribution]);
   const groupTotal = groupDistribution.reduce((sum, item) => sum + item.value, 0);
   const weeklyAttendance = useMemo(() => normalizeWeeklyAttendance(widgets.weeklyAttendance), [widgets.weeklyAttendance]);
@@ -375,6 +446,7 @@ export default function DashboardPage() {
   const certificateTotal = metric(widgets.certificateRequests, ["totalRequests", "totalCertificateRequests", "requestCount"])
     ?? (certificateRows.length ? certificateRows.reduce((sum, item) => sum + item.value, 0) : undefined);
   const activities = useMemo(() => normalizeActivities(widgets.recentActivity), [widgets.recentActivity]);
+  const visibleActivities = showAllActivities ? activities : activities.slice(0, 6);
   const facultyWorkload = useMemo(() => normalizeFacultyWorkload(widgets.facultyWorkload), [widgets.facultyWorkload]);
   const upcomingExaminations = useMemo(() => normalizeUpcomingExaminations(widgets.upcomingExaminations), [widgets.upcomingExaminations]);
   const selectedBoardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label || "All Boards";
@@ -414,7 +486,6 @@ export default function DashboardPage() {
         <article className="dashboard-card dashboard-students-card"><CardHeader title="Students Overview" />
           {loading.admissionTrend ? <LoadingState label="Loading admission trend..." /> : admissionTrend.length ? <div className="dashboard-chart dashboard-line-chart" role="img" aria-label="Students joined by month"><ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}><defs><linearGradient id="studentsArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.28} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" tickLine={false} axisLine={false} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [formatNumber(value), "Students joined"]} /><Area type="monotone" dataKey="studentsJoined" name="Students joined" stroke="#2563eb" strokeWidth={2.5} fill="url(#studentsArea)" dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div> : <EmptyState message={errors.admissionTrend ? "Unable to load admission trend." : "No admission trend is available for the selected filters."} />}
           {!loading.studentsOverview && (gender.male !== undefined || gender.female !== undefined || gender.other !== undefined) ? <div className="dashboard-gender-summary" aria-label="Student gender summary"><div><span className="dashboard-gender-icon male"><Users size={17} /></span><p>Male<strong>{formatNumber(gender.male)}</strong></p></div><div><span className="dashboard-gender-icon female"><Users size={17} /></span><p>Female<strong>{formatNumber(gender.female)}</strong></p></div>{gender.other !== undefined ? <div><span className="dashboard-gender-icon other"><Users size={17} /></span><p>Other<strong>{formatNumber(gender.other)}</strong></p></div> : null}</div> : null}
-          {!loading.studentsOverview && academicLevels.length ? <div className="dashboard-academic-levels" aria-label="Students by academic level"><span>Academic Levels</span><div>{academicLevels.map((item) => <span key={item.name}>{item.name}<strong>{formatNumber(item.count)}</strong></span>)}</div></div> : null}
         </article>
         <article className="dashboard-card dashboard-group-card"><CardHeader title="Students by Group" />
           {loading.groupDistribution ? <LoadingState label="Loading group distribution..." /> : groupDistribution.length ? <div className="dashboard-group-content"><div className="dashboard-donut" role="img" aria-label="Student distribution by group"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={GROUP_COLORS[index % GROUP_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [formatNumber(value), "Students"]} /></PieChart></ResponsiveContainer><div><strong>{formatNumber(totalStudents ?? groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-list">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ backgroundColor: GROUP_COLORS[index % GROUP_COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{formatNumber(item.value)}</strong><em>{groupTotal ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0%"}</em></div>)}</div></div> : <EmptyState message={errors.groupDistribution ? "Unable to load group distribution." : "No group distribution is available for the selected filters."} />}
@@ -425,7 +496,7 @@ export default function DashboardPage() {
       </section>
       <section className="dashboard-lower-grid" aria-label="Requests and recent activities">
         <article className="dashboard-card dashboard-certificate-card"><CardHeader title="Certificate Requests" action={<Link to="/dashboard/certificates" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.certificateRequests ? <LoadingState label="Loading certificate requests..." /> : certificateRows.length ? <div className="dashboard-certificate-list">{certificateRows.map(({ key, label, icon: Icon, tone, value }) => <div key={key}><span className={`dashboard-list-icon tone-${tone}`}><Icon size={16} /></span><span>{label}</span><strong>{formatNumber(value)}</strong></div>)}<footer><span>Total Requests</span><strong>{formatNumber(certificateTotal)}</strong></footer></div> : <EmptyState message={errors.certificateRequests ? "Unable to load certificate requests." : "No certificate requests are available for the selected filters."} />}</article>
-        <article className="dashboard-card dashboard-activities-card"><CardHeader title="Recent Activities" action={<Link to="/dashboard/reports" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.recentActivity ? <LoadingState label="Loading recent activities..." /> : activities.length ? <div className="dashboard-activity-list">{activities.map((item, index) => <div key={`${item.id}-${index}`}><span className="dashboard-activity-marker"><Activity size={14} /></span><p><strong>{item.action}</strong><span>{item.user} · {item.module}</span><small>{formatActivityDate(item.timestamp)}</small></p></div>)}</div> : <EmptyState message={errors.recentActivity ? "Unable to load recent activities." : "No recent activities are available for the selected dates."} />}</article>
+        <article className="dashboard-card dashboard-activities-card"><CardHeader title="Recent Activities" action={<div className="dashboard-activity-actions"><button className="dashboard-view-link" type="button" onClick={() => loadRecentActivity({ force: true })} disabled={activityRefreshing} aria-label="Refresh recent activities"><RotateCcw className={activityRefreshing ? "is-spinning" : ""} size={13} />{activityRefreshing ? "Refreshing" : "Refresh"}</button>{activities.length > 6 ? <button className="dashboard-view-link" type="button" onClick={() => setShowAllActivities((current) => !current)}>{showAllActivities ? "Show Less" : "View All"}<ChevronRight className={showAllActivities ? "is-expanded" : ""} size={15} /></button> : null}</div>} />{loading.recentActivity ? <LoadingState label="Loading recent activities..." /> : activities.length ? <>{errors.recentActivity ? <p className="dashboard-inline-error">Unable to refresh recent activities. Showing the latest available data.</p> : null}<div className={`dashboard-activity-list ${showAllActivities ? "is-expanded" : ""}`}>{visibleActivities.map((item) => <div key={item.id !== undefined && item.id !== null ? `activity-${item.id}` : `activity-${item.sourceIndex}-${item.timestamp}`}><span className="dashboard-activity-marker"><Activity size={14} /></span><p><strong title={item.action}>{item.action}</strong><span>{item.user} · {item.module}</span><small>{formatActivityDate(item.timestamp)}</small></p></div>)}</div></> : <EmptyState message={errors.recentActivity ? "Unable to load recent activities." : "No recent activities are available."} />}</article>
       </section>
       <section className="dashboard-lower-grid dashboard-secondary-grid" aria-label="Faculty workload and upcoming examinations">
         <article className="dashboard-card"><CardHeader title="Faculty Workload" action={<Link to="/dashboard/faculty" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.facultyWorkload ? <LoadingState label="Loading faculty workload..." /> : facultyWorkload.length ? <div className="dashboard-info-list">{facultyWorkload.map((item) => <div key={item.id}><span className="dashboard-activity-marker"><UserRoundCheck size={14} /></span><p><strong>{item.name}</strong><span>{item.department || "Department unavailable"}</span></p><div className="dashboard-info-metrics">{item.subjects !== undefined ? <span>{formatNumber(item.subjects)} subjects</span> : null}{item.hours !== undefined ? <span>{formatNumber(item.hours)} hrs/week</span> : null}</div></div>)}</div> : <EmptyState message={errors.facultyWorkload ? "Unable to load faculty workload." : "No faculty workload is available for the selected filters."} />}</article>

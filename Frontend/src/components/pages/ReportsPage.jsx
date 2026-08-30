@@ -19,6 +19,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 
@@ -42,14 +43,15 @@ const EMPTY_REPORTS = {
 
 const REPORTS_API_VERSION = "1.0";
 const OVERVIEW_REPORT_TYPE = "dashboard";
+const FILTER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const REPORTS_API = {
   filters: {
-    boards: "/api/reports/filters/boards",
-    academicYears: "/api/reports/filters/academic-years",
-    academicLevels: "/api/reports/filters/academic-levels",
-    groups: "/api/reports/filters/groups",
-    sections: "/api/reports/filters/sections",
+    boards: "/api/v1/boards",
+    academicYears: "/api/v1/academic-years",
+    academicLevels: "/api/v1/boards/academic-levels",
+    groups: "/api/v1/groups",
+    sections: "/api/v1/Sections",
   },
   dashboard: "/api/reports/dashboard",
   overview: "/api/reports/overview",
@@ -190,7 +192,13 @@ function numberValue(item, ...keys) {
 
 function metric(payload, keys) {
   const wanted = new Set(keys.map((key) => key.toLowerCase()));
-  const queue = [dataNode(payload)];
+  const root = dataNode(payload);
+  if (typeof root === "number") return Number.isFinite(root) ? root : undefined;
+  if (typeof root === "string" && root.trim() !== "") {
+    const numeric = Number(root.replace(/[₹,%\s]/g, ""));
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  const queue = [root];
   const visited = new Set();
   while (queue.length) {
     const node = queue.shift();
@@ -244,9 +252,42 @@ function activeFilterOptions(payload, preferredKeys, idKeys, labelKeys) {
   return Array.from(unique.values());
 }
 
+function activeAcademicYearOptions(payload) {
+  const unique = new Map();
+  collection(payload, ["academicYears", "AcademicYears", "years", "Years"]).forEach((item) => {
+    if (!activeOption(item)) return;
+    const normalized = optionFrom(
+      item,
+      ["academicYearId", "AcademicYearId", "id", "Id", "value", "Value"],
+      ["academicYearName", "AcademicYearName", "name", "Name", "label", "Label", "text", "Text"],
+    );
+    const id = positiveId(normalized?.value);
+    if (!normalized || !id || unique.has(id)) return;
+    const boardId = positiveId(read(item, "boardId", "BoardId"));
+    unique.set(id, { ...normalized, value: String(id), boardId: boardId ? String(boardId) : "" });
+  });
+  return Array.from(unique.values());
+}
+
 function positiveId(value) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isCanceledRequest(error) {
+  return error?.code === "ERR_CANCELED" || error?.name === "CanceledError" || error?.name === "AbortError";
+}
+
+function cachedFilterOptions(cache, key) {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt <= FILTER_CACHE_TTL_MS) return entry.options;
+  cache.delete(key);
+  return null;
+}
+
+function cacheFilterOptions(cache, key, options) {
+  cache.set(key, { options, cachedAt: Date.now() });
 }
 
 function validDateInput(value) {
@@ -301,12 +342,30 @@ function optionFrom(item, idKeys, labelKeys, metadata = {}) {
 }
 
 function buildFilterQuery(values = {}) {
-  const params = { "api-version": REPORTS_API_VERSION };
+  const params = {};
   for (const key of ["boardId", "academicYearId", "academicLevelId", "groupId"]) {
     const id = positiveId(values[key]);
     if (id) params[key] = id;
   }
   return params;
+}
+
+function matchingGroupOptions(payload, boardId, academicYearId, academicLevelId, boards, levels) {
+  const boardLabel = boards.find((option) => positiveId(option.value) === boardId)?.label;
+  const levelLabel = levels.find((option) => positiveId(option.value) === academicLevelId)?.label;
+  const normalizedBoard = String(boardLabel ?? "").trim().toLowerCase();
+  const normalizedLevel = String(levelLabel ?? "").trim().toLowerCase();
+  const rows = collection(payload, ["groups", "Groups"]);
+  const matchingRows = rows.filter((item) => {
+    const itemYearId = positiveId(read(item, "academicYearId", "AcademicYearId"));
+    const itemBoard = String(read(item, "board", "Board", "boardName", "BoardName", "boardId", "BoardId") ?? "").trim().toLowerCase();
+    const itemLevel = String(read(item, "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName", "academicLevelId", "AcademicLevelId") ?? "").trim().toLowerCase();
+    const yearMatches = !itemYearId || itemYearId === academicYearId;
+    const boardMatches = !itemBoard || itemBoard === String(boardId) || itemBoard === normalizedBoard;
+    const levelMatches = !itemLevel || itemLevel === String(academicLevelId) || itemLevel === normalizedLevel;
+    return yearMatches && boardMatches && levelMatches;
+  });
+  return activeFilterOptions(matchingRows, [], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]);
 }
 
 function buildReportQuery(filters) {
@@ -516,40 +575,83 @@ export default function ReportsPage() {
   const reportRequestRef = useRef(0);
   const auditRequestRef = useRef(0);
   const previewRequestRef = useRef(0);
+  const requestControllersRef = useRef({});
+  const filterOptionsCacheRef = useRef({
+    academicLevels: new Map(),
+    groups: new Map(),
+    sections: new Map(),
+  });
+
+  const beginRequest = useCallback((key) => {
+    requestControllersRef.current[key]?.abort();
+    const controller = new AbortController();
+    requestControllersRef.current[key] = controller;
+    return controller;
+  }, []);
+
+  const finishRequest = useCallback((key, controller) => {
+    if (requestControllersRef.current[key] === controller) {
+      delete requestControllersRef.current[key];
+    }
+  }, []);
+
+  const cancelRequest = useCallback((key) => {
+    requestControllersRef.current[key]?.abort();
+    delete requestControllersRef.current[key];
+  }, []);
+
+  const abortAllRequests = useCallback(() => {
+    Object.entries(requestControllersRef.current).forEach(([key, controller]) => {
+      if (key !== "masterOptions") controller.abort();
+    });
+    const masterOptionsController = requestControllersRef.current.masterOptions;
+    requestControllersRef.current = masterOptionsController ? { masterOptions: masterOptionsController } : {};
+  }, []);
 
   const loadMasterOptions = useCallback(async () => {
+    const controller = beginRequest("masterOptions");
     setBoardsLoading(true);
     setYearsLoading(true);
-    const results = await Promise.allSettled([
-      apiClient.get(REPORTS_API.filters.boards, { params: buildFilterQuery() }),
-      apiClient.get(REPORTS_API.filters.academicYears, { params: buildFilterQuery() }),
-    ]);
-    if (!mountedRef.current) return;
-    setMasterOptions((current) => ({
-      ...current,
-      boards: results[0].status === "fulfilled" ? activeFilterOptions(results[0].value.data, ["boards", "Boards"], ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]) : [],
-      years: results[1].status === "fulfilled" ? activeFilterOptions(results[1].value.data, ["academicYears", "AcademicYears", "years", "Years"], ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]) : [],
-      levels: [], groups: [], sections: [],
-    }));
-    const failures = results.filter((result) => result.status === "rejected");
+    const boardsRequest = apiClient.get(REPORTS_API.filters.boards, {
+      params: buildFilterQuery(), signal: controller.signal, skipGlobalLoader: true,
+    }).then((response) => {
+      if (!mountedRef.current || controller.signal.aborted) return;
+      const boards = activeFilterOptions(response.data, ["boards", "Boards"], ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"]);
+      setMasterOptions((current) => ({ ...current, boards }));
+    }).finally(() => {
+      if (mountedRef.current && !controller.signal.aborted) setBoardsLoading(false);
+    });
+    const yearsRequest = apiClient.get(REPORTS_API.filters.academicYears, {
+      params: buildFilterQuery(), signal: controller.signal, skipGlobalLoader: true,
+    }).then((response) => {
+      if (!mountedRef.current || controller.signal.aborted) return;
+      const years = activeAcademicYearOptions(response.data);
+      setMasterOptions((current) => ({ ...current, years }));
+    }).finally(() => {
+      if (mountedRef.current && !controller.signal.aborted) setYearsLoading(false);
+    });
+    const results = await Promise.allSettled([boardsRequest, yearsRequest]);
+    if (!mountedRef.current || controller.signal.aborted) return;
+    const failures = results.filter((result) => result.status === "rejected" && !isCanceledRequest(result.reason));
     if (failures.length) setToast("One or more Reports dropdowns could not be loaded from the current backend.");
-    setBoardsLoading(false);
-    setYearsLoading(false);
-  }, []);
+    finishRequest("masterOptions", controller);
+  }, [beginRequest, finishRequest]);
 
   const loadReports = useCallback(async (selectedFilters) => {
     const requestId = ++reportRequestRef.current;
+    const controller = beginRequest("reports");
+    const params = buildReportQuery(selectedFilters);
     setReportGenerated(false);
     setPreviewFile(null);
     setLoading(true);
     setError("");
     setReportErrors({});
     const [dashboardResult, overviewResult, ...results] = await Promise.allSettled([
-      apiClient.get(REPORTS_API.dashboard, { params: buildReportQuery(selectedFilters) }),
-      apiClient.get(REPORTS_API.overview, { params: buildReportQuery(selectedFilters) }),
-      ...REPORT_REQUESTS.map((request) => apiClient.get(request.endpoint, { params: buildReportQuery(selectedFilters) })),
+      apiClient.get(REPORTS_API.dashboard, { params, signal: controller.signal }),
+      apiClient.get(REPORTS_API.overview, { params, signal: controller.signal }),
+      ...REPORT_REQUESTS.map((request) => apiClient.get(request.endpoint, { params, signal: controller.signal })),
     ]);
-    if (!mountedRef.current || requestId !== reportRequestRef.current) return;
+    if (!mountedRef.current || controller.signal.aborted || requestId !== reportRequestRef.current) return;
     const nextReports = { ...EMPTY_REPORTS };
     const nextErrors = {};
     const failures = [];
@@ -577,13 +679,8 @@ export default function ReportsPage() {
     setAuditPage(1);
     setError(reportFailureMessage(failures));
     setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-    loadMasterOptions();
-  }, [loadMasterOptions]);
+    finishRequest("reports", controller);
+  }, [beginRequest, finishRequest]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -592,8 +689,15 @@ export default function ReportsPage() {
       reportRequestRef.current += 1;
       auditRequestRef.current += 1;
       previewRequestRef.current += 1;
+      abortAllRequests();
     };
-  }, []);
+  }, [abortAllRequests]);
+
+  useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+    loadMasterOptions();
+  }, [loadMasterOptions]);
 
   useEffect(() => {
     const boardId = positiveId(filters.board);
@@ -601,75 +705,128 @@ export default function ReportsPage() {
       setLevelLoading(false);
       return undefined;
     }
-    let active = true;
+    const cacheKey = String(boardId);
+    const cachedLevels = cachedFilterOptions(filterOptionsCacheRef.current.academicLevels, cacheKey);
+    if (cachedLevels !== null) {
+      setMasterOptions((current) => ({ ...current, levels: cachedLevels }));
+      setLevelLoading(false);
+      return undefined;
+    }
+    const controller = beginRequest("academicLevels");
     setLevelLoading(true);
     apiClient.get(REPORTS_API.filters.academicLevels, {
       params: buildFilterQuery({ boardId }),
+      signal: controller.signal,
+      skipGlobalLoader: true,
     }).then((response) => {
-      if (!active) return;
+      if (controller.signal.aborted) return;
       const levels = activeFilterOptions(response.data, ["academicLevels", "AcademicLevels", "levels", "Levels"], ["academicLevelId", "AcademicLevelId", "academicLevelID", "levelId", "LevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "levelName", "LevelName", "name", "Name"]);
+      cacheFilterOptions(filterOptionsCacheRef.current.academicLevels, cacheKey, levels);
       setMasterOptions((current) => ({ ...current, levels }));
       if (!levels.length) setToast("No academic levels available for the selected Board.");
     }).catch((requestError) => {
-      if (active) setToast(`Unable to load Academic Levels. ${getApiErrorMessage(requestError)}`);
+      if (!controller.signal.aborted && !isCanceledRequest(requestError)) setToast(`Unable to load Academic Levels. ${getApiErrorMessage(requestError)}`);
     }).finally(() => {
-      if (active) setLevelLoading(false);
+      if (!controller.signal.aborted) setLevelLoading(false);
+      finishRequest("academicLevels", controller);
     });
-    return () => { active = false; };
-  }, [filters.board]);
+    return () => controller.abort();
+  }, [beginRequest, filters.board, finishRequest]);
 
   useEffect(() => {
     if (!filters.board || !filters.year || !filters.level) return;
-    let active = true;
     const boardId = positiveId(filters.board);
     const academicYearId = positiveId(filters.year);
     const academicLevelId = positiveId(filters.level);
     if (!boardId || !academicYearId || !academicLevelId) return undefined;
+    const cacheKey = `${boardId}:${academicYearId}:${academicLevelId}`;
+    const cachedGroups = cachedFilterOptions(filterOptionsCacheRef.current.groups, cacheKey);
+    if (cachedGroups !== null) {
+      setMasterOptions((current) => ({ ...current, groups: cachedGroups }));
+      setGroupsLoading(false);
+      return undefined;
+    }
+    const controller = beginRequest("groups");
     setGroupsLoading(true);
     apiClient.get(REPORTS_API.filters.groups, {
       params: buildFilterQuery({ boardId, academicYearId, academicLevelId }),
+      signal: controller.signal,
+      skipGlobalLoader: true,
     }).then((response) => {
-      if (!active) return;
-      const groups = activeFilterOptions(response.data, ["groups", "Groups"], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]);
+      if (controller.signal.aborted) return;
+      const groups = matchingGroupOptions(
+        response.data,
+        boardId,
+        academicYearId,
+        academicLevelId,
+        masterOptions.boards,
+        masterOptions.levels,
+      );
+      cacheFilterOptions(filterOptionsCacheRef.current.groups, cacheKey, groups);
       setMasterOptions((current) => ({ ...current, groups }));
       if (!groups.length) setToast("No groups available for the selected filters.");
-    }).catch((requestError) => active && setToast(`Unable to load Groups. ${getApiErrorMessage(requestError)}`))
-      .finally(() => active && setGroupsLoading(false));
-    return () => { active = false; };
-  }, [filters.board, filters.level, filters.year]);
+    }).catch((requestError) => {
+      if (!controller.signal.aborted && !isCanceledRequest(requestError)) setToast(`Unable to load Groups. ${getApiErrorMessage(requestError)}`);
+    }).finally(() => {
+      if (!controller.signal.aborted) setGroupsLoading(false);
+      finishRequest("groups", controller);
+    });
+    return () => controller.abort();
+  }, [beginRequest, filters.board, filters.level, filters.year, finishRequest, masterOptions.boards, masterOptions.levels]);
 
   useEffect(() => {
     if (!filters.board || !filters.year || !filters.level || !filters.group) return;
-    let active = true;
     const boardId = positiveId(filters.board);
     const academicYearId = positiveId(filters.year);
     const academicLevelId = positiveId(filters.level);
     const groupId = positiveId(filters.group);
     if (!boardId || !academicYearId || !academicLevelId || !groupId) return undefined;
+    const cacheKey = `${boardId}:${academicYearId}:${academicLevelId}:${groupId}`;
+    const cachedSections = cachedFilterOptions(filterOptionsCacheRef.current.sections, cacheKey);
+    if (cachedSections !== null) {
+      setMasterOptions((current) => ({ ...current, sections: cachedSections }));
+      setSectionsLoading(false);
+      return undefined;
+    }
+    const controller = beginRequest("sections");
     setSectionsLoading(true);
     apiClient.get(REPORTS_API.filters.sections, {
-      params: buildFilterQuery({ boardId, academicYearId, academicLevelId, groupId }),
+      params: { GroupId: groupId },
+      signal: controller.signal,
+      skipGlobalLoader: true,
     }).then((response) => {
-      if (!active) return;
+      if (controller.signal.aborted) return;
       const sections = activeFilterOptions(response.data, ["sections", "Sections"], ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
+      cacheFilterOptions(filterOptionsCacheRef.current.sections, cacheKey, sections);
       setMasterOptions((current) => ({ ...current, sections }));
       if (!sections.length) setToast("No sections available for the selected filters.");
-    }).catch((requestError) => active && setToast(`Unable to load Sections. ${getApiErrorMessage(requestError)}`))
-      .finally(() => active && setSectionsLoading(false));
-    return () => { active = false; };
-  }, [filters.board, filters.group, filters.level, filters.year]);
+    }).catch((requestError) => {
+      if (!controller.signal.aborted && !isCanceledRequest(requestError)) setToast(`Unable to load Sections. ${getApiErrorMessage(requestError)}`);
+    }).finally(() => {
+      if (!controller.signal.aborted) setSectionsLoading(false);
+      finishRequest("sections", controller);
+    });
+    return () => controller.abort();
+  }, [beginRequest, filters.board, filters.group, filters.level, filters.year, finishRequest]);
+
+  const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
+    masterOptions.years.filter((item) => (
+      !filters.board || !item.boardId || item.boardId === String(filters.board)
+    )),
+    (item) => item.label,
+  ), [filters.board, masterOptions.years]);
 
   const filterFields = useMemo(() => {
     return [
       { name: "board", label: boardsLoading ? "Board (Loading...)" : "Board", type: "select", options: masterOptions.boards, disabled: boardsLoading, required: true },
-      { name: "year", label: yearsLoading ? "Academic Year (Loading...)" : "Academic Year", type: "select", options: masterOptions.years, disabled: yearsLoading, required: true },
+      { name: "year", label: yearsLoading ? "Academic Year (Loading...)" : "Academic Year", type: "select", options: academicYearOptions, disabled: yearsLoading, required: true },
       { name: "level", label: levelLoading ? "Academic Level (Loading...)" : "Academic Level", type: "select", options: masterOptions.levels, disabled: !positiveId(filters.board) || levelLoading, required: true },
       { name: "group", label: groupsLoading ? "Group (Loading...)" : "Group", type: "select", options: masterOptions.groups, disabled: !positiveId(filters.board) || !positiveId(filters.year) || !positiveId(filters.level) || groupsLoading, required: true },
       { name: "section", label: sectionsLoading ? "Section (Loading...)" : "Section", type: "select", options: masterOptions.sections, disabled: !positiveId(filters.board) || !positiveId(filters.year) || !positiveId(filters.level) || !positiveId(filters.group) || sectionsLoading, required: true },
       { name: "from", label: "From Date", type: "date", required: true },
       { name: "to", label: "To Date", type: "date", required: true },
     ];
-  }, [boardsLoading, filters.board, filters.group, filters.level, filters.year, groupsLoading, levelLoading, masterOptions, sectionsLoading, yearsLoading]);
+  }, [academicYearOptions, boardsLoading, filters.board, filters.group, filters.level, filters.year, groupsLoading, levelLoading, masterOptions, sectionsLoading, yearsLoading]);
 
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
@@ -735,12 +892,27 @@ export default function ReportsPage() {
     };
   }, [passRate, reports, workloadData]);
   const handleFilterChange = (name, value) => {
+    reportRequestRef.current += 1;
+    auditRequestRef.current += 1;
+    previewRequestRef.current += 1;
+    cancelRequest("reports");
+    cancelRequest("auditLogs");
+    cancelRequest("preview");
     setReportGenerated(false);
     setPreviewFile(null);
+    setReports(EMPTY_REPORTS);
+    setReportErrors({});
+    setError("");
+    setLoading(false);
+    setAuditData(null);
+    setAuditError("");
+    setAuditLoading(false);
+    setAuditPage(1);
+    setPreviewing("");
     setFilters((current) => {
       const next = { ...current, [name]: value };
       if (name === "board") {
-        Object.assign(next, { level: "", group: "", section: "" });
+        Object.assign(next, { year: "", level: "", group: "", section: "" });
         setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
         setLevelLoading(false);
         setGroupsLoading(false);
@@ -782,6 +954,7 @@ export default function ReportsPage() {
     reportRequestRef.current += 1;
     auditRequestRef.current += 1;
     previewRequestRef.current += 1;
+    abortAllRequests();
     setFilters({});
     setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
     setReports(EMPTY_REPORTS);
@@ -796,6 +969,8 @@ export default function ReportsPage() {
     setLoading(false);
     setAuditLoading(false);
     setPreviewing("");
+    setExportingOverview("");
+    setExportingCards({});
     setAuditFilters({});
     setAuditData(null);
     setAuditError("");
@@ -818,30 +993,35 @@ export default function ReportsPage() {
       return;
     }
     const requestId = ++auditRequestRef.current;
+    const controller = beginRequest("auditLogs");
     setAuditLoading(true);
     setAuditError("");
     try {
-      const response = await apiClient.get(REPORTS_API.details.auditLogs, { params: buildReportQuery(filters) });
-      if (!mountedRef.current || requestId !== auditRequestRef.current) return;
+      const response = await apiClient.get(REPORTS_API.details.auditLogs, {
+        params: buildReportQuery(filters),
+        signal: controller.signal,
+      });
+      if (!mountedRef.current || controller.signal.aborted || requestId !== auditRequestRef.current) return;
       setAuditData(response.data);
       setAuditPage(1);
     } catch (auditRequestError) {
-      if (!mountedRef.current || requestId !== auditRequestRef.current) return;
+      if (!mountedRef.current || controller.signal.aborted || isCanceledRequest(auditRequestError) || requestId !== auditRequestRef.current) return;
       setAuditData(null);
       setAuditError(getApiErrorMessage(auditRequestError));
     } finally {
-      if (mountedRef.current && requestId === auditRequestRef.current) setAuditLoading(false);
+      if (mountedRef.current && !controller.signal.aborted && requestId === auditRequestRef.current) setAuditLoading(false);
+      finishRequest("auditLogs", controller);
     }
   };
 
-  const requestReportFile = async (format, reportType, title) => {
+  const requestReportFile = async (format, reportType, title, signal) => {
     if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
       throw new Error("From Date must be earlier than or equal to To Date.");
     }
     const extension = format === "pdf" ? "pdf" : "xlsx";
     const response = await apiClient.get(
       format === "pdf" ? REPORTS_API.exportPdf : REPORTS_API.exportExcel,
-      { params: { ...buildReportQuery(filters), reportType }, responseType: "blob" },
+      { params: { ...buildReportQuery(filters), reportType }, responseType: "blob", signal },
     );
     const blob = responseBlob(response);
     const contentType = String(response.headers?.["content-type"] || blob.type || "").toLowerCase();
@@ -864,18 +1044,20 @@ export default function ReportsPage() {
 
   const previewReport = async (format) => {
     const requestId = ++previewRequestRef.current;
+    const controller = beginRequest("preview");
     setPreviewing(format);
     setPdfPreviewLoaded(false);
     try {
-      const file = await requestReportFile(format, OVERVIEW_REPORT_TYPE, "Reports Overview");
-      if (!mountedRef.current || requestId !== previewRequestRef.current) return;
+      const file = await requestReportFile(format, OVERVIEW_REPORT_TYPE, "Reports Overview", controller.signal);
+      if (!mountedRef.current || controller.signal.aborted || requestId !== previewRequestRef.current) return;
       setPreviewFile({ ...file, url: format === "pdf" ? URL.createObjectURL(file.blob) : "" });
     } catch (previewError) {
-      if (!mountedRef.current || requestId !== previewRequestRef.current) return;
+      if (!mountedRef.current || controller.signal.aborted || isCanceledRequest(previewError) || requestId !== previewRequestRef.current) return;
       setPreviewFile(null);
       setToast(await getExportErrorMessage(previewError));
     } finally {
-      if (mountedRef.current && requestId === previewRequestRef.current) setPreviewing("");
+      if (mountedRef.current && !controller.signal.aborted && requestId === previewRequestRef.current) setPreviewing("");
+      finishRequest("preview", controller);
     }
   };
 
@@ -886,11 +1068,11 @@ export default function ReportsPage() {
     try {
       const file = await requestReportFile(format, card.reportType, card.label);
       downloadBlob(file.blob, file.filename);
-      setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
+      if (mountedRef.current) setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
     } catch (exportError) {
-      setToast(await getExportErrorMessage(exportError));
+      if (mountedRef.current) setToast(await getExportErrorMessage(exportError));
     } finally {
-      setExportingCards((current) => {
+      if (mountedRef.current) setExportingCards((current) => {
         const next = { ...current };
         delete next[requestKey];
         return next;
@@ -904,11 +1086,11 @@ export default function ReportsPage() {
     try {
       const file = await requestReportFile(format, OVERVIEW_REPORT_TYPE, "Reports Overview");
       downloadBlob(file.blob, file.filename);
-      setToast(`Reports Overview ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
+      if (mountedRef.current) setToast(`Reports Overview ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
     } catch (exportError) {
-      setToast(await getExportErrorMessage(exportError));
+      if (mountedRef.current) setToast(await getExportErrorMessage(exportError));
     } finally {
-      setExportingOverview("");
+      if (mountedRef.current) setExportingOverview("");
     }
   };
 
@@ -980,10 +1162,11 @@ export default function ReportsPage() {
                 const format = { currency, suffix };
                 const source = reports[sourceKey];
                 const hasLiveData = hasReportData(source);
+                const hasDisplayData = summaryValues[key] !== undefined || hasLiveData;
                 const details = hasLiveData
                   ? reportDetails(source, summaryValues[key], format)
                   : [];
-                const displayValue = hasLiveData ? formatMetric(summaryValues[key], format) : reportErrors[sourceKey] ? "Unavailable" : "—";
+                const displayValue = hasDisplayData ? formatMetric(summaryValues[key], format) : reportErrors[sourceKey] ? "Unavailable" : "—";
                 return <article className="reports-summary-card reports-summary-card-expanded" key={key}>
                   <div className="reports-summary-card-head">
                     <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} strokeWidth={2} /></span>
@@ -994,7 +1177,7 @@ export default function ReportsPage() {
                       ? details.map((detail) => <div key={`${detail.label}-${detail.value}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)
                       : <div><dt>Details</dt><dd>{reportErrors[sourceKey]}</dd></div>}
                   </dl> : null}
-                  {reportGenerated && hasLiveData ? <div className="reports-card-actions">
+                  {reportGenerated && hasDisplayData ? <div className="reports-card-actions">
                     <button className="cms-btn cms-btn-primary" type="button" onClick={() => exportCardReport(card, "pdf")} disabled={Boolean(exportingCards[`${key}-pdf`])}><Download size={13} />{exportingCards[`${key}-pdf`] ? "Exporting..." : "Export PDF"}</button>
                     <button className="cms-btn cms-btn-ghost" type="button" onClick={() => exportCardReport(card, "excel")} disabled={Boolean(exportingCards[`${key}-excel`])}><FileSpreadsheet size={13} />{exportingCards[`${key}-excel`] ? "Exporting..." : "Export Excel"}</button>
                   </div> : null}

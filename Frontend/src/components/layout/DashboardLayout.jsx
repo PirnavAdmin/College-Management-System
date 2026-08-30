@@ -69,6 +69,7 @@ export const menu = [
 
 const SIDEBAR_SCROLL_KEY = "cms_sidebar_scroll_top";
 const NOTIFICATION_REFRESH_INTERVAL = 60_000;
+const EMPTY_NOTIFICATION_SOURCES = [];
 const PENDING_STATUSES = new Set(["pending", "draft", "requested", "generated", "reviewed", "new", "created", "incomplete", "unpublished"]);
 
 const unwrapNotificationPayload = (payload) => {
@@ -180,7 +181,7 @@ export default function DashboardLayout({
   breadcrumb = [],
   actions,
   children,
-  excludeNotificationSources = [],
+  excludeNotificationSources = EMPTY_NOTIFICATION_SOURCES,
 }) {
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
   const [attendanceOpen, setAttendanceOpen] = useState(false);

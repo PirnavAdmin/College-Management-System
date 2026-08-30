@@ -2,6 +2,7 @@
 /* ResultsPage.css - Dynamic Theme & Compact Styles */
 
 .results-page { display:grid; gap:14px; }
+.results-tabs-row { display:flex; align-items:center; width:100%; }
 .results-view-tabs { display:inline-flex; align-items:center; width:fit-content; max-width:100%; padding:6px; gap:6px; border:1px solid var(--cms-border,#e6e7de); border-radius:16px; background:var(--cms-surface-solid,#fff); overflow-x:auto; }
 .results-view-tab { min-height:34px; padding:0 16px; border:0; border-radius:10px; background:transparent; color:var(--cms-muted); font:inherit; font-size:12px; font-weight:700; white-space:nowrap; cursor:pointer; transition:background-color .2s ease,color .2s ease; }
 .results-view-tab:hover { color:var(--cms-text); background:var(--cms-subtle); }

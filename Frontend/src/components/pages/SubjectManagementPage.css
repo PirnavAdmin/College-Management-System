@@ -564,25 +564,21 @@
 .subject-table-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 24px 12px;
+  gap: 10px;
+  padding: 12px 24px;
   border-bottom: 1px solid var(--cms-border);
 }
 .subject-context-controls {
   display: grid;
-  grid-template-columns: repeat(3, 220px);
-  flex: 0 1 auto;
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  flex: 1 1 560px;
+  gap: 10px;
 }
 .subject-context-select {
-  display: grid;
-  gap: 5px;
+  display: block;
   min-width: 0;
-  color: var(--cms-text);
-  font-size: 12px;
-  font-weight: 700;
 }
 .subject-context-select select {
   width: 100%;
@@ -593,8 +589,17 @@
   color: var(--cms-text);
   padding: 0 10px;
 }
-.subject-table-toolbar .subject-search { width: min(320px, 100%); }
+.subject-table-toolbar .subject-search { display: block; flex: 1 1 260px; width: min(320px, 100%); }
 .subject-table-toolbar .cms-btn { min-height: 38px; white-space: nowrap; }
+.subject-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
 .assign-context {
   display: flex;
   align-items: center;
@@ -643,16 +648,18 @@
   .subject-context-controls { grid-template-columns: 1fr; }
   .subject-table-toolbar { padding: 14px 16px 12px; }
   .subject-table-toolbar .subject-search { width: 100%; }
+  .subject-toolbar-actions { width: 100%; margin-left: 0; }
+  .subject-toolbar-actions .cms-btn { flex: 1 1 180px; }
   .subject-config-modal .cms-modal-foot { flex-direction: column-reverse; }
   .subject-config-modal .cms-modal-foot .cms-btn { width: 100%; justify-content: center; }
 }
 
-@media (min-width: 1000px) {
+@media (min-width: 1200px) {
   .subject-table-toolbar {
     display: grid;
-    grid-template-columns: minmax(220px, 280px) repeat(3, minmax(170px, 1fr)) auto;
-    align-items: end;
-    gap: 12px;
+    grid-template-columns: minmax(180px, 1.15fr) repeat(3, minmax(120px, 1fr)) max-content;
+    align-items: center;
+    gap: 10px;
   }
   .subject-context-controls {
     display: contents;
@@ -660,8 +667,10 @@
   .subject-table-toolbar .subject-search {
     width: 100%;
   }
-  .subject-table-toolbar .cms-btn {
+  .subject-toolbar-actions {
+    flex-wrap: nowrap;
     justify-self: end;
+    margin-left: 0;
   }
 }
 @media (max-width: 700px) {

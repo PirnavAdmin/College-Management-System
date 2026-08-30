@@ -374,18 +374,6 @@ function List({ records, context, assign, loading, loadSubjects }) {
       title="Subject Management"
       subtitle="Manage subjects assigned to groups and academic levels."
       breadcrumb={["Academic Management"]}
-      actions={
-        <button
-          className={`cms-btn cms-btn-primary${openingAssign ? " is-loading" : ""}`}
-          disabled={loading || openingAssign || !selectedContext.groupId || !selectedContext.academicLevelId}
-          onClick={() => {
-            setOpeningAssign(true);
-            window.setTimeout(() => assign(selectedContext), 120);
-          }}
-        >
-          {openingAssign ? <><span className="subject-btn-spinner" /> Opening Assign Subjects...</> : <><Plus size={16} /> Assign Subjects</>}
-        </button>
-      }
     >
       <div className="subject-screen">
         <Table
@@ -398,6 +386,12 @@ function List({ records, context, assign, loading, loadSubjects }) {
           loading={loading}
           query={q}
           setQuery={setQ}
+          openingAssign={openingAssign}
+          assignDisabled={loading || openingAssign || !selectedContext.groupId || !selectedContext.academicLevelId}
+          onAssign={() => {
+            setOpeningAssign(true);
+            window.setTimeout(() => assign(selectedContext), 120);
+          }}
         />
       </div>
     </DashboardLayout>
@@ -796,7 +790,7 @@ function Configure({ item, cancel, save }) {
     </Modal>
   );
 }
-function Table({ rows, context, setContext, boards, groups, academicLevels, loading, query, setQuery }) {
+function Table({ rows, context, setContext, boards, groups, academicLevels, loading, query, setQuery, openingAssign, assignDisabled, onAssign }) {
   const [page, setPage] = useState(1);
   const pageSize = 5;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -812,13 +806,12 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
   return (
     <section className="subject-table-card">
       <div className="subject-table-toolbar">
-        <label className="subject-search">
-          <span className="sr-only">Search subject or code</span>
+        <div className="subject-search">
           <div>
             <Search size={16} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subject / code" />
+            <input aria-label="Search subject or code" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subject / code" />
           </div>
-        </label>
+        </div>
         <div className="subject-context-controls">
           <ContextSelect
             label="Board"
@@ -867,9 +860,19 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
             }}
           />
         </div>
-        <button className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
-          <Download size={15} /> Export
-        </button>
+        <div className="subject-toolbar-actions">
+          <button type="button" className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
+            <Download size={15} /> Export
+          </button>
+          <button
+            type="button"
+            className={`cms-btn cms-btn-primary${openingAssign ? " is-loading" : ""}`}
+            disabled={assignDisabled}
+            onClick={onAssign}
+          >
+            {openingAssign ? <><span className="subject-btn-spinner" /> Opening Assign Subjects...</> : <><Plus size={16} /> Assign Subjects</>}
+          </button>
+        </div>
       </div>
       <div className="subject-table-head subject-table-title-row">
         <h2>Assigned Subjects</h2>
@@ -951,9 +954,8 @@ function ContextBadges({ context }) {
 }
 function ContextSelect({ label, value, options, onChange }) {
   return (
-    <label className="subject-context-select">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+    <div className="subject-context-select">
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">Select {label}</option>
         {options.map((option) => {
           const valueOption = typeof option === "object" ? option.value : option;
@@ -961,7 +963,7 @@ function ContextSelect({ label, value, options, onChange }) {
           return <option key={valueOption} value={valueOption}>{labelOption}</option>;
         })}
       </select>
-    </label>
+    </div>
   );
 }
 function RequiredMark() {

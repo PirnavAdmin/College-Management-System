@@ -1,66 +1,41 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, ArrowUpRight, CalendarCheck, CalendarClock, Filter, GraduationCap, TrendingUp, Users, X } from "lucide-react";
-import { BarChart, Bar, Brush, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { Activity, Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, Layers3, RotateCcw, School, Users, UserRoundCheck, UserRoundCog } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Loader, StatusBadge } from "@/components/common/Ui.jsx";
 import "./DashboardPage.css";
 
-const dashboardApi = {
-  summary: "/api/v1/dashboard/summary",
-  admissionTrend: "/api/v1/dashboard/admission-trend",
-};
-const SECONDARY_REQUESTS = [
-  ["strength", apiEndpoints.reports.studentStrength],
-  ["exams", apiEndpoints.reports.examinations],
-  ["groups", apiEndpoints.reports.groups],
-  ["groupCatalog", apiEndpoints.groups.getAll],
-  ["students", apiEndpoints.students.getAll],
-  ["workload", apiEndpoints.reports.facultyWorkload], ["audit", apiEndpoints.reports.auditLogs],
-  ["faculty", apiEndpoints.faculty.getAll],
+const REQUEST_TIMEOUT = 12000;
+const GROUP_COLORS = ["#2563eb", "#7c3aed", "#f59e0b", "#16a34a", "#e11d48", "#0891b2", "#64748b"];
+const CERTIFICATE_TYPES = [
+  { key: "bonafide", label: "Bonafide Certificate", icon: GraduationCap, tone: "blue" },
+  { key: "study", label: "Study Certificate", icon: BookOpen, tone: "violet" },
+  { key: "conduct", label: "Conduct Certificate", icon: Award, tone: "green" },
+  { key: "transfer", label: "Transfer Certificate", icon: FileText, tone: "orange" },
+  { key: "others", label: "Others", icon: ClipboardCheck, tone: "cyan" },
 ];
-const DASHBOARD_API_VERSION = "1.0";
-const DASHBOARD_CACHE_KEY = "cms-dashboard-cache-v2";
-const DASHBOARD_CACHE_TTL = 5 * 60 * 1000;
-const REQUEST_TIMEOUT = 8000;
-
-function readDashboardCache() {
-  try {
-    const cached = JSON.parse(sessionStorage.getItem(DASHBOARD_CACHE_KEY) || "null");
-    if (!cached?.data || Date.now() - cached.savedAt > DASHBOARD_CACHE_TTL) return null;
-    return cached;
-  } catch {
-    return null;
-  }
-}
-
-function localCalendarDate() {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const apiDate = `${year}-${month}-${day}`;
-  return {
-    apiDate,
-    displayDate: new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(date),
-    fromDate: `${apiDate}T00:00:00`,
-    toDate: `${apiDate}T23:59:59`,
-  };
-}
-
-function dateSafeDashboardData(cachedData, today) {
-  if (!cachedData || cachedData.attendanceDate === today) return cachedData ?? {};
-  return { ...cachedData, attendance: null, attendanceDate: today };
-}
-const COLORS = ["#1d4ed8", "#60a5fa", "#6d28d9", "#0f9d58", "#f59e0b", "#ef6675"];
+const DASHBOARD_API = {
+  filters: "/api/v1/dashboard/filters",
+  summary: "/api/v1/dashboard/summary",
+  studentsOverview: "/api/v1/dashboard/students-overview",
+  groupDistribution: "/api/v1/dashboard/group-distribution",
+  weeklyAttendance: "/api/v1/dashboard/weekly-attendance",
+  certificateRequests: "/api/v1/dashboard/certificate-requests",
+  recentActivity: "/api/v1/dashboard/recent-activity",
+  admissionTrend: "/api/v1/dashboard/admission-trend",
+  facultyWorkload: "/api/v1/dashboard/faculty-workload",
+  upcomingExaminations: "/api/v1/dashboard/upcoming-examinations",
+};
+const DASHBOARD_WIDGETS = Object.entries(DASHBOARD_API).filter(([key]) => key !== "filters");
+const EMPTY_WIDGETS = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, null]));
+const EMPTY_LOADING = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, false]));
 
 function unwrap(payload) {
   let value = payload;
-  const seen = new Set();
-  while (value && typeof value === "object" && !Array.isArray(value) && !seen.has(value)) {
-    seen.add(value);
+  const visited = new Set();
+  while (value && typeof value === "object" && !Array.isArray(value) && !visited.has(value)) {
+    visited.add(value);
     const next = value.data ?? value.Data ?? value.result ?? value.Result;
     if (next === undefined || next === value) break;
     value = next;
@@ -68,11 +43,28 @@ function unwrap(payload) {
   return value;
 }
 
-function rows(payload, preferred = []) {
+function collection(payload, preferredKeys = []) {
   const value = unwrap(payload);
   if (Array.isArray(value)) return value;
-  for (const key of [...preferred, "items", "Items", "records", "Records", "results", "Results", "$values"]) {
+  for (const key of [...preferredKeys, "items", "Items", "records", "Records", "results", "Results", "$values"]) {
     if (Array.isArray(value?.[key])) return value[key];
+  }
+  return [];
+}
+
+function findCollection(payload, preferredKeys) {
+  const wanted = new Set(preferredKeys.map((key) => key.toLowerCase()));
+  const queue = [unwrap(payload)];
+  const visited = new Set();
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node || typeof node !== "object" || visited.has(node)) continue;
+    visited.add(node);
+    if (Array.isArray(node)) return node;
+    for (const [key, value] of Object.entries(node)) {
+      if (Array.isArray(value) && wanted.has(key.toLowerCase())) return value;
+      if (value && typeof value === "object") queue.push(value);
+    }
   }
   return [];
 }
@@ -82,473 +74,363 @@ function read(item, ...keys) {
   return key ? item[key] : undefined;
 }
 
-function number(item, ...keys) {
+function numeric(item, ...keys) {
   const value = read(item, ...keys);
+  if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number(value);
-  return value !== undefined && value !== "" && Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function metric(payload, keys) {
   const wanted = new Set(keys.map((key) => key.toLowerCase()));
   const queue = [unwrap(payload)];
-  const seen = new Set();
-  while (queue.length) {
-    const item = queue.shift();
-    if (!item || typeof item !== "object" || seen.has(item)) continue;
-    seen.add(item);
-    for (const [key, value] of Object.entries(item)) {
-      if (wanted.has(key.toLowerCase())) {
-        const parsed = Number(value);
-        if (value !== "" && Number.isFinite(parsed)) return parsed;
-      }
-      if (value && typeof value === "object") queue.push(value);
-    }
-  }
-  return undefined;
-}
-
-function firstMetric(data, sourceKeys, keys) {
-  for (const sourceKey of sourceKeys) {
-    const value = metric(data[sourceKey], keys);
-    if (value !== undefined) return value;
-  }
-  return undefined;
-}
-
-function arrayCount(payload, preferred = []) {
-  const value = unwrap(payload);
-  if (Array.isArray(value)) return value.length;
-  for (const key of [...preferred, "items", "Items", "records", "Records", "results", "Results", "$values"]) {
-    if (Array.isArray(value?.[key])) return value[key].length;
-  }
-  return undefined;
-}
-
-function activeAcademicYearInfo(summary, academicYears) {
-  const summaryNode = unwrap(summary);
-  const summaryId = Number(read(summaryNode, "currentAcademicYearId", "CurrentAcademicYearId", "activeAcademicYearId", "ActiveAcademicYearId", "academicYearId", "AcademicYearId"));
-  const summaryName = read(summaryNode, "currentAcademicYearName", "CurrentAcademicYearName", "activeAcademicYearName", "ActiveAcademicYearName", "academicYearName", "AcademicYearName", "yearName", "YearName");
-  const yearRows = rows(academicYears, ["academicYears", "AcademicYears", "years", "Years"]);
-  const idMatch = Number.isInteger(summaryId) && summaryId > 0
-    ? yearRows.find((item) => Number(read(item, "academicYearId", "AcademicYearId", "id", "Id")) === summaryId)
-    : null;
-  const activeYear = idMatch ?? yearRows.find((item) => {
-      const marker = read(item, "isCurrent", "IsCurrent", "isActive", "IsActive", "current", "Current", "status", "Status");
-      return marker === true || ["true", "active", "current"].includes(String(marker).toLowerCase());
-    });
-  const rowId = Number(read(activeYear, "academicYearId", "AcademicYearId", "id", "Id"));
-  const id = Number.isInteger(summaryId) && summaryId > 0 ? summaryId : Number.isInteger(rowId) && rowId > 0 ? rowId : null;
-  const name = summaryName ?? read(activeYear, "academicYearName", "AcademicYearName", "name", "Name", "yearName", "YearName") ?? null;
-  return { id, name: name ? String(name) : null };
-}
-
-function findArray(payload, preferredKeys) {
-  const wanted = new Set(preferredKeys.map((key) => key.toLowerCase()));
-  const queue = [unwrap(payload)];
-  const seen = new Set();
-  while (queue.length) {
-    const item = queue.shift();
-    if (!item || typeof item !== "object" || seen.has(item)) continue;
-    seen.add(item);
-    if (Array.isArray(item)) return item;
-    for (const [key, value] of Object.entries(item)) {
-      if (Array.isArray(value) && wanted.has(key.toLowerCase())) return value;
-      if (value && typeof value === "object") queue.push(value);
-    }
-  }
-  return [];
-}
-
-function groupDisplayName(item) {
-  const groupName = String(read(item, "groupName", "GroupName", "courseName", "CourseName", "group", "Group", "groupCode", "GroupCode", "name", "Name", "label", "Label") ?? "").trim();
-  const levelName = String(read(item, "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel", "levelName", "LevelName") ?? "").trim();
-  return levelName && !groupName.toLowerCase().includes(levelName.toLowerCase()) ? `${groupName} - ${levelName}` : groupName;
-}
-
-function findNamedArray(payload, preferredKeys) {
-  const root = unwrap(payload);
-  if (Array.isArray(root)) return root;
-  const wanted = new Set(preferredKeys.map((key) => key.toLowerCase()));
-  const queue = [root];
-  const seen = new Set();
+  const visited = new Set();
   while (queue.length) {
     const node = queue.shift();
-    if (!node || typeof node !== "object" || Array.isArray(node) || seen.has(node)) continue;
-    seen.add(node);
-    for (const [key, value] of Object.entries(node)) {
-      if (Array.isArray(value) && wanted.has(key.toLowerCase())) return value;
-      if (value && typeof value === "object" && !Array.isArray(value)) queue.push(value);
+    if (!node || typeof node !== "object" || visited.has(node)) continue;
+    visited.add(node);
+    if (!Array.isArray(node)) {
+      for (const [key, value] of Object.entries(node)) {
+        if (wanted.has(key.toLowerCase())) {
+          const parsed = Number(value);
+          if (value !== "" && Number.isFinite(parsed)) return parsed;
+        }
+        if (value && typeof value === "object") queue.push(value);
+      }
     }
   }
-  return [];
+  return undefined;
 }
 
-function normalizeDistributionRows(payload) {
-  const sourceRows = findNamedArray(payload, ["groupDistribution", "groupWiseStrength", "groupStrength", "studentStrength", "courseDistribution", "groups"]);
-  const groups = new Map();
-  const seenSections = new Set();
-  sourceRows.forEach((item) => {
-    const name = groupDisplayName(item);
-    const value = number(item, "studentCount", "StudentCount", "studentsCount", "StudentsCount", "totalStudents", "TotalStudents", "studentStrength", "StudentStrength", "strengthCount", "StrengthCount", "currentStrength", "CurrentStrength", "count", "Count", "value", "Value");
-    if (!name || value === undefined || value < 0) return;
-    const groupId = read(item, "groupId", "GroupId", "courseGroupId", "CourseGroupId");
-    const levelId = read(item, "academicLevelId", "AcademicLevelId");
-    const sectionId = read(item, "sectionId", "SectionId");
-    const groupKey = groupId !== undefined ? `${groupId}:${levelId ?? ""}` : name.toLowerCase();
-    const existing = groups.get(groupKey);
-    if (sectionId !== undefined) {
-      const sectionKey = `${groupKey}:${sectionId}`;
-      if (seenSections.has(sectionKey)) return;
-      seenSections.add(sectionKey);
-      groups.set(groupKey, { name, value: (existing?.value ?? 0) + value });
-    } else if (!existing || value > existing.value) {
-      // Without a SectionId repeated rows cannot be safely assumed additive.
-      groups.set(groupKey, { name, value });
-    }
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shiftLocalDate(value, days) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return localDateValue(date);
+}
+
+function apiDateRange(endDate) { return { from: shiftLocalDate(endDate, -6), to: endDate }; }
+
+function formatDateLabel(value, options = { month: "short", day: "numeric" }) {
+  const [year, month, day] = String(value).slice(0, 10).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("en-IN", options).format(date);
+}
+
+function optionRows(payload, kind) {
+  const definitions = kind === "year"
+    ? { preferred: ["academicYears", "AcademicYears", "years", "Years"], ids: ["academicYearId", "AcademicYearId", "id", "Id"], labels: ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"] }
+    : { preferred: ["boards", "Boards"], ids: ["boardId", "BoardId", "id", "Id"], labels: ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"] };
+  const seen = new Set();
+  return collection(payload, definitions.preferred).flatMap((item) => {
+    const id = read(item, ...definitions.ids);
+    const label = String(read(item, ...definitions.labels) ?? "").trim();
+    const dedupeKey = kind === "year" ? label.toLowerCase() : String(id);
+    if (!id || !label || seen.has(dedupeKey)) return [];
+    seen.add(dedupeKey);
+    const marker = read(item, "isCurrent", "IsCurrent", "isDefault", "IsDefault", "isActive", "IsActive", "status", "Status");
+    const current = marker === true || ["true", "active", "current", "default"].includes(String(marker).toLowerCase());
+    return [{ value: String(id), label, current }];
   });
-  return Array.from(groups.values());
 }
 
-function groupsFromStudentJoin(groupPayload, studentPayload, academicYearId) {
-  const groupRows = rows(groupPayload, ["groups", "Groups", "items", "Items"]);
-  const studentRows = rows(studentPayload, ["students", "Students", "items", "Items", "records", "Records"]);
-  if (!groupRows.length) return [];
-  const groups = new Map();
-  groupRows.forEach((item) => {
-    const id = Number(read(item, "groupId", "GroupId", "id", "Id"));
-    const rowYearId = Number(read(item, "academicYearId", "AcademicYearId"));
-    if (!Number.isInteger(id) || id <= 0 || (Number.isInteger(rowYearId) && rowYearId > 0 && rowYearId !== academicYearId)) return;
-    const name = groupDisplayName(item);
-    if (name) groups.set(id, { name, value: 0 });
-  });
-  studentRows.forEach((item) => {
-    const groupId = Number(read(item, "groupId", "GroupId", "courseGroupId", "CourseGroupId"));
-    const rowYearId = Number(read(item, "academicYearId", "AcademicYearId"));
-    const active = read(item, "isActive", "IsActive", "status", "Status");
-    if (!groups.has(groupId) || (Number.isInteger(rowYearId) && rowYearId > 0 && rowYearId !== academicYearId) || active === false || String(active).toLowerCase() === "inactive") return;
-    groups.get(groupId).value += 1;
-  });
-  return Array.from(groups.values());
-}
-
-function normalizeGroups(data, academicYearId) {
-  for (const source of [data.summary, data.strength, data.groups]) {
-    const distribution = normalizeDistributionRows(source);
-    if (distribution.length) return distribution;
-  }
-  return groupsFromStudentJoin(data.groupCatalog, data.students, academicYearId);
-}
-
-function normalizeFacultyWorkload(payload) {
-  return findArray(payload, ["facultyWorkload", "workload", "faculty", "items", "records"])
-    .map((item) => ({
-      name: String(read(item, "facultyName", "FacultyName", "name", "Name") ?? "").trim(),
-      hours: number(item, "totalWorkloadHours", "TotalWorkloadHours", "weeklyHours", "WeeklyHours", "hoursPerWeek", "HoursPerWeek", "workloadHours", "WorkloadHours", "totalTeachingHours", "TotalTeachingHours", "assignedHours", "AssignedHours", "hours", "Hours"),
-    }))
-    .filter((item) => item.name && item.hours !== undefined && item.hours >= 0)
-    .slice(0, 8);
-}
-
-function wholeCount(item, ...keys) {
-  const value = number(item, ...keys);
-  return value !== undefined && Number.isInteger(value) && value >= 0 ? value : undefined;
-}
-
-function normalizeAdmissionPeriod(item) {
-  const explicitYear = wholeCount(item, "year", "Year", "admissionYear", "AdmissionYear");
-  const explicitMonth = read(item, "month", "Month", "admissionMonth", "AdmissionMonth");
-  let sortDate;
-
-  if (explicitYear && explicitMonth !== undefined) {
-    const numericMonth = Number(explicitMonth);
-    if (Number.isInteger(numericMonth) && numericMonth >= 1 && numericMonth <= 12) {
-      sortDate = Date.UTC(explicitYear, numericMonth - 1, 1);
-    } else {
-      const parsedMonth = Date.parse(`${explicitMonth} 1, ${explicitYear}`);
-      if (!Number.isNaN(parsedMonth)) sortDate = Date.UTC(explicitYear, new Date(parsedMonth).getUTCMonth(), 1);
-    }
-  }
-
-  if (sortDate === undefined) {
-    const datedPeriod = read(item, "date", "Date", "monthYear", "MonthYear", "period", "Period");
-    if (datedPeriod instanceof Date || /(?:19|20)\d{2}/.test(String(datedPeriod ?? ""))) {
-      const parsedDate = new Date(datedPeriod);
-      if (!Number.isNaN(parsedDate.getTime())) sortDate = Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), 1);
-    }
-  }
-
-  if (sortDate === undefined) return null;
-  const admissions = wholeCount(item, "admissions", "Admissions", "admissionCount", "AdmissionCount", "confirmed", "Confirmed", "count", "Count");
-  if (admissions === undefined) return null;
+function buildDashboardParams(filters) {
   return {
-    sortDate,
-    period: new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(sortDate),
-    admissions,
-    applications: wholeCount(item, "applications", "Applications", "applicationCount", "ApplicationCount", "applicationsReceived", "ApplicationsReceived"),
+    ...(Number(filters.year) > 0 ? { academicYearId: Number(filters.year) } : {}),
+    ...(Number(filters.board) > 0 ? { boardId: Number(filters.board) } : {}),
+    date: filters.date,
   };
 }
 
-function academicYearAdmissionTotal(payload, normalizedTrend) {
-  const value = unwrap(payload);
-  const directTotal = wholeCount(value, "totalAdmissions", "TotalAdmissions", "academicYearAdmissions", "AcademicYearAdmissions", "admissionsTotal", "AdmissionsTotal");
-  if (directTotal !== undefined) return directTotal;
-  return normalizedTrend.length ? normalizedTrend.reduce((sum, item) => sum + item.admissions, 0) : undefined;
+function normalizeAdmissionTrend(payload) {
+  return findCollection(payload, ["monthlyAdmissions", "MonthlyAdmissions", "admissionTrend", "AdmissionTrend", "monthlyTrend", "MonthlyTrend", "trend", "Trend"])
+    .flatMap((item, index) => {
+      const value = numeric(item, "studentsJoined", "StudentsJoined", "admissions", "Admissions", "admissionCount", "AdmissionCount", "count", "Count");
+      const rawDate = read(item, "date", "Date", "monthStart", "MonthStart", "period", "Period", "monthYear", "MonthYear");
+      const year = numeric(item, "year", "Year", "admissionYear", "AdmissionYear");
+      const month = read(item, "month", "Month", "admissionMonth", "AdmissionMonth");
+      const suppliedLabel = String(read(item, "monthName", "MonthName", "label", "Label", "periodLabel", "PeriodLabel") ?? "").trim();
+      let date = rawDate ? new Date(rawDate) : null;
+      if ((!date || Number.isNaN(date.getTime())) && year && month !== undefined) {
+        const monthNumber = Number(month);
+        date = Number.isInteger(monthNumber) ? new Date(year, monthNumber - 1, 1) : new Date(`${month} 1, ${year}`);
+      }
+      if (value === undefined) return [];
+      if (date && !Number.isNaN(date.getTime())) return [{ sortDate: date.getTime(), period: new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date), studentsJoined: value }];
+      const period = suppliedLabel || String(month ?? rawDate ?? "").trim();
+      return period ? [{ sortDate: index, period, studentsJoined: value }] : [];
+    }).sort((left, right) => left.sortDate - right.sortDate);
 }
 
-function dailyAttendanceSummary(payload) {
-  const value = unwrap(payload);
-  const total = number(value, "totalStudents", "TotalStudents", "total", "Total");
-  const present = number(value, "present", "Present", "presentCount", "PresentCount");
-  const absent = number(value, "absent", "Absent", "absentCount", "AbsentCount");
-  const backendPercentage = number(value, "percentage", "Percentage", "attendancePercentage", "AttendancePercentage");
-  const percentage = backendPercentage ?? (total > 0 && present !== undefined ? present / total * 100 : undefined);
-  const hasData = [total, present, absent, backendPercentage].some((item) => item !== undefined);
-  return { total, present, absent, percentage, hasData };
+function normalizeGroupDistribution(payload) {
+  const source = findCollection(payload, ["groupDistribution", "GroupDistribution", "groupWiseStrength", "GroupWiseStrength", "groups", "Groups"]);
+  const groups = new Map();
+  const sectionKeys = new Set();
+  source.forEach((item) => {
+    const name = String(read(item, "groupName", "GroupName", "groupCode", "GroupCode", "name", "Name") ?? "").trim();
+    const value = numeric(item, "studentCount", "StudentCount", "studentsCount", "StudentsCount", "totalStudents", "TotalStudents", "count", "Count", "value", "Value");
+    if (!name || value === undefined || value < 0) return;
+    const groupId = read(item, "groupId", "GroupId");
+    const sectionId = read(item, "sectionId", "SectionId");
+    const key = groupId !== undefined ? String(groupId) : name.toLowerCase();
+    const current = groups.get(key);
+    if (sectionId !== undefined) {
+      const sectionKey = `${key}:${sectionId}`;
+      if (sectionKeys.has(sectionKey)) return;
+      sectionKeys.add(sectionKey);
+      groups.set(key, { name, value: (current?.value ?? 0) + value });
+    } else if (!current || value > current.value) groups.set(key, { name, value });
+  });
+  return Array.from(groups.values()).sort((left, right) => right.value - left.value);
 }
 
-function attendanceResponseMatchesDate(payload, requestedDate) {
-  const value = unwrap(payload);
-  const responseDate = read(value, "attendanceDate", "AttendanceDate", "date", "Date", "fromDate", "FromDate");
-  return responseDate === undefined || String(responseDate).slice(0, 10) === requestedDate;
+function normalizeWeeklyAttendance(payload) {
+  const source = findCollection(payload, ["dailyAttendance", "DailyAttendance", "attendanceByDate", "AttendanceByDate", "attendanceTrend", "AttendanceTrend", "days", "Days"]);
+  return source.flatMap((item, index) => {
+    const date = String(read(item, "attendanceDate", "AttendanceDate", "date", "Date", "day", "Day") ?? "").slice(0, 10);
+    const present = numeric(item, "present", "Present", "presentCount", "PresentCount");
+    const absent = numeric(item, "absent", "Absent", "absentCount", "AbsentCount");
+    const leave = numeric(item, "leave", "Leave", "leaveCount", "LeaveCount", "onLeave", "OnLeave");
+    if (present === undefined && absent === undefined && leave === undefined) return [];
+    const day = String(read(item, "dayName", "DayName", "weekday", "Weekday") ?? "").trim()
+      || (/^\d{4}-\d{2}-\d{2}$/.test(date) ? formatDateLabel(date, { weekday: "short" }) : `Day ${index + 1}`);
+    return [{ date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "", day, present, absent, leave }];
+  });
 }
 
-function formatValue(value, type) {
-  if (value === undefined) return "—";
-  if (type === "currency") return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", notation: "compact", maximumFractionDigits: 2 }).format(value);
-  const formatted = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 }).format(value);
-  return type === "percent" ? `${formatted}%` : formatted;
+function normalizeActivities(payload) {
+  return findCollection(payload, ["recentActivity", "RecentActivity", "activities", "Activities", "items", "Items"])
+    .map((item, index) => ({
+      id: read(item, "auditLogId", "AuditLogId", "logId", "LogId", "id", "Id") ?? index,
+      action: String(read(item, "description", "Description", "details", "Details", "message", "Message", "action", "Action", "activity", "Activity") ?? "Activity recorded"),
+      user: String(read(item, "userName", "UserName", "performedBy", "PerformedBy", "actorName", "ActorName", "createdBy", "CreatedBy") ?? "System user"),
+      module: String(read(item, "module", "Module", "moduleName", "ModuleName", "entityName", "EntityName") ?? "System"),
+      timestamp: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "dateTime", "DateTime", "auditDate", "AuditDate"),
+    }))
+    .filter((item) => item.timestamp && !Number.isNaN(new Date(item.timestamp).getTime()))
+    .sort((left, right) => new Date(right.timestamp) - new Date(left.timestamp)).slice(0, 6);
 }
 
-function Empty({ text = "No data available" }) { return <div className="dashboard-empty">{text}</div>; }
+function normalizeAcademicLevels(payload) {
+  return findCollection(payload, ["academicLevels", "AcademicLevels", "levelSummary", "LevelSummary", "studentsByAcademicLevel", "StudentsByAcademicLevel"])
+    .flatMap((item) => {
+      const name = String(read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name") ?? "").trim();
+      const count = numeric(item, "studentCount", "StudentCount", "count", "Count", "totalStudents", "TotalStudents", "value", "Value");
+      return name && count !== undefined ? [{ name, count }] : [];
+    });
+}
+
+function normalizeCertificateRequests(payload) {
+  const source = findCollection(payload, ["certificateRequests", "CertificateRequests", "requestCounts", "RequestCounts", "requestsByType", "RequestsByType"]);
+  const byType = new Map(source.flatMap((item) => {
+    const name = String(read(item, "certificateType", "CertificateType", "type", "Type", "name", "Name") ?? "").trim();
+    const count = numeric(item, "requestCount", "RequestCount", "count", "Count", "total", "Total");
+    return name && count !== undefined ? [[name.toLowerCase(), count]] : [];
+  }));
+  return CERTIFICATE_TYPES.map((type) => {
+    const directValue = metric(payload, [`${type.key}Requests`, `${type.key}Count`, type.key]);
+    const listedValue = byType.get(type.label.toLowerCase()) ?? byType.get(type.key.toLowerCase());
+    return { ...type, value: listedValue ?? directValue };
+  }).filter((item) => item.value !== undefined);
+}
+
+function normalizeFacultyWorkload(payload) {
+  return findCollection(payload, ["facultyWorkload", "FacultyWorkload", "workload", "Workload", "faculty", "Faculty"])
+    .flatMap((item, index) => {
+      const name = String(read(item, "facultyName", "FacultyName", "staffName", "StaffName", "name", "Name") ?? "").trim();
+      const hours = numeric(item, "weeklyHours", "WeeklyHours", "teachingHours", "TeachingHours", "assignedHours", "AssignedHours", "hours", "Hours");
+      const subjects = numeric(item, "subjectCount", "SubjectCount", "assignedSubjects", "AssignedSubjects", "subjects", "Subjects");
+      if (!name && hours === undefined && subjects === undefined) return [];
+      return [{ id: read(item, "facultyId", "FacultyId", "staffId", "StaffId", "id", "Id") ?? index, name: name || "Faculty member", department: String(read(item, "departmentName", "DepartmentName", "department", "Department") ?? ""), hours, subjects }];
+    }).slice(0, 6);
+}
+
+function normalizeUpcomingExaminations(payload) {
+  return findCollection(payload, ["upcomingExaminations", "UpcomingExaminations", "examinations", "Examinations", "exams", "Exams"])
+    .flatMap((item, index) => {
+      const name = String(read(item, "examName", "ExamName", "examinationName", "ExaminationName", "name", "Name", "title", "Title") ?? "").trim();
+      const date = read(item, "examDate", "ExamDate", "startDate", "StartDate", "date", "Date");
+      if (!name && !date) return [];
+      return [{ id: read(item, "examId", "ExamId", "examinationId", "ExaminationId", "id", "Id") ?? index, name: name || "Examination", date, context: String(read(item, "academicLevelName", "AcademicLevelName", "groupName", "GroupName", "programName", "ProgramName") ?? ""), status: String(read(item, "status", "Status") ?? "") }];
+    }).slice(0, 6);
+}
+
+function formatNumber(value) { return value === undefined || value === null ? "Unavailable" : new Intl.NumberFormat("en-IN").format(value); }
+function formatActivityDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date unavailable" : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(date);
+}
+function greetingForHour(hour) {
+  if (hour < 12) return { message: "Good Morning", icon: "\u{1F305}", iconLabel: "Sunrise" };
+  if (hour < 17) return { message: "Good Afternoon", icon: "\u{2600}\u{FE0F}", iconLabel: "Sun" };
+  return { message: "Good Evening", icon: "\u{1F319}", iconLabel: "Moon" };
+}
+function LoadingState({ label = "Loading data..." }) { return <div className="dashboard-state" role="status"><span className="dashboard-spinner" />{label}</div>; }
+function EmptyState({ message = "No data available" }) { return <div className="dashboard-state dashboard-state-empty">{message}</div>; }
+function CardHeader({ title, action }) { return <header className="dashboard-card-head"><h2>{title}</h2>{action}</header>; }
+function KpiCard({ label, value, icon: Icon, tone, loading, to }) {
+  return <Link className={`dashboard-kpi dashboard-kpi-${tone}`} to={to} aria-label={`Open ${label}`}><span className="dashboard-kpi-icon"><Icon size={22} aria-hidden="true" /></span><div><span>{label}</span><strong>{loading ? "—" : formatNumber(value)}</strong></div></Link>;
+}
 
 export default function DashboardPage() {
-  const initialCache = useMemo(readDashboardCache, []);
-  const initialDate = useMemo(localCalendarDate, []);
-  const initialData = useMemo(() => dateSafeDashboardData(initialCache?.data, initialDate.apiDate), [initialCache, initialDate.apiDate]);
-  const [data, setData] = useState(initialData);
-  const [failures, setFailures] = useState({});
-  const [loading, setLoading] = useState(() => !initialCache);
-  const [lastUpdated, setLastUpdated] = useState(() => initialCache ? new Date(initialCache.savedAt) : null);
-  const [admissionFilterOpen, setAdmissionFilterOpen] = useState(false);
-  const [admissionFrom, setAdmissionFrom] = useState("");
-  const [admissionTo, setAdmissionTo] = useState("");
-  const mounted = useRef(true);
-  const requestInFlight = useRef(false);
-  const dataRef = useRef(initialData);
+  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
+  const [masterOptions, setMasterOptions] = useState({ years: [], boards: [] });
+  const [filters, setFilters] = useState({ year: "", board: "", date: localDateValue() });
+  const [widgets, setWidgets] = useState(EMPTY_WIDGETS);
+  const [loadingFilters, setLoadingFilters] = useState(true);
+  const [loading, setLoading] = useState(EMPTY_LOADING);
+  const [errors, setErrors] = useState({});
+  const filterRequestRef = useRef(0);
+  const widgetRequestRef = useRef(0);
+  const widgetControllerRef = useRef(null);
 
-  const loadData = useCallback(async () => {
-    if (requestInFlight.current) return;
-    requestInFlight.current = true;
-    try {
-      const attendanceDay = localCalendarDate();
-      const succeeded = {};
-      const errors = {};
-      const requestConfig = { params: { "api-version": DASHBOARD_API_VERSION }, timeout: REQUEST_TIMEOUT };
-      const summaryResult = await Promise.allSettled([apiClient.get(dashboardApi.summary, requestConfig)]);
-      if (summaryResult[0].status === "fulfilled") {
-        succeeded.summary = summaryResult[0].value.data;
-        if (mounted.current) {
-          const summaryData = { ...dataRef.current, summary: succeeded.summary };
-          dataRef.current = summaryData;
-          setData(summaryData);
-          setLoading(false);
-        }
-      }
-      else errors.summary = getApiErrorMessage(summaryResult[0].reason);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nextHour = new Date().getHours();
+      setCurrentHour((hour) => hour === nextHour ? hour : nextHour);
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-      const summary = succeeded.summary ?? dataRef.current.summary;
-      let academicYears;
-      let academicYear = activeAcademicYearInfo(summary);
-      if (!academicYear.id || !academicYear.name) {
-        const yearResult = await Promise.allSettled([apiClient.get(apiEndpoints.academicYears.getAll, requestConfig)]);
-        if (yearResult[0].status === "fulfilled") {
-          academicYears = yearResult[0].value.data;
-          succeeded.academicYears = academicYears;
-          academicYear = activeAcademicYearInfo(summary, academicYears);
-        } else errors.academicYears = getApiErrorMessage(yearResult[0].reason);
-      }
-      succeeded.activeAcademicYear = academicYear;
+  useEffect(() => {
+    const requestId = ++filterRequestRef.current;
+    const controller = new AbortController();
+    setLoadingFilters(true);
+    apiClient.get(DASHBOARD_API.filters, { signal: controller.signal, timeout: REQUEST_TIMEOUT })
+      .then((response) => {
+      if (requestId !== filterRequestRef.current) return;
+      const years = optionRows(response.data, "year");
+      const boards = optionRows(response.data, "board");
+      setMasterOptions({ years, boards });
+      setFilters((current) => ({ ...current, year: current.year || years.find((item) => item.current)?.value || years[0]?.value || "", board: current.board || boards.find((item) => item.current)?.value || boards[0]?.value || "" }));
+      setErrors((current) => ({ ...current, filters: "" }));
+    }).catch((error) => {
+      if (requestId !== filterRequestRef.current || error?.code === "ERR_CANCELED") return;
+      setMasterOptions({ years: [], boards: [] });
+      setErrors((current) => ({ ...current, filters: getApiErrorMessage(error, "Unable to load dashboard filters.") }));
+    }).finally(() => { if (requestId === filterRequestRef.current) setLoadingFilters(false); });
+    return () => { filterRequestRef.current += 1; controller.abort(); };
+  }, []);
 
-      const secondaryRequests = SECONDARY_REQUESTS.filter(([key]) => {
-        return true;
+  useEffect(() => {
+    if (loadingFilters) return undefined;
+    const requestId = ++widgetRequestRef.current;
+    widgetControllerRef.current?.abort();
+    const controller = new AbortController();
+    widgetControllerRef.current = controller;
+    const params = buildDashboardParams(filters);
+    setWidgets(EMPTY_WIDGETS);
+    setLoading(Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, true])));
+    setErrors((current) => ({ filters: current.filters || "" }));
+    const requests = DASHBOARD_WIDGETS.map(([, endpoint]) => apiClient.get(endpoint, {
+      params,
+      signal: controller.signal,
+      timeout: REQUEST_TIMEOUT,
+    }));
+    Promise.allSettled(requests).then((results) => {
+      if (requestId !== widgetRequestRef.current) return;
+      const next = { ...EMPTY_WIDGETS };
+      const nextErrors = {};
+      DASHBOARD_WIDGETS.forEach(([key], index) => {
+        const result = results[index];
+        if (result.status === "fulfilled") next[key] = result.value.data;
+        else nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
       });
-      const secondaryPromise = Promise.allSettled(secondaryRequests.map(([key, endpoint]) => apiClient.get(endpoint, {
-        ...requestConfig,
-        params: {
-          ...requestConfig.params,
-          ...(["strength", "exams", "pass", "workload", "audit"].includes(key) && academicYear.id
-            ? { AcademicYearId: academicYear.id }
-            : {}),
-          ...(key === "groupCatalog" ? { isActive: true } : {}),
-          ...(key === "faculty" ? { PageNumber: 1, PageSize: 8 } : {}),
-        },
-      })));
-      const attendancePromise = Promise.allSettled([apiClient.post(apiEndpoints.attendance.summary, {
-        academicYearId: academicYear.id ?? undefined,
-        fromDate: attendanceDay.fromDate,
-        toDate: attendanceDay.toDate,
-      }, { timeout: REQUEST_TIMEOUT })]);
-      const trendPromise = academicYear.id
-        ? Promise.allSettled([apiClient.get(dashboardApi.admissionTrend, {
-          params: { academicYearId: academicYear.id, "api-version": DASHBOARD_API_VERSION }, timeout: REQUEST_TIMEOUT,
-        })])
-        : Promise.resolve([]);
-      const [secondaryResults, attendanceResults, trendResults] = await Promise.all([secondaryPromise, attendancePromise, trendPromise]);
-      secondaryResults.forEach((result, index) => {
-        const [key] = secondaryRequests[index];
-        if (result.status === "fulfilled") succeeded[key] = result.value.data;
-        else errors[key] = getApiErrorMessage(result.reason);
-      });
-      if (!normalizeFacultyWorkload(succeeded.workload ?? dataRef.current.workload).length) {
-        const facultyPayload = succeeded.faculty ?? dataRef.current.faculty;
-        const facultyRecords = rows(facultyPayload, ["faculty", "Faculty", "faculties", "Faculties", "items", "Items"])
-          .map((item) => Number(read(item, "facultyId", "FacultyId", "id", "Id")))
-          .filter((id) => Number.isInteger(id) && id > 0)
-          .slice(0, 8);
-        if (facultyRecords.length) {
-          const workloadResults = await Promise.allSettled(facultyRecords.map((facultyId) => apiClient.get(
-            apiEndpoints.faculty.getWorkload(facultyId),
-            requestConfig,
-          )));
-          const workloadRows = workloadResults
-            .filter((result) => result.status === "fulfilled")
-            .map((result) => result.value.data);
-          if (workloadRows.length) {
-            succeeded.workload = workloadRows;
-            delete errors.workload;
-          } else if (!errors.workload) {
-            errors.workload = "Faculty workload data is unavailable.";
-          }
-        }
-      }
-      if (attendanceResults[0].status === "fulfilled" && attendanceResponseMatchesDate(attendanceResults[0].value.data, attendanceDay.apiDate)) {
-        succeeded.attendance = attendanceResults[0].value.data;
-        succeeded.attendanceDate = attendanceDay.apiDate;
-      } else {
-        if (dataRef.current.attendanceDate !== attendanceDay.apiDate) {
-          succeeded.attendance = null;
-          succeeded.attendanceDate = attendanceDay.apiDate;
-        }
-        errors.attendance = attendanceResults[0].status === "fulfilled"
-          ? "Attendance API returned data for a different date."
-          : getApiErrorMessage(attendanceResults[0].reason);
-      }
-      const previousAcademicYearId = dataRef.current.activeAcademicYear?.id;
-      const academicYearChanged = previousAcademicYearId && previousAcademicYearId !== academicYear.id;
-      if (academicYearChanged) {
-        for (const key of ["groups", "strength", "groupCatalog", "students"]) {
-          if (errors[key]) succeeded[key] = null;
-        }
-      }
-      if (!academicYear.id) {
-        succeeded.admissionTrend = null;
-        errors.admissionTrend = "No active Academic Year could be resolved.";
-      }
-      else if (trendResults[0]?.status === "fulfilled") succeeded.admissionTrend = trendResults[0].value.data;
-      else {
-        if (academicYearChanged) succeeded.admissionTrend = null;
-        errors.admissionTrend = getApiErrorMessage(trendResults[0]?.reason);
-      }
+      setWidgets(next);
+      setErrors((current) => ({ filters: current.filters || "", ...nextErrors }));
+      setLoading(EMPTY_LOADING);
+    });
+    return () => {
+      widgetRequestRef.current += 1;
+      controller.abort();
+    };
+  }, [filters, loadingFilters]);
 
-      if (!mounted.current) return;
-      if (Object.keys(succeeded).some((key) => !["academicYears", "activeAcademicYear"].includes(key))) {
-        const merged = { ...dataRef.current, ...succeeded };
-        const savedAt = Date.now();
-        dataRef.current = merged;
-        sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ data: merged, savedAt }));
-        setData(merged);
-        setLastUpdated(new Date(savedAt));
-      }
-      setFailures(errors);
-    } catch (requestError) {
-      if (mounted.current) {
-        setFailures((current) => ({ ...current, request: getApiErrorMessage(requestError) }));
-      }
-    } finally {
-      requestInFlight.current = false;
-      if (mounted.current) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const activeAcademicYear = data.activeAcademicYear?.id ? data.activeAcademicYear : null;
-  const admissionTrend = useMemo(() => activeAcademicYear ? rows(data.admissionTrend, ["monthlyAdmissions", "MonthlyAdmissions", "admissionTrend", "AdmissionTrend", "trend", "Trend"]).map(normalizeAdmissionPeriod).filter(Boolean).sort((a, b) => a.sortDate - b.sortDate) : [], [activeAcademicYear, data.admissionTrend]);
-  const filteredAdmissionTrend = useMemo(() => admissionTrend.filter((item) => (
-    (!admissionFrom || item.sortDate >= Number(admissionFrom))
-    && (!admissionTo || item.sortDate <= Number(admissionTo))
-  )), [admissionFrom, admissionTo, admissionTrend]);
-  const admissionFilterActive = Boolean(admissionFrom || admissionTo);
-  const clearAdmissionFilter = useCallback(() => {
-    setAdmissionFrom("");
-    setAdmissionTo("");
-  }, []);
-
-  useEffect(() => {
-    clearAdmissionFilter();
-    setAdmissionFilterOpen(false);
-  }, [activeAcademicYear?.id, clearAdmissionFilter]);
-  const academicYearAdmissions = activeAcademicYear
-    ? firstMetric(data, ["summary"], ["currentAcademicYearAdmissions", "CurrentAcademicYearAdmissions", "academicYearAdmissions", "AcademicYearAdmissions", "admissionsThisAcademicYear", "AdmissionsThisAcademicYear"])
-      ?? academicYearAdmissionTotal(data.admissionTrend, admissionTrend)
-    : undefined;
-  const admissionsLabel = activeAcademicYear?.name ? `Admissions (${activeAcademicYear.name})` : "Admissions";
-  const currentAttendanceDay = localCalendarDate();
-  const attendanceForToday = data.attendanceDate === currentAttendanceDay.apiDate
-    ? dailyAttendanceSummary(data.attendance)
-    : dailyAttendanceSummary(null);
-  const kpis = useMemo(() => [
-    { label: "Total Students", value: firstMetric(data, ["summary", "strength"], ["totalStudents", "studentStrength", "activeStudents"]), icon: Users, tone: "blue", to: "/dashboard/students" },
-    { label: "Faculty Members", value: firstMetric(data, ["summary"], ["totalFaculty", "facultyCount", "activeFaculty"]) ?? arrayCount(data.faculty), icon: GraduationCap, tone: "violet", to: "/dashboard/faculty" },
-    { label: "Today's Attendance", value: attendanceForToday.percentage, icon: CalendarCheck, tone: "green", type: "percent", to: "/dashboard/attendance" },
-    { label: admissionsLabel, value: academicYearAdmissions, icon: TrendingUp, tone: "blue", to: "/dashboard/admission" },
-    { label: "Upcoming Exams", value: firstMetric(data, ["summary", "exams"], ["upcomingExams", "upcomingExaminations", "examinationCount"]) ?? arrayCount(data.exams), icon: CalendarClock, tone: "violet", to: "/dashboard/examinations" },
-  ], [academicYearAdmissions, admissionsLabel, attendanceForToday.percentage, data]);
-  const groupDistribution = normalizeGroups(data, activeAcademicYear?.id);
-  const exams = rows(data.exams, ["examinations", "Examinations", "upcomingExams", "UpcomingExams"]).map((item, index) => ({ id: read(item, "examinationId", "ExaminationId", "id", "Id") ?? index, subject: read(item, "subjectName", "SubjectName", "subject", "Subject", "examName", "ExamName") ?? "—", date: read(item, "examDate", "ExamDate", "date", "Date"), time: read(item, "startTime", "StartTime", "time", "Time") ?? "—", hall: read(item, "hallName", "HallName", "roomName", "RoomName", "hall", "Hall") ?? "—", invigilator: read(item, "invigilatorName", "InvigilatorName", "facultyName", "FacultyName") ?? "—", status: read(item, "status", "Status") ?? "Scheduled" })).filter((item) => { const date = new Date(item.date); return !item.date || Number.isNaN(date.getTime()) || date >= new Date(); }).slice(0, 5);
-  const workload = normalizeFacultyWorkload(data.workload);
-  const activities = rows(data.audit, ["auditLogs", "AuditLogs", "logs", "Logs"]).map((item, index) => ({ id: read(item, "auditLogId", "AuditLogId", "id", "Id") ?? index, user: read(item, "userName", "UserName", "performedBy", "PerformedBy", "createdBy", "CreatedBy") ?? "—", action: read(item, "action", "Action", "actionType", "ActionType") ?? "—", module: read(item, "module", "Module", "moduleName", "ModuleName") ?? "—", date: read(item, "timestamp", "Timestamp", "createdAt", "CreatedAt", "dateTime", "DateTime") })).slice(0, 5);
+  const totalStudents = metric(widgets.summary, ["totalStudents", "activeStudents", "students"]);
+  const kpis = [
+    { label: "Total Students", value: totalStudents, icon: Users, tone: "green", to: "/dashboard/students" },
+    { label: "Teaching Staff", value: metric(widgets.summary, ["teachingStaff", "teachingStaffCount", "totalTeachingStaff"]), icon: UserRoundCheck, tone: "blue", to: "/dashboard/faculty?staffTab=teaching" },
+    { label: "Non-Teaching Staff", value: metric(widgets.summary, ["nonTeachingStaff", "nonTeachingStaffCount", "totalNonTeachingStaff"]), icon: UserRoundCog, tone: "orange", to: "/dashboard/faculty?staffTab=non-teaching" },
+    { label: "Total Groups", value: metric(widgets.summary, ["totalGroups", "groupCount", "groups"]), icon: Layers3, tone: "violet", to: "/dashboard/courses" },
+    { label: "Total Sections", value: metric(widgets.summary, ["totalSections", "sectionCount", "sections"]), icon: School, tone: "cyan", to: "/dashboard/sections" },
+  ];
+  const admissionTrend = useMemo(() => normalizeAdmissionTrend(widgets.admissionTrend), [widgets.admissionTrend]);
+  const gender = {
+    male: metric(widgets.studentsOverview, ["maleStudents", "maleCount", "male"]),
+    female: metric(widgets.studentsOverview, ["femaleStudents", "femaleCount", "female"]),
+    other: metric(widgets.studentsOverview, ["otherStudents", "otherCount", "other"]),
+  };
+  const academicLevels = useMemo(() => normalizeAcademicLevels(widgets.studentsOverview), [widgets.studentsOverview]);
+  const groupDistribution = useMemo(() => normalizeGroupDistribution(widgets.groupDistribution), [widgets.groupDistribution]);
   const groupTotal = groupDistribution.reduce((sum, item) => sum + item.value, 0);
+  const weeklyAttendance = useMemo(() => normalizeWeeklyAttendance(widgets.weeklyAttendance), [widgets.weeklyAttendance]);
+  const certificateRows = useMemo(() => normalizeCertificateRequests(widgets.certificateRequests), [widgets.certificateRequests]);
+  const certificateTotal = metric(widgets.certificateRequests, ["totalRequests", "totalCertificateRequests", "requestCount"])
+    ?? (certificateRows.length ? certificateRows.reduce((sum, item) => sum + item.value, 0) : undefined);
+  const activities = useMemo(() => normalizeActivities(widgets.recentActivity), [widgets.recentActivity]);
+  const facultyWorkload = useMemo(() => normalizeFacultyWorkload(widgets.facultyWorkload), [widgets.facultyWorkload]);
+  const upcomingExaminations = useMemo(() => normalizeUpcomingExaminations(widgets.upcomingExaminations), [widgets.upcomingExaminations]);
+  const selectedBoardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label || "All Boards";
+  const calendarRange = apiDateRange(filters.date);
+  const calendarRangeLabel = `${formatDateLabel(calendarRange.from, { month: "short", day: "2-digit", year: "numeric" })} - ${formatDateLabel(calendarRange.to, { month: "short", day: "2-digit", year: "numeric" })}`;
+  const greeting = greetingForHour(currentHour);
+  const dashboardTitle = (
+    <span className="dashboard-welcome-title">
+      <span className="dashboard-time-greeting">
+        {greeting.message}
+        <span className="dashboard-greeting-icon" role="img" aria-label={greeting.iconLabel}>{greeting.icon}</span>
+      </span>
+      <span className="dashboard-welcome-copy">Welcome back, Admin!</span>
+      <span className="dashboard-breadcrumb-copy">Dashboard</span>
+    </span>
+  );
+  const resetFilters = () => {
+    setFilters({
+      year: masterOptions.years.find((item) => item.current)?.value || masterOptions.years[0]?.value || "",
+      board: masterOptions.boards.find((item) => item.current)?.value || masterOptions.boards[0]?.value || "",
+      date: localDateValue(),
+    });
+  };
 
-  const chart = (content, available) => <div className="dashboard-chart-body">{available ? content : <Empty />}</div>;
-  const hasApplications = filteredAdmissionTrend.some((item) => item.applications !== undefined);
-  return <DashboardLayout title="Dashboard" subtitle="Institution-wide academic and operational overview." actions={<div className="dashboard-header-actions"><div className="dashboard-update-meta"><small>Last Updated: {lastUpdated ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(lastUpdated) : "Not available"}</small></div><Link to="/dashboard/reports" className="cms-btn cms-btn-primary"><ArrowUpRight size={16} /> View Reports</Link></div>}>
-    {loading ? <div className="cms-card dashboard-loader"><Loader label="Loading dashboard..." /></div> : <>
-      {Object.keys(failures).length ? <div className="dashboard-warning">Some dashboard sources are unavailable. Successfully loaded widgets remain available.</div> : null}
-      <div className="dashboard-kpi-grid">{kpis.map(({ label: name, value, icon: Icon, tone, type, to }) => <Link className="dashboard-kpi-link" to={to} key={name} aria-label={`Open ${name}`}><article className="cms-stat"><span className={`cms-stat-icon tone-${tone}`}><Icon size={20} /></span><div><div className="cms-stat-label">{name}</div><div className="cms-stat-value">{formatValue(value, type)}</div></div></article></Link>)}</div>
-      <div className="dashboard-grid dashboard-grid-2">
-        <section className="cms-card dashboard-widget dashboard-admissions-card">
-          <div className="cms-card-head dashboard-admissions-head">
-            <div><h2>{admissionsLabel}</h2>{admissionFilterActive ? <small>Showing: {filteredAdmissionTrend[0]?.period ?? "No matching period"} {filteredAdmissionTrend.length > 1 ? `– ${filteredAdmissionTrend.at(-1).period}` : ""}</small> : null}</div>
-            <div className="dashboard-admissions-actions">
-              {admissionFilterActive ? <button type="button" className="dashboard-chart-reset" onClick={clearAdmissionFilter}>Reset</button> : null}
-              <button type="button" className="dashboard-filter-button" aria-label="Filter admissions chart" aria-expanded={admissionFilterOpen} onClick={() => setAdmissionFilterOpen((open) => !open)}><Filter size={16} /> Filter{admissionFilterActive ? <span aria-label="1 active filter">1</span> : null}</button>
-            </div>
-          </div>
-          {admissionFilterOpen ? <div className="dashboard-admissions-filter">
-            <label>From period<select value={admissionFrom} onChange={(event) => { const value = event.target.value; setAdmissionFrom(value); if (admissionTo && Number(value) > Number(admissionTo)) setAdmissionTo(value); }}><option value="">First available</option>{admissionTrend.map((item) => <option key={`from-${item.sortDate}`} value={item.sortDate}>{item.period}</option>)}</select></label>
-            <label>To period<select value={admissionTo} onChange={(event) => { const value = event.target.value; setAdmissionTo(value); if (admissionFrom && Number(value) < Number(admissionFrom)) setAdmissionFrom(value); }}><option value="">Last available</option>{admissionTrend.map((item) => <option key={`to-${item.sortDate}`} value={item.sortDate}>{item.period}</option>)}</select></label>
-            <button type="button" className="dashboard-filter-close" aria-label="Close admissions filters" onClick={() => setAdmissionFilterOpen(false)}><X size={17} /></button>
-          </div> : null}
-          <div className="dashboard-chart-body dashboard-admissions-chart">{filteredAdmissionTrend.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={filteredAdmissionTrend} margin={{ top: 8, right: 12, bottom: 20, left: 2 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" interval={0} angle={-30} textAnchor="end" height={62} /><YAxis allowDecimals={false} tickFormatter={(value) => Math.round(value)} label={{ value: "Admissions", angle: -90, position: "insideLeft" }} /><Tooltip labelFormatter={(value) => value} formatter={(value, name) => [Number(value), name === "admissions" ? "Admissions" : "Applications"]} /><Legend verticalAlign="top" height={30} /><Line type="monotone" dataKey="admissions" name="Admissions" stroke="#1d4ed8" strokeWidth={3} dot={{ r: 4, fill: "#1d4ed8", strokeWidth: 2 }} activeDot={{ r: 6 }} connectNulls />{hasApplications ? <Line type="monotone" dataKey="applications" name="Applications" stroke="#6d28d9" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} connectNulls /> : null}{filteredAdmissionTrend.length > 1 ? <Brush dataKey="period" height={24} travellerWidth={9} stroke="#1d4ed8" /> : null}</LineChart></ResponsiveContainer> : <Empty />}</div>
-        </section>
-        <section className="cms-card dashboard-widget dashboard-group-card"><div className="cms-card-head"><h2>Group Distribution</h2></div>{groupDistribution.length ? <div className="dashboard-group-body"><div className="dashboard-group-chart">{groupTotal > 0 ? <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2} isAnimationActive={false}>{groupDistribution.map((item, index) => <Cell key={`${item.name}-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [new Intl.NumberFormat("en-IN").format(value), "Students"]} /></PieChart></ResponsiveContainer> : <div className="dashboard-group-empty-ring" aria-hidden="true" />}<div className="dashboard-group-total"><strong>{new Intl.NumberFormat("en-IN").format(groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-legend">{groupDistribution.map((item, index) => <div key={`${item.name}-${index}`}><i style={{ background: COLORS[index % COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{new Intl.NumberFormat("en-IN").format(item.value)}</strong><em>{groupTotal > 0 ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0.0%"}</em></div>)}</div></div> : <Empty text={failures.groups && failures.strength && (failures.groupCatalog || failures.students) ? "Unable to load group distribution." : "No group distribution data available."} />}</section>
-        <section className="cms-card dashboard-widget dashboard-attendance-card"><div className="cms-card-head"><h2>Student Attendance ({currentAttendanceDay.displayDate})</h2></div>{attendanceForToday.hasData ? <div className="dashboard-attendance-daily">{attendanceForToday.percentage !== undefined ? <div className="dashboard-attendance-rate"><strong>{formatValue(attendanceForToday.percentage, "percent")}</strong><span>Attendance</span></div> : null}<div className="dashboard-attendance-metrics">{[["Total", attendanceForToday.total], ["Present", attendanceForToday.present], ["Absent", attendanceForToday.absent]].filter(([, value]) => value !== undefined).map(([name, value]) => <div key={name}><span>{name}</span><strong>{new Intl.NumberFormat("en-IN").format(value)}</strong></div>)}</div></div> : <Empty text={failures.attendance ? "Unable to load today's attendance." : "No attendance marked for today."} />}</section>
-        <section className="cms-card dashboard-widget"><div className="cms-card-head"><h2>Faculty Workload</h2></div>{workload.length ? chart(<ResponsiveContainer width="100%" height="100%"><BarChart data={workload} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" allowDecimals={false} /><YAxis dataKey="name" type="category" width={85} /><Tooltip formatter={(value) => [`${Number(value).toLocaleString("en-IN")} hrs`, "Weekly workload"]} /><Bar dataKey="hours" name="Weekly workload" fill="#6d28d9" /></BarChart></ResponsiveContainer>, true) : <div className="dashboard-chart-body"><Empty text={failures.workload ? "Unable to load faculty workload." : "No faculty workload assigned."} /></div>}</section>
-      </div>
-      <div className="dashboard-grid dashboard-grid-2">
-        <section className="cms-card"><div className="cms-card-head"><h2><CalendarClock size={15} /> Upcoming Examinations</h2><Link to="/dashboard/examinations" className="cms-btn cms-btn-ghost">Manage</Link></div><div className="cms-table-wrap"><table className="cms-table"><thead><tr><th>Subject</th><th>Date</th><th>Time</th><th>Hall</th><th>Invigilator</th><th>Status</th></tr></thead><tbody>{exams.length ? exams.map((item) => <tr key={item.id}><td className="cms-strong">{item.subject}</td><td>{item.date ? new Date(item.date).toLocaleDateString("en-IN") : "—"}</td><td>{item.time}</td><td>{item.hall}</td><td>{item.invigilator}</td><td><StatusBadge value={item.status} /></td></tr>) : <tr><td colSpan={6}><Empty /></td></tr>}</tbody></table></div></section>
-        <section className="cms-card"><div className="cms-card-head"><h2>Recent Activity</h2><Link to="/dashboard/reports" className="cms-btn cms-btn-ghost">View Audit Logs</Link></div><div className="dashboard-activity">{activities.length ? activities.map((item) => <div key={item.id}><span className="dashboard-activity-icon"><Activity size={15} /></span><p><strong>{item.user}</strong> {item.action} · {item.module}<small>{item.date ? new Date(item.date).toLocaleString("en-IN") : "—"}</small></p></div>) : <Empty />}</div></section>
-      </div>
-    </>}
+  const filtersContent = <div className="dashboard-filters" aria-label="Dashboard filters">
+    <label htmlFor="dashboard-year"><span>Academic Year</span><select id="dashboard-year" aria-label="Academic Year" value={filters.year} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, year: event.target.value }))}><option value="">All Academic Years</option>{masterOptions.years.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+    <label className="dashboard-board-filter" htmlFor="dashboard-board" style={{ "--board-select-width": `${Math.min(Math.max(selectedBoardLabel.length + 5, 20), 50)}ch` }}><span>Board</span><select id="dashboard-board" aria-label="Board" value={filters.board} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, board: event.target.value }))}><option value="">All Boards</option>{masterOptions.boards.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+    <label htmlFor="dashboard-date"><span>Calendar</span><span className="dashboard-date-control"><span className="dashboard-date-range">{calendarRangeLabel}</span><CalendarDays size={17} aria-hidden="true" /><input id="dashboard-date" aria-label={`Calendar range ending ${formatDateLabel(filters.date, { month: "long", day: "numeric", year: "numeric" })}`} type="date" max={localDateValue()} value={filters.date} onChange={(event) => setFilters((current) => ({ ...current, date: event.target.value || localDateValue() }))} /></span></label>
+    <button type="button" className="dashboard-reset-button" onClick={resetFilters} disabled={loadingFilters} aria-label="Reset dashboard filters"><RotateCcw size={16} aria-hidden="true" /> Reset</button>
+  </div>;
+
+  return <DashboardLayout title={dashboardTitle} subtitle="Here's the complete overview of your college." actions={filtersContent} breadcrumb={["Overview"]}>
+    <main className="dashboard-page">
+      {errors.filters ? <div className="dashboard-warning" role="alert">{errors.filters}</div> : null}
+      <section className="dashboard-kpi-grid" aria-label="College totals">{kpis.map((item) => <KpiCard key={item.label} {...item} loading={loading.summary} />)}</section>
+      <section className="dashboard-main-grid" aria-label="Dashboard analytics">
+        <article className="dashboard-card dashboard-students-card"><CardHeader title="Students Overview" />
+          {loading.admissionTrend ? <LoadingState label="Loading admission trend..." /> : admissionTrend.length ? <div className="dashboard-chart dashboard-line-chart" role="img" aria-label="Students joined by month"><ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}><defs><linearGradient id="studentsArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.28} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" tickLine={false} axisLine={false} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [formatNumber(value), "Students joined"]} /><Area type="monotone" dataKey="studentsJoined" name="Students joined" stroke="#2563eb" strokeWidth={2.5} fill="url(#studentsArea)" dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div> : <EmptyState message={errors.admissionTrend ? "Unable to load admission trend." : "No admission trend is available for the selected filters."} />}
+          {!loading.studentsOverview && (gender.male !== undefined || gender.female !== undefined || gender.other !== undefined) ? <div className="dashboard-gender-summary" aria-label="Student gender summary"><div><span className="dashboard-gender-icon male"><Users size={17} /></span><p>Male<strong>{formatNumber(gender.male)}</strong></p></div><div><span className="dashboard-gender-icon female"><Users size={17} /></span><p>Female<strong>{formatNumber(gender.female)}</strong></p></div>{gender.other !== undefined ? <div><span className="dashboard-gender-icon other"><Users size={17} /></span><p>Other<strong>{formatNumber(gender.other)}</strong></p></div> : null}</div> : null}
+          {!loading.studentsOverview && academicLevels.length ? <div className="dashboard-academic-levels" aria-label="Students by academic level"><span>Academic Levels</span><div>{academicLevels.map((item) => <span key={item.name}>{item.name}<strong>{formatNumber(item.count)}</strong></span>)}</div></div> : null}
+        </article>
+        <article className="dashboard-card dashboard-group-card"><CardHeader title="Students by Group" />
+          {loading.groupDistribution ? <LoadingState label="Loading group distribution..." /> : groupDistribution.length ? <div className="dashboard-group-content"><div className="dashboard-donut" role="img" aria-label="Student distribution by group"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={GROUP_COLORS[index % GROUP_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [formatNumber(value), "Students"]} /></PieChart></ResponsiveContainer><div><strong>{formatNumber(totalStudents ?? groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-list">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ backgroundColor: GROUP_COLORS[index % GROUP_COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{formatNumber(item.value)}</strong><em>{groupTotal ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0%"}</em></div>)}</div></div> : <EmptyState message={errors.groupDistribution ? "Unable to load group distribution." : "No group distribution is available for the selected filters."} />}
+        </article>
+        <article className="dashboard-card dashboard-attendance-card"><CardHeader title="Attendance Overview (This Week)" />
+          {loading.weeklyAttendance ? <LoadingState label="Loading weekly attendance..." /> : weeklyAttendance.length ? <div className="dashboard-chart dashboard-attendance-chart" role="img" aria-label={`Attendance through ${formatDateLabel(filters.date)}`}><ResponsiveContainer width="100%" height="100%"><BarChart data={weeklyAttendance} margin={{ top: 14, right: 4, left: -24, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tickLine={false} axisLine={false} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip labelFormatter={(_, entries) => entries?.[0]?.payload?.date ? formatDateLabel(entries[0].payload.date, { day: "2-digit", month: "short", year: "numeric" }) : ""} /><Legend iconType="circle" iconSize={8} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#22a447" radius={[3, 3, 0, 0]} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" /><Bar dataKey="leave" name="Leave" stackId="attendance" fill="#f59e0b" /></BarChart></ResponsiveContainer></div> : <EmptyState message={errors.weeklyAttendance ? "Unable to load weekly attendance." : "Weekly attendance detail is unavailable for the selected dates."} />}<p className="dashboard-card-note">Rolling 7 days · {formatDateLabel(apiDateRange(filters.date).from)} – {formatDateLabel(filters.date)}</p>
+        </article>
+      </section>
+      <section className="dashboard-lower-grid" aria-label="Requests and recent activities">
+        <article className="dashboard-card dashboard-certificate-card"><CardHeader title="Certificate Requests" action={<Link to="/dashboard/certificates" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.certificateRequests ? <LoadingState label="Loading certificate requests..." /> : certificateRows.length ? <div className="dashboard-certificate-list">{certificateRows.map(({ key, label, icon: Icon, tone, value }) => <div key={key}><span className={`dashboard-list-icon tone-${tone}`}><Icon size={16} /></span><span>{label}</span><strong>{formatNumber(value)}</strong></div>)}<footer><span>Total Requests</span><strong>{formatNumber(certificateTotal)}</strong></footer></div> : <EmptyState message={errors.certificateRequests ? "Unable to load certificate requests." : "No certificate requests are available for the selected filters."} />}</article>
+        <article className="dashboard-card dashboard-activities-card"><CardHeader title="Recent Activities" action={<Link to="/dashboard/reports" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.recentActivity ? <LoadingState label="Loading recent activities..." /> : activities.length ? <div className="dashboard-activity-list">{activities.map((item, index) => <div key={`${item.id}-${index}`}><span className="dashboard-activity-marker"><Activity size={14} /></span><p><strong>{item.action}</strong><span>{item.user} · {item.module}</span><small>{formatActivityDate(item.timestamp)}</small></p></div>)}</div> : <EmptyState message={errors.recentActivity ? "Unable to load recent activities." : "No recent activities are available for the selected dates."} />}</article>
+      </section>
+      <section className="dashboard-lower-grid dashboard-secondary-grid" aria-label="Faculty workload and upcoming examinations">
+        <article className="dashboard-card"><CardHeader title="Faculty Workload" action={<Link to="/dashboard/faculty" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.facultyWorkload ? <LoadingState label="Loading faculty workload..." /> : facultyWorkload.length ? <div className="dashboard-info-list">{facultyWorkload.map((item) => <div key={item.id}><span className="dashboard-activity-marker"><UserRoundCheck size={14} /></span><p><strong>{item.name}</strong><span>{item.department || "Department unavailable"}</span></p><div className="dashboard-info-metrics">{item.subjects !== undefined ? <span>{formatNumber(item.subjects)} subjects</span> : null}{item.hours !== undefined ? <span>{formatNumber(item.hours)} hrs/week</span> : null}</div></div>)}</div> : <EmptyState message={errors.facultyWorkload ? "Unable to load faculty workload." : "No faculty workload is available for the selected filters."} />}</article>
+        <article className="dashboard-card"><CardHeader title="Upcoming Examinations" action={<Link to="/dashboard/examinations" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.upcomingExaminations ? <LoadingState label="Loading upcoming examinations..." /> : upcomingExaminations.length ? <div className="dashboard-info-list">{upcomingExaminations.map((item) => <div key={item.id}><span className="dashboard-activity-marker"><CalendarDays size={14} /></span><p><strong>{item.name}</strong><span>{item.context || item.status || "Examination details"}</span></p><div className="dashboard-info-metrics">{item.date ? <span>{formatDateLabel(String(item.date).slice(0, 10), { day: "2-digit", month: "short", year: "numeric" })}</span> : null}</div></div>)}</div> : <EmptyState message={errors.upcomingExaminations ? "Unable to load upcoming examinations." : "No upcoming examinations are available for the selected filters."} />}</article>
+      </section>
+    </main>
   </DashboardLayout>;
 }

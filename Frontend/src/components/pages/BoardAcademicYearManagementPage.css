@@ -396,13 +396,15 @@
   gap: 9px 16px;
   padding: 12px 18px 14px;
 }
-.bay-form label {
+.bay-form label,
+.bay-form-field {
   display: grid;
   gap: 4px;
   font-size: 14px;
   font-weight: 700;
 }
-.bay-form label > span > b {
+.bay-form label > span > b,
+.bay-form-field > span > b {
   color: #dc2626;
 }
 .bay-form input,
@@ -445,6 +447,28 @@
 }
 .bay-form .bay-field-error {
   color: #dc2626;
+}
+.bay-custom-board-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-height: 39px;
+}
+.bay-choose-board-button {
+  min-height: 39px;
+  padding: 7px 12px;
+  border: 1px solid var(--cms-border);
+  border-radius: 7px;
+  background: var(--cms-subtle);
+  color: var(--cms-primary);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.bay-choose-board-button:hover {
+  border-color: var(--cms-primary);
+  background: var(--cms-primary-soft);
 }
 .bay-api-picker,
 .bay-api-level-picker {
@@ -1085,6 +1109,12 @@
   .bay-form form {
     grid-template-columns: 1fr;
   }
+  .bay-custom-board-control {
+    grid-template-columns: 1fr;
+  }
+  .bay-choose-board-button {
+    justify-self: start;
+  }
   .bay-details {
     min-height: auto;
   }
@@ -1194,6 +1224,7 @@
 [data-theme="dark"] .bay-page .ay-form-card textarea,
 [data-theme="dark"] .bay-page .bay-api-picker-input,
 [data-theme="dark"] .bay-page .bay-api-options,
+[data-theme="dark"] .bay-page .bay-choose-board-button,
 [data-theme="dark"] .bay-page .bay-state-combobox,
 [data-theme="dark"] .bay-page .bay-state-options,
 [data-theme="dark"] .bay-page .bay-level-combobox,

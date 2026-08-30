@@ -1,11 +1,13 @@
 :root {
   --cms-sidebar-w: 180px;
   --cms-sidebar-collapsed-w: 72px;
-  --cms-header-height: 64px;
+  --cms-header-height: clamp(56px, 4.2vw, 64px);
 }
 
 .cms-shell {
   display: flex;
+  width: 100%;
+  max-width: 100vw;
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
@@ -212,6 +214,8 @@
 
 .cms-main {
   flex: 1;
+  width: calc(100% - var(--cms-sidebar-w));
+  max-width: 100%;
   height: 100dvh;
   margin-left: var(--cms-sidebar-w);
   min-width: 0;
@@ -226,6 +230,7 @@
 }
 
 .cms-shell.nav-closed .cms-main {
+  width: 100%;
   margin-left: 0;
 }
 
@@ -597,17 +602,27 @@
 }
 
 .cms-content {
-  padding: 22px;
+  width: 100%;
+  padding: clamp(10px, 1.25vw, 18px);
   flex: 1;
   min-width: 0;
   min-height: 0;
   max-width: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
 .cms-content > * {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   animation: cmsFadeIn 0.2s ease both;
+}
+
+.cms-content :is(.cms-card, .cms-card-body, .cms-toolbar, .cms-toolbar-right, .cms-table-wrap, .cms-form-grid, .cms-filters) {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .cms-breadcrumb {
@@ -644,21 +659,21 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 14px;
+  gap: clamp(8px, 1vw, 14px);
   flex-wrap: wrap;
-  margin-bottom: 18px;
+  margin-bottom: clamp(10px, 1.2vw, 16px);
 }
 
 .cms-page-head h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: clamp(19px, 1.5vw, 22px);
   letter-spacing: -0.3px;
 }
 
 .cms-page-head p {
   margin: 4px 0 0;
   color: var(--cms-muted);
-  font-size: 13.5px;
+  font-size: clamp(12px, .9vw, 13.5px);
 }
 
 .cms-backdrop-mobile {
@@ -684,6 +699,7 @@
   }
   .cms-main,
   .cms-shell.nav-closed .cms-main {
+    width: 100%;
     margin-left: 0;
   }
   .cms-backdrop-mobile.is-open {

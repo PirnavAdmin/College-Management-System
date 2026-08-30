@@ -110,7 +110,11 @@ const normalizeMasterName = (value) => String(value ?? "").trim().replace(/\s+/g
 const NORMALIZED_DEFAULT_BOARD_CONFIG = Object.fromEntries(
   Object.entries(DEFAULT_BOARD_CONFIG).map(([name, config]) => [normalizeMasterName(name), config]),
 );
-const BOARD_NAME_OPTIONS = Object.keys(DEFAULT_BOARD_CONFIG).map((boardName) => ({ boardName }));
+const CUSTOM_BOARD_VALUE = "__custom_board__";
+const BOARD_NAME_OPTIONS = [
+  ...Object.keys(DEFAULT_BOARD_CONFIG).map((boardName) => ({ value: boardName, label: boardName })),
+  { value: CUSTOM_BOARD_VALUE, label: "Others" },
+];
 
 const emptyBoardForm = {
   boardName: "",
@@ -1131,6 +1135,7 @@ export default function BoardAcademicYearManagementPage() {
   const [boardExporting, setBoardExporting] = useState(false);
   const [boardDeletingId, setBoardDeletingId] = useState(null);
   const [codeValidationMessage, setCodeValidationMessage] = useState("");
+  const [customBoardEntry, setCustomBoardEntry] = useState(false);
   const [formData, setFormData] = useState({
     countries: [],
     academicPatterns: [],
@@ -1281,8 +1286,22 @@ export default function BoardAcademicYearManagementPage() {
   const update = (name, value) => setForm((current) => ({ ...current, [name]: value }));
   const handleBoardNameChange = async (value) => {
     const requestId = ++boardSelectionRequestRef.current;
-    const config = NORMALIZED_DEFAULT_BOARD_CONFIG[normalizeMasterName(value)];
     setCodeValidationMessage("");
+    if (value === CUSTOM_BOARD_VALUE) {
+      setCustomBoardEntry(true);
+      setForm((current) => ({
+        ...current,
+        boardName: "",
+        boardCode: "",
+        boardType: "",
+        stateId: "",
+        academicLevelIds: [],
+      }));
+      return;
+    }
+
+    setCustomBoardEntry(false);
+    const config = NORMALIZED_DEFAULT_BOARD_CONFIG[normalizeMasterName(value)];
     if (!config) {
       setForm((current) => ({ ...current, boardName: value }));
       return;
@@ -1318,6 +1337,7 @@ export default function BoardAcademicYearManagementPage() {
   const startAdd = async () => {
     setEditingId(null);
     setForm(emptyBoardForm);
+    setCustomBoardEntry(false);
     setSelected(null);
     setStates([]);
     setCodeValidationMessage("");
@@ -1344,6 +1364,7 @@ export default function BoardAcademicYearManagementPage() {
     await loadFormData();
     if (record.countryId) await loadStates(record.countryId);
     setEditingId(record.id);
+    setCustomBoardEntry(false);
     setForm({
       boardName: record.board,
       boardCode: record.code,
@@ -1367,8 +1388,8 @@ export default function BoardAcademicYearManagementPage() {
     setSearchParams({ screen: "form", mode: "edit", id: String(record.id) });
   };
 
-  const validateBoardCode = async () => {
-    const boardCode = form.boardCode.trim().toUpperCase();
+  const validateBoardCode = async (value = form.boardCode) => {
+    const boardCode = String(value).trim().toUpperCase();
     if (!boardCode) return false;
     try {
       const body = { boardCode, boardId: editingId ?? null };
@@ -1385,12 +1406,14 @@ export default function BoardAcademicYearManagementPage() {
   const save = async (event) => {
     event.preventDefault();
     if (boardSaving) return;
+    const boardName = form.boardName.trim();
+    const boardCode = form.boardCode.trim().toUpperCase();
     const passPercentage = form.passPercentage === "" ? 0 : Number(form.passPercentage);
     const academicPatternId = form.academicPatternId ||
       optionValue(formData.academicPatterns[0], "academicPatternId", "AcademicPatternId") || "";
     const missingBoardFields = [
-      [!form.boardName.trim(), "Board Name"],
-      [!form.boardCode.trim(), "Board Code"],
+      [!boardName, "Board Name"],
+      [!boardCode, "Board Code"],
       [!form.boardType, "Board Type"],
       [!form.countryId, "Country"],
       [!form.stateId, "State"],
@@ -1407,10 +1430,10 @@ export default function BoardAcademicYearManagementPage() {
         : "Enter a valid Pass Percentage between 0 and 100.");
       return;
     }
-    if (!(await validateBoardCode())) return;
+    if (!(await validateBoardCode(boardCode))) return;
     const payload = {
-      boardName: form.boardName.trim(),
-      boardCode: form.boardCode.trim().toUpperCase(),
+      boardName,
+      boardCode,
       description: form.description.trim() || null,
       countryId: Number(form.countryId),
       stateId: form.stateId === ALL_INDIA_STATE_ID ? null : (form.stateId ? Number(form.stateId) : null),
@@ -1459,6 +1482,7 @@ export default function BoardAcademicYearManagementPage() {
       setSelected(null);
       setEditingId(null);
       setForm(emptyBoardForm);
+      setCustomBoardEntry(false);
       setSearchParams({});
       await fetchBoards();
     } catch (error) {
@@ -1705,7 +1729,7 @@ export default function BoardAcademicYearManagementPage() {
                 <header>
                   <div>
                     <Eye size={17} />
-                    <h2>Configuration Details</h2>
+                    <h2>Board Details</h2>
                   </div>
                   <div className="bay-details-actions">
                     {selected ? (
@@ -1714,7 +1738,7 @@ export default function BoardAcademicYearManagementPage() {
                         className="cms-btn cms-btn-ghost bay-details-edit"
                         onClick={() => startEdit(selected)}
                       >
-                        <Edit3 size={16} /> Edit Configuration
+                        <Edit3 size={16} /> Edit Board
                       </button>
                     ) : null}
                   </div>
@@ -1755,21 +1779,44 @@ export default function BoardAcademicYearManagementPage() {
                   </div>
                 </header>
                 <form onSubmit={save}>
-                  <label className="span-2">
+                  <div className="bay-form-field span-2">
                     <span>
                       Board Name <b>*</b>
                     </span>
-                    <SearchableApiSelect
-                      value={form.boardName}
-                      options={BOARD_NAME_OPTIONS.some((item) => item.boardName === form.boardName) || !form.boardName
-                        ? BOARD_NAME_OPTIONS
-                        : [...BOARD_NAME_OPTIONS, { boardName: form.boardName }]}
-                      idKey="boardName"
-                      nameKey="boardName"
-                      placeholder="Search board name"
-                      onChange={handleBoardNameChange}
-                    />
-                  </label>
+                    {customBoardEntry ? (
+                      <div className="bay-custom-board-control">
+                        <input
+                          autoFocus
+                          value={form.boardName}
+                          placeholder="Enter new board name"
+                          aria-label="New board name"
+                          onChange={(event) => update("boardName", event.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="bay-choose-board-button"
+                          onClick={() => {
+                            setCustomBoardEntry(false);
+                            setForm((current) => ({ ...current, boardName: "", boardCode: "" }));
+                            setCodeValidationMessage("");
+                          }}
+                        >
+                          Choose existing
+                        </button>
+                      </div>
+                    ) : (
+                      <SearchableApiSelect
+                        value={form.boardName}
+                        options={BOARD_NAME_OPTIONS.some((item) => item.value === form.boardName) || !form.boardName
+                          ? BOARD_NAME_OPTIONS
+                          : [...BOARD_NAME_OPTIONS.slice(0, -1), { value: form.boardName, label: form.boardName }, BOARD_NAME_OPTIONS.at(-1)]}
+                        idKey="value"
+                        nameKey="label"
+                        placeholder="Search board name"
+                        onChange={handleBoardNameChange}
+                      />
+                    )}
+                  </div>
                   <label>
                     <span>
                       Board Code <b>*</b>
@@ -1778,7 +1825,7 @@ export default function BoardAcademicYearManagementPage() {
                       value={form.boardCode}
                       placeholder="Enter Board Code"
                       onChange={(e) => update("boardCode", e.target.value.toUpperCase())}
-                      onBlur={validateBoardCode}
+                      onBlur={() => validateBoardCode()}
                     />
                     {codeValidationMessage ? <small className="bay-field-error">{codeValidationMessage}</small> : null}
                   </label>
@@ -1862,6 +1909,7 @@ export default function BoardAcademicYearManagementPage() {
                       className="cms-btn cms-btn-ghost"
                       onClick={() => {
                         setForm(emptyBoardForm);
+                        setCustomBoardEntry(false);
                         setEditingId(selected?.id || null);
                         setSearchParams({});
                       }}

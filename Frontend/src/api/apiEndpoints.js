@@ -277,16 +277,10 @@
     list: "/api/v1/academic-levels",
   },
   studentAdmissions: {
-    bulkSection: "/api/v1/student-admissions/bulk-section",
-    bulkRollNumbers: "/api/v1/student-admissions/bulk-roll-numbers",
-  },
-  admissions: {
     getAll: "/api/v1/student-admissions",
     create: "/api/v1/student-admissions",
     getById: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
     update: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
-    delete: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
-    submit: (admissionId) => `/api/v1/student-admissions/${admissionId}/submit`,
     verify: (admissionId) => `/api/v1/student-admissions/${admissionId}/verify`,
     approve: (admissionId) => `/api/v1/student-admissions/${admissionId}/approve`,
     reject: (admissionId) => `/api/v1/student-admissions/${admissionId}/reject`,
@@ -296,11 +290,13 @@
     bloodGroups: "/api/v1/student-admissions/blood-groups",
     generateNumber: "/api/v1/student-admissions/generate-number",
   },
-  studentAdmissions: {
+  admissions: {
     getAll: "/api/v1/student-admissions",
     create: "/api/v1/student-admissions",
     getById: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
     update: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
+    delete: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
+    submit: (admissionId) => `/api/v1/student-admissions/${admissionId}/submit`,
     verify: (admissionId) => `/api/v1/student-admissions/${admissionId}/verify`,
     approve: (admissionId) => `/api/v1/student-admissions/${admissionId}/approve`,
     reject: (admissionId) => `/api/v1/student-admissions/${admissionId}/reject`,

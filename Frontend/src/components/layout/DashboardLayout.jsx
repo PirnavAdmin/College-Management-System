@@ -199,6 +199,11 @@ export default function DashboardLayout({
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+  const resolvedBreadcrumb = useMemo(() => {
+    const provided = Array.isArray(breadcrumb) ? breadcrumb : [];
+    const menuLabels = menuBreadcrumbForPath(pathname)?.labels ?? [];
+    return uniqueBreadcrumbLabels(provided.length ? provided : menuLabels, title);
+  }, [breadcrumb, pathname, title]);
   const user = readUser();
   const profileName = user?.name && user.name !== user?.email ? user.name : "CMS Admin";
   const profileEmail = user?.email || "Admin@CMS.com";

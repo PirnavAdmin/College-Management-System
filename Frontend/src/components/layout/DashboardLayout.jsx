@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
@@ -7,6 +7,8 @@ import {
   ChevronDown, Settings, User, LogOut,
 } from "lucide-react";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
+import apiClient from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import { useSidebar } from "@/hooks/useSidebar.js";
 import pirnavCollegesLogo from "@/assets/pirnav-colleges-logo.png";
 import "./DashboardLayout.css";
@@ -68,6 +70,9 @@ export const menu = [
 const SIDEBAR_SCROLL_KEY = "cms_sidebar_scroll_top";
 const NOTIFICATION_REFRESH_INTERVAL = 60_000;
 const EMPTY_NOTIFICATION_SOURCES = [];
+// Notifications are loaded dynamically when available. Keep the dropdown
+// safe during initial render or when no notification source is configured.
+const MOCK_NOTIFICATIONS = [];
 const PENDING_STATUSES = new Set(["pending", "draft", "requested", "generated", "reviewed", "new", "created", "incomplete", "unpublished"]);
 
 const unwrapNotificationPayload = (payload) => {

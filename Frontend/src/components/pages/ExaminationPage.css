@@ -18,13 +18,15 @@
 .exam-constrained-select>button { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; }
 .exam-constrained-select>button>span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .exam-constrained-select>button>span:last-child { flex:0 0 auto; }
-.exam-constrained-menu { position:absolute; z-index:10030; top:calc(100% + 4px); left:0; right:0; width:100%; min-width:0; max-width:100%; max-height:min(280px,calc(100vh - 160px)); overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; padding:6px; border:1px solid var(--cms-border); border-radius:8px; background:var(--cms-surface); box-shadow:0 10px 24px rgb(15 23 42 / 18%); }
+.exam-constrained-menu { position:absolute; z-index:10030; top:calc(100% + 4px); left:0; right:0; width:100%; min-width:0; max-width:100%; max-height:min(280px,calc(100vh - 160px)); overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; padding:6px; border:1px solid var(--cms-border); border-radius:8px; background:var(--cms-surface-solid, #fff); opacity:1; isolation:isolate; box-shadow:0 10px 24px rgb(15 23 42 / 18%); }
 .exam-constrained-menu button,.exam-constrained-menu span { display:block; width:100%; min-width:0; max-width:100%; overflow:hidden; padding:7px 8px; border:0; border-radius:5px; background:transparent; color:var(--cms-text); font:inherit; font-size:12px; text-align:left; text-overflow:ellipsis; white-space:nowrap; }
 .exam-constrained-menu button:hover,.exam-constrained-menu button:focus-visible { background:var(--cms-hover); }
 .exam-toolbar-spacer { flex:1 1 auto; }
 .exam-toolbar-actions { display:flex; flex:0 0 auto; align-items:center; gap:10px; margin-left:auto; }
 .exam-export-btn { min-height:42px; padding:9px 12px; }
 .exam-back-btn { display:inline-flex; margin-bottom:14px; }
+.exam-back-text-link { display:inline-block; margin:0 0 14px; padding:0; border:0; background:transparent; color:var(--cms-primary); font:inherit; font-size:13px; text-decoration:underline; cursor:pointer; }
+.exam-back-text-link:hover,.exam-back-text-link:focus-visible { color:var(--cms-primary-hover, var(--cms-primary)); }
 .exam-view-schedule { margin-top:18px; }
 .exam-print-area { display:none; }
 .exam-search { flex:0 1 300px; width:min(300px,100%); min-width:220px; }

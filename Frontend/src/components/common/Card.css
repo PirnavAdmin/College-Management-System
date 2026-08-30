@@ -1,4 +1,7 @@
 .cms-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   background: var(--cms-surface);
   border: 1px solid var(--cms-border);
   border-radius: var(--cms-radius);
@@ -6,7 +9,7 @@
   overflow: hidden;
 }
 .cms-card-head {
-  padding: 16px 18px;
+  padding: clamp(11px, 1vw, 15px) clamp(12px, 1.15vw, 17px);
   border-bottom: 1px solid var(--cms-border);
   display: flex;
   align-items: center;
@@ -16,25 +19,26 @@
 }
 .cms-card-head h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: clamp(13px, .95vw, 15px);
 }
 .cms-card-body {
-  padding: 18px;
+  min-width: 0;
+  padding: clamp(12px, 1.15vw, 17px);
 }
 .cms-stat-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
-  margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: clamp(10px, 1vw, 15px);
+  margin-bottom: clamp(10px, 1.1vw, 16px);
 }
 .cms-stat {
   background: var(--cms-surface);
   border: 1px solid var(--cms-border);
   border-radius: var(--cms-radius);
   box-shadow: var(--cms-shadow);
-  padding: 16px 18px;
+  padding: clamp(12px, 1vw, 16px);
   display: flex;
-  gap: 14px;
+  gap: clamp(9px, .9vw, 13px);
   align-items: center;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
@@ -59,7 +63,7 @@
   color: var(--cms-muted);
 }
 .cms-stat-value {
-  font-size: 20px;
+  font-size: clamp(17px, 1.35vw, 20px);
   font-weight: 700;
   letter-spacing: -0.4px;
 }
@@ -73,12 +77,12 @@
 .cms-grid-2 {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
-  gap: 16px;
+  gap: clamp(10px, 1vw, 15px);
 }
 .cms-grid-3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: clamp(10px, 1vw, 15px);
 }
 .cms-card,
 .cms-stat {

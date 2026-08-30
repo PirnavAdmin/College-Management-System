@@ -117,13 +117,6 @@ const pendingActionSources = [
     label: "assignment",
     count: (payload) => pendingRowCount(payload, (item) => item.isPublished === false || item.IsPublished === false || PENDING_STATUSES.has(notificationStatus(item))),
   },
-  {
-    id: "certificates",
-    endpoint: apiEndpoints.certificates.list,
-    to: "/dashboard/certificates",
-    label: "certificate request",
-    count: (payload) => pendingRowCount(payload),
-  },
 ];
 
 const searchIndex = menu.flatMap((g) =>
@@ -145,7 +138,14 @@ function initials(name = "CMS Admin") {
   return name.split(" ").filter(Boolean).map((part) => part[0]).slice(0, 2).join("").toUpperCase();
 }
 
-export default function DashboardLayout({ title, subtitle, breadcrumb = [], actions, children }) {
+export default function DashboardLayout({
+  title,
+  subtitle,
+  breadcrumb = [],
+  actions,
+  children,
+  excludeNotificationSources = [],
+}) {
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
   const [attendanceOpen, setAttendanceOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -168,11 +168,15 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
   const profileEmail = user?.email || "Admin@CMS.com";
   const profileRole = user?.role || "admin";
   const pendingActionCount = liveNotifications.reduce((total, item) => total + item.count, 0);
+  const enabledNotificationSources = useMemo(
+    () => pendingActionSources.filter((source) => !excludeNotificationSources.includes(source.id)),
+    [excludeNotificationSources],
+  );
 
   const loadPendingActions = useCallback(async () => {
     const requestId = ++notificationRequestRef.current;
     setNotificationsLoading(true);
-    const results = await Promise.allSettled(pendingActionSources.map((source) => apiClient.get(source.endpoint, {
+    const results = await Promise.allSettled(enabledNotificationSources.map((source) => apiClient.get(source.endpoint, {
       skipGlobalLoader: true,
       timeout: 10_000,
     })));
@@ -183,7 +187,7 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
     results.forEach((result, index) => {
       if (result.status !== "fulfilled") return;
       successfulSources += 1;
-      const source = pendingActionSources[index];
+      const source = enabledNotificationSources[index];
       const count = source.count(result.value.data);
       if (count > 0) {
         nextNotifications.push({
@@ -197,7 +201,7 @@ export default function DashboardLayout({ title, subtitle, breadcrumb = [], acti
     setLiveNotifications(nextNotifications);
     setNotificationsAvailable(successfulSources > 0);
     setNotificationsLoading(false);
-  }, []);
+  }, [enabledNotificationSources]);
 
   useEffect(() => {
     loadPendingActions();

@@ -633,7 +633,6 @@ function StaffMark({ say }) {
   useEffect(() => {
     Promise.allSettled([
       apiClient.get(apiEndpoints.boards.list),
-      apiClient.get(apiEndpoints.departments.getAll),
       apiClient.get(apiEndpoints.academicYears.list),
     ]).then((r) => {
       if (r[0].status === "fulfilled")
@@ -641,23 +640,30 @@ function StaffMark({ say }) {
           toOptions(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"]),
         );
       if (r[1].status === "fulfilled")
-        setDepts(
-          toOptions(
-            r[1].value.data,
-            ["departmentId", "id", "Id"],
-            ["departmentName", "name", "Name"],
-          ),
-        );
-      if (r[2].status === "fulfilled")
         setYears(
           toOptions(
-            r[2].value.data,
+            r[1].value.data,
             ["academicYearId", "id", "Id"],
             ["academicYearName", "yearName", "name", "Name"],
           ),
         );
     });
   }, []);
+  useEffect(() => {
+    let active = true;
+    setDept("");
+    setRows([]);
+    // Department API accepts a string staff type; attendance APIs continue
+    // receiving their existing numeric 1/2 values.
+    apiClient.get(apiEndpoints.departments.getAll, {
+      params: { staffType: type === 1 ? "Teaching" : "Non-Teaching" },
+    }).then((response) => {
+      if (!active) return;
+      const options = toOptions(response.data, ["departmentId", "id", "Id"], ["departmentName", "name", "Name"]);
+      setDepts(options);
+    }).catch((error) => active && say(getApiErrorMessage(error)));
+    return () => { active = false; };
+  }, [type]);
   useEffect(() => {
     if (!board) return;
     let active = true;
@@ -912,7 +918,6 @@ function StaffReports({ say }) {
     Promise.allSettled([
       apiClient.get(apiEndpoints.boards.list),
       apiClient.get(apiEndpoints.academicYears.list),
-      apiClient.get(apiEndpoints.departments.getAll),
     ]).then((results) => {
       if (results[0].status === "fulfilled")
         setBoards(
@@ -926,16 +931,19 @@ function StaffReports({ say }) {
             ["academicYearName", "yearName", "name", "Name"],
           ),
         );
-      if (results[2].status === "fulfilled")
-        setDepartments(
-          toOptions(
-            results[2].value.data,
-            ["departmentId", "id", "Id"],
-            ["departmentName", "name", "Name"],
-          ),
-        );
     });
   }, []);
+  useEffect(() => {
+    let active = true;
+    setDepartmentId("");
+    setRows([]);
+    apiClient.get(apiEndpoints.departments.getAll, {
+      params: { staffType: staffType === 1 ? "Teaching" : "Non-Teaching" },
+    }).then((response) => {
+      if (active) setDepartments(toOptions(response.data, ["departmentId", "id", "Id"], ["departmentName", "name", "Name"]));
+    }).catch((error) => active && say(getApiErrorMessage(error)));
+    return () => { active = false; };
+  }, [staffType]);
   useEffect(() => {
     if (!board) return;
     let active = true;

@@ -903,49 +903,47 @@ export default function ResultProcessingPage() {
       <div className="results-page">
         {toast && <Toast message={toast} onClose={() => setToast("")} />}
 
-        <div className="cms-card">
-          <div className="cms-card-body">
-            <div className="results-view-tabs" role="tablist" aria-label="Results views">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={viewMode === "table"}
-                className={`results-view-tab ${viewMode === "table" ? "results-view-tab-active" : ""}`}
-                onClick={() => {
-                  setViewMode("table");
-                  setStudentId(null);
-                  setSelectedStudentMemo(null);
-                }}
-              >
-                Results
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={viewMode === "rankList"}
-                className={`results-view-tab ${viewMode === "rankList" ? "results-view-tab-active" : ""}`}
-                onClick={() => {
-                  setViewMode("rankList");
-                  setStudentId(null);
-                  setSelectedStudentMemo(null);
-                }}
-              >
-                Rank List
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={viewMode === "analytics"}
-                className={`results-view-tab ${viewMode === "analytics" ? "results-view-tab-active" : ""}`}
-                onClick={() => {
-                  setViewMode("analytics");
-                  setStudentId(null);
-                  setSelectedStudentMemo(null);
-                }}
-              >
-                Analytics
-              </button>
-            </div>
+        <div className="results-tabs-row">
+          <div className="results-view-tabs" role="tablist" aria-label="Results views">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === "table"}
+              className={`results-view-tab ${viewMode === "table" ? "results-view-tab-active" : ""}`}
+              onClick={() => {
+                setViewMode("table");
+                setStudentId(null);
+                setSelectedStudentMemo(null);
+              }}
+            >
+              Results
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === "rankList"}
+              className={`results-view-tab ${viewMode === "rankList" ? "results-view-tab-active" : ""}`}
+              onClick={() => {
+                setViewMode("rankList");
+                setStudentId(null);
+                setSelectedStudentMemo(null);
+              }}
+            >
+              Rank List
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === "analytics"}
+              className={`results-view-tab ${viewMode === "analytics" ? "results-view-tab-active" : ""}`}
+              onClick={() => {
+                setViewMode("analytics");
+                setStudentId(null);
+                setSelectedStudentMemo(null);
+              }}
+            >
+              Analytics
+            </button>
           </div>
         </div>
 

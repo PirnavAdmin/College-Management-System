@@ -1437,6 +1437,7 @@ export default function SectionManagementPage() {
                   className="cms-btn cms-btn-primary cms-sec-compact-btn"
                   onClick={openAdd}
                 >
+                  <Plus size={16} />
                   Add Section
                 </button>
               </div>

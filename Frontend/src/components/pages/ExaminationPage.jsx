@@ -1004,27 +1004,47 @@ export default function ExaminationPage() {
       }
       breadcrumb={tab === "schedule" ? ["Examinations", "Exam Schedule"] : ["Examinations"]}
     >
-      <div className="exam-tabs" role="tablist" aria-label="Examination modules">
-        <button
-          role="tab"
-          aria-selected={tab === "exams"}
-          className={tab === "exams" ? "active" : ""}
-          onClick={() => setTab("exams")}
-        >
-          Examinations
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "schedule"}
-          className={tab === "schedule" ? "active" : ""}
-          onClick={() => setTab("schedule")}
-        >
-          Exam Schedule
-        </button>
+      <div className="exam-tabs-row">
+        <div className="exam-tabs" role="tablist" aria-label="Examination modules">
+          <button
+            role="tab"
+            aria-selected={tab === "exams"}
+            className={tab === "exams" ? "active" : ""}
+            onClick={() => setTab("exams")}
+          >
+            Examinations
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "schedule"}
+            className={tab === "schedule" ? "active" : ""}
+            onClick={() => setTab("schedule")}
+          >
+            Exam Schedule
+          </button>
+        </div>
+        {tab === "exams" && (
+          <button
+            className="cms-btn cms-btn-primary exam-header-create-btn"
+            onClick={() =>
+              nav("/dashboard/examinations/add", {
+                state: {
+                  initialExamFilters: {
+                    boardId: filters.boardId,
+                    yearId: filters.yearId,
+                    levelId: filters.levelId,
+                  },
+                },
+              })
+            }
+          >
+            <Plus size={16} /> Create Examination
+          </button>
+        )}
       </div>
       {tab === "exams" ? (
         <>
-          <div className="cms-card">
+          <div className="cms-card exam-list-card">
             <div className="exam-table-toolbar">
               <div className="exam-search">
                 <input
@@ -1066,22 +1086,6 @@ export default function ExaminationPage() {
               <div className="exam-toolbar-actions">
                 <button className="cms-btn cms-btn-ghost exam-export-btn" onClick={printSchedule}>
                   <Printer size={15} /> Export
-                </button>
-                <button
-                  className="cms-btn cms-btn-primary"
-                  onClick={() =>
-                    nav("/dashboard/examinations/add", {
-                      state: {
-                        initialExamFilters: {
-                          boardId: filters.boardId,
-                          yearId: filters.yearId,
-                          levelId: filters.levelId,
-                        },
-                      },
-                    })
-                  }
-                >
-                  <Plus size={16} /> Create Examination
                 </button>
               </div>
             </div>
@@ -1314,7 +1318,7 @@ export default function ExaminationPage() {
       ) : (
         <>
           <button
-            className="cms-btn cms-btn-ghost exam-back-btn"
+            className="exam-back-text-link exam-schedule-back-link"
             onClick={() => {
               setTab("exams");
               setEditing(null);

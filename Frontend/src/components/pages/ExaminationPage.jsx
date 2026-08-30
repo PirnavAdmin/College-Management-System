@@ -65,6 +65,18 @@ const normalizeMaster = (item, idKeys, nameKeys) => ({
   status: item?.status ?? (item?.isActive === false ? "Inactive" : "Active"),
 });
 const isActiveMaster = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status));
+const isExplicitlyInactive = (item) =>
+  [item?.isActive, item?.status].some((value) =>
+    [false, 0, "false", "0", "inactive", "disabled"].includes(
+      typeof value === "string" ? value.trim().toLowerCase() : value,
+    ),
+  );
+const isExplicitlyNonTeaching = (item) =>
+  [item?.staffType, item?.facultyType].some((value) =>
+    ["non-teaching", "non teaching", "nonteaching", "administrative", "admin", "support staff"].includes(
+      String(value ?? "").trim().toLowerCase(),
+    ),
+  );
 const normalizeDateInput = (value) => (value ? String(value).slice(0, 10) : "");
 const normalizeTimeInput = (value) => (value ? String(value).slice(0, 5) : "");
 const normalizeText = (value) =>
@@ -644,7 +656,13 @@ export default function ExaminationPage() {
       const normalized = collectionFrom(response.data)
         .map((item) => normalizeExamination(item, catalogs.patterns, catalogs.types))
         .filter((item) => Number(item.id) > 0);
-      setExams(normalized);
+      setExams((current) =>
+        normalized.map((item) =>
+          String(item.code || "").trim()
+            ? item
+            : { ...item, code: current.find((exam) => String(exam.id) === String(item.id))?.code ?? "" },
+        ),
+      );
       return normalized;
     } catch (error) {
       setToast(apiError(error));
@@ -745,7 +763,10 @@ export default function ExaminationPage() {
       if (contextResult.status === "fulfilled") {
         const context = objectFrom(contextResult.value.data);
         const requiredCapacity = Number(
-          context?.requiredCapacity ?? context?.totalEligibleStudents,
+          context?.requiredHallCapacity ??
+            context?.requiredRoomCapacity ??
+            context?.requiredCapacity ??
+            context?.totalEligibleStudents,
         );
         if (context && Number.isFinite(requiredCapacity) && requiredCapacity >= 0) {
           setSchedulingContext({
@@ -832,8 +853,7 @@ export default function ExaminationPage() {
               (item) =>
                 Number(item.id) > 0 &&
                 item.isAvailable !== false &&
-                (!schedulingContext?.requiredCapacity ||
-                  Number(item.capacity) >= schedulingContext.requiredCapacity),
+                Number(item.capacity) >= schedulingContext.requiredCapacity,
             ),
         );
       } else {
@@ -851,7 +871,8 @@ export default function ExaminationPage() {
               designation: item.designation ?? "",
               facultyType: item.facultyType ?? "",
               staffType: item.staffType ?? item.facultyType ?? "",
-              isActive: isActiveMaster(item),
+              isActive: !isExplicitlyInactive(item),
+              isTeaching: !isExplicitlyNonTeaching(item),
               isAvailable: item.isAvailable,
             }))
             .filter(
@@ -859,9 +880,7 @@ export default function ExaminationPage() {
                 Number(item.id) > 0 &&
                 item.isAvailable !== false &&
                 item.isActive &&
-                ["teaching", "teaching staff"].includes(
-                  String(item.staffType).trim().toLowerCase(),
-                ) &&
+                item.isTeaching &&
                 all.findIndex(
                   (candidate) =>
                     String(candidate.employeeId || candidate.id) ===
@@ -1521,7 +1540,6 @@ export default function ExaminationPage() {
           onSave={async (period) => {
             const updated = { ...editingExam, ...period };
             await apiClient.put(EXAM_API.byId(editingExam.id), {
-              examCode: updated.code,
               examName: updated.name,
               boardId: Number(updated.boardId),
               academicYearId: Number(updated.yearId),
@@ -1957,12 +1975,13 @@ function ExamForm({
         ...(form.groupProgramId ? { groupProgramId: Number(form.groupProgramId) } : {}),
         ...(existing?.rowVersion != null ? { rowVersion: existing.rowVersion } : {}),
       };
-      if (existing?.code) payload.examCode = existing.code;
       const response = existing
         ? await apiClient.put(EXAM_API.byId(existing.id), payload)
         : await apiClient.post(EXAM_API.list, payload);
       const returned = objectFrom(response.data);
       let record = returned ? normalizeExamination(returned, EXAM_PATTERNS, EXAM_TYPES) : null;
+      if (existing && record && !String(record.code || "").trim())
+        record = { ...record, code: existing.code };
       const createdId = existing?.id ?? record?.id ?? returned?.examId;
       if (!Number.isInteger(Number(createdId)) || Number(createdId) <= 0)
         throw new Error("The Examination API did not return a valid created Examination ID.");
@@ -1971,6 +1990,8 @@ function ExamForm({
         const detailPayload = objectFrom(detailResponse.data);
         if (!detailPayload) throw new Error("The created Examination detail response was invalid.");
         record = normalizeExamination(detailPayload, EXAM_PATTERNS, EXAM_TYPES);
+        if (existing && !String(record.code || "").trim())
+          record = { ...record, code: existing.code };
       }
       if (!String(record?.code || "").trim())
         throw new Error(

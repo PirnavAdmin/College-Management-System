@@ -20,7 +20,7 @@ const RESULT_API = {
   programsByGroup: apiEndpoints.groups.programs,
   examinations: apiEndpoints.examinations.getAll,
   generate: "/api/v1/results/generate",
-  process: apiEndpoints.results.process,
+  readiness: "/api/v1/results/readiness",
   sectionDetail: (sectionId) => `/api/v1/results/sections/${sectionId}`,
   publishGroup: "/api/v1/results/publish-group",
   studentMemo: (studentId) => `/api/v1/results/student/${studentId}/memo`,
@@ -115,17 +115,24 @@ const normalizeStatus = (value) => {
 const numberOrZero = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
 const validPercentage = (value) =>
   Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100;
+const validNonNegativeNumber = (value) => Number.isFinite(Number(value)) && Number(value) >= 0;
 const normalizeSectionSummary = (section) => {
-  const studentCount = Number(section.count ?? section.studentsCount ?? section.students ?? 0);
-  const passed = Number(section.passed ?? 0);
-  const failed = Number(section.failed ?? 0);
+  const studentCount = Number(
+    section.studentCount ??
+      section.count ??
+      section.studentsCount ??
+      section.students ??
+      section.totalStudents ??
+      0,
+  );
+  const passed = Number(section.passed ?? section.passedCount ?? 0);
+  const failed = Number(section.failed ?? section.failedCount ?? 0);
   const passRate = Number(section.passRate ?? section.passPercentage ?? 0);
   const average = Number(section.average ?? section.averagePercentage ?? 0);
-  const validationStatus =
-    String(section.validationStatus ?? "")
-      .trim()
-      .toUpperCase() || "UNKNOWN";
-  const resultStatus = normalizeStatus(section.resultStatus ?? section.status);
+  const averageIsPercentage = section.average == null && section.averagePercentage != null;
+  const validationStatus = String(section.validationStatus ?? "").trim().toUpperCase();
+  const rawResultStatus = String(section.resultStatus ?? section.status ?? "").trim();
+  const resultStatus = rawResultStatus ? normalizeStatus(rawResultStatus) : "";
   return {
     ...section,
     sectionId: Number(section.sectionId ?? section.id),
@@ -141,21 +148,42 @@ const normalizeSectionSummary = (section) => {
       [studentCount, passed, failed].every((value) => Number.isInteger(value) && value >= 0) &&
       passed + failed <= studentCount &&
       validPercentage(passRate) &&
-      validPercentage(average) &&
+      (averageIsPercentage ? validPercentage(average) : validNonNegativeNumber(average)) &&
       !["NOT_GENERATED", "FAILED", "STALE", "UNKNOWN"].includes(resultStatus) &&
-      ["VALID", "VALIDATED"].includes(validationStatus),
+      section.isValid !== false &&
+      (!validationStatus || ["VALID", "VALIDATED"].includes(validationStatus)),
   };
+};
+const generatedSectionsFrom = (data) => {
+  const candidates = [
+    data,
+    data?.data,
+    data?.result,
+    data?.sections,
+    data?.sectionSummaries,
+    data?.data?.sections,
+    data?.data?.sectionSummaries,
+    data?.result?.sections,
+    data?.result?.sectionSummaries,
+  ];
+  return candidates.find(Array.isArray) ?? [];
 };
 const normalizeReadiness = (item) => ({
   examinationId: Number(item?.examinationId ?? item?.examId),
+  examinationName: item?.examinationName ?? item?.examName ?? "",
   boardId: Number(item?.boardId) || null,
   academicYearId: Number(item?.academicYearId) || null,
   academicLevelId: Number(item?.academicLevelId) || null,
-  groupId: Number(item?.groupId),
-  programId: Number(item?.programId),
+  groupId: Number(item?.groupId) || null,
+  programId: Number(item?.programId) || null,
   examinationStatus: String(item?.examinationStatus ?? item?.examStatus ?? "")
     .trim()
     .toUpperCase(),
+  isExamCompleted:
+    item?.isExamCompleted === true ||
+    String(item?.examinationStatus ?? item?.examStatus ?? "").trim().toUpperCase() === "COMPLETED",
+  totalEligibleStudents: numberOrZero(item?.totalEligibleStudents),
+  activeStudentCount: numberOrZero(item?.activeStudentCount ?? item?.totalEligibleStudents),
   expectedSectionCount: numberOrZero(item?.expectedSectionCount),
   generatedSectionCount: numberOrZero(item?.generatedSectionCount),
   validSectionCount: numberOrZero(item?.validSectionCount),
@@ -167,12 +195,20 @@ const normalizeReadiness = (item) => ({
   submittedEvaluationCount: numberOrZero(item?.submittedEvaluationCount ?? item?.submittedCount),
   verifiedEvaluationCount: numberOrZero(item?.verifiedEvaluationCount ?? item?.verifiedCount),
   rejectedEvaluationCount: numberOrZero(item?.rejectedEvaluationCount ?? item?.rejectedCount),
-  allRequiredEvaluationsApproved: item?.allRequiredEvaluationsApproved === true,
-  allExpectedSectionsGenerated: item?.allExpectedSectionsGenerated === true,
-  allExpectedSectionsValid: item?.allExpectedSectionsValid === true,
-  readyForGeneration: item?.readyForGeneration === true,
-  readyForGroupPublication: item?.readyForGroupPublication === true,
-  publicationStatus: normalizeStatus(item?.publicationStatus ?? item?.resultStatus),
+  allRequiredEvaluationsApproved:
+    item?.allRequiredEvaluationsApproved === true || item?.allEvaluationsApproved === true,
+  allExpectedSectionsGenerated:
+    item?.allExpectedSectionsGenerated == null ? null : item.allExpectedSectionsGenerated === true,
+  allExpectedSectionsValid:
+    item?.allExpectedSectionsValid == null ? null : item.allExpectedSectionsValid === true,
+  readyForGeneration: item?.readyForGeneration === true || item?.canGenerateResults === true,
+  readyForGroupPublication:
+    item?.readyForGroupPublication == null ? null : item.readyForGroupPublication === true,
+  validationBlockers: Array.isArray(item?.validationBlockers) ? item.validationBlockers : [],
+  publicationStatus:
+    item?.publicationStatus == null && item?.resultStatus == null
+      ? null
+      : normalizeStatus(item?.publicationStatus ?? item?.resultStatus),
   resultBatchId: Number(item?.resultBatchId) || null,
   rowVersion: item?.rowVersion ?? null,
   sections: collectionFrom(item?.sections)
@@ -182,7 +218,9 @@ const normalizeReadiness = (item) => ({
 const canGenerate = (item) =>
   Boolean(
     item &&
-    item.examinationStatus === "COMPLETED" &&
+    Number.isInteger(item.examinationId) &&
+    item.examinationId > 0 &&
+    item.isExamCompleted &&
     item.expectedSectionCount > 0 &&
     item.requiredEvaluationCount > 0 &&
     item.approvedEvaluationCount === item.requiredEvaluationCount &&
@@ -195,23 +233,24 @@ const canGenerate = (item) =>
     ].every((key) => item[key] === 0) &&
     item.allRequiredEvaluationsApproved &&
     item.readyForGeneration &&
-    ["NOT_GENERATED", "FAILED", "STALE"].includes(item.publicationStatus),
+    item.validationBlockers.length === 0 &&
+    item.publicationStatus !== "PUBLISHED",
   );
-const canPublishGroup = (item) =>
+const canPublishGroup = (item, generatedSections = item?.sections ?? []) =>
   Boolean(
     item &&
+    item.isExamCompleted &&
     item.expectedSectionCount > 0 &&
-    item.generatedSectionCount === item.expectedSectionCount &&
-    item.validSectionCount === item.expectedSectionCount &&
-    item.allExpectedSectionsGenerated &&
-    item.allExpectedSectionsValid &&
-    item.readyForGroupPublication &&
-    item.examinationStatus === "COMPLETED" &&
     item.requiredEvaluationCount > 0 &&
     item.approvedEvaluationCount === item.requiredEvaluationCount &&
     item.allRequiredEvaluationsApproved &&
-    item.sections.length === item.expectedSectionCount &&
-    item.sections.every((section) => section.isValid) &&
+    item.validationBlockers.length === 0 &&
+    item.allExpectedSectionsGenerated !== false &&
+    item.allExpectedSectionsValid !== false &&
+    item.readyForGroupPublication !== false &&
+    generatedSections.length === item.expectedSectionCount &&
+    new Set(generatedSections.map((section) => section.sectionId)).size === generatedSections.length &&
+    generatedSections.every((section) => section.isValid) &&
     item.publicationStatus !== "PUBLISHED",
   );
 
@@ -432,7 +471,7 @@ export default function ResultProcessingPage() {
   const loadReadiness = async (context, quiet = false) => {
     const seq = ++requests.current.readiness;
     try {
-      const res = await apiClient.get(RESULT_API.process, { params: contextParams(context) });
+      const res = await apiClient.get(RESULT_API.readiness, { params: contextParams(context) });
       if (seq !== requests.current.readiness) return null;
       const root = objectFrom(res.data);
       const source = objectFrom(root?.readiness) ?? root;
@@ -443,23 +482,23 @@ export default function ResultProcessingPage() {
         (next.boardId == null || next.boardId === Number(context.board)) &&
         (next.academicYearId == null || next.academicYearId === Number(context.year)) &&
         (next.academicLevelId == null || next.academicLevelId === Number(context.level)) &&
-        next.groupId === Number(context.group) &&
-        next.programId === Number(context.program);
+        (next.groupId == null || next.groupId === Number(context.group)) &&
+        (next.programId == null || next.programId === Number(context.program));
       if (!matches)
         throw new Error("Result readiness did not match the selected academic context.");
       const uniqueSections = new Set(next.sections.map((section) => String(section.sectionId)));
-      if (
-        uniqueSections.size !== next.sections.length ||
-        next.sections.some((section) => !section.isValid)
-      )
+      const readinessSectionsValid =
+        uniqueSections.size === next.sections.length &&
+        next.sections.every((section) => section.isValid);
+      if (!readinessSectionsValid)
         next.readyForGroupPublication = false;
       setReadiness(next);
-      setSectionSummaries(next.sections);
+      if (next.sections.length && readinessSectionsValid) setSectionSummaries(next.sections);
       return next;
     } catch (err) {
       if (seq === requests.current.readiness) {
         setReadiness(null);
-        setSectionSummaries([]);
+        if (!quiet) setSectionSummaries([]);
         if (!quiet) showToast(apiError(err), "error");
       }
       return null;
@@ -548,16 +587,23 @@ export default function ResultProcessingPage() {
       if (latest.rowVersion != null) payload.rowVersion = latest.rowVersion;
       const res = await apiClient.post(RESULT_API.generate, payload);
       if (seq !== requests.current.generate) return;
+      const generatedSections = generatedSectionsFrom(res.data).map(normalizeSectionSummary);
+      const generatedSectionIds = generatedSections.map((section) => section.sectionId);
+      if (
+        !generatedSections.length ||
+        generatedSections.some((section) => !section.isValid) ||
+        new Set(generatedSectionIds).size !== generatedSectionIds.length
+      )
+        throw new Error(
+          "The Results API did not return valid unique generated Section summaries.",
+        );
       setApplied({ ...filters });
       setViewMode("table");
       setSectionId(null);
       setStudentId(null);
       setPage(1);
-      const refreshed = await loadReadiness(filters, true);
-      if (!refreshed) {
-        const root = objectFrom(res.data);
-        setSectionSummaries(collectionFrom(root?.sections ?? res.data));
-      }
+      setSectionSummaries(generatedSections);
+      await loadReadiness(filters, true);
       showToast("Results generated successfully.");
     } catch (err) {
       if (seq === requests.current.generate) {
@@ -578,7 +624,7 @@ export default function ResultProcessingPage() {
     setLoadingSectionId(secId);
     try {
       const res = await apiClient.get(RESULT_API.sectionDetail(secId), {
-        params: contextParams(applied),
+        params: { ...contextParams(applied), examId: Number(applied.exam) },
       });
       if (seq !== requests.current.section) return;
       const details = objectFrom(res.data);
@@ -592,8 +638,8 @@ export default function ResultProcessingPage() {
           Number(details.academicYearId) === Number(applied.year)) &&
         (details.academicLevelId == null ||
           Number(details.academicLevelId) === Number(applied.level)) &&
-        Number(details.groupId) === Number(applied.group) &&
-        Number(details.programId) === Number(applied.program);
+        (details.groupId == null || Number(details.groupId) === Number(applied.group)) &&
+        (details.programId == null || Number(details.programId) === Number(applied.program));
       if (!contextMatches)
         throw new Error("Section results did not match the selected academic context.");
       const detailRows = collectionFrom(details.students ?? details.studentRows);
@@ -630,13 +676,8 @@ export default function ResultProcessingPage() {
         group: rankFilters.group,
         program: rankFilters.program,
       };
-      const res = await apiClient.get(RESULT_API.studentMemo(sId), {
-        params: {
-          examinationId: Number(memoContext.exam),
-          groupId: Number(memoContext.group),
-          programId: Number(memoContext.program),
-          sectionId: Number(student?.sectionId) || undefined,
-        },
+      const res = await apiClient.post(RESULT_API.studentMemo(sId), null, {
+        params: { examId: Number(memoContext.exam) },
       });
       if (seq !== requests.current.memo) return;
       const memo = objectFrom(res.data);
@@ -645,7 +686,10 @@ export default function ResultProcessingPage() {
         !memo ||
         Number(memo.studentId ?? sId) !== Number(sId) ||
         memoExamId !== Number(memoContext.exam) ||
-        normalizeStatus(memo.publicationStatus ?? memo.resultStatus ?? memo.status) !== "PUBLISHED"
+        !(
+          memo.isPublished === true ||
+          normalizeStatus(memo.resultStatus ?? memo.status ?? memo.publicationStatus) === "PUBLISHED"
+        )
       ) {
         throw new Error(
           "Only a published memo matching the selected result context can be opened.",
@@ -668,20 +712,19 @@ export default function ResultProcessingPage() {
       setRankList([]);
       return;
     }
+    const expectedGroupId = Number(rankFilters.group || applied.group);
+    const expectedProgramId = Number(rankFilters.program || applied.program);
+    const expectedExamId = Number(rankFilters.exam || applied.exam);
     try {
       const res = await apiClient.get(RESULT_API.rankList, {
         params: {
           boardId: applied?.board ? Number(applied.board) : undefined,
           academicYearId: applied?.year ? Number(applied.year) : undefined,
           academicLevelId: applied?.level ? Number(applied.level) : undefined,
-          groupId: rankFilters.group ? Number(rankFilters.group) : undefined,
-          programId: rankFilters.program ? Number(rankFilters.program) : Number(applied.program),
+          groupId: expectedGroupId,
+          programId: expectedProgramId,
           sectionId: rankFilters.section ? Number(rankFilters.section) : undefined,
-          examId: rankFilters.exam
-            ? Number(rankFilters.exam)
-            : applied?.exam
-              ? Number(applied.exam)
-              : undefined,
+          examId: expectedExamId,
           search: rankSearch.trim() || undefined,
         },
       });
@@ -690,15 +733,19 @@ export default function ResultProcessingPage() {
         const returnedExamId = item.examinationId ?? item.examId;
         const returnedGroupId = item.groupId;
         const returnedProgramId = item.programId;
-        const publicationStatus = normalizeStatus(
-          item.publicationStatus ?? item.resultStatus ?? item.status,
-        );
+        const explicitlyUnpublished =
+          item.isPublished === false ||
+          ["UNPUBLISHED", "NOT_PUBLISHED"].includes(
+            String(item.publicationStatus ?? item.resultStatus ?? item.status ?? "")
+              .trim()
+              .toUpperCase(),
+          );
         return (
           Number(item.studentId) > 0 &&
-          publicationStatus === "PUBLISHED" &&
-          (returnedExamId == null || Number(returnedExamId) === Number(applied.exam)) &&
-          (returnedGroupId == null || Number(returnedGroupId) === Number(applied.group)) &&
-          (returnedProgramId == null || Number(returnedProgramId) === Number(applied.program))
+          !explicitlyUnpublished &&
+          (returnedExamId == null || Number(returnedExamId) === expectedExamId) &&
+          (returnedGroupId == null || Number(returnedGroupId) === expectedGroupId) &&
+          (returnedProgramId == null || Number(returnedProgramId) === expectedProgramId)
         );
       });
       setRankList([
@@ -770,9 +817,7 @@ export default function ResultProcessingPage() {
     setFailedStudents([]);
     setFailedStudentsState("loading");
     try {
-      const res = await apiClient.get(RESULT_API.failedStudents, {
-        params: contextParams(applied),
-      });
+      const res = await apiClient.get(RESULT_API.failedStudents);
       if (seq !== requests.current.failed) return;
       setFailedStudents(collectionFrom(res.data));
       setFailedStudentsState("success");
@@ -787,12 +832,12 @@ export default function ResultProcessingPage() {
   const currentExam = examinations.find((i) => String(i.id) === String(applied?.exam));
 
   const publishGroup = () => {
-    if (!canPublishGroup(readiness))
+    if (!canPublishGroup(readiness, sectionSummaries))
       return showToast(
         "Every expected Section must be generated and valid before Group publication.",
         "error",
       );
-    setConfirm({ type: "group", generated: readiness.sections });
+    setConfirm({ type: "group", generated: sectionSummaries });
   };
 
   const confirmPublish = async () => {
@@ -802,7 +847,7 @@ export default function ResultProcessingPage() {
       if (confirm.type === "section")
         throw new Error("Partial Section publication is not permitted.");
       const latest = await loadReadiness(applied, true);
-      if (!canPublishGroup(latest))
+      if (!canPublishGroup(latest, sectionSummaries))
         throw new Error(
           "Result readiness changed. Every expected Section must be generated and valid.",
         );
@@ -817,6 +862,9 @@ export default function ResultProcessingPage() {
       showToast("Group results published successfully.");
       setConfirm(null);
       await loadReadiness(applied, true);
+      setReadiness((current) =>
+        current ? { ...current, publicationStatus: "PUBLISHED" } : current,
+      );
       await Promise.all([loadRankList(), loadAnalytics()]);
     } catch (err) {
       showToast(apiError(err), "error");
@@ -1066,7 +1114,7 @@ export default function ResultProcessingPage() {
               onView={(id) => loadSectionDetails(id)}
               loadingSectionId={loadingSectionId}
               onGroup={publishGroup}
-              groupPublishReady={canPublishGroup(readiness)}
+              groupPublishReady={canPublishGroup(readiness, sectionSummaries)}
               onExcel={() =>
                 exportExcel(
                   sectionSummaries.flatMap((s) => s.studentRows || []),

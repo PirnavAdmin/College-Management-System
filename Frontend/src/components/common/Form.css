@@ -1,21 +1,24 @@
 .cms-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 16px;
+  gap: clamp(10px, 1vw, 14px) clamp(10px, 1.1vw, 16px);
 }
 .cms-form-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.cms-field { display: flex; flex-direction: column; gap: 6px; }
+.cms-field { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .cms-field.full { grid-column: 1 / -1; }
-.cms-field label { font-size: 12.5px; font-weight: 600; color: var(--cms-text); }
+.cms-field label { font-size: clamp(11.5px, .78vw, 12.5px); font-weight: 600; color: var(--cms-text); }
 .cms-field label .req { color: var(--cms-red); }
 .cms-field input,
 .cms-field select,
 .cms-field textarea {
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 38px;
   border: 1px solid var(--cms-border);
   border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 13.5px;
+  padding: clamp(7px, .55vw, 9px) clamp(9px, .75vw, 12px);
+  font-size: clamp(12px, .82vw, 13.5px);
   font-family: inherit;
   background: var(--cms-surface);
   color: var(--cms-text);
@@ -37,8 +40,8 @@
 .cms-check input { width: 16px; height: 16px; }
 .cms-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(4, minmax(min(180px, 100%), 1fr));
+  gap: clamp(8px, .8vw, 12px);
 }
 .cms-password { position: relative; display: block; }
 .cms-password input { width: 100%; padding-right: 40px; }
@@ -58,7 +61,7 @@
   border-radius: 8px;
 }
 .cms-eye-btn:hover { color: var(--cms-primary); background: var(--cms-primary-soft); }
-.cms-form-page { max-width: 960px; }
+.cms-form-page { width: 100%; max-width: 100%; min-width: 0; }
 .cms-back-link {
   display: inline-flex;
   align-items: center;

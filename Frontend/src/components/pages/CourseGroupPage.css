@@ -39,7 +39,7 @@
   box-shadow: 0 0 0 3px var(--cms-primary-soft);
 }
 
-.group-management .cms-toolbar-right > .cms-btn:first-of-type {
+.group-management .cms-toolbar-right .cms-export-control {
   margin-left: auto;
 }
 

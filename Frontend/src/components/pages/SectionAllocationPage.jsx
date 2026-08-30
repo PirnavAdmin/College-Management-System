@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./StudentManagementPage.css";
 const list = (d) => {
   if (Array.isArray(d)) return d;
@@ -251,6 +251,13 @@ export default function SectionAllocationPage() {
       ),
     [students, ctx],
   );
+  const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
+    years.filter((year) => {
+      const boardId = year.boardId ?? year.BoardId;
+      return !ctx.board || boardId == null || String(boardId) === String(ctx.board);
+    }),
+    (year) => year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName,
+  ), [ctx.board, years]);
   const update = (k, v) =>
     setCtx((c) => ({
       ...c,
@@ -371,7 +378,7 @@ export default function SectionAllocationPage() {
         <div className="cms-card-body student-management-filters">
           {[
             ["Board", "board", boards, "boardId", "boardName"],
-            ["Academic Year", "year", years, "academicYearId", "academicYearName"],
+            ["Academic Year", "year", academicYearOptions, "academicYearId", "academicYearName"],
             ["Academic Level", "level", levels, "academicLevelId", "levelName"],
             ["Group", "group", groups, "groupId", "groupName"],
             ["Programme", "program", programs, "programId", "programName"],

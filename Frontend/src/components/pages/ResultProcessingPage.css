@@ -419,3 +419,15 @@
   .results-action-btn svg { width: 13px; height: 13px; stroke-width: 2.2; }
   .results-section-table td { white-space: nowrap; }
 }
+.results-breadcrumb-title {
+  display: none;
+}
+
+.cms-breadcrumb .results-layout-title,
+.cms-breadcrumb .results-breadcrumb-title {
+  display: inline;
+}
+
+.cms-breadcrumb .results-heading-title {
+  display: none;
+}

@@ -434,7 +434,7 @@ function List({ records, context, assign, loading, loadSubjects }) {
     <DashboardLayout
       title="Subject Management"
       subtitle="Manage subjects assigned to groups and academic levels."
-      breadcrumb={["Academic Management"]}
+      breadcrumb={["Academics"]}
     >
       <div className="subject-screen">
         <Table
@@ -565,7 +565,7 @@ function Assign({ records, context, cancel, save }) {
     <DashboardLayout
       title="Assign Subjects"
       subtitle="Assign reusable subjects and subject types to a group."
-      breadcrumb={["Academic Management", "Subject Management", "Assign Subjects"]}
+      breadcrumb={["Academics", "Subject Management", "Assign Subjects"]}
     >
       <div className="subject-screen">
         <section className="subject-table-card assign-card">

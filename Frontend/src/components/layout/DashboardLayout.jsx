@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
   GraduationCap, CalendarClock, ClipboardCheck, FileText, FileSpreadsheet, PenLine,
   Award, ArrowUpRight, Wallet, ScrollText, BarChart3, PanelLeft, Bell, Search, ChevronRight,
-  ChevronDown, Settings, User, LogOut, RefreshCw,
+  ChevronDown, Settings, User, LogOut,
 } from "lucide-react";
-import apiClient from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
 import { useSidebar } from "@/hooks/useSidebar.js";
 import pirnavCollegesLogo from "@/assets/pirnav-colleges-logo.png";
@@ -186,16 +184,12 @@ export default function DashboardLayout({
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
   const [attendanceOpen, setAttendanceOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [liveNotifications, setLiveNotifications] = useState([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(true);
-  const [notificationsAvailable, setNotificationsAvailable] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const actionsRef = useRef(null);
   const searchRef = useRef(null);
   const sidebarNavRef = useRef(null);
-  const notificationRequestRef = useRef(0);
   const savedScrollTopRef = useRef(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -209,53 +203,7 @@ export default function DashboardLayout({
   const profileName = user?.name && user.name !== user?.email ? user.name : "CMS Admin";
   const profileEmail = user?.email || "Admin@CMS.com";
   const profileRole = user?.role || "admin";
-  const pendingActionCount = liveNotifications.reduce((total, item) => total + item.count, 0);
-  const enabledNotificationSources = useMemo(
-    () => pendingActionSources.filter((source) => !excludeNotificationSources.includes(source.id)),
-    [excludeNotificationSources],
-  );
-
-  const loadPendingActions = useCallback(async () => {
-    const requestId = ++notificationRequestRef.current;
-    setNotificationsLoading(true);
-    const results = await Promise.allSettled(enabledNotificationSources.map((source) => apiClient.get(source.endpoint, {
-      skipGlobalLoader: true,
-      timeout: 10_000,
-    })));
-    if (requestId !== notificationRequestRef.current) return;
-
-    const nextNotifications = [];
-    let successfulSources = 0;
-    results.forEach((result, index) => {
-      if (result.status !== "fulfilled") return;
-      successfulSources += 1;
-      const source = enabledNotificationSources[index];
-      const count = source.count(result.value.data);
-      if (count > 0) {
-        nextNotifications.push({
-          ...source,
-          count,
-          title: `${count} pending ${source.label}${count === 1 ? "" : "s"}`,
-        });
-      }
-    });
-
-    setLiveNotifications(nextNotifications);
-    setNotificationsAvailable(successfulSources > 0);
-    setNotificationsLoading(false);
-  }, [enabledNotificationSources]);
-
-  useEffect(() => {
-    loadPendingActions();
-    const refresh = () => loadPendingActions();
-    const intervalId = window.setInterval(refresh, NOTIFICATION_REFRESH_INTERVAL);
-    window.addEventListener("focus", refresh);
-    return () => {
-      notificationRequestRef.current += 1;
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [loadPendingActions]);
+  const pendingActionCount = MOCK_NOTIFICATIONS.reduce((total, item) => total + item.count, 0);
 
   const rememberSidebarScroll = () => {
     const scrollTop = sidebarNavRef.current?.scrollTop || 0;
@@ -419,7 +367,7 @@ export default function DashboardLayout({
           </div>
           <div className="cms-top-actions" ref={actionsRef}>
             <ThemeToggle />
-            <button className="cms-icon-btn" aria-label={`${pendingActionCount} pending actions`} aria-expanded={notifOpen} onClick={() => { const opening = !notifOpen; setNotifOpen(opening); setProfileOpen(false); if (opening) loadPendingActions(); }}>
+            <button className="cms-icon-btn" aria-label={`${pendingActionCount} sample notifications`} aria-expanded={notifOpen} onClick={() => { setNotifOpen((open) => !open); setProfileOpen(false); }}>
               <Bell size={18} />{pendingActionCount > 0 ? <span className="cms-notification-badge">{pendingActionCount > 99 ? "99+" : pendingActionCount}</span> : null}
             </button>
             <button className="cms-profile-btn" onClick={() => { setProfileOpen((v) => !v); setNotifOpen(false); }}>
@@ -430,19 +378,15 @@ export default function DashboardLayout({
             {notifOpen ? (
               <div className="cms-dropdown cms-notifications-dropdown">
                 <div className="cms-dropdown-head cms-notifications-head">
-                  <div><strong>Pending Actions</strong><small>Live site activity</small></div>
-                  <button type="button" onClick={loadPendingActions} disabled={notificationsLoading} aria-label="Refresh pending actions"><RefreshCw size={15} className={notificationsLoading ? "is-spinning" : ""} /></button>
+                  <div><strong>Notifications</strong><small>Sample activity</small></div>
                 </div>
-                {liveNotifications.map((notification) => (
+                {MOCK_NOTIFICATIONS.map((notification) => (
                   <button key={notification.id} type="button" className="cms-notif-item" onClick={() => { setNotifOpen(false); goTo(notification.to); }}>
                     <span className="cms-notif-count">{notification.count}</span>
                     <span><p>{notification.title}</p><small>Open {notification.label}s</small></span>
                     <ChevronRight size={15} aria-hidden="true" />
                   </button>
                 ))}
-                {!notificationsLoading && notificationsAvailable && !liveNotifications.length ? <div className="cms-notifications-empty">No pending actions.</div> : null}
-                {!notificationsLoading && !notificationsAvailable ? <div className="cms-notifications-empty">Pending actions are currently unavailable.</div> : null}
-                {notificationsLoading && !liveNotifications.length ? <div className="cms-notifications-empty">Checking pending actions...</div> : null}
               </div>
             ) : null}
 

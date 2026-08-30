@@ -1448,6 +1448,12 @@ export default function AdmissionPage() {
     ));
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
   const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
+  const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
+    (masterOptions.years || []).filter((item) => (
+      !values.board || !item.boardId || String(item.boardId) === String(values.board)
+    )),
+    (item) => item.label,
+  ), [masterOptions.years, values.board]);
   const levelOptions = useMemo(() => {
     if (!values.board) return [];
     const levels = masterOptions.levels || [];
@@ -1470,7 +1476,7 @@ export default function AdmissionPage() {
     if (field.name === "dob") return { ...field, max: yesterdayISO() };
     if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
     if (field.name === "prevBoard" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
-    if (field.name === "year" && masterOptions.years?.length) return { ...field, options: masterOptions.years };
+    if (field.name === "year" && masterOptions.years?.length) return { ...field, options: academicYearOptions };
     if (field.name === "level") {
       if (!values.board) return { ...field, options: [], selectPlaceholder: "Select Board first", disabled: true };
       return {
@@ -2179,7 +2185,7 @@ export default function AdmissionPage() {
         ...v,
         [name]: sanitizeValue(field, val),
         ...(labelKey ? { [labelKey]: labelValue } : {}),
-        ...(name === "board" ? { level: "", levelName: "" } : {}),
+        ...(name === "board" ? { year: "", level: "", levelName: "" } : {}),
         group: "",
         groupName: "",
         program: "",
@@ -2574,7 +2580,7 @@ export default function AdmissionPage() {
               />
             </div>
             <div className="cms-admission-filters">
-              <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || [] }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "year", label: "Academic Year", type: "select", options: academicYearFilterOptions }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, program: name === "group" ? "" : current.program })); setPage(1); }} />
               <Field field={{ name: "program", label: "Program", type: "select", options: programFilterOptions }} value={filters.program} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />

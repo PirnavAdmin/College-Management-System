@@ -944,9 +944,14 @@ export default function ResultProcessingPage() {
 
   return (
     <DashboardLayout
-      title="Results Management"
+      title={(
+        <span className="results-layout-title">
+          <span className="results-heading-title">Results Management</span>
+          <span className="results-breadcrumb-title">Results</span>
+        </span>
+      )}
       subtitle="Generate, publish and analyze approved examination results"
-      breadcrumb={["Results"]}
+      breadcrumb={["Examinations"]}
     >
       <div className="results-page">
         {toast && <Toast message={toast} onClose={() => setToast("")} />}

@@ -1084,7 +1084,7 @@ export default function MarksEntryPage() {
     <DashboardLayout
       title="Marks Evaluation"
       subtitle="Review and approve faculty-submitted examination marks"
-      breadcrumb={["Marks Evaluation"]}
+      breadcrumb={["Examinations"]}
     >
       <div className="cms-marks-entry">
         {toast && <div className={`cms-toast-banner cms-toast-${toast.type}`}>{toast.msg}</div>}

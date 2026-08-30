@@ -4,7 +4,7 @@ import { ArrowLeft, Download, Eye, FilterX, Pencil, Plus, RefreshCcw, Search, Tr
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import apiClient from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import "./AssignmentsMaterialsPage.css";
@@ -430,7 +430,10 @@ export default function AssignmentsMaterialsPage() {
     let nextSubjects = [];
 
     if (academicYearsResult.status === "fulfilled") {
-      nextAcademicYears = getCollection(academicYearsResult.value.data).map(normalizeAcademicYear).filter(Boolean);
+      nextAcademicYears = uniqueAcademicYearsByName(
+        getCollection(academicYearsResult.value.data).map(normalizeAcademicYear).filter(Boolean),
+        (item) => item.label,
+      );
       setAcademicYearOptions(nextAcademicYears);
     } else {
       setAcademicYearOptions([]);

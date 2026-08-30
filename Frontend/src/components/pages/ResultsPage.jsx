@@ -2,29 +2,28 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { CheckCircle2, Eye } from "lucide-react";
+import { Eye } from "lucide-react";
 import "./ResultProcessingPage.css";
 
 const PAGE_SIZE = 5;
 const SUBJECT_PAGE_SIZE = 6;
 
 const RESULT_API = {
-  boards: "/api/v1/boards",
-  academicYears: "/api/v1/academic-years/active",
-  academicLevels: "/api/v1/boards/academic-levels",
-  groupsByBoard: (boardId) => `/api/v1/groups/board/${boardId}`,
-  programsByGroup: (groupId) => `/api/v1/groups/${groupId}/programs`,
-  examinations: "/api/v1/examinations",
+  boards: apiEndpoints.boards.list,
+  academicYears: apiEndpoints.academicYears.active,
+  academicLevels: apiEndpoints.boards.academicLevels,
+  groupsByBoard: apiEndpoints.groups.getByBoard,
+  programsByGroup: apiEndpoints.groups.programs,
+  examinations: apiEndpoints.examinations.getAll,
   generate: "/api/v1/results/generate",
-  process: "/api/v1/results/process",
+  process: apiEndpoints.results.process,
   sectionDetail: (sectionId) => `/api/v1/results/sections/${sectionId}`,
-  publishSection: (sectionId) => `/api/v1/results/sections/${sectionId}/publish`,
   publishGroup: "/api/v1/results/publish-group",
   studentMemo: (studentId) => `/api/v1/results/student/${studentId}/memo`,
-  studentDetailsFallback: (studentId) => `/api/v1/student-analysis/${studentId}/details`,
   rankList: "/api/v1/results/rank-list",
   analytics: "/api/v1/results/analytics",
   failedStudents: "/api/v1/results/failed-students",
@@ -76,11 +75,13 @@ const normalizeLevel = (item) => ({
 });
 const normalizeGroup = (item) => ({
   id: Number(item.groupId ?? item.id),
+  boardId: Number(item.boardId) || null,
   name: item.groupName ?? item.name ?? "",
   code: item.groupCode ?? item.code ?? "",
 });
 const normalizeProgram = (item) => ({
   id: Number(item.programId ?? item.id),
+  groupId: Number(item.groupId) || null,
   groupProgramId: Number(item.groupProgramId) || null,
   name: item.programName ?? item.name ?? "",
   code: item.programCode ?? item.code ?? "",
@@ -112,8 +113,44 @@ const normalizeStatus = (value) => {
     : "UNKNOWN";
 };
 const numberOrZero = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
+const validPercentage = (value) =>
+  Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100;
+const normalizeSectionSummary = (section) => {
+  const studentCount = Number(section.count ?? section.studentsCount ?? section.students ?? 0);
+  const passed = Number(section.passed ?? 0);
+  const failed = Number(section.failed ?? 0);
+  const passRate = Number(section.passRate ?? section.passPercentage ?? 0);
+  const average = Number(section.average ?? section.averagePercentage ?? 0);
+  const validationStatus =
+    String(section.validationStatus ?? "")
+      .trim()
+      .toUpperCase() || "UNKNOWN";
+  const resultStatus = normalizeStatus(section.resultStatus ?? section.status);
+  return {
+    ...section,
+    sectionId: Number(section.sectionId ?? section.id),
+    studentCount,
+    passed,
+    failed,
+    passRate,
+    average,
+    resultStatus,
+    validationStatus,
+    isValid:
+      Number(section.sectionId ?? section.id) > 0 &&
+      [studentCount, passed, failed].every((value) => Number.isInteger(value) && value >= 0) &&
+      passed + failed <= studentCount &&
+      validPercentage(passRate) &&
+      validPercentage(average) &&
+      !["NOT_GENERATED", "FAILED", "STALE", "UNKNOWN"].includes(resultStatus) &&
+      ["VALID", "VALIDATED"].includes(validationStatus),
+  };
+};
 const normalizeReadiness = (item) => ({
   examinationId: Number(item?.examinationId ?? item?.examId),
+  boardId: Number(item?.boardId) || null,
+  academicYearId: Number(item?.academicYearId) || null,
+  academicLevelId: Number(item?.academicLevelId) || null,
   groupId: Number(item?.groupId),
   programId: Number(item?.programId),
   examinationStatus: String(item?.examinationStatus ?? item?.examStatus ?? "")
@@ -139,15 +176,7 @@ const normalizeReadiness = (item) => ({
   resultBatchId: Number(item?.resultBatchId) || null,
   rowVersion: item?.rowVersion ?? null,
   sections: collectionFrom(item?.sections)
-    .map((section) => ({
-      ...section,
-      sectionId: Number(section.sectionId ?? section.id),
-      resultStatus: normalizeStatus(section.resultStatus ?? section.status),
-      validationStatus:
-        String(section.validationStatus ?? "")
-          .trim()
-          .toUpperCase() || "UNKNOWN",
-    }))
+    .map(normalizeSectionSummary)
     .filter((section) => section.sectionId > 0),
 });
 const canGenerate = (item) =>
@@ -166,7 +195,7 @@ const canGenerate = (item) =>
     ].every((key) => item[key] === 0) &&
     item.allRequiredEvaluationsApproved &&
     item.readyForGeneration &&
-    item.publicationStatus !== "PUBLISHED",
+    ["NOT_GENERATED", "FAILED", "STALE"].includes(item.publicationStatus),
   );
 const canPublishGroup = (item) =>
   Boolean(
@@ -177,6 +206,12 @@ const canPublishGroup = (item) =>
     item.allExpectedSectionsGenerated &&
     item.allExpectedSectionsValid &&
     item.readyForGroupPublication &&
+    item.examinationStatus === "COMPLETED" &&
+    item.requiredEvaluationCount > 0 &&
+    item.approvedEvaluationCount === item.requiredEvaluationCount &&
+    item.allRequiredEvaluationsApproved &&
+    item.sections.length === item.expectedSectionCount &&
+    item.sections.every((section) => section.isValid) &&
     item.publicationStatus !== "PUBLISHED",
   );
 
@@ -212,6 +247,8 @@ export default function ResultProcessingPage() {
 
   // Analytics & Modals
   const [analytics, setAnalytics] = useState(null);
+  const [failedStudents, setFailedStudents] = useState([]);
+  const [failedStudentsState, setFailedStudentsState] = useState("idle");
   const [confirm, setConfirm] = useState(null);
   const [analyticsDetail, setAnalyticsDetail] = useState(null);
   const [toast, setToast] = useState("");
@@ -231,6 +268,7 @@ export default function ResultProcessingPage() {
     memo: 0,
     rank: 0,
     analytics: 0,
+    failed: 0,
     sectionAction: 0,
     groupPublish: 0,
   });
@@ -292,6 +330,12 @@ export default function ResultProcessingPage() {
     setSelectedStudentMemo(null);
     setQuery("");
     setPage(1);
+    setRankList([]);
+    setAnalytics(null);
+    setFailedStudents([]);
+    setFailedStudentsState("idle");
+    setAnalyticsDetail(null);
+    setConfirm(null);
   };
 
   const loadGroups = async (boardId) => {
@@ -356,22 +400,23 @@ export default function ResultProcessingPage() {
         },
       });
       if (seq !== requests.current.exams) return;
-      setExaminations(
-        collectionFrom(res.data)
-          .map(normalizeExam)
-          .filter(
-            (i) =>
-              i.id > 0 &&
-              i.status === "COMPLETED" &&
-              (!i.boardId || i.boardId === Number(context.board)) &&
-              (!i.academicYearId || i.academicYearId === Number(context.year)) &&
-              (!i.academicLevelId || i.academicLevelId === Number(context.level)) &&
-              i.groupId === Number(context.group) &&
-              i.programId === Number(context.program),
-          ),
-      );
+      const next = collectionFrom(res.data)
+        .map(normalizeExam)
+        .filter(
+          (i) =>
+            i.id > 0 &&
+            i.status === "COMPLETED" &&
+            i.boardId === Number(context.board) &&
+            i.academicYearId === Number(context.year) &&
+            i.academicLevelId === Number(context.level) &&
+            i.groupId === Number(context.group) &&
+            i.programId === Number(context.program),
+        );
+      setExaminations(next);
+      return next;
     } catch (err) {
       if (seq === requests.current.exams) showToast(apiError(err), "error");
+      return null;
     }
   };
 
@@ -395,10 +440,19 @@ export default function ResultProcessingPage() {
       const matches =
         next &&
         next.examinationId === Number(context.exam) &&
+        (next.boardId == null || next.boardId === Number(context.board)) &&
+        (next.academicYearId == null || next.academicYearId === Number(context.year)) &&
+        (next.academicLevelId == null || next.academicLevelId === Number(context.level)) &&
         next.groupId === Number(context.group) &&
         next.programId === Number(context.program);
       if (!matches)
         throw new Error("Result readiness did not match the selected academic context.");
+      const uniqueSections = new Set(next.sections.map((section) => String(section.sectionId)));
+      if (
+        uniqueSections.size !== next.sections.length ||
+        next.sections.some((section) => !section.isValid)
+      )
+        next.readyForGroupPublication = false;
       setReadiness(next);
       setSectionSummaries(next.sections);
       return next;
@@ -413,8 +467,22 @@ export default function ResultProcessingPage() {
   };
 
   const changeFilter = (key, value) => {
+    Object.keys(requests.current).forEach((requestKey) => {
+      requests.current[requestKey] += 1;
+    });
     const next = { ...filters, [key]: value };
-    if (key === "board") Object.assign(next, { group: "", program: "", exam: "" });
+    if (key === "board") {
+      const selectedYear = academicYears.find((item) => String(item.id) === String(next.year));
+      Object.assign(next, {
+        year:
+          selectedYear && (selectedYear.boardId == null || selectedYear.boardId === Number(value))
+            ? next.year
+            : "",
+        group: "",
+        program: "",
+        exam: "",
+      });
+    }
     if (key === "year" || key === "level") next.exam = "";
     if (key === "group") Object.assign(next, { program: "", exam: "" });
     if (key === "program") next.exam = "";
@@ -435,11 +503,34 @@ export default function ResultProcessingPage() {
 
   const generateResults = async () => {
     if (generatingResults) return;
-    if (!Object.values(filters).every(Boolean))
+    if (
+      !Object.values(filters).every((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+    )
       return showToast("Select all required result filters.", "error");
+    const selectedYear = academicYears.find((item) => item.id === Number(filters.year));
+    const selectedGroup = groups.find((item) => item.id === Number(filters.group));
+    const selectedProgram = programs.find((item) => item.id === Number(filters.program));
+    if (
+      !boards.some((item) => item.id === Number(filters.board)) ||
+      !academicLevels.some((item) => item.id === Number(filters.level)) ||
+      !selectedYear ||
+      (selectedYear.boardId != null && selectedYear.boardId !== Number(filters.board)) ||
+      !selectedGroup ||
+      (selectedGroup.boardId != null && selectedGroup.boardId !== Number(filters.board)) ||
+      !selectedProgram ||
+      (selectedProgram.groupId != null && selectedProgram.groupId !== Number(filters.group))
+    )
+      return showToast("The selected result context is no longer valid.", "error");
     const seq = ++requests.current.generate;
     setGeneratingResults(true);
     try {
+      const latestExams = await loadExaminations(filters);
+      const latestExam = latestExams?.find((item) => item.id === Number(filters.exam));
+      if (!latestExam || latestExam.status !== "COMPLETED") {
+        setFilters((current) => ({ ...current, exam: "" }));
+        clearResults();
+        throw new Error("The selected Examination is no longer COMPLETED for this context.");
+      }
       const latest = await loadReadiness(filters, true);
       if (seq !== requests.current.generate) return;
       if (!canGenerate(latest)) {
@@ -496,10 +587,25 @@ export default function ResultProcessingPage() {
         details &&
         returnedSectionId === Number(secId) &&
         Number(details.examinationId ?? details.examId) === Number(applied.exam) &&
+        (details.boardId == null || Number(details.boardId) === Number(applied.board)) &&
+        (details.academicYearId == null ||
+          Number(details.academicYearId) === Number(applied.year)) &&
+        (details.academicLevelId == null ||
+          Number(details.academicLevelId) === Number(applied.level)) &&
         Number(details.groupId) === Number(applied.group) &&
         Number(details.programId) === Number(applied.program);
       if (!contextMatches)
         throw new Error("Section results did not match the selected academic context.");
+      const detailRows = collectionFrom(details.students ?? details.studentRows);
+      const studentIds = detailRows.map((item) => Number(item.studentId ?? item.id));
+      if (
+        studentIds.some((id) => !Number.isInteger(id) || id <= 0) ||
+        new Set(studentIds.map(String)).size !== studentIds.length ||
+        detailRows.some(
+          (item) => item.sectionId != null && Number(item.sectionId) !== Number(secId),
+        )
+      )
+        throw new Error("Section results contained invalid or mismatched student rows.");
       setSelectedSectionDetails(details);
     } catch (err) {
       if (seq === requests.current.section) {
@@ -580,7 +686,27 @@ export default function ResultProcessingPage() {
         },
       });
       if (seq !== requests.current.rank) return;
-      setRankList(collectionFrom(res.data));
+      const rows = collectionFrom(res.data).filter((item) => {
+        const returnedExamId = item.examinationId ?? item.examId;
+        const returnedGroupId = item.groupId;
+        const returnedProgramId = item.programId;
+        const publicationStatus = normalizeStatus(
+          item.publicationStatus ?? item.resultStatus ?? item.status,
+        );
+        return (
+          Number(item.studentId) > 0 &&
+          publicationStatus === "PUBLISHED" &&
+          (returnedExamId == null || Number(returnedExamId) === Number(applied.exam)) &&
+          (returnedGroupId == null || Number(returnedGroupId) === Number(applied.group)) &&
+          (returnedProgramId == null || Number(returnedProgramId) === Number(applied.program))
+        );
+      });
+      setRankList([
+        ...new Map(
+          rows.map((item) => [`${item.examinationId ?? item.examId}:${item.studentId}`, item]),
+        ).values(),
+      ]);
+      setRankPage(1);
     } catch (err) {
       if (seq === requests.current.rank) showToast(apiError(err), "error");
     }
@@ -604,7 +730,24 @@ export default function ResultProcessingPage() {
         },
       });
       if (seq !== requests.current.analytics) return;
-      setAnalytics(res.data?.data ?? res.data);
+      const next = res.data?.data ?? res.data;
+      const subjectRows = collectionFrom(next?.subjectPerformance);
+      const subjectIds = subjectRows.map((item) => Number(item.subjectId));
+      const contextMismatch =
+        (next?.examinationId != null && Number(next.examinationId) !== Number(applied.exam)) ||
+        (next?.groupId != null && Number(next.groupId) !== Number(applied.group)) ||
+        (next?.programId != null && Number(next.programId) !== Number(applied.program));
+      const total = Number(next?.totalStudents ?? next?.total ?? 0);
+      const passed = Number(next?.passed ?? 0);
+      const failed = Number(next?.failed ?? 0);
+      if (
+        contextMismatch ||
+        [total, passed, failed].some((value) => !Number.isInteger(value) || value < 0) ||
+        passed + failed > total ||
+        new Set(subjectIds.map(String)).size !== subjectIds.length
+      )
+        throw new Error("Analytics did not match the selected result context.");
+      setAnalytics(next);
     } catch (err) {
       if (seq === requests.current.analytics) showToast(apiError(err), "error");
     }
@@ -615,14 +758,33 @@ export default function ResultProcessingPage() {
     if (viewMode === "analytics") loadAnalytics();
   }, [viewMode, rankFilters, rankSearch]);
 
-  const currentExam = examinations.find((i) => String(i.id) === String(applied?.exam));
-
-  const publishSection = (summary) => {
-    showToast(
-      "Section publication is disabled because it could expose a partial result set. Use Group publication after every Section is valid.",
-      "error",
-    );
+  const openFailedStudents = async () => {
+    setAnalyticsDetail("failed");
+    const embedded = analytics?.failedStudents;
+    if (Array.isArray(embedded)) {
+      setFailedStudents(embedded);
+      setFailedStudentsState("success");
+      return;
+    }
+    const seq = ++requests.current.failed;
+    setFailedStudents([]);
+    setFailedStudentsState("loading");
+    try {
+      const res = await apiClient.get(RESULT_API.failedStudents, {
+        params: contextParams(applied),
+      });
+      if (seq !== requests.current.failed) return;
+      setFailedStudents(collectionFrom(res.data));
+      setFailedStudentsState("success");
+    } catch (err) {
+      if (seq === requests.current.failed) {
+        setFailedStudentsState("error");
+        showToast(apiError(err), "error");
+      }
+    }
   };
+
+  const currentExam = examinations.find((i) => String(i.id) === String(applied?.exam));
 
   const publishGroup = () => {
     if (!canPublishGroup(readiness))
@@ -679,6 +841,9 @@ export default function ResultProcessingPage() {
   // Rank List Pagination
   const rankPages = Math.max(1, Math.ceil(rankList.length / PAGE_SIZE));
   const pagedRanks = rankList.slice((rankPage - 1) * PAGE_SIZE, rankPage * PAGE_SIZE);
+  useEffect(() => {
+    if (rankPage > rankPages) setRankPage(rankPages);
+  }, [rankPage, rankPages]);
 
   // Exports
   const exportRows = (rows) =>
@@ -686,23 +851,30 @@ export default function ResultProcessingPage() {
       Roll: item.rollNo || item.rollNumber,
       Student: item.studentName,
       Section: item.sectionName || item.section,
-      Total: item.total || item.totalMarks,
-      Maximum: item.maximum || item.maxMarks,
-      Percentage: Number(item.percentage || 0).toFixed(2),
+      Total: item.total ?? item.totalMarks ?? "—",
+      Maximum: item.maximum ?? item.maxMarks ?? "—",
+      Percentage: item.percentage == null ? "—" : Number(item.percentage).toFixed(2),
       Grade: item.grade,
       Result: item.result,
-      "Section Rank": item.sectionRank || item.rank || "—",
-      Status: item.status || item.resultStatus,
+      "Section Rank": item.sectionRank ?? item.rank ?? "—",
+      Status: item.status ?? item.resultStatus ?? "—",
     }));
 
+  const safeFileName = (value) =>
+    String(value ?? "Results")
+      .replace(/[\\/:*?"<>|]/g, "")
+      .trim() || "Results";
+
   const exportExcel = (rows, filename) => {
+    if (!rows.length) return showToast("No result records are available to export.", "error");
     const sheet = XLSX.utils.json_to_sheet(exportRows(rows));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Results");
-    XLSX.writeFile(book, `${filename}.xlsx`);
+    XLSX.writeFile(book, `${safeFileName(filename)}.xlsx`);
   };
 
   const exportPdf = (rows, filename) => {
+    if (!rows.length) return showToast("No result records are available to export.", "error");
     const doc = new jsPDF({ orientation: "landscape" });
     doc.text(filename, 14, 14);
     const data = exportRows(rows);
@@ -712,7 +884,7 @@ export default function ResultProcessingPage() {
       body: data.map((item) => headers.map((key) => item[key])),
       startY: 20,
     });
-    doc.save(`${filename}.pdf`);
+    doc.save(`${safeFileName(filename)}.pdf`);
   };
 
   const renderSelectOptions = (items) =>
@@ -794,8 +966,11 @@ export default function ResultProcessingPage() {
                   onChange={(v) => changeFilter("year", v)}
                 >
                   {renderSelectOptions(
-                    academicYears.filter(
-                      (i) => i.boardId == null || Number(i.boardId) === Number(filters.board),
+                    uniqueAcademicYearsByName(
+                      academicYears.filter(
+                        (i) => i.boardId == null || Number(i.boardId) === Number(filters.board),
+                      ),
+                      (item) => item.name,
                     ),
                   )}
                 </Select>
@@ -892,7 +1067,6 @@ export default function ResultProcessingPage() {
               setQuery={setQuery}
               onView={(id) => loadSectionDetails(id)}
               loadingSectionId={loadingSectionId}
-              onPublish={publishSection}
               onGroup={publishGroup}
               groupPublishReady={canPublishGroup(readiness)}
               onExcel={() =>
@@ -947,7 +1121,7 @@ export default function ResultProcessingPage() {
         )}
 
         {viewMode === "analytics" && !selectedStudentMemo && (
-          <Analytics data={analytics} onOpen={() => setAnalyticsDetail("failed")} />
+          <Analytics data={analytics} onOpen={openFailedStudents} />
         )}
 
         {confirm && (
@@ -962,7 +1136,8 @@ export default function ResultProcessingPage() {
 
         {analyticsDetail === "failed" && (
           <AnalyticsModal
-            rows={analytics?.failedStudents || []}
+            rows={failedStudents}
+            state={failedStudentsState}
             onClose={() => setAnalyticsDetail(null)}
           />
         )}
@@ -996,7 +1171,6 @@ function Sections({
   setQuery,
   onView,
   loadingSectionId,
-  onPublish,
   onGroup,
   groupPublishReady,
   onExcel,
@@ -1084,16 +1258,6 @@ function Sections({
                           >
                             <Eye size={15} />
                           </button>
-                          {status === "GENERATED" && (
-                            <button
-                              className="results-action-btn"
-                              title="Publish Section Results"
-                              aria-label="Publish Section Results"
-                              onClick={() => onPublish(item)}
-                            >
-                              <CheckCircle2 size={15} />
-                            </button>
-                          )}
                         </div>
                       </td>
                     </tr>
@@ -1448,14 +1612,16 @@ function RankList({
             {rows.length ? (
               rows.map((item, idx) => (
                 <tr key={`${item.examId || item.examinationId}-${item.studentId}-${idx}`}>
-                  <td className="cms-font-semibold">#{item.rank || idx + 1}</td>
+                  <td className="cms-font-semibold">#{item.rank ?? idx + 1}</td>
                   <td>{item.rollNo || item.rollNumber}</td>
                   <td>{item.studentName || item.student}</td>
                   <td>{item.groupName || item.group}</td>
                   <td>{item.programName || item.program}</td>
                   <td>{item.sectionName || item.section}</td>
                   <td className="cms-text-center">{item.total ?? item.totalMarks}</td>
-                  <td className="cms-text-center">{Number(item.percentage || 0).toFixed(2)}%</td>
+                  <td className="cms-text-center">
+                    {item.percentage == null ? "—" : `${Number(item.percentage).toFixed(2)}%`}
+                  </td>
                   <td className="cms-text-center">{item.grade}</td>
                   <td className="cms-text-center">{item.result}</td>
                   <td className="cms-text-center">
@@ -1490,16 +1656,25 @@ function RankList({
 
 function Analytics({ data, onOpen }) {
   const [subjectPage, setSubjectPage] = useState(1);
+  useEffect(() => setSubjectPage(1), [data]);
   const cards = [
     ["TOTAL STUDENTS", data?.totalStudents ?? data?.total ?? 0, "total"],
     ["PASSED", data?.passed ?? 0, "passed"],
     ["FAILED", data?.failed ?? 0, "failed"],
     [
       "AVERAGE %",
-      `${Number(data?.averagePercentage ?? data?.average ?? 0).toFixed(2)}%`,
+      data?.averagePercentage == null && data?.average == null
+        ? "—"
+        : `${Number(data?.averagePercentage ?? data?.average).toFixed(2)}%`,
       "average",
     ],
-    ["PASS %", `${Number(data?.passPercentage ?? data?.pass ?? 0).toFixed(2)}%`, "pass"],
+    [
+      "PASS %",
+      data?.passPercentage == null && data?.pass == null
+        ? "—"
+        : `${Number(data?.passPercentage ?? data?.pass).toFixed(2)}%`,
+      "pass",
+    ],
   ];
   const subjectPerformance = data?.subjectPerformance ?? [];
   const subjectPages = Math.max(1, Math.ceil(subjectPerformance.length / SUBJECT_PAGE_SIZE));
@@ -1552,11 +1727,15 @@ function Analytics({ data, onOpen }) {
                     <tr key={sub.subjectId}>
                       <td>{sub.subjectName}</td>
                       <td className="cms-text-center">{sub.students}</td>
-                      <td className="cms-text-center">{Number(sub.average || 0).toFixed(2)}%</td>
+                      <td className="cms-text-center">
+                        {sub.average == null ? "—" : `${Number(sub.average).toFixed(2)}%`}
+                      </td>
                       <td className="cms-text-center">{sub.highest}</td>
                       <td className="cms-text-center">{sub.lowest}</td>
                       <td className="cms-text-center">
-                        {Number(sub.passPercentage || 0).toFixed(2)}%
+                        {sub.passPercentage == null
+                          ? "—"
+                          : `${Number(sub.passPercentage).toFixed(2)}%`}
                       </td>
                     </tr>
                   ))
@@ -1579,7 +1758,7 @@ function Analytics({ data, onOpen }) {
   );
 }
 
-function AnalyticsModal({ rows, onClose }) {
+function AnalyticsModal({ rows, state, onClose }) {
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -1597,7 +1776,11 @@ function AnalyticsModal({ rows, onClose }) {
           </button>
         </div>
         <div className="cms-modal-body">
-          {rows.length === 0 ? (
+          {state === "loading" ? (
+            <p className="results-analytics-empty">Loading failed students...</p>
+          ) : state === "error" ? (
+            <p className="results-analytics-empty">Failed-student data could not be loaded.</p>
+          ) : rows.length === 0 ? (
             <p className="results-analytics-empty">
               All students are passed. No failed students found.
             </p>
@@ -1619,7 +1802,7 @@ function AnalyticsModal({ rows, onClose }) {
                         <td>{item.studentName}</td>
                         <td>{item.sectionName || item.section}</td>
                         <td className="cms-text-center">
-                          {Number(item.percentage || 0).toFixed(2)}%
+                          {item.percentage == null ? "—" : `${Number(item.percentage).toFixed(2)}%`}
                         </td>
                         <td className="cms-text-center">{item.result || "FAIL"}</td>
                       </tr>
@@ -1711,7 +1894,7 @@ function Pagination({ page, pages, setPage }) {
 
 function Badge({ value }) {
   const val = normalizeStatus(value);
-  const cls = val === "PUBLISHED" ? "results-status-published" : "results-status-generated";
+  const cls = `results-status-${val.toLowerCase().replaceAll("_", "-")}`;
   return <span className={`results-status ${cls}`}>{val}</span>;
 }
 

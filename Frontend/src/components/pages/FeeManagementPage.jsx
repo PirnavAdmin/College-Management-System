@@ -27,7 +27,7 @@ import {
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import {
   COLLEGE_NAME,
   PAYMENT_METHODS,
@@ -275,6 +275,8 @@ const normalizeTransactionRows = (rows, account) => rows.map((item, index) => ({
 }));
 
 const normalizeInstallmentRows = (rows, account) => rows.map((item, index) => ({
+  id: read(item, "feeInstallmentId", "FeeInstallmentId", "installmentId", "InstallmentId", "id", "Id"),
+  feeInstallmentId: read(item, "feeInstallmentId", "FeeInstallmentId", "installmentId", "InstallmentId", "id", "Id"),
   no: Number(read(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "no", "No") || index + 1),
   amount: numberValue(item, "amount", "Amount", "installmentAmount", "InstallmentAmount", "payableAmount", "PayableAmount"),
   paid: numberValue(item, "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid"),
@@ -555,17 +557,22 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
     if (!assignmentId) return setError("Student fee assignment ID is required to collect payment");
     const assignmentIdValue = Number(assignmentId);
     if (!Number.isFinite(assignmentIdValue) || assignmentIdValue <= 0) return setError("Student fee assignment ID must be a valid number");
+    const studentIdValue = Number(account.studentId || 0);
+    if (!Number.isFinite(studentIdValue) || studentIdValue <= 0) return setError("Student ID is required to collect payment");
+    const installment = target === "full" ? null : pending.find((item) => String(item.no) === target);
     setSaving(true);
     try {
       const response = await apiClient.post(apiEndpoints.fee.collect, {
-        studentFeeAssignmentId: assignmentIdValue,
+        studentId: studentIdValue,
+        studentFeeId: assignmentIdValue,
+        feeInstallmentId: installment?.feeInstallmentId || installment?.installmentId || installment?.id || null,
         amount: netAmount,
+        paymentDate: date ? new Date(date).toISOString() : null,
         paymentMode: method,
-        paymentDate: date,
-        transactionNumber: reference,
         discount: discountValue,
         fine: fineValue,
-        remarks: note,
+        transactionReference: reference,
+        note,
       });
       const saved = getObject(response.data);
       setSaving(false);
@@ -833,7 +840,7 @@ function StudentFeeDrawer({ account, onClose, onCollect, onReceipt }) {
 }
 
 /* ----------------------------- Student ledger ---------------------------- */
-function LedgerTab({ accounts, onView, onPrint, masters }) {
+function LedgerTab({ accounts, onView, onPrint, masters, loading = false, error = "" }) {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ academicYear: "", group: "", section: "", paymentPlan: "", feeStatus: "" });
   const [page, setPage] = useState(1);
@@ -905,7 +912,11 @@ function LedgerTab({ accounts, onView, onPrint, masters }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan={11} className="cms-fee-empty-row">Loading fee accounts...</td></tr>
+            ) : error ? (
+              <tr><td colSpan={11} className="cms-fee-empty-row">Unable to load fee accounts: {error}</td></tr>
+            ) : rows.length === 0 ? (
               <tr><td colSpan={11} className="cms-fee-empty-row">No students match the current search and filters.</td></tr>
             ) : paginatedRows.map((item) => (
               <tr key={item.id}>
@@ -939,7 +950,7 @@ function LedgerTab({ accounts, onView, onPrint, masters }) {
   );
 }
 
-function FeeCollectionTab({ accounts, onCollect }) {
+function FeeCollectionTab({ accounts, onCollect, loading = false, error = "" }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const setSearchTerm = (value) => {
@@ -980,7 +991,11 @@ function FeeCollectionTab({ accounts, onCollect }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan={9} className="cms-fee-empty-row">Loading fee accounts...</td></tr>
+            ) : error ? (
+              <tr><td colSpan={9} className="cms-fee-empty-row">Unable to load fee accounts: {error}</td></tr>
+            ) : rows.length === 0 ? (
               <tr><td colSpan={9} className="cms-fee-empty-row">No fee accounts match the current search and filters.</td></tr>
             ) : paginatedRows.map((item) => (
               <tr key={item.id}>
@@ -1044,6 +1059,25 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     ))
   ), [masters.groups, values.academicYearId, values.boardId]);
 
+  const resolveAcademicLevelId = async () => {
+    const selectedGroup = masters.groups.find((group) => String(group.value) === String(values.groupId));
+    const localLevelId = Number(selectedGroup?.academicLevelId || values.academicLevelId || 0);
+    if (localLevelId > 0) return localLevelId;
+    if (!values.groupId) return 0;
+    try {
+      const response = await apiClient.get(apiEndpoints.groups.getById(values.groupId));
+      const group = groupOption(getObject(response.data));
+      const fetchedLevelId = Number(group?.academicLevelId || 0);
+      if (fetchedLevelId > 0) {
+        setValues((current) => ({ ...current, academicLevelId: String(fetchedLevelId) }));
+        return fetchedLevelId;
+      }
+    } catch {
+      return 0;
+    }
+    return 0;
+  };
+
   useEffect(() => {
     const groupId = values.groupId;
     const requestId = programRequestRef.current + 1;
@@ -1094,6 +1128,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
       ...current,
       groupId,
       group: group?.label || "",
+      academicLevelId: group?.academicLevelId || current.academicLevelId || "",
       programId: "",
       program: "",
       feeItems: feeItemsForContext(current.feeItems),
@@ -1136,26 +1171,111 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     });
   };
 
-  const buildStructurePayload = () => {
-    const backendCompatibilitySectionId = Number(masters.sections.find((section) => section.groupId === values.groupId)?.value || masters.sections[0]?.value || 0);
-    const backendCompatibilityAcademicLevelId = Number(masters.levels[0]?.value || 0);
+  const buildStructureItemPayload = (item, structurePayload = {}) => {
+    const feeTypeId = Number(item.feeTypeId || item.id || 0);
+    const amount = Number(item.originalAmount || 0);
+    const dueDate = new Date().toISOString();
     return {
-      boardId: Number(values.boardId || values.board || 0),
-      academicYearId: Number(values.academicYearId || values.academicYear || 0),
-      // TODO: Remove academicLevelId compatibility fallback when the backend supports year/group/program fee structures.
-      academicLevelId: backendCompatibilityAcademicLevelId,
-      groupId: Number(values.groupId || values.group || 0),
-      ...(Number(values.programId) ? { programId: Number(values.programId) } : {}),
-      // TODO: Remove sectionId compatibility fallback when the backend supports section-independent fee structures.
-      sectionId: backendCompatibilitySectionId,
+      feeStructureId: structurePayload.feeStructureId,
+      FeeStructureId: structurePayload.feeStructureId,
+      p_FeeStructureId: structurePayload.feeStructureId,
+      boardId: structurePayload.boardId,
+      BoardId: structurePayload.boardId,
+      p_BoardId: structurePayload.p_BoardId,
+      academicYearId: structurePayload.academicYearId,
+      AcademicYearId: structurePayload.academicYearId,
+      p_AcademicYearId: structurePayload.p_AcademicYearId,
+      academicLevelId: structurePayload.academicLevelId,
+      AcademicLevelId: structurePayload.academicLevelId,
+      p_AcademicLevelId: structurePayload.p_AcademicLevelId,
+      groupId: structurePayload.groupId,
+      GroupId: structurePayload.groupId,
+      p_GroupId: structurePayload.p_GroupId,
+      ...(structurePayload.programId ? {
+        programId: structurePayload.programId,
+        ProgramId: structurePayload.programId,
+        p_ProgramId: structurePayload.p_ProgramId,
+      } : {}),
+      sectionId: structurePayload.sectionId,
+      SectionId: structurePayload.sectionId,
+      p_SectionId: structurePayload.p_SectionId,
+      feeTypeId,
+      FeeTypeId: feeTypeId,
+      p_FeeTypeId: feeTypeId,
+      amount,
+      Amount: amount,
+      p_Amount: amount,
+      isMandatory: Boolean(item.required),
+      IsMandatory: Boolean(item.required),
+      p_IsMandatory: Boolean(item.required),
+      dueDate,
+      DueDate: dueDate,
+      p_DueDate: dueDate,
     };
   };
 
-  const buildStructureItemPayload = (item) => ({
-    feeTypeId: Number(item.feeTypeId || item.id || 0),
-    amount: Number(item.originalAmount || 0),
-    isMandatory: Boolean(item.required),
-    dueDate: new Date().toISOString(),
+  const buildStructurePayload = (items = [], resolvedAcademicLevelId = 0) => {
+    const selectedGroup = masters.groups.find((group) => String(group.value) === String(values.groupId));
+    const backendCompatibilitySectionId = Number(masters.sections.find((section) => section.groupId === values.groupId)?.value || masters.sections[0]?.value || 0);
+    const backendCompatibilityAcademicLevelId = Number(resolvedAcademicLevelId || selectedGroup?.academicLevelId || values.academicLevelId || 0);
+    const programId = Number(values.programId || 0);
+    const payload = {
+      boardId: Number(values.boardId || values.board || 0),
+      BoardId: Number(values.boardId || values.board || 0),
+      p_BoardId: Number(values.boardId || values.board || 0),
+      academicYearId: Number(values.academicYearId || values.academicYear || 0),
+      AcademicYearId: Number(values.academicYearId || values.academicYear || 0),
+      p_AcademicYearId: Number(values.academicYearId || values.academicYear || 0),
+      // TODO: Remove academicLevelId compatibility fallback when the backend supports year/group/program fee structures.
+      academicLevelId: backendCompatibilityAcademicLevelId,
+      AcademicLevelId: backendCompatibilityAcademicLevelId,
+      p_AcademicLevelId: backendCompatibilityAcademicLevelId,
+      groupId: Number(values.groupId || values.group || 0),
+      GroupId: Number(values.groupId || values.group || 0),
+      p_GroupId: Number(values.groupId || values.group || 0),
+      ...(programId ? { programId, ProgramId: programId, p_ProgramId: programId } : {}),
+      // TODO: Remove sectionId compatibility fallback when the backend supports section-independent fee structures.
+      sectionId: backendCompatibilitySectionId,
+      SectionId: backendCompatibilitySectionId,
+      p_SectionId: backendCompatibilitySectionId,
+    };
+    const structureItems = items.map((item) => buildStructureItemPayload(item, payload));
+    const feeTypeIds = structureItems.map((item) => item.feeTypeId).filter(Boolean);
+    return {
+      ...payload,
+      feeTypeIds,
+      FeeTypeIds: feeTypeIds,
+      p_FeeTypeIds: feeTypeIds,
+      feeTypes: structureItems,
+      FeeTypes: structureItems,
+      feeItems: structureItems,
+      FeeItems: structureItems,
+      items: structureItems,
+      Items: structureItems,
+    };
+  };
+
+  const buildStructureParams = (payload) => ({
+    p_BoardId: payload.p_BoardId,
+    p_AcademicYearId: payload.p_AcademicYearId,
+    p_AcademicLevelId: payload.p_AcademicLevelId,
+    p_GroupId: payload.p_GroupId,
+    ...(payload.p_ProgramId ? { p_ProgramId: payload.p_ProgramId } : {}),
+    p_SectionId: payload.p_SectionId,
+  });
+
+  const buildStructureItemParams = (payload) => ({
+    p_FeeStructureId: payload.p_FeeStructureId,
+    p_BoardId: payload.p_BoardId,
+    p_AcademicYearId: payload.p_AcademicYearId,
+    p_AcademicLevelId: payload.p_AcademicLevelId,
+    p_GroupId: payload.p_GroupId,
+    ...(payload.p_ProgramId ? { p_ProgramId: payload.p_ProgramId } : {}),
+    p_SectionId: payload.p_SectionId,
+    p_FeeTypeId: payload.p_FeeTypeId,
+    p_Amount: payload.p_Amount,
+    p_IsMandatory: payload.p_IsMandatory,
+    p_DueDate: payload.p_DueDate,
   });
 
   const save = async () => {
@@ -1165,6 +1285,8 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     if (!values.programId) return setError("Program is required");
     if (!selectedItems.length) return setError("Select at least one fee type for this structure");
     if (values.feeItems.some((item) => Number(item.originalAmount || 0) < 0)) return setError("Fee amount cannot be negative");
+    const academicLevelId = await resolveAcademicLevelId();
+    if (!academicLevelId) return setError("Academic Level is missing for the selected Group. Please update the Group with an Academic Level before creating a fee structure.");
     const canUseFeeStructureApi = hasBackendFeeTypeIds(feeTypes);
     if (!canUseFeeStructureApi) return setError("Fee structures require saved backend fee types. Please save fee types successfully before creating a structure.");
     if (selectedItems.some((item) => !Number(item.feeTypeId || item.id))) return setError("Only saved backend fee types can be used for API fee structures.");
@@ -1178,17 +1300,25 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     if (duplicate) return setError("A fee structure already exists for the selected Academic Year, Group and Program.");
     setSaving(true);
     try {
-      const structurePayload = buildStructurePayload();
+      const structurePayload = buildStructurePayload(selectedItems, academicLevelId);
+      const structureConfig = { params: buildStructureParams(structurePayload) };
       const structureResponse = initial?.id
-        ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload)
-        : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload);
+        ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload, structureConfig)
+        : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload, structureConfig);
       const feeStructureId = initial?.id || read(getObject(structureResponse.data), "feeStructureId", "FeeStructureId", "id", "Id");
       if (!feeStructureId) throw new Error("Fee structure saved, but the structure ID was not returned.");
-      await Promise.all(selectedItems.map((item) => (
-        item.structureItemId
-          ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), buildStructureItemPayload(item))
-          : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), buildStructureItemPayload(item))
-      )));
+      const itemContext = { ...structurePayload, feeStructureId: Number(feeStructureId), FeeStructureId: Number(feeStructureId), p_FeeStructureId: Number(feeStructureId) };
+      const existingItemsResponse = await apiClient.get(apiEndpoints.fee.getStructureItems(feeStructureId)).catch(() => null);
+      const existingItems = existingItemsResponse ? getCollection(existingItemsResponse.data) : [];
+      if (initial?.id || !existingItems.length) {
+        await Promise.all(selectedItems.map((item) => {
+          const itemPayload = buildStructureItemPayload(item, itemContext);
+          const itemConfig = { params: buildStructureItemParams(itemPayload) };
+          return item.structureItemId
+            ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), itemPayload, itemConfig)
+            : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), itemPayload, itemConfig);
+        }));
+      }
       onSaved(initial?.id ? "Fee structure updated" : "Fee structure added", true);
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -1804,7 +1934,7 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
 }
 
 /* ---------------------------- Payment history ---------------------------- */
-function HistoryTab({ accounts, onReceipt }) {
+function HistoryTab({ accounts, onReceipt, loading = false, error = "" }) {
   const [search, setSearch] = useState("");
   const [loadingReceiptId, setLoadingReceiptId] = useState("");
   const [page, setPage] = useState(1);
@@ -1869,7 +1999,11 @@ function HistoryTab({ accounts, onReceipt }) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan={11} className="cms-fee-empty-row">Loading payment history...</td></tr>
+            ) : error ? (
+              <tr><td colSpan={11} className="cms-fee-empty-row">Unable to load payment history: {error}</td></tr>
+            ) : rows.length === 0 ? (
               <tr><td colSpan={11} className="cms-fee-empty-row">No payments match the current search and filters.</td></tr>
             ) : paginatedRows.map((row) => (
               <tr key={row.id}>
@@ -1964,7 +2098,7 @@ export default function FeeManagementPage() {
       apiClient.get(apiEndpoints.boards.getAll),
       apiClient.get(apiEndpoints.academicYears.getAll),
       apiClient.get(apiEndpoints.boards.getAcademicLevels),
-      apiClient.get(apiEndpoints.groups.dropdown).catch(() => apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } })),
+      apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } }).catch(() => apiClient.get(apiEndpoints.groups.dropdown)),
       apiClient.get(apiEndpoints.sections.getAll),
     ]);
 
@@ -1986,7 +2120,10 @@ export default function FeeManagementPage() {
         ? toSelectOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
         : [],
       years: yearsResult.status === "fulfilled"
-        ? toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"])
+        ? uniqueAcademicYearsByName(
+          toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
+          (item) => item.label,
+        )
         : [],
       levels: levelsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "name", "Name"])

@@ -126,6 +126,42 @@ const searchIndex = menu.flatMap((g) =>
   ]),
 );
 
+const normalizeBreadcrumbLabel = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
+const breadcrumbKey = (value) => normalizeBreadcrumbLabel(value).toLowerCase();
+
+const menuBreadcrumbForPath = (pathname) => {
+  let bestMatch = null;
+  const consider = (to, labels) => {
+    const matches = pathname === to || pathname.startsWith(`${to}/`);
+    if (!matches) return;
+    const score = to.length + (pathname === to ? 10_000 : 0);
+    if (!bestMatch || score > bestMatch.score) bestMatch = { to, labels, score };
+  };
+
+  menu.forEach((group) => {
+    group.items.forEach((item) => {
+      consider(item.to, [group.section, item.label]);
+      (item.children || []).forEach((child) => {
+        if (child.to !== item.to) consider(child.to, [group.section, item.label, child.label]);
+      });
+    });
+  });
+
+  return bestMatch;
+};
+
+const uniqueBreadcrumbLabels = (labels, currentTitle) => {
+  const titleKey = breadcrumbKey(currentTitle);
+  const seen = new Set();
+  return labels.flatMap((label) => {
+    const normalized = normalizeBreadcrumbLabel(label);
+    const key = breadcrumbKey(normalized);
+    if (!key || key === "home" || key === titleKey || seen.has(key)) return [];
+    seen.add(key);
+    return [normalized];
+  });
+};
+
 function readUser() {
   try {
     return JSON.parse(localStorage.getItem("user") || "null");
@@ -416,11 +452,11 @@ export default function DashboardLayout({
         </header>
 
         <main className="cms-content">
-          <div className="cms-breadcrumb">
+          <nav className="cms-breadcrumb" aria-label="Breadcrumb">
             <Link to="/dashboard">Home</Link>
-            {breadcrumb.map((b) => <span key={b} style={{ display: "flex", alignItems: "center", gap: 6 }}><ChevronRight size={13} /> <span>{b}</span></span>)}
-            <ChevronRight size={13} /><strong>{title}</strong>
-          </div>
+            {resolvedBreadcrumb.map((label) => <span key={label} className="cms-breadcrumb-step"><ChevronRight size={13} aria-hidden="true" /><span>{label}</span></span>)}
+            <ChevronRight size={13} aria-hidden="true" /><strong aria-current="page">{title}</strong>
+          </nav>
 
           <div className="cms-page-head">
             <div><h1>{title}</h1>{subtitle ? <p>{subtitle}</p> : null}</div>

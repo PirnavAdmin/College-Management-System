@@ -278,3 +278,15 @@
   .faculty-form footer, .faculty-stage footer, .faculty-allocation footer { justify-content: stretch; }
   .faculty-form footer .cms-btn, .faculty-stage footer .cms-btn, .faculty-allocation footer .cms-btn { flex: 1; justify-content: center; }
 }
+
+/* Board & Academic Year table-system alignment. */
+.faculty-list .cms-toolbar { min-height: 55px; padding: 9px 12px; gap: 9px; }
+.faculty-list .cms-search { height: 36px; min-height: 36px; border-radius: 8px; }
+.faculty-list .cms-toolbar-right { gap: 7px; }
+.faculty-list .cms-toolbar-right .cms-btn { min-height: 36px; padding: 0 13px; }
+.faculty-list .cms-table { min-width: 100%; }
+.faculty-list .cms-table th,
+.faculty-list .cms-table td { padding: clamp(7px, .5vw, 9px) clamp(6px, .6vw, 9px); }
+.faculty-list .cms-pagination { min-height: 46px; padding: 5px 14px; gap: 7px; background: var(--cms-subtle); }
+.faculty-list .cms-pagination .cms-page-info { font-size: 14px; font-weight: 600; }
+@media (max-width: 800px) { .faculty-list .cms-table-wrap { margin: 0; } }

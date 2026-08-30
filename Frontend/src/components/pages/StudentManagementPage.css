@@ -38,3 +38,6 @@
 .student-action-buttons a { display:inline-flex; gap:5px; align-items:center; color:var(--cms-primary); font-weight:600; font-size:13px; }
 .student-roll-preview { margin:22px 0; padding:16px 18px; border-radius:12px; background:var(--cms-subtle); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .student-roll-preview span { color:var(--cms-muted); }.student-roll-preview strong { font-size:24px; color:var(--cms-primary); }.student-roll-preview small { width:100%; color:var(--cms-muted); }
+
+/* Compact action family aligned with Board & Academic Year Management. */
+.student-action-buttons{gap:5px}.student-action-buttons a{min-height:34px;padding:0 9px;border:1px solid var(--cms-border);border-radius:10px;background:var(--cms-surface);font-size:12px;text-decoration:none}.student-action-buttons a:hover{border-color:var(--cms-primary-border);background:var(--cms-primary-soft);transform:translateY(-1px)}.student-action-buttons a svg{width:13px;height:13px;stroke-width:2.2}

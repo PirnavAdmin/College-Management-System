@@ -117,3 +117,10 @@
 .assignment-subject-option { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--cms-text); text-align: left; font: inherit; }
 .assignment-subject-option:hover { background: var(--cms-hover); }
 .assignment-subject-checkbox { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 1px solid var(--cms-primary-border); border-radius: 4px; color: var(--cms-primary); font-size: 12px; }
+
+/* Board & Academic Year toolbar sizing. */
+.assignment-toolbar { min-height: 55px; padding: 9px 12px; gap: 9px; }
+.assignment-toolbar .cms-search { flex: 1 1 320px; width: min(650px, 100%); max-width: 650px; height: 36px; min-height: 36px; }
+.assignment-toolbar-button { min-height: 36px; padding: 0 13px; border-radius: 9px; font-size: 13px; }
+.assignment-clear-filters-btn { flex-basis: 36px; width: 36px; height: 36px; }
+.assignment-filter-select { height: 36px; padding-block: 0; border-radius: 8px; }

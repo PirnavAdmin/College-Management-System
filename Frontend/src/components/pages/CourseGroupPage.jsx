@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
 import { Field, Modal, StatusBadge, Toast, useForm } from "@/components/common/Ui.jsx";
@@ -140,12 +140,12 @@ const getMappedYearsForBoard = (masters, boardId) => {
   const years = masters.years || [];
   const board = (masters.boards || []).find((item) => String(item.value) === String(boardId));
   const boardYears = years.filter((year) => String(year.boardId) === String(boardId));
-  if (boardYears.length) return boardYears;
+  if (boardYears.length) return uniqueAcademicYearsByName(boardYears, (year) => year.label);
   if (!boardId || !board) return [];
   const mappedIds = new Set(board.academicYearIds || []);
-  if (mappedIds.size) return years.filter((year) => mappedIds.has(String(year.value)));
+  if (mappedIds.size) return uniqueAcademicYearsByName(years.filter((year) => mappedIds.has(String(year.value))), (year) => year.label);
   const mappedNames = new Set((board.academicYearNames || []).map((name) => name.toLowerCase()));
-  if (mappedNames.size) return years.filter((year) => mappedNames.has(String(year.label).toLowerCase()));
+  if (mappedNames.size) return uniqueAcademicYearsByName(years.filter((year) => mappedNames.has(String(year.label).toLowerCase())), (year) => year.label);
   return [];
 };
 
@@ -545,7 +545,7 @@ const groupApi = {
       field.name === "board"
         ? { ...field, options: masters.boards }
         : field.name === "year"
-          ? { ...field, options: masters.years }
+          ? { ...field, options: uniqueAcademicYearsByName(masters.years, (year) => year.label) }
           : field.name === "level"
             ? { ...field, options: masters.levels }
             : field
@@ -557,7 +557,7 @@ const groupApi = {
       field.name === "board"
         ? { ...field, options: masters.boards }
         : field.name === "year"
-          ? { ...field, options: masters.years }
+          ? { ...field, options: uniqueAcademicYearsByName(masters.years, (year) => year.label) }
         : field.name === "level"
           ? { ...field, options: masters.levels }
           : field

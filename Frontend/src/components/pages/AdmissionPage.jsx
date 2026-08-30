@@ -5,30 +5,25 @@ import {
   ClipboardList,
   Edit3,
   Eye,
-  FileCheck,
   GraduationCap,
   IndianRupee,
   MapPin,
   Plus,
   School,
   Search,
-  Upload,
   User,
   Users,
   X,
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
-import { options } from "@/data/mockData.js";
 import {
   DEFAULT_INSTALLMENT_COUNT,
   INSTALLMENT_COUNTS,
   PAYMENT_METHODS,
-  PAYMENT_PLANS,
   buildInstallmentSchedule,
-  createFeeAccountFromAdmission,
   feeScheduleLabel,
   formatCurrency,
   formatDate,
@@ -56,6 +51,7 @@ const ALPHA_FIELDS = new Set([
   "district",
   "prevSchool",
 ]);
+const ADMISSION_GENDER_OPTIONS = ["Male", "Female", "Other"];
 
 const getCollection = (payload) => {
   const data = payload?.data ?? payload?.Data ?? payload;
@@ -68,6 +64,14 @@ const getCollection = (payload) => {
   if (Array.isArray(data?.Results)) return data.Results;
   if (Array.isArray(data?.$values)) return data.$values;
   return [];
+};
+
+const getObject = (payload) => {
+  const data = payload?.data ?? payload?.Data ?? payload;
+  if (data?.data && !Array.isArray(data.data)) return data.data;
+  if (data?.Data && !Array.isArray(data.Data)) return data.Data;
+  if (data && !Array.isArray(data)) return data;
+  return {};
 };
 
 const read = (item, ...keys) => {
@@ -210,11 +214,129 @@ const expandFeeStructureItems = (item) => {
   });
 };
 
+const feeTypeIdentity = (item) => {
+  const feeType = read(item, "feeType", "FeeType", "type", "Type");
+  return [
+    getFeeTypeName(item),
+    readText(item, "feeTypeCode", "FeeTypeCode", "code", "Code"),
+    readText(feeType, "feeTypeCode", "FeeTypeCode", "code", "Code"),
+  ].join(" ").toLowerCase();
+};
+
+const classifyFeeItem = (item) => {
+  const identity = feeTypeIdentity(item);
+  if (identity.includes("admission")) return "admission";
+  if (identity.includes("course") || identity.includes("tuition")) return "course";
+  return "optional";
+};
+
+const isActiveRecord = (item) => {
+  const status = read(item, "status", "Status");
+  const isActive = read(item, "isActive", "IsActive", "active", "Active");
+  if (typeof status === "string") return status.toLowerCase() !== "inactive";
+  if (typeof isActive === "boolean") return isActive;
+  return true;
+};
+
+const normalizeFeeStructureItem = (item, structure = {}) => {
+  const feeType = read(item, "feeType", "FeeType", "type", "Type");
+  const structureId = readId(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId")
+    || readId(structure, "feeStructureId", "FeeStructureId", "id", "Id");
+  const feeStructureItemId = readId(item, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId", "id", "Id");
+  const feeTypeId = readId(item, "feeTypeId", "FeeTypeId", "typeId", "TypeId")
+    || readId(feeType, "feeTypeId", "FeeTypeId", "id", "Id", "typeId", "TypeId");
+  const name = getFeeTypeName(item);
+  const amount = readNumber(item, "amount", "Amount", "feeAmount", "FeeAmount", "originalAmount", "OriginalAmount") ?? 0;
+  const mandatoryValue = read(item, "isMandatory", "IsMandatory", "required", "Required", "mandatory", "Mandatory");
+  const required = typeof mandatoryValue === "string"
+    ? mandatoryValue.toLowerCase() === "true" || mandatoryValue.toLowerCase() === "mandatory"
+    : Boolean(mandatoryValue);
+  if (!feeTypeId || !name || !structureId) return null;
+  const id = feeStructureItemId || `${structureId}-${feeTypeId}`;
+  return {
+    id,
+    structureId,
+    feeStructureId: structureId,
+    feeStructureItemId,
+    structureItemId: feeStructureItemId,
+    feeTypeId,
+    type: name,
+    originalAmount: amount,
+    payableAmount: amount,
+    required,
+    selected: required,
+    kind: classifyFeeItem(item),
+  };
+};
+
+const normalizeFeeStructureSummary = (item) => {
+  const group = read(item, "group", "Group");
+  const program = read(item, "program", "Program");
+  const board = read(item, "board", "Board");
+  const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
+  const id = readId(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId", "id", "Id");
+  if (!id) return null;
+  return {
+    raw: item,
+    id,
+    boardId: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id"),
+    academicYearId: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
+    groupId: readId(item, "groupId", "GroupId") || readId(group, "groupId", "GroupId", "id", "Id"),
+    programId: readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id"),
+    status: readText(item, "status", "Status") || (read(item, "isActive", "IsActive") === false ? "Inactive" : "Active"),
+  };
+};
+
+const normalizeScholarship = (item) => {
+  const id = readId(item, "scholarshipId", "ScholarshipId", "id", "Id");
+  const name = readText(item, "scholarshipName", "ScholarshipName", "name", "Name", "title", "Title");
+  if (!id || !name || !isActiveRecord(item)) return null;
+  const discountType = readText(item, "discountType", "DiscountType", "type", "Type") || "Percentage";
+  return {
+    id,
+    name,
+    discountType: discountType === "%" ? "Percentage" : discountType,
+    discountValue: readNumber(item, "discountValue", "DiscountValue", "value", "Value", "percentage", "Percentage", "amount", "Amount") ?? 0,
+  };
+};
+
+const paymentPlanLabel = (plan) => COURSE_PAYMENT_PLAN_LABELS[plan] || feeScheduleLabel(plan);
+
 const toOption = (item, idKeys, labelKeys) => {
   const value = read(item, ...idKeys);
   const label = read(item, ...labelKeys) || value;
   if (value === undefined || value === null || value === "") return null;
   return { value: String(value), label: String(label) };
+};
+
+const compactIds = (values = []) => (
+  Array.isArray(values)
+    ? values.map((value) => String(value ?? "").trim()).filter(Boolean)
+    : []
+);
+
+const normalizeBoardOption = (item) => {
+  const option = toOption(item, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "boardCode", "BoardCode", "name", "Name"]);
+  if (!option) return null;
+  const levels = getCollection(read(item, "academicLevels", "AcademicLevels", "levels", "Levels"));
+  const academicLevelIds = compactIds(read(item, "academicLevelIds", "AcademicLevelIds", "levelIds", "LevelIds"));
+  const academicLevelNames = compactIds(read(item, "academicLevelNames", "AcademicLevelNames", "levelNames", "LevelNames"));
+  const nestedLevelIds = levels.map((level) => readId(level, "academicLevelId", "AcademicLevelId", "id", "Id")).filter(Boolean);
+  const nestedLevelNames = levels.map((level) => readText(level, "levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name")).filter(Boolean);
+  return {
+    ...option,
+    academicLevelIds: academicLevelIds.length ? academicLevelIds : nestedLevelIds,
+    academicLevelNames: academicLevelNames.length ? academicLevelNames : nestedLevelNames,
+    levelMappingLoaded: Boolean(academicLevelIds.length || academicLevelNames.length || levels.length),
+  };
+};
+
+const normalizeLevelOption = (item) => {
+  const option = toOption(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]);
+  return option ? {
+    ...option,
+    boardId: readId(item, "boardId", "BoardId"),
+  } : null;
 };
 
 const toDateTime = (value) => {
@@ -223,23 +345,38 @@ const toDateTime = (value) => {
   return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
 };
 
+const localISODate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const yesterdayISO = () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return localISODate(date);
+};
+
+const isTodayOrFutureDate = (value) => {
+  if (!value) return false;
+  const normalized = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) && normalized >= localISODate(new Date());
+};
+
 const appendIfPresent = (formData, key, value) => {
   if (value === undefined || value === null || value === "") return;
   formData.append(key, value);
 };
 
 const ADMISSION_DRAFT_KEY = "studentAdmissionDraft";
-const ADMISSION_RECORDS_KEY = "studentAdmissionRecords";
+const ADMISSION_DRAFT_VERSION = 2;
 const ADMISSION_STATUS_OPTIONS = ["Pending", "Approved", "Rejected"];
-const CONCESSION_SCHEMES = [
-  "Merit Scholarship",
-  "Sports Scholarship",
-  "Staff Ward Concession",
-  "Sibling Concession",
-  "Economically Weaker Section",
-  "Management Concession",
-  "Custom Concession",
-];
+const COURSE_PAYMENT_PLANS = ["Full Payment", "Installment Payment"];
+const COURSE_PAYMENT_PLAN_LABELS = {
+  "Full Payment": "Full Course Payment",
+  "Installment Payment": "Course Fee Schedule",
+};
 const PAGE_SIZE = 8;
 
 const steps = [
@@ -248,8 +385,8 @@ const steps = [
     fields: [
       { name: "admissionNo", label: "Admission Number", required: true },
       { name: "admissionDate", label: "Admission Date", type: "date", required: true },
-      { name: "board", label: "Board", type: "select", options: options.board, required: true },
-      { name: "year", label: "Academic Year", type: "select", options: options.year, required: true },
+      { name: "board", label: "Board", type: "select", options: [], required: true },
+      { name: "year", label: "Academic Year", type: "select", options: [], required: true },
       { name: "admissionType", label: "Admission Type", type: "select", options: ["Regular", "Lateral Entry", "Transfer"] },
       { name: "quota", label: "Admission Quota", type: "select", options: ["Regular", "Merit", "Management", "Sports", "Reserved","other"] },
     ],
@@ -260,9 +397,9 @@ const steps = [
       { name: "photo", label: "Student Photo", type: "file" },
       { name: "firstName", label: "First Name", required: true },
       { name: "lastName", label: "Last Name", required: true },
-      { name: "gender", label: "Gender", type: "select", options: options.gender, required: true },
+      { name: "gender", label: "Gender", type: "select", options: ADMISSION_GENDER_OPTIONS, required: true },
       { name: "dob", label: "Date of Birth", type: "date", required: true },
-      { name: "bloodGroup", label: "Blood Group", type: "select", options: options.bloodGroup, required: true },
+      { name: "bloodGroup", label: "Blood Group", type: "select", options: [], required: true },
       { name: "aadhaar", label: "Aadhaar Number", required: true },
       { name: "mobile", label: "Mobile", type: "tel", required: true },
       { name: "email", label: "Email", type: "email" },
@@ -273,10 +410,10 @@ const steps = [
   {
     title: "Parent Details",
     fields: [
-      { name: "fatherName", label: "Father Name", required: true },
+      { name: "fatherName", label: "Father Name" },
       { name: "fatherOccupation", label: "Father Occupation" },
-      { name: "fatherMobile", label: "Father Mobile", type: "tel", required: true },
-      { name: "motherName", label: "Mother Name", required: true },
+      { name: "fatherMobile", label: "Father Mobile", type: "tel" },
+      { name: "motherName", label: "Mother Name" },
       { name: "motherOccupation", label: "Mother Occupation" },
       { name: "motherMobile", label: "Mother Mobile", type: "tel" },
       { name: "guardianName", label: "Guardian Name" },
@@ -298,7 +435,7 @@ const steps = [
     title: "Previous School",
     fields: [
       { name: "prevSchool", label: "Previous School Name", required: true },
-      { name: "prevBoard", label: "Previous Board", type: "select", options: options.board },
+      { name: "prevBoard", label: "Previous Board", type: "select", options: [] },
       { name: "passYear", label: "Year of Passing", type: "number" },
       { name: "prevMarks", label: "Marks / GPA Obtained" },
       { name: "hallTicket", label: "Hall Ticket Number" },
@@ -307,22 +444,11 @@ const steps = [
   {
     title: "Academic Details",
     fields: [
-      { name: "level", label: "Academic Level", type: "select", options: options.level, required: true },
+      { name: "level", label: "Academic Level", type: "select", options: [], required: true },
       { name: "group", label: "Group", type: "select", options: [] },
       { name: "program", label: "Program", type: "select", options: [] },
       { name: "medium", label: "Medium", type: "select", options: ["English", "Telugu", "Hindi"] },
       { name: "secondLanguage", label: "Second Language", type: "select", options: ["Sanskrit", "Telugu", "Hindi", "French"] },
-    ],
-  },
-  {
-    title: "Documents",
-    fields: [
-      { name: "docTc", label: "Transfer Certificate", type: "file" },
-      { name: "docMarks", label: "Marks Memo", type: "file" },
-      { name: "docAadhaar", label: "Aadhaar Copy", type: "file" },
-      { name: "docCaste", label: "Caste Certificate", type: "file" },
-      { name: "docIncome", label: "Income Certificate", type: "file" },
-      { name: "remarks", label: "Remarks", type: "textarea", full: true },
     ],
   },
   {
@@ -346,9 +472,20 @@ const stepIcons = {
   Address: MapPin,
   "Previous School": School,
   "Academic Details": GraduationCap,
-  Documents: FileCheck,
   Fee: IndianRupee,
   Preview: Eye,
+};
+
+const OPTIONAL_STUDENT_PHOTO_FALLBACK = {
+  fileName: "student-photo-placeholder.png",
+  contentType: "image/png",
+  base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+};
+
+const optionalStudentPhotoFile = () => {
+  if (typeof File === "undefined" || typeof atob === "undefined") return null;
+  const bytes = Uint8Array.from(atob(OPTIONAL_STUDENT_PHOTO_FALLBACK.base64), (char) => char.charCodeAt(0));
+  return new File([bytes], OPTIONAL_STUDENT_PHOTO_FALLBACK.fileName, { type: OPTIONAL_STUDENT_PHOTO_FALLBACK.contentType });
 };
 
 const buildAdmissionFormData = (values) => {
@@ -361,7 +498,12 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "Gender", values.gender);
   appendIfPresent(formData, "DateOfBirth", toDateTime(values.dob));
   appendIfPresent(formData, "BloodGroup", values.bloodGroup);
-  appendIfPresent(formData, "StudentPhoto", values.photo);
+  if (typeof File !== "undefined" && values.photo instanceof File) {
+    formData.append("StudentPhoto", values.photo);
+  } else {
+    const fallbackPhoto = optionalStudentPhotoFile();
+    if (fallbackPhoto) formData.append("StudentPhoto", fallbackPhoto);
+  }
   appendIfPresent(formData, "Email", values.email);
   appendIfPresent(formData, "MobileNumber", values.mobile);
   appendIfPresent(formData, "HallTicketNumber", values.hallTicket);
@@ -402,20 +544,6 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "PreviousBoard", values.prevBoard);
   appendIfPresent(formData, "PreviousYearOfPassing", values.passYear);
   appendIfPresent(formData, "PreviousPercentage", values.prevMarks);
-  appendIfPresent(formData, "TransferCertificate", values.docTc);
-  appendIfPresent(formData, "MarksMemo", values.docMarks);
-  appendIfPresent(formData, "AadhaarDocument", values.docAadhaar);
-  appendIfPresent(formData, "CasteCertificate", values.docCaste);
-  appendIfPresent(formData, "IncomeCertificate", values.docIncome);
-  appendIfPresent(formData, "Remarks", values.remarks);
-  appendIfPresent(formData, "TotalFee", values.totalFee);
-  appendIfPresent(formData, "Discount", values.discount);
-  appendIfPresent(formData, "Fine", values.fine);
-  appendIfPresent(formData, "NetPayable", values.netPayable);
-  appendIfPresent(formData, "AmountPaid", values.amountPaid);
-  appendIfPresent(formData, "BalanceAmount", values.balanceAmount);
-  appendIfPresent(formData, "PaymentMode", values.paymentMode);
-  appendIfPresent(formData, "TransactionNumber", values.transactionNumber);
   return formData;
 };
 
@@ -464,6 +592,15 @@ const safeStepIndex = (value) => {
   return Math.min(Math.max(parsed, 0), allSteps.length - 1);
 };
 
+const migrateDraftStep = (draft) => {
+  const parsed = Number(draft?.currentStep);
+  if (!Number.isInteger(parsed)) return 0;
+  if (Number(draft?.version) === ADMISSION_DRAFT_VERSION) return safeStepIndex(parsed);
+  if (parsed === 6 || parsed === 7) return steps.findIndex((section) => section.title === "Fee");
+  if (parsed > 7) return allSteps.length - 1;
+  return safeStepIndex(parsed);
+};
+
 const readAdmissionDraft = () => {
   if (!isBrowserStorageAvailable()) return { values: {}, step: 0, feeSelection: [], hasFeeSelection: false };
 
@@ -476,7 +613,7 @@ const readAdmissionDraft = () => {
     const feeSelection = Array.isArray(draft?.feeSelection) ? draft.feeSelection.map(String) : [];
     return {
       values,
-      step: safeStepIndex(draft?.currentStep),
+      step: migrateDraftStep(draft),
       feeSelection,
       hasFeeSelection: Array.isArray(draft?.feeSelection),
     };
@@ -490,6 +627,7 @@ const persistAdmissionDraft = ({ currentStep, formData, feeSelection }) => {
   if (!isBrowserStorageAvailable()) return;
 
   window.localStorage.setItem(ADMISSION_DRAFT_KEY, JSON.stringify({
+    version: ADMISSION_DRAFT_VERSION,
     currentStep: safeStepIndex(currentStep),
     formData: toSerializableAdmissionValues(formData),
     feeSelection: Array.isArray(feeSelection) ? feeSelection.map(String) : [],
@@ -500,11 +638,6 @@ const persistAdmissionDraft = ({ currentStep, formData, feeSelection }) => {
 const clearAdmissionDraft = () => {
   if (isBrowserStorageAvailable()) window.localStorage.removeItem(ADMISSION_DRAFT_KEY);
 };
-
-const hasDraftContent = (formData, feeSelection) => (
-  Object.values(toSerializableAdmissionValues(formData)).some((value) => value !== undefined && value !== null && String(value).trim() !== "")
-  || feeSelection.length > 0
-);
 
 const normalizeAdmissionStatus = (value, fallback = "Pending") => {
   const status = String(value || "").trim().toLowerCase();
@@ -520,80 +653,34 @@ const admissionStatusClass = (status) => {
   return "cms-badge-warn";
 };
 
-const admissionKey = (record) => String(record?.admissionId || record?.id || record?.admissionNo || "").trim();
-
-const mergeAdmissionRecords = (...groups) => {
-  const merged = new Map();
-  groups.flat().filter(Boolean).forEach((record) => {
-    const key = admissionKey(record) || `row-${merged.size}`;
-    merged.set(key, { ...(merged.get(key) || {}), ...record });
-  });
-  return Array.from(merged.values());
-};
-
-const readStoredAdmissionRecords = () => {
-  if (!isBrowserStorageAvailable()) return [];
-  try {
-    const records = JSON.parse(window.localStorage.getItem(ADMISSION_RECORDS_KEY) || "[]");
-    return Array.isArray(records) ? records : [];
-  } catch {
-    window.localStorage.removeItem(ADMISSION_RECORDS_KEY);
-    return [];
-  }
-};
-
-const writeStoredAdmissionRecords = (records) => {
-  if (isBrowserStorageAvailable()) window.localStorage.setItem(ADMISSION_RECORDS_KEY, JSON.stringify(records));
-};
-
-const valuesToAdmissionRecord = (values, {
-  id,
-  admissionId,
-  status = "Pending",
-  currentStep = 0,
-  source = "local",
-  updatedAt = new Date().toISOString(),
-} = {}) => {
-  const admissionNo = String(values.admissionNo || "").trim();
-  const localId = id || admissionId || admissionNo || `local-${Date.now()}`;
-  return {
-    id: localId,
-    admissionId: admissionId || "",
-    admissionNo: admissionNo || "-",
-    studentName: [values.firstName, values.lastName].filter(Boolean).join(" ") || "Incomplete Admission",
-    admissionDate: values.admissionDate || "",
-    academicYear: values.year || "",
-    board: values.board || "",
-    group: values.groupName || values.group || "",
-    program: values.programName || values.program || "",
-    section: values.sectionName || values.section || values.programName || values.program || "",
-    status: normalizeAdmissionStatus(status),
-    currentStep: safeStepIndex(currentStep),
-    source,
-    values: toSerializableAdmissionValues(values),
-    updatedAt,
-  };
-};
-
 const normalizeAdmissionRow = (item) => {
   const admissionId = readId(item, "admissionId", "AdmissionId", "id", "Id");
+  const student = read(item, "student", "Student");
   const firstName = readText(item, "firstName", "FirstName");
   const lastName = readText(item, "lastName", "LastName");
+  const board = read(item, "board", "Board");
+  const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
+  const academicLevel = read(item, "academicLevel", "AcademicLevel", "level", "Level");
+  const group = read(item, "group", "Group");
+  const program = read(item, "program", "Program");
   const studentName = readText(item, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
     || [firstName, lastName].filter(Boolean).join(" ");
   const admissionNo = readText(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "number", "Number");
   const status = normalizeAdmissionStatus(readText(item, "status", "Status", "admissionStatus", "AdmissionStatus"));
+  const programName = readText(item, "programName", "ProgramName")
+    || (typeof program === "string" ? program : readText(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"));
 
   return {
-    id: admissionId || admissionNo || `api-${Math.random().toString(36).slice(2)}`,
+    id: admissionId || admissionNo,
     admissionId,
-    admissionNo: admissionNo || "-",
-    studentName: studentName || "Unnamed Student",
+    studentId: readId(item, "studentId", "StudentId") || readId(student, "studentId", "StudentId", "id", "Id"),
+    admissionNo,
+    studentName,
     admissionDate: readText(item, "admissionDate", "AdmissionDate", "date", "Date"),
-    academicYear: readText(item, "academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "year", "Year"),
-    board: readText(item, "board", "Board", "boardName", "BoardName"),
-    group: readText(item, "group", "Group", "groupName", "GroupName", "course", "Course"),
-    section: readText(item, "section", "Section", "sectionName", "SectionName"),
+    academicYear: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id") || readText(item, "academicYearName", "AcademicYearName"),
+    board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id") || readText(item, "boardName", "BoardName"),
+    group: readText(item, "groupName", "GroupName", "course", "Course") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")),
+    program: programName,
     status,
     currentStep: 0,
     source: "api",
@@ -601,66 +688,208 @@ const normalizeAdmissionRow = (item) => {
     values: {
       admissionNo,
       admissionDate: readText(item, "admissionDate", "AdmissionDate", "date", "Date").slice(0, 10),
-      board: readText(item, "boardId", "BoardId", "board", "Board", "boardName", "BoardName"),
-      year: readText(item, "academicYearId", "AcademicYearId", "academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "year", "Year"),
+      admissionType: readText(item, "admissionType", "AdmissionType"),
+      quota: readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota"),
+      board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id"),
+      year: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
       firstName,
       lastName,
-      group: readText(item, "groupId", "GroupId", "group", "Group", "groupName", "GroupName"),
-      program: readText(item, "programId", "ProgramId", "program", "Program", "programName", "ProgramName"),
-      section: readText(item, "sectionId", "SectionId", "section", "Section", "sectionName", "SectionName"),
-      level: readText(item, "academicLevel", "AcademicLevel", "level", "Level"),
+      gender: readText(item, "gender", "Gender"),
+      dob: readText(item, "dateOfBirth", "DateOfBirth", "dob", "DOB").slice(0, 10),
+      bloodGroup: readText(item, "bloodGroup", "BloodGroup"),
+      aadhaar: readText(item, "aadhaarNumber", "AadhaarNumber", "aadhaar", "Aadhaar"),
+      mobile: readText(item, "mobileNumber", "MobileNumber", "mobile", "Mobile"),
+      email: readText(item, "email", "Email"),
+      religion: readText(item, "religion", "Religion"),
+      caste: readText(item, "category", "Category", "caste", "Caste"),
+      fatherName: readText(item, "fatherName", "FatherName"),
+      fatherOccupation: readText(item, "fatherOccupation", "FatherOccupation"),
+      fatherMobile: readText(item, "fatherMobile", "FatherMobile"),
+      fatherEmail: readText(item, "fatherEmail", "FatherEmail"),
+      motherName: readText(item, "motherName", "MotherName"),
+      motherOccupation: readText(item, "motherOccupation", "MotherOccupation"),
+      motherMobile: readText(item, "motherMobile", "MotherMobile"),
+      motherEmail: readText(item, "motherEmail", "MotherEmail"),
+      guardianName: readText(item, "guardianName", "GuardianName"),
+      guardianMobile: readText(item, "guardianMobile", "GuardianMobile"),
+      guardianEmail: readText(item, "guardianEmail", "GuardianEmail"),
+      annualIncome: readText(item, "annualIncome", "AnnualIncome"),
+      address1: readText(item, "addressLine1", "AddressLine1", "address", "Address"),
+      address2: readText(item, "addressLine2", "AddressLine2"),
+      city: readText(item, "city", "City"),
+      district: readText(item, "district", "District"),
+      state: readText(item, "state", "State"),
+      pincode: readText(item, "pincode", "Pincode", "pinCode", "PinCode"),
+      prevSchool: readText(item, "previousSchool", "PreviousSchool", "prevSchool", "PrevSchool"),
+      prevBoard: readText(item, "previousBoard", "PreviousBoard", "prevBoard", "PrevBoard"),
+      passYear: readText(item, "previousYearOfPassing", "PreviousYearOfPassing", "passYear", "PassYear"),
+      prevMarks: readText(item, "previousPercentage", "PreviousPercentage", "prevMarks", "PrevMarks"),
+      hallTicket: readText(item, "hallTicketNumber", "HallTicketNumber"),
+      group: readId(item, "groupId", "GroupId") || readId(group, "groupId", "GroupId", "id", "Id"),
+      groupName: readText(item, "groupName", "GroupName") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")),
+      program: readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id"),
+      programName,
+      level: readId(item, "academicLevelId", "AcademicLevelId") || readId(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
+      levelName: readText(item, "academicLevelName", "AcademicLevelName") || (typeof academicLevel === "string" ? academicLevel : readText(academicLevel, "academicLevelName", "AcademicLevelName", "name", "Name")),
       rollNumber: readText(item, "rollNo", "RollNo", "rollNumber", "RollNumber"),
+      medium: readText(item, "medium", "Medium"),
+      secondLanguage: readText(item, "secondLanguage", "SecondLanguage"),
     },
   };
 };
 
-// Derives fee numbers only from fee rows loaded into the form state.
+const numericId = (value) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+};
+
+const readStudentFeeAssignmentId = (payload) => {
+  const data = getObject(payload);
+  const rows = getCollection(payload);
+  const source = rows[0] || data;
+  return readId(
+    source,
+    "studentFeeAssignmentId",
+    "StudentFeeAssignmentId",
+    "studentFeeId",
+    "StudentFeeId",
+    "assignmentId",
+    "AssignmentId",
+    "id",
+    "Id",
+  );
+};
+
+const readPaymentPlanId = (payload) => readId(
+  getObject(payload),
+  "paymentPlanId",
+  "PaymentPlanId",
+  "id",
+  "Id",
+);
+
+const resolveApprovedStudentId = (...sources) => {
+  for (const source of sources) {
+    const student = read(source, "student", "Student");
+    const id = readId(source, "studentId", "StudentId") || readId(student, "studentId", "StudentId", "id", "Id");
+    if (numericId(id)) return numericId(id);
+  }
+  return null;
+};
+
+const admissionFeeApprovalBody = (admissionId, status) => {
+  const id = numericId(admissionId);
+  if (status === "Rejected") {
+    return { admissionId: id, rejectionReason: "Rejected from admission screen", remarks: "" };
+  }
+  return { admissionId: id, remarks: "" };
+};
+
+const collectPayload = ({ studentId, studentFeeId, amount, values, feeInstallmentId = null, note = "" }) => ({
+  studentId: Number(studentId),
+  studentFeeId: Number(studentFeeId),
+  feeInstallmentId: feeInstallmentId ? Number(feeInstallmentId) : null,
+  amount: Number(amount),
+  paymentDate: toDateTime(values.paymentDate || values.admissionDate || todayISO()),
+  paymentMode: values.paymentMethod || values.paymentMode || "Cash",
+  discount: 0,
+  fine: 0,
+  transactionReference: values.transactionNumber || "",
+  note,
+});
+
+const findApplicableFeeStructure = async ({ boardId, academicYearId, groupId, programId }) => {
+  if (!boardId || !academicYearId || !groupId) {
+    throw new Error("Fee account was not created because Board, Academic Year and Group are required to find a fee structure.");
+  }
+  const response = await apiClient.get(apiEndpoints.fee.getStructures);
+  const summaries = getCollection(response.data)
+    .flatMap(expandFeeStructureItems)
+    .map(normalizeFeeStructureSummary)
+    .filter(Boolean)
+    .filter((item) => item.status.toLowerCase() !== "inactive");
+  const matching = summaries.find((item) => (
+    String(item.boardId) === String(boardId)
+    && String(item.academicYearId) === String(academicYearId)
+    && String(item.groupId) === String(groupId)
+    && (programId ? String(item.programId) === String(programId) || !item.programId : !item.programId)
+  ));
+  if (!matching) throw new Error("No active fee structure is configured for the approved student's academic combination.");
+  return matching;
+};
+
+// Derives fee numbers only from backend fee rows loaded into the form state.
 const deriveAdmissionFee = (values) => {
   const baseItems = Array.isArray(values.feeItems) ? values.feeItems : [];
   const feeItems = baseItems.map((item, index) => {
     const originalAmount = Number(item.originalAmount ?? item.amount ?? 0);
+    const required = Boolean(item.required);
     return {
-      id: item.id || `fee-${index + 1}`,
+      ...item,
+      id: item.id || item.feeStructureItemId || item.feeTypeId || `fee-${index + 1}`,
       type: item.type || `Fee ${index + 1}`,
       originalAmount,
-      selected: item.selected !== false,
-      required: Boolean(item.required),
+      selected: required || item.selected !== false,
+      required,
       payableAmount: originalAmount,
       dueDate: item.dueDate || "",
+      kind: item.kind || classifyFeeItem(item),
     };
   });
   const selectedItems = feeItems.filter((item) => item.selected);
-  const admissionFee = Number(selectedItems.find((item) => item.type === "Admission Fee")?.originalAmount ?? 0);
-  const originalTotal = selectedItems.reduce((sum, item) => sum + item.originalAmount, 0);
-  const concessionType = values.concessionType || "Fixed";
+  const admissionItems = selectedItems.filter((item) => item.kind === "admission");
+  const courseItems = selectedItems.filter((item) => item.kind === "course");
+  const optionalItems = selectedItems.filter((item) => item.kind === "optional");
+  const admissionFee = admissionItems.reduce((sum, item) => sum + item.originalAmount, 0);
+  const courseFeeOriginal = courseItems.reduce((sum, item) => sum + item.originalAmount, 0);
+  const optionalFeesTotal = optionalItems.reduce((sum, item) => sum + item.originalAmount, 0);
+  const originalTotal = admissionFee + courseFeeOriginal + optionalFeesTotal;
+  const concessionType = values.concessionType || values.scholarshipDiscountType || "Fixed";
   const concessionValue = Number(values.concessionValue || 0);
   const rawConcession = concessionType === "Percentage"
-    ? (originalTotal * concessionValue) / 100
+    ? (courseFeeOriginal * concessionValue) / 100
     : concessionValue;
-  const concessionTotal = Math.min(Math.max(Math.round(rawConcession), 0), originalTotal);
-  const totalPayable = Math.max(originalTotal - concessionTotal, 0);
-  const courseFee = totalPayable;
+  const courseConcession = Math.min(Math.max(Math.round(rawConcession), 0), courseFeeOriginal);
+  const courseFeePayable = Math.max(courseFeeOriginal - courseConcession, 0);
+  const totalCommitment = admissionFee + courseFeePayable + optionalFeesTotal;
   const schedule = Array.isArray(values.installments) ? values.installments : [];
   const isInstallment = values.paymentPlan === "Installment Payment";
   const firstInstallment = schedule[0]?.amount ? Number(schedule[0].amount) : 0;
-  const paidToday = isInstallment ? (values.collectFirstInstallment ? firstInstallment : 0) : totalPayable;
+  const coursePaidToday = isInstallment ? (values.collectFirstInstallment ? firstInstallment : 0) : courseFeePayable;
+  const paidToday = admissionFee + optionalFeesTotal + coursePaidToday;
+  const courseScheduleBalance = isInstallment ? Math.max(courseFeePayable - coursePaidToday, 0) : 0;
 
   return {
+    feeStructureId: values.feeStructureId || "",
     admissionFee,
-    courseFee,
+    courseFee: courseFeePayable,
+    courseFeeOriginal,
+    courseConcession,
+    courseFeePayable,
+    optionalFeesTotal,
+    totalCommitment,
+    admissionFeeDueToday: admissionFee,
+    coursePaidToday,
+    courseScheduleBalance,
     feeItems,
     selectedFeeItems: selectedItems,
     originalTotal,
     concessionName: values.concessionName || "",
     concessionType,
     concessionValue,
-    concessionTotal,
-    totalPayable,
+    concessionTotal: courseConcession,
+    totalPayable: totalCommitment,
     paidToday,
-    remaining: Math.max(totalPayable - paidToday, 0),
+    remaining: Math.max(totalCommitment - paidToday, 0),
+    remainingBalance: Math.max(totalCommitment - paidToday, 0),
     paymentPlan: values.paymentPlan || "",
     paymentMethod: values.paymentMethod || "",
     schedule: schedule.map((row, index) => ({
+      ...row,
+      no: row.no ?? index + 1,
+      paidAmount: isInstallment && values.collectFirstInstallment && index === 0 ? Number(row.amount || 0) : 0,
+    })),
+    courseSchedules: schedule.map((row, index) => ({
       ...row,
       no: row.no ?? index + 1,
       paidAmount: isInstallment && values.collectFirstInstallment && index === 0 ? Number(row.amount || 0) : 0,
@@ -671,22 +900,28 @@ const deriveAdmissionFee = (values) => {
 const feeStepErrors = (values) => {
   const next = {};
   const fee = deriveAdmissionFee(values);
-  if (!fee.feeItems.length) return next;
+  if (!values.feeStructureId || !fee.feeItems.length) return next;
+  if (!fee.admissionFee) next.feeStructure = "Admission Fee is not configured in the selected fee structure";
+  if (!fee.courseFeeOriginal) next.feeStructure = "Course Fee is not configured in the selected fee structure";
+  if (fee.feeItems.some((item) => item.required && !item.selected)) next.feeItems = "Mandatory fees cannot be removed";
   if (!values.paymentPlan) next.paymentPlan = "Select a course fee payment plan";
   if (!values.paymentMethod) next.paymentMethod = "Payment Method is required when collecting money";
   if (!fee.selectedFeeItems.length) next.feeItems = "Select at least one applicable fee";
   if (fee.concessionType === "Percentage" && fee.concessionValue > 100) next.concessionValue = "Percentage concession cannot exceed 100%";
-  if (fee.concessionTotal > fee.originalTotal) next.concessionValue = "Concession cannot exceed the selected fee total";
+  if (fee.courseConcession > fee.courseFeeOriginal) next.concessionValue = "Concession cannot exceed the course fee";
+  if (values.paymentMethod && values.paymentMethod !== "Cash" && !String(values.transactionNumber || "").trim()) {
+    next.transactionNumber = "Transaction / Reference Number is required for this payment method";
+  }
 
   if (values.paymentPlan === "Installment Payment") {
     const schedule = Array.isArray(values.installments) ? values.installments : [];
     const total = schedule.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     if (schedule.length < 2) next.installments = "At least 2 fee schedules are required";
     else if (schedule.some((row) => Number(row.amount || 0) <= 0)) next.installments = "Every fee schedule amount must be greater than zero";
-    else if (total !== fee.totalPayable) next.installments = `Fee Schedule total (${formatCurrency(total)}) must equal the final payable amount (${formatCurrency(fee.totalPayable)})`;
+    else if (total !== fee.courseFeePayable) next.installments = `Course Fee Schedule total (${formatCurrency(total)}) must equal the course fee payable amount (${formatCurrency(fee.courseFeePayable)})`;
     else if (schedule.some((row) => !row.dueDate)) next.installments = "Every fee schedule needs a due date";
     else if (schedule.some((row, index) => index > 0 && String(row.dueDate) <= String(schedule[index - 1].dueDate))) {
-      next.installments = "Fee Schedule due dates must be in ascending order and cannot conflict";
+      next.installments = "Course Fee Schedule due dates must be in ascending order and cannot conflict";
     }
   }
   return next;
@@ -736,6 +971,33 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode }) {
 }
 
 function AdmissionField({ field, value, error, onChange, onFileChange, onFileRemove, inputRef }) {
+  if (field.type === "select" && field.selectPlaceholder) {
+    const normalizedOptions = (field.options || []).map((option) => (
+      option && typeof option === "object"
+        ? { value: option.value, label: option.label ?? option.value, disabled: Boolean(option.disabled) }
+        : { value: option, label: option, disabled: false }
+    ));
+    return (
+      <div className={`cms-field ${field.full ? "full" : ""} ${error ? "has-error" : ""}`}>
+        <label htmlFor={`f-${field.name}`}>
+          {field.label} {field.required ? <span className="req">*</span> : null}
+        </label>
+        <select
+          id={`f-${field.name}`}
+          value={value ?? ""}
+          disabled={field.disabled}
+          onChange={(event) => onChange(field.name, event.target.value)}
+        >
+          <option value="">{field.selectPlaceholder}</option>
+          {normalizedOptions.map((option, index) => (
+            <option key={`${option.value}-${index}`} value={option.value} disabled={option.disabled}>{option.label}</option>
+          ))}
+        </select>
+        {error ? <span className="cms-error">{error}</span> : null}
+      </div>
+    );
+  }
+
   if (field.type !== "file") {
     return <Field field={field} value={value} error={error} onChange={onChange} />;
   }
@@ -770,12 +1032,16 @@ function AdmissionField({ field, value, error, onChange, onFileChange, onFileRem
 function FeeSummaryRows({ fee }) {
   return (
     <div className="cms-fee-summary">
-      <div><span>Total Selected Fees</span><strong>{formatCurrency(fee.originalTotal)}</strong></div>
-      <div><span>Concession / Discount</span><strong>{formatCurrency(fee.concessionTotal)}</strong></div>
-      <div className="is-total"><span>Final Payable</span><strong>{formatCurrency(fee.totalPayable)}</strong></div>
+      <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFee)}</strong></div>
+      <div><span>Course Fee Before Scholarship</span><strong>{formatCurrency(fee.courseFeeOriginal)}</strong></div>
+      <div><span>Scholarship / Concession</span><strong>-{formatCurrency(fee.courseConcession)}</strong></div>
+      <div><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
+      <div><span>Optional Selected Fees</span><strong>{formatCurrency(fee.optionalFeesTotal)}</strong></div>
+      <div className="is-total"><span>Total Fee Commitment</span><strong>{formatCurrency(fee.totalCommitment)}</strong></div>
       <div><span>Paid Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
-      <div className="is-total"><span>Remaining Balance</span><strong>{formatCurrency(fee.remaining)}</strong></div>
-      <div><span>Payment Plan</span><strong>{fee.paymentPlan ? feeScheduleLabel(fee.paymentPlan) : "Not selected"}</strong></div>
+      <div><span>Future Scheduled Course Fee</span><strong>{formatCurrency(fee.courseScheduleBalance)}</strong></div>
+      <div className="is-total"><span>Remaining Balance</span><strong>{formatCurrency(fee.remainingBalance)}</strong></div>
+      <div><span>Payment Plan</span><strong>{fee.paymentPlan ? paymentPlanLabel(fee.paymentPlan) : "Not selected"}</strong></div>
       <div><span>Payment Method</span><strong>{fee.paymentMethod || "Not selected"}</strong></div>
     </div>
   );
@@ -807,22 +1073,23 @@ function FeeItemsTable({ feeItems, errors, onChange }) {
                 <input
                   type="checkbox"
                   checked={item.selected}
+                  disabled={item.required}
                   aria-label={`Apply ${item.type}`}
                   onChange={(event) => updateItem(item.id, { selected: event.target.checked })}
                 />
               </td>
               <td>
                 <strong>{item.type}</strong>
-                {item.required ? <small className="cms-fee-required">Mandatory by default</small> : null}
+                {item.required ? <small className="cms-fee-required">Mandatory</small> : null}
               </td>
-              <td>{item.required ? "Default fee" : "Optional fee"}</td>
+              <td>{item.required ? "Mandatory" : "Optional"}</td>
               <td className="num">{formatCurrency(item.originalAmount)}</td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
-            <td colSpan={3}>Total Selected Fees</td>
+            <td colSpan={3}>Selected Fee Items Total</td>
             <td className="num">{formatCurrency(feeItems.filter((item) => item.selected).reduce((sum, item) => sum + item.originalAmount, 0))}</td>
           </tr>
         </tfoot>
@@ -832,34 +1099,31 @@ function FeeItemsTable({ feeItems, errors, onChange }) {
   );
 }
 
-function ConcessionPanel({ fee, values, errors, onChange }) {
+function ConcessionPanel({ fee, values, errors, onChange, scholarships }) {
+  const scholarshipOptions = scholarships.map((item) => ({ value: item.id, label: item.name }));
   return (
     <section className="cms-fee-block">
-      <h3>Concession / Scheme</h3>
+      <h3>Scholarship / Concession</h3>
       <div className="cms-form-grid cols-3">
         <Field
-          field={{ name: "concessionName", label: "Scheme", type: "select", options: CONCESSION_SCHEMES }}
-          value={values.concessionName}
-          error={errors.concessionName}
+          field={{ name: "scholarshipId", label: "Scholarship", type: "select", options: scholarshipOptions }}
+          value={values.scholarshipId}
+          error={errors.scholarshipId}
           onChange={onChange}
         />
-        <Field
-          field={{ name: "concessionType", label: "Concession Type", type: "select", options: ["Fixed", "Percentage"] }}
-          value={values.concessionType || "Fixed"}
-          error={errors.concessionType}
-          onChange={onChange}
-        />
-        <Field
-          field={{ name: "concessionValue", label: values.concessionType === "Percentage" ? "Percentage" : "Fixed Amount", type: "number" }}
-          value={values.concessionValue}
-          error={errors.concessionValue}
-          onChange={onChange}
-        />
+        <div className="cms-fee-readonly-field">
+          <span>Discount Type</span>
+          <strong>{values.concessionType || "-"}</strong>
+        </div>
+        <div className="cms-fee-readonly-field">
+          <span>Discount Value</span>
+          <strong>{values.concessionType === "Percentage" ? `${Number(values.concessionValue || 0)}%` : formatCurrency(values.concessionValue || 0)}</strong>
+        </div>
       </div>
       <div className="cms-fee-concession-summary">
-        <div><span>Total Selected Fees</span><strong>{formatCurrency(fee.originalTotal)}</strong></div>
-        <div><span>Total Concession</span><strong>{formatCurrency(fee.concessionTotal)}</strong></div>
-        <div className="is-total"><span>Final Payable</span><strong>{formatCurrency(fee.totalPayable)}</strong></div>
+        <div><span>Course Fee Before Scholarship</span><strong>{formatCurrency(fee.courseFeeOriginal)}</strong></div>
+        <div><span>Course Scholarship</span><strong>-{formatCurrency(fee.courseConcession)}</strong></div>
+        <div className="is-total"><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
       </div>
     </section>
   );
@@ -871,7 +1135,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
       <table className="cms-fee-table">
         <thead>
           <tr>
-            <th>Fee Schedule</th>
+            <th>Course Fee Schedule</th>
             <th className="num">Amount</th>
             <th>Due Date</th>
             <th className="num">Paid Amount</th>
@@ -882,7 +1146,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
         <tbody>
           {schedule.map((row, index) => (
             <tr key={row.no}>
-              <td>Fee Schedule {row.no}</td>
+              <td>Course Fee Schedule {row.no}</td>
               <td className="num">
                 {editable ? (
                   <input
@@ -891,7 +1155,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
                     min="0"
                     value={row.amount}
                     onChange={(event) => onChange(index, "amount", event.target.value)}
-                    aria-label={`Fee Schedule ${row.no} amount`}
+                    aria-label={`Course Fee Schedule ${row.no} amount`}
                   />
                 ) : formatCurrency(row.amount)}
               </td>
@@ -902,7 +1166,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
                     type="date"
                     value={row.dueDate || ""}
                     onChange={(event) => onChange(index, "dueDate", event.target.value)}
-                    aria-label={`Fee Schedule ${row.no} due date`}
+                    aria-label={`Course Fee Schedule ${row.no} due date`}
                   />
                 ) : formatDate(row.dueDate)}
               </td>
@@ -928,7 +1192,7 @@ function InstallmentScheduleTable({ schedule, editable, onChange }) {
   );
 }
 
-function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, onPlanChange, onInstallmentCountChange }) {
+function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, onPlanChange, onInstallmentCountChange, scholarships = [], feeStructureLoading, feeStructureError }) {
   const hasStructure = fee.feeItems.length > 0;
   const isInstallment = values.paymentPlan === "Installment Payment";
   const schedule = fee.schedule;
@@ -944,50 +1208,38 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
         ))}
       </div>
 
-      {!hasStructure ? (
+      {feeStructureLoading ? (
+        <section className="cms-fee-block">
+          <p className="cms-fee-empty">Loading applicable fee structure...</p>
+        </section>
+      ) : !hasStructure ? (
         <section className="cms-fee-block">
           <p className="cms-fee-empty">
-            No fee structure is available for the selected academic details.
+            {feeStructureError || "No active fee structure is configured for the selected academic combination. Configure it in Fee Management -> Fee Setup -> Fee Structure."}
           </p>
           {errors.feeStructure ? <span className="cms-error">{errors.feeStructure}</span> : null}
         </section>
       ) : (
         <>
           <section className="cms-fee-block">
-            <h3>Fee Structure Summary</h3>
-            <div className="cms-fee-cards">
-              <div className="cms-fee-card">
-                <span>Selected Fee Total</span>
-                <strong>{formatCurrency(fee.originalTotal)}</strong>
-                <small>Updates when fee rows are checked</small>
-              </div>
-              <div className="cms-fee-card">
-                <span>Concession</span>
-                <strong>{formatCurrency(fee.concessionTotal)}</strong>
-                <small>{fee.concessionName || "No scheme selected"}</small>
-              </div>
-              <div className="cms-fee-card is-total">
-                <span>Final Payable</span>
-                <strong>{formatCurrency(fee.totalPayable)}</strong>
-                <small>Total student fee commitment</small>
-              </div>
-            </div>
-            <p className="cms-fee-note-line">
-              Fee rows define what applies to this student. Concession is calculated once against the total selected fees.
-            </p>
-          </section>
-
-          <section className="cms-fee-block">
-            <h3>Applicable Fees</h3>
+            <h3>Applicable Fee Structure</h3>
             <FeeItemsTable feeItems={fee.feeItems} errors={errors} onChange={onChange} />
           </section>
 
-          <ConcessionPanel fee={fee} values={values} errors={errors} onChange={onChange} />
+          <section className="cms-fee-block">
+            <h3>Admission Fee - Due Today</h3>
+            <div className="cms-fee-summary">
+              <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFee)}</strong></div>
+              <div><span>Payment Requirement</span><strong>Due on admission</strong></div>
+            </div>
+          </section>
+
+          <ConcessionPanel fee={fee} values={values} errors={errors} onChange={onChange} scholarships={scholarships} />
 
           <section className="cms-fee-block">
-            <h3>Choose Fee Schedule</h3>
+            <h3>Course Fee Payment Plan</h3>
             <div className="cms-fee-plan-grid">
-              {PAYMENT_PLANS.map((plan) => (
+              {COURSE_PAYMENT_PLANS.map((plan) => (
                 <button
                   type="button"
                   key={plan}
@@ -997,8 +1249,8 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
                 >
                   <span className="cms-fee-radio" aria-hidden="true" />
                   <span>
-                    <strong>{feeScheduleLabel(plan)}</strong>
-                    <small>{plan === "Full Payment" ? "Pay the final payable amount directly." : "Pay the final payable amount over multiple fee schedules."}</small>
+                    <strong>{paymentPlanLabel(plan)}</strong>
+                    <small>{plan === "Full Payment" ? "Collect Admission Fee and the full Course Fee payable today." : "Collect Admission Fee today and schedule only the Course Fee payable."}</small>
                   </span>
                 </button>
               ))}
@@ -1008,16 +1260,16 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
 
           {isInstallment ? (
             <section className="cms-fee-block">
-              <h3>Fee Schedule</h3>
+              <h3>Course Fee Schedule</h3>
               <div className="cms-fee-inline-fields">
                 <div className="cms-field">
-                  <label htmlFor="f-installmentCount">Number of Fee Schedules</label>
+                  <label htmlFor="f-installmentCount">Number of Course Fee Schedules</label>
                   <select
                     id="f-installmentCount"
                     value={String(values.installmentCount || DEFAULT_INSTALLMENT_COUNT)}
                     onChange={(event) => onInstallmentCountChange(Number(event.target.value))}
                   >
-                    {INSTALLMENT_COUNTS.map((count) => <option key={count} value={String(count)}>{count} Fee Schedules</option>)}
+                    {INSTALLMENT_COUNTS.map((count) => <option key={count} value={String(count)}>{count} Course Fee Schedules</option>)}
                   </select>
                 </div>
                 <label className="cms-fee-toggle">
@@ -1026,7 +1278,7 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
                     checked={Boolean(values.collectFirstInstallment)}
                     onChange={(event) => onChange("collectFirstInstallment", event.target.checked)}
                   />
-                  <span>Collect First Fee Schedule Now</span>
+                  <span>Collect First Course Fee Schedule Now</span>
                 </label>
               </div>
               <InstallmentScheduleTable schedule={schedule} editable onChange={onInstallmentChange} />
@@ -1034,19 +1286,24 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
             </section>
           ) : (
             <section className="cms-fee-block">
-              <h3>Full Payment</h3>
+              <h3>Full Course Payment</h3>
               <div className="cms-fee-summary">
-                <div><span>Total Selected Fees</span><strong>{formatCurrency(fee.originalTotal)}</strong></div>
-                <div><span>Concession</span><strong>{formatCurrency(fee.concessionTotal)}</strong></div>
-                <div><span>Final Payable Now</span><strong>{formatCurrency(fee.totalPayable)}</strong></div>
-                <div className="is-total"><span>Total Paying Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
-                <div className="is-total"><span>Remaining Balance After Payment</span><strong>{formatCurrency(fee.remaining)}</strong></div>
+                <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFee)}</strong></div>
+                <div><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
+                <div><span>Optional One-Time Fees</span><strong>{formatCurrency(fee.optionalFeesTotal)}</strong></div>
+                <div className="is-total"><span>Total Collecting Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
               </div>
             </section>
           )}
 
           <section className="cms-fee-block">
-            <h3>Payment Method</h3>
+            <h3>Payment Today</h3>
+            <div className="cms-fee-summary">
+              <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFeeDueToday)}</strong></div>
+              <div><span>Course Fee Paid Today</span><strong>{formatCurrency(fee.coursePaidToday)}</strong></div>
+              {fee.optionalFeesTotal ? <div><span>Additional One-Time Fees Paid Today</span><strong>{formatCurrency(fee.optionalFeesTotal)}</strong></div> : null}
+              <div className="is-total"><span>Total Collecting Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
+            </div>
             <div className="cms-form-grid cols-3">
               <Field
                 field={{ name: "paymentMethod", label: "Payment Method", type: "select", options: PAYMENT_METHODS, required: true }}
@@ -1074,7 +1331,7 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
           </section>
 
           <section className="cms-fee-block">
-            <h3>Payment Summary</h3>
+            <h3>Final Fee Summary</h3>
             <FeeSummaryRows fee={fee} />
           </section>
         </>
@@ -1089,18 +1346,19 @@ function FeePreview({ fee, values }) {
       <div className="cms-fee-kv-grid">
         <div><span>Group</span><strong>{values.group || "Not provided"}</strong></div>
         <div><span>Program</span><strong>{values.programName || values.program || "Not provided"}</strong></div>
-        <div><span>Total Selected Fees</span><strong>{formatCurrency(fee.originalTotal)}</strong></div>
-        <div><span>Scheme</span><strong>{fee.concessionName || "No concession"}</strong></div>
-        <div><span>Concession</span><strong>{formatCurrency(fee.concessionTotal)}</strong></div>
-        <div><span>Final Payable</span><strong>{formatCurrency(fee.totalPayable)}</strong></div>
-        <div><span>Payment Plan</span><strong>{values.paymentPlan ? feeScheduleLabel(values.paymentPlan) : "Not selected"}</strong></div>
+        <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFee)}</strong></div>
+        <div><span>Course Fee</span><strong>{formatCurrency(fee.courseFeeOriginal)}</strong></div>
+        <div><span>Scholarship</span><strong>{fee.concessionName || "No scholarship"}</strong></div>
+        <div><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
+        <div><span>Payment Plan</span><strong>{values.paymentPlan ? paymentPlanLabel(values.paymentPlan) : "Not selected"}</strong></div>
         <div><span>Paid Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
-        <div><span>Remaining Balance</span><strong>{formatCurrency(fee.remaining)}</strong></div>
+        <div><span>Future Course Schedules</span><strong>{formatCurrency(fee.courseScheduleBalance)}</strong></div>
+        <div><span>Remaining Balance</span><strong>{formatCurrency(fee.remainingBalance)}</strong></div>
         <div><span>Payment Method</span><strong>{values.paymentMethod || "Not selected"}</strong></div>
       </div>
       {fee.selectedFeeItems.length ? (
         <div className="cms-fee-preview-schedule">
-          <h4>Fee Summary</h4>
+          <h4>Selected Fee Items</h4>
           <div className="cms-fee-scroll">
             <table className="cms-fee-table">
               <thead>
@@ -1118,10 +1376,10 @@ function FeePreview({ fee, values }) {
           </div>
         </div>
       ) : null}
-      {values.paymentPlan === "Installment Payment" && fee.schedule.length ? (
+      {values.paymentPlan === "Installment Payment" && fee.courseSchedules.length ? (
         <div className="cms-fee-preview-schedule">
-          <h4>Fee Schedule</h4>
-          <InstallmentScheduleTable schedule={fee.schedule} editable={false} onChange={() => {}} />
+          <h4>Course Fee Schedule</h4>
+          <InstallmentScheduleTable schedule={fee.courseSchedules} editable={false} onChange={() => {}} />
         </div>
       ) : null}
     </div>
@@ -1146,7 +1404,12 @@ export default function AdmissionPage() {
   const [actionBusy, setActionBusy] = useState("");
   const [masterOptions, setMasterOptions] = useState({});
   const [masterStatus, setMasterStatus] = useState({ groupsLoading: false, groupsError: "", sectionsError: "", programsLoading: false, programsError: "" });
+  const [scholarships, setScholarships] = useState([]);
+  const [feeStructureLoading, setFeeStructureLoading] = useState(false);
+  const [feeStructureError, setFeeStructureError] = useState("");
   const [admissionNumberLoading, setAdmissionNumberLoading] = useState(false);
+  const [admissionNumberError, setAdmissionNumberError] = useState("");
+  const [editingAdmissionId, setEditingAdmissionId] = useState("");
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [feeSelection, setFeeSelection] = useState(initialDraft.feeSelection);
   const fileInputRefs = useRef({});
@@ -1155,9 +1418,10 @@ export default function AdmissionPage() {
   const persistTimerRef = useRef(null);
   const suppressPersistRef = useRef(false);
   const feeSelectionInitializedRef = useRef(initialDraft.hasFeeSelection);
-  const generateAdmissionNumberRef = useRef(false);
+  const admissionNumberInFlightRef = useRef(false);
   const pincodeRequestRef = useRef(0);
   const programRequestRef = useRef(0);
+  const boardMappingRequestRef = useRef(0);
   const autoLocationRef = useRef({ city: "", district: "", state: "" });
 
   const current = allSteps[step];
@@ -1184,11 +1448,42 @@ export default function AdmissionPage() {
     ));
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
   const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
+  const levelOptions = useMemo(() => {
+    if (!values.board) return [];
+    const levels = masterOptions.levels || [];
+    const selectedBoard = (masterOptions.boards || []).find((item) => String(item.value) === String(values.board));
+    if (!selectedBoard) return [];
+    const mappedIds = new Set((selectedBoard.academicLevelIds || []).map(String));
+    if (mappedIds.size) return levels.filter((item) => mappedIds.has(String(item.value)));
+    const mappedNames = new Set((selectedBoard.academicLevelNames || []).map((name) => String(name).trim().toLowerCase()));
+    if (mappedNames.size) return levels.filter((item) => mappedNames.has(String(item.label).trim().toLowerCase()));
+    return levels.filter((item) => item.boardId && String(item.boardId) === String(values.board));
+  }, [masterOptions.boards, masterOptions.levels, values.board]);
   const enhanceField = (field) => {
+    if (field.name === "admissionNo" && !editingAdmissionId) {
+      return {
+        ...field,
+        disabled: true,
+        placeholder: admissionNumberLoading ? "Generating admission number..." : "Admission Number",
+      };
+    }
+    if (field.name === "dob") return { ...field, max: yesterdayISO() };
     if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
+    if (field.name === "prevBoard" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
     if (field.name === "year" && masterOptions.years?.length) return { ...field, options: masterOptions.years };
-    if (field.name === "level" && masterOptions.levels?.length) return { ...field, options: masterOptions.levels };
+    if (field.name === "level") {
+      if (!values.board) return { ...field, options: [], selectPlaceholder: "Select Board first", disabled: true };
+      return {
+        ...field,
+        options: levelOptions,
+        selectPlaceholder: levelOptions.length ? "Select Academic Level" : "No academic levels available",
+        disabled: !levelOptions.length,
+      };
+    }
     if (field.name === "group") {
+      if (!values.board || !values.year || !values.level) {
+        return { ...field, options: [], selectPlaceholder: "Select Board, Academic Year and Academic Level first", disabled: true };
+      }
       if (masterStatus.groupsLoading) return { ...field, options: [{ value: "__loading_groups", label: "Loading groups...", disabled: true }] };
       if (masterStatus.groupsError) return { ...field, options: [{ value: "__groups_error", label: "Unable to load groups. Please try again.", disabled: true }] };
       return { ...field, options: groupOptions.length ? groupOptions : [{ value: "__no_groups", label: "No groups available", disabled: true }] };
@@ -1211,34 +1506,20 @@ export default function AdmissionPage() {
     ...section,
     fields: section.fields.map(enhanceField),
   }));
-  const currentDraft = viewMode === "form"
-    ? { values, step, feeSelection }
-    : readAdmissionDraft();
-  const draftRow = hasDraftContent(currentDraft.values || {}, currentDraft.feeSelection || [])
-    ? valuesToAdmissionRecord(currentDraft.values, {
-      id: "current-draft",
-      status: "Pending",
-      currentStep: currentDraft.step,
-      source: "draft",
-    })
-    : null;
-  const admissionRows = useMemo(() => (
-    mergeAdmissionRecords(admissions, draftRow ? [draftRow] : [])
-  ), [admissions, draftRow]);
   const displayedAdmissions = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return admissionRows.filter((row) => {
+    return admissions.filter((row) => {
       const matchesSearch = !term
-        || row.studentName.toLowerCase().includes(term)
-        || row.admissionNo.toLowerCase().includes(term);
+        || String(row.studentName || "").toLowerCase().includes(term)
+        || String(row.admissionNo || "").toLowerCase().includes(term);
       const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
       const matchesGroup = !filters.group || String(row.group) === String(filters.group);
-      const rowProgram = row.program || row.section;
+      const rowProgram = row.program;
       const matchesProgram = !filters.program || String(rowProgram) === String(filters.program);
       const matchesStatus = !filters.status || row.status === filters.status;
       return matchesSearch && matchesYear && matchesGroup && matchesProgram && matchesStatus;
     });
-  }, [admissionRows, filters.group, filters.program, filters.status, filters.year, search]);
+  }, [admissions, filters.group, filters.program, filters.status, filters.year, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1248,9 +1529,10 @@ export default function AdmissionPage() {
     try {
       const response = await apiClient.get(apiEndpoints.admissions.getAll);
       const apiRows = getCollection(response.data).map(normalizeAdmissionRow);
-      setAdmissions(mergeAdmissionRecords(apiRows, readStoredAdmissionRecords()));
-    } catch {
-      setAdmissions(readStoredAdmissionRecords());
+      setAdmissions(apiRows);
+    } catch (err) {
+      setAdmissions([]);
+      setToast(getApiErrorMessage(err));
     } finally {
       setListLoading(false);
     }
@@ -1290,8 +1572,8 @@ export default function AdmissionPage() {
   // Keeps the fee step consistent: default plan, and an installment schedule
   // that always matches the applicable course fee.
   useEffect(() => {
-    if (!values.group || !values.program) return;
-    const finalPayable = deriveAdmissionFee(values).totalPayable;
+    if (!values.feeStructureId || !values.feeItems?.length) return;
+    const courseFeePayable = deriveAdmissionFee(values).courseFeePayable;
     setValues((current) => {
       const next = { ...current };
       let changed = false;
@@ -1303,9 +1585,9 @@ export default function AdmissionPage() {
         const count = Number(next.installmentCount) || DEFAULT_INSTALLMENT_COUNT;
         const schedule = Array.isArray(next.installments) ? next.installments : [];
         const scheduleTotal = schedule.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-        if (schedule.length !== count || scheduleTotal !== finalPayable) {
+        if (schedule.length !== count || scheduleTotal !== courseFeePayable) {
           next.installmentCount = count;
-          next.installments = buildInstallmentSchedule(finalPayable, count, next.admissionDate || todayISO());
+          next.installments = buildInstallmentSchedule(courseFeePayable, count, next.admissionDate || todayISO());
           changed = true;
         }
       }
@@ -1330,32 +1612,41 @@ export default function AdmissionPage() {
           console.error("Unable to load group dropdown endpoint, falling back to groups list", dropdownError);
           return apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } });
         });
-      const [boardsResult, yearsResult, levelsResult, groupsResult, sectionsResult, bloodGroupsResult] = await Promise.allSettled([
+      const [boardsResult, yearsResult, levelsResult, groupsResult, sectionsResult, bloodGroupsResult, scholarshipsResult] = await Promise.allSettled([
         apiClient.get(apiEndpoints.boards.getAll),
         apiClient.get(apiEndpoints.academicYears.getAll),
         apiClient.get(apiEndpoints.boards.getAcademicLevels),
         fetchGroups(),
         apiClient.get(apiEndpoints.sections.getAll),
         apiClient.get(apiEndpoints.admissions.bloodGroups),
+        apiClient.get(apiEndpoints.fee.scholarships),
       ]);
 
       if (ignore) return;
       if (groupsResult.status === "rejected") console.error("Unable to load admission groups", groupsResult.reason);
       if (sectionsResult.status === "rejected") console.error("Unable to load admission sections", sectionsResult.reason);
+      if (scholarshipsResult.status === "fulfilled") {
+        setScholarships(getCollection(scholarshipsResult.value.data).map(normalizeScholarship).filter(Boolean));
+      } else {
+        setScholarships([]);
+      }
       setMasterOptions({
         boards: boardsResult.status === "fulfilled"
           ? getCollection(boardsResult.value.data)
-            .map((item) => toOption(item, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "boardCode", "BoardCode", "name", "Name"]))
+            .map(normalizeBoardOption)
             .filter(Boolean)
           : [],
         years: yearsResult.status === "fulfilled"
           ? getCollection(yearsResult.value.data)
-            .map((item) => toOption(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]))
+            .map((item) => {
+              const option = toOption(item, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]);
+              return option ? { ...option, boardId: readId(item, "boardId", "BoardId") } : null;
+            })
             .filter(Boolean)
           : [],
         levels: levelsResult.status === "fulfilled"
           ? getCollection(levelsResult.value.data)
-            .map((item) => toOption(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]))
+            .map(normalizeLevelOption)
             .filter(Boolean)
           : [],
         groups: groupsResult.status === "fulfilled"
@@ -1407,30 +1698,7 @@ export default function AdmissionPage() {
       }));
     };
 
-    const generateAdmissionNumber = async () => {
-      if (!generateAdmissionNumberRef.current) return;
-      setAdmissionNumberLoading(true);
-      try {
-        const response = await apiClient.post(apiEndpoints.admissions.generateNumber);
-        const data = response.data?.data ?? response.data?.Data ?? response.data;
-        const generatedNumber = typeof data === "string"
-          ? data
-          : read(data, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "number", "Number");
-        if (!ignore && generatedNumber) {
-          setValues((currentValues) => ({ ...currentValues, admissionNo: String(generatedNumber) }));
-        }
-      } catch {
-        if (!ignore) setToast("Admission number can be entered manually if generation is unavailable");
-      } finally {
-        if (!ignore) {
-          generateAdmissionNumberRef.current = false;
-          setAdmissionNumberLoading(false);
-        }
-      }
-    };
-
     loadAdmissionMasters();
-    if (viewMode === "form") generateAdmissionNumber();
     return () => {
       ignore = true;
       setMasterStatus((current) => ({ ...current, groupsLoading: false }));
@@ -1439,8 +1707,110 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
-    if (!values.board && !values.year && !values.level) return undefined;
+    if (editingAdmissionId || values.admissionNo) return undefined;
+    if (admissionNumberInFlightRef.current) return undefined;
+
     let ignore = false;
+    admissionNumberInFlightRef.current = true;
+    setAdmissionNumberError("");
+    setErrors((current) => ({ ...current, admissionNo: undefined }));
+    setAdmissionNumberLoading(true);
+
+    apiClient.post(apiEndpoints.admissions.generateNumber)
+      .then((response) => {
+        if (ignore) return;
+        const data = response.data?.data ?? response.data?.Data ?? response.data;
+        const generatedNumber = typeof data === "string"
+          ? data
+          : read(data, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "number", "Number");
+        if (generatedNumber) {
+          setValues((currentValues) => ({ ...currentValues, admissionNo: String(generatedNumber) }));
+          return;
+        }
+        const message = "Admission number could not be generated by the backend.";
+        setAdmissionNumberError(message);
+        setErrors((current) => ({ ...current, admissionNo: message }));
+        setToast(message);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        const message = getApiErrorMessage(err);
+        setAdmissionNumberError(message);
+        setErrors((current) => ({ ...current, admissionNo: message }));
+        setToast(message);
+      })
+      .finally(() => {
+        if (!ignore) setAdmissionNumberLoading(false);
+        admissionNumberInFlightRef.current = false;
+      });
+
+    return () => {
+      ignore = true;
+      admissionNumberInFlightRef.current = false;
+    };
+  }, [editingAdmissionId, values.admissionNo, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "form") return undefined;
+    if (!values.board) return undefined;
+    const selectedBoard = (masterOptions.boards || []).find((item) => String(item.value) === String(values.board));
+    if (!selectedBoard || selectedBoard.levelMappingLoaded) return undefined;
+    const requestId = boardMappingRequestRef.current + 1;
+    boardMappingRequestRef.current = requestId;
+    apiClient.get(apiEndpoints.boards.getById(values.board))
+      .then((response) => {
+        if (boardMappingRequestRef.current !== requestId) return;
+        const board = normalizeBoardOption(getObject(response.data));
+        if (!board) return;
+        setMasterOptions((current) => ({
+          ...current,
+          boards: (current.boards || []).map((item) => (
+            String(item.value) === String(values.board)
+              ? { ...item, ...board, levelMappingLoaded: true }
+              : item
+          )),
+        }));
+      })
+      .catch(() => {
+        if (boardMappingRequestRef.current !== requestId) return;
+        setMasterOptions((current) => ({
+          ...current,
+          boards: (current.boards || []).map((item) => (
+            String(item.value) === String(values.board)
+              ? { ...item, levelMappingLoaded: true }
+              : item
+          )),
+        }));
+      });
+    return undefined;
+  }, [masterOptions.boards, values.board, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "form" || !values.board || !values.level) return;
+    if (levelOptions.some((item) => String(item.value) === String(values.level))) return;
+    setValues((current) => ({
+      ...current,
+      level: "",
+      levelName: "",
+      group: "",
+      groupName: "",
+      program: "",
+      programName: "",
+      feeStructureId: "",
+      feeItems: [],
+      installments: [],
+    }));
+  }, [levelOptions, values.board, values.level, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "form") return undefined;
+    if (!values.board || !values.year || !values.level) {
+      setMasterOptions((current) => ({ ...current, groups: [] }));
+      setMasterStatus((current) => ({ ...current, groupsLoading: false, groupsError: "" }));
+      return undefined;
+    }
+    let ignore = false;
+    setMasterStatus((current) => ({ ...current, groupsLoading: true, groupsError: "" }));
     const params = {
       boardId: values.board || undefined,
       academicYearId: values.year || undefined,
@@ -1464,7 +1834,13 @@ export default function AdmissionPage() {
         setMasterOptions((current) => ({ ...current, groups }));
       })
       .catch(() => {
-        if (!ignore) setMasterOptions((current) => ({ ...current, groups: [] }));
+        if (!ignore) {
+          setMasterOptions((current) => ({ ...current, groups: [] }));
+          setMasterStatus((current) => ({ ...current, groupsError: "Unable to load groups. Please try again." }));
+        }
+      })
+      .finally(() => {
+        if (!ignore) setMasterStatus((current) => ({ ...current, groupsLoading: false }));
       });
     return () => { ignore = true; };
   }, [values.board, values.level, values.year, viewMode]);
@@ -1512,6 +1888,114 @@ export default function AdmissionPage() {
       });
     return undefined;
   }, [values.group, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "form") return undefined;
+    const boardId = values.board;
+    const academicYearId = values.year;
+    const groupId = values.group;
+    const programId = values.program;
+    setFeeStructureError("");
+    if (!boardId || !academicYearId || !groupId) {
+      setFeeStructureLoading(false);
+      setValues((current) => ({
+        ...current,
+        feeStructureId: "",
+        feeItems: [],
+        installments: [],
+        paymentPlan: "",
+        collectFirstInstallment: false,
+      }));
+      return undefined;
+    }
+
+    let ignore = false;
+    setFeeStructureLoading(true);
+    apiClient.get(apiEndpoints.fee.getStructures)
+      .then(async (response) => {
+        if (ignore) return;
+        const summaries = getCollection(response.data)
+          .flatMap(expandFeeStructureItems)
+          .map(normalizeFeeStructureSummary)
+          .filter(Boolean)
+          .filter((item) => item.status.toLowerCase() !== "inactive");
+        const matching = summaries.find((item) => (
+          String(item.boardId) === String(boardId)
+          && String(item.academicYearId) === String(academicYearId)
+          && String(item.groupId) === String(groupId)
+          && (programId ? String(item.programId) === String(programId) || !item.programId : !item.programId)
+        ));
+        if (!matching) {
+          if (!ignore) {
+            setValues((current) => ({
+              ...current,
+              feeStructureId: "",
+              feeItems: [],
+              installments: [],
+              paymentPlan: "",
+              collectFirstInstallment: false,
+            }));
+            setFeeStructureError("No active fee structure is configured for the selected academic combination. Configure it in Fee Management -> Fee Setup -> Fee Structure.");
+          }
+          return;
+        }
+
+        const [detailResult, itemsResult] = await Promise.allSettled([
+          apiClient.get(apiEndpoints.fee.getStructureById(matching.id)),
+          apiClient.get(apiEndpoints.fee.getStructureItems(matching.id)),
+        ]);
+        if (ignore) return;
+        const detail = detailResult.status === "fulfilled" ? getObject(detailResult.value.data) : matching.raw;
+        const itemSource = itemsResult.status === "fulfilled"
+          ? getCollection(itemsResult.value.data)
+          : [
+            ...expandFeeStructureItems(detail),
+            ...summaries.filter((item) => item.id === matching.id).map((item) => item.raw),
+          ];
+        const feeItems = itemSource
+          .map((item) => normalizeFeeStructureItem({ ...detail, ...item }, { ...matching.raw, ...detail, feeStructureId: matching.id }))
+          .filter(Boolean);
+        if (!feeItems.length) {
+          setValues((current) => ({
+            ...current,
+            feeStructureId: "",
+            feeItems: [],
+            installments: [],
+            paymentPlan: "",
+            collectFirstInstallment: false,
+          }));
+          setFeeStructureError("The matched fee structure has no configured fee items.");
+          return;
+        }
+        setValues((current) => {
+          if (String(current.board) !== String(boardId) || String(current.year) !== String(academicYearId) || String(current.group) !== String(groupId) || String(current.program || "") !== String(programId || "")) return current;
+          return {
+            ...current,
+            feeStructureId: matching.id,
+            feeItems,
+            paymentPlan: current.paymentPlan || "Full Payment",
+            installments: [],
+            collectFirstInstallment: false,
+          };
+        });
+      })
+      .catch((err) => {
+        if (ignore) return;
+        setValues((current) => ({
+          ...current,
+          feeStructureId: "",
+          feeItems: [],
+          installments: [],
+          paymentPlan: "",
+          collectFirstInstallment: false,
+        }));
+        setFeeStructureError(getApiErrorMessage(err));
+      })
+      .finally(() => {
+        if (!ignore) setFeeStructureLoading(false);
+      });
+    return () => { ignore = true; };
+  }, [values.board, values.group, values.program, values.year, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
@@ -1580,7 +2064,7 @@ export default function AdmissionPage() {
         ...current,
         paymentPlan: plan,
         installmentCount: count,
-        installments: buildInstallmentSchedule(deriveAdmissionFee({ ...current, paymentPlan: plan }).totalPayable, count, current.admissionDate || todayISO()),
+        installments: buildInstallmentSchedule(deriveAdmissionFee({ ...current, paymentPlan: plan }).courseFeePayable, count, current.admissionDate || todayISO()),
       };
     });
   };
@@ -1590,7 +2074,7 @@ export default function AdmissionPage() {
     setValues((current) => ({
       ...current,
       installmentCount: count,
-      installments: buildInstallmentSchedule(deriveAdmissionFee(current).totalPayable, count, current.admissionDate || todayISO()),
+      installments: buildInstallmentSchedule(deriveAdmissionFee(current).courseFeePayable, count, current.admissionDate || todayISO()),
     }));
   };
 
@@ -1610,10 +2094,14 @@ export default function AdmissionPage() {
     const optionsFromRows = (masterOptions.groups || []).map((item) => ({ value: item.label, label: item.label }));
     return Array.from(new Map(optionsFromRows.filter((item) => item.value).map((item) => [item.value, item])).values());
   }, [masterOptions.groups]);
+  const academicYearFilterOptions = useMemo(() => uniqueAcademicYearsByName(
+    (masterOptions.years || []).map((item) => ({ value: item.label, label: item.label })),
+    (item) => item.label,
+  ), [masterOptions.years]);
   const programFilterOptions = useMemo(() => {
     const filteredRows = filters.group
-      ? admissionRows.filter((item) => String(item.group) === String(filters.group))
-      : admissionRows;
+      ? admissions.filter((item) => String(item.group) === String(filters.group))
+      : admissions;
     return Array.from(new Map(filteredRows
       .map((item) => {
         const value = item.program || item.section;
@@ -1621,7 +2109,7 @@ export default function AdmissionPage() {
       })
       .filter(Boolean)
       .map((item) => [item.value, item])).values());
-  }, [admissionRows, filters.group]);
+  }, [admissions, filters.group]);
 
   const feeContext = [
     { label: "Student", value: [values.firstName, values.lastName].filter(Boolean).join(" ") },
@@ -1637,9 +2125,29 @@ export default function AdmissionPage() {
     if (isPlaceholderOption(val)) return;
     if (name === "feeItems") {
       setValues((v) => ({ ...v, feeItems: val, installments: v.paymentPlan === "Installment Payment"
-        ? buildInstallmentSchedule(deriveAdmissionFee({ ...v, feeItems: val }).totalPayable, Number(v.installmentCount) || DEFAULT_INSTALLMENT_COUNT, v.admissionDate || todayISO())
+        ? buildInstallmentSchedule(deriveAdmissionFee({ ...v, feeItems: val }).courseFeePayable, Number(v.installmentCount) || DEFAULT_INSTALLMENT_COUNT, v.admissionDate || todayISO())
         : v.installments }));
       setErrors((e) => ({ ...e, feeItems: undefined, installments: undefined }));
+      return;
+    }
+    if (name === "scholarshipId") {
+      const scholarship = scholarships.find((item) => String(item.id) === String(val));
+      setValues((v) => {
+        const next = {
+          ...v,
+          scholarshipId: val,
+          concessionName: scholarship?.name || "",
+          concessionType: scholarship?.discountType || "",
+          concessionValue: scholarship ? String(scholarship.discountValue || 0) : "",
+        };
+        return {
+          ...next,
+          installments: next.paymentPlan === "Installment Payment"
+            ? buildInstallmentSchedule(deriveAdmissionFee(next).courseFeePayable, Number(next.installmentCount) || DEFAULT_INSTALLMENT_COUNT, next.admissionDate || todayISO())
+            : next.installments,
+        };
+      });
+      setErrors((e) => ({ ...e, scholarshipId: undefined, concessionValue: undefined, installments: undefined }));
       return;
     }
     if (["concessionName", "concessionType", "concessionValue"].includes(name)) {
@@ -1652,7 +2160,7 @@ export default function AdmissionPage() {
         return {
           ...next,
           installments: next.paymentPlan === "Installment Payment"
-            ? buildInstallmentSchedule(deriveAdmissionFee(next).totalPayable, Number(next.installmentCount) || DEFAULT_INSTALLMENT_COUNT, next.admissionDate || todayISO())
+            ? buildInstallmentSchedule(deriveAdmissionFee(next).courseFeePayable, Number(next.installmentCount) || DEFAULT_INSTALLMENT_COUNT, next.admissionDate || todayISO())
             : next.installments,
         };
       });
@@ -1665,19 +2173,22 @@ export default function AdmissionPage() {
     }
     if (["board", "year", "level"].includes(name)) {
       const labelKey = name === "level" ? "levelName" : null;
-      const labelValue = name === "level" ? optionLabel(masterOptions.levels, val) : "";
+      const labelValue = name === "level" ? optionLabel(levelOptions, val) : "";
+      setMasterOptions((current) => ({ ...current, programs: [] }));
       setValues((v) => ({
         ...v,
         [name]: sanitizeValue(field, val),
         ...(labelKey ? { [labelKey]: labelValue } : {}),
+        ...(name === "board" ? { level: "", levelName: "" } : {}),
         group: "",
         groupName: "",
         program: "",
         programName: "",
+        feeStructureId: "",
         feeItems: [],
         installments: [],
       }));
-      setErrors((e) => ({ ...e, [name]: undefined, group: undefined, program: undefined }));
+      setErrors((e) => ({ ...e, [name]: undefined, group: undefined, program: undefined, feeStructure: undefined }));
       return;
     }
     if (name === "collectFirstInstallment") {
@@ -1687,21 +2198,23 @@ export default function AdmissionPage() {
     }
     if (name === "group") {
       // Program depends on Group: reset the program and the fee schedule.
+      setMasterOptions((current) => ({ ...current, programs: [] }));
       setValues((v) => ({
         ...v,
         group: val,
         groupName: optionLabel(groupOptions, val),
         program: "",
         programName: "",
+        feeStructureId: "",
         feeItems: [],
         installments: [],
       }));
-      setErrors((e) => ({ ...e, group: undefined, program: undefined }));
+      setErrors((e) => ({ ...e, group: undefined, program: undefined, feeStructure: undefined }));
       return;
     }
     if (name === "program") {
-      setValues((v) => ({ ...v, program: val, programName: optionLabel(programOptions, val), feeItems: [], installments: [] }));
-      setErrors((e) => ({ ...e, program: undefined }));
+      setValues((v) => ({ ...v, program: val, programName: optionLabel(programOptions, val), feeStructureId: "", feeItems: [], installments: [] }));
+      setErrors((e) => ({ ...e, program: undefined, feeStructure: undefined }));
       return;
     }
     setValues((v) => ({ ...v, [name]: sanitizeValue(field, val) }));
@@ -1739,6 +2252,7 @@ export default function AdmissionPage() {
     fields.forEach((f) => {
       const val = values[f.name];
       if (f.required && (!String(val ?? "").trim() || isPlaceholderOption(val))) next[f.name] = `${f.label} is required`;
+      else if (f.name === "dob" && val && isTodayOrFutureDate(val)) next[f.name] = "Date of Birth must be before today";
       else if (f.type === "email" && val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) next[f.name] = "Enter a valid email";
       else if (MOBILE_FIELDS.has(f.name) && val && !/^[0-9]{10}$/.test(String(val))) next[f.name] = "Enter a valid 10 digit number";
       else if (f.name === "aadhaar" && val && !/^[0-9]{12}$/.test(String(val))) next[f.name] = "Enter a valid 12 digit Aadhaar number";
@@ -1848,9 +2362,10 @@ export default function AdmissionPage() {
     setStep(targetStep);
   };
 
-  const openAdmissionForm = ({ formValues = {}, targetStep = 0, selection = [], generateNumber = false } = {}) => {
+  const openAdmissionForm = ({ formValues = {}, targetStep = 0, selection = [], admissionId = "" } = {}) => {
     suppressPersistRef.current = false;
-    generateAdmissionNumberRef.current = Boolean(generateNumber);
+    setAdmissionNumberError("");
+    setEditingAdmissionId(admissionId ? String(admissionId) : "");
     setValues(formValues);
     setFeeSelection(Array.isArray(selection) ? selection : []);
     feeSelectionInitializedRef.current = Array.isArray(selection);
@@ -1861,20 +2376,30 @@ export default function AdmissionPage() {
 
   const addNewAdmission = () => {
     clearAdmissionDraft();
-    openAdmissionForm({ formValues: {}, targetStep: 0, selection: [], generateNumber: true });
+    openAdmissionForm({ formValues: {}, targetStep: 0, selection: [] });
   };
 
-  const continueAdmission = (record) => {
-    const draft = readAdmissionDraft();
-    if (record.source === "draft" && hasDraftContent(draft.values, draft.feeSelection)) {
-      openAdmissionForm({ formValues: draft.values, targetStep: draft.step, selection: draft.feeSelection, generateNumber: !draft.values?.admissionNo });
+  const continueAdmission = async (record) => {
+    const admissionId = record.admissionId || record.id;
+    if (!admissionId) {
+      setToast("Admission ID is required to load admission details.");
       return;
     }
-    openAdmissionForm({
-      formValues: record.values || {},
-      targetStep: record.currentStep || 0,
-      selection: record.feeSelection || [],
-    });
+    setActionBusy(`Load-${record.id}`);
+    try {
+      const response = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
+      const detailRow = normalizeAdmissionRow(getObject(response.data));
+      openAdmissionForm({
+        formValues: detailRow.values || {},
+        targetStep: record.currentStep || 0,
+        selection: [],
+        admissionId,
+      });
+    } catch (err) {
+      setToast(getApiErrorMessage(err));
+    } finally {
+      setActionBusy("");
+    }
   };
 
   const returnToAdmissions = () => {
@@ -1884,31 +2409,102 @@ export default function AdmissionPage() {
     refreshAdmissions();
   };
 
-  const setStoredAdmissionStatus = (record, status) => {
-    const stored = readStoredAdmissionRecords();
-    const key = admissionKey(record);
-    const existing = stored.find((item) => admissionKey(item) === key);
-    const nextRecord = {
-      ...(existing || record),
-      status,
-      values: existing?.values || record.values || {},
-      updatedAt: new Date().toISOString(),
-    };
-    const nextRecords = mergeAdmissionRecords(stored.filter((item) => admissionKey(item) !== key), [nextRecord]);
-    writeStoredAdmissionRecords(nextRecords);
-    setAdmissions((currentRows) => mergeAdmissionRecords(currentRows.filter((item) => admissionKey(item) !== key), [nextRecord]));
+  const ensureApprovedStudentFeeAccount = async ({ admissionId, approvedPayload }) => {
+    const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
+    const detail = getObject(detailResponse.data);
+    const detailRow = normalizeAdmissionRow(detail);
+    const studentId = resolveApprovedStudentId(approvedPayload, detail, detailRow.raw, detailRow);
+    if (!studentId) {
+      throw new Error("Admission was approved, but the approved student ID was not returned by the backend.");
+    }
+
+    try {
+      const existingResponse = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(studentId));
+      const existingStudentFeeId = readStudentFeeAssignmentId(existingResponse.data);
+      if (existingStudentFeeId) return { studentId, studentFeeId: existingStudentFeeId, reused: true };
+    } catch (err) {
+      if (err?.response?.status && err.response.status !== 404) throw err;
+    }
+
+    const feeStructure = await findApplicableFeeStructure({
+      boardId: detailRow.values.board,
+      academicYearId: detailRow.values.year,
+      groupId: detailRow.values.group,
+      programId: detailRow.values.program,
+    });
+
+    const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
+      studentId,
+      feeStructureId: Number(feeStructure.id),
+    });
+    const studentFeeId = readStudentFeeAssignmentId(assignResponse.data);
+    if (!studentFeeId) throw new Error("Fee structure was assigned, but the student fee assignment ID was not returned.");
+
+    if (Number(detailRow.values.scholarshipId)) {
+      await apiClient.post(apiEndpoints.fee.concession, {
+        studentId,
+        studentFeeId: Number(studentFeeId),
+        scholarshipId: Number(detailRow.values.scholarshipId),
+        scholarshipName: detailRow.values.concessionName || null,
+        discountType: detailRow.values.concessionType || null,
+        discountValue: Number(detailRow.values.concessionValue || 0),
+        reason: "Applied during admission approval",
+      });
+    }
+
+    const fee = deriveAdmissionFee(detailRow.values);
+    if (fee.paymentPlan) {
+      const planResponse = await apiClient.post(apiEndpoints.fee.createPaymentPlan, {
+        studentFeeId: Number(studentFeeId),
+        planName: fee.paymentPlan,
+        numberOfInstallments: fee.paymentPlan === "Installment Payment" ? Math.max(fee.courseSchedules.length, 1) : 1,
+        installments: null,
+      });
+      const paymentPlanId = readPaymentPlanId(planResponse.data);
+      if (paymentPlanId && fee.paymentPlan === "Installment Payment") {
+        await Promise.all(fee.courseSchedules.map((item, index) => apiClient.post(apiEndpoints.fee.addPaymentPlanInstallment(paymentPlanId), {
+          installmentNumber: Number(item.no || index + 1),
+          amount: Number(item.amount || 0),
+          dueDate: toDateTime(item.dueDate || detailRow.values.admissionDate || todayISO()),
+        })));
+      }
+    }
+
+    if (fee.paidToday > 0) {
+      await apiClient.post(apiEndpoints.fee.collect, collectPayload({
+        studentId,
+        studentFeeId,
+        amount: fee.paidToday,
+        values: detailRow.values,
+        note: "Initial admission payment",
+      }));
+    }
+
+    return { studentId, studentFeeId, reused: false };
   };
 
   const updateAdmissionStatus = async (record, status) => {
     setActionBusy(`${status}-${record.id}`);
     const endpoint = status === "Approved" ? apiEndpoints.admissions.approve : apiEndpoints.admissions.reject;
     try {
-      if (record.admissionId) await apiClient.post(endpoint(record.admissionId));
-      setStoredAdmissionStatus(record, status);
-      setToast(`Admission ${record.admissionNo} marked as ${status}.`);
-    } catch {
-      setStoredAdmissionStatus(record, status);
-      setToast(`Admission ${record.admissionNo} marked as ${status} locally.`);
+      const admissionId = record.admissionId || record.id;
+      if (!admissionId) throw new Error("Admission ID is required for this action.");
+      const response = await apiClient.post(endpoint(admissionId), admissionFeeApprovalBody(admissionId, status));
+      if (status === "Approved") {
+        try {
+          await ensureApprovedStudentFeeAccount({ admissionId, approvedPayload: getObject(response.data) });
+        } catch (feeErr) {
+          await refreshAdmissions();
+          setToast(`Admission ${record.admissionNo} was approved, but fee account creation failed: ${getApiErrorMessage(feeErr)}`);
+          return;
+        }
+      }
+      await refreshAdmissions();
+      setToast(status === "Approved"
+        ? `Admission ${record.admissionNo} approved and fee account is ready.`
+        : `Admission ${record.admissionNo} marked as ${status}.`);
+    } catch (err) {
+      setToast(getApiErrorMessage(err));
     } finally {
       setActionBusy("");
       setApproveTarget(null);
@@ -1917,84 +2513,38 @@ export default function AdmissionPage() {
   };
 
   const submit = async () => {
+    if (saving) return;
     if (!validateAdmission()) {
       setToast("Please complete required admission details before submitting");
       return;
     }
-
-    setSaving(true);
-    const account = createFeeAccountFromAdmission({
-      admissionNo: values.admissionNo,
-      studentName: [values.firstName, values.lastName].filter(Boolean).join(" "),
-      rollNumber: values.rollNumber || "-",
-      academicYear: optionLabel(masterOptions.years, values.year) || values.year,
-      academicLevel: values.level,
-      group: values.groupName || optionLabel(masterOptions.groups, values.group) || values.group,
-      program: values.programName || optionLabel(programOptions, values.program) || values.program,
-      section: values.programName || optionLabel(programOptions, values.program) || values.program,
-      admissionDate: values.admissionDate || todayISO(),
-      admissionFee: fee.admissionFee,
-      courseFee: fee.courseFee,
-      paymentPlan: values.paymentPlan,
-      paymentMethod: values.paymentMethod,
-      transactionReference: values.transactionNumber || "",
-      collectFirstInstallment: Boolean(values.collectFirstInstallment),
-      installments: fee.schedule,
-      feeItems: fee.selectedFeeItems,
-      concessionName: fee.concessionName,
-      concessionType: fee.concessionType,
-      concessionValue: fee.concessionValue,
-      concessionAmount: fee.concessionTotal,
-      totalPayable: fee.totalPayable,
-    });
-
-    let backendAdmissionId = "";
-    try {
-      const response = await apiClient.post(apiEndpoints.admissions.create, buildAdmissionFormData(values), {
-        headers: { "Content-Type": undefined },
-      });
-      const data = response.data?.data ?? response.data?.Data ?? response.data;
-      backendAdmissionId = readId(data, "admissionId", "AdmissionId", "id", "Id");
-      if (backendAdmissionId && fee.selectedFeeItems.length) {
-        const feeItems = fee.selectedFeeItems
-          .map((item) => ({
-            feeTypeId: Number(item.feeTypeId || item.id || 0),
-            amount: Number(item.originalAmount || item.payableAmount || 0),
-          }))
-          .filter((item) => item.feeTypeId > 0 && item.amount > 0);
-        if (feeItems.length) {
-          await apiClient.post(apiEndpoints.fee.admissionAssign, {
-            admissionId: Number(backendAdmissionId),
-            feeStructureId: Number(fee.selectedFeeItems[0]?.structureId || 0),
-            feeItems,
-          });
-          await apiClient.get(apiEndpoints.fee.admissionSummary(backendAdmissionId)).catch(() => null);
-        }
-        if (Number(fee.paidToday || 0) > 0) {
-          await apiClient.post(apiEndpoints.fee.admissionPayment(backendAdmissionId), {
-            amount: Number(fee.paidToday),
-            paymentMode: values.paymentMethod || values.paymentMode || "Cash",
-            transactionNumber: values.transactionNumber || "",
-            paymentDate: new Date(values.paymentDate || values.admissionDate || todayISO()).toISOString(),
-            remarks: values.remarks || "",
-          }).catch(() => null);
-        }
-      }
-    } catch (err) {
-      setToast(`Backend admission save failed: ${getApiErrorMessage(err)}. Saved locally.`);
+    if (!editingAdmissionId && (!values.admissionNo || admissionNumberError)) {
+      const message = admissionNumberError || "Admission number must be generated by the backend before submitting.";
+      setAdmissionNumberError(message);
+      setToast(message);
+      return;
     }
 
-    const completedRecord = valuesToAdmissionRecord({
-      ...values,
-      year: optionLabel(masterOptions.years, values.year) || values.year,
-    }, { id: backendAdmissionId || account.admissionNo, status: "Pending", currentStep: allSteps.length - 1 });
-    const storedRecords = mergeAdmissionRecords(readStoredAdmissionRecords(), [completedRecord]);
-    writeStoredAdmissionRecords(storedRecords);
-    setAdmissions((currentRows) => mergeAdmissionRecords(currentRows, [completedRecord]));
-    setToast(`Admission ${account.admissionNo} submitted. Fee account created with ${formatCurrency(fee.paidToday)} collected today.`);
+    setSaving(true);
+    try {
+      const endpoint = editingAdmissionId
+        ? apiEndpoints.admissions.update(editingAdmissionId)
+        : apiEndpoints.admissions.create;
+      const method = editingAdmissionId ? "put" : "post";
+      await apiClient[method](endpoint, buildAdmissionFormData(values), {
+        headers: { "Content-Type": undefined },
+      });
+    } catch (err) {
+      setToast(getApiErrorMessage(err));
+      setSaving(false);
+      return;
+    }
+
+    setToast(`Admission ${values.admissionNo} ${editingAdmissionId ? "updated" : "submitted"} successfully.`);
     resetAdmissionDraftState();
     setViewMode("list");
     setPage(1);
+    await refreshAdmissions();
     setSaving(false);
   };
 
@@ -2024,7 +2574,7 @@ export default function AdmissionPage() {
               />
             </div>
             <div className="cms-admission-filters">
-              <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || options.year }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "year", label: "Academic Year", type: "select", options: masterOptions.years || [] }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, program: name === "group" ? "" : current.program })); setPage(1); }} />
               <Field field={{ name: "program", label: "Program", type: "select", options: programFilterOptions }} value={filters.program} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
@@ -2057,11 +2607,11 @@ export default function AdmissionPage() {
                     <td>{optionLabel(masterOptions.years, row.academicYear) || row.academicYear || "-"}</td>
                     <td>{optionLabel(masterOptions.boards, row.board) || row.board || "-"}</td>
                     <td>{row.group || "-"}</td>
-                    <td>{row.program || row.section || "-"}</td>
+                    <td>{row.program || "-"}</td>
                     <td><span className={`cms-badge ${admissionStatusClass(row.status)}`}>{row.status}</span></td>
                     <td>
                       <div className="cms-actions cms-admission-actions">
-                        <button type="button" className="cms-action-btn view" title="View / edit admission" aria-label="View or edit admission" onClick={() => continueAdmission(row)}>
+                        <button type="button" className="cms-action-btn view" title="View / edit admission" aria-label="View or edit admission" disabled={actionBusy === `Load-${row.id}`} onClick={() => continueAdmission(row)}>
                           <Eye size={15} />
                         </button>
                         <button type="button" className="cms-action-btn edit" title="Approve admission" aria-label="Approve admission" disabled={actionBusy === `Approved-${row.id}` || row.status === "Approved"} onClick={() => setApproveTarget(row)}>
@@ -2134,7 +2684,7 @@ export default function AdmissionPage() {
   return (
     <DashboardLayout
       title="Student Admission"
-      subtitle="Multi-step admission form with document upload."
+      subtitle="Multi-step admission form."
       breadcrumb={["People"]}
       actions={(
         <button type="button" className="cms-btn cms-btn-ghost" onClick={returnToAdmissions}>
@@ -2179,9 +2729,6 @@ export default function AdmissionPage() {
       <div className="cms-card">
         <div className="cms-card-head">
           <h2>Step {step + 1} of {allSteps.length} - {current.title}</h2>
-          {current.title === "Documents" ? (
-            <span className="cms-badge cms-badge-info"><Upload size={12} /> Max 2 MB per file</span>
-          ) : null}
         </div>
         <div className="cms-card-body">
           {isPreview ? (
@@ -2202,6 +2749,9 @@ export default function AdmissionPage() {
               onPlanChange={changePlan}
               onInstallmentCountChange={changeInstallmentCount}
               onInstallmentChange={changeInstallment}
+              scholarships={scholarships}
+              feeStructureLoading={feeStructureLoading}
+              feeStructureError={feeStructureError}
             />
           ) : (
             <div className={`cms-form-grid cols-3 ${current.title === "Address" ? "cms-admission-address-grid" : ""}`}>
@@ -2225,11 +2775,11 @@ export default function AdmissionPage() {
             {step === 0 ? "Back to Admissions" : isPreview ? "Back" : "Previous"}
           </button>
           {!isPreview ? (
-            <button className="cms-btn cms-btn-primary" onClick={next} disabled={admissionNumberLoading}>
+            <button className="cms-btn cms-btn-primary" onClick={next} disabled={admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))}>
               {admissionNumberLoading ? "Generating Number..." : step === steps.length - 1 ? "Preview" : "Save & Continue"}
             </button>
           ) : (
-            <button className="cms-btn cms-btn-primary" onClick={submit} disabled={saving || admissionNumberLoading}>
+            <button className="cms-btn cms-btn-primary" onClick={submit} disabled={saving || admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))}>
               {saving ? "Submitting..." : "Submit Admission"}
             </button>
           )}

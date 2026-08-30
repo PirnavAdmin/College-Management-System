@@ -117,9 +117,11 @@
     updateScholarship: (scholarshipId) => `/api/v1/fees/scholarships/${encodeURIComponent(scholarshipId)}`,
     deleteScholarship: (scholarshipId) => `/api/v1/fees/scholarships/${encodeURIComponent(scholarshipId)}`,
     assign: "/api/v1/fees/student-fees/assign",
+    assignStudentFee: "/api/v1/fees/student-fees/assign",
     admissionAssign: "/api/v1/fees/student-fees/assign",
     getStudentFee: (studentFeeId) => `/api/v1/fees/student-fees/${encodeURIComponent(studentFeeId)}`,
-    studentFeeDetails: (studentId) => `/api/v1/fees/students/${encodeURIComponent(studentId)}/fee-details`,
+    studentFeeDetails: (studentFeeId) => `/api/v1/fees/student-fees/${encodeURIComponent(studentFeeId)}`,
+    studentFeeDetailsByStudent: (studentId) => `/api/v1/fees/students/${encodeURIComponent(studentId)}/fee-details`,
     ledger: "/api/v1/fees/ledger",
     getStudentFees: (studentId) => `/api/v1/fees/students/${encodeURIComponent(studentId)}/fee-ledger`,
     studentLedger: (studentId) => `/api/v1/fees/students/${encodeURIComponent(studentId)}/fee-ledger`,
@@ -137,14 +139,14 @@
     deletePayment: (id) => `/api/fees/payment/${id}`,
     createPaymentPlan: "/api/v1/fees/payment-plans",
     createPaymentPlanInstallment: (paymentPlanId) => `/api/v1/fees/payment-plans/${encodeURIComponent(paymentPlanId)}/installments`,
+    addPaymentPlanInstallment: (paymentPlanId) => `/api/v1/fees/payment-plans/${encodeURIComponent(paymentPlanId)}/installments`,
     addFine: "/api/fees/fine",
     waiveFine: (id) => `/api/fees/fine/${id}/waive`,
     refund: "/api/fees/refund",
     getDue: "/api/v1/fees/due",
     dashboard: "/api/v1/fees/dashboard",
-    admissionSummary: (admissionId) => `/api/fees/admission/${admissionId}/summary`,
-    admissionPayment: (admissionId) => `/api/fees/admission/${admissionId}/payment`,
     downloadReceipt: (feeCollectionId) => `/api/fees/receipt/download/${feeCollectionId}`,
+    due: "/api/v1/fees/due",
     dailyReport: "/api/v1/fees/reports/daily",
     monthlyReport: "/api/v1/fees/reports/monthly",
     outstandingReport: "/api/fees/report/outstanding",
@@ -286,10 +288,27 @@
     delete: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
     submit: (admissionId) => `/api/v1/student-admissions/${admissionId}/submit`,
     verify: (admissionId) => `/api/v1/student-admissions/${admissionId}/verify`,
-    generateNumber: "/api/v1/student-admissions/generate-number",
-    bloodGroups: "/api/v1/student-admissions/blood-groups",
     approve: (admissionId) => `/api/v1/student-admissions/${admissionId}/approve`,
     reject: (admissionId) => `/api/v1/student-admissions/${admissionId}/reject`,
+    assignSection: (admissionId) => `/api/v1/student-admissions/${admissionId}/section`,
+    bulkSection: "/api/v1/student-admissions/bulk-section",
+    bulkRollNumbers: "/api/v1/student-admissions/bulk-roll-numbers",
+    bloodGroups: "/api/v1/student-admissions/blood-groups",
+    generateNumber: "/api/v1/student-admissions/generate-number",
+  },
+  studentAdmissions: {
+    getAll: "/api/v1/student-admissions",
+    create: "/api/v1/student-admissions",
+    getById: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
+    update: (admissionId) => `/api/v1/student-admissions/${admissionId}`,
+    verify: (admissionId) => `/api/v1/student-admissions/${admissionId}/verify`,
+    approve: (admissionId) => `/api/v1/student-admissions/${admissionId}/approve`,
+    reject: (admissionId) => `/api/v1/student-admissions/${admissionId}/reject`,
+    assignSection: (admissionId) => `/api/v1/student-admissions/${admissionId}/section`,
+    bulkSection: "/api/v1/student-admissions/bulk-section",
+    bulkRollNumbers: "/api/v1/student-admissions/bulk-roll-numbers",
+    bloodGroups: "/api/v1/student-admissions/blood-groups",
+    generateNumber: "/api/v1/student-admissions/generate-number",
   },
   location: {
     byPincode: (pincode) => `/api/v1/locations/pincode/${encodeURIComponent(pincode)}`,
@@ -370,4 +389,24 @@
     exportExcel: "/api/reports/export/excel",
     custom: "/api/reports/custom",
   },
+};
+
+export const uniqueAcademicYearsByName = (items = [], getName = (item) => (
+  item?.label
+  ?? item?.academicYearName
+  ?? item?.AcademicYearName
+  ?? item?.academicYear
+  ?? item?.AcademicYear
+  ?? item?.yearName
+  ?? item?.YearName
+  ?? item?.name
+  ?? item?.Name
+)) => {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(getName(item) ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 };

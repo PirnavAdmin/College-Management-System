@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./AttendancePage.css";
 
 const STATUS = [
@@ -37,7 +37,7 @@ const toOptions = (data, ids, names) =>
     .map((x) => ({ id: String(val(x, ...ids) ?? ""), name: val(x, ...names) ?? "", raw: x }))
     .filter((x, index, all) => x.id && x.name && all.findIndex((item) => item.id === x.id) === index);
 const activeYearsForBoard = (data, boardId) =>
-  toOptions(
+  uniqueAcademicYearsByName(toOptions(
     list(data).filter(
       (year) =>
         String(val(year, "boardId", "BoardId") ?? "") === String(boardId) &&
@@ -45,7 +45,7 @@ const activeYearsForBoard = (data, boardId) =>
     ),
     ["academicYearId", "id", "Id"],
     ["academicYearName", "yearName", "name", "Name"],
-  );
+  ), (item) => item.name);
 const levelsForBoard = (levels, board) => {
   // The Academic Levels endpoint is the authoritative active-level catalogue;
   // expose the complete list for manual selection after a board is chosen.

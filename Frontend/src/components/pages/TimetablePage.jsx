@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./TimetablePage.css";
 
 const EMPTY = {
@@ -283,13 +283,13 @@ function useLookups(initial = {}) {
       .then((response) => {
         const yearId = activeYearId(response.data);
         if (!cancelled) {
-          const mappedYears = boardMappedOptions(
+          const mappedYears = uniqueAcademicYearsByName(boardMappedOptions(
             data.allYears,
             data.boards,
             value.boardId,
             ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
             ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
-          );
+          ), (item) => item.name);
           const selectedYear = yearId ? String(yearId) : mappedYears[0]?.id;
           setValue((current) =>
             // A generated draft is opened with its full context. Do not
@@ -303,13 +303,13 @@ function useLookups(initial = {}) {
         }
       })
       .catch(() => {
-        const mappedYears = boardMappedOptions(
+        const mappedYears = uniqueAcademicYearsByName(boardMappedOptions(
           data.allYears,
           data.boards,
           value.boardId,
           ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
           ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
-        );
+        ), (item) => item.name);
         if (!cancelled && mappedYears[0]?.id) {
           setValue((current) =>
             current.boardId === value.boardId && !current.academicYearId
@@ -334,13 +334,13 @@ function useLookups(initial = {}) {
       .then((r) =>
         setData((current) => ({
           ...current,
-          years: boardMappedOptions(
+          years: uniqueAcademicYearsByName(boardMappedOptions(
             current.allYears,
             current.boards,
             value.boardId,
             ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
             ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
-          ),
+          ), (item) => item.name),
           levels: boardMappedOptions(
             current.allLevels,
             current.boards,

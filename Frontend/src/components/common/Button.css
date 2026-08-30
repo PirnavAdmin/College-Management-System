@@ -1,11 +1,13 @@
 .cms-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  border-radius: 10px;
+  justify-content: center;
+  min-height: 36px;
+  gap: 5px;
+  border-radius: 9px;
   border: 1px solid transparent;
-  padding: 9px 15px;
-  font-size: 13.5px;
+  padding: 0 13px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.18s ease;
@@ -45,20 +47,24 @@
   box-shadow: none;
 }
 .cms-action-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  padding: 0;
+  border-radius: 10px;
   border: 1px solid var(--cms-border);
   background: var(--cms-surface);
   display: inline-grid;
   place-items: center;
   cursor: pointer;
-  color: var(--cms-muted);
+  color: var(--cms-primary);
   transition: all 0.18s ease;
 }
-.cms-action-btn:hover { color: var(--cms-primary); border-color: var(--cms-primary-border); background: var(--cms-primary-soft); }
+.cms-action-btn svg { width: 13px; height: 13px; stroke-width: 2.2; }
+.cms-action-btn:hover { color: var(--cms-primary); border-color: var(--cms-primary-border); background: var(--cms-primary-soft); transform: translateY(-1px); }
 .cms-action-btn.danger:hover { color: var(--cms-red); border-color: #f6c9c9; background: var(--cms-red-soft); }
-.cms-actions { display: flex; gap: 6px; }
+.cms-action-btn:disabled { cursor: not-allowed; opacity: 0.55; transform: none; }
+.cms-actions { display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 5px; white-space: nowrap; }
 .cms-icon-btn {
   position: relative;
   border: 1px solid var(--cms-border);

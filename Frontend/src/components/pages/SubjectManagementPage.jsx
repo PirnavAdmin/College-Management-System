@@ -54,7 +54,7 @@ const groupContext = (group) => ({
 });
 const itemsFromResponse = (data) => {
   const body = data?.data ?? data;
-  return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? body?.$values ?? [];
+  return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? body?.boards ?? body?.data ?? body?.$values ?? [];
 };
 const academicLevelsForBoard = (board) => {
   if (!board) return [];
@@ -327,7 +327,7 @@ function List({ records, context, assign, loading, loadSubjects }) {
   useEffect(() => {
     let active = true;
     Promise.all([
-      apiClient.get(apiEndpoints.boards.getAll, { params: { PageNumber: 1, PageSize: 100 } }),
+      apiClient.get(apiEndpoints.boards.getAll),
       apiClient.get(apiEndpoints.groups.getAll),
     ]).then(([boardResponse, groupResponse]) => {
       if (!active) return;
@@ -335,7 +335,7 @@ function List({ records, context, assign, loading, loadSubjects }) {
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
       setGroups(nextGroups);
-    }).catch(() => {});
+    }).catch((error) => setToast(getApiErrorMessage(error) || "Unable to load boards and groups."));
     return () => { active = false; };
   }, []);
   const academicLevels = useMemo(() => academicLevelsForBoard(

@@ -5,18 +5,18 @@ import * as XLSX from "xlsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Loader, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./ExaminationPage.css";
 
 const EXAM_API = {
-  boards: "/api/v1/boards",
-  activeYear: "/api/v1/academic-years/active",
-  academicLevels: "/api/v1/boards/academic-levels",
-  groups: "/api/v1/groups",
-  programsByGroup: (groupId) => `/api/v1/groups/${groupId}/programs`,
+  boards: apiEndpoints.boards.list,
+  activeYear: apiEndpoints.academicYears.active,
+  academicLevels: apiEndpoints.boards.academicLevels,
+  groupsByBoard: apiEndpoints.groups.getByBoard,
+  programsByGroup: apiEndpoints.groups.programs,
   patterns: "/api/v1/examinations/patterns",
   types: "/api/v1/examinations/types",
-  list: "/api/v1/examinations",
+  list: apiEndpoints.examinations.getAll,
   byId: (id) => `/api/v1/examinations/${id}`,
   eligibleSubjects: (id) => `/api/v1/examinations/${id}/eligible-subjects`,
   finalize: (id) => `/api/v1/examinations/${id}/finalize-schedule`,
@@ -466,6 +466,7 @@ export default function ExaminationPage() {
     [eligibleSubjectsLoaded, setEligibleSubjectsLoaded] = useState(false),
     [eligibleSubjectsError, setEligibleSubjectsError] = useState(""),
     [schedulingContext, setSchedulingContext] = useState(null),
+    [schedulingContextError, setSchedulingContextError] = useState(""),
     [masters, setMasters] = useState(EMPTY_MASTERS),
     [busyAction, setBusyAction] = useState("");
   const groupRequestRef = useRef(0),
@@ -579,21 +580,14 @@ export default function ExaminationPage() {
     if (errors.length) setToast(errors[0]);
     return loaded;
   };
-  const loadGroups = async ({ boardId, yearId, levelId }) => {
+  const loadGroups = async ({ boardId }) => {
     const requestId = ++groupRequestRef.current;
     programRequestRef.current += 1;
     replaceMaster("groups", []);
     replaceMaster("programs", []);
-    if (![boardId, yearId, levelId].every((value) => Number(value) > 0)) return;
+    if (!Number.isInteger(Number(boardId)) || Number(boardId) <= 0) return;
     try {
-      const response = await apiClient.get(EXAM_API.groups, {
-        params: {
-          boardId: Number(boardId),
-          academicYearId: Number(yearId),
-          academicLevelId: Number(levelId),
-          isActive: true,
-        },
-      });
+      const response = await apiClient.get(EXAM_API.groupsByBoard(Number(boardId)));
       if (requestId !== groupRequestRef.current) return;
       replaceMaster(
         "groups",
@@ -713,11 +707,13 @@ export default function ExaminationPage() {
       setEligibleSubjectsLoaded(false);
       setEligibleSubjectsError("");
       setSchedulingContext(null);
+      setSchedulingContextError("");
       return;
     }
     setEligibleSubjectsLoaded(false);
     setEligibleSubjectsError("");
     setSchedulingContext(null);
+    setSchedulingContextError("");
     let active = true;
     Promise.allSettled([
       apiClient.get(EXAM_API.eligibleSubjects(examId)),
@@ -748,18 +744,26 @@ export default function ExaminationPage() {
       }
       if (contextResult.status === "fulfilled") {
         const context = objectFrom(contextResult.value.data);
-        if (context)
+        const requiredCapacity = Number(
+          context?.requiredCapacity ?? context?.totalEligibleStudents,
+        );
+        if (context && Number.isFinite(requiredCapacity) && requiredCapacity >= 0) {
           setSchedulingContext({
             examinationId: context.examinationId ?? Number(examId),
             sectionIds: collectionFrom(context.sectionIds)
               .map(Number)
               .filter((value) => value > 0),
             sections: collectionFrom(context.sections),
-            totalEligibleStudents: Number(context.totalEligibleStudents ?? 0),
-            requiredCapacity: Number(
-              context.requiredCapacity ?? context.totalEligibleStudents ?? 0,
-            ),
+            totalEligibleStudents: Number(context.totalEligibleStudents ?? requiredCapacity),
+            requiredCapacity,
           });
+        } else {
+          setSchedulingContextError("Scheduling Context did not return a valid required capacity.");
+        }
+      } else {
+        const message = apiError(contextResult.reason);
+        setSchedulingContextError(message);
+        setToast(message);
       }
     });
     return () => {
@@ -775,12 +779,12 @@ export default function ExaminationPage() {
     }
     let active = true;
     const params = {
+      examinationId: Number(examId),
       date: sch.date,
       startTime: toApiTime(sch.startTime),
       endTime: toApiTime(sch.endTime),
       ...(editing ? { excludeScheduleId: Number(editing) } : {}),
     };
-    const hallParams = params;
     const selectedSubjectIds =
       getScheduleMode(
         exams.find((item) => String(item.id) === String(examId)),
@@ -790,7 +794,21 @@ export default function ExaminationPage() {
         : sch.subjectId
           ? [Number(sch.subjectId)]
           : [];
-    const facultyParams = params;
+    const subjectParams = selectedSubjectIds.length === 1
+      ? { subjectId: selectedSubjectIds[0] }
+      : selectedSubjectIds.length > 1
+        ? { subjectIds: selectedSubjectIds }
+        : {};
+    const contextParams = {
+      ...(schedulingContext?.sectionIds?.length
+        ? { sectionIds: schedulingContext.sectionIds }
+        : {}),
+      ...(Number.isFinite(schedulingContext?.requiredCapacity)
+        ? { requiredCapacity: schedulingContext.requiredCapacity }
+        : {}),
+    };
+    const hallParams = { ...params, ...subjectParams, ...contextParams };
+    const facultyParams = { ...params, ...subjectParams };
     Promise.allSettled([
       apiClient.get(EXAM_API.availableHalls, { params: hallParams }),
       apiClient.get(EXAM_API.availableInvigilators, { params: facultyParams }),
@@ -916,7 +934,7 @@ export default function ExaminationPage() {
   useEffect(() => {
     if (page > pages) setPage(pages);
   }, [page, pages]);
-  if (loading && isForm)
+  if (loading && isForm && id)
     return (
       <DashboardLayout {...pageConfig}>
         <Loader label="Loading examination data..." />
@@ -986,27 +1004,47 @@ export default function ExaminationPage() {
       }
       breadcrumb={tab === "schedule" ? ["Examinations", "Exam Schedule"] : ["Examinations"]}
     >
-      <div className="exam-tabs" role="tablist" aria-label="Examination modules">
-        <button
-          role="tab"
-          aria-selected={tab === "exams"}
-          className={tab === "exams" ? "active" : ""}
-          onClick={() => setTab("exams")}
-        >
-          Examinations
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "schedule"}
-          className={tab === "schedule" ? "active" : ""}
-          onClick={() => setTab("schedule")}
-        >
-          Exam Schedule
-        </button>
+      <div className="exam-tabs-row">
+        <div className="exam-tabs" role="tablist" aria-label="Examination modules">
+          <button
+            role="tab"
+            aria-selected={tab === "exams"}
+            className={tab === "exams" ? "active" : ""}
+            onClick={() => setTab("exams")}
+          >
+            Examinations
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "schedule"}
+            className={tab === "schedule" ? "active" : ""}
+            onClick={() => setTab("schedule")}
+          >
+            Exam Schedule
+          </button>
+        </div>
+        {tab === "exams" && (
+          <button
+            className="cms-btn cms-btn-primary exam-header-create-btn"
+            onClick={() =>
+              nav("/dashboard/examinations/add", {
+                state: {
+                  initialExamFilters: {
+                    boardId: filters.boardId,
+                    yearId: filters.yearId,
+                    levelId: filters.levelId,
+                  },
+                },
+              })
+            }
+          >
+            <Plus size={16} /> Create Examination
+          </button>
+        )}
       </div>
       {tab === "exams" ? (
         <>
-          <div className="cms-card">
+          <div className="cms-card exam-list-card">
             <div className="exam-table-toolbar">
               <div className="exam-search">
                 <input
@@ -1048,22 +1086,6 @@ export default function ExaminationPage() {
               <div className="exam-toolbar-actions">
                 <button className="cms-btn cms-btn-ghost exam-export-btn" onClick={printSchedule}>
                   <Printer size={15} /> Export
-                </button>
-                <button
-                  className="cms-btn cms-btn-primary"
-                  onClick={() =>
-                    nav("/dashboard/examinations/add", {
-                      state: {
-                        initialExamFilters: {
-                          boardId: filters.boardId,
-                          yearId: filters.yearId,
-                          levelId: filters.levelId,
-                        },
-                      },
-                    })
-                  }
-                >
-                  <Plus size={16} /> Create Examination
                 </button>
               </div>
             </div>
@@ -1296,7 +1318,7 @@ export default function ExaminationPage() {
       ) : (
         <>
           <button
-            className="cms-btn cms-btn-ghost exam-back-btn"
+            className="exam-back-text-link exam-schedule-back-link"
             onClick={() => {
               setTab("exams");
               setEditing(null);
@@ -1309,6 +1331,7 @@ export default function ExaminationPage() {
           <Schedule
             masters={masters}
             schedulingContext={schedulingContext}
+            schedulingContextError={schedulingContextError}
             eligibleSubjectsLoaded={eligibleSubjectsLoaded}
             eligibleSubjectsError={eligibleSubjectsError}
             exam={exam}
@@ -1731,16 +1754,10 @@ function ExamForm({
     [saving, setSaving] = useState(false),
     locked = !!(existing && schedules.some((s) => String(s.examId) === String(existing.id)));
   useEffect(() => {
-    if (!existing && form.boardId && form.yearId && form.levelId)
-      onAcademicChange({ boardId: form.boardId, yearId: form.yearId, levelId: form.levelId });
+    if (!existing && form.boardId) onAcademicChange({ boardId: form.boardId });
   }, []);
   const change = (n, v) => {
-      const nextContext = {
-        boardId: n === "boardId" ? v : form.boardId,
-        yearId: n === "boardId" ? "" : n === "yearId" ? v : form.yearId,
-        levelId: n === "levelId" ? v : form.levelId,
-      };
-      if (["boardId", "yearId", "levelId"].includes(n)) onAcademicChange(nextContext);
+      if (n === "boardId") onAcademicChange({ boardId: v });
       if (n === "groupId") onGroupChange(v);
       setForm((x) => ({
         ...x,
@@ -1969,9 +1986,16 @@ function ExamForm({
   return (
     <DashboardLayout
       title={existing ? "Edit Examination" : "Create Examination"}
-      subtitle="Board → Academic Year → Academic Level → Group → Program"
       breadcrumb={["Examinations"]}
     >
+      <button
+        type="button"
+        className="exam-back-text-link"
+        aria-label="Back to Examinations"
+        onClick={() => nav("/dashboard/examinations")}
+      >
+        Back to Examinations
+      </button>
       <form className="cms-form-page examination-form-page" onSubmit={save}>
         <div className="cms-card">
           <div className="cms-card-body">
@@ -2159,6 +2183,7 @@ function ExamForm({
 function Schedule({
   masters,
   schedulingContext,
+  schedulingContextError,
   eligibleSubjectsLoaded,
   eligibleSubjectsError,
   exam,
@@ -2248,6 +2273,9 @@ function Schedule({
     if (!exam) x.form = "Select an examination.";
     if (!eligibleSubjectsLoaded)
       x.form = eligibleSubjectsError || "Eligible subjects are still loading. Please try again.";
+    if (!schedulingContext)
+      x.form =
+        schedulingContextError || "Scheduling Context is still loading. Please try again.";
     if (combined && !included.length)
       x.form = "No eligible subjects are configured for this examination.";
     if (!combined && eligibleSubjectsLoaded && !included.length)
@@ -2833,13 +2861,10 @@ const EXPORT_COLUMNS = [
   ["S.No", "serialNo"],
   ["Exam Name", "examName"],
   ["Exam Code", "examCode"],
-  ["Subject", "subjectName"],
-  ["Hall / Room", "hallName"],
   ["Invigilator", "invigilatorName"],
   ["Exam Date", "examDate", d],
   ["Start Time", "startTime"],
   ["End Time", "endTime"],
-  ["Exam Mode", "examMode"],
 ];
 function formatExportValue(row, [, key, format]) {
   return format ? format(row[key]) : (row[key] ?? "—");
@@ -2865,12 +2890,9 @@ function downloadExcelPreview(preview) {
     { wch: 30 },
     { wch: 18 },
     { wch: 24 },
-    { wch: 20 },
-    { wch: 24 },
     { wch: 16 },
     { wch: 14 },
     { wch: 14 },
-    { wch: 16 },
   ];
   const workbook = XLSX.utils.book_new();
   const sheetName = preview.scope === "global" ? "Exam Schedules" : "Exam Schedule";

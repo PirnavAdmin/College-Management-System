@@ -163,8 +163,9 @@
   padding: 6px;
   border: 1px solid var(--cms-border);
   border-radius: 8px;
-  background: var(--cms-surface, #fff);
+  background: var(--cms-surface-solid, #fff);
   opacity: 1;
+  isolation: isolate;
   box-shadow: 0 10px 24px rgb(15 23 42 / 18%);
 }
 
@@ -280,7 +281,7 @@
 .cms-sec-select { position: relative; min-width: 0; width: 100%; max-width: 100%; }
 .cms-sec-select-trigger { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 32px; padding: 6px 28px 6px 9px; overflow: hidden; border: 1px solid var(--cms-border); border-radius: 8px; color: var(--cms-text); background: var(--cms-surface); font: inherit; font-size: 12px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .cms-sec-select-trigger:disabled { cursor: not-allowed; opacity: .6; }
-.cms-sec-select-menu { position: absolute; z-index: 10020; top: calc(100% + 4px); left: 0; right: 0; min-width: 180px; padding: 6px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); box-shadow: 0 10px 24px rgb(15 23 42 / 18%); }
+.cms-sec-select-menu { position: absolute; z-index: 10020; top: calc(100% + 4px); left: 0; right: 0; min-width: 180px; padding: 6px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface-solid, #fff); opacity: 1; isolation: isolate; box-shadow: 0 10px 24px rgb(15 23 42 / 18%); }
 .cms-sec-select-menu input { width: 100%; min-height: 30px; padding: 5px 8px; border: 1px solid var(--cms-border); border-radius: 6px; font: inherit; font-size: 12px; }
 .cms-sec-select-options { max-height: 130px; overflow-y: auto; margin-top: 5px; }
 .cms-sec-select-options button, .cms-sec-select-options span { display: block; width: 100%; padding: 7px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--cms-text); font: inherit; font-size: 12px; text-align: left; }
@@ -375,6 +376,10 @@
   color: var(--cms-muted, #64748b);
   white-space: normal;
   overflow-wrap: break-word;
+}
+
+.cms-sec-board-code-cell {
+  cursor: pointer;
 }
 
 .cms-sec-table th.cms-sec-align-center,

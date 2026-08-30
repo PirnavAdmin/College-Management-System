@@ -193,7 +193,7 @@ const normalizeSection = (section) => {
 
 export const pageConfig = {
   title: "Section Management",
-  subtitle: "Manage academic sections, classrooms and teacher assignments.",
+  subtitle: "Manage academic sections, classrooms and Incharge assignments.",
   breadcrumb: ["Academics"],
 };
 
@@ -512,10 +512,14 @@ export default function SectionManagementPage() {
       return;
     }
     if (key === "academicYear") {
-      const selectedYear = academicYearsList.find((item) => item.name === value);
+      const selectedYear = academicYearsList.find(
+        (item) =>
+          String(item.id) === String(value) &&
+          (item.boardId == null || String(item.boardId) === String(form.boardId)),
+      );
       setForm((previous) => ({
         ...previous,
-        academicYear: value,
+        academicYear: selectedYear?.name ?? "",
         academicYearId: selectedYear?.id ?? "",
       }));
       return;
@@ -530,12 +534,12 @@ export default function SectionManagementPage() {
       return;
     }
     if (key === "group") {
-      const selectedGroup = groupsList.find((item) => item.name === value);
+      const selectedGroup = groupsList.find((item) => String(item.id) === String(value));
       programsRequest.current += 1;
       setProgramsList([]);
       setForm((previous) => ({
         ...previous,
-        group: value,
+        group: selectedGroup?.name ?? "",
         groupId: selectedGroup?.id ?? "",
         program: "",
         programId: "",
@@ -545,21 +549,25 @@ export default function SectionManagementPage() {
       return;
     }
     if (key === "program") {
-      const selectedProgram = programsList.find((item) => item.name === value);
+      const selectedProgram = programsList.find(
+        (item) =>
+          String(item.groupId) === String(form.groupId) &&
+          String(item.groupProgramId || item.programId) === String(value),
+      );
       setForm((previous) => ({
         ...previous,
-        program: value,
+        program: selectedProgram?.name ?? "",
         programId: selectedProgram?.programId ?? "",
         groupProgramId: selectedProgram?.groupProgramId ?? "",
       }));
       return;
     }
     if (key === "room") {
-      const selectedRoom = rooms.find((room) => roomCodesMatch(room.roomCode, value));
+      const selectedRoom = rooms.find((room) => String(room.id) === String(value));
       const roomCapacity = Number(selectedRoom?.capacity);
       setForm((previous) => ({
         ...previous,
-        room: value,
+        room: selectedRoom?.roomCode ?? "",
         roomId: selectedRoom?.id ?? "",
         strength:
           selectedRoom && Number.isFinite(roomCapacity) && roomCapacity > 0
@@ -569,10 +577,10 @@ export default function SectionManagementPage() {
       return;
     }
     if (key === "teacher") {
-      const selectedTeacher = teachersList.find((item) => item.name === value);
+      const selectedTeacher = teachersList.find((item) => String(item.id) === String(value));
       setForm((previous) => ({
         ...previous,
-        teacher: value,
+        teacher: selectedTeacher?.name ?? "",
         classTeacherId: selectedTeacher?.id ?? "",
       }));
       return;
@@ -632,6 +640,8 @@ export default function SectionManagementPage() {
     const roomName = firstNonEmpty(section.room, room?.roomName, room?.roomCode) || "—";
     const roomCode = firstNonEmpty(room?.roomCode, section.roomNumber, section.room) || "—";
     return {
+      boardCode:
+        firstNonEmpty(section.boardCode, boardsById.get(String(section.boardId))?.code) || "—",
       boardName: firstNonEmpty(section.board, boardsById.get(String(section.boardId))?.name) || "—",
       academicYearName:
         firstNonEmpty(section.academicYear, yearsById.get(String(section.academicYearId))?.name) ||
@@ -664,6 +674,7 @@ export default function SectionManagementPage() {
         !query ||
         [
           section.name,
+          display.boardCode,
           display.boardName,
           display.academicYearName,
           display.groupName,
@@ -757,15 +768,25 @@ export default function SectionManagementPage() {
     );
   }, [academicYearsList, boardsList, filters.board]);
   const academicYearOptions = useMemo(
-    () => uniqueAcademicYearsByName(formAcademicYears.map((item) => item.name), (item) => item),
+    () => formAcademicYears.map((item) => ({ value: item.id, label: item.name })),
     [formAcademicYears],
   );
   const academicYearFilterOptions = useMemo(
     () => uniqueAcademicYearsByName(filterAcademicYears.map((item) => item.name), (item) => item),
     [filterAcademicYears],
   );
-  const groupOptions = useMemo(() => groupsList.map((item) => item.name), [groupsList]);
-  const programOptions = useMemo(() => programsList.map((item) => item.name), [programsList]);
+  const groupOptions = useMemo(
+    () => groupsList.map((item) => ({ value: item.id, label: item.name })),
+    [groupsList],
+  );
+  const programOptions = useMemo(
+    () =>
+      programsList.map((item) => ({
+        value: item.groupProgramId || item.programId,
+        label: item.name,
+      })),
+    [programsList],
+  );
   const academicLevelOptions = useMemo(
     () => academicLevelsList.map((item) => item.name),
     [academicLevelsList],
@@ -808,50 +829,42 @@ export default function SectionManagementPage() {
                 (section) =>
                   section.id !== selectedSectionId &&
                   section.status === "Active" &&
+                  String(section.boardId) === String(form.boardId) &&
+                  String(section.academicYearId) === String(form.academicYearId) &&
+                  String(section.academicLevelId) === String(form.academicLevelId) &&
                   ((positiveId(section.roomId) && String(section.roomId) === String(room.id)) ||
                     (!positiveId(section.roomId) && roomCodesMatch(section.room, label(room)))),
               ),
           )
-          .map(label);
-        return form.room && !options.includes(form.room) ? [form.room, ...options] : options;
+          .map((room) => ({ value: String(room.id), label: label(room) }));
+        return form.roomId && !options.some((option) => option.value === String(form.roomId))
+          ? [{ value: String(form.roomId), label: form.room }, ...options]
+          : options;
       })(),
-    [rooms, sections, selectedSectionId, form.room],
+    [
+      rooms,
+      sections,
+      selectedSectionId,
+      form.boardId,
+      form.academicYearId,
+      form.academicLevelId,
+      form.roomId,
+      form.room,
+    ],
   );
   const availableTeachers = useMemo(() => {
     const assignedTeachers = new Set(
       sections
-        .filter(
-          (section) =>
-            section.id !== selectedSectionId &&
-            section.status === "Active" &&
-            String(section.boardId) === String(form.boardId) &&
-            String(section.academicYearId) === String(form.academicYearId),
-        )
-        .map((section) => String(section.classTeacherId || normalizedValue(section.teacher))),
+        .filter((section) => section.id !== selectedSectionId && positiveId(section.classTeacherId))
+        .map((section) => String(section.classTeacherId)),
     );
     return teachersList
-      .map((teacher) => teacher.name)
-      .filter(
-        (teacher) =>
-          !form.board ||
-          !form.academicYear ||
-          normalizedValue(teacher) === normalizedValue(form.teacher) ||
-          !assignedTeachers.has(
-            String(
-              teachersList.find((item) => item.name === teacher)?.id || normalizedValue(teacher),
-            ),
-          ),
-      );
-  }, [
-    teachersList,
-    sections,
-    selectedSectionId,
-    form.boardId,
-    form.academicYearId,
-    form.board,
-    form.academicYear,
-    form.teacher,
-  ]);
+      .filter((teacher) => !assignedTeachers.has(String(teacher.id)))
+      .map((teacher) => ({
+        value: teacher.id,
+        label: teacher.employeeId ? `${teacher.name} (${teacher.employeeId})` : teacher.name,
+      }));
+  }, [teachersList, sections, selectedSectionId]);
 
   const close = () => {
     setModal(false);
@@ -868,7 +881,11 @@ export default function SectionManagementPage() {
     setSelectedSectionId(null);
     setMode("add");
     const board = boardsList.find((item) => item.name === filters.board);
-    const year = academicYearsList.find((item) => item.name === filters.academicYear);
+    const year = academicYearsList.find(
+      (item) =>
+        item.name === filters.academicYear &&
+        (!board || item.boardId == null || String(item.boardId) === String(board.id)),
+    );
     const level = academicLevelsList.find((item) => item.name === filters.academicLevel);
     setForm({
       ...EMPTY,
@@ -1014,7 +1031,7 @@ export default function SectionManagementPage() {
     if (!window.confirm(`Are you sure you want to delete section "${section.name}"?`)) return;
     setDeletingSectionId(section.id);
     try {
-      await apiClient.delete(`/api/v1/Sections/${section.id}`);
+      await apiClient.delete(apiEndpoints.sections.delete(section.id));
       await loadSections();
       say(`Section "${section.name}" deleted successfully!`);
     } catch (error) {
@@ -1122,26 +1139,19 @@ export default function SectionManagementPage() {
           `Section capacity cannot exceed room capacity (${selectedRoom.capacity}).`,
         );
       if (!selectedTeacher.isActive)
-        return setModalError("Please select an available active class teacher.");
+        return setModalError("Please select an available active Incharge.");
     }
     const other = (section) => section.id !== selectedSectionId;
     const conflictingSection =
-      form.status === "Active" &&
       sections.find(
         (section) =>
           other(section) &&
-          section.status === "Active" &&
-          String(section.boardId) === String(form.boardId) &&
-          String(section.academicYearId) === String(form.academicYearId) &&
-          ((positiveId(section.classTeacherId) &&
-            String(section.classTeacherId) === String(form.classTeacherId)) ||
-            (!positiveId(section.classTeacherId) &&
-              normalizedValue(resolveSection(section).teacherName) ===
-                normalizedValue(form.teacher))),
+          positiveId(section.classTeacherId) &&
+          String(section.classTeacherId) === String(form.classTeacherId),
       );
     if (conflictingSection)
       return setModalError(
-        `The selected Incharge is already assigned to active section "${conflictingSection.name}" for this Board and Academic Year.`,
+        `The selected Incharge is already assigned to section "${conflictingSection.name}".`,
       );
     if (
       sections.some(
@@ -1162,7 +1172,9 @@ export default function SectionManagementPage() {
         (section) =>
           other(section) &&
           section.status === "Active" &&
+          String(section.boardId) === String(form.boardId) &&
           String(section.academicYearId) === String(form.academicYearId) &&
+          String(section.academicLevelId) === String(form.academicLevelId) &&
           ((positiveId(section.roomId) && String(section.roomId) === String(form.roomId)) ||
             (!positiveId(section.roomId) &&
               roomCodesMatch(resolveSection(section).roomCode, selectedRoom.roomCode))),
@@ -1425,6 +1437,7 @@ export default function SectionManagementPage() {
                   className="cms-btn cms-btn-primary cms-sec-compact-btn"
                   onClick={openAdd}
                 >
+                  <Plus size={16} />
                   Add Section
                 </button>
               </div>
@@ -1440,7 +1453,7 @@ export default function SectionManagementPage() {
                         "Program",
                         "Academic Level",
                         "Room",
-                        "Class Teacher",
+                        "Incharge",
                         "Capacity",
                         "Status",
                         "Actions",
@@ -1465,8 +1478,11 @@ export default function SectionManagementPage() {
                           <td className="cms-strong cms-sec-name-cell" title={section.name}>
                             {section.name || "—"}
                           </td>
-                          <td title={resolveSection(section).boardName}>
-                            {resolveSection(section).boardName}
+                          <td
+                            className="cms-sec-board-code-cell"
+                            title={resolveSection(section).boardName}
+                          >
+                            {resolveSection(section).boardCode}
                           </td>
                           <td title={resolveSection(section).academicYearName}>
                             {resolveSection(section).academicYearName}
@@ -1613,7 +1629,7 @@ export default function SectionManagementPage() {
                               ["Group", detail.groupName],
                               ["Program", detail.programName],
                               ["Room", detail.roomDisplay],
-                              ["Class Teacher", detail.teacherName],
+                              ["Incharge", detail.teacherName],
                               ["Maximum Strength", viewSection.strength || "—"],
                               [
                                 "Created Date",
@@ -1664,7 +1680,7 @@ export default function SectionManagementPage() {
                           />
                           <FormField
                             label="Academic Year"
-                            value={form.academicYear}
+                            value={form.academicYearId}
                             field="academicYear"
                             options={academicYearOptions}
                             readOnly={readOnly}
@@ -1672,7 +1688,7 @@ export default function SectionManagementPage() {
                           />
                           <FormField
                             label="Group"
-                            value={form.group}
+                            value={form.groupId}
                             field="group"
                             options={groupOptions}
                             readOnly={readOnly}
@@ -1680,7 +1696,7 @@ export default function SectionManagementPage() {
                           />
                           <FormField
                             label="Program"
-                            value={form.program}
+                            value={form.groupProgramId || form.programId}
                             field="program"
                             options={programOptions}
                             readOnly={readOnly}
@@ -1710,7 +1726,7 @@ export default function SectionManagementPage() {
                             </label>
                             <div className="cms-sec-room-field-row">
                               <Select
-                                value={form.room}
+                                value={form.roomId}
                                 onChange={(value) => change("room", value)}
                                 options={availableRooms}
                                 placeholder="Select Room Number"
@@ -1738,7 +1754,7 @@ export default function SectionManagementPage() {
                               Incharge <span className="req">*</span>
                             </label>
                             <Select
-                              value={form.teacher}
+                              value={form.classTeacherId}
                               onChange={(value) => change("teacher", value)}
                               options={availableTeachers}
                               placeholder="Select Incharge"
@@ -2236,6 +2252,13 @@ function FormField({ label, value, field, options, disabled = false, readOnly, c
 }
 
 function Select({ value, onChange, options, placeholder, disabled = false }) {
+  const normalizedOptions = options.map((option) =>
+    typeof option === "object" && option !== null
+      ? { value: String(option.value), label: String(option.label) }
+      : { value: String(option), label: String(option) },
+  );
+  const selectedLabel =
+    normalizedOptions.find((option) => option.value === String(value))?.label || "";
   return (
     <div className={`cms-sec-select ${disabled ? "is-disabled" : ""}`}>
       <select
@@ -2243,13 +2266,13 @@ function Select({ value, onChange, options, placeholder, disabled = false }) {
         value={value}
         disabled={disabled}
         aria-label={placeholder}
-        title={value || placeholder}
+        title={selectedLabel || placeholder}
         onChange={(event) => onChange(event.target.value)}
       >
-        <option value="">{options.length ? placeholder : `${placeholder}`}</option>
-        {options.map((option) => (
-          <option key={option} value={option} title={option}>
-            {option}
+        <option value="">{normalizedOptions.length ? placeholder : `${placeholder}`}</option>
+        {normalizedOptions.map((option) => (
+          <option key={option.value} value={option.value} title={option.label}>
+            {option.label}
           </option>
         ))}
       </select>

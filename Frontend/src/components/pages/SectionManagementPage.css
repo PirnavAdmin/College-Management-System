@@ -111,6 +111,18 @@
   max-width: 145px;
 }
 
+.cms-sec-toolbar-filters:not(.cms-room-toolbar-filters) .cms-field {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+.cms-sec-toolbar-filters .cms-sec-select-trigger {
+  box-sizing: border-box;
+  height: 42px;
+  min-height: 42px;
+}
+
 .cms-sec-toolbar-spacer {
   flex: 1 1 8px;
 }

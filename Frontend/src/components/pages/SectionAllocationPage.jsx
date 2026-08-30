@@ -30,6 +30,7 @@ export default function SectionAllocationPage() {
     [groups, setGroups] = useState([]),
     [programs, setPrograms] = useState([]),
     [sections, setSections] = useState([]),
+    [sectionDirectory, setSectionDirectory] = useState([]),
     [students, setStudents] = useState([]),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState("");
@@ -38,43 +39,133 @@ export default function SectionAllocationPage() {
       apiClient.get(apiEndpoints.boards.list),
       apiClient.get(apiEndpoints.academicYears.active),
       apiClient.get(apiEndpoints.groups.list),
+      apiClient.get(apiEndpoints.sections.list),
       apiClient.get(apiEndpoints.admissions.getAll),
+      apiClient.get(apiEndpoints.students.getAll),
     ])
-      .then(([b, y, g, s]) => {
+      .then(([b, y, g, allSectionsResponse, admissionsResponse, studentsResponse]) => {
         setBoards(list(b.data));
         setYears(list(y.data));
         setGroups(list(g.data));
+        setSectionDirectory(list(allSectionsResponse.data));
+        const admissionsByNumber = new Map(
+          list(admissionsResponse.data).map((admission) => [
+            String(admission.admissionNo ?? admission.admissionNumber ?? "").trim(),
+            admission,
+          ]),
+        );
         setStudents(
-          list(s.data).filter((x) => {
-            const approved = x.isApproved ?? x.IsApproved ?? x.approved ?? x.Approved;
-            return approved === true || approved === 1 || String(approved).toLowerCase() === "true";
-          }).map((x, i) => ({
+          list(studentsResponse.data).map((x, i) => {
+            const admission = admissionsByNumber.get(
+              String(x.admissionNo ?? x.admissionNumber ?? "").trim(),
+            );
+            const approved = admission?.isApproved ?? admission?.IsApproved ?? admission?.approved ?? admission?.Approved
+              ?? admission?.approvalStatus ?? admission?.ApprovalStatus;
+            const verified = admission?.isVerified ?? admission?.IsVerified ?? admission?.verified ?? admission?.Verified
+              ?? admission?.verificationStatus ?? admission?.VerificationStatus;
+            const admissionStatus = String(
+              admission?.status ?? admission?.Status ?? admission?.admissionStatus ?? admission?.AdmissionStatus ?? "",
+            ).trim().toLowerCase();
+            const isApproved =
+              approved === true ||
+              approved === 1 ||
+              String(approved).toLowerCase() === "true" ||
+              ["approved", "active", "completed"].includes(admissionStatus);
+            const isVerified =
+              verified == null ||
+              verified === true ||
+              verified === 1 ||
+              String(verified).toLowerCase() === "true" ||
+              ["approved", "active", "completed"].includes(admissionStatus);
+            return ({
             ...x,
             id: x.studentId ?? x.id ?? i,
             // The bulk allocation endpoint accepts admission IDs only. A
             // student ID is a different record and makes the backend look up
             // a non-existent admission.
-            admissionId: x.admissionId ?? x.studentAdmissionId ?? x.id,
-            studentId: x.studentId ?? x.student?.studentId ?? "",
+            // Prefer the admission foreign key already returned by the
+            // student record. Fall back to the admission-number lookup for
+            // older API responses that do not expose it.
+            admissionId:
+              x.admissionId ??
+              x.AdmissionId ??
+              x.studentAdmissionId ??
+              x.StudentAdmissionId ??
+              admission?.admissionId ??
+              admission?.studentAdmissionId ??
+              admission?.id ??
+              "",
+            studentId: x.studentId ?? x.id ?? "",
             name: x.studentName ?? x.fullName ?? x.name ?? "Unnamed Student",
             admissionNo: x.admissionNo ?? x.admissionNumber ?? "—",
             groupId: x.groupId,
-            programId: x.programId ?? x.programmeId,
+            programId:
+              x.programId ??
+              x.programmeId ??
+              admission?.programId ??
+              admission?.ProgramId ??
+              admission?.programmeId ??
+              admission?.ProgrammeId ??
+              admission?.program?.programId ??
+              admission?.Program?.programId,
             group: x.groupName ?? x.group ?? "",
-            programme: x.programmeName ?? x.programName ?? x.programme ?? "",
-            section: x.sectionName ?? x.section ?? "",
+            programme:
+              x.programmeName ??
+              x.programName ??
+              x.programme ??
+              admission?.programmeName ??
+              admission?.ProgrammeName ??
+              admission?.programName ??
+              admission?.ProgramName ??
+              admission?.programme?.programmeName ??
+              admission?.program?.programName ??
+              admission?.Program?.programName ??
+              "",
+            // Keep the ID as well as the label. The roll-number action must
+            // compare IDs; comparing a section label to the selected ID makes
+            // every allocated student appear ineligible after a reload.
+            sectionId:
+              x.sectionId ??
+              x.SectionId ??
+              x.allocatedSectionId ??
+              x.AllocatedSectionId ??
+              x.assignedSectionId ??
+              x.AssignedSectionId ??
+              admission?.sectionId ??
+              admission?.SectionId ??
+              admission?.allocatedSectionId ??
+              admission?.AllocatedSectionId ??
+              admission?.assignedSectionId ??
+              admission?.AssignedSectionId ??
+              admission?.section?.sectionId ??
+              admission?.Section?.sectionId ??
+              "",
+            section:
+              x.sectionName ??
+              x.section ??
+              admission?.sectionName ??
+              admission?.SectionName ??
+              admission?.allocatedSectionName ??
+              admission?.AllocatedSectionName ??
+              admission?.assignedSectionName ??
+              admission?.AssignedSectionName ??
+              admission?.section?.sectionName ??
+              admission?.Section?.sectionName ??
+              "",
             roll: x.rollNumber ?? x.rollNo ?? "",
             status: x.status ?? "Pending allocation",
-            isApproved: true,
-          })),
+            isApproved: isApproved && isVerified,
+          });
+          }),
         );
       })
-      .catch((e) => setMessage(getApiErrorMessage(e)));
+      .catch((e) => setMessage(getApiErrorMessage(e)))
+      .finally(() => setStudentsLoading(false));
   }, []);
   useEffect(() => {
     if (!ctx.board) return;
     apiClient
-      .get(apiEndpoints.academicLevels.list, { params: { boardId: ctx.board } })
+      .get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } })
       .then((r) => setLevels(list(r.data)))
       .catch((e) => setMessage(getApiErrorMessage(e)));
     const active = years.find((y) => String(y.boardId) === String(ctx.board) && y.isActive);
@@ -175,7 +266,10 @@ export default function SectionAllocationPage() {
       ...(k === "program" ? { section: "" } : {}),
     }));
   const save = async () => {
-    const ids = rows.map((s) => Number(s.admissionId)).filter(Number.isFinite),
+    const ids = rows
+        .filter((student) => student.isApproved)
+        .map((student) => Number(student.admissionId))
+        .filter(Number.isFinite),
       sectionId = Number(ctx.section);
     if (!sectionId || !ids.length)
       return setMessage("Only verified and approved admissions can be allocated to a section.");
@@ -185,6 +279,16 @@ export default function SectionAllocationPage() {
         sectionId,
         admissionIds: ids,
       });
+      const sectionName = sections.find(
+        (section) => String(section.sectionId ?? section.id) === String(sectionId),
+      )?.sectionName;
+      setStudents((current) =>
+        current.map((student) =>
+          ids.includes(Number(student.admissionId))
+            ? { ...student, sectionId, section: sectionName ?? student.section }
+            : student,
+        ),
+      );
       setMessage("Section allocation saved successfully.");
     } catch (e) {
       setMessage(getApiErrorMessage(e));
@@ -193,20 +297,44 @@ export default function SectionAllocationPage() {
     }
   };
   const rolls = async () => {
-    const ids = rows
-        .filter((s) => s.section === ctx.section)
-        .map((s) => Number(s.admissionId))
-        .filter(Number.isFinite),
-      sectionId = Number(ctx.section);
-    if (!ids.length)
+    const sectionId = Number(ctx.section);
+    const selectedSectionName = sections.find(
+      (section) => String(section.sectionId ?? section.id) === String(sectionId),
+    )?.sectionName;
+    const admissionIds = rows
+        .filter(
+          (student) =>
+            Number(student.sectionId) === sectionId ||
+            (!student.sectionId &&
+              String(student.section).trim().toLowerCase() ===
+                String(selectedSectionName ?? "").trim().toLowerCase()),
+        )
+        .map((student) => Number(student.admissionId))
+        .filter(Number.isFinite);
+    if (!admissionIds.length)
       return setMessage("Allocate students to a section before generating roll numbers.");
     setBusy("roll");
     try {
       await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
         sectionId,
         startingRollNumber: 1,
-        admissionIds: ids,
+        admissionIds,
       });
+      // The generation endpoint updates student records on the server. Reload
+      // them instead of retaining the stale list that was fetched on mount.
+      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll);
+      const refreshedRolls = new Map(
+        list(refreshedStudentsResponse.data).map((student) => [
+          String(student.studentId ?? student.StudentId ?? student.id ?? student.Id ?? ""),
+          student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
+        ]),
+      );
+      setStudents((current) =>
+        current.map((student) => ({
+          ...student,
+          roll: refreshedRolls.get(String(student.studentId)) ?? student.roll,
+        })),
+      );
       setMessage("Roll numbers generated successfully.");
     } catch (e) {
       setMessage(getApiErrorMessage(e));
@@ -282,21 +410,25 @@ export default function SectionAllocationPage() {
                 <th>Student Name</th>
                 <th>Admission No.</th>
                 <th>Programme</th>
-                <th>Current Section</th>
-                <th>Allocation Section</th>
+                <th>Section</th>
                 <th>Roll No.</th>
                 <th>Status</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length ? (
+              {studentsLoading ? (
+                <tr>
+                  <td colSpan="6">
+                    <div className="cms-empty">Loading admitted students...</div>
+                  </td>
+                </tr>
+              ) : rows.length ? (
                 rows.map((s) => (
                   <tr key={s.id}>
                     <td>{s.name}</td>
                     <td>{s.admissionNo}</td>
                     <td>{s.programme || programs.find((program) => String(program.programId ?? program.id) === String(s.programId))?.programName || "—"}</td>
-                    <td>{s.section || sections.find((section) => String(section.sectionId ?? section.id) === String(s.sectionId))?.sectionName || "Pending"}</td>
-                    <td>{sections.find((section) => String(section.sectionId ?? section.id) === String(ctx.section))?.sectionName || ctx.section || "-"}</td>
+                    <td>{s.section || sectionDirectory.find((section) => String(section.sectionId ?? section.id) === String(s.sectionId))?.sectionName || sections.find((section) => String(section.sectionId ?? section.id) === String(s.sectionId))?.sectionName || "Pending"}</td>
                     <td>{s.roll || "Pending"}</td>
                     <td>
                       <StatusBadge value={s.status} />
@@ -305,7 +437,7 @@ export default function SectionAllocationPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7">
+                  <td colSpan="6">
                     <div className="cms-empty">No admitted students found.</div>
                   </td>
                 </tr>

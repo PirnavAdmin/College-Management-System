@@ -65,6 +65,18 @@ const normalizeMaster = (item, idKeys, nameKeys) => ({
   status: item?.status ?? (item?.isActive === false ? "Inactive" : "Active"),
 });
 const isActiveMaster = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status));
+const isExplicitlyInactive = (item) =>
+  [item?.isActive, item?.status].some((value) =>
+    [false, 0, "false", "0", "inactive", "disabled"].includes(
+      typeof value === "string" ? value.trim().toLowerCase() : value,
+    ),
+  );
+const isExplicitlyNonTeaching = (item) =>
+  [item?.staffType, item?.facultyType].some((value) =>
+    ["non-teaching", "non teaching", "nonteaching", "administrative", "admin", "support staff"].includes(
+      String(value ?? "").trim().toLowerCase(),
+    ),
+  );
 const normalizeDateInput = (value) => (value ? String(value).slice(0, 10) : "");
 const normalizeTimeInput = (value) => (value ? String(value).slice(0, 5) : "");
 const normalizeText = (value) =>
@@ -250,8 +262,8 @@ const nameOf = (items, id, fallback = "All Programs") =>
 const d = (value) =>
   value
     ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
-        new Date(value + "T00:00:00"),
-      )
+      new Date(value + "T00:00:00"),
+    )
     : "—";
 const subjectsFor = (masters) => masters.subjects;
 const patternsForProgram = (patterns, programId, groupProgramId) =>
@@ -270,8 +282,8 @@ const validateExamConfiguration = (exam) => {
 const getScheduleMode = (exam, patterns = []) =>
   normalizeScheduleMode(
     exam?.scheduleMode ||
-      patterns.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
-      exam?.examPattern,
+    patterns.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
+    exam?.examPattern,
   );
 const createCombinedSessionId = (examId) => `COMBINED-${examId}-${Date.now()}`;
 const getExamPassingMarks = (exam) => {
@@ -371,7 +383,7 @@ const buildExportRows = (targetExams, schedules, masters) =>
       records.forEach((schedule) => {
         const key =
           normalizeScheduleMode(schedule.scheduleMode) === "COMBINED_OBJECTIVE" &&
-          schedule.sessionId
+            schedule.sessionId
             ? `combined-${exam.id}-${schedule.sessionId}`
             : `subject-${schedule.id}`;
         const group = groups.get(key) || [];
@@ -549,13 +561,13 @@ export default function ExaminationPage() {
             }
             return key === "years"
               ? {
-                  ...master,
-                  id: Number(master.id),
-                  boardId: item.boardId == null ? null : Number(item.boardId),
-                  startDate: item.startDate ?? "",
-                  endDate: item.endDate ?? "",
-                  isActive: isActiveMaster(item),
-                }
+                ...master,
+                id: Number(master.id),
+                boardId: item.boardId == null ? null : Number(item.boardId),
+                startDate: item.startDate ?? "",
+                endDate: item.endDate ?? "",
+                isActive: isActiveMaster(item),
+              }
               : key === "boards"
                 ? { ...master, id: Number(master.id), isActive: isActiveMaster(item) }
                 : { ...master, id: Number(master.id) };
@@ -644,7 +656,13 @@ export default function ExaminationPage() {
       const normalized = collectionFrom(response.data)
         .map((item) => normalizeExamination(item, catalogs.patterns, catalogs.types))
         .filter((item) => Number(item.id) > 0);
-      setExams(normalized);
+      setExams((current) =>
+        normalized.map((item) =>
+          String(item.code || "").trim()
+            ? item
+            : { ...item, code: current.find((exam) => String(exam.id) === String(item.id))?.code ?? "" },
+        ),
+      );
       return normalized;
     } catch (error) {
       setToast(apiError(error));
@@ -745,7 +763,10 @@ export default function ExaminationPage() {
       if (contextResult.status === "fulfilled") {
         const context = objectFrom(contextResult.value.data);
         const requiredCapacity = Number(
-          context?.requiredCapacity ?? context?.totalEligibleStudents,
+          context?.requiredHallCapacity ??
+          context?.requiredRoomCapacity ??
+          context?.requiredCapacity ??
+          context?.totalEligibleStudents,
         );
         if (context && Number.isFinite(requiredCapacity) && requiredCapacity >= 0) {
           setSchedulingContext({
@@ -832,8 +853,7 @@ export default function ExaminationPage() {
               (item) =>
                 Number(item.id) > 0 &&
                 item.isAvailable !== false &&
-                (!schedulingContext?.requiredCapacity ||
-                  Number(item.capacity) >= schedulingContext.requiredCapacity),
+                Number(item.capacity) >= schedulingContext.requiredCapacity,
             ),
         );
       } else {
@@ -851,7 +871,8 @@ export default function ExaminationPage() {
               designation: item.designation ?? "",
               facultyType: item.facultyType ?? "",
               staffType: item.staffType ?? item.facultyType ?? "",
-              isActive: isActiveMaster(item),
+              isActive: !isExplicitlyInactive(item),
+              isTeaching: !isExplicitlyNonTeaching(item),
               isAvailable: item.isAvailable,
             }))
             .filter(
@@ -859,9 +880,7 @@ export default function ExaminationPage() {
                 Number(item.id) > 0 &&
                 item.isAvailable !== false &&
                 item.isActive &&
-                ["teaching", "teaching staff"].includes(
-                  String(item.staffType).trim().toLowerCase(),
-                ) &&
+                item.isTeaching &&
                 all.findIndex(
                   (candidate) =>
                     String(candidate.employeeId || candidate.id) ===
@@ -1443,8 +1462,8 @@ export default function ExaminationPage() {
                   });
               } else {
                 const combinedRecords = records.filter(
-                    (item) => normalizeScheduleMode(item.scheduleMode) === "COMBINED_OBJECTIVE",
-                  ),
+                  (item) => normalizeScheduleMode(item.scheduleMode) === "COMBINED_OBJECTIVE",
+                ),
                   sessionIds = [
                     ...new Set(combinedRecords.map((item) => item.sessionId).filter(Boolean)),
                   ],
@@ -1521,7 +1540,6 @@ export default function ExaminationPage() {
           onSave={async (period) => {
             const updated = { ...editingExam, ...period };
             await apiClient.put(EXAM_API.byId(editingExam.id), {
-              examCode: updated.code,
               examName: updated.name,
               boardId: Number(updated.boardId),
               academicYearId: Number(updated.yearId),
@@ -1595,10 +1613,10 @@ export default function ExaminationPage() {
               const targets =
                 normalizeScheduleMode(removeSchedule.scheduleMode) === "COMBINED_OBJECTIVE"
                   ? schedules.filter(
-                      (item) =>
-                        String(item.examId) === String(removeSchedule.examId) &&
-                        item.sessionId === removeSchedule.sessionId,
-                    )
+                    (item) =>
+                      String(item.examId) === String(removeSchedule.examId) &&
+                      item.sessionId === removeSchedule.sessionId,
+                  )
                   : [removeSchedule];
               await Promise.all(
                 targets.map((item) => apiClient.delete(EXAM_API.scheduleById(item.id))),
@@ -1739,16 +1757,16 @@ function ExamForm({
     [form, setForm] = useState(() =>
       existing
         ? {
-            ...existing,
-            programId: String(existing.programId),
-            groupProgramId: String(existing.groupProgramId || ""),
-          }
+          ...existing,
+          programId: String(existing.programId),
+          groupProgramId: String(existing.groupProgramId || ""),
+        }
         : {
-            ...emptyExam(),
-            boardId: initialExamFilters?.boardId || "",
-            yearId: initialExamFilters?.yearId || "",
-            levelId: initialExamFilters?.levelId || "",
-          },
+          ...emptyExam(),
+          boardId: initialExamFilters?.boardId || "",
+          yearId: initialExamFilters?.yearId || "",
+          levelId: initialExamFilters?.levelId || "",
+        },
     ),
     [errors, setErrors] = useState({}),
     [saving, setSaving] = useState(false),
@@ -1757,14 +1775,32 @@ function ExamForm({
     if (!existing && form.boardId) onAcademicChange({ boardId: form.boardId });
   }, []);
   const change = (n, v) => {
-      if (n === "boardId") onAcademicChange({ boardId: v });
-      if (n === "groupId") onGroupChange(v);
-      setForm((x) => ({
-        ...x,
-        [n]: v,
-        ...(n === "boardId"
+    if (n === "boardId") onAcademicChange({ boardId: v });
+    if (n === "groupId") onGroupChange(v);
+    setForm((x) => ({
+      ...x,
+      [n]: v,
+      ...(n === "boardId"
+        ? {
+          yearId: "",
+          groupId: "",
+          groupProgramId: "",
+          programId: "",
+          examPatternId: "",
+          assessmentTypeId: "",
+          examType: "",
+        }
+        : n === "yearId"
           ? {
-              yearId: "",
+            groupId: "",
+            groupProgramId: "",
+            programId: "",
+            examPatternId: "",
+            assessmentTypeId: "",
+            examType: "",
+          }
+          : n === "levelId"
+            ? {
               groupId: "",
               groupProgramId: "",
               programId: "",
@@ -1772,39 +1808,21 @@ function ExamForm({
               assessmentTypeId: "",
               examType: "",
             }
-          : n === "yearId"
-            ? {
-                groupId: "",
+            : n === "groupId"
+              ? {
                 groupProgramId: "",
                 programId: "",
                 examPatternId: "",
                 assessmentTypeId: "",
                 examType: "",
               }
-            : n === "levelId"
-              ? {
-                  groupId: "",
-                  groupProgramId: "",
-                  programId: "",
-                  examPatternId: "",
-                  assessmentTypeId: "",
-                  examType: "",
-                }
-              : n === "groupId"
-                ? {
-                    groupProgramId: "",
-                    programId: "",
-                    examPatternId: "",
-                    assessmentTypeId: "",
-                    examType: "",
-                  }
-                : n === "programId"
-                  ? { examPatternId: "", assessmentTypeId: "", examType: "" }
-                  : n === "examPatternId"
-                    ? { assessmentTypeId: "", examType: "" }
-                    : {}),
-      }));
-    },
+              : n === "programId"
+                ? { examPatternId: "", assessmentTypeId: "", examType: "" }
+                : n === "examPatternId"
+                  ? { assessmentTypeId: "", examType: "" }
+                  : {}),
+    }));
+  },
     y = uniqueAcademicYearsByName(
       YEARS.filter(
         (x) => x.isActive && (x.boardId == null || Number(x.boardId) === Number(form.boardId)),
@@ -1819,22 +1837,22 @@ function ExamForm({
     allowedTypes =
       Array.isArray(pattern?.allowedExamTypes) && pattern.allowedExamTypes.length
         ? pattern.allowedExamTypes
-            .map((value) => {
-              const supplied = typeof value === "object" ? value : { name: value, examType: value };
-              const master = EXAM_TYPES.find((item) =>
-                [item.id, item.name, item.examType].some(
-                  (candidate) =>
-                    String(candidate ?? "")
-                      .trim()
-                      .toLowerCase() ===
-                    String(supplied.id ?? supplied.name ?? supplied.examType ?? "")
-                      .trim()
-                      .toLowerCase(),
-                ),
-              );
-              return master ?? null;
-            })
-            .filter((item) => Number.isInteger(Number(item?.id)) && Number(item.id) > 0)
+          .map((value) => {
+            const supplied = typeof value === "object" ? value : { name: value, examType: value };
+            const master = EXAM_TYPES.find((item) =>
+              [item.id, item.name, item.examType].some(
+                (candidate) =>
+                  String(candidate ?? "")
+                    .trim()
+                    .toLowerCase() ===
+                  String(supplied.id ?? supplied.name ?? supplied.examType ?? "")
+                    .trim()
+                    .toLowerCase(),
+              ),
+            );
+            return master ?? null;
+          })
+          .filter((item) => Number.isInteger(Number(item?.id)) && Number(item.id) > 0)
         : EXAM_TYPES.filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0);
   const save = async (e) => {
     e.preventDefault();
@@ -1957,12 +1975,13 @@ function ExamForm({
         ...(form.groupProgramId ? { groupProgramId: Number(form.groupProgramId) } : {}),
         ...(existing?.rowVersion != null ? { rowVersion: existing.rowVersion } : {}),
       };
-      if (existing?.code) payload.examCode = existing.code;
       const response = existing
         ? await apiClient.put(EXAM_API.byId(existing.id), payload)
         : await apiClient.post(EXAM_API.list, payload);
       const returned = objectFrom(response.data);
       let record = returned ? normalizeExamination(returned, EXAM_PATTERNS, EXAM_TYPES) : null;
+      if (existing && record && !String(record.code || "").trim())
+        record = { ...record, code: existing.code };
       const createdId = existing?.id ?? record?.id ?? returned?.examId;
       if (!Number.isInteger(Number(createdId)) || Number(createdId) <= 0)
         throw new Error("The Examination API did not return a valid created Examination ID.");
@@ -1971,6 +1990,8 @@ function ExamForm({
         const detailPayload = objectFrom(detailResponse.data);
         if (!detailPayload) throw new Error("The created Examination detail response was invalid.");
         record = normalizeExamination(detailPayload, EXAM_PATTERNS, EXAM_TYPES);
+        if (existing && !String(record.code || "").trim())
+          record = { ...record, code: existing.code };
       }
       if (!String(record?.code || "").trim())
         throw new Error(
@@ -2105,7 +2126,9 @@ function ExamForm({
                   onChange={(v) => change("name", v)}
                   error={errors.name}
                 />
-                <Field label="Exam Code" value={form.code} readOnly />
+                {existing && (
+                  <Field label="Exam Code" value={form.code} readOnly />
+                )}
                 <Field
                   label="Start Date *"
                   type="date"
@@ -2364,10 +2387,10 @@ function Schedule({
       if (editing) {
         const targets = combined
           ? entries.filter(
-              (item) =>
-                normalizeScheduleMode(item.scheduleMode) === "COMBINED_OBJECTIVE" &&
-                item.sessionId === savedSessionId,
-            )
+            (item) =>
+              normalizeScheduleMode(item.scheduleMode) === "COMBINED_OBJECTIVE" &&
+              item.sessionId === savedSessionId,
+          )
           : entries.filter((item) => String(item.id) === String(editing));
         await Promise.all(
           targets.map((item) =>

@@ -8,6 +8,14 @@ import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./StudentManagementPage.css";
 
 export const pageConfig = { title: "Student Management", rows: [], fields: [] };
+const list = (payload) => {
+  const data = payload?.data ?? payload?.Data ?? payload;
+  if (Array.isArray(data)) return data;
+  return data?.data ?? data?.Data ?? data?.items ?? data?.Items ?? data?.results ?? data?.Results ?? data?.$values ?? [];
+};
+const value = (record, ...keys) => keys.map((key) => record?.[key]).find((item) => item != null && item !== "");
+const normalizedName = (item) => String(item ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+const nameFor = (items, id, idKeys, labelKeys) => value(items.find((item) => String(value(item, ...idKeys)) === String(id)), ...labelKeys) ?? "";
 export default function StudentManagementPage() {
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState({
@@ -43,7 +51,46 @@ export default function StudentManagementPage() {
           roll: x.rollNumber ?? x.rollNo ?? x.roll ?? "",
           status: x.status ?? x.studentStatus ?? "Pending assignment",
         }));
-        if (active) setStudents(mapped);
+        if (active) setStudents(mapped.filter((student) => Boolean(student.roll)));
+        return Promise.allSettled([
+          apiClient.get(apiEndpoints.admissions.getAll), apiClient.get(apiEndpoints.academicYears.list),
+          apiClient.get(apiEndpoints.academicLevels.list), apiClient.get(apiEndpoints.groups.list),
+          apiClient.get(apiEndpoints.programs.list), apiClient.get(apiEndpoints.sections.list),
+        ]).then((responses) => {
+          const [admissions, years, levels, groups, programs, sections] = responses.map((response) =>
+            response.status === "fulfilled" ? list(response.value.data) : [],
+          );
+          const byNo = new Map(admissions.map((item) => [String(value(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") ?? "").trim(), item]));
+          const byStudentId = new Map(admissions.map((item) => [String(value(item, "studentId", "StudentId") ?? ""), item]));
+          const admissionName = (item) => value(item, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+            ?? [value(item, "firstName", "FirstName"), value(item, "lastName", "LastName")].filter(Boolean).join(" ");
+          const byName = new Map(admissions.map((item) => [normalizedName(admissionName(item)), item]));
+          const enriched = mapped.map((student) => {
+            const admission = byStudentId.get(String(student.studentId ?? ""))
+              ?? byNo.get(String(student.admissionNo ?? "").trim())
+              ?? byName.get(normalizedName(student.name));
+            const yearId = value(student, "academicYearId", "AcademicYearId") ?? value(admission, "academicYearId", "AcademicYearId");
+            const levelId = value(student, "academicLevelId", "AcademicLevelId") ?? value(admission, "academicLevelId", "AcademicLevelId");
+            const groupId = value(student, "groupId", "GroupId") ?? value(admission, "groupId", "GroupId");
+            const programId = value(student, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? value(admission, "programId", "ProgramId", "programmeId", "ProgrammeId");
+            const sectionId = value(student, "sectionId", "SectionId") ?? value(admission, "sectionId", "SectionId", "allocatedSectionId", "AllocatedSectionId");
+            return {
+              ...student,
+              academicYear: student.academicYear || value(admission, "academicYearName", "AcademicYearName") || nameFor(years, yearId, ["academicYearId", "AcademicYearId", "id"], ["academicYearName", "AcademicYearName", "name"]),
+              level: student.level || value(admission, "academicLevelName", "AcademicLevelName") || nameFor(levels, levelId, ["academicLevelId", "AcademicLevelId", "id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name"]),
+              group: student.group || value(admission, "groupName", "GroupName") || nameFor(groups, groupId, ["groupId", "GroupId", "id"], ["groupName", "GroupName", "name"]),
+              programme: student.programme || value(admission, "programName", "ProgramName", "programmeName", "ProgrammeName") || nameFor(programs, programId, ["programId", "ProgramId", "programmeId", "ProgrammeId", "id"], ["programName", "ProgramName", "programmeName", "ProgrammeName", "name"]),
+              section: student.section || value(admission, "sectionName", "SectionName") || nameFor(sections, sectionId, ["sectionId", "SectionId", "id"], ["sectionName", "SectionName", "name"]),
+              mobile: student.mobileNumber ?? student.mobile ?? "",
+              // The students endpoint does not expose an approval flag. A
+              // linked admission is preferred; a generated roll number is a
+              // reliable completed-placement fallback for this API.
+              approved: Boolean(admission) || Boolean(student.roll),
+            };
+          });
+          const visibleStudents = enriched.filter((student) => student.approved);
+          if (active && visibleStudents.length) setStudents(visibleStudents);
+        });
       })
       .catch((e) => active && setError(getApiErrorMessage(e)))
       .finally(() => active && setLoading(false));
@@ -150,7 +197,9 @@ export default function StudentManagementPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length ? (
+              {loading ? (
+                <tr><td colSpan="11"><div className="cms-empty">Loading approved students...</div></td></tr>
+              ) : rows.length ? (
                 rows.map((s) => (
                   <tr key={s.id}>
                     <td>{s.studentId}</td>
@@ -180,7 +229,7 @@ export default function StudentManagementPage() {
               ) : (
                 <tr>
                   <td colSpan="11">
-                    <div className="cms-empty">No students match your search.</div>
+                    <div className="cms-empty">{error || "No approved students match your search."}</div>
                   </td>
                 </tr>
               )}

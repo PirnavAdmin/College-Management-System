@@ -269,10 +269,22 @@
 .cms-marks-entry .cms-table-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
   margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+.cms-marks-entry .cms-evaluation-toolbar {
+  justify-content: flex-start;
+}
+
+.cms-marks-entry .cms-evaluation-toolbar > .cms-btn {
+  margin-left: auto;
+}
+
+.cms-marks-entry .cms-evaluation-bulk-action {
+  margin-left: auto;
 }
 
 .cms-tab-bar {
@@ -311,7 +323,8 @@
 /* Search Box */
 .cms-marks-entry .cms-search-wrap {
   position: relative;
-  flex: 1;
+  flex: 0 1 320px;
+  width: 100%;
   max-width: 320px;
 }
 
@@ -494,6 +507,31 @@
   height: 6px;
   border-radius: 50%;
   background: currentColor;
+}
+
+.cms-marks-entry .cms-evaluation-table th:nth-child(6),
+.cms-marks-entry .cms-evaluation-table td:nth-child(6),
+.cms-marks-entry .cms-evaluation-table th:nth-child(7),
+.cms-marks-entry .cms-evaluation-table td:nth-child(7),
+.cms-marks-entry .cms-evaluation-table th:nth-child(8),
+.cms-marks-entry .cms-evaluation-table td:nth-child(8),
+.cms-marks-entry .cms-student-analysis-table th:last-child,
+.cms-marks-entry .cms-student-analysis-table td:last-child {
+  text-align: center;
+}
+
+.cms-marks-entry .cms-evaluation-table .cms-badge-status {
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cms-marks-entry .cms-evaluation-table .cms-badge-dot {
+  width: 4px;
+  height: 4px;
+  flex: 0 0 4px;
 }
 
 .cms-status-submitted {
@@ -805,8 +843,14 @@
     flex-direction: column;
     align-items: stretch;
   }
+
+  .cms-marks-entry .cms-evaluation-toolbar > .cms-btn,
+  .cms-marks-entry .cms-evaluation-bulk-action {
+    margin-left: 0;
+  }
   
-  .cms-search-wrap {
+  .cms-marks-entry .cms-search-wrap {
+    flex-basis: auto;
     max-width: 100%;
   }
 

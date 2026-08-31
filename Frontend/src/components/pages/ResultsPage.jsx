@@ -304,16 +304,6 @@ const normalizeReadiness = (item) => ({
     .filter((section) => section.sectionId > 0),
 });
 
-const canGenerate = (item) =>
-  Boolean(
-    item &&
-    (item.readyForGeneration ||
-      (item.examinationId > 0 &&
-        item.isExamCompleted &&
-        item.validationBlockers.length === 0 &&
-        item.publicationStatus !== "PUBLISHED")),
-  );
-
 const canPublishGroup = (item, generatedSections = item?.sections ?? []) =>
   Boolean(
     item &&
@@ -351,6 +341,7 @@ export default function ResultProcessingPage() {
   const [rankFilters, setRankFilters] = useState({ group: "", program: "", section: "", exam: "" });
   const [rankSearch, setRankSearch] = useState("");
   const [rankList, setRankList] = useState([]);
+  const [showRankPreview, setShowRankPreview] = useState(false);
 
   // Analytics & Modals
   const [analytics, setAnalytics] = useState(null);
@@ -656,7 +647,6 @@ export default function ResultProcessingPage() {
     } catch (err) {
       if (seq === requests.current.generate) {
         showToast(apiError(err), "error");
-        // Fallback: check if existing results can be loaded despite readiness status
         const restored = await loadExistingSectionSummaries(filters);
         if (restored && restored.length > 0) {
           setApplied({ ...filters });
@@ -696,6 +686,7 @@ export default function ResultProcessingPage() {
 
   const loadStudentMemo = async (student) => {
     const sId = typeof student === "object" ? student.studentId : student;
+    const studentExamId = typeof student === "object" ? (student.examinationId ?? student.examId) : null;
     if (loadingStudentId !== null) return;
     const seq = ++requests.current.memo;
     setStudentId(sId);
@@ -707,19 +698,25 @@ export default function ResultProcessingPage() {
         group: rankFilters.group,
         program: rankFilters.program,
       };
+      const examId = studentExamId || Number(memoContext.exam) || Number(rankFilters.exam) || undefined;
       const res = await apiClient.get(RESULT_API.studentMemo(sId), {
-        params: { examId: Number(memoContext.exam), examinationId: Number(memoContext.exam) },
+        params: examId ? { examId, examinationId: examId } : {},
       });
       if (seq !== requests.current.memo) return;
-      const memo = objectFrom(res.data);
+      const payload = objectFrom(res.data) || res.data;
+      const memo = typeof student === "object" ? { ...student, ...(payload || {}) } : payload;
       if (!memo) {
         throw new Error("Unable to load student marks memo.");
       }
       setSelectedStudentMemo(memo);
     } catch (err) {
       if (seq === requests.current.memo) {
-        setStudentId(null);
-        showToast(apiError(err), "error");
+        if (typeof student === "object") {
+          setSelectedStudentMemo(student);
+        } else {
+          setStudentId(null);
+          showToast(apiError(err), "error");
+        }
       }
     } finally {
       if (seq === requests.current.memo) setLoadingStudentId(null);
@@ -769,7 +766,7 @@ export default function ResultProcessingPage() {
       ]);
       setRankPage(1);
     } catch (err) {
-      if (seq === requests.current.rank) showToast(apiError(err), "error");
+      if (seq !== requests.current.rank) showToast(apiError(err), "error");
     }
   };
 
@@ -792,7 +789,7 @@ export default function ResultProcessingPage() {
       const next = res.data?.data ?? res.data;
       setAnalytics(next);
     } catch (err) {
-      if (seq === requests.current.analytics) showToast(apiError(err), "error");
+      if (seq !== requests.current.analytics) showToast(apiError(err), "error");
     }
   };
 
@@ -902,38 +899,45 @@ export default function ResultProcessingPage() {
   }, [rankPage, rankPages]);
 
   // Exports
-  const exportRows = (rows) =>
-    rows.map((item) => ({
-      Roll: item.rollNo || item.rollNumber || "—",
-      Student: item.studentName || item.student || "—",
-      Section: item.sectionName || item.section || "—",
-      Total: item.total ?? item.totalMarks ?? "—",
-      Maximum: item.maximum ?? item.maxMarks ?? "—",
-      Percentage: item.percentage == null ? "—" : Number(item.percentage).toFixed(2),
-      Grade: item.grade || "—",
-      Result: item.result || "—",
-      "Section Rank": item.sectionRank ?? item.rank ?? "—",
-      Status: item.status ?? item.resultStatus ?? "—",
-    }));
+  const exportRows = (rows, includeStatus = true) =>
+    rows.map((item) => {
+      const rowData = {
+        Rank: item.rank ?? item.sectionRank ?? "—",
+        Roll: item.rollNo || item.rollNumber || "—",
+        Student: item.studentName || item.student || "—",
+        Group: item.groupName || item.group || "—",
+        Program: item.programName || item.program || "—",
+        Section: item.sectionName || item.section || "—",
+        Total: item.total ?? item.totalMarks ?? "—",
+        Maximum: item.maximum ?? item.maxMarks ?? "—",
+        Percentage: item.percentage == null ? "—" : Number(item.percentage).toFixed(2),
+        Grade: item.grade || "—",
+        Result: item.result || "—",
+      };
+      if (includeStatus) {
+        rowData.Status = item.status ?? item.resultStatus ?? "—";
+      }
+      return rowData;
+    });
 
   const safeFileName = (value) =>
     String(value ?? "Results")
       .replace(/[\\/:*?"<>|]/g, "")
       .trim() || "Results";
 
-  const exportExcel = (rows, filename) => {
+  const exportExcel = (rows, filename, includeStatus = true) => {
     if (!rows.length) return showToast("No result records are available to export.", "error");
-    const sheet = XLSX.utils.json_to_sheet(exportRows(rows));
+    const sheet = XLSX.utils.json_to_sheet(exportRows(rows, includeStatus));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Results");
     XLSX.writeFile(book, `${safeFileName(filename)}.xlsx`);
   };
 
-  const exportPdf = (rows, filename) => {
+  const exportPdf = (rows, filename, includeStatus = true) => {
     if (!rows.length) return showToast("No result records are available to export.", "error");
     const doc = new jsPDF({ orientation: "landscape" });
     doc.text(filename, 14, 14);
-    const data = exportRows(rows);
+    const data = exportRows(rows, includeStatus);
     const headers = Object.keys(data[0] || {});
     autoTable(doc, {
       head: [headers],
@@ -1175,12 +1179,20 @@ export default function ResultProcessingPage() {
                 program: next.program,
               })
             }
-            onExport={() => exportExcel(rankList, "Rank-List")}
+            onExportPreview={() => setShowRankPreview(true)}
           />
         )}
 
         {viewMode === "analytics" && !selectedStudentMemo && (
           <Analytics data={analytics} onOpen={openFailedStudents} />
+        )}
+
+        {showRankPreview && (
+          <RankPreviewModal
+            rows={rankList}
+            onClose={() => setShowRankPreview(false)}
+            onDownload={() => exportExcel(rankList, "Rank-List", false)}
+          />
         )}
 
         {confirm && (
@@ -1581,7 +1593,7 @@ function RankList({
   loadingStudentId,
   onGroupChange,
   onProgramChange,
-  onExport,
+  onExportPreview,
 }) {
   const update = (key, val) => {
     const next = {
@@ -1646,7 +1658,7 @@ function RankList({
           ))}
         </Select>
         <div className="results-rank-toolbar-spacer" />
-        <button className="cms-btn cms-btn-ghost" onClick={onExport}>
+        <button className="cms-btn cms-btn-ghost" onClick={onExportPreview}>
           Export Rank List
         </button>
       </div>
@@ -1713,6 +1725,171 @@ function RankList({
   );
 }
 
+function RankPreviewModal({ rows, onClose, onDownload }) {
+  const [modalPage, setModalPage] = useState(1);
+  const modalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pagedRows = rows.slice((modalPage - 1) * PAGE_SIZE, modalPage * PAGE_SIZE);
+  const getResultLabel = (item) => {
+    const value = String(item.result ?? item.resultStatus ?? "").trim().toUpperCase();
+    if (value.includes("PASS")) return "PASS";
+    if (value.includes("FAIL")) return "FAIL";
+    return "—";
+  };
+
+  return (
+    <div
+      className="cms-modal-overlay results-rank-preview-overlay"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: "rgba(0, 0, 0, 0.45)",
+        zIndex: 1100,
+        padding: "16px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="cms-modal-content results-rank-preview-modal"
+        style={{
+          maxWidth: "680px",
+          width: "100%",
+          maxHeight: "85vh",
+          display: "flex",
+          flexDirection: "column",
+          borderRadius: "10px",
+          backgroundColor: "#ffffff",
+          boxShadow: "0 10px 25px rgba(0, 0, 0, 0.2)",
+          padding: "18px 22px",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="cms-modal-header"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            borderBottom: "1px solid #e5e7eb",
+            paddingBottom: "12px",
+            marginBottom: "14px",
+          }}
+        >
+          <div>
+            <h3 className="cms-modal-title" style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>
+              Rank List Export Preview
+            </h3>
+            <span className="results-rank-preview-subtitle">{rows.length} records ready to export</span>
+          </div>
+          <button
+            className="cms-modal-close"
+            style={{
+              background: "none",
+              border: "none",
+              fontSize: "20px",
+              cursor: "pointer",
+              color: "#9ca3af",
+            }}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <div className="cms-modal-body" style={{ flex: 1, overflowY: "auto", marginBottom: "14px" }}>
+          {rows.length === 0 ? (
+            <p className="results-analytics-empty" style={{ textAlign: "center", padding: "20px", color: "#6b7280" }}>
+              No rank list records available for preview.
+            </p>
+          ) : (
+            <>
+              <div className="cms-table-wrap results-rank-preview-table-wrap" style={{ overflowX: "auto" }}>
+                <table className="cms-table results-rank-preview-table" style={{ width: "100%", fontSize: "12px" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ padding: "6px 8px" }}>RANK</th>
+                      <th style={{ padding: "6px 8px" }}>ROLL</th>
+                      <th style={{ padding: "6px 8px" }}>STUDENT</th>
+                      <th style={{ padding: "6px 8px" }}>GROUP</th>
+                      <th style={{ padding: "6px 8px" }}>PROGRAM</th>
+                      <th style={{ padding: "6px 8px" }}>SECTION</th>
+                      <th style={{ padding: "6px 8px" }}>TOTAL</th>
+                      <th style={{ padding: "6px 8px" }}>MAX</th>
+                      <th style={{ padding: "6px 8px" }}>PERCENT %</th>
+                      <th style={{ padding: "6px 8px" }}>GRADE</th>
+                      <th style={{ padding: "6px 8px" }}>RESULT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRows.map((item, idx) => (
+                      <tr key={`${item.studentId}-${idx}`}>
+                        <td className="cms-font-semibold" style={{ padding: "6px 8px" }}>
+                          #{item.rank ?? (modalPage - 1) * PAGE_SIZE + idx + 1}
+                        </td>
+                        <td style={{ padding: "6px 8px" }}>{item.rollNo || item.rollNumber || "—"}</td>
+                        <td style={{ padding: "6px 8px" }}>{item.studentName || item.student || "—"}</td>
+                        <td style={{ padding: "6px 8px" }}>{item.groupName || item.group || "—"}</td>
+                        <td style={{ padding: "6px 8px" }}>{item.programName || item.program || "—"}</td>
+                        <td style={{ padding: "6px 8px" }}>{item.sectionName || item.section || "—"}</td>
+                        <td className="cms-text-center" style={{ padding: "6px 8px" }}>
+                          {item.total ?? item.totalMarks ?? "—"}
+                        </td>
+                        <td className="cms-text-center" style={{ padding: "6px 8px" }}>
+                          {item.maximum ?? item.maxMarks ?? "—"}
+                        </td>
+                        <td className="cms-text-center" style={{ padding: "6px 8px" }}>
+                          {item.percentage == null ? "—" : `${Number(item.percentage).toFixed(2)}%`}
+                        </td>
+                        <td className="cms-text-center" style={{ padding: "6px 8px" }}>{item.grade || "—"}</td>
+                        <td className="cms-text-center" style={{ padding: "6px 8px" }}>
+                          <span className={`results-rank-result results-rank-result-${getResultLabel(item).toLowerCase()}`}>
+                            {getResultLabel(item)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {modalPages > 1 && (
+                <Pagination page={modalPage} pages={modalPages} setPage={setModalPage} />
+              )}
+            </>
+          )}
+        </div>
+        <div
+          className="cms-modal-footer"
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: "10px",
+            borderTop: "1px solid #e5e7eb",
+            paddingTop: "12px",
+          }}
+        >
+          <button className="cms-btn cms-btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="cms-btn cms-btn-primary"
+            disabled={!rows.length}
+            onClick={() => {
+              onDownload();
+              onClose();
+            }}
+          >
+            Download Excel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Analytics({ data, onOpen }) {
   const [subjectPage, setSubjectPage] = useState(1);
   useEffect(() => setSubjectPage(1), [data]);
@@ -1720,13 +1897,6 @@ function Analytics({ data, onOpen }) {
     ["TOTAL STUDENTS", data?.totalStudents ?? data?.total ?? 0, "total"],
     ["PASSED", data?.passed ?? data?.passedStudents ?? 0, "passed"],
     ["FAILED", data?.failed ?? data?.failedStudents ?? 0, "failed"],
-    [
-      "AVERAGE %",
-      data?.averagePercentage == null && data?.average == null && data?.overallAveragePercentage == null
-        ? "—"
-        : `${Number(data?.averagePercentage ?? data?.average ?? data?.overallAveragePercentage).toFixed(2)}%`,
-      "average",
-    ],
     [
       "PASS %",
       data?.passPercentage == null && data?.pass == null
@@ -1769,7 +1939,7 @@ function Analytics({ data, onOpen }) {
         <div className="cms-card-body">
           <h3 className="cms-card-title">Subject Performance</h3>
           <div className="cms-table-wrap">
-            <table className="cms-table">
+            <table className="cms-table results-subject-performance-table">
               <thead>
                 <tr>
                   <th>SUBJECT</th>

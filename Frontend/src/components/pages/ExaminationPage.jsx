@@ -29,6 +29,7 @@ const EXAM_API = {
   availableInvigilators: "/api/v1/examinations/available-invigilators",
   schedulingContext: (id) => `/api/v1/examinations/${id}/scheduling-context`,
 };
+
 const collectionFrom = (data) => {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.items)) return data.items;
@@ -61,7 +62,7 @@ const normalizeMaster = (item, idKeys, nameKeys) => ({
     nameKeys.map((key) => item?.[key]).find((value) => value != null && value !== "") ??
     item?.name ??
     "",
-  code: item?.code ?? item?.groupCode ?? item?.programCode ?? item?.subjectCode ?? "",
+  code: item?.code ?? item?.boardCode ?? item?.groupCode ?? item?.programCode ?? item?.subjectCode ?? "",
   status: item?.status ?? (item?.isActive === false ? "Inactive" : "Active"),
 });
 const isActiveMaster = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status));
@@ -97,10 +98,11 @@ const normalizeScheduleMode = (value) => {
     "COMBINED",
     "COMBINED_OBJECTIVE",
     "OBJECTIVE_COMBINED",
+    "OBJECTIVE",
     "JEE_MAIN",
     "JEE_ADVANCED",
     "NEET",
-  ].includes(mode)
+  ].includes(mode) || mode.includes("OBJECTIVE") || mode.includes("COMBINED")
     ? "COMBINED_OBJECTIVE"
     : "SUBJECT_WISE";
 };
@@ -132,27 +134,16 @@ const findExamType = (types, value) => {
 };
 const apiError = (error) => {
   const data = error?.response?.data;
-
   if (data?.errors && typeof data.errors === "object") {
     const validationMessages = Object.entries(data.errors)
       .flatMap(([field, messages]) => {
         const items = Array.isArray(messages) ? messages : [messages];
-
-        return items
-          .filter(Boolean)
-          .map((message) => `${field}: ${message}`);
+        return items.filter(Boolean).map((message) => `${field}: ${message}`);
       })
       .join(" ");
-
     if (validationMessages) return validationMessages;
   }
-
-  return (
-    data?.detail ||
-    data?.message ||
-    data?.title ||
-    getApiErrorMessage(error)
-  );
+  return data?.detail || data?.message || data?.title || getApiErrorMessage(error);
 };
 const normalizeSchedule = (item) => ({
   ...item,
@@ -185,9 +176,10 @@ const normalizeExamination = (item, patterns = [], types = []) => ({
   code: item.examCode ?? item.code ?? "",
   name: item.examName ?? item.name ?? "",
   boardId: item.boardId,
+  boardCode: item.boardCode ?? item.code ?? "",
+  boardName: item.boardName ?? item.board ?? "",
   yearId: item.academicYearId ?? item.yearId,
   levelId: item.academicLevelId ?? item.levelId,
-  boardName: item.boardName ?? item.board ?? "",
   academicYearName: item.academicYearName ?? item.academicYear ?? item.yearName ?? "",
   academicLevelName: item.academicLevelName ?? item.academicLevel ?? item.levelName ?? "",
   groupId: item.groupId,
@@ -217,7 +209,9 @@ const normalizeExamination = (item, patterns = [], types = []) => ({
   passPercentage: item.passPercentage ?? "",
   description: item.description ?? "",
   status: String(item.status ?? "DRAFT").toUpperCase(),
-  scheduleMode: normalizeScheduleMode(item.scheduleMode ?? item.examPattern),
+  scheduleMode: normalizeScheduleMode(
+    item.scheduleMode ?? item.examPattern ?? item.examType ?? item.type,
+  ),
   completedAt: item.completedAt ?? "",
   completionMode: item.completionMode ?? "",
   rowVersion: item.rowVersion,
@@ -278,6 +272,8 @@ const nextScheduleFromPrevious = (savedSchedule) => ({
 const overlaps = (a, b, c, d) => a < d && b > c;
 const nameOf = (items, id, fallback = "All Programs") =>
   items.find((x) => String(x.id) === String(id))?.name || fallback;
+const codeOf = (items, id, fallback = "—") =>
+  items.find((x) => String(x.id) === String(id))?.code || fallback;
 const d = (value) =>
   value
     ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(
@@ -299,22 +295,24 @@ const validateExamConfiguration = (exam) => {
     Number(exam.groupId) <= 0 ||
     !Number.isInteger(Number(exam.programId)) ||
     Number(exam.programId) <= 0 ||
-    !Number.isInteger(Number(exam.examPatternId)) ||
-    Number(exam.examPatternId) <= 0 ||
     !Number.isInteger(Number(exam.assessmentTypeId)) ||
-    Number(exam.assessmentTypeId) <= 0
+    Number(exam.assessmentTypeId) <= 0 ||
+    !Number.isInteger(Number(exam.examPatternId)) ||
+    Number(exam.examPatternId) <= 0
   ) {
-    return "Select a valid Program, Exam Pattern and Exam Type.";
+    return "Select a valid Program, Exam Type and Exam Pattern.";
   }
-
   return "";
 };
-const getScheduleMode = (exam, patterns = []) =>
-  normalizeScheduleMode(
+const getScheduleMode = (exam, patterns = []) => {
+  const candidate =
     exam?.scheduleMode ||
     patterns.find((item) => String(item.id) === String(exam?.examPatternId))?.scheduleMode ||
-    exam?.examPattern,
-  );
+    exam?.examPattern ||
+    exam?.examType ||
+    exam?.type;
+  return normalizeScheduleMode(candidate);
+};
 const createCombinedSessionId = (examId) => `COMBINED-${examId}-${Date.now()}`;
 const getExamPassingMarks = (exam) => {
   const total = Number(exam?.totalMarks);
@@ -428,6 +426,7 @@ const buildExportRows = (targetExams, schedules, masters) =>
           examCode: exam.code || "—",
           examName: exam.name,
           boardName: nameOf(masters.boards, exam.boardId),
+          boardCode: codeOf(masters.boards, exam.boardId),
           academicYear: nameOf(masters.years, exam.yearId),
           academicLevel: nameOf(masters.levels, exam.levelId),
           programName: nameOf(masters.programs, exam.programId),
@@ -470,11 +469,7 @@ const buildExportRows = (targetExams, schedules, masters) =>
       );
     })
     .map((row, index) => ({ ...row, serialNo: index + 1 }));
-const duration = (a, b) => {
-  if (!a || !b || b <= a) return "";
-  const min = +b.slice(0, 2) * 60 + +b.slice(3) - (+a.slice(0, 2) * 60 + +a.slice(3));
-  return `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ""}`;
-};
+
 export const pageConfig = {
   title: "Examination Management",
   subtitle: "Configure examinations and build conflict-free subject schedules.",
@@ -602,7 +597,12 @@ export default function ExaminationPage() {
                 isActive: isActiveMaster(item),
               }
               : key === "boards"
-                ? { ...master, id: Number(master.id), isActive: isActiveMaster(item) }
+                ? {
+                  ...master,
+                  id: Number(master.id),
+                  code: item.boardCode ?? item.code ?? item.boardName ?? item.name ?? "",
+                  isActive: isActiveMaster(item),
+                }
                 : { ...master, id: Number(master.id) };
           })
           .filter(
@@ -965,6 +965,8 @@ export default function ExaminationPage() {
         [
           exam.code,
           exam.name,
+          exam.boardCode,
+          exam.boardName,
           exam.groupName,
           exam.groupName || nameOf(GROUPS, exam.groupId, ""),
           exam.programName,
@@ -986,6 +988,16 @@ export default function ExaminationPage() {
   useEffect(() => {
     if (page > pages) setPage(pages);
   }, [page, pages]);
+
+  const getBoardCode = (e) => {
+    const found = BOARDS.find((b) => String(b.id) === String(e.boardId));
+    return e.boardCode || found?.code || found?.name || e.boardName || "—";
+  };
+  const getBoardName = (e) => {
+    const found = BOARDS.find((b) => String(b.id) === String(e.boardId));
+    return e.boardName || found?.name || "—";
+  };
+
   if (loading && isForm && id)
     return (
       <DashboardLayout {...pageConfig}>
@@ -1102,7 +1114,7 @@ export default function ExaminationPage() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by code, name, group, program, type or status..."
+                  placeholder="Search by code, name, board, group, program, type or status..."
                 />
               </div>
               <div className="exam-toolbar-filters">
@@ -1147,6 +1159,7 @@ export default function ExaminationPage() {
                   <tr>
                     <th>Exam Code</th>
                     <th>Exam Name</th>
+                    <th>Board</th>
                     <th>Academic Year</th>
                     <th>Level</th>
                     <th>Group</th>
@@ -1160,7 +1173,7 @@ export default function ExaminationPage() {
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan="10">
+                      <td colSpan="11">
                         <div className="exam-list-loading">
                           <span className="exam-list-spinner" aria-hidden="true" />
                           <span>Loading data...</span>
@@ -1172,9 +1185,12 @@ export default function ExaminationPage() {
                       <tr key={e.id}>
                         <td className="cms-strong">{e.code}</td>
                         <td>
-                          <span className="exam-cell-truncate" title={e.name}>
+                          <span className="exam-cell-two-lines" title={e.name}>
                             {e.name}
                           </span>
+                        </td>
+                        <td title={getBoardName(e)}>
+                          <span className="exam-cell-two-lines">{getBoardCode(e)}</span>
                         </td>
                         <td>
                           <span
@@ -1333,7 +1349,7 @@ export default function ExaminationPage() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="10">
+                      <td colSpan="11">
                         <div className="cms-empty">No examinations match the current filters.</div>
                       </td>
                     </tr>
@@ -1441,7 +1457,7 @@ export default function ExaminationPage() {
                   form: "Configure valid Total Marks and Pass Percentage before finalizing this examination.",
                 });
               if (validateExamConfiguration(exam))
-                return setErrors({ form: "Select a valid Program, Exam Pattern and Exam Type." });
+                return setErrors({ form: "Select a valid Program, Exam Type and Exam Pattern." });
               if (!eligibleSubjectsLoaded)
                 return setErrors({
                   form: "Eligible subjects could not be loaded. Please try again before finalizing.",
@@ -1676,6 +1692,7 @@ export default function ExaminationPage() {
     </DashboardLayout>
   );
 }
+
 function ToolbarSelect({ label, value, onChange, options, disabled = false }) {
   return (
     <div className="exam-toolbar-select">
@@ -1823,44 +1840,44 @@ function ExamForm({
           groupId: "",
           groupProgramId: "",
           programId: "",
-          examPatternId: "",
           assessmentTypeId: "",
           examType: "",
+          examPatternId: "",
         }
         : n === "yearId"
           ? {
             groupId: "",
             groupProgramId: "",
             programId: "",
-            examPatternId: "",
             assessmentTypeId: "",
             examType: "",
+            examPatternId: "",
           }
           : n === "levelId"
             ? {
               groupId: "",
               groupProgramId: "",
               programId: "",
-              examPatternId: "",
               assessmentTypeId: "",
               examType: "",
+              examPatternId: "",
             }
             : n === "groupId"
               ? {
                 groupProgramId: "",
                 programId: "",
-                examPatternId: "",
                 assessmentTypeId: "",
                 examType: "",
+                examPatternId: "",
               }
               : n === "programId"
-                ? { examPatternId: "", assessmentTypeId: "", examType: "" }
-                : n === "examPatternId"
-                  ? { assessmentTypeId: "", examType: "" }
+                ? { assessmentTypeId: "", examType: "", examPatternId: "" }
+                : n === "assessmentTypeId"
+                  ? { examPatternId: "" }
                   : {}),
     }));
-  },
-    y = uniqueAcademicYearsByName(
+  };
+  const y = uniqueAcademicYearsByName(
       YEARS.filter(
         (x) => x.isActive && (x.boardId == null || Number(x.boardId) === Number(form.boardId)),
       ),
@@ -1869,28 +1886,36 @@ function ExamForm({
     l = LEVELS,
     g = GROUPS,
     p = PROGRAMS,
-    patterns = patternsForProgram(EXAM_PATTERNS, form.programId, form.groupProgramId),
-    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(form.examPatternId)),
-    allowedTypes =
-      Array.isArray(pattern?.allowedExamTypes) && pattern.allowedExamTypes.length
-        ? pattern.allowedExamTypes
-          .map((value) => {
-            const supplied = typeof value === "object" ? value : { name: value, examType: value };
-            const master = EXAM_TYPES.find((item) =>
-              [item.id, item.name, item.examType].some(
-                (candidate) =>
-                  String(candidate ?? "")
-                    .trim()
-                    .toLowerCase() ===
-                  String(supplied.id ?? supplied.name ?? supplied.examType ?? "")
-                    .trim()
-                    .toLowerCase(),
-              ),
-            );
-            return master ?? null;
-          })
-          .filter((item) => Number.isInteger(Number(item?.id)) && Number(item.id) > 0)
-        : EXAM_TYPES.filter((item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0);
+    availableExamTypes = EXAM_TYPES.filter(
+      (item) => Number.isInteger(Number(item.id)) && Number(item.id) > 0,
+    ),
+    selectedTypeObj = availableExamTypes.find(
+      (item) => String(item.id) === String(form.assessmentTypeId),
+    ),
+    availablePatterns = patternsForProgram(
+      EXAM_PATTERNS,
+      form.programId,
+      form.groupProgramId,
+    ).filter((patternItem) => {
+      if (!form.assessmentTypeId) return true;
+      if (!Array.isArray(patternItem.allowedExamTypes) || !patternItem.allowedExamTypes.length)
+        return true;
+      return patternItem.allowedExamTypes.some((candidate) => {
+        const candidateVal =
+          typeof candidate === "object"
+            ? candidate.id ?? candidate.name ?? candidate.examType
+            : candidate;
+        return (
+          String(candidateVal ?? "")
+            .trim()
+            .toLowerCase() ===
+          String(selectedTypeObj?.id ?? selectedTypeObj?.name ?? selectedTypeObj?.examType ?? "")
+            .trim()
+            .toLowerCase()
+        );
+      });
+    }),
+    pattern = EXAM_PATTERNS.find((item) => String(item.id) === String(form.examPatternId));
   const save = async (e) => {
     e.preventDefault();
     if (saving) return;
@@ -1906,8 +1931,8 @@ function ExamForm({
       "levelId",
       "groupId",
       "programId",
-      "examPatternId",
       "assessmentTypeId",
+      "examPatternId",
       "startDate",
       "endDate",
     ].forEach((k) => {
@@ -1917,7 +1942,9 @@ function ExamForm({
             ? "Please select a Program."
             : k === "assessmentTypeId"
               ? "Please select an Exam Type."
-              : "Required";
+              : k === "examPatternId"
+                ? "Please select an Exam Pattern."
+                : "Required";
     });
     if (!normalizedExamName) x.name = "Exam Name is required.";
     else if (normalizedExamName.length < 2)
@@ -1931,7 +1958,7 @@ function ExamForm({
       x.description = "Description contains unsupported control characters.";
     const configurationError = validateExamConfiguration(form);
     if (configurationError) x.examPatternId = configurationError;
-    ["boardId", "yearId", "levelId", "groupId", "programId", "examPatternId"].forEach((field) => {
+    ["boardId", "yearId", "levelId", "groupId", "programId", "assessmentTypeId", "examPatternId"].forEach((field) => {
       if (!Number.isInteger(Number(form[field])) || Number(form[field]) <= 0)
         x[field] = "Select a valid option.";
     });
@@ -2127,9 +2154,9 @@ function ExamForm({
                       groupProgramId: selected?.groupProgramId
                         ? String(selected.groupProgramId)
                         : "",
-                      examPatternId: "",
                       assessmentTypeId: "",
                       examType: "",
+                      examPatternId: "",
                     }));
                     setErrors((current) => ({ ...current, programId: undefined, form: undefined }));
                   }}
@@ -2137,32 +2164,34 @@ function ExamForm({
                   error={errors.programId}
                 />
                 <Select
-                  label="Exam Pattern *"
-                  value={form.examPatternId}
-                  disabled={saving || locked || !form.programId}
-                  onChange={(v) => change("examPatternId", v)}
-                  options={patterns}
-                  error={errors.examPatternId}
-                />
-                <Select
                   label="Exam Type *"
                   value={form.assessmentTypeId}
-                  disabled={saving || locked || !form.examPatternId}
+                  disabled={saving || locked || !form.programId}
                   onChange={(v) => {
-                    const selected = allowedTypes.find((item) => String(item.id) === String(v));
+                    const selected = availableExamTypes.find((item) => String(item.id) === String(v));
                     setForm((current) => ({
                       ...current,
                       assessmentTypeId: v,
                       examType: selected?.examType ?? selected?.name ?? "",
+                      examPatternId: "",
                     }));
                     setErrors((current) => ({
                       ...current,
                       assessmentTypeId: undefined,
+                      examPatternId: undefined,
                       form: undefined,
                     }));
                   }}
-                  options={allowedTypes}
+                  options={availableExamTypes}
                   error={errors.assessmentTypeId}
+                />
+                <Select
+                  label="Exam Pattern *"
+                  value={form.examPatternId}
+                  disabled={saving || locked || !form.assessmentTypeId}
+                  onChange={(v) => change("examPatternId", v)}
+                  options={availablePatterns}
+                  error={errors.examPatternId}
                 />
               </div>
             </section>
@@ -2257,6 +2286,7 @@ function ExamForm({
     </DashboardLayout>
   );
 }
+
 function Schedule({
   masters,
   schedulingContext,
@@ -2650,6 +2680,7 @@ function Schedule({
     </>
   );
 }
+
 function ScheduleTable({ entries, canEdit, edit, remove, masters }) {
   return (
     <div className="cms-table-wrap exam-schedule-table">
@@ -2714,6 +2745,7 @@ function ScheduleTable({ entries, canEdit, edit, remove, masters }) {
     </div>
   );
 }
+
 function ExamDetails({ exam, schedules, masters, close }) {
   const entries = schedules.filter((s) => String(s.examId) === String(exam.id));
   return (
@@ -2740,6 +2772,7 @@ function ExamDetails({ exam, schedules, masters, close }) {
     </Modal>
   );
 }
+
 function CompactScheduleTable({ entries, masters }) {
   return (
     <div className="cms-table-wrap exam-view-schedule">
@@ -2780,6 +2813,7 @@ function CompactScheduleTable({ entries, masters }) {
     </div>
   );
 }
+
 function EditExamModal({ exam, schedules, masters, onClose, onSave }) {
   const [form, setForm] = useState({ startDate: exam.startDate, endDate: exam.endDate }),
     [errors, setErrors] = useState({}),
@@ -2879,18 +2913,9 @@ function EditExamModal({ exam, schedules, masters, onClose, onSave }) {
     </Modal>
   );
 }
+
 function ExportPreviewModal({ preview, onClose }) {
   const hasRows = preview.rows.length > 0;
-  const handleDownloadPdf = () => {
-    if (!hasRows) return;
-    const previousTitle = document.title;
-    document.title = `${sanitizeFileName(preview.title)}.pdf`;
-    try {
-      window.print();
-    } finally {
-      document.title = previousTitle;
-    }
-  };
   const handleDownloadExcel = () => {
     if (!hasRows) return;
     downloadExcelPreview(preview);
@@ -2906,24 +2931,17 @@ function ExportPreviewModal({ preview, onClose }) {
         </button>
         <button
           type="button"
-          className="cms-btn cms-btn-ghost"
+          className="cms-btn cms-btn-primary"
           disabled={!hasRows}
           onClick={handleDownloadExcel}
         >
           Download Excel
         </button>
-        <button
-          type="button"
-          className="cms-btn cms-btn-primary"
-          disabled={!hasRows}
-          onClick={handleDownloadPdf}
-        >
-          Download PDF
-        </button>
       </div>
     </Modal>
   );
 }
+
 function PrintableSchedule({ preview }) {
   if (!preview) return null;
   return (
@@ -2934,15 +2952,18 @@ function PrintableSchedule({ preview }) {
     </section>
   );
 }
+
 const EXPORT_COLUMNS = [
   ["S.No", "serialNo"],
   ["Exam Name", "examName"],
   ["Exam Code", "examCode"],
+  ["Board", "boardName"],
   ["Invigilator", "invigilatorName"],
   ["Exam Date", "examDate", d],
   ["Start Time", "startTime"],
   ["End Time", "endTime"],
 ];
+
 function formatExportValue(row, [, key, format]) {
   return format ? format(row[key]) : (row[key] ?? "—");
 }
@@ -2966,6 +2987,7 @@ function downloadExcelPreview(preview) {
     { wch: 8 },
     { wch: 30 },
     { wch: 18 },
+    { wch: 30 },
     { wch: 24 },
     { wch: 16 },
     { wch: 14 },
@@ -2989,9 +3011,20 @@ function ExportTable({ rows, scope }) {
       <tbody>
         {rows.map((row, index) => (
           <tr key={`${row.examId}-${row.sessionId || row.subjectName}-${index}`}>
-            {EXPORT_COLUMNS.map(([label, key, format]) => (
-              <td key={label}>{format ? format(row[key]) : (row[key] ?? "—")}</td>
-            ))}
+            {EXPORT_COLUMNS.map(([label, key, format]) => {
+              const val = format ? format(row[key]) : (row[key] ?? "—");
+              return (
+                <td key={label}>
+                  {["examName", "boardName"].includes(key) ? (
+                    <span className="exam-cell-two-lines" title={val}>
+                      {val}
+                    </span>
+                  ) : (
+                    val
+                  )}
+                </td>
+              );
+            })}
           </tr>
         ))}
       </tbody>
@@ -3070,4 +3103,4 @@ function Field({
       {error && <span className="cms-error">{error}</span>}
     </div>
   );
-}
+} 

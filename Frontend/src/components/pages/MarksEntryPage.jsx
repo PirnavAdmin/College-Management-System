@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Eye } from "lucide-react";
 import DashboardLayout from "../layout/DashboardLayout";
 import apiClient, { getApiErrorMessage } from "../../api/apiClient.js";
 import { uniqueAcademicYearsByName } from "../../api/apiEndpoints.js";
@@ -110,12 +111,12 @@ const normalizeBoard = (item) => ({
 const normalizeYear = (item) => ({
   academicYearId: Number(item.academicYearId ?? item.id),
   boardId: item.boardId == null ? null : Number(item.boardId),
-  academicYearName: item.academicYearName ?? item.name ?? "",
+  academicYearName: item.academicYearName ?? item.name ?? item.academicYear ?? "",
   active: item.isActive == null && item.status == null ? true : isActive(item),
 });
 const normalizeLevel = (item) => ({
   academicLevelId: Number(item.academicLevelId ?? item.id),
-  levelName: item.levelName ?? item.academicLevelName ?? item.name ?? "",
+  levelName: item.levelName ?? item.academicLevelName ?? item.name ?? item.academicLevel ?? "",
 });
 const normalizeGroup = (item) => ({
   groupId: Number(item.groupId ?? item.id),
@@ -147,8 +148,8 @@ const normalizeExam = (item) => ({
   examinationId: Number(item.examinationId ?? item.examId ?? item.id),
   examCode: item.examCode ?? item.code ?? "",
   examName: item.examName ?? item.name ?? "",
-  examType: item.examType ?? item.type ?? "",
-  examPattern: item.examPattern ?? "",
+  examType: item.examType ?? item.type ?? item.assessmentTypeName ?? item.assessmentType ?? "",
+  examPattern: item.examPattern ?? item.pattern ?? item.patternName ?? "",
   scheduleMode: item.scheduleMode ?? "",
   totalMarks: Number(item.totalMarks ?? 0),
   passPercentage: Number(item.passPercentage ?? 0),
@@ -230,14 +231,38 @@ const normalizeEvaluation = (item) => {
   };
 };
 const normalizeAnalysis = (item) => {
-  const subjectRows = collectionFrom(item.subjects ?? item.subjectMarksList);
+  const rawSubjects = collectionFrom(
+    item.subjects ?? item.subjectMarksList ?? item.studentMarks ?? item.marksList,
+  );
+
+  const subjects = rawSubjects.map((s) => {
+    const sId = Number(s.subjectId ?? s.id ?? 0);
+    const internalVal = s.internal ?? s.internalMarks ?? s.internalObtained ?? null;
+    const practicalVal = s.practical ?? s.practicalMarks ?? s.practicalObtained ?? null;
+    const theoryVal = s.theory ?? s.theoryMarks ?? s.theoryObtained ?? null;
+    const totalVal = s.total ?? s.obtainedMarks ?? s.totalMarks ?? s.marks ?? null;
+    const maxVal = s.maxMarks ?? s.subjectMaxMarks ?? s.maximum ?? 100;
+
+    return {
+      ...s,
+      subjectId: sId,
+      subjectName: s.subjectName ?? s.name ?? "",
+      subjectCode: s.subjectCode ?? s.code ?? "",
+      internal: internalVal != null ? Number(internalVal) : null,
+      practical: practicalVal != null ? Number(practicalVal) : null,
+      theory: theoryVal != null ? Number(theoryVal) : null,
+      total: totalVal != null ? Number(totalVal) : null,
+      obtainedMarks: totalVal != null ? Number(totalVal) : null,
+      maxMarks: Number(maxVal),
+      remarks: s.remarks ?? "",
+      isAbsent: activeValue(s.isAbsent ?? s.absent),
+    };
+  });
+
   const marksFromSubjects = Object.fromEntries(
-    subjectRows
-      .filter((subject) => Number(subject.subjectId) > 0)
-      .map((subject) => [
-        String(subject.subjectId),
-        subject.marks ?? subject.obtainedMarks ?? subject.totalMarks ?? subject.total ?? null,
-      ]),
+    subjects
+      .filter((s) => s.subjectId > 0)
+      .map((s) => [String(s.subjectId), s.total ?? s.obtainedMarks]),
   );
 
   let rawMarks = {};
@@ -255,11 +280,20 @@ const normalizeAnalysis = (item) => {
     studentId: Number(item.studentId ?? item.id),
     rollNo: item.rollNo ?? item.rollNumber ?? item.admissionNumber ?? "",
     studentName: item.studentName ?? item.fullName ?? item.name ?? "",
+    groupName: item.groupName ?? item.group ?? "",
+    programName: item.programName ?? item.program ?? "",
+    sectionName: item.sectionName ?? item.section ?? "",
+    examName: item.examName ?? item.examination ?? "",
+    examType: item.examType ?? "",
+    examPattern: item.examPattern ?? "",
     marks: combinedMarks,
-    subjects: subjectRows,
-    total: Number(item.total ?? item.totalMarks ?? 0),
+    subjects,
+    total: Number(item.total ?? item.totalMarks ?? item.overallTotal ?? item.marksObtained ?? 0),
     maximum: Number(item.maximum ?? item.maxTotal ?? item.maxMarks ?? 0),
     percentage: item.percentage == null ? null : Number(item.percentage),
+    passPercentage: item.passPercentage != null ? Number(item.passPercentage) : null,
+    passingScore: item.passingScore != null ? Number(item.passingScore) : null,
+    rank: item.rank ?? null,
     examinationId: Number(item.examinationId ?? item.examId) || null,
     sectionId: Number(item.sectionId) || null,
     grade: item.grade ?? "—",
@@ -511,29 +545,48 @@ export default function MarksEntryPage() {
     }
 
     try {
-      const response = await apiClient.get(EVALUATION_API.examinations, {
-        params: {
-          BoardId: boardId,
-          AcademicYearId: academicYearId,
-          AcademicLevelId: academicLevelId,
-          GroupId: groupId,
-          ProgramId: programId,
-          Status: "COMPLETED",
-        },
-      });
+      let response;
+      try {
+        response = await apiClient.get(EVALUATION_API.examinations, {
+          params: {
+            boardId,
+            BoardId: boardId,
+            academicYearId,
+            AcademicYearId: academicYearId,
+            academicLevelId,
+            AcademicLevelId: academicLevelId,
+            groupId,
+            GroupId: groupId,
+            programId,
+            ProgramId: programId,
+            status: "COMPLETED",
+            Status: "COMPLETED",
+          },
+        });
+      } catch {
+        response = await apiClient.get(EVALUATION_API.examinations);
+      }
 
       if (sequence !== requests.current.exams) return [];
 
-      const next = collectionFrom(response.data)
+      let rawItems = collectionFrom(response.data);
+      if (!rawItems.length) {
+        // Fallback: Fetch all examinations and filter locally
+        const fallbackRes = await apiClient.get(EVALUATION_API.examinations);
+        if (sequence !== requests.current.exams) return [];
+        rawItems = collectionFrom(fallbackRes.data);
+      }
+
+      const next = rawItems
         .map(normalizeExam)
         .filter(
           (item) =>
             positiveId(item.examinationId) &&
-            (!item.status || item.status === "COMPLETED") &&
-            (!item.boardId || item.boardId === boardId) &&
-            (!item.academicYearId || item.academicYearId === academicYearId) &&
-            (!item.academicLevelId || item.academicLevelId === academicLevelId) &&
-            (!item.groupId || item.groupId === groupId) &&
+            (!item.status || String(item.status).toUpperCase() === "COMPLETED") &&
+            (!item.boardId || Number(item.boardId) === boardId) &&
+            (!item.academicYearId || Number(item.academicYearId) === academicYearId) &&
+            (!item.academicLevelId || Number(item.academicLevelId) === academicLevelId) &&
+            (!item.groupId || Number(item.groupId) === groupId) &&
             matchesIdOrName(item.programId, programId, programs),
         );
 
@@ -743,7 +796,7 @@ export default function MarksEntryPage() {
   const loadStudentDetails = async (student) => {
     const sequence = ++requests.current.student;
     setStudentId(student.studentId);
-    setSelectedStudentDetails(null);
+    setSelectedStudentDetails(student);
     try {
       const response = await apiClient.get(
         EVALUATION_API.studentDetails(Number(student.studentId)),
@@ -752,19 +805,25 @@ export default function MarksEntryPage() {
             examinationId: Number(applied?.examination),
             sectionId: Number(applied?.section),
             academicYearId: Number(applied?.academicYear),
+            boardId: Number(applied?.board),
+            academicLevelId: Number(applied?.academicLevel),
+            groupId: Number(applied?.group),
           },
         },
       );
       if (sequence !== requests.current.student) return;
-      const payload = response.data?.data ?? response.data?.result ?? response.data;
+      const payload = objectFrom(response.data) || response.data;
 
-      setSelectedStudentDetails({
-        ...student,
-        ...(payload && typeof payload === "object" ? normalizeAnalysis(payload) : {}),
-      });
+      if (payload && typeof payload === "object") {
+        const normalized = normalizeAnalysis(payload);
+        setSelectedStudentDetails({
+          ...student,
+          ...normalized,
+          subjects: normalized.subjects.length ? normalized.subjects : (student.subjects || []),
+        });
+      }
     } catch (error) {
       if (sequence === requests.current.student) {
-        setStudentId(null);
         showToast(apiError(error), "error");
       }
     }
@@ -839,7 +898,6 @@ export default function MarksEntryPage() {
     }
 
     if (
-      ["academicYear", "academicLevel", "program"].includes(key) &&
       [next.board, next.academicYear, next.academicLevel, next.group, next.program].every((v) => String(v).trim().length > 0)
     ) {
       loadSections(next);
@@ -1201,7 +1259,7 @@ export default function MarksEntryPage() {
                 </div>
                 {tab === "evaluations" && globalAction && (
                   <button
-                    className={`cms-btn ${globalAction === "VERIFY_ALL" ? "cms-btn-info" : "cms-btn-success"}`}
+                    className={`cms-btn cms-evaluation-bulk-action ${globalAction === "VERIFY_ALL" ? "cms-btn-info" : "cms-btn-success"}`}
                     disabled={Boolean(actionLoading)}
                     onClick={() => setGlobalStage(globalAction)}
                   >
@@ -1315,7 +1373,7 @@ function Filter({ label, value, options, disabled, onChange }) {
 function EvaluationTable({ rows, onClick, emptyMessage }) {
   return (
     <div className="cms-table-container">
-      <table className="cms-table">
+      <table className="cms-table cms-evaluation-table">
         <thead>
           <tr>
             <th>SUBJECT</th>
@@ -1325,16 +1383,13 @@ function EvaluationTable({ rows, onClick, emptyMessage }) {
             <th>HIGHEST</th>
             <th>LOWEST</th>
             <th>STATUS</th>
+            <th>ACTIONS</th>
           </tr>
         </thead>
         <tbody>
           {rows.length ? (
             rows.map((item) => (
-              <tr
-                className="cms-clickable-row"
-                key={item.evaluationId}
-                onClick={() => onClick(item)}
-              >
+              <tr key={item.evaluationId}>
                 <td className="cms-font-semibold">
                   {item.subject.subjectName}
                   <small className="cms-row-subtitle">{item.subject.subjectCode}</small>
@@ -1351,11 +1406,22 @@ function EvaluationTable({ rows, onClick, emptyMessage }) {
                 <td className="cms-text-center">
                   <Badge status={item.status} />
                 </td>
+                <td className="cms-text-center">
+                  <button
+                    type="button"
+                    className="cms-action-btn view"
+                    title="View details"
+                    aria-label="View details"
+                    onClick={() => onClick(item)}
+                  >
+                    <Eye size={15} />
+                  </button>
+                </td>
               </tr>
             ))
           ) : (
             <tr>
-              <td colSpan={7} className="cms-empty-td">
+              <td colSpan={8} className="cms-empty-td">
                 {emptyMessage}
               </td>
             </tr>
@@ -1368,7 +1434,7 @@ function EvaluationTable({ rows, onClick, emptyMessage }) {
 function StudentTable({ rows, subjects, exam, onClick }) {
   return (
     <div className="cms-table-container">
-      <table className="cms-table">
+      <table className="cms-table cms-student-analysis-table">
         <thead>
           <tr>
             <th>ROLL NO</th>
@@ -1380,16 +1446,13 @@ function StudentTable({ rows, subjects, exam, onClick }) {
             <th>PERCENTAGE</th>
             <th>GRADE</th>
             <th>RESULT</th>
+            <th>ACTIONS</th>
           </tr>
         </thead>
         <tbody>
           {rows.length ? (
             rows.map((student) => (
-              <tr
-                className="cms-clickable-row"
-                key={student.studentId}
-                onClick={() => onClick(student)}
-              >
+              <tr key={student.studentId}>
                 <td className="cms-font-semibold">{student.rollNo}</td>
                 <td>{student.studentName}</td>
                 {subjects.map((s) => (
@@ -1403,11 +1466,22 @@ function StudentTable({ rows, subjects, exam, onClick }) {
                 <td className="cms-text-center">{safePercent(student.percentage)}</td>
                 <td className="cms-text-center">{student.grade}</td>
                 <td className="cms-text-center">{student.result}</td>
+                <td className="cms-text-center">
+                  <button
+                    type="button"
+                    className="cms-action-btn view"
+                    title="View student details"
+                    aria-label="View student details"
+                    onClick={() => onClick(student)}
+                  >
+                    <Eye size={15} />
+                  </button>
+                </td>
               </tr>
             ))
           ) : (
             <tr>
-              <td colSpan={6 + subjects.length} className="cms-empty-td">
+              <td colSpan={7 + subjects.length} className="cms-empty-td">
                 No student analysis records available.
               </td>
             </tr>
@@ -1566,30 +1640,59 @@ function MarksTable({ rows, objective, practical }) {
   );
 }
 function StudentDetails({ student, exam, subjects, evaluations, display, onBack }) {
-  const objective = objectiveExam(exam),
-    details = subjects.map((subject) => {
-      const record = evaluations.find(
-        (item) => String(item.subjectId) === String(subject.subjectId),
-      ),
-        evalRow = record?.rows?.find((item) => item.studentId === student.studentId),
-        markVal =
-          student?.marks?.[String(subject.subjectId)] ??
-          student?.marks?.[subject.subjectName] ??
-          student?.marks?.[subject.subjectId] ??
-          null,
-        analysisRow = student?.subjects?.find(
-          (item) => String(item.subjectId) === String(subject.subjectId),
-        ),
-        row =
-          evalRow ||
-          analysisRow ||
-          (markVal != null ? { obtainedMarks: markVal, total: markVal } : null);
-      return {
-        subject,
-        row,
-        max: record?.subjectMaxMarks ?? row?.maxMarks ?? "—",
-      };
-    });
+  const combinedSubjects = useMemo(() => {
+    const list = [
+      ...(Array.isArray(student?.subjects) ? student.subjects : []),
+      ...subjects,
+    ];
+    const map = new Map();
+    for (const s of list) {
+      const id = Number(s.subjectId || s.id);
+      if (id > 0 && !map.has(String(id))) {
+        map.set(String(id), {
+          subjectId: id,
+          subjectName: s.subjectName ?? s.name ?? "",
+          subjectCode: s.subjectCode ?? s.code ?? "",
+          practical: Boolean(
+            s.practical != null
+              ? s.practical
+              : s.isPractical != null
+              ? s.isPractical
+              : s.practicalMarks != null && Number(s.practicalMarks) > 0,
+          ),
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [student?.subjects, subjects]);
+
+  const objective = objectiveExam(exam) || String(student?.examType).trim().toLowerCase() === "objective";
+
+  const details = combinedSubjects.map((subject) => {
+    const analysisRow = Array.isArray(student?.subjects)
+      ? student.subjects.find((item) => Number(item.subjectId || item.id) === Number(subject.subjectId))
+      : null;
+    const record = evaluations.find(
+      (item) => String(item.subjectId) === String(subject.subjectId),
+    );
+    const evalRow = record?.rows?.find((item) => Number(item.studentId) === Number(student.studentId));
+    const markVal =
+      student?.marks?.[String(subject.subjectId)] ??
+      student?.marks?.[subject.subjectName] ??
+      null;
+
+    const row =
+      analysisRow ||
+      evalRow ||
+      (markVal != null ? { obtainedMarks: markVal, total: markVal } : null);
+
+    return {
+      subject,
+      row,
+      max: row?.maxMarks ?? record?.subjectMaxMarks ?? 100,
+    };
+  });
+
   return (
     <div className="cms-card cms-main-card cms-student-details">
       <div className="cms-details-header">
@@ -1601,16 +1704,17 @@ function StudentDetails({ student, exam, subjects, evaluations, display, onBack 
         </div>
       </div>
       <div className="cms-detail-grid">
-        <Card label="Roll Number" value={student.rollNo} />
-        <Card label="Student Name" value={student.studentName} />
-        <Card label="Group" value={display.group} />
-        <Card label="Program" value={display.program} />
-        <Card label="Section" value={display.section} />
-        <Card label="Examination" value={display.examination} />
-        <Card label="Exam Type" value={exam?.examType || "—"} />
+        <Card label="Roll Number" value={student.rollNo || student.rollNumber || "—"} />
+        <Card label="Student Name" value={student.studentName || student.fullName || "—"} />
+        <Card label="Group" value={student.groupName || student.group || display.group} />
+        <Card label="Program" value={student.programName || student.program || display.program} />
+        <Card label="Section" value={student.sectionName || student.section || display.section} />
+        <Card label="Examination" value={student.examName || student.examination || display.examination} />
+        <Card label="Exam Type" value={student.examType || exam?.examType || "—"} />
+        <Card label="Exam Pattern" value={student.examPattern || exam?.examPattern || "—"} />
         <Card label="Percentage" value={safePercent(student.percentage)} />
-        <Card label="Grade" value={student.grade} />
-        <Card label="Result" value={student.result} />
+        <Card label="Grade" value={student.grade || "—"} />
+        <Card label="Result" value={student.result || "—"} />
       </div>
       <div className="cms-table-container cms-details-table-wrap">
         <table className="cms-table">
@@ -1631,42 +1735,48 @@ function StudentDetails({ student, exam, subjects, evaluations, display, onBack 
                   <th>TOTAL</th>
                 </>
               )}
+              <th>REMARKS</th>
             </tr>
           </thead>
           <tbody>
-            {details.map(({ subject, row, max }) => (
-              <tr key={subject.subjectId}>
-                <td>{subject.subjectName}</td>
-                {objective ? (
-                  <>
-                    <td>{row?.obtainedMarks ?? "—"}</td>
-                    <td>{max}</td>
-                    <td>{row ? percentageOf(row.obtainedMarks, row.maxMarks || max) : "—"}</td>
-                  </>
-                ) : (
-                  <>
-                    <td>{row?.internal ?? "—"}</td>
-                    <td>{subject.practical ? (row?.practical ?? "—") : "—"}</td>
-                    <td>{row?.theory ?? "—"}</td>
-                    <td>{row?.total ?? "—"}</td>
-                  </>
-                )}
-              </tr>
-            ))}
+            {details.map(({ subject, row, max }) => {
+              const internal = row?.internal != null ? row.internal : "—";
+              const practical = row?.practical != null ? row.practical : "—";
+              const theory = row?.theory != null ? row.theory : "—";
+              const total = row?.total != null ? row.total : (row?.obtainedMarks != null ? row.obtainedMarks : "—");
+              const remarks = row?.remarks || "—";
+              const isAbsent = Boolean(row?.isAbsent ?? row?.absent);
+
+              return (
+                <tr key={subject.subjectId}>
+                  <td className="cms-font-semibold">
+                    {subject.subjectName}
+                    {subject.subjectCode && <small className="cms-row-subtitle">{subject.subjectCode}</small>}
+                  </td>
+                  {objective ? (
+                    <>
+                      <td>{isAbsent ? "—" : total}</td>
+                      <td>{max}</td>
+                      <td>
+                        {row && !isAbsent
+                          ? percentageOf(total !== "—" ? total : 0, max)
+                          : "—"}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{isAbsent ? "—" : internal}</td>
+                      <td>{isAbsent ? "—" : practical}</td>
+                      <td>{isAbsent ? "—" : theory}</td>
+                      <td>{isAbsent ? "—" : total}</td>
+                    </>
+                  )}
+                  <td>{remarks}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-      </div>
-      <div className="cms-details-section">
-        <h3 className="cms-details-section-title">Performance Summary</h3>
-        <div className="cms-detail-grid">
-          <Card label="Overall Total" value={student.total} />
-          <Card label="Maximum" value={student.maximum ?? "—"} />
-          <Card label="Percentage" value={safePercent(student.percentage)} />
-          <Card label="Pass Percentage" value={`${exam?.passPercentage ?? 0}%`} />
-          <Card label="Passing Score" value={exam ? passingScore(exam) : "—"} />
-          <Card label="Grade" value={student.grade} />
-          <Card label="Result" value={student.result} />
-        </div>
       </div>
     </div>
   );

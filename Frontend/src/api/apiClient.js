@@ -54,12 +54,18 @@ const getJwtExpiryState = (token) => {
 export const getApiErrorMessage = (error) => {
   const data = error?.response?.data;
   if (typeof data === "string") return data;
+  const flattenMessages = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.flatMap(flattenMessages);
+    if (typeof value === "object") return Object.values(value).flatMap(flattenMessages);
+    return [String(value)];
+  };
   if (data?.errors && typeof data.errors === "object") {
-    const messages = Object.values(data.errors).flat().filter(Boolean);
+    const messages = flattenMessages(data.errors).filter(Boolean);
     if (messages.length) return messages.join(" ");
   }
   if (data?.Errors && typeof data.Errors === "object") {
-    const messages = Object.values(data.Errors).flat().filter(Boolean);
+    const messages = flattenMessages(data.Errors).filter(Boolean);
     if (messages.length) return messages.join(" ");
   }
   if (data?.Message) return data.Message;
@@ -67,6 +73,8 @@ export const getApiErrorMessage = (error) => {
   if (data?.Error) return data.Error;
   if (data?.error) return data.error;
   if (data?.title) return data.title;
+  if (data?.detail) return data.detail;
+  if (data?.Detail) return data.Detail;
   if (error?.response?.status === 401) return "Your session has expired. Please sign in again.";
   if (error?.response?.status === 403) return "Your account is not permitted to access this resource.";
   if (error?.response?.status) return `Request failed (HTTP ${error.response.status}).`;

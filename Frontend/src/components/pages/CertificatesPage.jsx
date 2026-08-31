@@ -23,6 +23,7 @@ const CERTIFICATE_BASE = "/api/v1/certificates";
 const CERTIFICATE_API = {
   ...apiEndpoints.certificates,
   list: CERTIFICATE_BASE,
+  studentsDropdown: `${CERTIFICATE_BASE}/students-dropdown`,
   generate: `${CERTIFICATE_BASE}/generate`,
   workflowStats: `${CERTIFICATE_BASE}/workflow-stats`,
   getById: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}`,
@@ -329,6 +330,14 @@ const maybeIsoDate = (value) => {
   return String(value);
 };
 
+const toApiDateTime = (value) => {
+  const normalized = normalizeApiDateValue(value);
+  if (!normalized) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return `${normalized}T00:00:00.000Z`;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 const getReferenceLabel = (value, keys) => {
   if (value && typeof value === "object") return pick(value, keys) || "";
   return value || "";
@@ -339,8 +348,20 @@ const normalizeStudentRecord = (raw) => {
   const source = nested && typeof nested === "object" ? { ...raw, ...nested } : raw;
   const fullName = pick(source, ["fullName", "FullName", "studentName", "StudentName", "name", "Name"])
     || [pick(source, ["firstName", "FirstName"]), pick(source, ["lastName", "LastName"])].filter(Boolean).join(" ");
+  const sectionReference = pick(source, [
+    "sectionName", "SectionName",
+    "allocatedSectionName", "AllocatedSectionName",
+    "assignedSectionName", "AssignedSectionName",
+    "section", "Section",
+    "allocatedSection", "AllocatedSection",
+    "assignedSection", "AssignedSection",
+  ]);
+  const section = getReferenceLabel(
+    sectionReference,
+    ["sectionName", "SectionName", "name", "Name", "label", "Label", "code", "Code"],
+  );
   return {
-    id: Number(pick(source, ["id", "Id", "studentId", "StudentId", "studentID", "admissionId", "AdmissionId"])) || null,
+    id: Number(pick(source, ["studentId", "StudentId", "studentID", "id", "Id", "admissionId", "AdmissionId"])) || null,
     admissionNo: String(pick(source, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no", "studentAdmissionNo", "StudentAdmissionNo", "enrollmentNo", "EnrollmentNo"]) || "").trim(),
     name: fullName,
     rollNo: String(pick(source, ["rollNo", "RollNo", "rollNumber", "RollNumber"]) || "").trim(),
@@ -358,7 +379,17 @@ const normalizeStudentRecord = (raw) => {
       pick(source, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "currentAcademicYear", "CurrentAcademicYear", "yearName", "YearName", "academicYearId", "AcademicYearId"]),
       ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "title", "Title", "value", "Value"],
     ),
-    section: pick(source, ["section", "Section", "sectionName", "SectionName"]) || "",
+    academicYearId: Number(pick(source, ["academicYearId", "AcademicYearId"])) || null,
+    academicLevelId: Number(pick(source, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"])) || null,
+    groupId: Number(pick(source, ["groupId", "GroupId"])) || null,
+    sectionId: Number(
+      pick(source, [
+        "sectionId", "SectionId",
+        "allocatedSectionId", "AllocatedSectionId",
+        "assignedSectionId", "AssignedSectionId",
+      ]) || pick(sectionReference, ["sectionId", "SectionId", "id", "Id"]),
+    ) || null,
+    section: String(section || "").trim(),
   };
 };
 
@@ -394,6 +425,8 @@ const normalizeCertificate = (raw, studentLookup = []) => {
   );
   const issueDate = maybeIsoDate(pick(raw, ["issueDate", "IssueDate", "issuedDate", "IssuedDate", "issuedAt", "IssuedAt"]));
   const status = toDisplayStatus(pick(raw, ["status", "Status", "certificateStatus", "CertificateStatus"]));
+  const backendCertificateType = pick(raw, ["certificateType", "CertificateType", "type", "Type"]);
+  const certificatePresentation = resolveCertificatePresentation(backendCertificateType);
   const rowId = backendId || String(pick(raw, ["certificateNumber", "CertificateNumber", "certificateNo", "CertificateNo"]) || "");
 
   return {
@@ -412,7 +445,7 @@ const normalizeCertificate = (raw, studentLookup = []) => {
       ) ||
       matchedStudent?.academicYear ||
       "-",
-    type: pick(raw, ["certificateType", "CertificateType", "type", "Type"]) || "-",
+    type: certificatePresentation?.type || backendCertificateType || "-",
     purpose: pick(raw, ["purpose", "Purpose"]) || "",
     requestDate: requestDate || todayIso(),
     issue: issueDate || "",
@@ -440,7 +473,7 @@ const hasCertificateShape = (value) => {
 const getFriendlyErrorMessage = (error, fallback) => {
   const base = getApiErrorMessage(error);
   const statusCode = Number(error?.response?.status);
-  if (base && !["Something went wrong. Please try again."].includes(base)) return base;
+  if (base && !["Something went wrong. Please try again.", "An unexpected server error occurred."].includes(base)) return base;
 
   if (statusCode === 400) return fallback || "Invalid request data. Please review and try again.";
   if (statusCode === 401) return "Session expired or unauthorized. Please login again.";
@@ -593,49 +626,78 @@ function withOptionalRemarks(payload, remarksValue) {
   return { ...payload, remarks: remarks || "" };
 }
 
-const certificateGenerationEndpoints = {
-  Bonafide: "bonafide",
-  Study: "study",
-  Conduct: "conduct",
-  TC: "tc",
-};
-
-function getGenerationEndpoint(certificateType) {
-  const type = String(certificateType || "").trim();
-
-  if (!type) return null;
-
-  const directMatch = Object.keys(certificateGenerationEndpoints).find(
-    (key) => key.toLowerCase() === type.toLowerCase(),
-  );
-  if (directMatch) {
-    return CERTIFICATE_API[certificateGenerationEndpoints[directMatch]];
-  }
-
-  const lowerType = type.toLowerCase();
-  if (lowerType.includes("bonafide")) return CERTIFICATE_API.bonafide;
-  if (lowerType.includes("study")) return CERTIFICATE_API.study;
-  if (lowerType.includes("conduct")) return CERTIFICATE_API.conduct;
-  if (lowerType.includes("transfer") || lowerType === "tc" || lowerType.includes("tc")) return CERTIFICATE_API.tc;
-
-  return CERTIFICATE_API.generate;
-}
-
 const CERTIFICATE_ORIENTATION_STORAGE_KEY = "pjc-certificate-orientations";
 
-function getCertificateOrientation(certificateType, explicitOrientation = "") {
-  const type = String(certificateType || "").trim().toLowerCase();
-  if (type.includes("transfer")) return "landscape";
-  if (type.includes("bonafide") || type.includes("study") || type.includes("conduct")) return "portrait";
+const CERTIFICATE_TYPE_DEFINITIONS = Object.freeze({
+  "Bonafide Certificate": Object.freeze({ endpoint: CERTIFICATE_API.bonafide, template: "bonafide", orientation: "portrait", aliases: ["bonafide", "bonafide certificate"] }),
+  "Study Certificate": Object.freeze({ endpoint: CERTIFICATE_API.study, template: "study", orientation: "portrait", aliases: ["study", "study certificate"] }),
+  "Conduct Certificate": Object.freeze({ endpoint: CERTIFICATE_API.conduct, template: "conduct", orientation: "portrait", aliases: ["conduct", "conduct certificate"] }),
+  "Transfer Certificate": Object.freeze({ endpoint: CERTIFICATE_API.tc, template: "transfer", orientation: "landscape", aliases: ["tc", "transfer", "transfer certificate"] }),
+});
+
+function findKnownCertificateType(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return Object.entries(CERTIFICATE_TYPE_DEFINITIONS).find(([, definition]) => (
+    definition.aliases.includes(normalized)
+  )) || null;
+}
+
+function getSavedCustomOrientation(type, explicitOrientation = "") {
   if (["portrait", "landscape"].includes(String(explicitOrientation).toLowerCase())) {
     return String(explicitOrientation).toLowerCase();
   }
   try {
     const saved = JSON.parse(localStorage.getItem(CERTIFICATE_ORIENTATION_STORAGE_KEY) || "{}");
-    return saved[type] === "landscape" ? "landscape" : "portrait";
+    return saved[String(type || "").trim().toLowerCase()] === "landscape" ? "landscape" : "portrait";
   } catch {
     return "portrait";
   }
+}
+
+function resolveCertificateRequest(form) {
+  const selectedType = String(form?.type || "").trim();
+  if (selectedType === "Others") {
+    const customType = normalizeText(form?.customType);
+    if (!customType) return null;
+    return {
+      type: customType,
+      endpoint: CERTIFICATE_API.other,
+      template: "other",
+      orientation: getSavedCustomOrientation(customType, form?.orientation),
+    };
+  }
+
+  const known = findKnownCertificateType(selectedType);
+  if (!known) return null;
+  const [type, definition] = known;
+  return { type, ...definition };
+}
+
+function resolveCertificatePresentation(type, explicitOrientation = "") {
+  const rawType = String(type || "").trim();
+  const known = findKnownCertificateType(rawType);
+  if (known) {
+    const [canonicalType, definition] = known;
+    return { type: canonicalType, ...definition };
+  }
+  if (!rawType || rawType === "-") return null;
+  return {
+    type: rawType,
+    endpoint: CERTIFICATE_API.other,
+    template: "other",
+    orientation: getSavedCustomOrientation(rawType, explicitOrientation),
+  };
+}
+
+function certificateTypesMatch(requestedType, returnedType) {
+  const requested = resolveCertificatePresentation(requestedType);
+  const returned = resolveCertificatePresentation(returnedType);
+  if (!requested || !returned) return false;
+  return requested.type.toLowerCase() === returned.type.toLowerCase();
+}
+
+function getCertificateOrientation(certificateType, explicitOrientation = "") {
+  return resolveCertificatePresentation(certificateType, explicitOrientation)?.orientation || null;
 }
 
 function rememberCertificateOrientation(certificateType, orientation) {
@@ -668,6 +730,8 @@ function renderSignatureHtml(signature) {
 }
 
 function getCertificateTemplate(type, record) {
+  const presentation = resolveCertificatePresentation(type, record?.orientation);
+  if (!presentation) return null;
   const safePurpose = record.purpose || "official purpose";
   const institutionName = "Pirnav College";
   const admissionNo = record.admissionNo || "-";
@@ -677,51 +741,39 @@ function getCertificateTemplate(type, record) {
   const studyInfo = `with Admission No. ${admissionNo}, currently studying in ${year} (${group}) during the academic year ${academicYear}`;
   const studentRecord = `with Admission No. ${admissionNo}, in ${year} (${group}) during the academic year ${academicYear}`;
 
-  switch (String(type || "").toLowerCase()) {
-    case "bonafide certificate":
+  switch (presentation.template) {
+    case "bonafide":
       return {
         heading: "Bonafide Certificate",
         paragraphOne: `${studyInfo}, and is a bonafide student of ${institutionName}.`,
         paragraphTwo: `This certificate is issued upon request to authenticate the student's status and is valid for the stated purpose of ${safePurpose}.`,
       };
-    case "study certificate":
+    case "study":
       return {
         heading: "Study Certificate",
         paragraphOne: `${studyInfo}, and has pursued studies at ${institutionName} in accordance with the institution's academic records.`,
         paragraphTwo: `This certificate is issued as an official record confirming the student's academic status and is valid for the purpose of ${safePurpose}.`,
       };
-    case "transfer certificate":
-    case "tc":
+    case "transfer":
       return {
         heading: "Transfer Certificate",
         paragraphOne: `The student ${studentRecord} has been relieved from ${institutionName} as per the institutional records and is eligible to continue studies at another recognized institution.`,
         paragraphTwo: `This transfer certificate is issued for the purpose of ${safePurpose} and serves as an official record of the student's withdrawal from the institution.`,
       };
-    case "conduct certificate":
+    case "conduct":
       return {
         heading: "Conduct Certificate",
         paragraphOne: `${studyInfo}, and has maintained satisfactory conduct and discipline during the period of study at ${institutionName}.`,
         paragraphTwo: `This conduct certificate is issued to certify the student's behavior and is valid for the purpose of ${safePurpose}.`,
       };
-    case "migration certificate":
+    case "other":
       return {
-        heading: "Migration Certificate",
-        paragraphOne: `The student ${studentRecord} is permitted to migrate from ${institutionName} in accordance with the institution's academic regulations and official records.`,
-        paragraphTwo: `This migration certificate is issued for the purpose of ${safePurpose} and is recognized as an official transfer of academic status.`,
-      };
-    case "fee certificate":
-    case "fee":
-      return {
-        heading: "Fee Certificate",
-        paragraphOne: `${studyInfo}. The fee particulars for the stated academic year have been verified from the official accounts records of ${institutionName}.`,
-        paragraphTwo: `This fee certificate is issued as evidence of the student's fee record and is valid for the purpose of ${safePurpose}.`,
-      };
-    default:
-      return {
-        heading: "Student Certificate",
-        paragraphOne: `${studyInfo}, and is/was a bonafide student of ${institutionName}.`,
+        heading: presentation.type,
+        paragraphOne: `${studentRecord}. The student's academic details have been verified against the official records of ${institutionName}.`,
         paragraphTwo: `This certificate is issued as an official academic document for the purpose of ${safePurpose}.`,
       };
+    default:
+      return null;
   }
 }
 
@@ -936,6 +988,7 @@ function buildPrintHtml(record) {
   const certificateNo = escapeHtml(record.number);
   const student = escapeHtml(record.student);
   const template = getCertificateTemplate(record.type, record);
+  if (!template) throw new Error("Unsupported certificate type.");
   const templateHeading = escapeHtml(template.heading);
   const templateParaOne = escapeHtml(template.paragraphOne);
   const templateParaTwo = escapeHtml(template.paragraphTwo);
@@ -944,6 +997,7 @@ function buildPrintHtml(record) {
   const signature = renderSignatureHtml(record.signature);
   const remarks = record.remarks ? `<p><strong>Remarks:</strong> ${escapeHtml(record.remarks)}</p>` : "";
   const orientation = getCertificateOrientation(record.type, record.orientation);
+  if (!orientation) throw new Error("Unsupported certificate type.");
 
   return `<!doctype html>
 <html>
@@ -1061,6 +1115,17 @@ export default function CertificatesPage() {
     return action ? busyAction.type === action : true;
   };
 
+  const verifyPersistedCertificateType = async (certificateId, expectedType) => {
+    const response = await apiClient.get(CERTIFICATE_API.getById(certificateId), { skipGlobalLoader: true });
+    const record = unwrapSinglePayload(response.data);
+    if (!hasCertificateShape(record)) throw new Error("The updated certificate record could not be verified.");
+    const normalized = normalizeCertificate(record, studentRows);
+    if (!certificateTypesMatch(expectedType, normalized.type)) {
+      throw new Error("The certificate type changed unexpectedly during processing.");
+    }
+    return normalized;
+  };
+
   const hasServerCertificateId = (row) => {
     const value = row?.backendId ?? row?.id;
     return value !== undefined && value !== null && String(value).trim() !== "";
@@ -1129,20 +1194,72 @@ export default function CertificatesPage() {
     const requestId = ++studentRequestRef.current;
     setLoadingStudents(true);
     try {
-      const [studentsResult, admissionsResult] = await Promise.allSettled([
+      const [
+        studentManagementResult,
+        certificateDropdownResult,
+        admissionsResult,
+        academicYearsResult,
+        academicLevelsResult,
+        groupsResult,
+        sectionsResult,
+      ] = await Promise.allSettled([
         apiClient.get(apiEndpoints.students.getAll),
+        apiClient.get(CERTIFICATE_API.studentsDropdown),
         apiClient.get(apiEndpoints.admissions.getAll),
+        apiClient.get(apiEndpoints.academicYears.list),
+        apiClient.get(apiEndpoints.academicLevels.list),
+        apiClient.get(apiEndpoints.groups.list),
+        apiClient.get(apiEndpoints.sections.list),
       ]);
-      if (studentsResult.status === "rejected" && admissionsResult.status === "rejected") {
-        throw studentsResult.reason || admissionsResult.reason;
+      if (studentManagementResult.status === "rejected" && certificateDropdownResult.status === "rejected") {
+        throw studentManagementResult.reason || certificateDropdownResult.reason;
       }
       const mapped = mergeCertificateStudents(
-        admissionsResult.status === "fulfilled" ? unwrapStudentPayload(admissionsResult.value.data) : [],
-        studentsResult.status === "fulfilled" ? unwrapStudentPayload(studentsResult.value.data) : [],
+        admissionsResult.status === "fulfilled"
+          ? unwrapStudentPayload(admissionsResult.value.data)
+          : [],
+        studentManagementResult.status === "fulfilled"
+          ? unwrapStudentPayload(studentManagementResult.value.data)
+          : [],
+        certificateDropdownResult.status === "fulfilled"
+          ? unwrapStudentPayload(certificateDropdownResult.value.data)
+          : [],
       );
+      const makeReferenceMap = (result, idKeys, nameKeys) => new Map(
+        (result.status === "fulfilled" ? unwrapStudentPayload(result.value.data) : [])
+          .map((item) => [Number(pick(item, idKeys)), String(pick(item, nameKeys) || "").trim()])
+          .filter(([id, name]) => id && name),
+      );
+      const academicYearsById = makeReferenceMap(
+        academicYearsResult,
+        ["academicYearId", "AcademicYearId", "id", "Id"],
+        ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"],
+      );
+      const academicLevelsById = makeReferenceMap(
+        academicLevelsResult,
+        ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"],
+        ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"],
+      );
+      const groupsById = makeReferenceMap(
+        groupsResult,
+        ["groupId", "GroupId", "id", "Id"],
+        ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"],
+      );
+      const sectionsById = makeReferenceMap(
+        sectionsResult,
+        ["sectionId", "SectionId", "id", "Id"],
+        ["sectionName", "SectionName", "name", "Name", "code", "Code"],
+      );
+      const enrichedStudents = mapped.map((student) => ({
+        ...student,
+        academicYear: academicYearsById.get(Number(student.academicYearId)) || student.academicYear || "",
+        level: academicLevelsById.get(Number(student.academicLevelId)) || student.level || "",
+        group: groupsById.get(Number(student.groupId)) || student.group || "",
+        section: sectionsById.get(Number(student.sectionId)) || student.section || "",
+      }));
       if (requestId !== studentRequestRef.current) return [];
-      setStudentRows(mapped);
-      return mapped;
+      setStudentRows(enrichedStudents);
+      return enrichedStudents;
     } catch (error) {
       if (requestId !== studentRequestRef.current) return [];
       setStudentRows([]);
@@ -1276,12 +1393,15 @@ export default function CertificatesPage() {
 
     const admissionNo = String(form.admissionNo || "").trim();
     const selectedType = String(form.type || "").trim();
-    const type = selectedType === "Others" ? normalizeText(form.customType) : selectedType;
     const purpose = normalizeText(form.purpose);
     const requestDate = String(form.requestDate || "").trim();
     const remarks = normalizeText(form.remarks);
-    const orientation = getCertificateOrientation(type, form.orientation);
-    if (selectedType === "Others") rememberCertificateOrientation(type, orientation);
+    const certificateRequest = resolveCertificateRequest(form);
+    if (!certificateRequest) {
+      setToast("Unsupported certificate type.");
+      return;
+    }
+    if (selectedType === "Others") rememberCertificateOrientation(certificateRequest.type, certificateRequest.orientation);
     if (!findStudentByAdmission(admissionNo)) {
       setErrors((prev) => ({ ...prev, admissionNo: "Select a valid admission number" }));
       return;
@@ -1289,24 +1409,37 @@ export default function CertificatesPage() {
 
     setCreating(true);
     try {
-      const endpoint = selectedType === "Others" ? CERTIFICATE_API.other : getGenerationEndpoint(type);
-      if (!endpoint) {
-        setToast("This certificate type is not supported by the backend endpoint configuration.");
+      const normalizedRequestDate = toApiDateTime(requestDate);
+      if (!normalizedRequestDate) {
+        setErrors((prev) => ({ ...prev, requestDate: "Enter a valid request date" }));
         return;
       }
-      const normalizedRequestDate = normalizeApiDateValue(requestDate);
       const specializedPayload = withOptionalRemarks({
         admissionNo,
-        certificateType: type,
+        certificateType: certificateRequest.type,
         purpose,
         requestDate: normalizedRequestDate,
       }, remarks);
-      await apiClient.post(endpoint, specializedPayload);
+      const response = await apiClient.post(certificateRequest.endpoint, specializedPayload);
+      const createdRecord = unwrapSinglePayload(response?.data);
+      if (hasCertificateShape(createdRecord)) {
+        const createdCertificate = normalizeCertificate(createdRecord, studentRows);
+        if (!certificateTypesMatch(certificateRequest.type, createdCertificate.type)) {
+          throw new Error("The generated certificate type does not match the requested certificate type.");
+        }
+        setRows((currentRows) => [
+          createdCertificate,
+          ...currentRows.filter((row) => (
+            String(row.backendId || row.id) !== String(createdCertificate.backendId || createdCertificate.id)
+            && String(row.number) !== String(createdCertificate.number)
+          )),
+        ]);
+      }
       await refreshCertificateData({ showLoader: false });
       resetForm();
       setActiveTab("certificates");
       setPage(1);
-      setToast(selectedType === "Others" ? "Other certificate draft created successfully." : "Certificate generated successfully.");
+      setToast(`${certificateRequest.type} generated successfully.`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Failed to generate certificate. Please try again."));
     } finally {
@@ -1333,6 +1466,7 @@ export default function CertificatesPage() {
     try {
       const requestConfig = action === "issue" ? { params: { issuedBy: getIssuedBy() || undefined } } : undefined;
       await apiClient.patch(selected.endpoint(actionId), null, requestConfig);
+      await verifyPersistedCertificateType(actionId, row.type);
       await refreshCertificateData({ showLoader: false });
       if (action === "review") {
         setPrintPreview(null);
@@ -1374,6 +1508,9 @@ export default function CertificatesPage() {
     try {
       const requestConfig = action === "issue" ? { params: { issuedBy: getIssuedBy() || undefined } } : undefined;
       await apiClient.patch(selected.endpoint, null, requestConfig);
+      await Promise.all(eligibleRows.map((row) => (
+        verifyPersistedCertificateType(row.backendId || row.id, row.type)
+      )));
       await refreshCertificateData({ showLoader: false });
       setToast(`${eligibleRows.length} eligible certificate${eligibleRows.length === 1 ? "" : "s"} ${selected.label}.`);
     } catch (error) {
@@ -1398,6 +1535,7 @@ export default function CertificatesPage() {
     setBusyAction({ id: row.id, type: "cancel" });
     try {
       await apiClient.patch(CERTIFICATE_API.cancel(actionId));
+      await verifyPersistedCertificateType(actionId, row.type);
       await refreshCertificateData({ showLoader: false });
       setToast(`Certificate ${row.number} cancelled`);
     } catch (error) {
@@ -1417,12 +1555,19 @@ export default function CertificatesPage() {
     if (!confirmed) return;
     setBusyAction({ id: row.id, type: "reissue" });
     try {
-      await apiClient.post(CERTIFICATE_API.reissue, withOptionalRemarks({
+      const response = await apiClient.post(CERTIFICATE_API.reissue, withOptionalRemarks({
         admissionNo: String(row.admissionNo || "").trim(),
         certificateType: String(row.type || "").trim(),
         purpose: String(row.purpose || "").trim(),
-        requestDate: normalizeApiDateValue(row.requestDate) || todayIso(),
+        requestDate: toApiDateTime(row.requestDate) || toApiDateTime(todayIso()),
       }, row.remarks));
+      const reissuedRecord = unwrapSinglePayload(response?.data);
+      if (hasCertificateShape(reissuedRecord)) {
+        const normalizedReissue = normalizeCertificate(reissuedRecord, studentRows);
+        if (!certificateTypesMatch(row.type, normalizedReissue.type)) {
+          throw new Error("The reissued certificate type does not match the original certificate type.");
+        }
+      }
       await refreshCertificateData({ showLoader: false });
       setPrintPreview(null);
       setActiveTab("actions");
@@ -1570,7 +1715,10 @@ export default function CertificatesPage() {
       const requestId = ++detailsRequestRef.current;
       const resolvedId = await resolveServerCertificateId(record);
       if (!resolvedId) {
-        if (requestId === detailsRequestRef.current) setPrintPreview(record);
+        if (requestId === detailsRequestRef.current) {
+          if (resolveCertificatePresentation(record.type, record.orientation)) setPrintPreview(record);
+          else setToast("Unsupported certificate type.");
+        }
         return;
       }
       try {
@@ -1579,6 +1727,10 @@ export default function CertificatesPage() {
         const details = unwrapSinglePayload(response.data);
         if (hasCertificateShape(details)) {
           const normalizedDetails = normalizeCertificate(details, studentRows);
+          if (!resolveCertificatePresentation(normalizedDetails.type, normalizedDetails.orientation)) {
+            setToast("Unsupported certificate type.");
+            return;
+          }
           setPrintPreview({
             ...normalizedDetails,
             signature: normalizedDetails.signature || getSignatureValue(response.data) || record.signature || "",
@@ -1588,7 +1740,10 @@ export default function CertificatesPage() {
       } catch {
         // keep fallback below
       }
-      if (requestId === detailsRequestRef.current) setPrintPreview(record);
+      if (requestId === detailsRequestRef.current) {
+        if (resolveCertificatePresentation(record.type, record.orientation)) setPrintPreview(record);
+        else setToast("Unsupported certificate type.");
+      }
     })();
   };
 
@@ -2128,7 +2283,7 @@ export default function CertificatesPage() {
         ) : null}
       </div>
 
-      {printPreview ? (
+      {printPreview && printTemplate ? (
         <div className="cert-print-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => {
           if (e.target === e.currentTarget) setPrintPreview(null);
         }}>
@@ -2172,7 +2327,7 @@ export default function CertificatesPage() {
                       <span>ESTD</span><small>1990</small>
                     </div>
                   </div>
-                  <h2 className="cert-doc-title">{printTemplate?.heading || "Official Student Certificate"}</h2>
+                  <h2 className="cert-doc-title">{printTemplate.heading}</h2>
                 </header>
 
                 <div className="cert-preview-meta">
@@ -2182,10 +2337,10 @@ export default function CertificatesPage() {
 
                 <div className="cert-doc-body">
                   <p>
-                    This is to certify that <strong>{printPreview.student}</strong> {printTemplate?.paragraphOne || "is/was a bonafide student of Pirnav College."}
+                    This is to certify that <strong>{printPreview.student}</strong> {printTemplate.paragraphOne}
                   </p>
                   <p>
-                    {printTemplate?.paragraphTwo || "This certificate is issued for official purpose."}
+                    {printTemplate.paragraphTwo}
                   </p>
                 </div>
 

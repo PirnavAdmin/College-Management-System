@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, Layers3, RotateCcw, School, Users, UserRoundCheck, UserRoundCog } from "lucide-react";
+import { Activity, Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, Layers3, Plus, RotateCcw, School, Users, UserRoundCheck, UserRoundCog } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import "./DashboardPage.css";
 
@@ -29,6 +30,14 @@ const DASHBOARD_API = {
 };
 const DASHBOARD_WIDGETS = Object.entries(DASHBOARD_API).filter(([key]) => key !== "filters");
 const FILTERED_DASHBOARD_WIDGETS = DASHBOARD_WIDGETS.filter(([key]) => key !== "recentActivity");
+const QUICK_ACTIONS = [
+  { label: "Add Student", to: "/dashboard/admission", icon: Users, tone: "green", add: true },
+  { label: "Add Staff", to: "/dashboard/faculty/add?staffTab=teaching", icon: UserRoundCheck, tone: "blue", add: true },
+  { label: "Create Group", to: "/dashboard/courses/add", icon: Layers3, tone: "violet", add: true },
+  { label: "Create Section", to: "/dashboard/sections", icon: School, tone: "cyan", add: true },
+  { label: "Create Exam", to: "/dashboard/examinations/add", icon: FileText, tone: "orange", add: true },
+  { label: "Mark Attendance", to: "/dashboard/attendance/student", icon: ClipboardCheck, tone: "green" },
+];
 const EMPTY_WIDGETS = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, null]));
 const EMPTY_LOADING = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, false]));
 const RECENT_ACTIVITY_CACHE_TTL = 60_000;
@@ -121,6 +130,37 @@ function metric(payload, keys) {
     }
   }
   return undefined;
+}
+
+function recordCount(payload) {
+  return metric(payload, ["totalCount", "TotalCount", "count", "Count"])
+    ?? collection(payload).length;
+}
+
+async function fetchSummaryFallback(filters, signal) {
+  const scope = {
+    ...(filters.academicYearId ? { academicYearId: filters.academicYearId } : {}),
+    ...(filters.boardId ? { boardId: filters.boardId } : {}),
+  };
+  const requests = [
+    apiClient.get(apiEndpoints.students.getAll, { params: { ...scope, PageNumber: 1, PageSize: 1 }, signal, timeout: REQUEST_TIMEOUT }),
+    apiClient.get("/api/v1/staff", { params: { ...scope, PageNumber: 1, PageSize: 1, StaffType: "Teaching" }, signal, timeout: REQUEST_TIMEOUT }),
+    apiClient.get("/api/v1/staff", { params: { ...scope, PageNumber: 1, PageSize: 1, StaffType: "NonTeaching" }, signal, timeout: REQUEST_TIMEOUT }),
+    apiClient.get(apiEndpoints.groups.getAll, { params: scope, signal, timeout: REQUEST_TIMEOUT }),
+    apiClient.get(apiEndpoints.sections.getAll, { params: scope, signal, timeout: REQUEST_TIMEOUT }),
+  ];
+  const results = await Promise.allSettled(requests);
+  const counts = results.map((result) => result.status === "fulfilled" ? recordCount(result.value.data) : undefined);
+  return {
+    payload: {
+      totalStudents: counts[0],
+      teachingStaff: counts[1],
+      nonTeachingStaff: counts[2],
+      totalGroups: counts[3],
+      totalSections: counts[4],
+    },
+    complete: counts.every((value) => value !== undefined),
+  };
 }
 
 function localDateValue(date = new Date()) {
@@ -305,8 +345,8 @@ function greetingForHour(hour) {
 function LoadingState({ label = "Loading data..." }) { return <div className="dashboard-state" role="status"><span className="dashboard-spinner" />{label}</div>; }
 function EmptyState({ message = "No data available" }) { return <div className="dashboard-state dashboard-state-empty">{message}</div>; }
 function CardHeader({ title, action }) { return <header className="dashboard-card-head"><h2>{title}</h2>{action}</header>; }
-function KpiCard({ label, value, icon: Icon, tone, loading, to }) {
-  return <Link className={`dashboard-kpi dashboard-kpi-${tone}`} to={to} aria-label={`Open ${label}`}><span className="dashboard-kpi-icon"><Icon size={22} aria-hidden="true" /></span><div><span>{label}</span><strong>{loading ? "—" : formatNumber(value)}</strong></div></Link>;
+function KpiCard({ label, value, icon: Icon, tone, loading }) {
+  return <article className={`dashboard-kpi dashboard-kpi-${tone}`}><span className="dashboard-kpi-icon"><Icon size={22} aria-hidden="true" /></span><div><span>{label}</span><strong>{loading ? "—" : formatNumber(value)}</strong></div></article>;
 }
 
 export default function DashboardPage() {
@@ -364,10 +404,21 @@ export default function DashboardPage() {
       setMasterOptions({ years, boards });
       setFilters((current) => ({ ...current, year: current.year || years.find((item) => item.current)?.value || years[0]?.value || "", board: current.board || boards.find((item) => item.current)?.value || boards[0]?.value || "" }));
       setErrors((current) => ({ ...current, filters: "" }));
-    }).catch((error) => {
+    }).catch(async (error) => {
       if (requestId !== filterRequestRef.current || error?.code === "ERR_CANCELED") return;
-      setMasterOptions({ years: [], boards: [] });
-      setErrors((current) => ({ ...current, filters: getApiErrorMessage(error, "Unable to load dashboard filters.") }));
+      const fallbackResults = await Promise.allSettled([
+        apiClient.get(apiEndpoints.academicYears.list, { signal: controller.signal, timeout: REQUEST_TIMEOUT }),
+        apiClient.get(apiEndpoints.boards.getAll, { signal: controller.signal, timeout: REQUEST_TIMEOUT }),
+      ]);
+      if (requestId !== filterRequestRef.current) return;
+      const years = fallbackResults[0].status === "fulfilled" ? optionRows(fallbackResults[0].value.data, "year") : [];
+      const boards = fallbackResults[1].status === "fulfilled" ? optionRows(fallbackResults[1].value.data, "board") : [];
+      setMasterOptions({ years, boards });
+      setFilters((current) => ({ ...current, year: current.year || years.find((item) => item.current)?.value || years[0]?.value || "", board: current.board || boards.find((item) => item.current)?.value || boards[0]?.value || "" }));
+      setErrors((current) => ({
+        ...current,
+        filters: years.length && boards.length ? "" : getApiErrorMessage(error, "Unable to load dashboard filters."),
+      }));
     }).finally(() => { if (requestId === filterRequestRef.current) setLoadingFilters(false); });
     return () => { filterRequestRef.current += 1; controller.abort(); };
   }, []);
@@ -406,7 +457,7 @@ export default function DashboardPage() {
       signal: controller.signal,
       timeout: REQUEST_TIMEOUT,
     }));
-    Promise.allSettled(requests).then((results) => {
+    Promise.allSettled(requests).then(async (results) => {
       if (requestId !== widgetRequestRef.current) return;
       const next = { ...EMPTY_WIDGETS };
       const nextErrors = {};
@@ -415,6 +466,12 @@ export default function DashboardPage() {
         if (result.status === "fulfilled") next[key] = result.value.data;
         else nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
       });
+      if (!next.summary && controller.signal.aborted === false) {
+        const fallback = await fetchSummaryFallback(params, controller.signal);
+        if (requestId !== widgetRequestRef.current) return;
+        next.summary = fallback.payload;
+        if (fallback.complete) delete nextErrors.summary;
+      }
       setWidgets((current) => ({ ...next, recentActivity: current.recentActivity }));
       setErrors((current) => ({ filters: current.filters || "", recentActivity: current.recentActivity || "", ...nextErrors }));
       setLoading((current) => ({ ...EMPTY_LOADING, recentActivity: current.recentActivity }));
@@ -427,11 +484,11 @@ export default function DashboardPage() {
 
   const totalStudents = metric(widgets.summary, ["totalStudents", "activeStudents", "students"]);
   const kpis = [
-    { label: "Total Students", value: totalStudents, icon: Users, tone: "green", to: "/dashboard/students" },
-    { label: "Teaching Staff", value: metric(widgets.summary, ["teachingStaff", "teachingStaffCount", "totalTeachingStaff"]), icon: UserRoundCheck, tone: "blue", to: "/dashboard/faculty?staffTab=teaching" },
-    { label: "Non-Teaching Staff", value: metric(widgets.summary, ["nonTeachingStaff", "nonTeachingStaffCount", "totalNonTeachingStaff"]), icon: UserRoundCog, tone: "orange", to: "/dashboard/faculty?staffTab=non-teaching" },
-    { label: "Total Groups", value: metric(widgets.summary, ["totalGroups", "groupCount", "groups"]), icon: Layers3, tone: "violet", to: "/dashboard/courses" },
-    { label: "Total Sections", value: metric(widgets.summary, ["totalSections", "sectionCount", "sections"]), icon: School, tone: "cyan", to: "/dashboard/sections" },
+    { label: "Total Students", value: totalStudents, icon: Users, tone: "green" },
+    { label: "Teaching Staff", value: metric(widgets.summary, ["teachingStaff", "teachingStaffCount", "totalTeachingStaff"]), icon: UserRoundCheck, tone: "blue" },
+    { label: "Non-Teaching Staff", value: metric(widgets.summary, ["nonTeachingStaff", "nonTeachingStaffCount", "totalNonTeachingStaff"]), icon: UserRoundCog, tone: "orange" },
+    { label: "Total Groups", value: metric(widgets.summary, ["totalGroups", "groupCount", "groups"]), icon: Layers3, tone: "violet" },
+    { label: "Total Sections", value: metric(widgets.summary, ["totalSections", "sectionCount", "sections"]), icon: School, tone: "cyan" },
   ];
   const admissionTrend = useMemo(() => normalizeAdmissionTrend(widgets.admissionTrend), [widgets.admissionTrend]);
   const gender = {
@@ -482,6 +539,20 @@ export default function DashboardPage() {
     <main className="dashboard-page">
       {errors.filters ? <div className="dashboard-warning" role="alert">{errors.filters}</div> : null}
       <section className="dashboard-kpi-grid" aria-label="College totals">{kpis.map((item) => <KpiCard key={item.label} {...item} loading={loading.summary} />)}</section>
+      <nav className="dashboard-quick-actions" aria-label="Quick Actions">
+        <h2>Quick Actions</h2>
+        <div>
+          {QUICK_ACTIONS.map(({ label, to, icon: Icon, tone, add }) => (
+            <Link key={label} to={to} className={`dashboard-quick-action tone-${tone}`}>
+              <span className="dashboard-quick-action-icon">
+                <Icon size={18} aria-hidden="true" />
+                {add ? <Plus className="dashboard-quick-action-plus" size={10} strokeWidth={3} aria-hidden="true" /> : null}
+              </span>
+              {label}
+            </Link>
+          ))}
+        </div>
+      </nav>
       <section className="dashboard-main-grid" aria-label="Dashboard analytics">
         <article className="dashboard-card dashboard-students-card"><CardHeader title="Students Overview" />
           {loading.admissionTrend ? <LoadingState label="Loading admission trend..." /> : admissionTrend.length ? <div className="dashboard-chart dashboard-line-chart" role="img" aria-label="Students joined by month"><ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}><defs><linearGradient id="studentsArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.28} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" tickLine={false} axisLine={false} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [formatNumber(value), "Students joined"]} /><Area type="monotone" dataKey="studentsJoined" name="Students joined" stroke="#2563eb" strokeWidth={2.5} fill="url(#studentsArea)" dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div> : <EmptyState message={errors.admissionTrend ? "Unable to load admission trend." : "No admission trend is available for the selected filters."} />}

@@ -292,3 +292,6 @@
 .faculty-list .cms-pagination { min-height: 46px; padding: 5px 14px; gap: 7px; background: var(--cms-subtle); }
 .faculty-list .cms-pagination .cms-page-info { font-size: 14px; font-weight: 600; }
 @media (max-width: 800px) { .faculty-list .cms-table-wrap { margin: 0; } }
+
+/* Keep the added Board column readable without squeezing staff details/actions. */
+.staff-server-table .cms-table { min-width: 880px; }

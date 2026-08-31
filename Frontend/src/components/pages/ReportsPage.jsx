@@ -47,45 +47,40 @@ const FILTER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const REPORTS_API = {
   filters: {
-    boards: "/api/v1/boards",
-    academicYears: "/api/v1/academic-years",
-    academicLevels: "/api/v1/boards/academic-levels",
-    groups: "/api/v1/groups",
-    sections: "/api/v1/Sections",
+    boards: "/api/v1/reports/filters/boards",
+    academicYears: "/api/v1/reports/filters/academic-years",
+    academicLevels: "/api/v1/reports/filters/academic-levels",
+    groups: "/api/v1/reports/filters/groups",
+    sections: "/api/v1/reports/filters/sections",
   },
-  dashboard: "/api/reports/dashboard",
-  overview: "/api/reports/overview",
+  dashboard: "/api/v1/reports/dashboard",
   details: {
-    admissions: "/api/reports/details/admissions",
-    attendance: "/api/reports/details/attendance",
-    staffAttendance: "/api/reports/details/staff-attendance",
-    facultyAttendance: "/api/reports/details/faculty-attendance",
-    feeCollection: "/api/reports/details/fee-collection",
-    dueFees: "/api/reports/details/due-fees",
-    examinations: "/api/reports/details/examinations",
-    results: "/api/reports/details/results",
-    staffWorkload: "/api/reports/details/staff-workload",
-    facultyWorkload: "/api/reports/details/faculty-workload",
-    studentStrength: "/api/reports/details/student-strength",
-    passPercentage: "/api/reports/details/pass-percentage",
-    toppers: "/api/reports/details/toppers",
-    auditLogs: "/api/reports/details/audit-logs",
+    admissions: "/api/v1/reports/details/admissions",
+    attendance: "/api/v1/reports/details/attendance",
+    staffAttendance: "/api/v1/reports/details/staff-attendance",
+    feeCollection: "/api/v1/reports/details/fee-collection",
+    dueFees: "/api/v1/reports/details/due-fees",
+    examinations: "/api/v1/reports/details/examinations",
+    results: "/api/v1/reports/details/results",
+    staffWorkload: "/api/v1/reports/details/staff-workload",
+    studentStrength: "/api/v1/reports/details/student-strength",
+    passPercentage: "/api/v1/reports/details/pass-percentage",
+    toppers: "/api/v1/reports/details/toppers",
+    auditLogs: "/api/v1/reports/details/audit-logs",
   },
-  exportPdf: "/api/reports/export/pdf",
-  exportExcel: "/api/reports/export/excel",
+  exportPdf: "/api/v1/reports/export/pdf",
+  exportExcel: "/api/v1/reports/export/excel",
 };
 
 const REPORT_REQUESTS = [
   { key: "admissions", endpoint: REPORTS_API.details.admissions },
   { key: "attendance", endpoint: REPORTS_API.details.attendance },
-  { key: "staffAttendance", endpoint: REPORTS_API.details.staffAttendance },
-  { key: "facultyAttendance", endpoint: REPORTS_API.details.facultyAttendance },
+  { key: "facultyAttendance", endpoint: REPORTS_API.details.staffAttendance },
   { key: "feeCollection", endpoint: REPORTS_API.details.feeCollection },
   { key: "feeOutstanding", endpoint: REPORTS_API.details.dueFees },
   { key: "examinations", endpoint: REPORTS_API.details.examinations },
   { key: "results", endpoint: REPORTS_API.details.results },
-  { key: "staffWorkload", endpoint: REPORTS_API.details.staffWorkload },
-  { key: "facultyWorkload", endpoint: REPORTS_API.details.facultyWorkload },
+  { key: "facultyWorkload", endpoint: REPORTS_API.details.staffWorkload },
   { key: "studentStrength", endpoint: REPORTS_API.details.studentStrength },
   { key: "passPercentage", endpoint: REPORTS_API.details.passPercentage },
   { key: "toppers", endpoint: REPORTS_API.details.toppers },
@@ -314,7 +309,7 @@ function reportFailureMessage(failures) {
   const reasons = failures.map(({ reason }) => reason);
   const messages = [...new Set(reasons.map(getApiErrorMessage).filter(Boolean))];
   const statuses = reasons.map((reason) => reason?.response?.status).filter(Boolean);
-  const allUnavailable = failures.length === REPORT_REQUESTS.length + 2;
+  const allUnavailable = failures.length === REPORT_REQUESTS.length + 1;
   const affected = failures.map(({ key }) => key.replace(/([A-Z])/g, " $1").toLowerCase()).join(", ");
   const firstMessage = messages[0] || "Unknown Reports API error.";
 
@@ -646,9 +641,8 @@ export default function ReportsPage() {
     setLoading(true);
     setError("");
     setReportErrors({});
-    const [dashboardResult, overviewResult, ...results] = await Promise.allSettled([
+    const [dashboardResult, ...results] = await Promise.allSettled([
       apiClient.get(REPORTS_API.dashboard, { params, signal: controller.signal }),
-      apiClient.get(REPORTS_API.overview, { params, signal: controller.signal }),
       ...REPORT_REQUESTS.map((request) => apiClient.get(request.endpoint, { params, signal: controller.signal })),
     ]);
     if (!mountedRef.current || controller.signal.aborted || requestId !== reportRequestRef.current) return;
@@ -660,11 +654,7 @@ export default function ReportsPage() {
       failures.push({ key: "dashboard", reason: dashboardResult.reason });
       nextErrors.dashboard = getApiErrorMessage(dashboardResult.reason);
     }
-    if (overviewResult.status === "fulfilled") nextReports.overview = overviewResult.value.data;
-    else {
-      failures.push({ key: "overview", reason: overviewResult.reason });
-      nextErrors.overview = getApiErrorMessage(overviewResult.reason);
-    }
+    if (dashboardResult.status === "fulfilled") nextReports.overview = dashboardResult.value.data;
     results.forEach((result, index) => {
       const { key } = REPORT_REQUESTS[index];
       if (result.status === "fulfilled") nextReports[key] = result.value.data;
@@ -675,7 +665,7 @@ export default function ReportsPage() {
     });
     setReports(nextReports);
     setReportErrors(nextErrors);
-    setReportGenerated([dashboardResult, overviewResult, ...results].some((result) => result.status === "fulfilled"));
+    setReportGenerated([dashboardResult, ...results].some((result) => result.status === "fulfilled"));
     setAuditPage(1);
     setError(reportFailureMessage(failures));
     setLoading(false);

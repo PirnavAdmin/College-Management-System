@@ -4,9 +4,20 @@
   margin: 0 auto;
 }
 
+.group-management > .cms-card {
+  overflow: visible;
+}
+
 .group-management .cms-toolbar {
+  position: relative;
+  z-index: 5;
   align-items: center;
   gap: 8px;
+}
+
+.group-management .cms-table-wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .group-management .cms-toolbar-right {
@@ -15,32 +26,23 @@
   margin-left: 0;
 }
 
-.course-table-filters {
-  display: flex;
-  flex: 0 1 auto;
-  gap: 8px;
-  min-width: 0;
-}
-
-.course-table-filters select {
-  width: 190px;
-  min-height: 34px;
-  border: 1px solid var(--cms-border);
-  border-radius: 8px;
-  padding: 6px 28px 6px 10px;
-  background: var(--cms-surface);
-  color: var(--cms-text);
-  font-size: 12.5px;
-  outline: none;
-}
-
-.course-table-filters select:focus {
-  border-color: var(--cms-primary-border);
-  box-shadow: 0 0 0 3px var(--cms-primary-soft);
-}
-
 .group-management .cms-toolbar-right .cms-export-control {
   margin-left: auto;
+}
+
+.group-management .cms-export-menu {
+  z-index: 1000;
+  background: #fff;
+  background-color: #fff;
+  opacity: 1;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-theme="dark"] .group-management .cms-export-menu,
+:root[data-theme="dark"] .group-management .cms-export-menu {
+  background: #171A17;
+  background-color: #171A17;
 }
 
 .group-management .cms-toolbar-right .cms-btn {
@@ -82,39 +84,6 @@
   min-height: 34px;
   padding: 0 12px;
   font-size: 12.5px;
-}
-
-.course-context-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--cms-border);
-  border-radius: 8px;
-  background: var(--cms-subtle);
-}
-
-.course-context-summary div {
-  min-width: 0;
-}
-
-.course-context-summary span {
-  display: block;
-  margin-bottom: 2px;
-  color: var(--cms-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-
-.course-context-summary strong {
-  display: block;
-  color: var(--cms-text);
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .course-programs-panel {
@@ -226,20 +195,6 @@
 @media (max-width: 700px) {
   .course-group-form-page .cms-card-body {
     padding: 14px;
-  }
-
-  .course-context-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .course-table-filters {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-  }
-
-  .course-table-filters select {
-    flex: 1 1 180px;
-    width: auto;
   }
 
   .course-programs-head {

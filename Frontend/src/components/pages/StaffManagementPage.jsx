@@ -586,18 +586,19 @@ function Workflow({ existingId, staffTab = "teaching" }) {
         if (requestId !== employeeIdRequestRef.current) return;
         const employeeId = typeof response.data === "string" ? response.data : firstValue(response.data, "employeeId", "EmployeeId", "value", "Value");
         if (!employeeId) throw new Error("Employee ID was not returned by the server.");
-        setValue("empId", String(employeeId));
+        setValues((current) => ({ ...current, empId: String(employeeId) }));
+        setErrors((current) => ({ ...current, empId: undefined }));
       })
       .catch((error) => {
         if (requestId !== employeeIdRequestRef.current) return;
-        setValue("empId", "");
+        setValues((current) => ({ ...current, empId: "" }));
         setToast(error?.message === "Employee ID was not returned by the server." ? error.message : "Unable to generate Employee ID.");
       })
       .finally(() => {
         if (requestId === employeeIdRequestRef.current) setGeneratingEmployeeId(false);
       });
     return () => { employeeIdRequestRef.current += 1; };
-  }, [existingId, setValue, staffType]);
+  }, [existingId, setErrors, setValues, staffType]);
   const loadStaffDropdown = useCallback(async () => {
     setLoadingStaffDropdown(true);
     try {
@@ -943,7 +944,14 @@ function Workflow({ existingId, staffTab = "teaching" }) {
               >
                 Cancel
               </button>
-              <button className="cms-btn cms-btn-primary" disabled={generatingEmployeeId || !values.empId}>Next</button>
+              <button
+                type="submit"
+                className="cms-btn cms-btn-primary staff-next-button"
+                disabled={generatingEmployeeId || !values.empId}
+                aria-busy={generatingEmployeeId}
+              >
+                {generatingEmployeeId ? "Generating ID..." : "Next"}
+              </button>
             </footer>
           </form>
         )}

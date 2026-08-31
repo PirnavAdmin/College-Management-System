@@ -181,6 +181,8 @@
 .staff-photo-preview img { width: 100%; height: 100%; object-fit: cover; }
 .staff-photo-field > small { color: var(--cms-muted); font-size: 11px; font-weight: 500; }
 .faculty-form footer, .faculty-stage footer, .faculty-allocation footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 26px; }
+.faculty-form footer .staff-next-button:not(:disabled) { cursor: pointer; }
+.faculty-form footer .staff-next-button:disabled { cursor: wait; }
 
 .faculty-preview { display: grid; grid-template-columns: 1fr; width: 100%; gap: 16px; }
 .faculty-preview-section { overflow: hidden; border: 1px solid var(--cms-border); border-radius: 12px; background: var(--cms-surface); }

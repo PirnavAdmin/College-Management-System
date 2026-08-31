@@ -235,11 +235,16 @@
   background: var(--cms-amber-soft);
 }
 .subject-configure-button {
-  height: 36px;
-  min-width: 80px;
-  padding: 6px 14px;
+  flex-direction: column;
+  height: 44px;
+  min-width: 96px;
+  padding: 5px 14px;
   font-size: 13px;
-  white-space: nowrap;
+  line-height: 1.15;
+  white-space: normal;
+}
+.subject-configure-button span {
+  display: block;
 }
 .subject-btn-spinner {
   width: 14px;
@@ -579,6 +584,13 @@
 .subject-context-select {
   display: block;
   min-width: 0;
+}
+#root .cms-content .subject-row-actions .subject-configure-button {
+  width: auto;
+  min-width: 96px;
+  height: 44px;
+  padding: 5px 14px;
+  border-radius: 8px;
 }
 .subject-context-select select {
   width: 100%;

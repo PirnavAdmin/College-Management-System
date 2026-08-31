@@ -322,10 +322,12 @@ export default function PromotionPage({ screen = "promotion" }) {
     return Object.keys(errors).length === 0;
   };
 
-  const eligibleParams = useCallback(() => compactParams({
-    academicYearId: numericId(setup.fromYear), academicLevelId: numericId(setup.fromLevel), groupId: numericId(setup.group), programId: numericId(setup.program), section: setup.fromSection,
-    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevelId: numericId(setup.toLevel), targetGroupId: numericId(setup.toGroup), targetProgramId: numericId(setup.toProgram), targetSection: setup.toSection,
-  }), [setup]);
+  const eligibleParams = useCallback(() => {
+    return compactParams({
+      AcademicYearId: numericId(setup.fromYear),
+      BoardId: numericId(setup.board),
+    });
+  }, [setup.board, setup.fromYear]);
 
   const fetchEligibleStudents = useCallback(async () => {
     setStudentsLoading(true);
@@ -359,11 +361,12 @@ export default function PromotionPage({ screen = "promotion" }) {
   const selectedStudents = useMemo(() => students.filter((student) => selectedIds.includes(student.id) && isEligible(student)), [selectedIds, students]);
   const eligibleStudents = useMemo(() => students.filter(isEligible), [students]);
   const summary = useMemo(() => ({ eligible: eligibleStudents.length, ineligible: students.length - eligibleStudents.length }), [eligibleStudents.length, students.length]);
+  const academicLevelLabel = (levelId) => masters.levels.find((level) => level.value === asString(levelId))?.label || asString(levelId);
 
   const buildPayload = () => ({
-    sourceAcademicYearId: numericId(setup.fromYear), sourceAcademicLevelId: numericId(setup.fromLevel),
+    sourceAcademicYearId: numericId(setup.fromYear), sourceAcademicLevelId: numericId(setup.fromLevel), sourceAcademicLevel: academicLevelLabel(setup.fromLevel),
     sourceGroupId: numericId(setup.group), sourceProgramId: numericId(setup.program), sourceSection: setup.fromSection,
-    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevelId: numericId(setup.toLevel),
+    targetAcademicYearId: numericId(setup.toYear), targetAcademicLevelId: numericId(setup.toLevel), targetAcademicLevel: academicLevelLabel(setup.toLevel),
     targetGroupId: numericId(setup.toGroup), targetProgramId: numericId(setup.toProgram), targetSection: setup.toSection,
     studentIds: selectedStudents.map((student) => numericId(student.id)).filter(Boolean),
   });
@@ -429,7 +432,7 @@ export default function PromotionPage({ screen = "promotion" }) {
     if (!studentId) { setError("This student does not contain a valid backend ID."); return; }
     setSubmitting(true);
     try {
-      await apiClient.post(apiEndpoints.promotions.student(studentId), { targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel: setup.toLevel, targetGroupId: numericId(setup.toGroup), targetSection: setup.toSection }, { timeout: 15000 });
+      await apiClient.post(apiEndpoints.promotions.student(studentId), { targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel: academicLevelLabel(setup.toLevel), targetGroupId: numericId(setup.toGroup), targetSection: setup.toSection }, { timeout: 15000 });
       setIndividualStudent(null); setToast("Student promoted successfully."); await refreshAfterMutation();
     } catch (requestError) { setError(getApiErrorMessage(requestError));
     } finally {
@@ -567,7 +570,8 @@ function AllocationScreen({ activeTab, setActiveTab, masters, setup, students, o
     if (chosen.length !== 1 || !numericId(setup.toYear) || !setup.toLevel) { setMessage("Select students with one target and complete the promotion destination first."); return; }
     setSaving(true); setMessage("");
     try {
-      const payload = { studentIds: selected, targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel: setup.toLevel, targetGroupId: isGroup ? numericId(chosen[0]) : numericId(setup.toGroup) };
+      const targetAcademicLevel = masters.levels.find((level) => level.value === asString(setup.toLevel))?.label || asString(setup.toLevel);
+      const payload = { studentIds: selected, targetAcademicYearId: numericId(setup.toYear), targetAcademicLevel, targetGroupId: isGroup ? numericId(chosen[0]) : numericId(setup.toGroup) };
       if (!isGroup) payload.targetSection = chosen[0];
       await apiClient.patch(isGroup ? apiEndpoints.promotions.groupAllocation : apiEndpoints.promotions.sectionAllocation, payload, { timeout: 15000 });
       onSaved(); setSelected([]); setTarget({});

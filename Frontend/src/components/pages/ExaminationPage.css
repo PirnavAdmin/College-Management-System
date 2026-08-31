@@ -52,7 +52,7 @@
 .exam-list-table th:nth-child(10) { width:13%; }
 .exam-list-table th:nth-child(9),.exam-list-table td:nth-child(9),.exam-list-table th:nth-child(10),.exam-list-table td:nth-child(10) { text-align:center; }
 .exam-cell-truncate { display:block; width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.exam-level-two-lines { display:-webkit-box; width:100%; min-width:0; overflow:hidden; line-height:1.35; overflow-wrap:normal; word-break:normal; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.exam-level-two-lines { display:-webkit-box; width:100%; min-width:0; overflow:hidden; line-height:1.35; overflow-wrap:normal; word-break:normal; -webkit-box-orient:vertical; line-clamp:2; -webkit-line-clamp:2; }
 .exam-list-table .exam-status-cell { overflow:visible; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
 .exam-list-table .exam-status-cell .cms-badge { min-height:22px; gap:3px; padding:3px 7px; font-size:10px; line-height:1; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
 .exam-list-table .exam-status-cell .cms-badge::before { width:4px; height:4px; flex:0 0 4px; }

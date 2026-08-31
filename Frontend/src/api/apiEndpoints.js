@@ -335,7 +335,7 @@
     generate: "/api/v1/timetable/generate",
   },
   promotions: {
-    eligible: "/api/promotions/eligible",
+    eligible: "/api/v1/promotions/eligible",
     preview: "/api/promotions/preview",
     create: "/api/promotions",
     student: (studentId) => `/api/promotions/student/${studentId}`,

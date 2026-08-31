@@ -88,11 +88,29 @@ const levelsForBoard = (levels, board) => {
 };
 const student = (x) => ({
   id: val(x, "studentId", "StudentId", "id", "Id"),
+  admissionNumber: val(x, "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo") ?? "—",
+  rollNumber: val(x, "rollNumber", "RollNumber", "rollNo", "RollNo") || "—",
   code: val(x, "rollNo", "RollNo", "admissionNo", "AdmissionNo", "studentCode") ?? "—",
   name: val(x, "studentName", "StudentName", "name", "Name", "fullName") ?? "—",
   group: val(x, "groupName", "GroupName", "group") ?? "—",
+  displayCode: val(x, "rollNumber", "RollNumber", "rollNo", "RollNo", "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo", "studentCode") || "—",
   status: status(val(x, "status", "Status", "attendanceStatus")),
+  remarks: val(x, "remarks", "Remarks") ?? "",
+  isAttendanceMarked: Boolean(val(x, "isAttendanceMarked", "IsAttendanceMarked")),
 });
+const attendanceTotals = (row) => {
+  const nestedRecords = list(val(row, "attendanceRecords", "AttendanceRecords", "dailyAttendance", "DailyAttendance", "records", "Records"));
+  const records = nestedRecords.length ? nestedRecords : [row];
+  return records.reduce((totals, record) => {
+    if (val(record, "isAttendanceMarked", "IsAttendanceMarked") === false) return totals;
+    const rawStatus = val(record, "status", "Status", "attendanceStatus", "AttendanceStatus");
+    if (rawStatus === undefined || rawStatus === null || rawStatus === "") return totals;
+    const attendanceStatus = status(rawStatus);
+    if (attendanceStatus === "Present") totals.present += 1;
+    if (attendanceStatus === "Absent") totals.absent += 1;
+    return totals;
+  }, { present: 0, absent: 0 });
+};
 const staff = (x) => ({
   id: val(x, "facultyId", "FacultyId", "staffId", "StaffId", "id", "Id"),
   code: val(x, "employeeId", "EmployeeId", "staffCode", "StaffCode") ?? "—",
@@ -231,11 +249,6 @@ function StudentMark({ say }) {
       .catch((error) => { if (active) { setM((current) => ({ ...current, programs: [] })); say(getApiErrorMessage(error)); } });
     return () => { active = false; };
   }, [f.groupId, say]);
-  useEffect(() => {
-    if (!f.groupId || f.programId || !programOptions.length) return;
-    const regular = programOptions.find((program) => /regular/i.test(program.name));
-    setF((current) => ({ ...current, programId: (regular || programOptions[0]).id, sectionId: "" }));
-  }, [f.groupId, f.programId, programOptions]);
   const attendancePeriodOptions = useMemo(() => {
     const scheduledIds = new Set(periodOptions.map((period) => period.id));
     return [
@@ -257,6 +270,7 @@ function StudentMark({ say }) {
           academicYearId: "",
           academicLevelId: "",
           groupId: "",
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
@@ -268,6 +282,7 @@ function StudentMark({ say }) {
           academicYearId: value,
           academicLevelId: "",
           groupId: "",
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
@@ -278,6 +293,7 @@ function StudentMark({ say }) {
           ...c,
           academicLevelId: value,
           groupId: "",
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
@@ -401,12 +417,13 @@ function StudentMark({ say }) {
     let active = true;
     const selectedProgram = programOptions.find((program) => String(program.id) === String(f.programId));
     Promise.allSettled([
-      apiClient.get(apiEndpoints.sections.list, { params: {
-        GroupId: f.groupId,
-        ProgramId: (val(selectedProgram?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? f.programId) || undefined,
-        Programme: selectedProgram?.name || undefined,
-        IsActive: true,
-      } }),
+      f.programId
+        ? apiClient.get(apiEndpoints.sections.list, { params: {
+            ProgramId: val(selectedProgram?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? f.programId,
+            Programme: selectedProgram?.name || undefined,
+            IsActive: true,
+          } })
+        : Promise.resolve({ data: [] }),
       apiClient.get(apiEndpoints.subjects.context, {
         params: { boardId: f.boardId, groupId: f.groupId, academicLevelId: f.academicLevelId },
       }),
@@ -416,7 +433,7 @@ function StudentMark({ say }) {
         ...c,
         sections:
           r[0].status === "fulfilled"
-            ? toOptions(sectionsForProgram(r[0].value.data, f.programId, programOptions), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? toOptions(sectionsForProgram(r[0].value.data, f.programId, programOptions), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])
             : [],
         subjects:
           r[1].status === "fulfilled"
@@ -437,17 +454,23 @@ function StudentMark({ say }) {
     const fallbackTeacherId = val(selectedSection, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId");
     const fallbackTeacherName = val(selectedSection, "classTeacherName", "ClassTeacherName", "teacher", "Teacher");
     Promise.allSettled([
-      apiClient.get(apiEndpoints.attendance.academicContext, {
-        params: { groupId: f.groupId, sectionId: f.sectionId },
-      }),
+      f.subjectId && f.periodId
+        ? apiClient.get(apiEndpoints.attendance.academicContext, {
+            params: { groupId: f.groupId, sectionId: f.sectionId },
+          })
+        : Promise.resolve({ data: {} }),
       apiClient.get(apiEndpoints.timetable.getBySection(f.sectionId), {
         params: { academicYearId: f.academicYearId || undefined },
       }),
     ]).then((results) => {
       if (!active) return;
       const context = results[0].status === "fulfilled" ? results[0].value.data?.data ?? results[0].value.data : {};
-      const teacherId = val(context, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId") ?? fallbackTeacherId ?? "";
-      const teacherName = val(context, "classTeacherName", "ClassTeacherName", "facultyName", "FacultyName", "staffName", "StaffName") ?? fallbackTeacherName ?? "";
+      const teacherId = f.subjectId && f.periodId
+        ? val(context, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId") ?? fallbackTeacherId ?? ""
+        : "";
+      const teacherName = f.subjectId && f.periodId
+        ? val(context, "classTeacherName", "ClassTeacherName", "facultyName", "FacultyName", "staffName", "StaffName") ?? fallbackTeacherName ?? ""
+        : "";
       setF((c) => ({
         ...c,
         sectionClassTeacherId: String(teacherId),
@@ -461,7 +484,7 @@ function StudentMark({ say }) {
       }));
     });
     return () => { active = false; };
-  }, [f.academicYearId, f.groupId, f.sectionId, m.sections]);
+  }, [f.academicYearId, f.groupId, f.sectionId, f.subjectId, f.periodId, m.sections]);
   useEffect(() => {
     if (!f.sectionId || !f.periodId) return;
     let active = true;
@@ -508,7 +531,10 @@ function StudentMark({ say }) {
   // This keeps the student attendance form aligned with the selected section
   // and period instead of requiring the admin to re-enter the assignment.
   useEffect(() => {
-    if (!f.date || !f.groupId || !f.sectionId) return;
+    if (!f.date || !f.groupId || !f.sectionId || !f.subjectId || !f.periodId) {
+      setF((current) => ({ ...current, periodFacultyId: "", periodFacultyName: "" }));
+      return;
+    }
     let active = true;
     const sessionType = f.periodId === MORNING_SESSION
       ? "Morning session"
@@ -549,29 +575,29 @@ function StudentMark({ say }) {
         // existing validation and student APIs when no assignment is found.
       });
     return () => { active = false; };
-  }, [f.date, f.groupId, f.sectionId, f.periodId]);
+  }, [f.date, f.groupId, f.sectionId, f.subjectId, f.periodId]);
   const load = async () => {
-    if ([f.academicYearId, f.academicLevelId, f.groupId, f.programId, f.sectionId, f.subjectId, f.periodId].some((v) => !v))
-      return say("Select all attendance fields.");
+    if ([f.date, f.boardId, f.academicLevelId, f.groupId, f.programId, f.sectionId].some((v) => !v))
+      return say("Select Board, Academic Level, Group, Program, and Section.");
+    if (Boolean(f.subjectId) !== Boolean(f.periodId))
+      return say("Select both Subject and Period, or leave both as All.");
     if ([MORNING_SESSION, AFTERNOON_SESSION].includes(f.periodId))
       return say("Select a scheduled subject period to load attendance records.");
     setLoading(true);
     try {
-      const r = await apiClient.get(apiEndpoints.attendance.studentsForAttendance, { params: {
+      const r = await apiClient.get(apiEndpoints.attendance.students, { params: {
         date: f.date,
         boardId: +f.boardId,
-        academicYearId: +f.academicYearId,
         academicLevelId: +f.academicLevelId,
         groupId: +f.groupId,
-        programId: +f.programId,
         sectionId: +f.sectionId,
-        subjectId: +f.subjectId,
-        periodId: +f.periodId,
+        ...(f.subjectId ? { subjectId: +f.subjectId } : {}),
+        ...(f.periodId ? { periodId: +f.periodId } : {}),
       } });
       setRows(
         list(r.data)
           .map(student)
-          .filter((x) => x.id),
+          .filter((x, index, students) => x.id && students.findIndex((item) => String(item.id) === String(x.id)) === index),
       );
     } catch (e) {
       say(getApiErrorMessage(e));
@@ -589,8 +615,8 @@ function StudentMark({ say }) {
         programId: +f.programId,
         groupId: +f.groupId,
         sectionId: +f.sectionId,
-        subjectId: +f.subjectId,
-        periodId: +f.periodId,
+        subjectId: f.subjectId ? +f.subjectId : null,
+        periodId: f.periodId ? +f.periodId : null,
         facultyId: f.periodFacultyId ? +f.periodFacultyId : null,
         students: rows.map((x) => ({
           studentId: +x.id,
@@ -633,8 +659,8 @@ function StudentMark({ say }) {
               disabled={!f.boardId || !f.academicYearId || levelLoading}
             />
             <Select l="Group" v={f.groupId} on={change("groupId")} o={m.groups} empty="All groups" />
-            <Select l="Program" v={f.programId} on={change("programId")} o={programOptions} empty="All programs" disabled={!f.groupId} />
-            <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" />
+            <Select l="Program" v={f.programId} on={change("programId")} o={programOptions} empty="Select Program" disabled={!f.groupId} />
+            <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" disabled={!f.programId} />
             <Select l="Subject" v={f.subjectId} on={change("subjectId")} o={m.subjects} empty="All subjects" />
             <Select
               l="Period"
@@ -647,7 +673,9 @@ function StudentMark({ say }) {
             <Field l="Class Teacher">
               <input
                 value={
-                  teacherName(f.periodFacultyId, f.periodFacultyName) !== "Not assigned"
+                  !f.subjectId && !f.periodId
+                    ? "Not required"
+                    : teacherName(f.periodFacultyId, f.periodFacultyName) !== "Not assigned"
                     ? teacherName(f.periodFacultyId, f.periodFacultyName)
                     : teacherName(f.sectionClassTeacherId, f.sectionClassTeacherName)
                 }
@@ -850,23 +878,29 @@ function Table({ rows, setRows, loading, saving, save, staffMode = false }) {
           <table className="cms-table att-table att-compact">
             <thead>
               <tr>
+                {!staffMode && <th>Admission No.</th>}
                 <th>{staffMode ? "Staff ID" : "Roll No"}</th>
                 <th>{staffMode ? "Staff Name" : "Student Name"}</th>
                 <th>{staffMode ? "Department" : "Status"}</th>
+                {!staffMode && <th>Remarks</th>}
+                {!staffMode && <th>Marked</th>}
                 <th>{staffMode ? "Attendance" : "Action"}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="4">Loading attendance...</td>
+                  <td colSpan={staffMode ? 4 : 7}>Loading attendance...</td>
                 </tr>
               ) : rows.length ? (
                 rows.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.code}</td>
+                    {!staffMode && <td>{r.admissionNumber}</td>}
+                    <td>{staffMode ? r.code : r.rollNumber}</td>
                     <td>{r.name}</td>
                     <td>{staffMode ? r.department : r.status}</td>
+                    {!staffMode && <td>{r.remarks || "—"}</td>}
+                    {!staffMode && <td>{r.isAttendanceMarked ? "Yes" : "No"}</td>}
                     <td>
                       {staffMode ? (
                         <div className="att-status">
@@ -894,7 +928,7 @@ function Table({ rows, setRows, loading, saving, save, staffMode = false }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="4">Load attendance to view records.</td>
+                  <td colSpan={staffMode ? 4 : 7}>Load attendance to view records.</td>
                 </tr>
               )}
             </tbody>
@@ -1217,11 +1251,11 @@ function Reports({ staffMode, say }) {
     setF((x) => {
       const value = e.target.value;
       if (k === "board")
-        return { ...x, board: value, year: "", level: "", group: "", section: "", subject: "", period: "", teacher: "" };
+        return { ...x, board: value, year: "", level: "", group: "", program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "year")
-        return { ...x, year: value, level: "", group: "", section: "", subject: "", period: "", teacher: "" };
+        return { ...x, year: value, level: "", group: "", program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "level")
-        return { ...x, level: value, group: "", section: "", subject: "", period: "", teacher: "" };
+        return { ...x, level: value, group: "", program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "group")
         return { ...x, group: value, program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "program") return { ...x, program: value, section: "", subject: "", period: "", teacher: "" };
@@ -1325,12 +1359,13 @@ function Reports({ staffMode, say }) {
     let active = true;
     const selectedProgram = programOptions.find((program) => String(program.id) === String(f.program));
     Promise.allSettled([
-      apiClient.get(apiEndpoints.sections.list, { params: {
-        GroupId: f.group,
-        ProgramId: (val(selectedProgram?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? f.program) || undefined,
-        Programme: selectedProgram?.name || undefined,
-        IsActive: true,
-      } }),
+      f.program
+        ? apiClient.get(apiEndpoints.sections.list, { params: {
+            ProgramId: val(selectedProgram?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? f.program,
+            Programme: selectedProgram?.name || undefined,
+            IsActive: true,
+          } })
+        : Promise.resolve({ data: [] }),
       apiClient.get(apiEndpoints.subjects.context, {
         params: { boardId: f.board, groupId: f.group, academicLevelId: f.level },
       }),
@@ -1340,7 +1375,7 @@ function Reports({ staffMode, say }) {
         ...x,
         sections:
           r[0].status === "fulfilled"
-            ? toOptions(sectionsForProgram(r[0].value.data, f.program, programOptions), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? toOptions(sectionsForProgram(r[0].value.data, f.program, programOptions), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])
             : [],
         subjects:
           r[1].status === "fulfilled"
@@ -1364,22 +1399,39 @@ function Reports({ staffMode, say }) {
     return () => { active = false; };
   }, [f.group, say]);
   const load = async () => {
+    if (!staffMode) {
+      if ([f.date, f.board, f.level, f.group, f.program, f.section].some((value) => !value))
+        return say("Select Board, Academic Level, Group, Program, and Section.");
+      if (Boolean(f.subject) !== Boolean(f.period))
+        return say("Select both Subject and Period, or leave both as All.");
+    }
     setLoading(true);
     try {
-      const r = await apiClient.post(
-        staffMode
-          ? apiEndpoints.staffAttendance.monthlyReport
-          : apiEndpoints.attendance.studentMonthlyReport,
-        staffMode
-          ? { date: f.date, staffType: 1, departmentId: null }
-          : {
-              date: f.date,
-              groupId: f.group ? +f.group : null,
-              programId: f.program ? +f.program : null,
-              sectionId: f.section ? +f.section : null,
-            },
-      );
-      setRows(list(r.data));
+      if (staffMode) {
+        const response = await apiClient.post(
+          apiEndpoints.staffAttendance.monthlyReport,
+          { date: f.date, staffType: 1, departmentId: null },
+        );
+        setRows(list(response.data));
+      } else {
+        const response = await apiClient.get(apiEndpoints.attendance.students, {
+          params: {
+            date: f.date,
+            boardId: +f.board,
+            academicLevelId: +f.level,
+            groupId: +f.group,
+            sectionId: +f.section,
+            ...(f.subject ? { subjectId: +f.subject } : {}),
+            ...(f.period ? { periodId: +f.period } : {}),
+          },
+        });
+        setRows(
+          list(response.data).filter((row, index, records) => {
+            const studentId = val(row, "studentId", "StudentId", "id", "Id");
+            return records.findIndex((item) => String(val(item, "studentId", "StudentId", "id", "Id")) === String(studentId)) === index;
+          }),
+        );
+      }
     } catch (e) {
       say(getApiErrorMessage(e));
     } finally {
@@ -1412,7 +1464,14 @@ function Reports({ staffMode, say }) {
     } catch (error) { say(getApiErrorMessage(error)); }
     finally { setExporting(false); }
   };
-  const columns = rows.length ? Object.keys(rows[0]) : [];
+  const reportDate = new Date(`${f.date}T00:00:00`);
+  const reportYear = reportDate.getFullYear();
+  const reportMonth = reportDate.getMonth();
+  const reportDays = Array.from({ length: new Date(reportYear, reportMonth + 1, 0).getDate() }, (_, index) => index + 1);
+  const selectedReportDay = reportDate.getDate();
+  const reportMonthLabel = reportDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const selectedGroupName = m.groups.find((item) => String(item.id) === String(f.group))?.name ?? "—";
+  const selectedSectionName = m.sections.find((item) => String(item.id) === String(f.section))?.name ?? "—";
   return (
     <>
       <section className="att-card att-report-card">
@@ -1433,13 +1492,14 @@ function Reports({ staffMode, say }) {
               />
               <Select l="Academic Level" v={f.level} on={change("level")} o={m.levels} empty={levelLoading ? "Loading..." : "All levels"} disabled={!f.board || !f.year || levelLoading} />
               <Select l="Group" v={f.group} on={change("group")} o={m.groups} empty="All groups" />
-              <Select l="Program" v={f.program} on={change("program")} o={programOptions} empty="All programs" disabled={!f.group} />
+              <Select l="Program" v={f.program} on={change("program")} o={programOptions} empty="Select Program" disabled={!f.group} />
               <Select
                 l="Section"
                 v={f.section}
                 on={change("section")}
                 o={m.sections}
                 empty="All sections"
+                disabled={!f.program}
               />
               <Select
                 l="Subject"
@@ -1469,33 +1529,51 @@ function Reports({ staffMode, say }) {
       </section>
       <section className="att-card att-table-card">
         <div className="att-table-top">
-          <b>Attendance Report</b>
+          <div>
+            <b>Monthly Attendance</b>
+            <span className="att-days-label">{reportMonthLabel} · {reportDays.length} days</span>
+            <div className="att-legend">P Present · A Absent · L Late · LV Leave</div>
+          </div>
         </div>
         <div className="att-scroll">
           <table className="cms-table att-table att-month-table">
             <thead>
               <tr>
-                {columns.map((c) => (
-                  <th key={c}>{c.replace(/([A-Z])/g, " $1")}</th>
-                ))}
+                <th>Roll No.</th>
+                <th>Student Name</th>
+                <th>Group</th>
+                <th>Section</th>
+                {reportDays.map((day) => <th className="att-day-header" key={day}><span>{day}</span><small>{new Date(reportYear, reportMonth, day).toLocaleDateString("en-US", { weekday: "short" }).slice(0, 3)}</small></th>)}
+                <th className="att-month-summary">Present Days</th>
+                <th className="att-month-summary">Absent Days</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td>Loading report...</td>
+                  <td colSpan={reportDays.length + 6}>Loading report...</td>
                 </tr>
               ) : rows.length ? (
                 rows.map((row, i) => (
                   <tr key={val(row, "studentId", "facultyId", "id", "Id") ?? i}>
-                    {columns.map((c) => (
-                      <td key={c}>{String(row[c] ?? "—")}</td>
-                    ))}
+                    <td>{val(row, "rollNumber", "RollNumber", "rollNo", "RollNo", "admissionNumber", "AdmissionNumber") || "—"}</td>
+                    <td>{val(row, "studentName", "StudentName", "name", "Name") || "—"}</td>
+                    <td>{val(row, "groupName", "GroupName") || selectedGroupName}</td>
+                    <td>{val(row, "sectionName", "SectionName") || selectedSectionName}</td>
+                    {reportDays.map((day) => {
+                      if (day !== selectedReportDay || val(row, "isAttendanceMarked", "IsAttendanceMarked") === false)
+                        return <td key={day}><span className="att-status-dash">—</span></td>;
+                      const attendanceStatus = status(val(row, "status", "Status", "attendanceStatus"));
+                      const statusCode = STATUS.find(([name]) => name === attendanceStatus)?.[2] ?? "—";
+                      return <td key={day}><span className={`att-status-pill att-${attendanceStatus.toLowerCase()}`}>{statusCode}</span></td>;
+                    })}
+                    <td className="att-month-summary"><b>{attendanceTotals(row).present}</b></td>
+                    <td className="att-month-summary"><b>{attendanceTotals(row).absent}</b></td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td>Apply filters to load the monthly report.</td>
+                  <td colSpan={reportDays.length + 6}>Apply filters to load the monthly report.</td>
                 </tr>
               )}
             </tbody>

@@ -6,7 +6,10 @@ import path from "node:path";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiBaseUrl = env.VITE_API_BASE_URL || "https://sterile-retorted-tightness.ngrok-free.dev";
-  const isHttpsApi = apiBaseUrl.startsWith("https://");
+  const apiProxyAgent = new https.Agent({
+    keepAlive: true,
+    rejectUnauthorized: false,
+  });
 
   return {
     plugins: [react()],

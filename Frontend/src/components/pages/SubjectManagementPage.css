@@ -235,7 +235,6 @@
   background: var(--cms-amber-soft);
 }
 .subject-configure-button {
-<<<<<<< HEAD
   flex-direction: column;
   height: 44px;
   min-width: 96px;
@@ -246,15 +245,6 @@
 }
 .subject-configure-button span {
   display: block;
-=======
-  height: 36px;
-  min-width: 148px;
-  padding: 6px 14px;
-  font-size: 13px;
-  white-space: nowrap;
-  flex: 0 0 auto;
-  width: auto;
->>>>>>> 9e869fbbd616051ef99357c7fc4f46f71acddd31
 }
 .subject-btn-spinner {
   width: 14px;

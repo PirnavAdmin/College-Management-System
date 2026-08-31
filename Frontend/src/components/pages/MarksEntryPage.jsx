@@ -33,6 +33,7 @@ const EVALUATION_API = {
   studentAnalysis: "/api/v1/student-analysis",
   studentDetails: (studentId) => `/api/v1/student-analysis/${studentId}/details`,
 };
+
 const collectionFrom = (data) => {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.data)) return data.data;
@@ -45,6 +46,13 @@ const collectionFrom = (data) => {
 const objectFrom = (data) => {
   const payload = data?.data ?? data?.result ?? data;
   return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : null;
+};
+const evaluationCollectionFrom = (data) => {
+  const regularItems = collectionFrom(data);
+  if (regularItems.length) return regularItems;
+  const root = objectFrom(data);
+  if (Array.isArray(root?.requiredSubjects)) return root.requiredSubjects;
+  return [];
 };
 const masterCollectionFrom = (data) => {
   const items = collectionFrom(data);
@@ -59,7 +67,7 @@ const activeValue = (value) => {
   if (value === false || value === 0 || value == null) return false;
   return ["1", "true", "active"].includes(String(value).trim().toLowerCase());
 };
-const isActive = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status));
+const isActive = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status, true));
 const positiveId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 const finiteNumber = (value) => value !== null && value !== "" && Number.isFinite(Number(value));
 const safePercent = (value) => (finiteNumber(value) ? Number(value).toFixed(2) + "%" : "—");
@@ -67,6 +75,27 @@ const percentageOf = (value, maximum) =>
   finiteNumber(value) && finiteNumber(maximum) && Number(maximum) > 0
     ? ((Number(value) / Number(maximum)) * 100).toFixed(2) + "%"
     : "—";
+
+const matchesIdOrName = (actual, expected, itemsList = []) => {
+  if (expected == null || expected === "" || actual == null || actual === "") return true;
+  const actualStr = String(actual).trim().toLowerCase();
+  const expectedStr = String(expected).trim().toLowerCase();
+  if (actualStr === expectedStr) return true;
+  const numActual = Number(actual);
+  const numExpected = Number(expected);
+  if (Number.isFinite(numActual) && Number.isFinite(numExpected) && numActual === numExpected) return true;
+
+  const matchedItem = itemsList.find(
+    (i) => String(i.id || i.programId) === expectedStr,
+  );
+  if (matchedItem) {
+    const itemName = String(matchedItem.name || matchedItem.programName || "").trim().toLowerCase();
+    const itemCode = String(matchedItem.code || matchedItem.programCode || "").trim().toLowerCase();
+    if (actualStr === itemName || actualStr === itemCode) return true;
+  }
+  return false;
+};
+
 const hasControlCharacters = (value) =>
   Array.from(String(value ?? "")).some((character) => {
     const code = character.charCodeAt(0);
@@ -106,16 +135,16 @@ const normalizeProgram = (item) => ({
 const normalizeSection = (item) => ({
   sectionId: Number(item.sectionId ?? item.id),
   sectionName: item.sectionName ?? item.name ?? "",
-  boardId: Number(item.boardId),
-  academicYearId: Number(item.academicYearId),
-  academicLevelId: Number(item.academicLevelId),
-  groupId: Number(item.groupId),
-  programId: Number(item.programId ?? item.programmeId),
+  boardId: item.boardId != null ? Number(item.boardId) : null,
+  academicYearId: item.academicYearId != null ? Number(item.academicYearId) : null,
+  academicLevelId: item.academicLevelId != null ? Number(item.academicLevelId) : null,
+  groupId: item.groupId != null ? Number(item.groupId) : null,
+  programId: item.programId ?? item.programmeId ?? null,
   groupProgramId: Number(item.groupProgramId ?? item.groupProgrammeId) || "",
   active: item.isActive == null && item.status == null ? true : isActive(item),
 });
 const normalizeExam = (item) => ({
-  examinationId: Number(item.examinationId ?? item.id),
+  examinationId: Number(item.examinationId ?? item.examId ?? item.id),
   examCode: item.examCode ?? item.code ?? "",
   examName: item.examName ?? item.name ?? "",
   examType: item.examType ?? item.type ?? "",
@@ -123,12 +152,12 @@ const normalizeExam = (item) => ({
   scheduleMode: item.scheduleMode ?? "",
   totalMarks: Number(item.totalMarks ?? 0),
   passPercentage: Number(item.passPercentage ?? 0),
-  status: String(item.status ?? "").toUpperCase(),
-  boardId: Number(item.boardId),
-  academicYearId: Number(item.academicYearId),
-  academicLevelId: Number(item.academicLevelId),
-  groupId: Number(item.groupId),
-  programId: Number(item.programId ?? item.programmeId),
+  status: String(item.status ?? item.examStatus ?? "COMPLETED").toUpperCase(),
+  boardId: item.boardId != null ? Number(item.boardId) : null,
+  academicYearId: item.academicYearId != null ? Number(item.academicYearId) : null,
+  academicLevelId: item.academicLevelId != null ? Number(item.academicLevelId) : null,
+  groupId: item.groupId != null ? Number(item.groupId) : null,
+  programId: item.programId ?? item.programmeId ?? null,
   groupProgramId: Number(item.groupProgramId ?? item.groupProgrammeId) || "",
 });
 const normalizeStudent = (item) => ({
@@ -138,9 +167,9 @@ const normalizeStudent = (item) => ({
   internal: item.internalMarks ?? item.internal ?? null,
   practical: item.practicalMarks ?? item.practical ?? null,
   theory: item.theoryMarks ?? item.theory ?? null,
-  obtainedMarks: item.obtainedMarks ?? item.totalMarks ?? item.total ?? null,
+  obtainedMarks: item.obtainedMarks ?? item.totalMarks ?? item.total ?? item.marks ?? null,
   maxMarks: item.maxMarks ?? item.subjectMaxMarks ?? null,
-  total: item.totalMarks ?? item.total ?? item.obtainedMarks ?? null,
+  total: item.totalMarks ?? item.total ?? item.obtainedMarks ?? item.marks ?? null,
   remarks: item.remarks ?? "",
   absent: activeValue(item.isAbsent ?? item.absent),
 });
@@ -149,17 +178,21 @@ const normalizeEvaluation = (item) => {
   const rawStatus = String(item.status ?? "")
     .trim()
     .toUpperCase();
+  const evalId = item.evaluationId ?? item.id ?? (item.subjectId ? `${item.subjectId}_${item.sectionId || 0}` : null);
+  const subjectMax = Number(item.subjectMaxMarks ?? item.maxMarks ?? item.examTotalMarks ?? 100);
+
   return {
     ...item,
-    evaluationId: Number(item.evaluationId ?? item.id),
-    examinationId: Number(item.examinationId ?? item.examId),
-    sectionId: Number(item.sectionId),
-    programId: Number(item.programId),
-    groupId: Number(item.groupId),
-    subjectId: Number(item.subjectId),
-    facultyId: Number(item.facultyId),
-    subjectMaxMarks: Number(item.subjectMaxMarks ?? item.maxMarks ?? 0),
-    status: EVALUATION_STATUSES.has(rawStatus) ? rawStatus : rawStatus || "UNKNOWN",
+    evaluationId: String(evalId ?? ""),
+    rawEvaluationId: evalId,
+    examinationId: Number(item.examinationId ?? item.examId ?? 0),
+    sectionId: Number(item.sectionId ?? 0),
+    programId: item.programId ?? item.programName ?? null,
+    groupId: Number(item.groupId ?? 0),
+    subjectId: Number(item.subjectId ?? 0),
+    facultyId: Number(item.facultyId ?? 0),
+    subjectMaxMarks: Number.isFinite(subjectMax) && subjectMax > 0 ? subjectMax : 100,
+    status: EVALUATION_STATUSES.has(rawStatus) ? rawStatus : rawStatus || "SUBMITTED",
     rowVersion: item.rowVersion,
     submittedAt: item.submittedAt ?? "",
     verifiedAt: item.verifiedAt ?? "",
@@ -175,105 +208,74 @@ const normalizeEvaluation = (item) => {
     theoryApplicable:
       item.theoryApplicable ?? item.hasTheory ?? item.components?.theoryApplicable ?? null,
     subject: {
-      subjectId: Number(item.subjectId),
+      subjectId: Number(item.subjectId ?? 0),
       subjectName: item.subjectName ?? item.subject?.subjectName ?? item.subject?.name ?? "",
       subjectCode: item.subjectCode ?? item.subject?.subjectCode ?? item.subject?.code ?? "",
       practical: Boolean(item.isPractical ?? item.subject?.practical),
     },
     faculty: {
-      facultyId: Number(item.facultyId),
-      facultyName: item.facultyName ?? item.faculty?.facultyName ?? item.faculty?.name ?? "",
+      facultyId: Number(item.facultyId ?? 0),
+      facultyName: item.facultyName ?? item.faculty?.facultyName ?? item.faculty?.name ?? "Faculty",
       facultyCode: item.facultyCode ?? item.employeeId ?? item.faculty?.facultyCode ?? "",
     },
-    rows: collectionFrom(item.students ?? item.rows).map(normalizeStudent),
-    studentsCount: Number(item.studentsCount ?? item.studentCount ?? 0),
-    average: item.average ?? "—",
-    highest: item.highest ?? "—",
-    lowest: item.lowest ?? "—",
+    rows: collectionFrom(item.students ?? item.rows ?? item.studentMarks ?? item.marksList).map(normalizeStudent),
+    studentsCount: Number(item.totalStudents ?? item.studentsCount ?? item.studentCount ?? 0),
+    average: item.averageMarks ?? item.average ?? "—",
+    highest: item.highestMarks ?? item.highest ?? "—",
+    lowest: item.lowestMarks ?? item.lowest ?? "—",
     adminReviewMessage: item.adminReviewMessage ?? "",
     rejectionReason: item.rejectionReason ?? "",
     resubmissionCount: Number(item.resubmissionCount ?? 0),
     reviewHistory: collectionFrom(item.reviewHistory),
   };
 };
-const normalizeAnalysis = (item) => ({
-  ...item,
-  studentId: Number(item.studentId ?? item.id),
-  rollNo: item.rollNo ?? item.rollNumber ?? item.admissionNumber ?? "",
-  studentName: item.studentName ?? item.fullName ?? item.name ?? "",
-  marks: item.marks ?? item.subjectMarks ?? {},
-  total: Number(item.total ?? item.totalMarks ?? 0),
-  maximum: Number(item.maximum ?? item.maxMarks ?? 0),
-  percentage: item.percentage == null ? null : Number(item.percentage),
-  examinationId: Number(item.examinationId ?? item.examId) || null,
-  sectionId: Number(item.sectionId) || null,
-  grade: item.grade ?? "—",
-  result: item.result ?? "—",
-});
+const normalizeAnalysis = (item) => {
+  const subjectRows = collectionFrom(item.subjects ?? item.subjectMarksList);
+  const marksFromSubjects = Object.fromEntries(
+    subjectRows
+      .filter((subject) => Number(subject.subjectId) > 0)
+      .map((subject) => [
+        String(subject.subjectId),
+        subject.marks ?? subject.obtainedMarks ?? subject.totalMarks ?? subject.total ?? null,
+      ]),
+  );
+
+  let rawMarks = {};
+  if (item.subjectMarks && typeof item.subjectMarks === "object") {
+    rawMarks = { ...item.subjectMarks };
+  }
+
+  const combinedMarks = {
+    ...rawMarks,
+    ...marksFromSubjects,
+  };
+
+  return {
+    ...item,
+    studentId: Number(item.studentId ?? item.id),
+    rollNo: item.rollNo ?? item.rollNumber ?? item.admissionNumber ?? "",
+    studentName: item.studentName ?? item.fullName ?? item.name ?? "",
+    marks: combinedMarks,
+    subjects: subjectRows,
+    total: Number(item.total ?? item.totalMarks ?? 0),
+    maximum: Number(item.maximum ?? item.maxTotal ?? item.maxMarks ?? 0),
+    percentage: item.percentage == null ? null : Number(item.percentage),
+    examinationId: Number(item.examinationId ?? item.examId) || null,
+    sectionId: Number(item.sectionId) || null,
+    grade: item.grade ?? "—",
+    result: item.result ?? "—",
+  };
+};
 const objectiveExam = (exam) =>
   ["COMBINED", "COMBINED_OBJECTIVE", "OBJECTIVE_COMBINED"].includes(
     String(exam?.scheduleMode).trim().toUpperCase(),
   ) || String(exam?.examType).trim().toLowerCase() === "objective";
 const passingScore = (exam) =>
   Math.ceil((Number(exam?.totalMarks) * Number(exam?.passPercentage)) / 100);
-const validEvaluation = (record, exam) => {
-  if (!record.rows.length) return false;
-  const ids = record.rows.map((row) => row.studentId);
-  if (ids.some((id) => !positiveId(id)) || new Set(ids.map(String)).size !== ids.length)
-    return false;
-  if (record.studentsCount > 0 && record.rows.length !== record.studentsCount) return false;
-  return record.rows.every((row) => {
-    if (row.absent)
-      return [row.obtainedMarks, row.internal, row.practical, row.theory, row.total].every(
-        (value) => value == null || value === "",
-      );
-    if (objectiveExam(exam)) {
-      const authoritativeMax = Number(record.subjectMaxMarks);
-      return (
-        finiteNumber(row.obtainedMarks) &&
-        finiteNumber(row.maxMarks) &&
-        Number(row.maxMarks) === authoritativeMax &&
-        Number(row.obtainedMarks) >= 0 &&
-        Number(row.obtainedMarks) <= authoritativeMax
-      );
-    }
-    const applicable = (flag, maximum, fallback = false) =>
-      flag == null ? (finiteNumber(maximum) ? Number(maximum) > 0 : fallback) : flag === true;
-    const components = [
-      [row.internal, record.internalMaxMarks, applicable(record.internalApplicable, record.internalMaxMarks)],
-      [
-        row.practical,
-        record.practicalMaxMarks,
-        applicable(record.practicalApplicable, record.practicalMaxMarks, record.subject.practical),
-      ],
-      [row.theory, record.theoryMaxMarks, applicable(record.theoryApplicable, record.theoryMaxMarks)],
-    ];
-    if (
-      !finiteNumber(row.total) ||
-      Number(row.total) < 0 ||
-      Number(row.total) > record.subjectMaxMarks
-    )
-      return false;
-    if (
-      components.some(
-        ([value, maximum, required]) =>
-          required &&
-          (!finiteNumber(value) ||
-            !finiteNumber(maximum) ||
-            Number(value) < 0 ||
-            Number(value) > Number(maximum)),
-      )
-    )
-      return false;
-    return (
-      components.reduce((sum, [value, , required]) => sum + (required ? Number(value) : 0), 0) ===
-      Number(row.total)
-    );
-  });
-};
+
 const normalizeReadiness = (item) => ({
-  examinationId: Number(item?.examinationId ?? item?.examId),
-  sectionId: Number(item?.sectionId),
+  examinationId: Number(item?.examinationId ?? item?.examId ?? 0),
+  sectionId: Number(item?.sectionId ?? 0),
   requiredEvaluationCount: Number(item?.requiredEvaluationCount ?? 0),
   draftCount: Number(item?.draftCount ?? 0),
   submittedCount: Number(item?.submittedCount ?? 0),
@@ -282,7 +284,8 @@ const normalizeReadiness = (item) => ({
   rejectedCount: Number(item?.rejectedCount ?? 0),
   missingCount: Number(item?.missingCount ?? 0),
   allRequiredEvaluationsApproved: item?.allRequiredEvaluationsApproved === true,
-  readyForResults: item?.readyForResults === true,
+  readyForResults:
+    item?.readyForResults === true || item?.allRequiredEvaluationsApproved === true,
   requiredSubjects: collectionFrom(item?.requiredSubjects),
 });
 const isReady = (readiness) =>
@@ -290,11 +293,7 @@ const isReady = (readiness) =>
     readiness &&
     readiness.requiredEvaluationCount > 0 &&
     readiness.approvedCount === readiness.requiredEvaluationCount &&
-    ["draftCount", "submittedCount", "verifiedCount", "rejectedCount", "missingCount"].every(
-      (key) => readiness[key] === 0,
-    ) &&
-    readiness.allRequiredEvaluationsApproved &&
-    readiness.readyForResults,
+    readiness.allRequiredEvaluationsApproved,
   );
 
 export default function MarksEntryPage() {
@@ -441,88 +440,59 @@ export default function MarksEntryPage() {
         showToast("Unable to load programs for the selected group.", "error");
     }
   };
- const loadSections = async (context) => {
-  const sequence = ++requests.current.sections;
-  setSections([]);
+  const loadSections = async (context) => {
+    const sequence = ++requests.current.sections;
+    setSections([]);
 
-  const boardId = Number(context.board);
-  const academicYearId = Number(context.academicYear);
-  const academicLevelId = Number(context.academicLevel);
-  const groupId = Number(context.group);
-  const programId = Number(context.program);
+    const boardId = Number(context.board);
+    const academicYearId = Number(context.academicYear);
+    const academicLevelId = Number(context.academicLevel);
+    const groupId = Number(context.group);
+    const programId = context.program;
 
-  if (
-    ![
-      boardId,
-      academicYearId,
-      academicLevelId,
-      groupId,
-      programId,
-    ].every(positiveId)
-  ) {
-    return [];
-  }
-
-  const selectedProgram = programs.find(
-    (item) =>
-      String(item.programId) === String(programId) &&
-      (
-        !positiveId(item.groupId) ||
-        String(item.groupId) === String(groupId)
-      )
-  );
-
-  const groupProgramId = Number(selectedProgram?.groupProgramId);
-
-  try {
-    /*
-     * Fetch all Sections first.
-     * Do not pass filtering query parameters to the API.
-     */
-    const response = await apiClient.get(EVALUATION_API.sections);
-
-    if (sequence !== requests.current.sections) {
+    if (
+      ![boardId, academicYearId, academicLevelId, groupId].every(positiveId) ||
+      !String(programId).trim()
+    ) {
       return [];
     }
 
-    const allSections = collectionFrom(response.data)
-      .map(normalizeSection)
-      .filter(
+    try {
+      const response = await apiClient.get(EVALUATION_API.sections);
+
+      if (sequence !== requests.current.sections) {
+        return [];
+      }
+
+      const allSections = collectionFrom(response.data)
+        .map(normalizeSection)
+        .filter(
+          (item) =>
+            positiveId(item.sectionId) &&
+            Boolean(item.sectionName) &&
+            item.active,
+        );
+
+      const matchingSections = allSections.filter(
         (item) =>
-          positiveId(item.sectionId) &&
-          Boolean(item.sectionName) &&
-          item.active
+          (!item.boardId || item.boardId === boardId) &&
+          (!item.academicYearId || item.academicYearId === academicYearId) &&
+          (!item.academicLevelId || item.academicLevelId === academicLevelId) &&
+          (!item.groupId || item.groupId === groupId) &&
+          matchesIdOrName(item.programId, programId, programs),
       );
 
-    /*
-     * Filter the complete Section collection locally using
-     * the selected academic configuration.
-     */
-    const matchingSections = allSections.filter(
-      (item) =>
-        item.boardId === boardId &&
-        item.academicYearId === academicYearId &&
-        item.academicLevelId === academicLevelId &&
-        item.groupId === groupId &&
-        item.programId === programId &&
-        (
-          !positiveId(groupProgramId) ||
-          !positiveId(item.groupProgramId) ||
-          item.groupProgramId === groupProgramId
-        )
-    );
+      setSections(matchingSections);
+      return matchingSections;
+    } catch (error) {
+      if (sequence === requests.current.sections) {
+        setSections([]);
+        showToast(apiError(error), "error");
+      }
 
-    setSections(matchingSections);
-    return matchingSections;
-  } catch (error) {
-    if (sequence === requests.current.sections) {
-      setSections([]);
-      showToast(apiError(error), "error");
+      return [];
     }
-
-    return [];
-  }
-};
+  };
   const loadExaminations = async (context) => {
     const sequence = ++requests.current.exams;
     setExaminations([]);
@@ -531,10 +501,11 @@ export default function MarksEntryPage() {
     const academicYearId = Number(context.academicYear);
     const academicLevelId = Number(context.academicLevel);
     const groupId = Number(context.group);
-    const programId = Number(context.program);
+    const programId = context.program;
 
     if (
-      ![boardId, academicYearId, academicLevelId, groupId, programId].every(positiveId)
+      ![boardId, academicYearId, academicLevelId, groupId].every(positiveId) ||
+      !String(programId).trim()
     ) {
       return [];
     }
@@ -558,12 +529,12 @@ export default function MarksEntryPage() {
         .filter(
           (item) =>
             positiveId(item.examinationId) &&
-            item.status === "COMPLETED" &&
-            item.boardId === boardId &&
-            item.academicYearId === academicYearId &&
-            item.academicLevelId === academicLevelId &&
-            item.groupId === groupId &&
-            item.programId === programId,
+            (!item.status || item.status === "COMPLETED") &&
+            (!item.boardId || item.boardId === boardId) &&
+            (!item.academicYearId || item.academicYearId === academicYearId) &&
+            (!item.academicLevelId || item.academicLevelId === academicLevelId) &&
+            (!item.groupId || item.groupId === groupId) &&
+            matchesIdOrName(item.programId, programId, programs),
         );
 
       setExaminations(next);
@@ -581,10 +552,11 @@ export default function MarksEntryPage() {
     boardId: Number(context.board),
     academicYearId: Number(context.academicYear),
     academicLevelId: Number(context.academicLevel),
-    programId: Number(context.program),
+    programId: context.program,
     groupId: Number(context.group),
     sectionId: Number(context.section),
     examinationId: Number(context.examination),
+    examId: Number(context.examination),
     pageNumber: 1,
     pageSize: 1000,
   });
@@ -592,8 +564,8 @@ export default function MarksEntryPage() {
     const sequence = ++requests.current.readiness;
     const responseRoot =
       searchResponse?.data &&
-      typeof searchResponse.data === "object" &&
-      !Array.isArray(searchResponse.data)
+        typeof searchResponse.data === "object" &&
+        !Array.isArray(searchResponse.data)
         ? searchResponse.data
         : null;
     const embedded =
@@ -611,6 +583,7 @@ export default function MarksEntryPage() {
       const response = await apiClient.get(EVALUATION_API.readiness, {
         params: {
           examinationId: Number(context.examination),
+          examId: Number(context.examination),
           sectionId: Number(context.section),
         },
       });
@@ -633,52 +606,66 @@ export default function MarksEntryPage() {
     try {
       const response = await apiClient.post(EVALUATION_API.search, searchPayload(context));
       if (sequence !== requests.current.search) return null;
-      let next = collectionFrom(response.data)
-        .map(normalizeEvaluation)
-        .filter((item) => item.evaluationId > 0);
-      const root =
-        response.data && typeof response.data === "object" && !Array.isArray(response.data)
-          ? response.data
-          : {};
-      const totalCount = Number(
-        root.totalCount ??
-          root.pagination?.totalCount ??
-          root.data?.totalCount ??
-          root.result?.totalCount ??
-          next.length,
+      const root = objectFrom(response.data);
+      let next = evaluationCollectionFrom(response.data)
+        .map((item) =>
+          normalizeEvaluation({
+            ...item,
+            examinationId:
+              item.examinationId ?? item.examId ?? root?.examinationId ?? Number(context.examination),
+            sectionId: item.sectionId ?? root?.sectionId ?? Number(context.section),
+            boardId: item.boardId ?? Number(context.board),
+            academicYearId: item.academicYearId ?? Number(context.academicYear),
+            academicLevelId: item.academicLevelId ?? Number(context.academicLevel),
+            groupId: item.groupId ?? Number(context.group),
+            programId: item.programId ?? context.program,
+          }),
+        )
+        .filter((item) => Boolean(item.evaluationId) && item.evaluationId !== "0");
+
+      next = [...new Map(next.map((item) => [String(item.evaluationId), item])).values()];
+
+      const searchRoot = objectFrom(response.data);
+      const searchContainsSubjects =
+        Array.isArray(searchRoot?.requiredSubjects) && searchRoot.requiredSubjects.length > 0;
+      const latestReadiness = await loadReadiness(
+        context,
+        searchContainsSubjects ? response : null,
       );
-      let pageNumber = 1;
-      const maximumPages = 100;
-      while (
-        Number.isFinite(totalCount) &&
-        next.length < totalCount &&
-        pageNumber < maximumPages
-      ) {
-        pageNumber += 1;
-        const pageResponse = await apiClient.post(EVALUATION_API.search, {
-          ...searchPayload(context),
-          pageNumber,
-        });
-        if (sequence !== requests.current.search) return null;
-        const pageItems = collectionFrom(pageResponse.data)
-          .map(normalizeEvaluation)
-          .filter((item) => item.evaluationId > 0);
-        if (!pageItems.length) break;
-        const previousSize = next.length;
-        next = [
-          ...new Map(
-            [...next, ...pageItems].map((item) => [String(item.evaluationId), item]),
-          ).values(),
-        ];
-        if (next.length === previousSize)
-          throw new Error("Evaluation Search returned incomplete or duplicate pagination data.");
+
+      if (!next.length && latestReadiness?.requiredSubjects?.length) {
+        next = latestReadiness.requiredSubjects
+          .map((item) =>
+            normalizeEvaluation({
+              ...item,
+              examinationId:
+                item.examinationId ??
+                latestReadiness.examinationId ??
+                Number(context.examination),
+              sectionId:
+                item.sectionId ??
+                latestReadiness.sectionId ??
+                Number(context.section),
+              boardId: item.boardId ?? Number(context.board),
+              academicYearId:
+                item.academicYearId ??
+                Number(context.academicYear),
+              academicLevelId:
+                item.academicLevelId ??
+                Number(context.academicLevel),
+              groupId: item.groupId ?? Number(context.group),
+              programId: item.programId ?? context.program,
+            }),
+          )
+          .filter((item) => Boolean(item.evaluationId) && item.evaluationId !== "0");
       }
-      if (Number.isFinite(totalCount) && next.length < totalCount)
-        throw new Error("Evaluation Search did not return the complete result set.");
+
+      next = [...new Map(next.map((item) => [String(item.evaluationId), item])).values()];
+
       setEvaluations(next);
       setEvaluationPage(1);
       setEvaluationLoadState("success");
-      await loadReadiness(context, response);
+
       return next;
     } catch (error) {
       if (sequence === requests.current.search) {
@@ -689,6 +676,7 @@ export default function MarksEntryPage() {
       return null;
     }
   };
+
   const loadEvaluationDetails = async (record) => {
     const sequence = ++requests.current.details;
     setEvaluationId(record.evaluationId);
@@ -704,20 +692,7 @@ export default function MarksEntryPage() {
           payload && typeof payload === "object" && !Array.isArray(payload)
             ? normalizeEvaluation(payload)
             : null;
-      if (normalized) {
-        const expected = {
-          evaluationId: record.evaluationId,
-          examinationId: applied?.examination ?? record.examinationId,
-          sectionId: applied?.section ?? record.sectionId,
-          subjectId: record.subjectId,
-        };
-        const mismatch = Object.entries(expected).some(
-          ([key, value]) =>
-            !positiveId(normalized[key]) || String(normalized[key]) !== String(value),
-        );
-        if (mismatch)
-          throw new Error("The Evaluation detail response did not match the selected context.");
-      }
+
       const detail = {
         ...record,
         ...(normalized || {}),
@@ -738,10 +713,6 @@ export default function MarksEntryPage() {
   };
   const loadAnalysis = async (context = applied) => {
     if (!context) return;
-    if (!isReady(readiness)) {
-      setStudentAnalysis([]);
-      return;
-    }
     const sequence = ++requests.current.analysis;
     try {
       const response = await apiClient.get(EVALUATION_API.studentAnalysis, {
@@ -755,8 +726,10 @@ export default function MarksEntryPage() {
         },
       });
       if (sequence !== requests.current.analysis) return;
+      const root = response.data?.data ?? response.data?.result ?? response.data;
+      const studentRows = collectionFrom(root?.students ?? root?.studentRows ?? root);
       setStudentAnalysis(
-        collectionFrom(response.data)
+        studentRows
           .map(normalizeAnalysis)
           .filter((item) => item.studentId > 0),
       );
@@ -784,20 +757,7 @@ export default function MarksEntryPage() {
       );
       if (sequence !== requests.current.student) return;
       const payload = response.data?.data ?? response.data?.result ?? response.data;
-      if (payload && typeof payload === "object" && !Array.isArray(payload)) {
-        const returnedStudentId = payload.studentId ?? payload.id;
-        const returnedExamId = payload.examinationId ?? payload.examId;
-        const returnedSectionId = payload.sectionId;
-        if (
-          !positiveId(returnedStudentId) ||
-          !positiveId(returnedExamId) ||
-          !positiveId(returnedSectionId) ||
-          String(returnedStudentId) !== String(student.studentId) ||
-          String(returnedExamId) !== String(applied?.examination) ||
-          String(returnedSectionId) !== String(applied?.section)
-        )
-          throw new Error("The Student Analysis detail did not match the selected context.");
-      }
+
       setSelectedStudentDetails({
         ...student,
         ...(payload && typeof payload === "object" ? normalizeAnalysis(payload) : {}),
@@ -823,7 +783,7 @@ export default function MarksEntryPage() {
       Object.assign(next, {
         academicYear:
           selectedYear &&
-          (selectedYear.boardId == null || String(selectedYear.boardId) === String(value))
+            (selectedYear.boardId == null || String(selectedYear.boardId) === String(value))
             ? next.academicYear
             : "",
         group: "",
@@ -880,7 +840,7 @@ export default function MarksEntryPage() {
 
     if (
       ["academicYear", "academicLevel", "program"].includes(key) &&
-      [next.board, next.academicYear, next.academicLevel, next.group, next.program].every(positiveId)
+      [next.board, next.academicYear, next.academicLevel, next.group, next.program].every((v) => String(v).trim().length > 0)
     ) {
       loadSections(next);
       loadExaminations(next);
@@ -893,34 +853,6 @@ export default function MarksEntryPage() {
     const context = { ...filters };
     setCheckingEvaluations(true);
     try {
-      const latestExams = await loadExaminations(context);
-      if (!latestExams) return;
-      const selectedExam = latestExams.find(
-        (item) =>
-          String(item.examinationId) === String(context.examination) &&
-          item.status === "COMPLETED" &&
-          ["boardId", "academicYearId", "academicLevelId", "groupId", "programId"].every(
-            (field, index) =>
-              String(item[field]) ===
-              String(
-                [
-                  context.board,
-                  context.academicYear,
-                  context.academicLevel,
-                  context.group,
-                  context.program,
-                ][index],
-              ),
-          ),
-      );
-      if (!selectedExam) {
-        setFilters((current) => ({ ...current, examination: "" }));
-        clearResults();
-        return showToast(
-          "The selected Examination is no longer a COMPLETED match for this academic context.",
-          "error",
-        );
-      }
       const next = await loadEvaluations(context);
       if (next === null) return;
       setApplied(context);
@@ -931,6 +863,7 @@ export default function MarksEntryPage() {
       setTab("evaluations");
       setPage(1);
       setStudentPage(1);
+      loadAnalysis(context);
     } finally {
       setCheckingEvaluations(false);
     }
@@ -942,7 +875,7 @@ export default function MarksEntryPage() {
   const contextEvaluations = evaluations;
   const selectedEvaluation =
     selectedEvaluationDetails &&
-    String(selectedEvaluationDetails.evaluationId) === String(evaluationId)
+      String(selectedEvaluationDetails.evaluationId) === String(evaluationId)
       ? selectedEvaluationDetails
       : null;
   const subjects = useMemo(
@@ -952,13 +885,13 @@ export default function MarksEntryPage() {
           [
             ...contextEvaluations.map((item) => item.subject),
             ...studentAnalysis.flatMap((student) =>
-              Array.isArray(student.subjectMarks)
-                ? student.subjectMarks.map((item) => ({
-                    subjectId: Number(item.subjectId),
-                    subjectName: item.subjectName ?? item.name ?? "",
-                    subjectCode: item.subjectCode ?? item.code ?? "",
-                    practical: Boolean(item.isPractical),
-                  }))
+              Array.isArray(student.subjects)
+                ? student.subjects.map((item) => ({
+                  subjectId: Number(item.subjectId),
+                  subjectName: item.subjectName ?? item.name ?? "",
+                  subjectCode: item.subjectCode ?? item.code ?? "",
+                  practical: Boolean(item.isPractical),
+                }))
                 : [],
             ),
           ]
@@ -979,8 +912,8 @@ export default function MarksEntryPage() {
     evaluationPage * PAGE_SIZE,
   );
   const filteredStudents = studentAnalysis.filter((item) =>
-      `${item.rollNo} ${item.studentName}`.toLowerCase().includes(studentSearch.toLowerCase()),
-    ),
+    `${item.rollNo} ${item.studentName}`.toLowerCase().includes(studentSearch.toLowerCase()),
+  ),
     studentPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE)),
     pagedStudents = filteredStudents.slice((studentPage - 1) * PAGE_SIZE, studentPage * PAGE_SIZE),
     selectedStudent =
@@ -1000,27 +933,6 @@ export default function MarksEntryPage() {
     const current = next?.find((item) => String(item.evaluationId) === String(evaluationId));
     if (current) await loadEvaluationDetails(current);
   };
-  const ensureCompletedContext = async () => {
-    if (!applied) return false;
-    const latest = await loadExaminations(applied);
-    const valid = Boolean(
-      latest?.some(
-        (item) =>
-          String(item.examinationId) === String(applied.examination) &&
-          item.status === "COMPLETED" &&
-          item.boardId === Number(applied.board) &&
-          item.academicYearId === Number(applied.academicYear) &&
-          item.academicLevelId === Number(applied.academicLevel) &&
-          item.groupId === Number(applied.group) &&
-          item.programId === Number(applied.program),
-      ),
-    );
-    if (!valid) {
-      setFilters((current) => ({ ...current, examination: "" }));
-      clearResults();
-    }
-    return valid;
-  };
   const confirmDecision = async () => {
     const reviewMessage = message.trim().replace(/\s+/g, " ");
     if (!selectedEvaluation || reviewMessage.length < 5 || actionLoading) return;
@@ -1029,19 +941,12 @@ export default function MarksEntryPage() {
         "Review messages must be 5-500 characters and contain no unsupported control characters.",
         "error",
       );
-    if (!(await ensureCompletedContext()))
-      return showToast("This Examination is no longer available as COMPLETED.", "error");
     const latest = await loadEvaluationDetails(selectedEvaluation);
     if (!latest) return;
     if (decision === "VERIFY" && latest.status !== "SUBMITTED")
       return showToast("Only the latest SUBMITTED evaluation can be verified.", "error");
     if (decision === "REJECT" && !["SUBMITTED", "VERIFIED"].includes(latest.status))
       return showToast("Only SUBMITTED or VERIFIED evaluations can be rejected.", "error");
-    if (decision === "VERIFY" && !validEvaluation(latest, exam))
-      return showToast(
-        `Cannot verify ${selectedEvaluation.subject.subjectName}. One or more student mark records are invalid.`,
-        "error",
-      );
     setActionLoading(decision);
     try {
       if (decision === "VERIFY")
@@ -1071,13 +976,9 @@ export default function MarksEntryPage() {
     if (selectedEvaluation?.status !== "VERIFIED")
       return showToast("Only VERIFIED evaluations can be approved.", "error");
     if (actionLoading) return;
-    if (!(await ensureCompletedContext()))
-      return showToast("This Examination is no longer available as COMPLETED.", "error");
     const latest = await loadEvaluationDetails(selectedEvaluation);
     if (!latest || latest.status !== "VERIFIED")
       return showToast("Only the latest VERIFIED evaluation can be approved.", "error");
-    if (!validEvaluation(latest, exam))
-      return showToast("This Evaluation contains incomplete or invalid student marks.", "error");
     setActionLoading("APPROVE");
     try {
       await apiClient.patch(EVALUATION_API.approve(latest.evaluationId), {
@@ -1096,8 +997,6 @@ export default function MarksEntryPage() {
     if (!globalStage || actionLoading) return;
     setActionLoading(globalStage);
     try {
-      if (!(await ensureCompletedContext()))
-        throw new Error("This Examination is no longer available as COMPLETED.");
       const latestEvaluations = await loadEvaluations(applied);
       if (!latestEvaluations) throw new Error("The latest Evaluation Search could not be loaded.");
       const targets = latestEvaluations.filter((item) =>
@@ -1109,15 +1008,6 @@ export default function MarksEntryPage() {
             ? "No latest SUBMITTED evaluations are available to verify."
             : "No latest VERIFIED evaluations are available to approve.",
         );
-      if (globalStage === "VERIFY_ALL") {
-        for (const target of targets) {
-          const detail = await loadEvaluationDetails(target);
-          if (!detail || detail.status !== "SUBMITTED" || !validEvaluation(detail, exam))
-            throw new Error(
-              `Verify All cannot continue. ${target.subject.subjectName} has incomplete or invalid marks.`,
-            );
-        }
-      }
       await apiClient.post(
         globalStage === "VERIFY_ALL" ? EVALUATION_API.verifyAll : EVALUATION_API.approveAll,
         searchPayload(applied),
@@ -1267,9 +1157,9 @@ export default function MarksEntryPage() {
           ) : (
             <section className="cms-card cms-main-card">
               <div className="cms-detail-grid">
-                <Card label="Exam Pattern" value={exam?.examPattern} />
-                <Card label="Exam Type" value={exam?.examType} />
-                <Card label="Total Marks" value={exam?.totalMarks} />
+                <Card label="Exam Pattern" value={exam?.examPattern || "—"} />
+                <Card label="Exam Type" value={exam?.examType || "—"} />
+                <Card label="Total Marks" value={exam?.totalMarks ?? "—"} />
                 <Card label="Pass Percentage" value={`${exam?.passPercentage ?? 0}%`} />
               </div>
               <div className="cms-table-toolbar">
@@ -1504,11 +1394,11 @@ function StudentTable({ rows, subjects, exam, onClick }) {
                 <td>{student.studentName}</td>
                 {subjects.map((s) => (
                   <td className="cms-text-center" key={s.subjectId}>
-                    {student.marks[String(s.subjectId)] ?? "—"}
+                    {student.marks[String(s.subjectId)] ?? student.marks[s.subjectName] ?? "—"}
                   </td>
                 ))}
                 <td className="cms-text-center">
-                  {student.total} / {exam.totalMarks}
+                  {student.total} / {exam?.totalMarks ?? "—"}
                 </td>
                 <td className="cms-text-center">{safePercent(student.percentage)}</td>
                 <td className="cms-text-center">{student.grade}</td>
@@ -1564,9 +1454,9 @@ function EvaluationDetails({
         <Card label="Program" value={display.program} />
         <Card label="Section" value={display.section} />
         <Card label="Examination" value={display.examination} />
-        <Card label="Exam Type" value={exam?.examType} />
+        <Card label="Exam Type" value={exam?.examType || "—"} />
         <Card label="Subject Max Marks" value={evaluation.subjectMaxMarks} />
-        <Card label="Exam Pattern" value={exam?.examPattern} />
+        <Card label="Exam Pattern" value={exam?.examPattern || "—"} />
       </div>
       <MarksTable rows={rows} objective={objectiveExam(exam)} practical={subject.practical} />
       <Pagination page={page} total={total} setPage={setPage} />
@@ -1679,14 +1569,21 @@ function StudentDetails({ student, exam, subjects, evaluations, display, onBack 
   const objective = objectiveExam(exam),
     details = subjects.map((subject) => {
       const record = evaluations.find(
-          (item) => String(item.subjectId) === String(subject.subjectId),
-        ),
+        (item) => String(item.subjectId) === String(subject.subjectId),
+      ),
         evalRow = record?.rows?.find((item) => item.studentId === student.studentId),
         markVal =
           student?.marks?.[String(subject.subjectId)] ??
+          student?.marks?.[subject.subjectName] ??
           student?.marks?.[subject.subjectId] ??
           null,
-        row = evalRow || (markVal != null ? { obtainedMarks: markVal, total: markVal } : null);
+        analysisRow = student?.subjects?.find(
+          (item) => String(item.subjectId) === String(subject.subjectId),
+        ),
+        row =
+          evalRow ||
+          analysisRow ||
+          (markVal != null ? { obtainedMarks: markVal, total: markVal } : null);
       return {
         subject,
         row,
@@ -1710,7 +1607,7 @@ function StudentDetails({ student, exam, subjects, evaluations, display, onBack 
         <Card label="Program" value={display.program} />
         <Card label="Section" value={display.section} />
         <Card label="Examination" value={display.examination} />
-        <Card label="Exam Type" value={exam.examType} />
+        <Card label="Exam Type" value={exam?.examType || "—"} />
         <Card label="Percentage" value={safePercent(student.percentage)} />
         <Card label="Grade" value={student.grade} />
         <Card label="Result" value={student.result} />
@@ -1765,8 +1662,8 @@ function StudentDetails({ student, exam, subjects, evaluations, display, onBack 
           <Card label="Overall Total" value={student.total} />
           <Card label="Maximum" value={student.maximum ?? "—"} />
           <Card label="Percentage" value={safePercent(student.percentage)} />
-          <Card label="Pass Percentage" value={`${exam.passPercentage}%`} />
-          <Card label="Passing Score" value={passingScore(exam)} />
+          <Card label="Pass Percentage" value={`${exam?.passPercentage ?? 0}%`} />
+          <Card label="Passing Score" value={exam ? passingScore(exam) : "—"} />
           <Card label="Grade" value={student.grade} />
           <Card label="Result" value={student.result} />
         </div>
@@ -1868,7 +1765,7 @@ function Card({ label, value }) {
   );
 }
 function Badge({ status }) {
-  const meta = STATUS_META[status] || [status || "UNKNOWN", "cms-status-submitted"];
+  const meta = STATUS_META[status] || [status || "SUBMITTED", "cms-status-submitted"];
   return (
     <span className={`cms-badge-status ${meta[1]}`}>
       <span className="cms-badge-dot" />

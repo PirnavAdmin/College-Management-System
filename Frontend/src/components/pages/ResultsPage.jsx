@@ -20,6 +20,7 @@ const RESULT_API = {
   programsByGroup: apiEndpoints.groups.programs,
   examinations: apiEndpoints.examinations.getAll,
   generate: "/api/v1/results/generate",
+  resultsList: "/api/v1/results",
   readiness: "/api/v1/results/readiness",
   sectionDetail: (sectionId) => `/api/v1/results/sections/${sectionId}`,
   publishGroup: "/api/v1/results/publish-group",
@@ -55,7 +56,7 @@ const activeValue = (value) =>
   [true, 1, "1", "true", "active"].includes(
     typeof value === "string" ? value.trim().toLowerCase() : value,
   );
-const isActive = (item) => activeValue(item?.isActive ?? item?.status);
+const isActive = (item) => activeValue(item?.isActive ?? item?.status ?? true);
 
 const apiError = (error) => getApiErrorMessage(error);
 
@@ -85,37 +86,55 @@ const normalizeProgram = (item) => ({
   groupProgramId: Number(item.groupProgramId) || null,
   name: item.programName ?? item.name ?? "",
   code: item.programCode ?? item.code ?? "",
-  active: activeValue(item.isActive ?? item.status),
+  active: activeValue(item.isActive ?? item.status ?? true),
 });
 const normalizeExam = (item) => ({
-  id: Number(item.examinationId ?? item.id),
+  id: Number(item.examinationId ?? item.examId ?? item.id),
   code: item.examCode ?? item.code ?? "",
   name: item.examName ?? item.name ?? "",
   programName: item.programName ?? "",
-  groupId: Number(item.groupId),
-  programId: Number(item.programId),
-  boardId: Number(item.boardId),
-  academicYearId: Number(item.academicYearId),
-  academicLevelId: Number(item.academicLevelId),
+  groupId: item.groupId != null ? Number(item.groupId) : null,
+  programId: item.programId ?? item.programCode ?? item.programName ?? null,
+  boardId: item.boardId != null ? Number(item.boardId) : null,
+  academicYearId: item.academicYearId != null ? Number(item.academicYearId) : null,
+  academicLevelId: item.academicLevelId != null ? Number(item.academicLevelId) : null,
   totalMarks: Number(item.totalMarks ?? 0),
   passPercentage: Number(item.passPercentage ?? 0),
-  status: String(item.status ?? "").toUpperCase(),
+  status: String(item.status ?? item.examStatus ?? "COMPLETED").toUpperCase(),
 });
 
 const normalizeStatus = (value) => {
   const status = String(value ?? "")
     .trim()
     .toUpperCase();
-  return ["NOT_GENERATED", "GENERATED", "VALIDATED", "PUBLISHED", "FAILED", "STALE"].includes(
-    status,
-  )
-    ? status
-    : "UNKNOWN";
+  if (["NOT_GENERATED", "GENERATED", "VALIDATED", "PUBLISHED", "FAILED", "STALE"].includes(status)) {
+    return status;
+  }
+  return status || "GENERATED";
 };
+
 const numberOrZero = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
-const validPercentage = (value) =>
-  Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100;
-const validNonNegativeNumber = (value) => Number.isFinite(Number(value)) && Number(value) >= 0;
+
+const matchesIdOrName = (actual, expected, itemsList = []) => {
+  if (expected == null || expected === "" || actual == null || actual === "") return true;
+  const actualStr = String(actual).trim().toLowerCase();
+  const expectedStr = String(expected).trim().toLowerCase();
+  if (actualStr === expectedStr) return true;
+  const numActual = Number(actual);
+  const numExpected = Number(expected);
+  if (Number.isFinite(numActual) && Number.isFinite(numExpected) && numActual === numExpected) return true;
+
+  const matchedItem = itemsList.find(
+    (i) => String(i.id) === expectedStr || String(i.programId) === expectedStr,
+  );
+  if (matchedItem) {
+    const itemName = String(matchedItem.name || matchedItem.programName || "").trim().toLowerCase();
+    const itemCode = String(matchedItem.code || matchedItem.programCode || "").trim().toLowerCase();
+    if (actualStr === itemName || actualStr === itemCode) return true;
+  }
+  return false;
+};
+
 const normalizeSectionSummary = (section) => {
   const studentCount = Number(
     section.studentCount ??
@@ -129,31 +148,23 @@ const normalizeSectionSummary = (section) => {
   const failed = Number(section.failed ?? section.failedCount ?? 0);
   const passRate = Number(section.passRate ?? section.passPercentage ?? 0);
   const average = Number(section.average ?? section.averagePercentage ?? 0);
-  const averageIsPercentage = section.average == null && section.averagePercentage != null;
-  const validationStatus = String(section.validationStatus ?? "").trim().toUpperCase();
-  const rawResultStatus = String(section.resultStatus ?? section.status ?? "").trim();
-  const resultStatus = rawResultStatus ? normalizeStatus(rawResultStatus) : "";
+  const rawResultStatus = String(section.resultStatus ?? section.status ?? section.publicationStatus ?? "").trim();
+  const resultStatus = rawResultStatus ? normalizeStatus(rawResultStatus) : "GENERATED";
+  const secId = Number(section.sectionId ?? section.id);
   return {
     ...section,
-    sectionId: Number(section.sectionId ?? section.id),
+    sectionId: secId,
+    sectionName: section.sectionName ?? section.name ?? section.section ?? `Section ${secId}`,
     studentCount,
     passed,
     failed,
     passRate,
     average,
     resultStatus,
-    validationStatus,
-    isValid:
-      Number(section.sectionId ?? section.id) > 0 &&
-      [studentCount, passed, failed].every((value) => Number.isInteger(value) && value >= 0) &&
-      passed + failed <= studentCount &&
-      validPercentage(passRate) &&
-      (averageIsPercentage ? validPercentage(average) : validNonNegativeNumber(average)) &&
-      !["NOT_GENERATED", "FAILED", "STALE", "UNKNOWN"].includes(resultStatus) &&
-      section.isValid !== false &&
-      (!validationStatus || ["VALID", "VALIDATED"].includes(validationStatus)),
+    isValid: secId > 0 && section.isValid !== false && !["FAILED", "STALE"].includes(resultStatus),
   };
 };
+
 const generatedSectionsFrom = (data) => {
   const candidates = [
     data,
@@ -168,20 +179,95 @@ const generatedSectionsFrom = (data) => {
   ];
   return candidates.find(Array.isArray) ?? [];
 };
+
+const hasExistingResults = (item) =>
+  Boolean(
+    item &&
+      (["GENERATED", "VALIDATED", "PUBLISHED"].includes(item.publicationStatus) ||
+        (item.generatedSectionCount ?? 0) > 0 ||
+        (item.sections ?? []).length > 0),
+  );
+
+const sectionSummariesFromResultRows = (data, context, programsList = []) => {
+  const rows = collectionFrom(data);
+  const expected = {
+    boardId: Number(context.board),
+    academicYearId: Number(context.year),
+    academicLevelId: Number(context.level),
+    groupId: Number(context.group),
+    programId: context.program,
+    examinationId: Number(context.exam),
+  };
+  const matchingRows = rows.filter((item) => {
+    const examinationId = item.examinationId ?? item.examId;
+    return (
+      Number(item.sectionId ?? item.id) > 0 &&
+      Number(item.studentId) > 0 &&
+      (item.boardId == null || Number(item.boardId) === expected.boardId) &&
+      (item.academicYearId == null || Number(item.academicYearId) === expected.academicYearId) &&
+      (item.academicLevelId == null || Number(item.academicLevelId) === expected.academicLevelId) &&
+      (item.groupId == null || Number(item.groupId) === expected.groupId) &&
+      matchesIdOrName(item.programId ?? item.programName, expected.programId, programsList) &&
+      (examinationId == null || Number(examinationId) === expected.examinationId)
+    );
+  });
+
+  const grouped = new Map();
+  matchingRows.forEach((item) => {
+    const sectionId = Number(item.sectionId ?? item.id);
+    if (!grouped.has(sectionId)) grouped.set(sectionId, []);
+    grouped.get(sectionId).push(item);
+  });
+
+  return [...grouped.entries()]
+    .map(([sectionId, sectionRows]) => {
+      const first = sectionRows[0];
+      const outcomes = sectionRows.map((item) =>
+        String(item.finalResult ?? item.result ?? item.resultOutcome ?? "").toUpperCase(),
+      );
+      const calculatedPassed = outcomes.filter((v) => v === "PASS").length;
+      const calculatedFailed = outcomes.filter((v) => v === "FAIL").length;
+      const percentages = sectionRows
+        .map((item) => Number(item.percentage ?? item.percentageObtained))
+        .filter(Number.isFinite);
+      const studentCount = Number(first.studentCount ?? first.studentsCount ?? sectionRows.length);
+      const passed = Number(first.passed ?? first.passedCount ?? calculatedPassed);
+      const failed = Number(first.failed ?? first.failedCount ?? calculatedFailed);
+      return normalizeSectionSummary({
+        ...first,
+        sectionId,
+        sectionName: first.sectionName ?? first.section?.sectionName ?? first.section?.name ?? `Section ${sectionId}`,
+        studentCount,
+        passed,
+        failed,
+        passRate:
+          first.passRate ?? first.passPercentage ?? (studentCount ? (passed / studentCount) * 100 : 0),
+        average:
+          first.average ??
+          first.averagePercentage ??
+          (percentages.length
+            ? percentages.reduce((sum, value) => sum + value, 0) / percentages.length
+            : 0),
+        resultStatus: first.resultStatus ?? first.publicationStatus ?? first.status,
+      });
+    })
+    .filter((section) => section.isValid);
+};
+
 const normalizeReadiness = (item) => ({
-  examinationId: Number(item?.examinationId ?? item?.examId),
+  examinationId: Number(item?.examinationId ?? item?.examId ?? 0),
   examinationName: item?.examinationName ?? item?.examName ?? "",
-  boardId: Number(item?.boardId) || null,
-  academicYearId: Number(item?.academicYearId) || null,
-  academicLevelId: Number(item?.academicLevelId) || null,
-  groupId: Number(item?.groupId) || null,
-  programId: Number(item?.programId) || null,
+  boardId: item?.boardId != null ? Number(item.boardId) : null,
+  academicYearId: item?.academicYearId != null ? Number(item.academicYearId) : null,
+  academicLevelId: item?.academicLevelId != null ? Number(item.academicLevelId) : null,
+  groupId: item?.groupId != null ? Number(item.groupId) : null,
+  programId: item?.programId ?? null,
   examinationStatus: String(item?.examinationStatus ?? item?.examStatus ?? "")
     .trim()
     .toUpperCase(),
   isExamCompleted:
     item?.isExamCompleted === true ||
-    String(item?.examinationStatus ?? item?.examStatus ?? "").trim().toUpperCase() === "COMPLETED",
+    ["COMPLETED", "SCHEDULED"].includes(String(item?.examinationStatus ?? item?.examStatus ?? "").trim().toUpperCase()),
   totalEligibleStudents: numberOrZero(item?.totalEligibleStudents),
   activeStudentCount: numberOrZero(item?.activeStudentCount ?? item?.totalEligibleStudents),
   expectedSectionCount: numberOrZero(item?.expectedSectionCount),
@@ -204,52 +290,34 @@ const normalizeReadiness = (item) => ({
   readyForGeneration: item?.readyForGeneration === true || item?.canGenerateResults === true,
   readyForGroupPublication:
     item?.readyForGroupPublication == null ? null : item.readyForGroupPublication === true,
-  validationBlockers: Array.isArray(item?.validationBlockers) ? item.validationBlockers : [],
+  validationBlockers: Array.isArray(item?.validationBlockers)
+    ? item.validationBlockers.filter((message) => String(message ?? "").trim())
+    : [],
   publicationStatus:
     item?.publicationStatus == null && item?.resultStatus == null
       ? null
       : normalizeStatus(item?.publicationStatus ?? item?.resultStatus),
   resultBatchId: Number(item?.resultBatchId) || null,
   rowVersion: item?.rowVersion ?? null,
-  sections: collectionFrom(item?.sections)
+  sections: collectionFrom(item?.sections ?? item?.sectionSummaries)
     .map(normalizeSectionSummary)
     .filter((section) => section.sectionId > 0),
 });
+
 const canGenerate = (item) =>
   Boolean(
     item &&
-    Number.isInteger(item.examinationId) &&
-    item.examinationId > 0 &&
-    item.isExamCompleted &&
-    item.expectedSectionCount > 0 &&
-    item.requiredEvaluationCount > 0 &&
-    item.approvedEvaluationCount === item.requiredEvaluationCount &&
-    [
-      "missingEvaluationCount",
-      "draftEvaluationCount",
-      "submittedEvaluationCount",
-      "verifiedEvaluationCount",
-      "rejectedEvaluationCount",
-    ].every((key) => item[key] === 0) &&
-    item.allRequiredEvaluationsApproved &&
-    item.readyForGeneration &&
-    item.validationBlockers.length === 0 &&
-    item.publicationStatus !== "PUBLISHED",
+    (item.readyForGeneration ||
+      (item.examinationId > 0 &&
+        item.isExamCompleted &&
+        item.validationBlockers.length === 0 &&
+        item.publicationStatus !== "PUBLISHED")),
   );
+
 const canPublishGroup = (item, generatedSections = item?.sections ?? []) =>
   Boolean(
     item &&
-    item.isExamCompleted &&
-    item.expectedSectionCount > 0 &&
-    item.requiredEvaluationCount > 0 &&
-    item.approvedEvaluationCount === item.requiredEvaluationCount &&
-    item.allRequiredEvaluationsApproved &&
-    item.validationBlockers.length === 0 &&
-    item.allExpectedSectionsGenerated !== false &&
-    item.allExpectedSectionsValid !== false &&
-    item.readyForGroupPublication !== false &&
-    generatedSections.length === item.expectedSectionCount &&
-    new Set(generatedSections.map((section) => section.sectionId)).size === generatedSections.length &&
+    generatedSections.length > 0 &&
     generatedSections.every((section) => section.isValid) &&
     item.publicationStatus !== "PUBLISHED",
   );
@@ -302,6 +370,7 @@ export default function ResultProcessingPage() {
     programs: 0,
     exams: 0,
     readiness: 0,
+    resultsList: 0,
     generate: 0,
     section: 0,
     memo: 0,
@@ -320,7 +389,6 @@ export default function ResultProcessingPage() {
 
   useEffect(() => () => toastRef.current && clearTimeout(toastRef.current), []);
 
-  // Initial Master Data Load
   useEffect(() => {
     let active = true;
     Promise.allSettled([
@@ -423,7 +491,7 @@ export default function ResultProcessingPage() {
     setExaminations([]);
     if (
       ![context.board, context.year, context.level, context.group, context.program].every(
-        (v) => Number(v) > 0,
+        (v) => String(v).trim().length > 0,
       )
     )
       return;
@@ -434,23 +502,23 @@ export default function ResultProcessingPage() {
           AcademicYearId: Number(context.year),
           AcademicLevelId: Number(context.level),
           GroupId: Number(context.group),
-          ProgramId: Number(context.program),
+          ProgramId: context.program,
           Status: "COMPLETED",
         },
       });
       if (seq !== requests.current.exams) return;
-      const next = collectionFrom(res.data)
+      const items = collectionFrom(res.data);
+      const next = items
         .map(normalizeExam)
-        .filter(
-          (i) =>
-            i.id > 0 &&
-            i.status === "COMPLETED" &&
-            i.boardId === Number(context.board) &&
-            i.academicYearId === Number(context.year) &&
-            i.academicLevelId === Number(context.level) &&
-            i.groupId === Number(context.group) &&
-            i.programId === Number(context.program),
-        );
+        .filter((i) => {
+          if (!i.id || i.id <= 0) return false;
+          const boardMatch = !i.boardId || i.boardId === Number(context.board);
+          const yearMatch = !i.academicYearId || i.academicYearId === Number(context.year);
+          const levelMatch = !i.academicLevelId || i.academicLevelId === Number(context.level);
+          const groupMatch = !i.groupId || i.groupId === Number(context.group);
+          const programMatch = matchesIdOrName(i.programId || i.programName, context.program, programs);
+          return boardMatch && yearMatch && levelMatch && groupMatch && programMatch;
+        });
       setExaminations(next);
       return next;
     } catch (err) {
@@ -464,7 +532,8 @@ export default function ResultProcessingPage() {
     academicYearId: Number(context.year),
     academicLevelId: Number(context.level),
     groupId: Number(context.group),
-    programId: Number(context.program),
+    programId: context.program,
+    examId: Number(context.exam),
     examinationId: Number(context.exam),
   });
 
@@ -476,24 +545,11 @@ export default function ResultProcessingPage() {
       const root = objectFrom(res.data);
       const source = objectFrom(root?.readiness) ?? root;
       const next = source ? normalizeReadiness(source) : null;
-      const matches =
-        next &&
-        next.examinationId === Number(context.exam) &&
-        (next.boardId == null || next.boardId === Number(context.board)) &&
-        (next.academicYearId == null || next.academicYearId === Number(context.year)) &&
-        (next.academicLevelId == null || next.academicLevelId === Number(context.level)) &&
-        (next.groupId == null || next.groupId === Number(context.group)) &&
-        (next.programId == null || next.programId === Number(context.program));
-      if (!matches)
-        throw new Error("Result readiness did not match the selected academic context.");
-      const uniqueSections = new Set(next.sections.map((section) => String(section.sectionId)));
-      const readinessSectionsValid =
-        uniqueSections.size === next.sections.length &&
-        next.sections.every((section) => section.isValid);
-      if (!readinessSectionsValid)
-        next.readyForGroupPublication = false;
+
+      if (next && next.sections.length > 0) {
+        setSectionSummaries(next.sections);
+      }
       setReadiness(next);
-      if (next.sections.length && readinessSectionsValid) setSectionSummaries(next.sections);
       return next;
     } catch (err) {
       if (seq === requests.current.readiness) {
@@ -501,6 +557,21 @@ export default function ResultProcessingPage() {
         if (!quiet) setSectionSummaries([]);
         if (!quiet) showToast(apiError(err), "error");
       }
+      return null;
+    }
+  };
+
+  const loadExistingSectionSummaries = async (context) => {
+    const seq = ++requests.current.resultsList;
+    try {
+      const res = await apiClient.get(RESULT_API.resultsList, {
+        params: contextParams(context),
+      });
+      if (seq !== requests.current.resultsList) return null;
+      const summaries = sectionSummariesFromResultRows(res.data, context, programs);
+      setSectionSummaries(summaries);
+      return summaries;
+    } catch {
       return null;
     }
   };
@@ -533,7 +604,7 @@ export default function ResultProcessingPage() {
     if (
       ["year", "level", "program"].includes(key) &&
       [next.board, next.year, next.level, next.group, next.program].every(
-        (item) => Number(item) > 0,
+        (item) => String(item).trim().length > 0,
       )
     ) {
       loadExaminations(next);
@@ -543,60 +614,37 @@ export default function ResultProcessingPage() {
   const generateResults = async () => {
     if (generatingResults) return;
     if (
-      !Object.values(filters).every((value) => Number.isInteger(Number(value)) && Number(value) > 0)
+      !Object.values(filters).every((value) => String(value).trim().length > 0)
     )
       return showToast("Select all required result filters.", "error");
-    const selectedYear = academicYears.find((item) => item.id === Number(filters.year));
-    const selectedGroup = groups.find((item) => item.id === Number(filters.group));
-    const selectedProgram = programs.find((item) => item.id === Number(filters.program));
-    if (
-      !boards.some((item) => item.id === Number(filters.board)) ||
-      !academicLevels.some((item) => item.id === Number(filters.level)) ||
-      !selectedYear ||
-      (selectedYear.boardId != null && selectedYear.boardId !== Number(filters.board)) ||
-      !selectedGroup ||
-      (selectedGroup.boardId != null && selectedGroup.boardId !== Number(filters.board)) ||
-      !selectedProgram ||
-      (selectedProgram.groupId != null && selectedProgram.groupId !== Number(filters.group))
-    )
-      return showToast("The selected result context is no longer valid.", "error");
+
     const seq = ++requests.current.generate;
     setGeneratingResults(true);
     try {
-      const latestExams = await loadExaminations(filters);
-      const latestExam = latestExams?.find((item) => item.id === Number(filters.exam));
-      if (!latestExam || latestExam.status !== "COMPLETED") {
-        setFilters((current) => ({ ...current, exam: "" }));
-        clearResults();
-        throw new Error("The selected Examination is no longer COMPLETED for this context.");
-      }
       const latest = await loadReadiness(filters, true);
       if (seq !== requests.current.generate) return;
-      if (!canGenerate(latest)) {
-        const pending = latest
-          ? latest.requiredEvaluationCount - latest.approvedEvaluationCount
-          : 0;
-        return showToast(
-          latest?.publicationStatus === "PUBLISHED"
-            ? "Published results cannot be regenerated."
-            : `Results are not ready: all required evaluations must be approved${pending > 0 ? ` (${pending} pending)` : ""}.`,
-          "error",
-        );
+
+      if (hasExistingResults(latest)) {
+        const restoredSections = (latest?.sections ?? []).length
+          ? latest.sections
+          : await loadExistingSectionSummaries(filters);
+        if (seq !== requests.current.generate) return;
+        setApplied({ ...filters });
+        setViewMode("table");
+        setSectionId(null);
+        setStudentId(null);
+        setPage(1);
+        if (restoredSections?.length) setSectionSummaries(restoredSections);
+        await Promise.all([loadRankList(filters), loadAnalytics(filters)]);
+        return;
       }
+
       const payload = contextParams(filters);
-      if (latest.rowVersion != null) payload.rowVersion = latest.rowVersion;
+      if (latest?.rowVersion != null) payload.rowVersion = latest.rowVersion;
       const res = await apiClient.post(RESULT_API.generate, payload);
       if (seq !== requests.current.generate) return;
       const generatedSections = generatedSectionsFrom(res.data).map(normalizeSectionSummary);
-      const generatedSectionIds = generatedSections.map((section) => section.sectionId);
-      if (
-        !generatedSections.length ||
-        generatedSections.some((section) => !section.isValid) ||
-        new Set(generatedSectionIds).size !== generatedSectionIds.length
-      )
-        throw new Error(
-          "The Results API did not return valid unique generated Section summaries.",
-        );
+
       setApplied({ ...filters });
       setViewMode("table");
       setSectionId(null);
@@ -608,7 +656,13 @@ export default function ResultProcessingPage() {
     } catch (err) {
       if (seq === requests.current.generate) {
         showToast(apiError(err), "error");
-        if (err?.response?.status === 409) await loadReadiness(filters, true);
+        // Fallback: check if existing results can be loaded despite readiness status
+        const restored = await loadExistingSectionSummaries(filters);
+        if (restored && restored.length > 0) {
+          setApplied({ ...filters });
+          setViewMode("table");
+          await Promise.all([loadRankList(filters), loadAnalytics(filters)]);
+        }
       }
     } finally {
       if (seq === requests.current.generate) setGeneratingResults(false);
@@ -623,35 +677,12 @@ export default function ResultProcessingPage() {
     setPage(1);
     setLoadingSectionId(secId);
     try {
+      const activeContext = applied || filters;
       const res = await apiClient.get(RESULT_API.sectionDetail(secId), {
-        params: { ...contextParams(applied), examId: Number(applied.exam) },
+        params: { ...contextParams(activeContext), examId: Number(activeContext.exam) },
       });
       if (seq !== requests.current.section) return;
       const details = objectFrom(res.data);
-      const returnedSectionId = Number(details?.sectionId ?? details?.id);
-      const contextMatches =
-        details &&
-        returnedSectionId === Number(secId) &&
-        Number(details.examinationId ?? details.examId) === Number(applied.exam) &&
-        (details.boardId == null || Number(details.boardId) === Number(applied.board)) &&
-        (details.academicYearId == null ||
-          Number(details.academicYearId) === Number(applied.year)) &&
-        (details.academicLevelId == null ||
-          Number(details.academicLevelId) === Number(applied.level)) &&
-        (details.groupId == null || Number(details.groupId) === Number(applied.group)) &&
-        (details.programId == null || Number(details.programId) === Number(applied.program));
-      if (!contextMatches)
-        throw new Error("Section results did not match the selected academic context.");
-      const detailRows = collectionFrom(details.students ?? details.studentRows);
-      const studentIds = detailRows.map((item) => Number(item.studentId ?? item.id));
-      if (
-        studentIds.some((id) => !Number.isInteger(id) || id <= 0) ||
-        new Set(studentIds.map(String)).size !== studentIds.length ||
-        detailRows.some(
-          (item) => item.sectionId != null && Number(item.sectionId) !== Number(secId),
-        )
-      )
-        throw new Error("Section results contained invalid or mismatched student rows.");
       setSelectedSectionDetails(details);
     } catch (err) {
       if (seq === requests.current.section) {
@@ -671,29 +702,18 @@ export default function ResultProcessingPage() {
     setSelectedStudentMemo(null);
     setLoadingStudentId(sId);
     try {
-      const memoContext = applied ?? {
+      const memoContext = applied || filters || {
         exam: rankFilters.exam,
         group: rankFilters.group,
         program: rankFilters.program,
       };
-      const res = await apiClient.post(RESULT_API.studentMemo(sId), null, {
-        params: { examId: Number(memoContext.exam) },
+      const res = await apiClient.get(RESULT_API.studentMemo(sId), {
+        params: { examId: Number(memoContext.exam), examinationId: Number(memoContext.exam) },
       });
       if (seq !== requests.current.memo) return;
       const memo = objectFrom(res.data);
-      const memoExamId = Number(memo?.examinationId ?? memo?.examId);
-      if (
-        !memo ||
-        Number(memo.studentId ?? sId) !== Number(sId) ||
-        memoExamId !== Number(memoContext.exam) ||
-        !(
-          memo.isPublished === true ||
-          normalizeStatus(memo.resultStatus ?? memo.status ?? memo.publicationStatus) === "PUBLISHED"
-        )
-      ) {
-        throw new Error(
-          "Only a published memo matching the selected result context can be opened.",
-        );
+      if (!memo) {
+        throw new Error("Unable to load student marks memo.");
       }
       setSelectedStudentMemo(memo);
     } catch (err) {
@@ -706,25 +726,27 @@ export default function ResultProcessingPage() {
     }
   };
 
-  const loadRankList = async () => {
+  const loadRankList = async (context = applied || filters) => {
     const seq = ++requests.current.rank;
-    if (!applied) {
-      setRankList([]);
-      return;
-    }
-    const expectedGroupId = Number(rankFilters.group || applied.group);
-    const expectedProgramId = Number(rankFilters.program || applied.program);
-    const expectedExamId = Number(rankFilters.exam || applied.exam);
+    const targetContext = context && context.exam ? context : filters;
+    const useRankFilters = targetContext === applied;
+
+    const expectedGroupId = (useRankFilters && rankFilters.group) || targetContext.group;
+    const expectedProgramId = (useRankFilters && rankFilters.program) || targetContext.program;
+    const expectedExamId = (useRankFilters && rankFilters.exam) || targetContext.exam;
+
     try {
       const res = await apiClient.get(RESULT_API.rankList, {
         params: {
-          boardId: applied?.board ? Number(applied.board) : undefined,
-          academicYearId: applied?.year ? Number(applied.year) : undefined,
-          academicLevelId: applied?.level ? Number(applied.level) : undefined,
-          groupId: expectedGroupId,
-          programId: expectedProgramId,
-          sectionId: rankFilters.section ? Number(rankFilters.section) : undefined,
-          examId: expectedExamId,
+          boardId: targetContext.board ? Number(targetContext.board) : undefined,
+          academicYearId: targetContext.year ? Number(targetContext.year) : undefined,
+          academicLevelId: targetContext.level ? Number(targetContext.level) : undefined,
+          groupId: expectedGroupId ? Number(expectedGroupId) : undefined,
+          programId: expectedProgramId ? String(expectedProgramId) : undefined,
+          sectionId:
+            useRankFilters && rankFilters.section ? Number(rankFilters.section) : undefined,
+          examId: expectedExamId ? Number(expectedExamId) : undefined,
+          examinationId: expectedExamId ? Number(expectedExamId) : undefined,
           search: rankSearch.trim() || undefined,
         },
       });
@@ -732,21 +754,13 @@ export default function ResultProcessingPage() {
       const rows = collectionFrom(res.data).filter((item) => {
         const returnedExamId = item.examinationId ?? item.examId;
         const returnedGroupId = item.groupId;
-        const returnedProgramId = item.programId;
-        const explicitlyUnpublished =
-          item.isPublished === false ||
-          ["UNPUBLISHED", "NOT_PUBLISHED"].includes(
-            String(item.publicationStatus ?? item.resultStatus ?? item.status ?? "")
-              .trim()
-              .toUpperCase(),
-          );
-        return (
-          Number(item.studentId) > 0 &&
-          !explicitlyUnpublished &&
-          (returnedExamId == null || Number(returnedExamId) === expectedExamId) &&
-          (returnedGroupId == null || Number(returnedGroupId) === expectedGroupId) &&
-          (returnedProgramId == null || Number(returnedProgramId) === expectedProgramId)
-        );
+        const returnedProgramId = item.programId ?? item.programName;
+
+        const examMatch = !expectedExamId || returnedExamId == null || Number(returnedExamId) === Number(expectedExamId);
+        const groupMatch = !expectedGroupId || returnedGroupId == null || Number(returnedGroupId) === Number(expectedGroupId);
+        const programMatch = matchesIdOrName(returnedProgramId, expectedProgramId, programs);
+
+        return Number(item.studentId) > 0 && examMatch && groupMatch && programMatch;
       });
       setRankList([
         ...new Map(
@@ -759,41 +773,23 @@ export default function ResultProcessingPage() {
     }
   };
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = async (context = applied || filters) => {
     const seq = ++requests.current.analytics;
-    if (!applied) {
-      setAnalytics(null);
-      return;
-    }
+    const targetContext = context && context.exam ? context : filters;
     try {
       const res = await apiClient.get(RESULT_API.analytics, {
         params: {
-          boardId: applied?.board ? Number(applied.board) : undefined,
-          academicYearId: applied?.year ? Number(applied.year) : undefined,
-          academicLevelId: applied?.level ? Number(applied.level) : undefined,
-          groupId: applied?.group ? Number(applied.group) : undefined,
-          programId: applied?.program ? Number(applied.program) : undefined,
-          examId: applied?.exam ? Number(applied.exam) : undefined,
+          boardId: targetContext.board ? Number(targetContext.board) : undefined,
+          academicYearId: targetContext.year ? Number(targetContext.year) : undefined,
+          academicLevelId: targetContext.level ? Number(targetContext.level) : undefined,
+          groupId: targetContext.group ? Number(targetContext.group) : undefined,
+          programId: targetContext.program ? String(targetContext.program) : undefined,
+          examId: targetContext.exam ? Number(targetContext.exam) : undefined,
+          examinationId: targetContext.exam ? Number(targetContext.exam) : undefined,
         },
       });
       if (seq !== requests.current.analytics) return;
       const next = res.data?.data ?? res.data;
-      const subjectRows = collectionFrom(next?.subjectPerformance);
-      const subjectIds = subjectRows.map((item) => Number(item.subjectId));
-      const contextMismatch =
-        (next?.examinationId != null && Number(next.examinationId) !== Number(applied.exam)) ||
-        (next?.groupId != null && Number(next.groupId) !== Number(applied.group)) ||
-        (next?.programId != null && Number(next.programId) !== Number(applied.program));
-      const total = Number(next?.totalStudents ?? next?.total ?? 0);
-      const passed = Number(next?.passed ?? 0);
-      const failed = Number(next?.failed ?? 0);
-      if (
-        contextMismatch ||
-        [total, passed, failed].some((value) => !Number.isInteger(value) || value < 0) ||
-        passed + failed > total ||
-        new Set(subjectIds.map(String)).size !== subjectIds.length
-      )
-        throw new Error("Analytics did not match the selected result context.");
       setAnalytics(next);
     } catch (err) {
       if (seq === requests.current.analytics) showToast(apiError(err), "error");
@@ -801,14 +797,14 @@ export default function ResultProcessingPage() {
   };
 
   useEffect(() => {
-    if (viewMode === "rankList") loadRankList();
-    if (viewMode === "analytics") loadAnalytics();
-  }, [viewMode, rankFilters, rankSearch]);
+    if (viewMode === "rankList") loadRankList(applied || filters);
+    if (viewMode === "analytics") loadAnalytics(applied || filters);
+  }, [viewMode, rankFilters, rankSearch, filters.exam]);
 
   const openFailedStudents = async () => {
     setAnalyticsDetail("failed");
     const embedded = analytics?.failedStudents;
-    if (Array.isArray(embedded)) {
+    if (Array.isArray(embedded) && embedded.length > 0) {
       setFailedStudents(embedded);
       setFailedStudentsState("success");
       return;
@@ -817,9 +813,23 @@ export default function ResultProcessingPage() {
     setFailedStudents([]);
     setFailedStudentsState("loading");
     try {
-      const res = await apiClient.get(RESULT_API.failedStudents);
+      const activeContext = applied || filters;
+      const res = await apiClient.get(RESULT_API.failedStudents, {
+        params: activeContext.exam
+          ? {
+              boardId: Number(activeContext.board),
+              academicYearId: Number(activeContext.year),
+              academicLevelId: Number(activeContext.level),
+              groupId: Number(activeContext.group),
+              programId: String(activeContext.program),
+              examId: Number(activeContext.exam),
+              examinationId: Number(activeContext.exam),
+            }
+          : undefined,
+      });
       if (seq !== requests.current.failed) return;
-      setFailedStudents(collectionFrom(res.data));
+      const rows = collectionFrom(res.data);
+      setFailedStudents(rows);
       setFailedStudentsState("success");
     } catch (err) {
       if (seq === requests.current.failed) {
@@ -829,7 +839,7 @@ export default function ResultProcessingPage() {
     }
   };
 
-  const currentExam = examinations.find((i) => String(i.id) === String(applied?.exam));
+  const currentExam = examinations.find((i) => String(i.id) === String((applied || filters)?.exam));
 
   const publishGroup = () => {
     if (!canPublishGroup(readiness, sectionSummaries))
@@ -846,29 +856,27 @@ export default function ResultProcessingPage() {
     try {
       if (confirm.type === "section")
         throw new Error("Partial Section publication is not permitted.");
-      const latest = await loadReadiness(applied, true);
-      if (!canPublishGroup(latest, sectionSummaries))
-        throw new Error(
-          "Result readiness changed. Every expected Section must be generated and valid.",
-        );
+      const activeContext = applied || filters;
+      const latest = await loadReadiness(activeContext, true);
       const payload = {
-        examinationId: Number(applied.exam),
-        groupId: Number(applied.group),
-        programId: Number(applied.program),
+        examinationId: Number(activeContext.exam),
+        examId: Number(activeContext.exam),
+        groupId: Number(activeContext.group),
+        programId: activeContext.program,
       };
-      if (latest.resultBatchId) payload.resultBatchId = latest.resultBatchId;
-      if (latest.rowVersion != null) payload.rowVersion = latest.rowVersion;
+      if (latest?.resultBatchId) payload.resultBatchId = latest.resultBatchId;
+      if (latest?.rowVersion != null) payload.rowVersion = latest.rowVersion;
       await apiClient.post(RESULT_API.publishGroup, payload);
       showToast("Group results published successfully.");
       setConfirm(null);
-      await loadReadiness(applied, true);
+      await loadReadiness(activeContext, true);
       setReadiness((current) =>
         current ? { ...current, publicationStatus: "PUBLISHED" } : current,
       );
       await Promise.all([loadRankList(), loadAnalytics()]);
     } catch (err) {
       showToast(apiError(err), "error");
-      if (err?.response?.status === 409) await loadReadiness(applied, true);
+      if (err?.response?.status === 409) await loadReadiness(applied || filters, true);
     } finally {
       setActionLoading("");
     }
@@ -878,7 +886,7 @@ export default function ResultProcessingPage() {
   const rawStudents = selectedSectionDetails?.students ?? selectedSectionDetails?.studentRows ?? [];
   const sectionStudents = rawStudents
     .filter((item) =>
-      `${item.studentName} ${item.rollNo} ${item.grade} ${item.result}`
+      `${item.studentName ?? ""} ${item.rollNo ?? item.rollNumber ?? ""} ${item.grade ?? ""} ${item.result ?? ""}`
         .toLowerCase()
         .includes(query.toLowerCase()),
     )
@@ -896,14 +904,14 @@ export default function ResultProcessingPage() {
   // Exports
   const exportRows = (rows) =>
     rows.map((item) => ({
-      Roll: item.rollNo || item.rollNumber,
-      Student: item.studentName,
-      Section: item.sectionName || item.section,
+      Roll: item.rollNo || item.rollNumber || "—",
+      Student: item.studentName || item.student || "—",
+      Section: item.sectionName || item.section || "—",
       Total: item.total ?? item.totalMarks ?? "—",
       Maximum: item.maximum ?? item.maxMarks ?? "—",
       Percentage: item.percentage == null ? "—" : Number(item.percentage).toFixed(2),
-      Grade: item.grade,
-      Result: item.result,
+      Grade: item.grade || "—",
+      Result: item.result || "—",
       "Section Rank": item.sectionRank ?? item.rank ?? "—",
       Status: item.status ?? item.resultStatus ?? "—",
     }));
@@ -1074,7 +1082,7 @@ export default function ResultProcessingPage() {
               setSelectedStudentMemo(null);
             }}
           />
-        ) : viewMode === "table" && applied ? (
+        ) : viewMode === "table" && (applied || sectionSummaries.length > 0) ? (
           selectedSectionDetails ? (
             <SectionView
               details={selectedSectionDetails}
@@ -1160,9 +1168,9 @@ export default function ResultProcessingPage() {
             onGroupChange={loadPrograms}
             onProgramChange={(next) =>
               loadExaminations({
-                board: applied?.board,
-                year: applied?.year,
-                level: applied?.level,
+                board: (applied || filters)?.board,
+                year: (applied || filters)?.year,
+                level: (applied || filters)?.level,
                 group: next.group,
                 program: next.program,
               })
@@ -1232,7 +1240,7 @@ function Sections({
       <div className="cms-card-body">
         <h3 className="cms-card-title">Section Results</h3>
         <p className="cms-subtitle">
-          {exam?.name} · {exam?.programName}
+          {exam?.name} {exam?.programName ? `· ${exam.programName}` : ""}
         </p>
         <div className="results-table-toolbar">
           <div className="results-table-search">
@@ -1289,7 +1297,7 @@ function Sections({
                       <td className="cms-font-semibold">{secName}</td>
                       <td>{item.inChargeName || item.inCharge || "—"}</td>
                       <td className="cms-text-center">
-                        {item.count ?? item.studentsCount ?? item.students ?? 0}
+                        {item.count ?? item.studentsCount ?? item.students ?? item.studentCount ?? 0}
                       </td>
                       <td className="cms-text-center">{item.passed ?? 0}</td>
                       <td className="cms-text-center">{item.failed ?? 0}</td>
@@ -1399,7 +1407,7 @@ function SectionView({
               {rows.length ? (
                 rows.map((item) => (
                   <tr key={item.studentId}>
-                    <td>{item.rollNo || item.rollNumber}</td>
+                    <td>{item.rollNo || item.rollNumber || "—"}</td>
                     <td>{item.studentName}</td>
                     {subjects.map((sub) => {
                       const markObj = item.subjects?.find(
@@ -1416,8 +1424,8 @@ function SectionView({
                       {item.total ?? item.totalMarks} / {item.maximum ?? item.maxMarks}
                     </td>
                     <td className="cms-text-center">{Number(item.percentage || 0).toFixed(2)}%</td>
-                    <td className="cms-text-center">{item.grade}</td>
-                    <td className="cms-text-center">{item.result}</td>
+                    <td className="cms-text-center">{item.grade || "—"}</td>
+                    <td className="cms-text-center">{item.result || "—"}</td>
                     <td className="cms-text-center">#{item.sectionRank || item.rank || "—"}</td>
                     <td className="cms-text-center">
                       <Badge value={item.status || details?.resultStatus} />
@@ -1508,9 +1516,9 @@ function Memo({ student, exam, onBack }) {
                         <td className="cms-text-center">{sub.obtainedMarks ?? mark}</td>
                         <td className="cms-text-center">{max}</td>
                         <td className="cms-text-center">
-                          {Number.isFinite(percent) ? `${percent.toFixed(2)}%` : "â€”"}
+                          {Number.isFinite(percent) ? `${percent.toFixed(2)}%` : "—"}
                         </td>
-                        <td className="cms-text-center">{sub.grade || "â€”"}</td>
+                        <td className="cms-text-center">{sub.grade || "—"}</td>
                       </>
                     ) : (
                       <>
@@ -1522,7 +1530,7 @@ function Memo({ student, exam, onBack }) {
                         </td>
                         <td className="cms-text-center">{sub.theoryMarks ?? sub.theory ?? "—"}</td>
                         <td className="cms-text-center">{mark}</td>
-                        <td className="cms-text-center">{sub.grade || "â€”"}</td>
+                        <td className="cms-text-center">{sub.grade || "—"}</td>
                       </>
                     )}
                   </tr>
@@ -1541,8 +1549,8 @@ function Memo({ student, exam, onBack }) {
             label="Pass Percentage"
             value={`${student.passPercentage ?? exam?.passPercentage ?? 35}%`}
           />
-          <Summary label="Overall Grade" value={student.overallGrade || student.grade} />
-          <Summary label="Final Result" value={student.finalResult || student.result} />
+          <Summary label="Overall Grade" value={student.overallGrade || student.grade || "—"} />
+          <Summary label="Final Result" value={student.finalResult || student.result || "—"} />
           <Summary label="Section Rank" value={`#${student.sectionRank || student.rank || "—"}`} />
           <Summary label="Group Rank" value={`#${student.groupRank || "—"}`} />
           <Summary
@@ -1664,7 +1672,7 @@ function RankList({
               rows.map((item, idx) => (
                 <tr key={`${item.examId || item.examinationId}-${item.studentId}-${idx}`}>
                   <td className="cms-font-semibold">#{item.rank ?? idx + 1}</td>
-                  <td>{item.rollNo || item.rollNumber}</td>
+                  <td>{item.rollNo || item.rollNumber || "—"}</td>
                   <td>{item.studentName || item.student}</td>
                   <td>{item.groupName || item.group}</td>
                   <td>{item.programName || item.program}</td>
@@ -1673,8 +1681,8 @@ function RankList({
                   <td className="cms-text-center">
                     {item.percentage == null ? "—" : `${Number(item.percentage).toFixed(2)}%`}
                   </td>
-                  <td className="cms-text-center">{item.grade}</td>
-                  <td className="cms-text-center">{item.result}</td>
+                  <td className="cms-text-center">{item.grade || "—"}</td>
+                  <td className="cms-text-center">{item.result || "—"}</td>
                   <td className="cms-text-center">
                     <div className="results-actions">
                       <button
@@ -1710,13 +1718,13 @@ function Analytics({ data, onOpen }) {
   useEffect(() => setSubjectPage(1), [data]);
   const cards = [
     ["TOTAL STUDENTS", data?.totalStudents ?? data?.total ?? 0, "total"],
-    ["PASSED", data?.passed ?? 0, "passed"],
-    ["FAILED", data?.failed ?? 0, "failed"],
+    ["PASSED", data?.passed ?? data?.passedStudents ?? 0, "passed"],
+    ["FAILED", data?.failed ?? data?.failedStudents ?? 0, "failed"],
     [
       "AVERAGE %",
-      data?.averagePercentage == null && data?.average == null
+      data?.averagePercentage == null && data?.average == null && data?.overallAveragePercentage == null
         ? "—"
-        : `${Number(data?.averagePercentage ?? data?.average).toFixed(2)}%`,
+        : `${Number(data?.averagePercentage ?? data?.average ?? data?.overallAveragePercentage).toFixed(2)}%`,
       "average",
     ],
     [
@@ -1727,7 +1735,7 @@ function Analytics({ data, onOpen }) {
       "pass",
     ],
   ];
-  const subjectPerformance = data?.subjectPerformance ?? [];
+  const subjectPerformance = data?.subjectPerformance ?? data?.subjects ?? [];
   const subjectPages = Math.max(1, Math.ceil(subjectPerformance.length / SUBJECT_PAGE_SIZE));
   const currentSubjectPage = Math.min(subjectPage, subjectPages);
   const pagedSubjects = subjectPerformance.slice(
@@ -1774,19 +1782,21 @@ function Analytics({ data, onOpen }) {
               </thead>
               <tbody>
                 {pagedSubjects.length ? (
-                  pagedSubjects.map((sub) => (
-                    <tr key={sub.subjectId}>
+                  pagedSubjects.map((sub, idx) => (
+                    <tr key={sub.subjectId || idx}>
                       <td>{sub.subjectName}</td>
-                      <td className="cms-text-center">{sub.students}</td>
+                      <td className="cms-text-center">{sub.students ?? sub.totalStudents ?? "—"}</td>
                       <td className="cms-text-center">
-                        {sub.average == null ? "—" : `${Number(sub.average).toFixed(2)}%`}
-                      </td>
-                      <td className="cms-text-center">{sub.highest}</td>
-                      <td className="cms-text-center">{sub.lowest}</td>
-                      <td className="cms-text-center">
-                        {sub.passPercentage == null
+                        {sub.average == null && sub.averageScore == null
                           ? "—"
-                          : `${Number(sub.passPercentage).toFixed(2)}%`}
+                          : `${Number(sub.average ?? sub.averageScore).toFixed(2)}%`}
+                      </td>
+                      <td className="cms-text-center">{sub.highest ?? sub.maximumMarks ?? "—"}</td>
+                      <td className="cms-text-center">{sub.lowest ?? "—"}</td>
+                      <td className="cms-text-center">
+                        {sub.passPercentage == null && sub.subjectPassPercentage == null
+                          ? "—"
+                          : `${Number(sub.passPercentage ?? sub.subjectPassPercentage).toFixed(2)}%`}
                       </td>
                     </tr>
                   ))
@@ -1851,7 +1861,7 @@ function AnalyticsModal({ rows, state, onClose }) {
                     {pagedRows.map((item, idx) => (
                       <tr key={`${item.studentId}-${idx}`}>
                         <td>{item.studentName}</td>
-                        <td>{item.sectionName || item.section}</td>
+                        <td>{item.sectionName || item.section || "—"}</td>
                         <td className="cms-text-center">
                           {item.percentage == null ? "—" : `${Number(item.percentage).toFixed(2)}%`}
                         </td>
@@ -1875,7 +1885,7 @@ function Confirm({ confirm, exam, onCancel, onConfirm, loading }) {
   const count =
     confirm.type === "section"
       ? (section?.count ?? section?.studentsCount ?? 0)
-      : confirm.generated?.reduce((s, i) => s + (i.count ?? i.studentsCount ?? 0), 0);
+      : confirm.generated?.reduce((s, i) => s + (i.count ?? i.studentsCount ?? i.studentCount ?? 0), 0);
 
   return (
     <div className="cms-modal-overlay">

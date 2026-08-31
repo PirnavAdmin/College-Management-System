@@ -622,7 +622,8 @@ function Assign({ records, context, cancel, save }) {
                     }
                     onClick={() => configureRow(row)}
                   >
-                    Configure Marks
+                    <span>Configure</span>
+                    <span>Marks</span>
                   </button>
                   <button
                     className="subject-new-row-delete"

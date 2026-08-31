@@ -2149,12 +2149,16 @@ export default function FeeManagementPage() {
   const [accountErrors, setAccountErrors] = useState({ ledger: "", collection: "" });
   const [dashboardData, setDashboardData] = useState(null);
   const [dueRows, setDueRows] = useState([]);
-  const feeRepairRanRef = useRef(false);
-  const feeAssignmentInFlightRef = useRef(new Set());
+  const [, setOverviewError] = useState("");
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const accountRequestRef = useRef({ ledger: 0, collection: 0 });
+  const overviewRequestRef = useRef(0);
+  const initialFeeLoadRef = useRef(false);
 
   const structures = apiStructures;
   const overviewAccounts = ledgerAccounts;
-  const selected = selectedId ? [...ledgerAccounts, ...collectionAccounts].find((item) => item.id === selectedId) : null;
+  const selectedBase = selectedId ? [...ledgerAccounts, ...collectionAccounts].find((item) => item.id === selectedId) : null;
+  const selected = selectedDetail || selectedBase;
   const modalOpen = Boolean(selected || collecting || receipt);
 
   const saveFeeTypes = (nextTypes) => {
@@ -2165,37 +2169,32 @@ export default function FeeManagementPage() {
     setScholarships(nextScholarships);
   };
 
-  const fetchFeeContext = useCallback(async (accountRows = []) => {
+  const fetchFeeContext = useCallback(async () => {
     const [studentsResult, admissionsResult] = await Promise.allSettled([
       apiClient.get(apiEndpoints.students.getAll),
       apiClient.get(apiEndpoints.admissions.getAll),
     ]);
     const students = studentsResult.status === "fulfilled" ? getCollection(studentsResult.value.data) : [];
     const admissions = admissionsResult.status === "fulfilled" ? getCollection(admissionsResult.value.data) : [];
-    const studentIds = Array.from(new Set(accountRows.map((row) => read(row, "studentId", "StudentId")).filter(Boolean).map(String)));
-    const detailEntries = await Promise.all(studentIds.map(async (studentId) => {
-      try {
-        const response = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(studentId));
-        return [studentId, getObject(response.data)];
-      } catch {
-        return [studentId, {}];
-      }
-    }));
     return {
       admissions,
       studentsById: mapById(students, "studentId", "StudentId", "id", "Id"),
-      feeDetailsByStudentId: new Map(detailEntries),
+      feeDetailsByStudentId: new Map(),
     };
   }, []);
 
   const loadFeeAccounts = useCallback(async (source) => {
     const endpoint = source === "collection" ? apiEndpoints.fee.collection : apiEndpoints.fee.ledger;
+    const requestId = (accountRequestRef.current[source] || 0) + 1;
+    accountRequestRef.current = { ...accountRequestRef.current, [source]: requestId };
     setAccountLoading((current) => ({ ...current, [source]: true }));
     setAccountErrors((current) => ({ ...current, [source]: "" }));
     try {
       const response = await apiClient.get(endpoint);
+      if (accountRequestRef.current[source] !== requestId) return;
       const rows = getCollection(response.data);
-      const context = await fetchFeeContext(rows);
+      const context = await fetchFeeContext();
+      if (accountRequestRef.current[source] !== requestId) return;
       const accounts = normalizeFeeAccountRows(rows, context);
       if (source === "collection") {
         setCollectionAccounts(accounts);
@@ -2203,87 +2202,39 @@ export default function FeeManagementPage() {
         setLedgerAccounts(accounts);
       }
     } catch (err) {
-      if (source === "collection") {
-        setCollectionAccounts([]);
-      } else {
-        setLedgerAccounts([]);
-      }
+      if (accountRequestRef.current[source] !== requestId) return;
       setAccountErrors((current) => ({ ...current, [source]: getApiErrorMessage(err) }));
     } finally {
-      setAccountLoading((current) => ({ ...current, [source]: false }));
+      if (accountRequestRef.current[source] === requestId) {
+        setAccountLoading((current) => ({ ...current, [source]: false }));
+      }
     }
   }, [fetchFeeContext]);
 
   const loadOverviewData = useCallback(async () => {
-    const [dashboardResult, dueResult] = await Promise.allSettled([
-      apiClient.get(apiEndpoints.fee.dashboard),
-      apiClient.get(apiEndpoints.fee.due || apiEndpoints.fee.getDue),
-    ]);
-    setDashboardData(dashboardResult.status === "fulfilled" ? getObject(dashboardResult.value.data) : null);
-    setDueRows(dueResult.status === "fulfilled" ? normalizeDueRows(getCollection(dueResult.value.data)) : []);
-  }, []);
-
-  const findStructureForAdmission = useCallback((admission, structureRows) => {
-    const boardId = textValue(admission, "boardId", "BoardId");
-    const academicYearId = textValue(admission, "academicYearId", "AcademicYearId");
-    const groupId = textValue(admission, "groupId", "GroupId");
-    const programId = textValue(admission, "programId", "ProgramId");
-    if (!boardId || !academicYearId || !groupId) return null;
-    return structureRows.find((row) => (
-      row.status !== "Inactive"
-      && String(row.boardId) === String(boardId)
-      && String(row.academicYearId) === String(academicYearId)
-      && String(row.groupId) === String(groupId)
-      && (!Number(programId) || !row.programId || String(row.programId) === String(programId))
-    )) || null;
-  }, []);
-
-  const reconcileApprovedFeeAccounts = useCallback(async () => {
-    if (feeRepairRanRef.current) return;
-    feeRepairRanRef.current = true;
-    try {
-      const [admissionsResult, studentsResult, ledgerResult, structuresResult] = await Promise.all([
-        apiClient.get(apiEndpoints.admissions.getAll),
-        apiClient.get(apiEndpoints.students.getAll),
-        apiClient.get(apiEndpoints.fee.ledger),
-        apiClient.get(apiEndpoints.fee.getStructures),
-      ]);
-      const admissions = getCollection(admissionsResult.data).filter(isApprovedAdmission);
-      const students = getCollection(studentsResult.data);
-      const ledgerRows = getCollection(ledgerResult.data);
-      const assignedStudentIds = new Set(ledgerRows.map((row) => String(read(row, "studentId", "StudentId"))).filter(Boolean));
-      const studentByAdmissionNo = new Map(students.map((student) => [normalizeKey(textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")), student]));
-      const studentByName = new Map(students.map((student) => [normalizeKey(textValue(student, "studentName", "StudentName", "name", "Name")), student]));
-      const structureRows = normalizeFeeStructureRows(getCollection(structuresResult.data));
-      let repaired = false;
-
-      for (const admission of admissions) {
-        const admissionNo = normalizeKey(textValue(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber"));
-        const student = studentByAdmissionNo.get(admissionNo) || studentByName.get(normalizeKey(admissionFullName(admission)));
-        const studentId = read(student, "studentId", "StudentId", "id", "Id");
-        if (!studentId || assignedStudentIds.has(String(studentId)) || feeAssignmentInFlightRef.current.has(String(studentId))) continue;
-        const structure = findStructureForAdmission(admission, structureRows);
-        if (!structure) continue;
-        feeAssignmentInFlightRef.current.add(String(studentId));
-        try {
-          await apiClient.post(apiEndpoints.fee.assignStudentFee, {
-            studentId: Number(studentId),
-            feeStructureId: Number(structure.id),
-          });
-          assignedStudentIds.add(String(studentId));
-          repaired = true;
-        } finally {
-          feeAssignmentInFlightRef.current.delete(String(studentId));
-        }
-      }
-
-      if (repaired) {
-        await Promise.all([loadFeeAccounts("ledger"), loadFeeAccounts("collection"), loadOverviewData()]);
-      }
-    } catch (err) {
-      setToast(`Approved admission fee account repair failed: ${getApiErrorMessage(err)}`);
+    const requestId = overviewRequestRef.current + 1;
+    overviewRequestRef.current = requestId;
+    setOverviewError("");
+    const dashboardResult = await apiClient.get(apiEndpoints.fee.dashboard).then(
+      (response) => ({ status: "fulfilled", response }),
+      (error) => ({ status: "rejected", error }),
+    );
+    const dueResult = await apiClient.get(apiEndpoints.fee.due || apiEndpoints.fee.getDue).then(
+      (response) => ({ status: "fulfilled", response }),
+      (error) => ({ status: "rejected", error }),
+    );
+    if (overviewRequestRef.current !== requestId) return;
+    if (dashboardResult.status === "fulfilled") {
+      setDashboardData(getObject(dashboardResult.response.data));
     }
-  }, [findStructureForAdmission, loadFeeAccounts, loadOverviewData]);
+    if (dueResult.status === "fulfilled") {
+      setDueRows(normalizeDueRows(getCollection(dueResult.response.data)));
+    }
+    const messages = [dashboardResult, dueResult]
+      .filter((result) => result.status === "rejected")
+      .map((result) => getApiErrorMessage(result.error));
+    if (messages.length) setOverviewError(messages.join(" "));
+  }, []);
 
   const loadFeeApiData = useCallback(async () => {
     setStructureLoading(true);
@@ -2307,32 +2258,31 @@ export default function FeeManagementPage() {
     if (structuresResult.status === "fulfilled") {
       setApiStructures(normalizeFeeStructureRows(getCollection(structuresResult.value.data)));
     } else {
-      setApiStructures([]);
       setStructureError(getApiErrorMessage(structuresResult.reason));
     }
     if (scholarshipsResult.status === "fulfilled") {
       setScholarships(normalizeScholarshipRows(getCollection(scholarshipsResult.value.data)));
     }
-    setMasters({
+    setMasters((current) => ({
       boards: boardsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
-        : [],
+        : current.boards,
       years: yearsResult.status === "fulfilled"
         ? uniqueAcademicYearsByName(
           toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
           (item) => item.label,
         )
-        : [],
+        : current.years,
       levels: levelsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "name", "Name"])
-        : [],
+        : current.levels,
       groups: groupsResult.status === "fulfilled"
         ? getCollection(groupsResult.value.data).map(groupOption).filter(Boolean)
-        : [],
+        : current.groups,
       sections: sectionsResult.status === "fulfilled"
         ? getCollection(sectionsResult.value.data).map(sectionOption).filter(Boolean)
-        : [],
-    });
+        : current.sections,
+    }));
     setMasterErrors({
       boards: boardsResult.status === "rejected" ? getApiErrorMessage(boardsResult.reason) : "",
       years: yearsResult.status === "rejected" ? getApiErrorMessage(yearsResult.reason) : "",
@@ -2355,6 +2305,29 @@ export default function FeeManagementPage() {
   };
 
   useEffect(() => {
+    let ignore = false;
+    setSelectedDetail(null);
+    if (!selectedId || !selectedBase?.studentId) return undefined;
+    apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId))
+      .then((response) => {
+        if (ignore) return;
+        const detail = getObject(response.data);
+        const [normalized] = normalizeFeeAccountRows([selectedBase], {
+          feeDetailsByStudentId: new Map([[String(selectedBase.studentId), detail]]),
+        });
+        setSelectedDetail(normalized || selectedBase);
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setAccountErrors((current) => ({ ...current, ledger: current.ledger || getApiErrorMessage(err) }));
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [selectedBase, selectedId]);
+
+  useEffect(() => {
     if (!modalOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -2367,10 +2340,13 @@ export default function FeeManagementPage() {
     loadFeeApiData();
     loadFeeAccounts("ledger");
     loadOverviewData();
-    reconcileApprovedFeeAccounts();
-  }, [loadFeeApiData, loadFeeAccounts, loadOverviewData, reconcileApprovedFeeAccounts]);
+  }, [loadFeeApiData, loadFeeAccounts, loadOverviewData]);
 
   useEffect(() => {
+    if (!initialFeeLoadRef.current) {
+      initialFeeLoadRef.current = true;
+      return;
+    }
     if (tab === "Fee Collection") loadFeeAccounts("collection");
     if (tab === "Student Fee Ledger" || tab === "Payment History" || tab === "Overview") loadFeeAccounts("ledger");
     if (tab === "Overview" || tab === "Payment History" || tab === "Fee Collection") loadOverviewData();

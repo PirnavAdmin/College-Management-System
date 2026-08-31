@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
+  BadgeCheck,
   Check,
   ClipboardList,
   Edit3,
@@ -371,7 +372,7 @@ const appendIfPresent = (formData, key, value) => {
 
 const ADMISSION_DRAFT_KEY = "studentAdmissionDraft";
 const ADMISSION_DRAFT_VERSION = 2;
-const ADMISSION_STATUS_OPTIONS = ["Pending", "Approved", "Rejected"];
+const ADMISSION_STATUS_OPTIONS = ["Pending", "Verified", "Approved", "Rejected"];
 const COURSE_PAYMENT_PLANS = ["Full Payment", "Installment Payment"];
 const COURSE_PAYMENT_PLAN_LABELS = {
   "Full Payment": "Full Course Payment",
@@ -641,14 +642,26 @@ const clearAdmissionDraft = () => {
 
 const normalizeAdmissionStatus = (value, fallback = "Pending") => {
   const status = String(value || "").trim().toLowerCase();
-  if (["approved", "approve", "active", "completed", "complete", "submitted"].includes(status)) return "Approved";
+  if (["approved", "approve", "active", "completed", "complete"].includes(status)) return "Approved";
   if (["rejected", "reject", "inactive", "cancelled", "canceled", "denied"].includes(status)) return "Rejected";
-  if (["pending", "draft", "incomplete", "new", "created"].includes(status)) return "Pending";
+  if (["verified", "verify"].includes(status)) return "Verified";
+  if (["pending", "draft", "incomplete", "new", "created", "submitted"].includes(status)) return "Pending";
   return fallback;
 };
 
+const isAdmissionVerified = (...sources) => sources.some((source) => {
+  const status = readText(source, "status", "Status", "admissionStatus", "AdmissionStatus", "verificationStatus", "VerificationStatus");
+  const normalized = String(status || "").trim().toLowerCase();
+  return normalized === "verified"
+    || normalized === "approved"
+    || normalized === "approve"
+    || read(source, "isVerified", "IsVerified", "verified", "Verified") === true
+    || Boolean(read(source, "verifiedAt", "VerifiedAt", "verifiedDate", "VerifiedDate", "verifiedBy", "VerifiedBy"));
+});
+
 const admissionStatusClass = (status) => {
   if (status === "Approved") return "cms-badge-active";
+  if (status === "Verified") return "cms-badge-info";
   if (status === "Rejected") return "cms-badge-danger";
   return "cms-badge-warn";
 };
@@ -746,18 +759,29 @@ const numericId = (value) => {
 const readStudentFeeAssignmentId = (payload) => {
   const data = getObject(payload);
   const rows = getCollection(payload);
-  const source = rows[0] || data;
-  return readId(
-    source,
-    "studentFeeAssignmentId",
-    "StudentFeeAssignmentId",
-    "studentFeeId",
-    "StudentFeeId",
-    "assignmentId",
-    "AssignmentId",
-    "id",
-    "Id",
-  );
+  const sources = [
+    data,
+    read(data, "studentFee", "StudentFee", "feeAccount", "FeeAccount", "assignment", "Assignment"),
+    rows[0],
+    read(rows[0], "studentFee", "StudentFee", "feeAccount", "FeeAccount", "assignment", "Assignment"),
+  ];
+  for (const source of sources) {
+    const id = readId(
+      source,
+      "studentFeeAssignmentId",
+      "StudentFeeAssignmentId",
+      "studentFeeId",
+      "StudentFeeId",
+      "feeAccountId",
+      "FeeAccountId",
+      "assignmentId",
+      "AssignmentId",
+      "id",
+      "Id",
+    );
+    if (numericId(id)) return id;
+  }
+  return "";
 };
 
 const readPaymentPlanId = (payload) => readId(
@@ -770,11 +794,33 @@ const readPaymentPlanId = (payload) => readId(
 
 const resolveApprovedStudentId = (...sources) => {
   for (const source of sources) {
-    const student = read(source, "student", "Student");
-    const id = readId(source, "studentId", "StudentId") || readId(student, "studentId", "StudentId", "id", "Id");
+    const student = read(source, "student", "Student", "approvedStudent", "ApprovedStudent", "createdStudent", "CreatedStudent", "studentDetails", "StudentDetails");
+    const id = readId(source, "studentId", "StudentId", "approvedStudentId", "ApprovedStudentId", "createdStudentId", "CreatedStudentId")
+      || readId(student, "studentId", "StudentId", "id", "Id");
     if (numericId(id)) return numericId(id);
   }
   return null;
+};
+
+const sameAdmissionIdentity = (left, right) => {
+  const leftAdmissionId = readId(left, "admissionId", "AdmissionId", "id", "Id");
+  const rightAdmissionId = readId(right, "admissionId", "AdmissionId", "id", "Id");
+  if (leftAdmissionId && rightAdmissionId && String(leftAdmissionId) === String(rightAdmissionId)) return true;
+  const leftNo = readText(left, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber");
+  const rightNo = readText(right, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber");
+  return Boolean(leftNo && rightNo && leftNo.trim().toLowerCase() === rightNo.trim().toLowerCase());
+};
+
+const sameStudentIdentity = (student, admission) => {
+  const studentAdmissionNo = readText(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber");
+  const admissionNo = readText(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber");
+  if (studentAdmissionNo && admissionNo && studentAdmissionNo.trim().toLowerCase() === admissionNo.trim().toLowerCase()) return true;
+  const studentName = readText(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName").trim().toLowerCase();
+  const admissionName = (readText(admission, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+    || [readText(admission, "firstName", "FirstName"), readText(admission, "lastName", "LastName")].filter(Boolean).join(" "))
+    .trim()
+    .toLowerCase();
+  return Boolean(studentName && admissionName && studentName === admissionName);
 };
 
 const admissionFeeApprovalBody = (admissionId, status) => {
@@ -784,6 +830,11 @@ const admissionFeeApprovalBody = (admissionId, status) => {
   }
   return { admissionId: id, remarks: "" };
 };
+
+const admissionVerificationBody = (admissionId) => ({
+  admissionId: numericId(admissionId),
+  remarks: "",
+});
 
 const collectPayload = ({ studentId, studentFeeId, amount, values, feeInstallmentId = null, note = "" }) => ({
   studentId: Number(studentId),
@@ -812,7 +863,7 @@ const findApplicableFeeStructure = async ({ boardId, academicYearId, groupId, pr
     String(item.boardId) === String(boardId)
     && String(item.academicYearId) === String(academicYearId)
     && String(item.groupId) === String(groupId)
-    && (programId ? String(item.programId) === String(programId) || !item.programId : !item.programId)
+    && (Number(programId) ? String(item.programId) === String(programId) || !item.programId : true)
   ));
   if (!matching) throw new Error("No active fee structure is configured for the approved student's academic combination.");
   return matching;
@@ -1422,6 +1473,7 @@ export default function AdmissionPage() {
   const pincodeRequestRef = useRef(0);
   const programRequestRef = useRef(0);
   const boardMappingRequestRef = useRef(0);
+  const approvedFeeSyncRef = useRef(new Set());
   const autoLocationRef = useRef({ city: "", district: "", state: "" });
 
   const current = allSteps[step];
@@ -2415,13 +2467,35 @@ export default function AdmissionPage() {
     refreshAdmissions();
   };
 
-  const ensureApprovedStudentFeeAccount = async ({ admissionId, approvedPayload }) => {
+  const resolveApprovedStudentIdFromBackend = useCallback(async ({ admissionId, approvedPayload, detail, detailRow }) => {
+    const directId = resolveApprovedStudentId(approvedPayload, detail, detailRow?.raw, detailRow);
+    if (directId) return directId;
+
+    const currentDetailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
+    const currentDetail = getObject(currentDetailResponse.data);
+    const currentRow = normalizeAdmissionRow(currentDetail);
+    const detailId = resolveApprovedStudentId(currentDetail, currentRow.raw, currentRow);
+    if (detailId) return detailId;
+
+    const admissionsResponse = await apiClient.get(apiEndpoints.admissions.getAll);
+    const admissionRows = getCollection(admissionsResponse.data);
+    const matchingAdmission = admissionRows.find((item) => sameAdmissionIdentity(item, currentDetail));
+    const admissionListId = resolveApprovedStudentId(matchingAdmission);
+    if (admissionListId) return admissionListId;
+
+    const studentsResponse = await apiClient.get(apiEndpoints.students.getAll);
+    const studentRows = getCollection(studentsResponse.data);
+    const matchingStudent = studentRows.find((item) => sameStudentIdentity(item, currentDetail));
+    return resolveApprovedStudentId(matchingStudent);
+  }, []);
+
+  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload }) => {
     const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
     const detail = getObject(detailResponse.data);
     const detailRow = normalizeAdmissionRow(detail);
-    const studentId = resolveApprovedStudentId(approvedPayload, detail, detailRow.raw, detailRow);
+    const studentId = await resolveApprovedStudentIdFromBackend({ admissionId, approvedPayload, detail, detailRow });
     if (!studentId) {
-      throw new Error("Admission was approved, but the approved student ID was not returned by the backend.");
+      throw new Error("Admission approved successfully, but the backend did not expose the created student ID required for fee assignment.");
     }
 
     try {
@@ -2487,7 +2561,7 @@ export default function AdmissionPage() {
     }
 
     return { studentId, studentFeeId, reused: false };
-  };
+  }, [resolveApprovedStudentIdFromBackend]);
 
   const updateAdmissionStatus = async (record, status) => {
     setActionBusy(`${status}-${record.id}`);
@@ -2495,10 +2569,20 @@ export default function AdmissionPage() {
     try {
       const admissionId = record.admissionId || record.id;
       if (!admissionId) throw new Error("Admission ID is required for this action.");
+      if (status === "Approved") {
+        const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
+        const latestDetail = getObject(detailResponse.data);
+        const latestRow = normalizeAdmissionRow(latestDetail);
+        if (!isAdmissionVerified(record.raw, record, latestDetail, latestRow.raw, latestRow)) {
+          setToast("Verify the admission before approving.");
+          return;
+        }
+      }
       const response = await apiClient.post(endpoint(admissionId), admissionFeeApprovalBody(admissionId, status));
       if (status === "Approved") {
         try {
           await ensureApprovedStudentFeeAccount({ admissionId, approvedPayload: getObject(response.data) });
+          approvedFeeSyncRef.current.add(String(admissionId));
         } catch (feeErr) {
           await refreshAdmissions();
           setToast(`Admission ${record.admissionNo} was approved, but fee account creation failed: ${getApiErrorMessage(feeErr)}`);
@@ -2510,13 +2594,61 @@ export default function AdmissionPage() {
         ? `Admission ${record.admissionNo} approved and fee account is ready.`
         : `Admission ${record.admissionNo} marked as ${status}.`);
     } catch (err) {
-      setToast(getApiErrorMessage(err));
+      setToast(status === "Approved"
+        ? `Admission approval failed: ${getApiErrorMessage(err)}`
+        : getApiErrorMessage(err));
     } finally {
       setActionBusy("");
       setApproveTarget(null);
       setRejectTarget(null);
     }
   };
+
+  const verifyAdmission = async (record) => {
+    setActionBusy(`Verified-${record.id}`);
+    try {
+      const admissionId = record.admissionId || record.id;
+      if (!admissionId) throw new Error("Admission ID is required for this action.");
+      await apiClient.post(apiEndpoints.admissions.verify(admissionId), admissionVerificationBody(admissionId));
+      await refreshAdmissions();
+      setToast(`Admission ${record.admissionNo} verified successfully.`);
+    } catch (err) {
+      setToast(`Admission verification failed: ${getApiErrorMessage(err)}`);
+    } finally {
+      setActionBusy("");
+    }
+  };
+
+  useEffect(() => {
+    if (listLoading || !admissions.length) return undefined;
+    const approvedRows = admissions.filter((row) => (
+      row.status === "Approved"
+      && row.admissionId
+      && !approvedFeeSyncRef.current.has(String(row.admissionId))
+    ));
+    if (!approvedRows.length) return undefined;
+
+    let cancelled = false;
+    const syncApprovedFeeAccounts = async () => {
+      for (const row of approvedRows) {
+        if (cancelled) return;
+        approvedFeeSyncRef.current.add(String(row.admissionId));
+        try {
+          await ensureApprovedStudentFeeAccount({ admissionId: row.admissionId, approvedPayload: row.raw });
+        } catch (err) {
+          if (!cancelled) {
+            setToast(`Admission ${row.admissionNo} is approved, but fee account creation failed: ${getApiErrorMessage(err)}`);
+          }
+          return;
+        }
+      }
+    };
+    syncApprovedFeeAccounts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [admissions, ensureApprovedStudentFeeAccount, listLoading]);
 
   const submit = async () => {
     if (saving) return;
@@ -2620,12 +2752,21 @@ export default function AdmissionPage() {
                         <button type="button" className="cms-action-btn view" title="View / edit admission" aria-label="View or edit admission" disabled={actionBusy === `Load-${row.id}`} onClick={() => continueAdmission(row)}>
                           <Eye size={15} />
                         </button>
-                        <button type="button" className="cms-action-btn edit" title="Approve admission" aria-label="Approve admission" disabled={actionBusy === `Approved-${row.id}` || row.status === "Approved"} onClick={() => setApproveTarget(row)}>
-                          <Check size={15} />
-                        </button>
-                        <button type="button" className="cms-action-btn danger" title="Reject admission" aria-label="Reject admission" disabled={actionBusy === `Rejected-${row.id}` || row.status === "Rejected"} onClick={() => setRejectTarget(row)}>
-                          <X size={15} />
-                        </button>
+                        {row.status === "Pending" ? (
+                          <button type="button" className="cms-action-btn edit" title="Verify admission" aria-label="Verify admission" disabled={actionBusy === `Verified-${row.id}`} onClick={() => verifyAdmission(row)}>
+                            <BadgeCheck size={15} />
+                          </button>
+                        ) : null}
+                        {row.status === "Verified" ? (
+                          <button type="button" className="cms-action-btn edit" title="Approve admission" aria-label="Approve admission" disabled={actionBusy === `Approved-${row.id}`} onClick={() => setApproveTarget(row)}>
+                            <Check size={15} />
+                          </button>
+                        ) : null}
+                        {row.status === "Pending" || row.status === "Verified" ? (
+                          <button type="button" className="cms-action-btn danger" title="Reject admission" aria-label="Reject admission" disabled={actionBusy === `Rejected-${row.id}`} onClick={() => setRejectTarget(row)}>
+                            <X size={15} />
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

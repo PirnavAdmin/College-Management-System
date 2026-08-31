@@ -441,90 +441,139 @@ export default function MarksEntryPage() {
         showToast("Unable to load programs for the selected group.", "error");
     }
   };
-  const loadSections = async (context) => {
-    const sequence = ++requests.current.sections;
-    setSections([]);
-    if (
-      ![
-        context.board,
-        context.academicYear,
-        context.academicLevel,
-        context.group,
-        context.program,
-      ].every((value) => Number(value) > 0)
-    )
-      return;
-    try {
-      const response = await apiClient.get(EVALUATION_API.sections, {
-        params: {
-          boardId: Number(context.board),
-          academicYearId: Number(context.academicYear),
-          academicLevelId: Number(context.academicLevel),
-          groupId: Number(context.group),
-          programId: Number(context.program),
-          isActive: true,
-        },
-      });
-      if (sequence !== requests.current.sections) return;
-      setSections(
-        collectionFrom(response.data)
-          .map(normalizeSection)
-          .filter(
-            (item) =>
-              item.sectionId > 0 &&
-              item.boardId === Number(context.board) &&
-              item.academicYearId === Number(context.academicYear) &&
-              item.academicLevelId === Number(context.academicLevel) &&
-              item.groupId === Number(context.group) &&
-              item.programId === Number(context.program) &&
-              item.active,
-          ),
-      );
-    } catch (error) {
-      if (sequence === requests.current.sections) showToast(apiError(error), "error");
+ const loadSections = async (context) => {
+  const sequence = ++requests.current.sections;
+  setSections([]);
+
+  const boardId = Number(context.board);
+  const academicYearId = Number(context.academicYear);
+  const academicLevelId = Number(context.academicLevel);
+  const groupId = Number(context.group);
+  const programId = Number(context.program);
+
+  if (
+    ![
+      boardId,
+      academicYearId,
+      academicLevelId,
+      groupId,
+      programId,
+    ].every(positiveId)
+  ) {
+    return [];
+  }
+
+  const selectedProgram = programs.find(
+    (item) =>
+      String(item.programId) === String(programId) &&
+      (
+        !positiveId(item.groupId) ||
+        String(item.groupId) === String(groupId)
+      )
+  );
+
+  const groupProgramId = Number(selectedProgram?.groupProgramId);
+
+  try {
+    /*
+     * Fetch all Sections first.
+     * Do not pass filtering query parameters to the API.
+     */
+    const response = await apiClient.get(EVALUATION_API.sections);
+
+    if (sequence !== requests.current.sections) {
+      return [];
     }
-  };
+
+    const allSections = collectionFrom(response.data)
+      .map(normalizeSection)
+      .filter(
+        (item) =>
+          positiveId(item.sectionId) &&
+          Boolean(item.sectionName) &&
+          item.active
+      );
+
+    /*
+     * Filter the complete Section collection locally using
+     * the selected academic configuration.
+     */
+    const matchingSections = allSections.filter(
+      (item) =>
+        item.boardId === boardId &&
+        item.academicYearId === academicYearId &&
+        item.academicLevelId === academicLevelId &&
+        item.groupId === groupId &&
+        item.programId === programId &&
+        (
+          !positiveId(groupProgramId) ||
+          !positiveId(item.groupProgramId) ||
+          item.groupProgramId === groupProgramId
+        )
+    );
+
+    setSections(matchingSections);
+    return matchingSections;
+  } catch (error) {
+    if (sequence === requests.current.sections) {
+      setSections([]);
+      showToast(apiError(error), "error");
+    }
+
+    return [];
+  }
+};
   const loadExaminations = async (context) => {
     const sequence = ++requests.current.exams;
     setExaminations([]);
+
+    const boardId = Number(context.board);
+    const academicYearId = Number(context.academicYear);
+    const academicLevelId = Number(context.academicLevel);
+    const groupId = Number(context.group);
+    const programId = Number(context.program);
+
     if (
-      ![
-        context.board,
-        context.academicYear,
-        context.academicLevel,
-        context.group,
-        context.program,
-      ].every((value) => Number(value) > 0)
-    )
-      return;
+      ![boardId, academicYearId, academicLevelId, groupId, programId].every(positiveId)
+    ) {
+      return [];
+    }
+
     try {
       const response = await apiClient.get(EVALUATION_API.examinations, {
         params: {
-          BoardId: Number(context.board),
-          AcademicYearId: Number(context.academicYear),
-          AcademicLevelId: Number(context.academicLevel),
-          GroupId: Number(context.group),
-          ProgramId: Number(context.program),
+          BoardId: boardId,
+          AcademicYearId: academicYearId,
+          AcademicLevelId: academicLevelId,
+          GroupId: groupId,
+          ProgramId: programId,
           Status: "COMPLETED",
         },
       });
-      if (sequence !== requests.current.exams) return;
+
+      if (sequence !== requests.current.exams) return [];
+
       const next = collectionFrom(response.data)
         .map(normalizeExam)
         .filter(
           (item) =>
-            item.examinationId > 0 &&
+            positiveId(item.examinationId) &&
             item.status === "COMPLETED" &&
-            item.boardId === Number(context.board) &&
-            item.academicYearId === Number(context.academicYear) &&
-            item.academicLevelId === Number(context.academicLevel) &&
-            item.groupId === Number(context.group) &&
-            item.programId === Number(context.program),
+            item.boardId === boardId &&
+            item.academicYearId === academicYearId &&
+            item.academicLevelId === academicLevelId &&
+            item.groupId === groupId &&
+            item.programId === programId,
         );
+
       setExaminations(next);
       return next;
     } catch (error) {
-      if (sequence === requests.current.exams) showToast(apiError(error), "error");
+      if (sequence === requests.current.exams) {
+        setExaminations([]);
+        showToast(apiError(error), "error");
+      }
+
       return null;
     }
   };
@@ -761,11 +810,16 @@ export default function MarksEntryPage() {
     }
   };
   const changeFilter = (key, value) => {
-    const next = { ...filters, [key]: value };
+    const next = {
+      ...filters,
+      [key]: value,
+    };
+
     if (key === "board") {
       const selectedYear = academicYears.find(
         (item) => String(item.academicYearId) === String(next.academicYear),
       );
+
       Object.assign(next, {
         academicYear:
           selectedYear &&
@@ -777,14 +831,35 @@ export default function MarksEntryPage() {
         section: "",
         examination: "",
       });
+
       requests.current.groups += 1;
       requests.current.programs += 1;
     }
-    if (key === "academicYear" || key === "academicLevel")
-      Object.assign(next, { section: "", examination: "" });
-    if (key === "group") Object.assign(next, { program: "", section: "", examination: "" });
-    if (key === "program") Object.assign(next, { section: "", examination: "" });
+
+    if (key === "academicYear" || key === "academicLevel") {
+      Object.assign(next, {
+        section: "",
+        examination: "",
+      });
+    }
+
+    if (key === "group") {
+      Object.assign(next, {
+        program: "",
+        section: "",
+        examination: "",
+      });
+    }
+
+    if (key === "program") {
+      Object.assign(next, {
+        section: "",
+        examination: "",
+      });
+    }
+
     setFilters(next);
+
     requests.current.sections += 1;
     requests.current.exams += 1;
     requests.current.search += 1;
@@ -792,14 +867,20 @@ export default function MarksEntryPage() {
     requests.current.readiness += 1;
     requests.current.analysis += 1;
     requests.current.student += 1;
+
     clearResults();
-    if (key === "board") loadGroups(value);
-    if (key === "group") loadPrograms(value);
+
+    if (key === "board") {
+      loadGroups(value);
+    }
+
+    if (key === "group") {
+      loadPrograms(value);
+    }
+
     if (
       ["academicYear", "academicLevel", "program"].includes(key) &&
-      [next.board, next.academicYear, next.academicLevel, next.group, next.program].every(
-        (item) => Number(item) > 0,
-      )
+      [next.board, next.academicYear, next.academicLevel, next.group, next.program].every(positiveId)
     ) {
       loadSections(next);
       loadExaminations(next);

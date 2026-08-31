@@ -235,11 +235,26 @@
   background: var(--cms-amber-soft);
 }
 .subject-configure-button {
+<<<<<<< HEAD
+  flex-direction: column;
+  height: 44px;
+  min-width: 96px;
+  padding: 5px 14px;
+  font-size: 13px;
+  line-height: 1.15;
+  white-space: normal;
+}
+.subject-configure-button span {
+  display: block;
+=======
   height: 36px;
-  min-width: 80px;
+  min-width: 148px;
   padding: 6px 14px;
   font-size: 13px;
   white-space: nowrap;
+  flex: 0 0 auto;
+  width: auto;
+>>>>>>> 9e869fbbd616051ef99357c7fc4f46f71acddd31
 }
 .subject-btn-spinner {
   width: 14px;
@@ -258,7 +273,7 @@
 .assignment-head,
 .assignment-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.1fr) minmax(130px, 0.7fr) minmax(330px, 1.6fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(190px, 1.1fr) minmax(130px, 0.7fr) minmax(300px, 1.2fr) minmax(280px, 1.2fr);
   gap: 10px;
   align-items: center;
 }
@@ -316,15 +331,26 @@
   position: relative;
 }
 .subject-row-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(148px, 1fr) 36px;
   align-items: center;
-  justify-content: flex-start;
-  flex-wrap: wrap;
   gap: 6px;
+  width: 100%;
   min-width: 0;
 }
+.assignment-row .subject-configure-button {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 148px !important;
+  min-width: 148px !important;
+  max-width: none !important;
+  overflow: visible;
+  justify-self: start;
+}
+.subject-row-actions .subject-new-row-delete { justify-self: end; }
 .subject-row-actions small {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   margin-top: 2px;
 }
 .subject-new-row-delete {
@@ -579,6 +605,13 @@
 .subject-context-select {
   display: block;
   min-width: 0;
+}
+#root .cms-content .subject-row-actions .subject-configure-button {
+  width: auto;
+  min-width: 96px;
+  height: 44px;
+  padding: 5px 14px;
+  border-radius: 8px;
 }
 .subject-context-select select {
   width: 100%;

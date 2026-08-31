@@ -130,11 +130,30 @@ const findExamType = (types, value) => {
     ),
   );
 };
-const apiError = (error) =>
-  error?.response?.data?.detail ||
-  error?.response?.data?.message ||
-  error?.response?.data?.title ||
-  getApiErrorMessage(error);
+const apiError = (error) => {
+  const data = error?.response?.data;
+
+  if (data?.errors && typeof data.errors === "object") {
+    const validationMessages = Object.entries(data.errors)
+      .flatMap(([field, messages]) => {
+        const items = Array.isArray(messages) ? messages : [messages];
+
+        return items
+          .filter(Boolean)
+          .map((message) => `${field}: ${message}`);
+      })
+      .join(" ");
+
+    if (validationMessages) return validationMessages;
+  }
+
+  return (
+    data?.detail ||
+    data?.message ||
+    data?.title ||
+    getApiErrorMessage(error)
+  );
+};
 const normalizeSchedule = (item) => ({
   ...item,
   id: item.examScheduleId ?? item.id,
@@ -275,8 +294,19 @@ const patternsForProgram = (patterns, programId, groupProgramId) =>
       (groupProgramId && String(pattern.groupProgramId) === String(groupProgramId)),
   );
 const validateExamConfiguration = (exam) => {
-  if (!exam.groupId || !exam.programId || !exam.examPatternId || !exam.examType)
+  if (
+    !Number.isInteger(Number(exam.groupId)) ||
+    Number(exam.groupId) <= 0 ||
+    !Number.isInteger(Number(exam.programId)) ||
+    Number(exam.programId) <= 0 ||
+    !Number.isInteger(Number(exam.examPatternId)) ||
+    Number(exam.examPatternId) <= 0 ||
+    !Number.isInteger(Number(exam.assessmentTypeId)) ||
+    Number(exam.assessmentTypeId) <= 0
+  ) {
     return "Select a valid Program, Exam Pattern and Exam Type.";
+  }
+
   return "";
 };
 const getScheduleMode = (exam, patterns = []) =>
@@ -488,6 +518,9 @@ export default function ExaminationPage() {
     detailRequestRef = useRef(0),
     scheduleRequestRef = useRef(new Map()),
     mastersRef = useRef(EMPTY_MASTERS);
+  const isDeletingExam = Boolean(remove) && busyAction === `delete-exam-${remove.id}`;
+  const isDeletingSchedule =
+    Boolean(removeSchedule) && busyAction === `delete-schedule-${removeSchedule.id}`;
   const {
     boards: BOARDS,
     years: YEARS,
@@ -853,7 +886,7 @@ export default function ExaminationPage() {
               (item) =>
                 Number(item.id) > 0 &&
                 item.isAvailable !== false &&
-                Number(item.capacity) >= schedulingContext.requiredCapacity,
+                Number(item.capacity) >= Number(schedulingContext?.requiredCapacity ?? 0),
             ),
         );
       } else {
@@ -1153,7 +1186,7 @@ export default function ExaminationPage() {
                         </td>
                         <td>
                           <span
-                            className="exam-cell-truncate"
+                            className="exam-level-two-lines"
                             title={e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}
                           >
                             {e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}
@@ -1184,7 +1217,7 @@ export default function ExaminationPage() {
                           {d(e.startDate)}
                           <small className="exam-muted">to {d(e.endDate)}</small>
                         </td>
-                        <td>
+                        <td className="exam-status-cell">
                           <StatusBadge value={e.status} />
                         </td>
                         <td>
@@ -1553,7 +1586,7 @@ export default function ExaminationPage() {
               endDate: updated.endDate,
               examPattern:
                 findPattern(EXAM_PATTERNS, updated.examPatternId)?.code || updated.examPattern,
-              examPatternId: Number(updated.examPatternId),
+              examPatternId: String(updated.examPatternId),
               totalMarks: Number(updated.totalMarks),
               passPercentage: Number(updated.passPercentage),
               description: updated.description || "",
@@ -1575,6 +1608,8 @@ export default function ExaminationPage() {
           title="Delete draft examination"
           message={`Delete ${remove.name}? This draft has no schedules.`}
           onCancel={() => setRemove(null)}
+          loading={isDeletingExam}
+          loadingLabel="Deleting..."
           onConfirm={async () => {
             if (busyAction) return;
             setBusyAction("delete-exam-" + remove.id);
@@ -1606,6 +1641,8 @@ export default function ExaminationPage() {
               : `Remove the ${removeSchedule.subjectName} schedule?`
           }
           onCancel={() => setRemoveSchedule(null)}
+          loading={isDeletingSchedule}
+          loadingLabel="Removing..."
           onConfirm={async () => {
             if (busyAction) return;
             setBusyAction("delete-schedule-" + removeSchedule.id);
@@ -1870,12 +1907,17 @@ function ExamForm({
       "groupId",
       "programId",
       "examPatternId",
-      "examType",
+      "assessmentTypeId",
       "startDate",
       "endDate",
     ].forEach((k) => {
       if (!String(form[k] || "").trim())
-        x[k] = k === "programId" ? "Please select a Program." : "Required";
+        x[k] =
+          k === "programId"
+            ? "Please select a Program."
+            : k === "assessmentTypeId"
+              ? "Please select an Exam Type."
+              : "Required";
     });
     if (!normalizedExamName) x.name = "Exam Name is required.";
     else if (normalizedExamName.length < 2)
@@ -1907,8 +1949,11 @@ function ExamForm({
       String(selectedProgram?.groupProgramId) !== String(form.groupProgramId)
     )
       x.programId = "The selected Group–Program association is invalid.";
-    if (!Number.isInteger(Number(form.assessmentTypeId)) || Number(form.assessmentTypeId) <= 0)
-      x.examType = "Select a valid Exam Type.";
+    if (
+      String(form.assessmentTypeId || "").trim() &&
+      (!Number.isInteger(Number(form.assessmentTypeId)) || Number(form.assessmentTypeId) <= 0)
+    )
+      x.assessmentTypeId = "Select a valid Exam Type.";
     if (form.startDate && form.endDate && form.startDate > form.endDate)
       x.endDate = "End date must be on or after the start date.";
     if (!Number.isInteger(Number(form.totalMarks)) || Number(form.totalMarks) <= 0)
@@ -1962,18 +2007,23 @@ function ExamForm({
         programId: Number(form.programId),
         assessmentTypeId: Number(form.assessmentTypeId),
         examType:
-          EXAM_TYPES.find((item) => String(item.id) === String(form.assessmentTypeId))?.examType ??
-          form.examType,
+          EXAM_TYPES.find(
+            (item) => String(item.id) === String(form.assessmentTypeId)
+          )?.examType ?? form.examType,
         startDate: form.startDate,
         endDate: form.endDate,
         examPattern: pattern?.code ?? form.examPattern ?? "",
-        examPatternId: Number(form.examPatternId),
+        examPatternId: String(form.examPatternId),
         totalMarks: Number(form.totalMarks),
         passPercentage: Number(form.passPercentage),
         description: normalizedDescription,
         status: "DRAFT",
-        ...(form.groupProgramId ? { groupProgramId: Number(form.groupProgramId) } : {}),
-        ...(existing?.rowVersion != null ? { rowVersion: existing.rowVersion } : {}),
+        ...(form.groupProgramId
+          ? { groupProgramId: Number(form.groupProgramId) }
+          : {}),
+        ...(existing?.rowVersion != null
+          ? { rowVersion: existing.rowVersion }
+          : {}),
       };
       const response = existing
         ? await apiClient.put(EXAM_API.byId(existing.id), payload)
@@ -2105,10 +2155,14 @@ function ExamForm({
                       assessmentTypeId: v,
                       examType: selected?.examType ?? selected?.name ?? "",
                     }));
-                    setErrors((current) => ({ ...current, examType: undefined, form: undefined }));
+                    setErrors((current) => ({
+                      ...current,
+                      assessmentTypeId: undefined,
+                      form: undefined,
+                    }));
                   }}
                   options={allowedTypes}
-                  error={errors.examType}
+                  error={errors.assessmentTypeId}
                 />
               </div>
             </section>
@@ -2418,7 +2472,7 @@ function Schedule({
         });
       } else {
         const subject = selectedSubjects[0],
-          marks = getMarksConfig(exam, subject);
+          marks = getMarksConfig(exam, subject, SUBJECTS);
         await apiClient.post(EXAM_API.schedules, {
           ...commonPayload,
           examinationId: Number(exam.id),

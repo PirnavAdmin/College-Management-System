@@ -1,11 +1,10 @@
-import { BookOpen, CalendarCheck, ClipboardList, FileText, Megaphone, User, Wallet, LogOut } from "lucide-react";
+import { BookOpen, CalendarCheck, FileText, Megaphone, User, Wallet, LogOut } from "lucide-react";
 import "./StudentDashboard.css";
 import logo from "@/assets/P_LOGO.png";
 
 const cards = [
   { title: "My Profile", icon: User },
   { title: "Attendance", icon: CalendarCheck },
-  { title: "Assignments", icon: ClipboardList },
   { title: "Results", icon: FileText },
   { title: "Fee Details", icon: Wallet },
   { title: "Announcements", icon: Megaphone },

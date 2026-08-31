@@ -25,7 +25,6 @@ const CERTIFICATE_API = {
   list: CERTIFICATE_BASE,
   generate: `${CERTIFICATE_BASE}/generate`,
   workflowStats: `${CERTIFICATE_BASE}/workflow-stats`,
-  studentsDropdown: `${CERTIFICATE_BASE}/students-dropdown`,
   getById: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}`,
   delete: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}`,
   bonafide: `${CERTIFICATE_BASE}/bonafide`,
@@ -338,10 +337,12 @@ const getReferenceLabel = (value, keys) => {
 const normalizeStudentRecord = (raw) => {
   const nested = pick(raw, ["student", "Student", "admission", "Admission"]);
   const source = nested && typeof nested === "object" ? { ...raw, ...nested } : raw;
+  const fullName = pick(source, ["fullName", "FullName", "studentName", "StudentName", "name", "Name"])
+    || [pick(source, ["firstName", "FirstName"]), pick(source, ["lastName", "LastName"])].filter(Boolean).join(" ");
   return {
     id: Number(pick(source, ["id", "Id", "studentId", "StudentId", "studentID", "admissionId", "AdmissionId"])) || null,
     admissionNo: String(pick(source, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no", "studentAdmissionNo", "StudentAdmissionNo", "enrollmentNo", "EnrollmentNo"]) || "").trim(),
-    name: pick(source, ["fullName", "FullName", "studentName", "StudentName", "name", "Name", "firstName", "FirstName"]) || "",
+    name: fullName,
     rollNo: String(pick(source, ["rollNo", "RollNo", "rollNumber", "RollNumber"]) || "").trim(),
     group: pick(source, ["groupName", "GroupName", "groupCode", "GroupCode", "group", "Group", "courseGroup", "CourseGroup"]) || "",
     level: getReferenceLabel(
@@ -359,6 +360,22 @@ const normalizeStudentRecord = (raw) => {
     ),
     section: pick(source, ["section", "Section", "sectionName", "SectionName"]) || "",
   };
+};
+
+const mergeCertificateStudents = (...collections) => {
+  const studentsByAdmission = new Map();
+  collections.flat().forEach((raw) => {
+    const student = normalizeStudentRecord(raw);
+    if (!student.admissionNo) return;
+    const key = student.admissionNo.toLowerCase();
+    const current = studentsByAdmission.get(key) || {};
+    studentsByAdmission.set(key, Object.fromEntries(
+      Object.keys(student).map((field) => [field, student[field] || current[field] || ""]),
+    ));
+  });
+  return Array.from(studentsByAdmission.values()).sort((left, right) => (
+    left.admissionNo.localeCompare(right.admissionNo, undefined, { numeric: true, sensitivity: "base" })
+  ));
 };
 
 const normalizeCertificate = (raw, studentLookup = []) => {
@@ -1112,8 +1129,17 @@ export default function CertificatesPage() {
     const requestId = ++studentRequestRef.current;
     setLoadingStudents(true);
     try {
-      const response = await apiClient.get(CERTIFICATE_API.studentsDropdown);
-      const mapped = unwrapStudentPayload(response?.data).map(normalizeStudentRecord).filter((student) => student.admissionNo);
+      const [studentsResult, admissionsResult] = await Promise.allSettled([
+        apiClient.get(apiEndpoints.students.getAll),
+        apiClient.get(apiEndpoints.admissions.getAll),
+      ]);
+      if (studentsResult.status === "rejected" && admissionsResult.status === "rejected") {
+        throw studentsResult.reason || admissionsResult.reason;
+      }
+      const mapped = mergeCertificateStudents(
+        admissionsResult.status === "fulfilled" ? unwrapStudentPayload(admissionsResult.value.data) : [],
+        studentsResult.status === "fulfilled" ? unwrapStudentPayload(studentsResult.value.data) : [],
+      );
       if (requestId !== studentRequestRef.current) return [];
       setStudentRows(mapped);
       return mapped;

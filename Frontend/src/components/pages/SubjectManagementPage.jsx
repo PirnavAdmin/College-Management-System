@@ -160,8 +160,12 @@ const normalize = (records) => {
 
     return {
       ...record,
-      id: record?.id ?? record?.subjectId ?? record?.SubjectId ?? record?.Id ?? `subject-${index}`,
-      subjectId: subject?.subjectId || record?.subjectId || record?.SubjectId || record?.id || "",
+      // Context responses have differed between backend versions (SubjectId,
+      // SubjectID, subjectID, and subjectDefinitionId). Preserve one stable
+      // server ID so saving an existing record uses PUT rather than POST.
+      serverId: record?.subjectId ?? record?.SubjectId ?? record?.subjectID ?? record?.SubjectID ?? record?.subjectDefinitionId ?? record?.SubjectDefinitionId ?? record?.id ?? record?.Id ?? "",
+      id: record?.subjectId ?? record?.SubjectId ?? record?.subjectID ?? record?.SubjectID ?? record?.subjectDefinitionId ?? record?.SubjectDefinitionId ?? record?.id ?? record?.Id ?? `subject-${index}`,
+      subjectId: subject?.subjectId || record?.subjectId || record?.SubjectId || record?.subjectID || record?.SubjectID || record?.subjectDefinitionId || record?.SubjectDefinitionId || record?.id || record?.Id || "",
       subjectName: record?.subjectName || record?.SubjectName || subject?.subjectName || fallback?.subjectName || "",
       subjectCode: record?.subjectCode || record?.SubjectCode || subject?.subjectCode || fallback?.subjectCode || "",
       components: cleanSubjectTypes(
@@ -232,13 +236,40 @@ export default function SubjectManagementPage({ screen = "list" }) {
       setApiAvailable(true);
     } catch (error) {
       if (requestId !== subjectRequestId.current) return;
-      setRecords([]);
-      setApiAvailable(false);
-      setToast(getApiErrorMessage(error) || "Unable to load subjects for the selected context.");
+      // Older backend deployments may not expose the optional /context
+      // route. The regular subject list remains a valid source; filter it
+      // locally when it carries context IDs, otherwise retain the list so
+      // assignment is never blocked by that one endpoint.
+      try {
+        const fallback = await apiClient.get(apiEndpoints.subjects.getAll);
+        if (requestId !== subjectRequestId.current) return;
+        const fallbackRecords = itemsFromResponse(fallback.data).filter((record) => {
+          const boardId = record.boardId ?? record.BoardId;
+          const groupId = record.groupId ?? record.GroupId;
+          const academicLevelId = record.academicLevelId ?? record.AcademicLevelId;
+          return (
+            (boardId == null || String(boardId) === String(subjectContext.boardId)) &&
+            (groupId == null || String(groupId) === String(subjectContext.groupId)) &&
+            (academicLevelId == null || String(academicLevelId) === String(subjectContext.academicLevelId))
+          );
+        }).map((record) => ({ ...record, ...subjectContext }));
+        setRecords(normalize(fallbackRecords.length ? fallbackRecords : defaultSubjectsForContext(subjectContext)));
+        setApiAvailable(true);
+      } catch (fallbackError) {
+        if (requestId !== subjectRequestId.current) return;
+        setRecords([]);
+        setApiAvailable(false);
+        setToast(getApiErrorMessage(fallbackError) || getApiErrorMessage(error) || "Unable to load subjects for the selected context.");
+      }
     } finally {
       if (requestId === subjectRequestId.current) setLoading(false);
     }
   }, []);
+  useEffect(() => {
+    if (screen === "assign") {
+      loadSubjects({ ...SUBJECT_CONTEXT, ...(location.state?.subjectContext || {}) });
+    }
+  }, [screen, loadSubjects]);
   const save = async (next, msg) => {
     const normalizedRecords = normalize(next);
     if (!apiAvailable) {
@@ -257,15 +288,45 @@ export default function SubjectManagementPage({ screen = "list" }) {
     const previous = new Map(records.map((record) => [String(record.id), record]));
     const nextIds = new Set(normalizedRecords.map((record) => String(record.id)));
     try {
+      // The backend exposes a context-aware duplicate-code check. Use it
+      // before POST so an existing code never reaches the database as a
+      // duplicate insert (which currently returns a generic server 500).
+      const newRecords = normalizedRecords.filter((record) => !record.serverId && (!previous.has(String(record.id)) || String(record.id).startsWith("new-")));
+      const duplicateChecks = await Promise.all(newRecords.map(async (record) => {
+        const payload = apiRecord(record);
+        const response = await apiClient.get(apiEndpoints.subjects.checkCode, {
+          params: {
+            subjectCode: payload.subjectCode,
+            boardId: payload.boardId,
+            groupId: payload.groupId,
+            academicLevelId: payload.academicLevelId,
+          },
+        });
+        const result = response.data?.data ?? response.data;
+        const exists = result === true || result?.exists === true || result?.isExists === true || result?.isDuplicate === true || result?.isAvailable === false;
+        return exists ? payload.subjectCode : "";
+      }));
+      const duplicateCode = duplicateChecks.find(Boolean);
+      if (duplicateCode) {
+        setToast(`Subject code “${duplicateCode}” already exists for this academic context.`);
+        return false;
+      }
       await Promise.all([
         ...normalizedRecords.flatMap((record) => {
           const existing = previous.get(String(record.id));
-          if (!existing || String(record.id).startsWith("new-")) {
+          const candidateServerId = record.serverId || existing?.serverId || "";
+          // IDs beginning with new- are UI-only keys, never API resource IDs.
+          const serverId = String(candidateServerId).startsWith("new-") ? "" : candidateServerId;
+          if (!serverId && (!existing || String(record.id).startsWith("new-"))) {
             return [apiClient.post(apiEndpoints.subjects.create, apiRecord(record))];
           }
-          return JSON.stringify(apiRecord(existing)) === JSON.stringify(apiRecord(record))
+          // A context result can supply a server ID while its normalized key
+          // differs from the previous collection. In that case it is still
+          // an existing subject: update it directly, never dereference an
+          // absent previous item or attempt a duplicate create.
+          return existing && JSON.stringify(apiRecord(existing)) === JSON.stringify(apiRecord(record))
             ? []
-            : [apiClient.put(apiEndpoints.subjects.update(record.id), apiRecord(record))];
+            : [apiClient.put(apiEndpoints.subjects.update(serverId), apiRecord(record))];
         }),
         ...records
           .filter((record) => !nextIds.has(String(record.id)))
@@ -561,7 +622,8 @@ function Assign({ records, context, cancel, save }) {
                     }
                     onClick={() => configureRow(row)}
                   >
-                    Configure Marks
+                    <span>Configure</span>
+                    <span>Marks</span>
                   </button>
                   <button
                     className="subject-new-row-delete"

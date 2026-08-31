@@ -26,6 +26,10 @@
 .exam-toolbar-spacer { display:none; }
 .exam-toolbar-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin:0; }
 .exam-export-btn,.exam-header-create-btn { min-height:40px; padding:7px 14px; font-size:13px; }
+.exam-table-toolbar .exam-search input,
+.exam-table-toolbar .exam-toolbar-select select,
+.exam-table-toolbar .exam-constrained-select > button,
+.exam-table-toolbar .exam-export-btn { box-sizing:border-box; height:36px; min-height:36px; }
 .exam-back-btn { display:inline-flex; margin-bottom:14px; }
 .exam-back-text-link { display:inline-flex; align-items:center; gap:6px; margin:0 0 14px; padding:0; border:0; background:transparent; color:var(--cms-primary); font:inherit; font-size:14px; font-weight:600; text-decoration:underline; cursor:pointer; }
 .exam-schedule-back-link { font-size:15px; }
@@ -52,6 +56,7 @@
 .exam-list-table th:nth-child(10) { width:13%; }
 .exam-list-table th:nth-child(9),.exam-list-table td:nth-child(9),.exam-list-table th:nth-child(10),.exam-list-table td:nth-child(10) { text-align:center; }
 .exam-cell-truncate { display:block; width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.exam-cell-two-lines { display:-webkit-box; width:100%; min-width:0; overflow:hidden; line-height:1.35; overflow-wrap:normal; word-break:normal; -webkit-box-orient:vertical; line-clamp:2; -webkit-line-clamp:2; }
 .exam-level-two-lines { display:-webkit-box; width:100%; min-width:0; overflow:hidden; line-height:1.35; overflow-wrap:normal; word-break:normal; -webkit-box-orient:vertical; line-clamp:2; -webkit-line-clamp:2; }
 .exam-list-table .exam-status-cell { overflow:visible; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
 .exam-list-table .exam-status-cell .cms-badge { min-height:22px; gap:3px; padding:3px 7px; font-size:10px; line-height:1; white-space:nowrap; overflow-wrap:normal; word-break:normal; }

@@ -39,6 +39,16 @@ const STAFF_API = {
   photo: (id) => `/api/v1/staff/photo/${id}`,
 };
 
+// Subject-allocation routes are scoped to this screen so the existing shared
+// Staff and Teaching Staff API configuration remains unchanged.
+const STAFF_SUBJECT_ALLOCATION_API = {
+  create: "/api/v1/staff/assign-subject",
+  update: (allocationId) => `/api/v1/staff/assign-subject/${encodeURIComponent(allocationId)}`,
+  delete: (allocationId) => `/api/v1/staff/assign-subject/${encodeURIComponent(allocationId)}`,
+  list: (staffId) => `/api/v1/staff/${encodeURIComponent(staffId)}/subject-allocations`,
+  workload: (staffId) => `/api/v1/staff/workload/${encodeURIComponent(staffId)}`,
+};
+
 const API_STAFF_TYPES = { teaching: "Teaching", "non-teaching": "NonTeaching" };
 const STAFF_PAGE_SIZE = 5;
 
@@ -48,14 +58,15 @@ const fields = [
   { name: "lastName", label: "Last Name", required: true },
   { name: "gender", label: "Gender", type: "select", options: [], required: true },
   { name: "dob", label: "Date of Birth", type: "date", required: true },
-  { name: "aadhaar", label: "Aadhaar Number" },
+  { name: "bloodGroup", label: "Blood Group" },
   { name: "mobile", label: "Mobile", type: "tel", required: true },
   { name: "email", label: "Email", type: "email", required: true },
-  { name: "bloodGroup", label: "Blood Group" },
+  { name: "aadhaar", label: "Aadhaar Number" },
   { name: "qualification", label: "Qualification", required: true },
-  { name: "designation", label: "Designation", type: "select", options: [], required: true },
   { name: "facultyType", label: "Staff Category", type: "select", options: ["Teaching Staff", "Non-Teaching Staff"], required: true },
+  { name: "boardName", label: "Board Name", type: "select", options: [], required: true },
   { name: "department", label: "Department", type: "select", options: [], required: true },
+  { name: "designation", label: "Designation", type: "select", options: [], required: true },
   { name: "joining", label: "Joining Date", type: "date", required: true },
   { name: "experience", label: "Experience (Years)", type: "number" },
   { name: "status", label: "Status", type: "select", options: ["Active", "Inactive"], required: true },
@@ -80,13 +91,19 @@ const extractItems = (payload) =>
       payload?.data ||
       [];
 const extractRecord = (payload) => payload?.data ?? payload?.Data ?? payload;
+const boardOptionsFrom = (payload) => extractItems(payload).map((board) => ({
+  id: firstValue(board, "boardId", "BoardId", "id", "Id"),
+  name: String(firstValue(board, "boardName", "BoardName", "name", "Name") || "").trim(),
+})).filter((board) => board.name);
 const facultyName = (item = {}) =>
   item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "—";
 const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
 const getCrudId = (item = {}) => item.id ?? item.Id;
 const getStaffId = (item = {}) => item.staffId ?? item.StaffId;
+const getAllocationStaffId = (item = {}) => getStaffId(item) ?? getCrudId(item);
 const getFacultyId = (item = {}) => item.facultyId ?? item.FacultyId;
 const facultyId = (item = {}) => getFacultyId(item);
+const STAFF_BOARD_STORAGE_KEY = "cms.staff-board-assignments";
 const firstValue = (item = {}, ...keys) =>
   keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null && value !== "") ??
   Object.entries(item || {}).find(([key, value]) =>
@@ -112,6 +129,28 @@ const facultyTypeValue = (item = {}) => {
 const toApiStaffType = (value) => {
   const normalized = normalizeStaffType(value);
   return normalized === "Non-Teaching Staff" ? API_STAFF_TYPES["non-teaching"] : API_STAFF_TYPES.teaching;
+};
+const readStoredStaffBoards = () => {
+  try {
+    return JSON.parse(window.localStorage.getItem(STAFF_BOARD_STORAGE_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+};
+const staffBoardStorageKeys = (item = {}) => [
+  firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
+  getCrudId(item),
+].filter((value) => value !== undefined && value !== null && value !== "").map(String);
+const withStoredStaffBoard = (item = {}) => {
+  const storedBoards = readStoredStaffBoards();
+  const stored = staffBoardStorageKeys(item).map((key) => storedBoards[key]).find(Boolean);
+  return stored ? { ...item, boardId: stored.boardId, boardName: stored.boardName } : item;
+};
+const storeStaffBoard = (item, board) => {
+  if (!board?.boardName) return;
+  const storedBoards = readStoredStaffBoards();
+  staffBoardStorageKeys(item).forEach((key) => { storedBoards[key] = board; });
+  window.localStorage.setItem(STAFF_BOARD_STORAGE_KEY, JSON.stringify(storedBoards));
 };
 const normalizeStaffPage = (payload) => {
   const source = payload?.data ?? payload?.Data ?? payload ?? {};
@@ -142,6 +181,18 @@ const allocationSubjectId = (item = {}) =>
   item.subjectId ?? item.SubjectId ?? item.subject?.subjectId ?? item.subject?.id ?? item.Subject?.SubjectId ?? item.Subject?.Id;
 const allocationId = (item = {}) =>
   item.assignmentId ?? item.allocationId ?? item.id ?? item.AssignmentId ?? item.AllocationId;
+const buildSubjectAllocationPayload = (staff, subject) => {
+  const staffId = Number(getAllocationStaffId(staff));
+  const selectedSubjectId = Number(subjectId(subject));
+  const academicYearId = Number(firstValue(subject, "academicYearId", "AcademicYearId"));
+  const maxWeeklyHours = Number(firstValue(subject, "maxWeeklyHours", "MaxWeeklyHours"));
+  return {
+    staffId,
+    subjectId: selectedSubjectId,
+    ...(Number.isInteger(academicYearId) && academicYearId > 0 ? { academicYearId } : {}),
+    ...(Number.isFinite(maxWeeklyHours) && maxWeeklyHours >= 0 ? { maxWeeklyHours } : {}),
+  };
+};
 const allocationItems = (payload) => {
   const data = extractRecord(payload) ?? {};
   return extractItems(
@@ -159,6 +210,13 @@ const assignedSubjectNames = (payload) => [...new Set(
     .map((allocation) => subjectName(allocation))
     .filter((name) => name && name !== "Unnamed subject"),
 )];
+const assignedBoard = (payload) => {
+  const allocation = allocationItems(payload).find((item) => firstValue(item, "boardName", "BoardName"));
+  return allocation ? {
+    boardId: firstValue(allocation, "boardId", "BoardId"),
+    boardName: firstValue(allocation, "boardName", "BoardName"),
+  } : null;
+};
 const sharedPayloadFor = (values) => ({
   firstName: values.firstName,
   lastName: values.lastName,
@@ -174,6 +232,8 @@ const sharedPayloadFor = (values) => ({
   staffType: toApiStaffType(values.facultyType),
   department: values.department,
   ...(values.departmentId ? { departmentId: Number(values.departmentId) } : {}),
+  ...(values.boardId ? { boardId: Number(values.boardId) } : {}),
+  ...(values.boardName ? { boardName: values.boardName } : {}),
   joiningDate: values.joining,
   experience: Number(values.experience) || 0,
   status: values.status || "Active",
@@ -196,6 +256,7 @@ const rowFor = (item) => ({
         : "Inactive"
       : item.status || "—",
   department: item.department,
+  boardName: firstValue(item, "boardName", "BoardName", "board", "Board") || "—",
   designation: item.designation,
   facultyType: facultyTypeValue(item),
   qualification: item.qualification ?? item.Qualification,
@@ -218,6 +279,8 @@ const valuesFor = (item = {}) => ({
   facultyType: facultyTypeValue(item),
   department: lookupValue(firstValue(item, "department", "Department", "departmentName", "DepartmentName")),
   departmentId: firstValue(item, "departmentId", "DepartmentId"),
+  boardId: firstValue(item, "boardId", "BoardId"),
+  boardName: lookupValue(firstValue(item, "boardName", "BoardName", "board", "Board")),
   joining: dateOnly(firstValue(item, "joiningDate", "JoiningDate", "joining", "Joining")),
   experience: firstValue(item, "experience", "Experience"),
   status: firstValue(item, "status", "Status") || "Active",
@@ -274,7 +337,7 @@ const staffPrintRows = (record) => {
     ["Employee ID", values.empId], ["Staff Name", facultyName(record)], ["Staff Category", values.facultyType],
     ["Gender", values.gender], ["Date of Birth", values.dob], ["Aadhaar Number", values.aadhaar],
     ["Mobile", values.mobile], ["Email", values.email], ["Blood Group", values.bloodGroup],
-    ["Qualification", values.qualification], ["Designation", values.designation], ["Department", values.department],
+    ["Qualification", values.qualification], ["Designation", values.designation], ["Board Name", values.boardName], ["Department", values.department],
     ["Joining Date", values.joining], ["Experience (Years)", values.experience], ["Status", values.status],
   ];
   if (Array.isArray(record.assignedSubjects)) rows.push(["Subjects -", record.assignedSubjects.join(", ") || "—"]);
@@ -338,11 +401,11 @@ const cleanFacultyValues = (source) => {
     empId: text("empId"), firstName: text("firstName"), lastName: text("lastName"),
     aadhaar: text("aadhaar").replace(/\s/g, ""), mobile: text("mobile").replace(/\D/g, ""),
     email: text("email").toLowerCase(), qualification: text("qualification"),
-    designation: text("designation"), department: text("department"),
+    designation: text("designation"), boardName: text("boardName"), department: text("department"),
     experience: text("experience"),
   };
 };
-const facultyValidation = (source, { departments = [], genders = [], allowCustomDepartment = false } = {}) => {
+const facultyValidation = (source, { departments = [], genders = [], boards = [], allowCustomDepartment = false } = {}) => {
   const values = cleanFacultyValues(source);
   const errors = {};
   if (!EMPLOYEE_ID_PATTERN.test(values.empId) || values.empId.length < 3 || values.empId.length > 20) errors.empId = "Employee ID must be 3–20 letters, numbers, or hyphens.";
@@ -360,6 +423,7 @@ const facultyValidation = (source, { departments = [], genders = [], allowCustom
   if (!values.qualification || values.qualification.length > 100) errors.qualification = "Qualification is required.";
   if (!values.designation || values.designation.length > 100) errors.designation = "Please select or enter a valid designation.";
   if (!["Teaching Staff", "Non-Teaching Staff"].includes(values.facultyType)) errors.facultyType = "Please select a faculty type.";
+  if (!values.boardName || !boards.includes(values.boardName)) errors.boardName = "Please select a board.";
   if (!values.department || values.department.length > 100 || (!allowCustomDepartment && !departments.includes(values.department))) {
     errors.department = allowCustomDepartment ? "Please select or enter a valid department." : "Please select a department.";
   }
@@ -474,8 +538,9 @@ function Preview({ values }) {
       "Professional Information",
       BriefcaseBusiness,
       [
-        "empId",
-        "department",
+         "empId",
+         "boardName",
+         "department",
         "designation",
         "qualification",
         "facultyType",
@@ -531,6 +596,8 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
   const [departments, setDepartments] = useState([]);
+  const [boards, setBoards] = useState([]);
+  const [loadingBoards, setLoadingBoards] = useState(true);
   const [loadingDepartments, setLoadingDepartments] = useState(true);
   const [loadingDetails, setLoadingDetails] = useState(Boolean(existingId));
   const [genders, setGenders] = useState([]);
@@ -566,14 +633,16 @@ function Workflow({ existingId, staffTab = "teaching" }) {
         field.name === "empId"
           ? { ...field, disabled: true, placeholder: generatingEmployeeId ? "Generating Employee ID..." : "Employee ID" }
           : field.name === "department"
-          ? { ...field, options: departments, disabled: loadingDepartments }
+           ? { ...field, options: departments, disabled: loadingDepartments }
+          : field.name === "boardName"
+            ? { ...field, options: boards.map((board) => board.name), disabled: loadingBoards }
           : field.name === "gender"
             ? { ...field, options: genders }
             : field.name === "designation"
               ? { ...field, options: DESIGNATIONS[selectedFacultyType] || [], disabled: !selectedFacultyType }
             : field,
       ),
-    [departments, genders, generatingEmployeeId, loadingDepartments, selectedFacultyType],
+    [boards, departments, genders, generatingEmployeeId, loadingBoards, loadingDepartments, selectedFacultyType],
   );
   const { values, errors, setValue, setValues, setErrors } = useForm(formFields, { facultyType: staffType, status: "Active" });
   useEffect(() => {
@@ -620,13 +689,55 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     setLoadingDepartments(false);
   }, [teaching]);
   useEffect(() => {
+    let active = true;
+    setLoadingBoards(true);
+    apiClient.get(apiEndpoints.boards.getAll, { skipGlobalLoader: true })
+      .then((response) => {
+        if (!active) return;
+        const options = boardOptionsFrom(response.data);
+        setBoards(options);
+      })
+      .catch((error) => {
+        if (active) {
+          setBoards([]);
+          setToast(friendlyFacultyError(error));
+        }
+      })
+      .finally(() => { if (active) setLoadingBoards(false); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (loadingDetails || boards.length !== 1) return;
+    setValues((current) => {
+      if (current.boardName) return current;
+      const board = { boardId: boards[0].id, boardName: boards[0].name };
+      const hydrated = { ...current, ...board };
+      if (current.empId || existingId) storeStaffBoard({ ...hydrated, id: existingId }, board);
+      return hydrated;
+    });
+  }, [boards, existingId, loadingDetails, setValues]);
+  useEffect(() => {
     if (!existingId) return;
     const requestId = ++workflowDetailRequestRef.current;
     apiClient
       .get(STAFF_API.getById(existingId))
-      .then((r) => {
+      .then(async (r) => {
         if (requestId !== workflowDetailRequestRef.current) return;
-        const record = extractRecord(r.data);
+        let record = withStoredStaffBoard(extractRecord(r.data));
+        const allocationStaffId = getAllocationStaffId(record);
+        if (teaching && allocationStaffId && !firstValue(record, "boardName", "BoardName")) {
+          try {
+            const allocationResponse = await apiClient.get(STAFF_SUBJECT_ALLOCATION_API.list(allocationStaffId), { skipGlobalLoader: true });
+            const board = assignedBoard(allocationResponse.data);
+            if (board) {
+              record = { ...record, ...board };
+              storeStaffBoard(record, board);
+            }
+          } catch (error) {
+            console.error("Unable to recover the staff board from subject allocations:", error);
+          }
+        }
+        if (requestId !== workflowDetailRequestRef.current) return;
         setValues(valuesFor(record));
         setSelectedFacultyType(facultyTypeValue(record));
         setSaved(record);
@@ -638,7 +749,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
         if (requestId === workflowDetailRequestRef.current) setLoadingDetails(false);
       });
     return () => { workflowDetailRequestRef.current += 1; };
-  }, [existingId, setValues]);
+  }, [existingId, setValues, teaching]);
   const loadAllocation = async (faculty) => {
     setLoadingAllocation(true);
     const loadSubjects = apiClient
@@ -652,18 +763,18 @@ function Workflow({ existingId, staffTab = "teaching" }) {
       })
       .catch((e) => setToast(friendlyFacultyError(e)));
 
-    const allocationFacultyId = facultyId(faculty);
-    const loadWorkload = allocationFacultyId ? apiClient
-      .get(apiEndpoints.faculty.getWorkload(allocationFacultyId))
-      .then((workloadResponse) => {
-      setAllocations(allocationItems(workloadResponse.data));
+    const allocationStaffId = getAllocationStaffId(faculty);
+    const loadAssignedSubjects = allocationStaffId ? apiClient
+      .get(STAFF_SUBJECT_ALLOCATION_API.list(allocationStaffId))
+      .then((allocationResponse) => {
+      setAllocations(allocationItems(allocationResponse.data));
       })
       .catch((e) => setToast(friendlyFacultyError(e))) : Promise.resolve().then(() => {
       setAllocations([]);
-      setToast("Subject allocation is unavailable because the Staff API did not return a FacultyId.");
+      setToast("Subject allocation is unavailable because the Staff API did not return a StaffId.");
     });
 
-    await Promise.all([loadSubjects, loadWorkload]);
+    await Promise.all([loadSubjects, loadAssignedSubjects]);
     setLoadingAllocation(false);
   };
   useEffect(() => {
@@ -678,19 +789,23 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     }
   }, [step, saved, teaching]);
   const validateAndShow = (source = values) => {
-    const result = facultyValidation(source, { departments, genders, allowCustomDepartment: !teaching });
+    const result = facultyValidation(source, { departments, genders, boards: boards.map((board) => board.name), allowCustomDepartment: !teaching });
     setErrors(result.errors);
     return result;
   };
   const handleFieldChange = (name, value) => {
     const sanitized = name === "mobile" ? String(value).replace(/\D/g, "").slice(0, 10) : name === "aadhaar" ? String(value).replace(/\D/g, "").slice(0, 12) : value;
     setValue(name, sanitized);
+    if (name === "boardName") {
+      const selectedBoard = boards.find((board) => board.name === sanitized);
+      setValue("boardId", selectedBoard?.id ?? "");
+    }
     if (name === "facultyType") { setSelectedFacultyType(sanitized); if (values.designation) setValue("designation", ""); }
-    const result = facultyValidation({ ...values, [name]: sanitized }, { departments, genders, allowCustomDepartment: !teaching });
+    const result = facultyValidation({ ...values, [name]: sanitized }, { departments, genders, boards: boards.map((board) => board.name), allowCustomDepartment: !teaching });
     if (!result.errors[name]) setErrors((current) => ({ ...current, [name]: undefined }));
   };
   const handleFieldBlur = (name) => {
-    const result = facultyValidation(values, { departments, genders, allowCustomDepartment: !teaching });
+    const result = facultyValidation(values, { departments, genders, boards: boards.map((board) => board.name), allowCustomDepartment: !teaching });
     setValues(result.values);
     setErrors((current) => ({ ...current, [name]: result.errors[name] }));
   };
@@ -729,6 +844,8 @@ function Workflow({ existingId, staffTab = "teaching" }) {
         staffId: getStaffId(record),
         facultyId: getFacultyId(record),
       };
+      storeStaffBoard(next, { boardId: result.values.boardId, boardName: result.values.boardName });
+      next = { ...next, boardId: result.values.boardId, boardName: result.values.boardName };
       let photoUploadFailed = false;
       if (photoFile) {
         if (!getStaffId(next)) {
@@ -756,10 +873,14 @@ function Workflow({ existingId, staffTab = "teaching" }) {
       let allocationFailed = false;
       if (teaching && pendingSubjects.length) {
         try {
-          if (!facultyId(next)) throw new Error("The Staff API did not return a FacultyId required for subject allocation.");
-          for (const subject of pendingSubjects) {
-            await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: facultyId(next), subjectId: subjectId(subject) });
-          }
+          if (!getStaffId(next)) throw new Error("The Staff API did not return a StaffId required for subject allocation.");
+          const allocationResults = await Promise.allSettled(
+            pendingSubjects.map((subject) => apiClient.post(
+              STAFF_SUBJECT_ALLOCATION_API.create,
+              buildSubjectAllocationPayload(next, subject),
+            )),
+          );
+          allocationFailed = allocationResults.some((allocationResult) => allocationResult.status === "rejected");
         } catch (allocationError) {
           allocationFailed = true;
           console.error("Staff subject allocation failed:", allocationError);
@@ -791,9 +912,9 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const allocate = async (subject) => {
     if (!saved) return;
     const selectedId = subjectId(subject);
-    const selectedFacultyId = facultyId(saved);
-    if (selectedId === undefined || selectedId === null || !selectedFacultyId) {
-      return setToast("A valid faculty and subject must be selected.");
+    const selectedStaffId = getAllocationStaffId(saved);
+    if (selectedId === undefined || selectedId === null || !selectedStaffId) {
+      return setToast("A valid staff member and subject must be selected.");
     }
     if (
       allocations.some(
@@ -804,10 +925,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     )
       return setToast("This subject is already allocated.");
     try {
-      await apiClient.post(apiEndpoints.faculty.assignSubject, {
-        facultyId: selectedFacultyId,
-        subjectId: selectedId,
-      });
+      await apiClient.post(STAFF_SUBJECT_ALLOCATION_API.create, buildSubjectAllocationPayload(saved, subject));
       await loadAllocation(saved);
       setToast(`${subjectName(subject)} allocated successfully.`);
     } catch (e) {
@@ -816,7 +934,9 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   };
   const remove = async () => {
     try {
-      await apiClient.delete(apiEndpoints.faculty.deleteSubjectAssignment(allocationId(removing)));
+      const selectedAllocationId = allocationId(removing);
+      if (!selectedAllocationId) throw new Error("The selected subject allocation does not have a valid allocation ID.");
+      await apiClient.delete(STAFF_SUBJECT_ALLOCATION_API.delete(selectedAllocationId));
       setRemoving(null);
       await loadAllocation(saved);
       setToast("Subject allocation removed.");
@@ -858,10 +978,20 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     if (!saved) return setToast("Faculty must be saved before subjects can be allocated.");
     setSavingAllocation(true);
     try {
-      for (const subject of pendingSubjects) await apiClient.post(apiEndpoints.faculty.assignSubject, { facultyId: facultyId(saved), subjectId: subjectId(subject) });
-      setPendingSubjects([]);
+      const selectedStaffId = getAllocationStaffId(saved);
+      if (!selectedStaffId) throw new Error("The Staff API did not return a StaffId required for subject allocation.");
+      const subjectsToSave = [...pendingSubjects];
+      const results = await Promise.allSettled(subjectsToSave.map((subject) => apiClient.post(
+        STAFF_SUBJECT_ALLOCATION_API.create,
+        buildSubjectAllocationPayload(saved, subject),
+      )));
+      const failedSubjects = subjectsToSave.filter((_, index) => results[index].status === "rejected");
+      const savedCount = subjectsToSave.length - failedSubjects.length;
+      setPendingSubjects(failedSubjects);
       await loadAllocation(saved);
-      setToast("Selected subjects allocated successfully.");
+      setToast(failedSubjects.length
+        ? `${savedCount} subject${savedCount === 1 ? "" : "s"} allocated; ${failedSubjects.length} could not be allocated.`
+        : "Selected subjects allocated successfully.");
     } catch (error) { setToast(friendlyFacultyError(error)); }
     finally { setSavingAllocation(false); }
   };
@@ -886,7 +1016,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
               </div>
             </header>
             <div className="faculty-form-grid">
-              {loadingDepartments ? <p className="faculty-empty">Loading departments...</p> : null}
+              {loadingDepartments || loadingBoards ? <p className="faculty-empty">Loading staff options...</p> : null}
               {formFields.map((field) => field.name === "designation" || field.name === "department" ? (
                 <SearchableStaffField
                   key={field.name}
@@ -1151,7 +1281,7 @@ export default function StaffManagementPage() {
       });
       if (requestId !== listRequestRef.current) return;
       const page = normalizeStaffPage(response.data);
-      setRows(page.items.map(rowFor));
+      setRows(page.items.map((item) => rowFor(withStoredStaffBoard(item))));
       setPagination(page);
       if (pageNumber > page.totalPages) setPageNumber(page.totalPages);
     } catch (e) {
@@ -1194,21 +1324,30 @@ export default function StaffManagementPage() {
       const response = await apiClient.get(STAFF_API.getById(getCrudId(row)));
       const record = extractRecord(response.data) || {};
       if (requestId !== detailRequestRef.current) return;
-      const normalized = rowFor({ ...row, ...record });
+      const normalized = rowFor(withStoredStaffBoard({ ...row, ...record }));
       setViewing(normalized);
-      const detailsFacultyId = getFacultyId(normalized);
-      const workloadPromise = activeTab === "teaching" && detailsFacultyId
-        ? apiClient.get(apiEndpoints.faculty.getWorkload(detailsFacultyId), { skipGlobalLoader: true })
+      const detailsStaffId = getAllocationStaffId(normalized);
+      const allocationsPromise = activeTab === "teaching" && detailsStaffId
+        ? apiClient.get(STAFF_SUBJECT_ALLOCATION_API.list(detailsStaffId), { skipGlobalLoader: true })
         : Promise.resolve(null);
-      const [, workloadResult] = await Promise.allSettled([loadPhoto(normalized), workloadPromise]);
+      const boardsPromise = apiClient.get(apiEndpoints.boards.getAll, { skipGlobalLoader: true });
+      const [, allocationsResult, boardsResult] = await Promise.allSettled([loadPhoto(normalized), allocationsPromise, boardsPromise]);
       if (requestId !== detailRequestRef.current) return;
-      const assignedSubjects = workloadResult.status === "fulfilled" && workloadResult.value
-        ? assignedSubjectNames(workloadResult.value.data)
+      const assignedSubjects = allocationsResult.status === "fulfilled" && allocationsResult.value
+        ? assignedSubjectNames(allocationsResult.value.data)
         : [];
+      const allocationBoard = allocationsResult.status === "fulfilled" && allocationsResult.value
+        ? assignedBoard(allocationsResult.value.data)
+        : null;
+      const configuredBoards = boardsResult.status === "fulfilled" ? boardOptionsFrom(boardsResult.value.data) : [];
+      const resolvedBoard = allocationBoard
+        || (normalized.boardName && normalized.boardName !== "—" ? { boardId: normalized.boardId, boardName: normalized.boardName } : null)
+        || (configuredBoards.length === 1 ? { boardId: configuredBoards[0].id, boardName: configuredBoards[0].name } : null);
+      if (resolvedBoard) storeStaffBoard(normalized, resolvedBoard);
       setViewing((current) => current && getCrudId(current) === getCrudId(normalized)
-        ? { ...current, assignedSubjects }
+        ? { ...current, ...(resolvedBoard || {}), assignedSubjects }
         : current);
-      if (workloadResult.status === "rejected") setToast("Staff details loaded, but assigned subjects could not be retrieved.");
+      if (allocationsResult.status === "rejected") setToast("Staff details loaded, but assigned subjects could not be retrieved.");
     } catch (e) {
       if (requestId !== detailRequestRef.current) return;
       setViewing(null);
@@ -1235,19 +1374,19 @@ export default function StaffManagementPage() {
     try {
       const detailsResponse = await apiClient.get(STAFF_API.getById(recordId), { skipGlobalLoader: true });
       const details = extractRecord(detailsResponse.data) || {};
-      const normalized = rowFor({ ...row, ...details });
-      const printFacultyId = getFacultyId(normalized);
-      const [photoResult, workloadResult] = await Promise.allSettled([
+      const normalized = rowFor(withStoredStaffBoard({ ...row, ...details }));
+      const printStaffId = getAllocationStaffId(normalized);
+      const [photoResult, allocationsResult] = await Promise.allSettled([
         requestStaffPhoto(recordId),
-        activeTab === "teaching" && printFacultyId
-          ? apiClient.get(apiEndpoints.faculty.getWorkload(printFacultyId), { skipGlobalLoader: true })
+        activeTab === "teaching" && printStaffId
+          ? apiClient.get(STAFF_SUBJECT_ALLOCATION_API.list(printStaffId), { skipGlobalLoader: true })
           : Promise.resolve(null),
       ]);
       const printableRecord = {
         ...normalized,
         ...(activeTab === "teaching" ? {
-          assignedSubjects: workloadResult.status === "fulfilled" && workloadResult.value
-            ? assignedSubjectNames(workloadResult.value.data)
+          assignedSubjects: allocationsResult.status === "fulfilled" && allocationsResult.value
+            ? assignedSubjectNames(allocationsResult.value.data)
             : [],
         } : {}),
       };
@@ -1305,12 +1444,14 @@ export default function StaffManagementPage() {
   const listColumns = activeTab === "teaching" ? [
     { key: "empId", label: "Employee ID", strong: true },
     { key: "name", label: "Faculty Name" },
+    { key: "boardName", label: "Board Name" },
     { key: "department", label: "Department" },
     { key: "designation", label: "Designation" },
     { key: "status", label: "Status", badge: true },
   ] : [
     { key: "empId", label: "Employee ID", strong: true },
     { key: "name", label: "Staff Name" },
+    { key: "boardName", label: "Board Name" },
     { key: "department", label: "Department" },
     { key: "designation", label: "Designation" },
     { key: "status", label: "Status", badge: true },
@@ -1328,6 +1469,7 @@ export default function StaffManagementPage() {
     ["Blood Group", previewValues.bloodGroup],
     ["Qualification", previewValues.qualification],
     ["Designation", previewValues.designation],
+    ["Board Name", previewValues.boardName],
     ["Department", previewValues.department],
     ["Joining Date", previewValues.joining],
     ["Experience (Years)", previewValues.experience],
@@ -1344,6 +1486,7 @@ export default function StaffManagementPage() {
     ["Email", previewValues.email],
     ["Blood Group", previewValues.bloodGroup],
     ["Qualification", previewValues.qualification],
+    ["Board Name", previewValues.boardName],
     ["Department", previewValues.department],
     ["Designation", previewValues.designation],
     ["Joining Date", previewValues.joining],

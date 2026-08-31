@@ -7,7 +7,6 @@ const listeners = new Set();
 const state = {
   navOpen: null,
   facultyOpen: readBoolean(FACULTY_KEY, false),
-  assignmentsOpen: false,
 };
 
 function readBoolean(key, fallback) {
@@ -39,7 +38,7 @@ function subscribe(callback) {
 }
 
 function snapshot() {
-  return `${state.navOpen}|${state.facultyOpen}|${state.assignmentsOpen}`;
+  return `${state.navOpen}|${state.facultyOpen}`;
 }
 
 function resolveInitialNavOpen() {
@@ -49,9 +48,9 @@ function resolveInitialNavOpen() {
 }
 
 export function useSidebar() {
-  const snap = useSyncExternalStore(subscribe, snapshot, () => "null|false|false");
+  const snap = useSyncExternalStore(subscribe, snapshot, () => "null|false");
   const [mounted, setMounted] = useState(false);
-  const [nav, faculty, assignments] = snap.split("|");
+  const [nav, faculty] = snap.split("|");
 
   useEffect(() => {
     if (state.navOpen === null) {
@@ -65,7 +64,6 @@ export function useSidebar() {
     ready: mounted,
     navOpen: mounted ? nav === "true" : true,
     facultyOpen: faculty === "true",
-    assignmentsOpen: assignments === "true",
     setNavOpen: (value) => {
       const next = typeof value === "function" ? value(state.navOpen === true) : value;
       if (next === state.navOpen) return;
@@ -80,12 +78,6 @@ export function useSidebar() {
       if (next === state.facultyOpen) return;
       state.facultyOpen = next;
       writeBoolean(FACULTY_KEY, next);
-      emit();
-    },
-    setAssignmentsOpen: (value) => {
-      const next = typeof value === "function" ? value(state.assignmentsOpen) : value;
-      if (next === state.assignmentsOpen) return;
-      state.assignmentsOpen = next;
       emit();
     },
   };

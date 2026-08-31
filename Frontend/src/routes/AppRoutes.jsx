@@ -15,8 +15,6 @@ import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/
 import SectionAllocationPage from "@/components/pages/SectionAllocationPage.jsx";
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
 import AttendancePage from "@/components/pages/AttendancePage.jsx";
-import AssignmentsMaterialsPage, { pageConfig as assignmentsMaterialsConfig } from "@/components/pages/AssignmentsMaterialsPage.jsx";
-import AssignmentSubmissionsPage from "@/components/pages/AssignmentSubmissionsPage.jsx";
 import ExaminationPage, { pageConfig as examinationConfig } from "@/components/pages/ExaminationPage.jsx";
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
 import ResultProcessingPage from "@/components/pages/ResultProcessingPage.jsx";
@@ -40,7 +38,6 @@ const moduleConfigs = {
   sections: sectionManagementConfig,
   faculty: StaffManagementPage.pageConfig,
   "faculty-allocation": StaffManagementPage.facultySubjectAllocationConfig,
-  assignments: assignmentsMaterialsConfig,
   examinations: examinationConfig,
   certificates: certificatesConfig,
   students: studentManagementConfig,
@@ -112,10 +109,6 @@ export default function AppRoutes() {
         <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
         <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
         <Route path="/dashboard/attendance/:area/reports" element={<AttendancePage />} />
-        <Route path="/dashboard/assignments" element={<AssignmentsMaterialsPage />} />
-        <Route path="/dashboard/assignments/submissions" element={<AssignmentSubmissionsPage />} />
-        <Route path="/dashboard/assignments/add" element={<AssignmentsMaterialsPage />} />
-        <Route path="/dashboard/assignments/:id/edit" element={<AssignmentsMaterialsPage />} />
         <Route path="/dashboard/examinations" element={<ExaminationPage />} />
         <Route path="/dashboard/examinations/add" element={<ExaminationPage />} />
         <Route path="/dashboard/marks-entry" element={<MarksEntryPage />} />
@@ -143,8 +136,6 @@ export default function AppRoutes() {
       {listSlugs.map((slug) => <Route key={`${slug}-edit-redirect`} path={`/${slug}/:id/edit`} element={<Navigate to={`/dashboard/${slug}`} replace />} />)}
       <Route path="/admission" element={<Navigate to="/dashboard/admission" replace />} />
       <Route path="/attendance" element={<Navigate to="/dashboard/attendance" replace />} />
-      <Route path="/assignments" element={<Navigate to="/dashboard/assignments" replace />} />
-      <Route path="/assignments/add" element={<Navigate to="/dashboard/assignments/add" replace />} />
       <Route path="/timetable" element={<Navigate to="/dashboard/timetable" replace />} />
       <Route path="/marks-entry" element={<Navigate to="/dashboard/marks-entry" replace />} />
       <Route path="/results" element={<Navigate to="/dashboard/results" replace />} />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
@@ -7,6 +7,8 @@ import {
   ChevronDown, Settings, User, LogOut,
 } from "lucide-react";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
+import apiClient from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import { useSidebar } from "@/hooks/useSidebar.js";
 import pirnavCollegesLogo from "@/assets/pirnav-colleges-logo.png";
 import "./DashboardLayout.css";
@@ -66,8 +68,59 @@ export const menu = [
 ];
 
 const SIDEBAR_SCROLL_KEY = "cms_sidebar_scroll_top";
-const MOCK_NOTIFICATIONS = [
-  { id: "faculty-onboarding", count: 1, title: "New faculty onboarding pending", label: "faculty record", to: "/dashboard/faculty" },
+const NOTIFICATION_REFRESH_INTERVAL = 60_000;
+const EMPTY_NOTIFICATION_SOURCES = [];
+// Notifications are loaded dynamically when available. Keep the dropdown
+// safe during initial render or when no notification source is configured.
+const MOCK_NOTIFICATIONS = [];
+const PENDING_STATUSES = new Set(["pending", "draft", "requested", "generated", "reviewed", "new", "created", "incomplete", "unpublished"]);
+
+const unwrapNotificationPayload = (payload) => {
+  let value = payload;
+  const seen = new Set();
+  while (value && typeof value === "object" && !Array.isArray(value) && !seen.has(value)) {
+    seen.add(value);
+    const next = value.data ?? value.Data ?? value.result ?? value.Result;
+    if (next === undefined || next === value) break;
+    value = next;
+  }
+  return value;
+};
+
+const notificationRows = (payload) => {
+  const value = unwrapNotificationPayload(payload);
+  if (Array.isArray(value)) return value;
+  for (const key of ["items", "Items", "records", "Records", "results", "Results", "$values"]) {
+    if (Array.isArray(value?.[key])) return value[key];
+  }
+  return [];
+};
+
+const notificationStatus = (item = {}) => String(item.status ?? item.Status ?? item.workflowStatus ?? item.WorkflowStatus ?? "").trim().toLowerCase();
+const pendingRowCount = (payload, predicate = (item) => PENDING_STATUSES.has(notificationStatus(item))) => notificationRows(payload).filter(predicate).length;
+
+const pendingActionSources = [
+  {
+    id: "admissions",
+    endpoint: apiEndpoints.admissions.getAll,
+    to: "/dashboard/admission",
+    label: "admission",
+    count: (payload) => pendingRowCount(payload),
+  },
+  {
+    id: "fees",
+    endpoint: apiEndpoints.fee.getDue,
+    to: "/dashboard/fee-structure",
+    label: "fee account",
+    count: (payload) => pendingRowCount(payload, (item) => !["paid", "completed", "settled"].includes(notificationStatus(item))),
+  },
+  {
+    id: "assignments",
+    endpoint: apiEndpoints.assignments.adminList,
+    to: "/dashboard/assignments",
+    label: "assignment",
+    count: (payload) => pendingRowCount(payload, (item) => item.isPublished === false || item.IsPublished === false || PENDING_STATUSES.has(notificationStatus(item))),
+  },
 ];
 
 const searchIndex = menu.flatMap((g) =>
@@ -131,6 +184,7 @@ export default function DashboardLayout({
   breadcrumb = [],
   actions,
   children,
+  excludeNotificationSources = EMPTY_NOTIFICATION_SOURCES,
 }) {
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
   const [attendanceOpen, setAttendanceOpen] = useState(false);

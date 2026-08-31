@@ -7,22 +7,6 @@
     changePassword: "/api/Admin/change-password",
     updateStatus: (adminId) => `/api/Admin/${adminId}/status`,
   },
-  assignments: {
-    list: "/api/v1/assignments",
-    published: "/api/v1/assignments/published",
-    adminList: "/api/admin/assignments",
-    adminCreate: "/api/admin/assignments",
-    create: "/api/v1/assignments",
-    details: (id) => `/api/v1/assignments/${id}`,
-    update: (id) => `/api/v1/assignments/${id}`,
-    delete: (id) => `/api/v1/assignments/${id}`,
-    submit: (id) => `/api/v1/assignments/${id}/submit`,
-    // Backend contract: POST { assignmentIds: number[] } to publish selected assignments.
-    bulkPublish: "/api/v1/assignments/publish",
-    subjectsByGroup: (groupId) => `/api/v1/assignments/groups/${groupId}/subjects`,
-    facultyDropdown: "/api/v1/assignments/faculty-dropdown",
-    submissions: (id) => `/api/admin/assignments/${id}/submissions`,
-  },
   faculty: {
     list: "/api/v1/staff",
     getAll: "/api/v1/staff",
@@ -36,8 +20,6 @@
     updateSubjectAssignment: (id) => `/api/v1/staff/assign-subject/${id}`,
     deleteSubjectAssignment: (id) => `/api/v1/staff/assign-subject/${id}`,
     getWorkload: (facultyId) => `/api/v1/staff/workload/${facultyId}`,
-    // Existing assignment faculty dropdown endpoint; subject IDs are supplied as query params by the caller.
-    bySubjects: "/api/v1/assignments/faculty-dropdown",
   },
   boards: {
     list: "/api/v1/boards",

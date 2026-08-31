@@ -88,7 +88,6 @@ Admin only:
 - `/dashboard/students`
 - `/dashboard/timetable`
 - `/dashboard/attendance`
-- `/dashboard/assignments`
 - `/dashboard/examinations`
 - `/dashboard/marks-entry`
 - `/dashboard/results`
@@ -107,7 +106,7 @@ Only authentication is integrated now. Existing module pages keep the Frontendne
 
 ## Dashboard Module Page Ownership
 
-All 18 dashboard modules have dedicated JSX and CSS files under `src/components/pages/`. Team members should add future module-specific API integration and page logic inside the related module page instead of putting all module code back into one generic page.
+Dashboard modules have dedicated JSX and CSS files under `src/components/pages/`. Team members should add future module-specific API integration and page logic inside the related module page instead of putting all module code back into one generic page.
 
 | Module | Route | Page files |
 | --- | --- | --- |
@@ -121,7 +120,6 @@ All 18 dashboard modules have dedicated JSX and CSS files under `src/components/
 | Student Management | `/dashboard/students` | `StudentManagementPage.jsx`, `StudentManagementPage.css` |
 | Timetable | `/dashboard/timetable` | `TimetablePage.jsx`, `TimetablePage.css` |
 | Attendance | `/dashboard/attendance` | `AttendancePage.jsx`, `AttendancePage.css` |
-| Assignments & Materials | `/dashboard/assignments` | `AssignmentsMaterialsPage.jsx`, `AssignmentsMaterialsPage.css` |
 | Examination | `/dashboard/examinations` | `ExaminationPage.jsx`, `ExaminationPage.css` |
 | Marks Entry | `/dashboard/marks-entry` | `MarksEntryPage.jsx`, `MarksEntryPage.css` |
 | Result Processing | `/dashboard/results` | `ResultProcessingPage.jsx`, `ResultProcessingPage.css` |

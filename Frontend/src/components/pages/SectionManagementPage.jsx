@@ -1505,7 +1505,7 @@ export default function SectionManagementPage() {
                           <td title={String(section.strength || "—")}>{section.strength || "—"}</td>
                           <td>
                             <span
-                              className={`cms-badge ${section.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}
+                              className={`cms-badge cms-sec-status-badge ${section.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}
                             >
                               {section.status}
                             </span>

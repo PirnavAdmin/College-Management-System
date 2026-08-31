@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
-  GraduationCap, CalendarClock, ClipboardCheck, FileText, FileSpreadsheet, PenLine,
+  GraduationCap, CalendarClock, ClipboardCheck, FileSpreadsheet, PenLine,
   Award, ArrowUpRight, Wallet, ScrollText, BarChart3, PanelLeft, Bell, Search, ChevronRight,
   ChevronDown, Settings, User, LogOut,
 } from "lucide-react";
@@ -45,7 +45,6 @@ export const menu = [
         { to: "/dashboard/attendance/student", label: "Student", icon: ClipboardCheck },
         { to: "/dashboard/attendance/staff", label: "Staff", icon: ClipboardCheck },
       ] },
-      { to: "/dashboard/assignments", label: "Assignments", icon: FileText, children: [{ to: "/dashboard/assignments", label: "Assignment Creation", icon: FileText }, { to: "/dashboard/assignments/submissions", label: "Submissions", icon: ClipboardCheck }] },
     ],
   },
   {
@@ -114,13 +113,6 @@ const pendingActionSources = [
     label: "fee account",
     count: (payload) => pendingRowCount(payload, (item) => !["paid", "completed", "settled"].includes(notificationStatus(item))),
   },
-  {
-    id: "assignments",
-    endpoint: apiEndpoints.assignments.adminList,
-    to: "/dashboard/assignments",
-    label: "assignment",
-    count: (payload) => pendingRowCount(payload, (item) => item.isPublished === false || item.IsPublished === false || PENDING_STATUSES.has(notificationStatus(item))),
-  },
 ];
 
 const searchIndex = menu.flatMap((g) =>
@@ -186,7 +178,7 @@ export default function DashboardLayout({
   children,
   excludeNotificationSources = EMPTY_NOTIFICATION_SOURCES,
 }) {
-  const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen, assignmentsOpen, setAssignmentsOpen } = useSidebar();
+  const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen } = useSidebar();
   const [attendanceOpen, setAttendanceOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -311,9 +303,9 @@ export default function DashboardLayout({
                 if (item.children) {
                   const isFacultyMenu = item.to === "/dashboard/faculty";
                   const isAttendanceMenu = item.to === "/dashboard/attendance";
-                  const isOpen = isFacultyMenu ? facultyOpen : isAttendanceMenu ? attendanceOpen : assignmentsOpen;
-                  const setOpen = isFacultyMenu ? setFacultyOpen : isAttendanceMenu ? setAttendanceOpen : setAssignmentsOpen;
-                  const childIsActive = (child) => child.to === "/dashboard/assignments" ? pathname === child.to : isActive(child.to);
+                  const isOpen = isFacultyMenu ? facultyOpen : attendanceOpen;
+                  const setOpen = isFacultyMenu ? setFacultyOpen : setAttendanceOpen;
+                  const childIsActive = (child) => isActive(child.to);
                   return (
                     <div key={item.to}>
                       <div className="cms-nav-parent">
@@ -337,7 +329,7 @@ export default function DashboardLayout({
                       {isOpen
                         ? item.children.map((child) => {
                             const ChildIcon = child.icon;
-                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={() => { if (item.to === "/dashboard/assignments") setAssignmentsOpen(false); if (item.to === "/dashboard/attendance") setAttendanceOpen(false); closeOnMobile(); }}><ChildIcon size={15} /> {child.label}</Link>;
+                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={() => { if (item.to === "/dashboard/attendance") setAttendanceOpen(false); closeOnMobile(); }}><ChildIcon size={15} /> {child.label}</Link>;
                           })
                         : null}
                     </div>

@@ -197,6 +197,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
   const subjectRequestId = useRef(0);
   const loadSubjects = useCallback(async (subjectContext) => {
     const requestId = ++subjectRequestId.current;
+    setLoading(true);
     if (!subjectContext?.boardId || !subjectContext?.groupId || !subjectContext?.academicLevelId) {
       // The landing view keeps Board unselected but still shows recently
       // added subjects. Once a group is chosen, use its scoped collection.
@@ -213,10 +214,11 @@ export default function SubjectManagementPage({ screen = "list" }) {
           setApiAvailable(false);
           setToast(getApiErrorMessage(error) || "Unable to load subjects.");
         }
+      } finally {
+        if (requestId === subjectRequestId.current) setLoading(false);
       }
       return;
     }
-    setLoading(true);
     try {
       const response = await apiClient.get(apiEndpoints.subjects.context, {
         params: {
@@ -358,6 +360,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
         context={SUBJECT_CONTEXT}
         loading={loading}
         loadSubjects={loadSubjects}
+        onError={setToast}
         assign={(subjectContext) => nav("/dashboard/subjects/assign", {
           state: {
             subjectContext: {
@@ -379,7 +382,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
     </>
   );
 }
-function List({ records, context, assign, loading, loadSubjects }) {
+function List({ records, context, assign, loading, loadSubjects, onError }) {
   const [q, setQ] = useState("");
   const [openingAssign, setOpeningAssign] = useState(false);
   const [selectedContext, setSelectedContext] = useState(context);
@@ -396,9 +399,9 @@ function List({ records, context, assign, loading, loadSubjects }) {
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
       setGroups(nextGroups);
-    }).catch((error) => setToast(getApiErrorMessage(error) || "Unable to load boards and groups."));
+    }).catch((error) => onError(getApiErrorMessage(error) || "Unable to load boards and groups."));
     return () => { active = false; };
-  }, []);
+  }, [onError]);
   const academicLevels = useMemo(() => academicLevelsForBoard(
     boards.find((board) => String(board.boardId ?? board.BoardId ?? board.id ?? board.Id) === String(selectedContext.boardId)),
   ), [boards, selectedContext.boardId]);
@@ -941,7 +944,7 @@ function Table({ rows, context, setContext, boards, groups, academicLevels, load
         <span>{rows.length} subjects</span>
       </div>
       <div className="subject-table-scroll">
-        {loading ? <Loader /> : <table className="subject-table">
+        {loading ? <Loader label="Loading subjects..." /> : <table className="subject-table">
           <thead>
             <tr>
               <th>#</th>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Download } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -36,6 +37,30 @@ const toOptions = (data, ids, names) =>
   list(data)
     .map((x) => ({ id: String(val(x, ...ids) ?? ""), name: val(x, ...names) ?? "", raw: x }))
     .filter((x, index, all) => x.id && x.name && all.findIndex((item) => item.id === x.id) === index);
+const sectionsForProgram = (data, selectedProgramId, programs) => {
+  const sections = list(data);
+  if (!selectedProgramId) return sections;
+  const selected = programs.find((program) => String(program.id) === String(selectedProgramId));
+  const programIds = new Set([
+    selectedProgramId,
+    val(selected?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id"),
+    val(selected?.raw, "groupProgramId", "GroupProgramId", "groupProgrammeId", "GroupProgrammeId"),
+  ].filter((id) => id !== undefined && id !== null && id !== "").map(String));
+  const programName = String(selected?.name ?? "").trim().toLowerCase();
+  const hasProgramMapping = sections.some((section) =>
+    val(section, "programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId", "groupProgrammeId", "GroupProgrammeId") != null
+    || val(section, "programName", "ProgramName", "programme", "Programme", "program", "Program") != null,
+  );
+  if (!hasProgramMapping) return sections;
+  return sections.filter((section) => {
+    const sectionIds = [
+      val(section, "programId", "ProgramId", "programmeId", "ProgrammeId"),
+      val(section, "groupProgramId", "GroupProgramId", "groupProgrammeId", "GroupProgrammeId"),
+    ].filter((id) => id !== undefined && id !== null && id !== "").map(String);
+    const sectionProgramName = String(val(section, "programName", "ProgramName", "programme", "Programme", "program", "Program") ?? "").trim().toLowerCase();
+    return sectionIds.some((id) => programIds.has(id)) || Boolean(programName && sectionProgramName === programName);
+  });
+};
 const activeYearsForBoard = (data, boardId) =>
   uniqueAcademicYearsByName(toOptions(
     list(data).filter(
@@ -63,11 +88,29 @@ const levelsForBoard = (levels, board) => {
 };
 const student = (x) => ({
   id: val(x, "studentId", "StudentId", "id", "Id"),
+  admissionNumber: val(x, "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo") ?? "—",
+  rollNumber: val(x, "rollNumber", "RollNumber", "rollNo", "RollNo") || "—",
   code: val(x, "rollNo", "RollNo", "admissionNo", "AdmissionNo", "studentCode") ?? "—",
   name: val(x, "studentName", "StudentName", "name", "Name", "fullName") ?? "—",
   group: val(x, "groupName", "GroupName", "group") ?? "—",
+  displayCode: val(x, "rollNumber", "RollNumber", "rollNo", "RollNo", "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo", "studentCode") || "—",
   status: status(val(x, "status", "Status", "attendanceStatus")),
+  remarks: val(x, "remarks", "Remarks") ?? "",
+  isAttendanceMarked: Boolean(val(x, "isAttendanceMarked", "IsAttendanceMarked")),
 });
+const attendanceTotals = (row) => {
+  const nestedRecords = list(val(row, "attendanceRecords", "AttendanceRecords", "dailyAttendance", "DailyAttendance", "records", "Records"));
+  const records = nestedRecords.length ? nestedRecords : [row];
+  return records.reduce((totals, record) => {
+    if (val(record, "isAttendanceMarked", "IsAttendanceMarked") === false) return totals;
+    const rawStatus = val(record, "status", "Status", "attendanceStatus", "AttendanceStatus");
+    if (rawStatus === undefined || rawStatus === null || rawStatus === "") return totals;
+    const attendanceStatus = status(rawStatus);
+    if (attendanceStatus === "Present") totals.present += 1;
+    if (attendanceStatus === "Absent") totals.absent += 1;
+    return totals;
+  }, { present: 0, absent: 0 });
+};
 const staff = (x) => ({
   id: val(x, "facultyId", "FacultyId", "staffId", "StaffId", "id", "Id"),
   code: val(x, "employeeId", "EmployeeId", "staffCode", "StaffCode") ?? "—",
@@ -79,6 +122,17 @@ const isMorningSlot = (slot) => {
   const time = String(val(slot, "startTime", "StartTime", "periodStartTime", "PeriodStartTime") ?? "");
   const hour = Number(time.match(/\d{1,2}/)?.[0]);
   return Number.isFinite(hour) && hour < 12;
+};
+const filePart = (value, fallback) => String(value || fallback).trim().replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || fallback;
+const saveDownload = (data, filename) => {
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 };
 
 export default function AttendancePage() {
@@ -140,6 +194,7 @@ function StudentMark({ say }) {
       years: [],
       levels: [],
       groups: [],
+      programs: [],
       sections: [],
       subjects: [],
       periods: [],
@@ -182,14 +237,18 @@ function StudentMark({ say }) {
     });
   }, [f.subjectId, m.periods, m.sectionTimetable]);
   const programOptions = useMemo(() => {
+    if (m.programs.length) return toOptions(m.programs, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "ProgramName", "programme", "Programme", "name", "Name"]);
     const group = m.groups.find((item) => item.id === String(f.groupId));
     return toOptions(group?.raw?.programs ?? group?.raw?.Programs ?? [], ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name"]);
-  }, [f.groupId, m.groups]);
+  }, [f.groupId, m.groups, m.programs]);
   useEffect(() => {
-    if (!f.groupId || f.programId || !programOptions.length) return;
-    const regular = programOptions.find((program) => /regular/i.test(program.name));
-    setF((current) => ({ ...current, programId: (regular || programOptions[0]).id, sectionId: "" }));
-  }, [f.groupId, f.programId, programOptions]);
+    if (!f.groupId) { setM((current) => ({ ...current, programs: [] })); return; }
+    let active = true;
+    apiClient.get(apiEndpoints.groups.programs(f.groupId))
+      .then((response) => active && setM((current) => ({ ...current, programs: list(response.data) })))
+      .catch((error) => { if (active) { setM((current) => ({ ...current, programs: [] })); say(getApiErrorMessage(error)); } });
+    return () => { active = false; };
+  }, [f.groupId, say]);
   const attendancePeriodOptions = useMemo(() => {
     const scheduledIds = new Set(periodOptions.map((period) => period.id));
     return [
@@ -211,6 +270,7 @@ function StudentMark({ say }) {
           academicYearId: "",
           academicLevelId: "",
           groupId: "",
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
@@ -222,6 +282,7 @@ function StudentMark({ say }) {
           academicYearId: value,
           academicLevelId: "",
           groupId: "",
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
@@ -232,6 +293,7 @@ function StudentMark({ say }) {
           ...c,
           academicLevelId: value,
           groupId: "",
+          programId: "",
           sectionId: "",
           subjectId: "",
           periodId: "",
@@ -353,8 +415,15 @@ function StudentMark({ say }) {
       return;
     }
     let active = true;
+    const selectedProgram = programOptions.find((program) => String(program.id) === String(f.programId));
     Promise.allSettled([
-      apiClient.get(apiEndpoints.sections.list, { params: { GroupId: f.groupId } }),
+      f.programId
+        ? apiClient.get(apiEndpoints.sections.list, { params: {
+            ProgramId: val(selectedProgram?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? f.programId,
+            Programme: selectedProgram?.name || undefined,
+            IsActive: true,
+          } })
+        : Promise.resolve({ data: [] }),
       apiClient.get(apiEndpoints.subjects.context, {
         params: { boardId: f.boardId, groupId: f.groupId, academicLevelId: f.academicLevelId },
       }),
@@ -364,11 +433,7 @@ function StudentMark({ say }) {
         ...c,
         sections:
           r[0].status === "fulfilled"
-            ? toOptions((() => {
-                const all = list(r[0].value.data);
-                const hasProgram = all.some((section) => val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== undefined && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== null && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== "");
-                return !f.programId || !hasProgram ? all : all.filter((section) => String(val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId")) === String(f.programId));
-              })(), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? toOptions(sectionsForProgram(r[0].value.data, f.programId, programOptions), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])
             : [],
         subjects:
           r[1].status === "fulfilled"
@@ -378,7 +443,7 @@ function StudentMark({ say }) {
       setF((c) => ({ ...c, sectionId: "", subjectId: "", periodId: "", sectionClassTeacherId: "", sectionClassTeacherName: "", periodFacultyId: "", periodFacultyName: "" }));
     });
     return () => { active = false; };
-  }, [f.boardId, f.academicLevelId, f.groupId, f.programId]);
+  }, [f.boardId, f.academicLevelId, f.groupId, f.programId, programOptions]);
   useEffect(() => {
     if (!f.groupId || !f.sectionId) {
       setM((c) => ({ ...c, sectionTimetable: [] }));
@@ -389,17 +454,23 @@ function StudentMark({ say }) {
     const fallbackTeacherId = val(selectedSection, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId");
     const fallbackTeacherName = val(selectedSection, "classTeacherName", "ClassTeacherName", "teacher", "Teacher");
     Promise.allSettled([
-      apiClient.get(apiEndpoints.attendance.academicContext, {
-        params: { groupId: f.groupId, sectionId: f.sectionId },
-      }),
+      f.subjectId && f.periodId
+        ? apiClient.get(apiEndpoints.attendance.academicContext, {
+            params: { groupId: f.groupId, sectionId: f.sectionId },
+          })
+        : Promise.resolve({ data: {} }),
       apiClient.get(apiEndpoints.timetable.getBySection(f.sectionId), {
         params: { academicYearId: f.academicYearId || undefined },
       }),
     ]).then((results) => {
       if (!active) return;
       const context = results[0].status === "fulfilled" ? results[0].value.data?.data ?? results[0].value.data : {};
-      const teacherId = val(context, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId") ?? fallbackTeacherId ?? "";
-      const teacherName = val(context, "classTeacherName", "ClassTeacherName", "facultyName", "FacultyName", "staffName", "StaffName") ?? fallbackTeacherName ?? "";
+      const teacherId = f.subjectId && f.periodId
+        ? val(context, "classTeacherId", "ClassTeacherId", "facultyId", "FacultyId") ?? fallbackTeacherId ?? ""
+        : "";
+      const teacherName = f.subjectId && f.periodId
+        ? val(context, "classTeacherName", "ClassTeacherName", "facultyName", "FacultyName", "staffName", "StaffName") ?? fallbackTeacherName ?? ""
+        : "";
       setF((c) => ({
         ...c,
         sectionClassTeacherId: String(teacherId),
@@ -413,7 +484,7 @@ function StudentMark({ say }) {
       }));
     });
     return () => { active = false; };
-  }, [f.academicYearId, f.groupId, f.sectionId, m.sections]);
+  }, [f.academicYearId, f.groupId, f.sectionId, f.subjectId, f.periodId, m.sections]);
   useEffect(() => {
     if (!f.sectionId || !f.periodId) return;
     let active = true;
@@ -460,7 +531,10 @@ function StudentMark({ say }) {
   // This keeps the student attendance form aligned with the selected section
   // and period instead of requiring the admin to re-enter the assignment.
   useEffect(() => {
-    if (!f.date || !f.groupId || !f.sectionId) return;
+    if (!f.date || !f.groupId || !f.sectionId || !f.subjectId || !f.periodId) {
+      setF((current) => ({ ...current, periodFacultyId: "", periodFacultyName: "" }));
+      return;
+    }
     let active = true;
     const sessionType = f.periodId === MORNING_SESSION
       ? "Morning session"
@@ -501,29 +575,29 @@ function StudentMark({ say }) {
         // existing validation and student APIs when no assignment is found.
       });
     return () => { active = false; };
-  }, [f.date, f.groupId, f.sectionId, f.periodId]);
+  }, [f.date, f.groupId, f.sectionId, f.subjectId, f.periodId]);
   const load = async () => {
-    if ([f.academicYearId, f.academicLevelId, f.groupId, f.programId, f.sectionId, f.subjectId, f.periodId].some((v) => !v))
-      return say("Select all attendance fields.");
+    if ([f.date, f.boardId, f.academicLevelId, f.groupId, f.programId, f.sectionId].some((v) => !v))
+      return say("Select Board, Academic Level, Group, Program, and Section.");
+    if (Boolean(f.subjectId) !== Boolean(f.periodId))
+      return say("Select both Subject and Period, or leave both as All.");
     if ([MORNING_SESSION, AFTERNOON_SESSION].includes(f.periodId))
       return say("Select a scheduled subject period to load attendance records.");
     setLoading(true);
     try {
-      const r = await apiClient.get(apiEndpoints.attendance.studentsForAttendance, { params: {
+      const r = await apiClient.get(apiEndpoints.attendance.students, { params: {
         date: f.date,
         boardId: +f.boardId,
-        academicYearId: +f.academicYearId,
         academicLevelId: +f.academicLevelId,
         groupId: +f.groupId,
-        programId: +f.programId,
         sectionId: +f.sectionId,
-        subjectId: +f.subjectId,
-        periodId: +f.periodId,
+        ...(f.subjectId ? { subjectId: +f.subjectId } : {}),
+        ...(f.periodId ? { periodId: +f.periodId } : {}),
       } });
       setRows(
         list(r.data)
           .map(student)
-          .filter((x) => x.id),
+          .filter((x, index, students) => x.id && students.findIndex((item) => String(item.id) === String(x.id)) === index),
       );
     } catch (e) {
       say(getApiErrorMessage(e));
@@ -541,8 +615,8 @@ function StudentMark({ say }) {
         programId: +f.programId,
         groupId: +f.groupId,
         sectionId: +f.sectionId,
-        subjectId: +f.subjectId,
-        periodId: +f.periodId,
+        subjectId: f.subjectId ? +f.subjectId : null,
+        periodId: f.periodId ? +f.periodId : null,
         facultyId: f.periodFacultyId ? +f.periodFacultyId : null,
         students: rows.map((x) => ({
           studentId: +x.id,
@@ -585,8 +659,8 @@ function StudentMark({ say }) {
               disabled={!f.boardId || !f.academicYearId || levelLoading}
             />
             <Select l="Group" v={f.groupId} on={change("groupId")} o={m.groups} empty="All groups" />
-            <Select l="Program" v={f.programId} on={change("programId")} o={programOptions} empty="All programs" disabled={!f.groupId} />
-            <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" />
+            <Select l="Program" v={f.programId} on={change("programId")} o={programOptions} empty="Select Program" disabled={!f.groupId} />
+            <Select l="Section" v={f.sectionId} on={change("sectionId")} o={m.sections} empty="All sections" disabled={!f.programId} />
             <Select l="Subject" v={f.subjectId} on={change("subjectId")} o={m.subjects} empty="All subjects" />
             <Select
               l="Period"
@@ -599,7 +673,9 @@ function StudentMark({ say }) {
             <Field l="Class Teacher">
               <input
                 value={
-                  teacherName(f.periodFacultyId, f.periodFacultyName) !== "Not assigned"
+                  !f.subjectId && !f.periodId
+                    ? "Not required"
+                    : teacherName(f.periodFacultyId, f.periodFacultyName) !== "Not assigned"
                     ? teacherName(f.periodFacultyId, f.periodFacultyName)
                     : teacherName(f.sectionClassTeacherId, f.sectionClassTeacherName)
                 }
@@ -802,23 +878,29 @@ function Table({ rows, setRows, loading, saving, save, staffMode = false }) {
           <table className="cms-table att-table att-compact">
             <thead>
               <tr>
+                {!staffMode && <th>Admission No.</th>}
                 <th>{staffMode ? "Staff ID" : "Roll No"}</th>
                 <th>{staffMode ? "Staff Name" : "Student Name"}</th>
                 <th>{staffMode ? "Department" : "Status"}</th>
+                {!staffMode && <th>Remarks</th>}
+                {!staffMode && <th>Marked</th>}
                 <th>{staffMode ? "Attendance" : "Action"}</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="4">Loading attendance...</td>
+                  <td colSpan={staffMode ? 4 : 7}>Loading attendance...</td>
                 </tr>
               ) : rows.length ? (
                 rows.map((r) => (
                   <tr key={r.id}>
-                    <td>{r.code}</td>
+                    {!staffMode && <td>{r.admissionNumber}</td>}
+                    <td>{staffMode ? r.code : r.rollNumber}</td>
                     <td>{r.name}</td>
                     <td>{staffMode ? r.department : r.status}</td>
+                    {!staffMode && <td>{r.remarks || "—"}</td>}
+                    {!staffMode && <td>{r.isAttendanceMarked ? "Yes" : "No"}</td>}
                     <td>
                       {staffMode ? (
                         <div className="att-status">
@@ -846,7 +928,7 @@ function Table({ rows, setRows, loading, saving, save, staffMode = false }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="4">Load attendance to view records.</td>
+                  <td colSpan={staffMode ? 4 : 7}>Load attendance to view records.</td>
                 </tr>
               )}
             </tbody>
@@ -914,6 +996,7 @@ function StaffReports({ say }) {
   const [rows, setRows] = useState([]);
   const [yearLoading, setYearLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   useEffect(() => {
     Promise.allSettled([
       apiClient.get(apiEndpoints.boards.list),
@@ -977,6 +1060,28 @@ function StaffReports({ say }) {
     } finally {
       setLoading(false);
     }
+  };
+  const exportAttendance = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const selectedDate = new Date(`${date}T00:00:00`);
+      const response = await apiClient.get(apiEndpoints.staffAttendance.monthlyExport, {
+        params: {
+          Date: date,
+          Month: selectedDate.getMonth() + 1,
+          Year: selectedDate.getFullYear(),
+          AcademicYearId: year ? Number(year) : undefined,
+          DepartmentId: departmentId ? Number(departmentId) : undefined,
+          StaffType: staffType,
+        },
+        responseType: "blob",
+      });
+      const academicYear = years.find((item) => String(item.id) === String(year))?.name || date.slice(0, 7);
+      saveDownload(response.data, `Faculty_Attendance_${filePart(academicYear, "Academic_Year")}.xlsx`);
+      say("Faculty attendance Excel downloaded.");
+    } catch (error) { say(getApiErrorMessage(error)); }
+    finally { setExporting(false); }
   };
   const totals = rows.reduce(
     (summary, row) => ({
@@ -1056,6 +1161,9 @@ function StaffReports({ say }) {
           <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
             {loading ? "Loading..." : "Apply"}
           </button>
+          <button className="cms-btn cms-btn-ghost" disabled={loading || exporting || !year} onClick={exportAttendance}>
+            <Download size={15} aria-hidden="true" /> {exporting ? "Exporting..." : "Export Faculty Attendance"}
+          </button>
         </div>
       </section>
       <section className="att-card att-table-card">
@@ -1128,6 +1236,7 @@ function Reports({ staffMode, say }) {
       years: [],
       levels: [],
       groups: [],
+      programs: [],
       sections: [],
       subjects: [],
       periods: [],
@@ -1136,16 +1245,17 @@ function Reports({ staffMode, say }) {
     [rows, setRows] = useState([]),
     [yearLoading, setYearLoading] = useState(false),
     [levelLoading, setLevelLoading] = useState(false),
-    [loading, setLoading] = useState(false);
+    [loading, setLoading] = useState(false),
+    [exporting, setExporting] = useState(false);
   const change = (k) => (e) =>
     setF((x) => {
       const value = e.target.value;
       if (k === "board")
-        return { ...x, board: value, year: "", level: "", group: "", section: "", subject: "", period: "", teacher: "" };
+        return { ...x, board: value, year: "", level: "", group: "", program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "year")
-        return { ...x, year: value, level: "", group: "", section: "", subject: "", period: "", teacher: "" };
+        return { ...x, year: value, level: "", group: "", program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "level")
-        return { ...x, level: value, group: "", section: "", subject: "", period: "", teacher: "" };
+        return { ...x, level: value, group: "", program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "group")
         return { ...x, group: value, program: "", section: "", subject: "", period: "", teacher: "" };
       if (k === "program") return { ...x, program: value, section: "", subject: "", period: "", teacher: "" };
@@ -1247,8 +1357,15 @@ function Reports({ staffMode, say }) {
       return;
     }
     let active = true;
+    const selectedProgram = programOptions.find((program) => String(program.id) === String(f.program));
     Promise.allSettled([
-      apiClient.get(apiEndpoints.sections.list, { params: { GroupId: f.group } }),
+      f.program
+        ? apiClient.get(apiEndpoints.sections.list, { params: {
+            ProgramId: val(selectedProgram?.raw, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id") ?? f.program,
+            Programme: selectedProgram?.name || undefined,
+            IsActive: true,
+          } })
+        : Promise.resolve({ data: [] }),
       apiClient.get(apiEndpoints.subjects.context, {
         params: { boardId: f.board, groupId: f.group, academicLevelId: f.level },
       }),
@@ -1258,11 +1375,7 @@ function Reports({ staffMode, say }) {
         ...x,
         sections:
           r[0].status === "fulfilled"
-            ? toOptions((() => {
-                const all = list(r[0].value.data);
-                const hasProgram = all.some((section) => val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== undefined && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== null && val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId") !== "");
-                return !f.program || !hasProgram ? all : all.filter((section) => String(val(section, "programId", "ProgramId", "groupProgramId", "GroupProgramId", "programmeId", "ProgrammeId")) === String(f.program));
-              })(), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? toOptions(sectionsForProgram(r[0].value.data, f.program, programOptions), ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"])
             : [],
         subjects:
           r[1].status === "fulfilled"
@@ -1271,35 +1384,94 @@ function Reports({ staffMode, say }) {
       }));
     });
     return () => { active = false; };
-  }, [f.board, f.level, f.group, f.program]);
+  }, [f.board, f.level, f.group, f.program, m.programs]);
   const programOptions = useMemo(() => {
+    if (m.programs.length) return toOptions(m.programs, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "ProgramName", "programme", "Programme", "name", "Name"]);
     const group = m.groups.find((item) => item.id === String(f.group));
     return toOptions(group?.raw?.programs ?? group?.raw?.Programs ?? [], ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name"]);
-  }, [f.group, m.groups]);
+  }, [f.group, m.groups, m.programs]);
+  useEffect(() => {
+    if (!f.group) { setM((current) => ({ ...current, programs: [] })); return; }
+    let active = true;
+    apiClient.get(apiEndpoints.groups.programs(f.group))
+      .then((response) => active && setM((current) => ({ ...current, programs: list(response.data) })))
+      .catch((error) => { if (active) { setM((current) => ({ ...current, programs: [] })); say(getApiErrorMessage(error)); } });
+    return () => { active = false; };
+  }, [f.group, say]);
   const load = async () => {
+    if (!staffMode) {
+      if ([f.date, f.board, f.level, f.group, f.program, f.section].some((value) => !value))
+        return say("Select Board, Academic Level, Group, Program, and Section.");
+      if (Boolean(f.subject) !== Boolean(f.period))
+        return say("Select both Subject and Period, or leave both as All.");
+    }
     setLoading(true);
     try {
-      const r = await apiClient.post(
-        staffMode
-          ? apiEndpoints.staffAttendance.monthlyReport
-          : apiEndpoints.attendance.studentMonthlyReport,
-        staffMode
-          ? { date: f.date, staffType: 1, departmentId: null }
-          : {
-              date: f.date,
-              groupId: f.group ? +f.group : null,
-              programId: f.program ? +f.program : null,
-              sectionId: f.section ? +f.section : null,
-            },
-      );
-      setRows(list(r.data));
+      if (staffMode) {
+        const response = await apiClient.post(
+          apiEndpoints.staffAttendance.monthlyReport,
+          { date: f.date, staffType: 1, departmentId: null },
+        );
+        setRows(list(response.data));
+      } else {
+        const response = await apiClient.get(apiEndpoints.attendance.students, {
+          params: {
+            date: f.date,
+            boardId: +f.board,
+            academicLevelId: +f.level,
+            groupId: +f.group,
+            sectionId: +f.section,
+            ...(f.subject ? { subjectId: +f.subject } : {}),
+            ...(f.period ? { periodId: +f.period } : {}),
+          },
+        });
+        setRows(
+          list(response.data).filter((row, index, records) => {
+            const studentId = val(row, "studentId", "StudentId", "id", "Id");
+            return records.findIndex((item) => String(val(item, "studentId", "StudentId", "id", "Id")) === String(studentId)) === index;
+          }),
+        );
+      }
     } catch (e) {
       say(getApiErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
-  const columns = rows.length ? Object.keys(rows[0]) : [];
+  const exportAttendance = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const selectedDate = new Date(`${f.date}T00:00:00`);
+      const response = await apiClient.get(apiEndpoints.attendance.studentMonthlyExport, {
+        params: {
+          Date: f.date,
+          Month: selectedDate.getMonth() + 1,
+          Year: selectedDate.getFullYear(),
+          BoardId: f.board ? Number(f.board) : undefined,
+          AcademicYearId: f.year ? Number(f.year) : undefined,
+          AcademicLevelId: f.level ? Number(f.level) : undefined,
+          GroupId: f.group ? Number(f.group) : undefined,
+          SectionId: f.section ? Number(f.section) : undefined,
+          SubjectId: f.subject ? Number(f.subject) : undefined,
+          PeriodId: f.period ? Number(f.period) : undefined,
+        },
+        responseType: "blob",
+      });
+      const academicYear = m.years.find((item) => String(item.id) === String(f.year))?.name || f.date.slice(0, 7);
+      saveDownload(response.data, `Student_Attendance_${filePart(academicYear, "Academic_Year")}.xlsx`);
+      say("Student attendance Excel downloaded.");
+    } catch (error) { say(getApiErrorMessage(error)); }
+    finally { setExporting(false); }
+  };
+  const reportDate = new Date(`${f.date}T00:00:00`);
+  const reportYear = reportDate.getFullYear();
+  const reportMonth = reportDate.getMonth();
+  const reportDays = Array.from({ length: new Date(reportYear, reportMonth + 1, 0).getDate() }, (_, index) => index + 1);
+  const selectedReportDay = reportDate.getDate();
+  const reportMonthLabel = reportDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const selectedGroupName = m.groups.find((item) => String(item.id) === String(f.group))?.name ?? "—";
+  const selectedSectionName = m.sections.find((item) => String(item.id) === String(f.section))?.name ?? "—";
   return (
     <>
       <section className="att-card att-report-card">
@@ -1320,13 +1492,14 @@ function Reports({ staffMode, say }) {
               />
               <Select l="Academic Level" v={f.level} on={change("level")} o={m.levels} empty={levelLoading ? "Loading..." : "All levels"} disabled={!f.board || !f.year || levelLoading} />
               <Select l="Group" v={f.group} on={change("group")} o={m.groups} empty="All groups" />
-              <Select l="Program" v={f.program} on={change("program")} o={programOptions} empty="All programs" disabled={!f.group} />
+              <Select l="Program" v={f.program} on={change("program")} o={programOptions} empty="Select Program" disabled={!f.group} />
               <Select
                 l="Section"
                 v={f.section}
                 on={change("section")}
                 o={m.sections}
                 empty="All sections"
+                disabled={!f.program}
               />
               <Select
                 l="Subject"
@@ -1349,37 +1522,58 @@ function Reports({ staffMode, say }) {
           <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
             {loading ? "Loading..." : "Apply Filters"}
           </button>
+          <button className="cms-btn cms-btn-ghost" disabled={loading || exporting || !f.year} onClick={exportAttendance}>
+            <Download size={15} aria-hidden="true" /> {exporting ? "Exporting..." : "Export Student Attendance"}
+          </button>
         </div>
       </section>
       <section className="att-card att-table-card">
         <div className="att-table-top">
-          <b>Attendance Report</b>
+          <div>
+            <b>Monthly Attendance</b>
+            <span className="att-days-label">{reportMonthLabel} · {reportDays.length} days</span>
+            <div className="att-legend">P Present · A Absent · L Late · LV Leave</div>
+          </div>
         </div>
         <div className="att-scroll">
           <table className="cms-table att-table att-month-table">
             <thead>
               <tr>
-                {columns.map((c) => (
-                  <th key={c}>{c.replace(/([A-Z])/g, " $1")}</th>
-                ))}
+                <th>Roll No.</th>
+                <th>Student Name</th>
+                <th>Group</th>
+                <th>Section</th>
+                {reportDays.map((day) => <th className="att-day-header" key={day}><span>{day}</span><small>{new Date(reportYear, reportMonth, day).toLocaleDateString("en-US", { weekday: "short" }).slice(0, 3)}</small></th>)}
+                <th className="att-month-summary">Present Days</th>
+                <th className="att-month-summary">Absent Days</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td>Loading report...</td>
+                  <td colSpan={reportDays.length + 6}>Loading report...</td>
                 </tr>
               ) : rows.length ? (
                 rows.map((row, i) => (
                   <tr key={val(row, "studentId", "facultyId", "id", "Id") ?? i}>
-                    {columns.map((c) => (
-                      <td key={c}>{String(row[c] ?? "—")}</td>
-                    ))}
+                    <td>{val(row, "rollNumber", "RollNumber", "rollNo", "RollNo", "admissionNumber", "AdmissionNumber") || "—"}</td>
+                    <td>{val(row, "studentName", "StudentName", "name", "Name") || "—"}</td>
+                    <td>{val(row, "groupName", "GroupName") || selectedGroupName}</td>
+                    <td>{val(row, "sectionName", "SectionName") || selectedSectionName}</td>
+                    {reportDays.map((day) => {
+                      if (day !== selectedReportDay || val(row, "isAttendanceMarked", "IsAttendanceMarked") === false)
+                        return <td key={day}><span className="att-status-dash">—</span></td>;
+                      const attendanceStatus = status(val(row, "status", "Status", "attendanceStatus"));
+                      const statusCode = STATUS.find(([name]) => name === attendanceStatus)?.[2] ?? "—";
+                      return <td key={day}><span className={`att-status-pill att-${attendanceStatus.toLowerCase()}`}>{statusCode}</span></td>;
+                    })}
+                    <td className="att-month-summary"><b>{attendanceTotals(row).present}</b></td>
+                    <td className="att-month-summary"><b>{attendanceTotals(row).absent}</b></td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td>Apply filters to load the monthly report.</td>
+                  <td colSpan={reportDays.length + 6}>Apply filters to load the monthly report.</td>
                 </tr>
               )}
             </tbody>

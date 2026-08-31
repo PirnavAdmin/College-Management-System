@@ -94,6 +94,97 @@ const numberValue = (item, ...keys) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const optionalNumberValue = (item, ...keys) => {
+  const value = read(item, ...keys);
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const normalizeKey = (value) => String(value || "").trim().toLowerCase();
+
+const admissionFullName = (item) => (
+  textValue(item, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+  || [textValue(item, "firstName", "FirstName"), textValue(item, "lastName", "LastName")].filter(Boolean).join(" ")
+);
+
+const isApprovedAdmission = (item) => {
+  const status = normalizeKey(textValue(item, "status", "Status", "admissionStatus", "AdmissionStatus"));
+  return status === "approved" || status === "admitted" || read(item, "isApproved", "IsApproved") === true;
+};
+
+const accountStatusFor = ({ payable = 0, paid = 0, balance = 0, dueDate = "", status = "" }) => {
+  const backendStatus = textValue({ status }, "status");
+  if (backendStatus && normalizeKey(backendStatus) !== "pending") return backendStatus;
+  if (balance <= 0 && payable > 0) return "Paid";
+  if (dueDate && new Date(dueDate) < new Date(todayISO()) && balance > 0) return "Overdue";
+  if (paid > 0 && balance > 0) return "Partial";
+  if (balance > 0) return backendStatus || "Due";
+  if (payable <= 0 && balance <= 0) return "Not Assigned";
+  return backendStatus || "Due";
+};
+
+const hasUsefulChartData = (rows = []) => rows.some((row) => (
+  normalizeKey(row.group) && (Number(row.expected || 0) > 0 || Number(row.collected || 0) > 0 || Number(row.outstanding || 0) > 0)
+));
+
+const accountOverviewTotals = (accounts = []) => {
+  const totalExpected = accounts.reduce((sum, account) => sum + Number(account.totalPayable || 0), 0);
+  const totalCollected = accounts.reduce((sum, account) => sum + Number(account.totalPaid || 0), 0);
+  const pendingStudents = accounts.filter((account) => Number(account.balance || 0) > 0).length;
+  const overdueStudents = accounts.filter((account) => (
+    Number(account.balance || 0) > 0
+    && account.nextDueDate
+    && new Date(account.nextDueDate) < new Date(todayISO())
+  )).length;
+  return {
+    totalStudents: accounts.length,
+    totalCollected,
+    pendingStudents,
+    overdueStudents,
+    collectedPercent: totalExpected > 0 ? (totalCollected / totalExpected) * 100 : 0,
+  };
+};
+
+const accountGroupWiseTotals = (accounts = []) => {
+  const grouped = new Map();
+  accounts.forEach((account) => {
+    const group = account.group || account.program || "-";
+    const row = grouped.get(group) || { group, expected: 0, collected: 0, outstanding: 0 };
+    row.expected += Number(account.totalPayable || 0);
+    row.collected += Number(account.totalPaid || 0);
+    row.outstanding += Number(account.balance || 0);
+    grouped.set(group, row);
+  });
+  return Array.from(grouped.values());
+};
+
+const mapById = (rows, ...keys) => {
+  const mapped = new Map();
+  rows.forEach((row) => {
+    const id = read(row, ...keys);
+    if (id !== undefined && id !== null && id !== "") mapped.set(String(id), row);
+  });
+  return mapped;
+};
+
+const findMatchingAdmission = (admissions, account, student) => {
+  const admissionNo = normalizeKey(textValue(account, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+    || textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber"));
+  if (admissionNo) {
+    const byAdmissionNo = admissions.find((item) => normalizeKey(textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")) === admissionNo);
+    if (byAdmissionNo) return byAdmissionNo;
+  }
+  const studentName = normalizeKey(textValue(account, "studentName", "StudentName") || textValue(student, "studentName", "StudentName", "name", "Name"));
+  return admissions.find((item) => isApprovedAdmission(item) && normalizeKey(admissionFullName(item)) === studentName) || null;
+};
+
+const feeDetailPayloadRows = (detail) => getCollection(read(detail, "breakdown", "Breakdown", "feeItems", "FeeItems", "items", "Items"));
+
+const feeDetailScheduleRows = (detail) => getCollection(read(detail, "schedules", "Schedules", "installments", "Installments", "feeSchedules", "FeeSchedules"));
+
+const feeDetailPaymentRows = (detail) => getCollection(read(detail, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions"));
+
 const toSelectOptions = (rows, idKeys, labelKeys) => rows
   .map((item) => {
     const value = read(item, ...idKeys);
@@ -280,60 +371,106 @@ const normalizeInstallmentRows = (rows, account) => rows.map((item, index) => ({
   no: Number(read(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "no", "No") || index + 1),
   amount: numberValue(item, "amount", "Amount", "installmentAmount", "InstallmentAmount", "payableAmount", "PayableAmount"),
   paid: numberValue(item, "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid"),
+  balance: numberValue(item, "balance", "Balance", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount"),
   dueDate: textValue(item, "dueDate", "DueDate", "date", "Date"),
   status: textValue(item, "status", "Status") || account.feeStatus || "Pending",
 }));
 
-const normalizeFeeAccountRows = (rows) => rows.map((item, index) => {
+const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) => {
+  const studentsById = context.studentsById || new Map();
+  const admissions = context.admissions || [];
+  const feeDetailsByStudentId = context.feeDetailsByStudentId || new Map();
   const student = read(item, "student", "Student");
+  const studentFee = read(item, "studentFee", "StudentFee", "feeAccount", "FeeAccount", "assignment", "Assignment");
+  const studentId = read(item, "studentId", "StudentId") ?? read(student, "studentId", "StudentId", "id", "Id");
+  const studentRecord = studentsById.get(String(studentId)) || {};
+  const admissionRecord = findMatchingAdmission(admissions, item, studentRecord);
+  const detail = feeDetailsByStudentId.get(String(studentId)) || {};
   const group = read(item, "group", "Group");
   const section = read(item, "section", "Section");
   const program = read(item, "program", "Program");
   const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
+  const assignmentId = read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
+    ?? read(studentFee, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
+    ?? read(detail, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "id", "Id");
+  const feeItems = feeDetailPayloadRows(detail).length ? feeDetailPayloadRows(detail) : getCollection(read(item, "feeItems", "FeeItems", "items", "Items", "breakdown", "Breakdown"));
+  const normalizedItems = feeItems.map((feeItem, feeIndex) => ({
+    id: String(read(feeItem, "feeTypeId", "FeeTypeId", "id", "Id") ?? `${index}-${feeIndex}`),
+    type: textValue(feeItem, "feeTypeName", "FeeTypeName", "feeType", "FeeType", "type", "Type", "name", "Name") || `Fee ${feeIndex + 1}`,
+    originalAmount: numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount"),
+    concessionAmount: numberValue(feeItem, "concessionAmount", "ConcessionAmount", "discount", "Discount"),
+    payableAmount: numberValue(feeItem, "payableAmount", "PayableAmount", "payable", "Payable", "amount", "Amount"),
+    selected: read(feeItem, "selected", "Selected") !== false,
+    required: Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
+  }));
+  const detailTotal = normalizedItems.reduce((sum, feeItem) => sum + Number(feeItem.payableAmount || feeItem.originalAmount || 0), 0);
+  const schedules = feeDetailScheduleRows(detail).length
+    ? feeDetailScheduleRows(detail)
+    : getCollection(read(item, "installments", "Installments", "schedules", "Schedules", "feeSchedules", "FeeSchedules"));
+  const rawTotalPayable = optionalNumberValue(item, "totalPayable", "TotalPayable", "payable", "Payable", "netPayable", "NetPayable")
+    ?? optionalNumberValue(detail, "totalPayable", "TotalPayable", "payable", "Payable", "originalFee", "OriginalFee", "scheduledFees", "ScheduledFees")
+    ?? detailTotal;
+  const totalPaid = optionalNumberValue(item, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount")
+    ?? optionalNumberValue(detail, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount")
+    ?? 0;
+  const rawBalance = optionalNumberValue(item, "balance", "Balance", "outstanding", "Outstanding", "dueAmount", "DueAmount")
+    ?? optionalNumberValue(detail, "balance", "Balance", "outstanding", "Outstanding", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount")
+    ?? undefined;
+  const nextDueDate = textValue(item, "nextDueDate", "NextDueDate", "nextDue", "NextDue", "dueDate", "DueDate")
+    || textValue(detail, "nextDueDate", "NextDueDate", "nextDue", "NextDue", "dueDate", "DueDate");
+  const rawStatus = textValue(item, "feeStatus", "FeeStatus", "status", "Status") || textValue(detail, "feeStatus", "FeeStatus", "status", "Status");
+  const totalPayable = rawTotalPayable <= 0 && detailTotal > 0 ? detailTotal : rawTotalPayable;
+  const balance = rawBalance !== undefined && !(rawBalance <= 0 && totalPayable > totalPaid && normalizeKey(rawStatus) === "pending")
+    ? rawBalance
+    : Math.max(totalPayable - totalPaid, 0);
   const account = {
-    id: String(read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "assignmentId", "AssignmentId", "studentId", "StudentId", "id", "Id") ?? `fee-account-${index + 1}`),
-    assignmentId: read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "assignmentId", "AssignmentId", "id", "Id"),
-    studentFeeAssignmentId: read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "assignmentId", "AssignmentId", "id", "Id"),
-    studentId: read(item, "studentId", "StudentId") ?? read(student, "studentId", "StudentId", "id", "Id"),
-    studentName: textValue(item, "studentName", "StudentName", "name", "Name") || textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName") || "Student",
-    admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "-",
-    rollNumber: textValue(item, "rollNumber", "RollNumber") || textValue(student, "rollNumber", "RollNumber"),
-    academicYearId: textValue(item, "academicYearId", "AcademicYearId") || textValue(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
-    academicYear: textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || textValue(academicYear, "academicYearName", "AcademicYearName", "name", "Name"),
-    academicLevel: textValue(item, "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel"),
-    groupId: textValue(item, "groupId", "GroupId") || textValue(group, "groupId", "GroupId", "id", "Id"),
-    group: textValue(item, "groupName", "GroupName", "group", "Group") || textValue(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"),
-    sectionId: textValue(item, "sectionId", "SectionId") || textValue(section, "sectionId", "SectionId", "id", "Id") || textValue(program, "programId", "ProgramId", "id", "Id"),
-    section: textValue(item, "sectionName", "SectionName", "section", "Section") || textValue(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"),
-    admissionDate: textValue(item, "admissionDate", "AdmissionDate", "createdAt", "CreatedAt"),
+    id: String(assignmentId ?? read(item, "studentId", "StudentId") ?? `fee-account-${index + 1}`),
+    assignmentId,
+    studentFeeAssignmentId: assignmentId,
+    studentFeeId: assignmentId,
+    studentId,
+    studentName: textValue(item, "studentName", "StudentName", "name", "Name")
+      || textValue(detail, "studentName", "StudentName", "name", "Name")
+      || textValue(studentRecord, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+      || admissionFullName(admissionRecord)
+      || "Student",
+    admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || textValue(detail, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || textValue(studentRecord, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || textValue(admissionRecord, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || "-",
+    rollNumber: textValue(item, "rollNumber", "RollNumber") || textValue(detail, "rollNumber", "RollNumber") || textValue(studentRecord, "rollNo", "RollNo", "rollNumber", "RollNumber"),
+    academicYearId: textValue(item, "academicYearId", "AcademicYearId") || textValue(academicYear, "academicYearId", "AcademicYearId", "id", "Id") || textValue(admissionRecord, "academicYearId", "AcademicYearId"),
+    academicYear: textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || textValue(detail, "academicYearName", "AcademicYearName") || textValue(academicYear, "academicYearName", "AcademicYearName", "name", "Name") || textValue(admissionRecord, "academicYearName", "AcademicYearName"),
+    academicLevel: textValue(item, "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel") || textValue(detail, "academicLevelName", "AcademicLevelName") || textValue(admissionRecord, "academicLevelName", "AcademicLevelName"),
+    groupId: textValue(item, "groupId", "GroupId") || textValue(group, "groupId", "GroupId", "id", "Id") || textValue(admissionRecord, "groupId", "GroupId") || textValue(studentRecord, "groupId", "GroupId"),
+    group: textValue(item, "groupName", "GroupName", "group", "Group") || textValue(detail, "groupName", "GroupName") || textValue(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode") || textValue(admissionRecord, "groupName", "GroupName"),
+    programId: textValue(item, "programId", "ProgramId") || textValue(program, "programId", "ProgramId", "id", "Id") || textValue(admissionRecord, "programId", "ProgramId") || textValue(studentRecord, "programId", "ProgramId"),
+    program: textValue(item, "programName", "ProgramName", "program", "Program") || textValue(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode") || textValue(admissionRecord, "programName", "ProgramName"),
+    sectionId: textValue(item, "sectionId", "SectionId") || textValue(section, "sectionId", "SectionId", "id", "Id") || textValue(studentRecord, "sectionId", "SectionId"),
+    section: textValue(item, "sectionName", "SectionName", "section", "Section") || textValue(detail, "sectionName", "SectionName") || textValue(section, "sectionName", "SectionName", "name", "Name") || textValue(admissionRecord, "sectionName", "SectionName") || textValue(admissionRecord, "programName", "ProgramName"),
+    admissionDate: textValue(item, "admissionDate", "AdmissionDate", "createdAt", "CreatedAt") || textValue(detail, "admissionDate", "AdmissionDate") || textValue(admissionRecord, "admissionDate", "AdmissionDate"),
     paymentPlan: textValue(item, "paymentPlan", "PaymentPlan", "plan", "Plan") || "Full Payment",
     admissionFee: numberValue(item, "admissionFee", "AdmissionFee"),
     courseFee: numberValue(item, "courseFee", "CourseFee", "totalPayable", "TotalPayable", "payable", "Payable"),
-    totalPayable: numberValue(item, "totalPayable", "TotalPayable", "payable", "Payable", "netPayable", "NetPayable"),
-    totalPaid: numberValue(item, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount"),
-    balance: numberValue(item, "balance", "Balance", "outstanding", "Outstanding", "dueAmount", "DueAmount"),
+    totalPayable,
+    totalPaid,
+    balance,
     concessionAmount: numberValue(item, "concessionAmount", "ConcessionAmount", "discountAmount", "DiscountAmount"),
-    feeStatus: textValue(item, "feeStatus", "FeeStatus", "status", "Status") || "Due",
-    nextDueDate: textValue(item, "nextDueDate", "NextDueDate", "dueDate", "DueDate"),
-    feeItems: getCollection(read(item, "feeItems", "FeeItems", "items", "Items")).map((feeItem, feeIndex) => ({
-      id: String(read(feeItem, "feeTypeId", "FeeTypeId", "id", "Id") ?? `${index}-${feeIndex}`),
-      type: textValue(feeItem, "feeTypeName", "FeeTypeName", "type", "Type", "name", "Name") || `Fee ${feeIndex + 1}`,
-      originalAmount: numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount"),
-      payableAmount: numberValue(feeItem, "payableAmount", "PayableAmount", "amount", "Amount"),
-      selected: read(feeItem, "selected", "Selected") !== false,
-      required: Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
-    })),
+    feeStatus: accountStatusFor({ payable: totalPayable, paid: totalPaid, balance, dueDate: nextDueDate, status: rawStatus }),
+    nextDueDate,
+    feeItems: normalizedItems,
     transactions: [],
     installments: [],
   };
-  account.transactions = normalizeTransactionRows(getCollection(read(item, "transactions", "Transactions", "payments", "Payments")), account);
-  account.installments = normalizeInstallmentRows(getCollection(read(item, "installments", "Installments", "schedules", "Schedules", "feeSchedules", "FeeSchedules")), account);
+  account.transactions = normalizeTransactionRows(feeDetailPaymentRows(detail).length ? feeDetailPaymentRows(detail) : getCollection(read(item, "transactions", "Transactions", "payments", "Payments")), account);
+  account.installments = normalizeInstallmentRows(schedules, account);
   const derived = deriveAccount(account);
   return {
     ...derived,
-    totalPayable: account.totalPayable || derived.totalPayable,
-    totalPaid: account.totalPaid || derived.totalPaid,
-    balance: account.balance || derived.balance,
+    totalPayable: account.totalPayable ?? derived.totalPayable,
+    totalPaid: account.totalPaid ?? derived.totalPaid,
+    balance: account.balance ?? derived.balance,
     feeStatus: account.feeStatus || derived.feeStatus,
     nextDueDate: account.nextDueDate || derived.nextDueDate,
   };
@@ -407,18 +544,62 @@ function TablePagination({ page, pageSize = PAGE_SIZE, totalItems, onPageChange 
 }
 
 /* ------------------------------- Overview ------------------------------- */
-function OverviewTab({ accounts }) {
+const normalizeDueRows = (rows) => rows
+  .map((item, index) => ({
+    key: String(read(item, "feeInstallmentId", "FeeInstallmentId", "studentFeeId", "StudentFeeId", "id", "Id") ?? `due-${index + 1}`),
+    studentName: textValue(item, "studentName", "StudentName", "name", "Name") || "Student",
+    admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "-",
+    group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName"),
+    section: textValue(item, "sectionName", "SectionName", "section", "Section", "programName", "ProgramName") || "-",
+    no: textValue(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "feeSchedule", "FeeSchedule") || index + 1,
+    dueDate: textValue(item, "dueDate", "DueDate", "nextDue", "NextDue"),
+    amount: numberValue(item, "balance", "Balance", "amount", "Amount", "dueAmount", "DueAmount"),
+    status: textValue(item, "status", "Status", "feeStatus", "FeeStatus") || "Due",
+  }))
+  .filter((item) => item.amount > 0);
+
+const normalizeDashboard = (payload) => {
+  const data = getObject(payload);
+  return {
+    totals: {
+      totalStudents: optionalNumberValue(data, "totalStudents", "TotalStudents"),
+      totalCollected: optionalNumberValue(data, "totalCollected", "TotalCollected", "collected", "Collected"),
+      pendingStudents: optionalNumberValue(data, "pendingStudents", "PendingStudents"),
+      overdueStudents: optionalNumberValue(data, "overdueStudents", "OverdueStudents"),
+      collectedPercent: optionalNumberValue(data, "collectionPercentage", "CollectionPercentage", "collectedPercent", "CollectedPercent"),
+    },
+    chartData: getCollection(read(data, "groupWiseCollection", "GroupWiseCollection")).map((item) => ({
+      group: textValue(item, "groupName", "GroupName", "group", "Group") || "-",
+      expected: numberValue(item, "expected", "Expected", "totalExpected", "TotalExpected"),
+      collected: numberValue(item, "collected", "Collected", "totalCollected", "TotalCollected"),
+      outstanding: numberValue(item, "outstanding", "Outstanding", "totalOutstanding", "TotalOutstanding"),
+    })),
+    upcoming: normalizeDueRows(getCollection(read(data, "upcomingSchedules", "UpcomingSchedules", "dues", "Dues"))),
+    recent: getCollection(read(data, "recentPayments", "RecentPayments", "payments", "Payments")),
+  };
+};
+
+function OverviewTab({ accounts, dashboard = null, dueRows = [] }) {
   const [overviewTab, setOverviewTab] = useState("upcoming");
-  const totals = overviewTotals(accounts);
-  const chartData = groupWiseTotals(accounts);
-  const upcoming = upcomingInstallments(accounts);
-  const recent = allTransactions(accounts).slice(0, 8);
+  const dashboardData = dashboard ? normalizeDashboard(dashboard) : null;
+  const fallbackTotals = accountOverviewTotals(accounts);
+  const dashboardTotals = Object.fromEntries(Object.entries(dashboardData?.totals || {}).filter(([, value]) => value !== undefined));
+  const dashboardOutstandingIsMissing = Number(dashboardTotals.pendingStudents || 0) === 0 && accounts.some((account) => Number(account.balance || 0) > 0);
+  const totals = dashboardOutstandingIsMissing
+    ? { ...dashboardTotals, ...fallbackTotals, totalStudents: Math.max(Number(dashboardTotals.totalStudents || 0), fallbackTotals.totalStudents) }
+    : { ...fallbackTotals, ...dashboardTotals };
+  const dashboardChart = dashboardData?.chartData || [];
+  const accountChart = accountGroupWiseTotals(accounts);
+  const chartData = hasUsefulChartData(dashboardChart) ? dashboardChart : hasUsefulChartData(accountChart) ? accountChart : groupWiseTotals(accounts);
+  const upcoming = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : upcomingInstallments(accounts);
+  const recent = dashboardData?.recent?.length ? dashboardData.recent : allTransactions(accounts).slice(0, 8);
+  const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
 
   return (
     <div className="cms-fee-stack">
       <div className="cms-fee-stat-grid">
         <SummaryCard icon={Users} tone="blue" label="Total Students" value={`${totals.totalStudents} Students`} hint="With active fee accounts" />
-        <SummaryCard icon={WalletCards} tone="green" label="Total Collected" value={formatCompactCurrency(totals.totalCollected)} hint={`${totals.collectedPercent.toFixed(1)}% of expected`} />
+        <SummaryCard icon={WalletCards} tone="green" label="Total Collected" value={formatCompactCurrency(totals.totalCollected)} hint={`${collectedPercent.toFixed(1)}% of expected`} />
         <SummaryCard icon={AlertCircle} tone="red" label="Pending / Overdue" value={`${totals.pendingStudents} Students`} hint={`${totals.overdueStudents} overdue`} />
       </div>
 
@@ -547,10 +728,9 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
     const value = Number(amount || 0);
     const discountValue = Number(discount || 0);
     const fineValue = Number(fine || 0);
-    const netAmount = Math.max(value + fineValue - discountValue, 0);
     if (!Number.isFinite(value) || value <= 0) return setError("Enter a valid payment amount");
     if (discountValue > value + fineValue) return setError("Discount cannot exceed the payment amount plus fine");
-    if (netAmount > account.balance) return setError(`Amount cannot exceed the outstanding balance of ${formatCurrency(account.balance)}`);
+    if (value > account.balance) return setError(`Amount cannot exceed the outstanding balance of ${formatCurrency(account.balance)}`);
     if (!method) return setError("Payment Method is required");
     if (isReferenceRequired && !reference.trim()) return setError("Transaction / Reference Number is required for this payment method");
     const assignmentId = account.assignmentId || account.studentFeeAssignmentId;
@@ -566,7 +746,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
         studentId: studentIdValue,
         studentFeeId: assignmentIdValue,
         feeInstallmentId: installment?.feeInstallmentId || installment?.installmentId || installment?.id || null,
-        amount: netAmount,
+        amount: value,
         paymentDate: date ? new Date(date).toISOString() : null,
         paymentMode: method,
         discount: discountValue,
@@ -577,7 +757,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
       const saved = getObject(response.data);
       setSaving(false);
       return onSaved({
-        amount: numberValue(saved, "amount", "Amount", "paidAmount", "PaidAmount") || netAmount,
+        amount: numberValue(saved, "amount", "Amount", "paidAmount", "PaidAmount") || value,
         receiptNo: textValue(saved, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || "-",
       });
     } catch (err) {
@@ -1171,46 +1351,14 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     });
   };
 
-  const buildStructureItemPayload = (item, structurePayload = {}) => {
+  const buildStructureItemPayload = (item) => {
     const feeTypeId = Number(item.feeTypeId || item.id || 0);
     const amount = Number(item.originalAmount || 0);
-    const dueDate = new Date().toISOString();
     return {
-      feeStructureId: structurePayload.feeStructureId,
-      FeeStructureId: structurePayload.feeStructureId,
-      p_FeeStructureId: structurePayload.feeStructureId,
-      boardId: structurePayload.boardId,
-      BoardId: structurePayload.boardId,
-      p_BoardId: structurePayload.p_BoardId,
-      academicYearId: structurePayload.academicYearId,
-      AcademicYearId: structurePayload.academicYearId,
-      p_AcademicYearId: structurePayload.p_AcademicYearId,
-      academicLevelId: structurePayload.academicLevelId,
-      AcademicLevelId: structurePayload.academicLevelId,
-      p_AcademicLevelId: structurePayload.p_AcademicLevelId,
-      groupId: structurePayload.groupId,
-      GroupId: structurePayload.groupId,
-      p_GroupId: structurePayload.p_GroupId,
-      ...(structurePayload.programId ? {
-        programId: structurePayload.programId,
-        ProgramId: structurePayload.programId,
-        p_ProgramId: structurePayload.p_ProgramId,
-      } : {}),
-      sectionId: structurePayload.sectionId,
-      SectionId: structurePayload.sectionId,
-      p_SectionId: structurePayload.p_SectionId,
       feeTypeId,
-      FeeTypeId: feeTypeId,
-      p_FeeTypeId: feeTypeId,
       amount,
-      Amount: amount,
-      p_Amount: amount,
       isMandatory: Boolean(item.required),
-      IsMandatory: Boolean(item.required),
-      p_IsMandatory: Boolean(item.required),
-      dueDate,
-      DueDate: dueDate,
-      p_DueDate: dueDate,
+      dueDate: new Date().toISOString(),
     };
   };
 
@@ -1219,67 +1367,20 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     const backendCompatibilitySectionId = Number(masters.sections.find((section) => section.groupId === values.groupId)?.value || masters.sections[0]?.value || 0);
     const backendCompatibilityAcademicLevelId = Number(resolvedAcademicLevelId || selectedGroup?.academicLevelId || values.academicLevelId || 0);
     const programId = Number(values.programId || 0);
-    const payload = {
+    return {
       boardId: Number(values.boardId || values.board || 0),
-      BoardId: Number(values.boardId || values.board || 0),
-      p_BoardId: Number(values.boardId || values.board || 0),
       academicYearId: Number(values.academicYearId || values.academicYear || 0),
-      AcademicYearId: Number(values.academicYearId || values.academicYear || 0),
-      p_AcademicYearId: Number(values.academicYearId || values.academicYear || 0),
       // TODO: Remove academicLevelId compatibility fallback when the backend supports year/group/program fee structures.
       academicLevelId: backendCompatibilityAcademicLevelId,
-      AcademicLevelId: backendCompatibilityAcademicLevelId,
-      p_AcademicLevelId: backendCompatibilityAcademicLevelId,
       groupId: Number(values.groupId || values.group || 0),
-      GroupId: Number(values.groupId || values.group || 0),
-      p_GroupId: Number(values.groupId || values.group || 0),
-      ...(programId ? { programId, ProgramId: programId, p_ProgramId: programId } : {}),
+      ...(programId ? { programId } : {}),
       // TODO: Remove sectionId compatibility fallback when the backend supports section-independent fee structures.
       sectionId: backendCompatibilitySectionId,
-      SectionId: backendCompatibilitySectionId,
-      p_SectionId: backendCompatibilitySectionId,
-    };
-    const structureItems = items.map((item) => buildStructureItemPayload(item, payload));
-    const feeTypeIds = structureItems.map((item) => item.feeTypeId).filter(Boolean);
-    return {
-      ...payload,
-      feeTypeIds,
-      FeeTypeIds: feeTypeIds,
-      p_FeeTypeIds: feeTypeIds,
-      feeTypes: structureItems,
-      FeeTypes: structureItems,
-      feeItems: structureItems,
-      FeeItems: structureItems,
-      items: structureItems,
-      Items: structureItems,
     };
   };
 
-  const buildStructureParams = (payload) => ({
-    p_BoardId: payload.p_BoardId,
-    p_AcademicYearId: payload.p_AcademicYearId,
-    p_AcademicLevelId: payload.p_AcademicLevelId,
-    p_GroupId: payload.p_GroupId,
-    ...(payload.p_ProgramId ? { p_ProgramId: payload.p_ProgramId } : {}),
-    p_SectionId: payload.p_SectionId,
-  });
-
-  const buildStructureItemParams = (payload) => ({
-    p_FeeStructureId: payload.p_FeeStructureId,
-    p_BoardId: payload.p_BoardId,
-    p_AcademicYearId: payload.p_AcademicYearId,
-    p_AcademicLevelId: payload.p_AcademicLevelId,
-    p_GroupId: payload.p_GroupId,
-    ...(payload.p_ProgramId ? { p_ProgramId: payload.p_ProgramId } : {}),
-    p_SectionId: payload.p_SectionId,
-    p_FeeTypeId: payload.p_FeeTypeId,
-    p_Amount: payload.p_Amount,
-    p_IsMandatory: payload.p_IsMandatory,
-    p_DueDate: payload.p_DueDate,
-  });
-
   const save = async () => {
-    const selectedItems = values.feeItems.filter((item) => item.selected && (item.required || Number(item.originalAmount || 0) > 0));
+    const selectedItems = values.feeItems.filter((item) => item.required || Number(item.originalAmount || 0) > 0);
     if (!values.academicYear && !values.academicYearId) return setError("Academic Year is required");
     if (!values.group && !values.groupId) return setError("Group is required");
     if (!values.programId) return setError("Program is required");
@@ -1301,22 +1402,19 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     setSaving(true);
     try {
       const structurePayload = buildStructurePayload(selectedItems, academicLevelId);
-      const structureConfig = { params: buildStructureParams(structurePayload) };
       const structureResponse = initial?.id
-        ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload, structureConfig)
-        : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload, structureConfig);
+        ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload)
+        : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload);
       const feeStructureId = initial?.id || read(getObject(structureResponse.data), "feeStructureId", "FeeStructureId", "id", "Id");
       if (!feeStructureId) throw new Error("Fee structure saved, but the structure ID was not returned.");
-      const itemContext = { ...structurePayload, feeStructureId: Number(feeStructureId), FeeStructureId: Number(feeStructureId), p_FeeStructureId: Number(feeStructureId) };
       const existingItemsResponse = await apiClient.get(apiEndpoints.fee.getStructureItems(feeStructureId)).catch(() => null);
       const existingItems = existingItemsResponse ? getCollection(existingItemsResponse.data) : [];
       if (initial?.id || !existingItems.length) {
         await Promise.all(selectedItems.map((item) => {
-          const itemPayload = buildStructureItemPayload(item, itemContext);
-          const itemConfig = { params: buildStructureItemParams(itemPayload) };
+          const itemPayload = buildStructureItemPayload(item);
           return item.structureItemId
-            ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), itemPayload, itemConfig)
-            : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), itemPayload, itemConfig);
+            ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), itemPayload)
+            : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), itemPayload);
         }));
       }
       onSaved(initial?.id ? "Fee structure updated" : "Fee structure added", true);
@@ -2049,10 +2147,18 @@ export default function FeeManagementPage() {
   const [collectionAccounts, setCollectionAccounts] = useState([]);
   const [accountLoading, setAccountLoading] = useState({ ledger: false, collection: false });
   const [accountErrors, setAccountErrors] = useState({ ledger: "", collection: "" });
+  const [dashboardData, setDashboardData] = useState(null);
+  const [dueRows, setDueRows] = useState([]);
+  const [, setOverviewError] = useState("");
+  const [selectedDetail, setSelectedDetail] = useState(null);
+  const accountRequestRef = useRef({ ledger: 0, collection: 0 });
+  const overviewRequestRef = useRef(0);
+  const initialFeeLoadRef = useRef(false);
 
   const structures = apiStructures;
   const overviewAccounts = ledgerAccounts;
-  const selected = selectedId ? [...ledgerAccounts, ...collectionAccounts].find((item) => item.id === selectedId) : null;
+  const selectedBase = selectedId ? [...ledgerAccounts, ...collectionAccounts].find((item) => item.id === selectedId) : null;
+  const selected = selectedDetail || selectedBase;
   const modalOpen = Boolean(selected || collecting || receipt);
 
   const saveFeeTypes = (nextTypes) => {
@@ -2063,28 +2169,71 @@ export default function FeeManagementPage() {
     setScholarships(nextScholarships);
   };
 
+  const fetchFeeContext = useCallback(async () => {
+    const [studentsResult, admissionsResult] = await Promise.allSettled([
+      apiClient.get(apiEndpoints.students.getAll),
+      apiClient.get(apiEndpoints.admissions.getAll),
+    ]);
+    const students = studentsResult.status === "fulfilled" ? getCollection(studentsResult.value.data) : [];
+    const admissions = admissionsResult.status === "fulfilled" ? getCollection(admissionsResult.value.data) : [];
+    return {
+      admissions,
+      studentsById: mapById(students, "studentId", "StudentId", "id", "Id"),
+      feeDetailsByStudentId: new Map(),
+    };
+  }, []);
+
   const loadFeeAccounts = useCallback(async (source) => {
     const endpoint = source === "collection" ? apiEndpoints.fee.collection : apiEndpoints.fee.ledger;
+    const requestId = (accountRequestRef.current[source] || 0) + 1;
+    accountRequestRef.current = { ...accountRequestRef.current, [source]: requestId };
     setAccountLoading((current) => ({ ...current, [source]: true }));
     setAccountErrors((current) => ({ ...current, [source]: "" }));
     try {
       const response = await apiClient.get(endpoint);
-      const accounts = normalizeFeeAccountRows(getCollection(response.data));
+      if (accountRequestRef.current[source] !== requestId) return;
+      const rows = getCollection(response.data);
+      const context = await fetchFeeContext();
+      if (accountRequestRef.current[source] !== requestId) return;
+      const accounts = normalizeFeeAccountRows(rows, context);
       if (source === "collection") {
         setCollectionAccounts(accounts);
       } else {
         setLedgerAccounts(accounts);
       }
     } catch (err) {
-      if (source === "collection") {
-        setCollectionAccounts([]);
-      } else {
-        setLedgerAccounts([]);
-      }
+      if (accountRequestRef.current[source] !== requestId) return;
       setAccountErrors((current) => ({ ...current, [source]: getApiErrorMessage(err) }));
     } finally {
-      setAccountLoading((current) => ({ ...current, [source]: false }));
+      if (accountRequestRef.current[source] === requestId) {
+        setAccountLoading((current) => ({ ...current, [source]: false }));
+      }
     }
+  }, [fetchFeeContext]);
+
+  const loadOverviewData = useCallback(async () => {
+    const requestId = overviewRequestRef.current + 1;
+    overviewRequestRef.current = requestId;
+    setOverviewError("");
+    const dashboardResult = await apiClient.get(apiEndpoints.fee.dashboard).then(
+      (response) => ({ status: "fulfilled", response }),
+      (error) => ({ status: "rejected", error }),
+    );
+    const dueResult = await apiClient.get(apiEndpoints.fee.due || apiEndpoints.fee.getDue).then(
+      (response) => ({ status: "fulfilled", response }),
+      (error) => ({ status: "rejected", error }),
+    );
+    if (overviewRequestRef.current !== requestId) return;
+    if (dashboardResult.status === "fulfilled") {
+      setDashboardData(getObject(dashboardResult.response.data));
+    }
+    if (dueResult.status === "fulfilled") {
+      setDueRows(normalizeDueRows(getCollection(dueResult.response.data)));
+    }
+    const messages = [dashboardResult, dueResult]
+      .filter((result) => result.status === "rejected")
+      .map((result) => getApiErrorMessage(result.error));
+    if (messages.length) setOverviewError(messages.join(" "));
   }, []);
 
   const loadFeeApiData = useCallback(async () => {
@@ -2109,32 +2258,31 @@ export default function FeeManagementPage() {
     if (structuresResult.status === "fulfilled") {
       setApiStructures(normalizeFeeStructureRows(getCollection(structuresResult.value.data)));
     } else {
-      setApiStructures([]);
       setStructureError(getApiErrorMessage(structuresResult.reason));
     }
     if (scholarshipsResult.status === "fulfilled") {
       setScholarships(normalizeScholarshipRows(getCollection(scholarshipsResult.value.data)));
     }
-    setMasters({
+    setMasters((current) => ({
       boards: boardsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
-        : [],
+        : current.boards,
       years: yearsResult.status === "fulfilled"
         ? uniqueAcademicYearsByName(
           toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
           (item) => item.label,
         )
-        : [],
+        : current.years,
       levels: levelsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "name", "Name"])
-        : [],
+        : current.levels,
       groups: groupsResult.status === "fulfilled"
         ? getCollection(groupsResult.value.data).map(groupOption).filter(Boolean)
-        : [],
+        : current.groups,
       sections: sectionsResult.status === "fulfilled"
         ? getCollection(sectionsResult.value.data).map(sectionOption).filter(Boolean)
-        : [],
-    });
+        : current.sections,
+    }));
     setMasterErrors({
       boards: boardsResult.status === "rejected" ? getApiErrorMessage(boardsResult.reason) : "",
       years: yearsResult.status === "rejected" ? getApiErrorMessage(yearsResult.reason) : "",
@@ -2157,6 +2305,29 @@ export default function FeeManagementPage() {
   };
 
   useEffect(() => {
+    let ignore = false;
+    setSelectedDetail(null);
+    if (!selectedId || !selectedBase?.studentId) return undefined;
+    apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId))
+      .then((response) => {
+        if (ignore) return;
+        const detail = getObject(response.data);
+        const [normalized] = normalizeFeeAccountRows([selectedBase], {
+          feeDetailsByStudentId: new Map([[String(selectedBase.studentId), detail]]),
+        });
+        setSelectedDetail(normalized || selectedBase);
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setAccountErrors((current) => ({ ...current, ledger: current.ledger || getApiErrorMessage(err) }));
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [selectedBase, selectedId]);
+
+  useEffect(() => {
     if (!modalOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -2168,12 +2339,18 @@ export default function FeeManagementPage() {
   useEffect(() => {
     loadFeeApiData();
     loadFeeAccounts("ledger");
-  }, [loadFeeApiData, loadFeeAccounts]);
+    loadOverviewData();
+  }, [loadFeeApiData, loadFeeAccounts, loadOverviewData]);
 
   useEffect(() => {
+    if (!initialFeeLoadRef.current) {
+      initialFeeLoadRef.current = true;
+      return;
+    }
     if (tab === "Fee Collection") loadFeeAccounts("collection");
     if (tab === "Student Fee Ledger" || tab === "Payment History" || tab === "Overview") loadFeeAccounts("ledger");
-  }, [loadFeeAccounts, tab]);
+    if (tab === "Overview" || tab === "Payment History" || tab === "Fee Collection") loadOverviewData();
+  }, [loadFeeAccounts, loadOverviewData, tab]);
 
   return (
     <DashboardLayout
@@ -2196,7 +2373,7 @@ export default function FeeManagementPage() {
         ))}
       </div>
 
-      {tab === "Overview" ? <OverviewTab accounts={overviewAccounts} /> : null}
+      {tab === "Overview" ? <OverviewTab accounts={overviewAccounts} dashboard={dashboardData} dueRows={dueRows} /> : null}
       {tab === "Student Fee Ledger" ? <LedgerTab accounts={ledgerAccounts} onView={setSelectedId} onPrint={printStudentStatement} masters={masters} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
       {tab === "Fee Setup" ? (
         <FeeSetupTab
@@ -2236,6 +2413,7 @@ export default function FeeManagementPage() {
             setToast(`Payment of ${formatCurrency(saved.amount)} recorded - receipt ${saved.receiptNo}`);
             loadFeeAccounts("ledger");
             loadFeeAccounts("collection");
+            loadOverviewData();
           }}
         />
       ) : null}

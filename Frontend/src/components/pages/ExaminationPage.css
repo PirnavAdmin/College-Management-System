@@ -52,6 +52,10 @@
 .exam-list-table th:nth-child(10) { width:13%; }
 .exam-list-table th:nth-child(9),.exam-list-table td:nth-child(9),.exam-list-table th:nth-child(10),.exam-list-table td:nth-child(10) { text-align:center; }
 .exam-cell-truncate { display:block; width:100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.exam-level-two-lines { display:-webkit-box; width:100%; min-width:0; overflow:hidden; line-height:1.35; overflow-wrap:normal; word-break:normal; -webkit-box-orient:vertical; line-clamp:2; -webkit-line-clamp:2; }
+.exam-list-table .exam-status-cell { overflow:visible; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+.exam-list-table .exam-status-cell .cms-badge { min-height:22px; gap:3px; padding:3px 7px; font-size:10px; line-height:1; white-space:nowrap; overflow-wrap:normal; word-break:normal; }
+.exam-list-table .exam-status-cell .cms-badge::before { width:4px; height:4px; flex:0 0 4px; }
 .exam-list-loading { display:flex; min-height:170px; align-items:center; justify-content:center; gap:10px; color:var(--cms-muted); font-size:12.5px; }
 .exam-list-spinner { width:22px; height:22px; border:3px solid var(--cms-primary-soft); border-top-color:var(--cms-primary); border-radius:50%; animation:exam-list-spin .75s linear infinite; }
 @keyframes exam-list-spin { to { transform:rotate(360deg); } }
@@ -115,18 +119,21 @@
 @media (max-width:700px) { .exam-tabs-row { align-items:stretch; flex-wrap:wrap; } .exam-tabs { flex:1 1 100%; width:100%; } .exam-tabs button { flex:1; } .exam-tabs-row .exam-header-create-btn { margin-left:auto; } .exam-toolbar { align-items:flex-start; flex-direction:column; } .exam-toolbar .cms-btn,.exam-table-toolbar .cms-btn { width:100%; justify-content:center; } .exam-toolbar-actions { width:100%; flex-direction:column; } .examination-form-page .cms-form-grid.cols-3,.exam-schedule-card .cms-form-grid.cols-3,.exam-detail-grid,.exam-edit-summary { grid-template-columns:1fr; } .exam-table-toolbar { align-items:stretch; flex-direction:column; padding:14px; } .exam-toolbar-filters { flex-direction:column; align-items:stretch; width:100%; } .exam-toolbar-select { width:100%; max-width:none; flex-basis:auto; } .exam-search { width:100%; min-width:0; max-width:none; flex-basis:auto; } .exam-list-pagination { flex-wrap:wrap; justify-content:center; padding:14px 16px; } .exam-record-summary { flex-basis:100%; margin-right:0; text-align:center; } .exam-finalize { align-items:stretch; flex-direction:column; } .exam-finalize .cms-btn { width:100%; justify-content:center; } .examination-form-page .cms-form-section { padding:16px; } .exam-detail { min-height:0; padding:15px 16px; } .exam-view-summary { padding:18px 19px; } .exam-view-summary strong { font-size:19px; } .exam-view-summary p { font-size:14px; } .exam-view-schedule .cms-table th,.exam-view-schedule .cms-table td { padding:6px; font-size:10px; } }
 @media (max-width:700px) { .exam-export-actions .cms-btn { flex:1 1 100%; justify-content:center; } }
 @media print {
-  @page { size:A4 landscape; margin:8mm; }
+  @page { size:A4 landscape; margin:12mm; }
+  html,
+  body { width:100%; min-height:0; margin:0 !important; padding:0 !important; overflow:visible !important; background:#fff !important; }
   body * { visibility:hidden !important; }
   .exam-print-area, .exam-print-area * { visibility:visible !important; }
-  .exam-print-area { display:block !important; position:absolute; inset:0; width:100%; padding:0; color:#000 !important; background:#fff !important; font-family:Arial,sans-serif; }
-  .exam-print-area h1 { margin:0; font-size:18pt; }
-  .exam-print-area h2 { margin:5px 0 18px; font-size:14pt; }
-  .exam-print-area h3 { margin:0; font-size:13pt; }
-  .exam-print-area p { margin:5px 0 14px; font-size:10pt; }
-  .exam-print-context { display:grid; grid-template-columns:repeat(2,1fr); gap:5px 20px; margin:0 0 16px; font-size:9.5pt; }
-  .exam-print-area table { width:100%; border-collapse:collapse; table-layout:auto; }
-  .exam-print-area th, .exam-print-area td { padding:3px 4px; border:1px solid #000 !important; color:#000 !important; background:#fff !important; font-size:8px; text-align:center; vertical-align:middle; white-space:normal; overflow-wrap:break-word; word-break:normal; }
-  .exam-print-area th { font-weight:700; }
+  .exam-print-area { display:block !important; position:absolute; inset:0 auto auto 0; width:100%; margin:0; padding:0; color:#000 !important; background:#fff !important; font-family:Arial,sans-serif; }
+  .exam-print-area h1 { margin:0 0 4px; text-align:center; font-size:20px; font-weight:700; }
+  .exam-print-area h2 { margin:0 0 16px; text-align:center; font-size:15px; font-weight:600; }
+  .exam-print-area .exam-export-table { display:table !important; width:100% !important; table-layout:fixed; border-collapse:collapse; color:#000; background:#fff; font-size:10px; }
+  .exam-print-area .exam-export-table thead { display:table-header-group; }
+  .exam-print-area .exam-export-table tbody { display:table-row-group; }
+  .exam-print-area .exam-export-table tr { break-inside:avoid; page-break-inside:avoid; }
+  .exam-print-area .exam-export-table th,
+  .exam-print-area .exam-export-table td { padding:7px 6px; border:1px solid #9ca3af; color:#000; background:#fff; text-align:left; vertical-align:middle; white-space:normal; overflow-wrap:anywhere; }
+  .exam-print-area .exam-export-table th { font-weight:700; background:#e5e7eb !important; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
 }
 
 @media screen {

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Pencil } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { StatusBadge, Toast } from "@/components/common/Ui.jsx";
+import { Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import "./StudentManagementPage.css";
+import "./SectionAllocationPage.css";
 const list = (d) => {
   if (Array.isArray(d)) return d;
   if (Array.isArray(d?.items)) return d.items;
@@ -14,6 +16,36 @@ const list = (d) => {
   return [];
 };
 const EXCLUDED_NOTIFICATION_SOURCES = ["certificates"];
+const valueOf = (item, ...keys) => keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null);
+const objectFrom = (payload) => payload?.data?.data ?? payload?.data ?? payload?.result ?? payload ?? {};
+const programIdOf = (program) => valueOf(program, "programId", "ProgramId", "programmeId", "ProgrammeId", "id", "Id", "groupProgramId", "GroupProgramId");
+const programNameOf = (program) => valueOf(program, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "name", "Name");
+const sectionIdOf = (section) => valueOf(section, "sectionId", "SectionId", "id", "Id");
+const sectionNameOf = (section) => valueOf(section, "sectionName", "SectionName", "name", "Name");
+
+const changeStudentAllocation = async ({ admissionId, studentId, currentProgramId, programId, sectionId }) => {
+  if (String(programId) !== String(currentProgramId)) {
+    throw new Error("Changing programme is not supported by the current backend API contract.");
+  }
+  const response = await apiClient.put(apiEndpoints.students.updateSection(studentId), { sectionId });
+  await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
+    sectionId,
+    startingRollNumber: 1,
+    admissionIds: [admissionId],
+  });
+  const refreshed = await Promise.allSettled([
+    admissionId ? apiClient.get(apiEndpoints.studentAdmissions.getById(admissionId)) : Promise.resolve({ data: {} }),
+    apiClient.get(apiEndpoints.students.getById(studentId)),
+  ]);
+  return {
+    ...response,
+    data: {
+      ...objectFrom(response.data),
+      ...(refreshed[0].status === "fulfilled" ? objectFrom(refreshed[0].value.data) : {}),
+      ...(refreshed[1].status === "fulfilled" ? objectFrom(refreshed[1].value.data) : {}),
+    },
+  };
+};
 export default function SectionAllocationPage() {
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [ctx, setCtx] = useState({
@@ -33,6 +65,8 @@ export default function SectionAllocationPage() {
     [sectionDirectory, setSectionDirectory] = useState([]),
     [students, setStudents] = useState([]),
     [message, setMessage] = useState(""),
+    [messageType, setMessageType] = useState("success"),
+    [changingStudent, setChangingStudent] = useState(null),
     [busy, setBusy] = useState("");
   useEffect(() => {
     Promise.all([
@@ -48,17 +82,17 @@ export default function SectionAllocationPage() {
         setYears(list(y.data));
         setGroups(list(g.data));
         setSectionDirectory(list(allSectionsResponse.data));
-        const admissionsByNumber = new Map(
-          list(admissionsResponse.data).map((admission) => [
-            String(admission.admissionNo ?? admission.admissionNumber ?? "").trim(),
-            admission,
+        const studentsByAdmissionNumber = new Map(
+          list(studentsResponse.data).map((student) => [
+            String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
+            student,
           ]),
         );
         setStudents(
-          list(studentsResponse.data).map((x, i) => {
-            const admission = admissionsByNumber.get(
-              String(x.admissionNo ?? x.admissionNumber ?? "").trim(),
-            );
+          list(admissionsResponse.data).map((admission, i) => {
+            const x = studentsByAdmissionNumber.get(
+              String(admission.admissionNo ?? admission.admissionNumber ?? "").trim(),
+            ) ?? {};
             const approved = admission?.isApproved ?? admission?.IsApproved ?? admission?.approved ?? admission?.Approved
               ?? admission?.approvalStatus ?? admission?.ApprovalStatus;
             const verified = admission?.isVerified ?? admission?.IsVerified ?? admission?.verified ?? admission?.Verified
@@ -79,7 +113,7 @@ export default function SectionAllocationPage() {
               ["approved", "active", "completed"].includes(admissionStatus);
             return ({
             ...x,
-            id: x.studentId ?? x.id ?? i,
+            id: x.studentId ?? x.id ?? `admission-${admission.admissionId ?? i}`,
             // The bulk allocation endpoint accepts admission IDs only. A
             // student ID is a different record and makes the backend look up
             // a non-existent admission.
@@ -96,9 +130,12 @@ export default function SectionAllocationPage() {
               admission?.id ??
               "",
             studentId: x.studentId ?? x.id ?? "",
-            name: x.studentName ?? x.fullName ?? x.name ?? "Unnamed Student",
-            admissionNo: x.admissionNo ?? x.admissionNumber ?? "—",
-            groupId: x.groupId,
+            name: [admission.firstName, admission.lastName].filter(Boolean).join(" ") || x.studentName || x.fullName || x.name || "Unnamed Student",
+            admissionNo: admission.admissionNo ?? admission.admissionNumber ?? x.admissionNo ?? x.admissionNumber ?? "—",
+            boardId: admission.boardId ?? admission.BoardId ?? x.boardId ?? x.BoardId,
+            academicYearId: admission.academicYearId ?? admission.AcademicYearId ?? x.academicYearId ?? x.AcademicYearId,
+            academicLevelId: admission.academicLevelId ?? admission.AcademicLevelId ?? x.academicLevelId ?? x.AcademicLevelId,
+            groupId: admission.groupId ?? admission.GroupId ?? x.groupId,
             programId:
               x.programId ??
               x.programmeId ??
@@ -108,7 +145,7 @@ export default function SectionAllocationPage() {
               admission?.ProgrammeId ??
               admission?.program?.programId ??
               admission?.Program?.programId,
-            group: x.groupName ?? x.group ?? "",
+            group: admission.groupName ?? admission.GroupName ?? x.groupName ?? x.group ?? "",
             programme:
               x.programmeName ??
               x.programName ??
@@ -152,14 +189,14 @@ export default function SectionAllocationPage() {
               admission?.section?.sectionName ??
               admission?.Section?.sectionName ??
               "",
-            roll: x.rollNumber ?? x.rollNo ?? "",
-            status: x.status ?? "Pending allocation",
+            roll: admission.rollNumber ?? admission.RollNumber ?? admission.rollNo ?? admission.RollNo ?? x.rollNumber ?? x.rollNo ?? "",
+            status: admission.status ?? admission.Status ?? x.status ?? "Pending allocation",
             isApproved: isApproved && isVerified,
           });
           }),
         );
       })
-      .catch((e) => setMessage(getApiErrorMessage(e)))
+      .catch((e) => { setMessageType("error"); setMessage(getApiErrorMessage(e)); })
       .finally(() => setStudentsLoading(false));
   }, []);
   useEffect(() => {
@@ -246,9 +283,13 @@ export default function SectionAllocationPage() {
     () =>
       students.filter(
         (s) =>
+          (!ctx.board || String(s.boardId ?? "") === String(ctx.board)) &&
+          (!ctx.year || String(s.academicYearId ?? "") === String(ctx.year)) &&
+          (!ctx.level || String(s.academicLevelId ?? "") === String(ctx.level)) &&
           (!ctx.group || String(s.groupId ?? s.group) === String(ctx.group)) &&
-          (!ctx.program || String(s.programId ?? s.programme) === String(ctx.program)),
-      ),
+          (!ctx.program || String(s.programId ?? s.programme) === String(ctx.program)) &&
+          (!ctx.section || String(s.sectionId ?? "") === String(ctx.section)),
+      ).sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" })),
     [students, ctx],
   );
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
@@ -279,17 +320,35 @@ export default function SectionAllocationPage() {
         sectionId,
         admissionIds: ids,
       });
+      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
+        sectionId,
+        startingRollNumber: 1,
+        admissionIds: ids,
+      });
+      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll);
+      const refreshedRolls = new Map(
+        list(refreshedStudentsResponse.data).map((student) => [
+          String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
+          student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
+        ]),
+      );
       const sectionName = sections.find(
         (section) => String(section.sectionId ?? section.id) === String(sectionId),
       )?.sectionName;
       setStudents((current) =>
         current.map((student) =>
           ids.includes(Number(student.admissionId))
-            ? { ...student, sectionId, section: sectionName ?? student.section }
+            ? {
+                ...student,
+                sectionId,
+                section: sectionName ?? student.section,
+                roll: refreshedRolls.get(String(student.admissionNo).trim()) || "",
+              }
             : student,
         ),
       );
-      setMessage("Section allocation saved successfully.");
+      setMessageType("success");
+      setMessage("Section allocation and roll numbers saved successfully.");
     } catch (e) {
       setMessage(getApiErrorMessage(e));
     } finally {
@@ -362,6 +421,12 @@ export default function SectionAllocationPage() {
         </option>
       );
     });
+  const allocationChanged = (student, updated) => {
+    setStudents((current) => current.map((item) => item.id === student.id ? { ...item, ...updated } : item));
+    setChangingStudent(null);
+    setMessageType("success");
+    setMessage("Programme/Section changed successfully.");
+  };
   return (
     <DashboardLayout
       title="Section Allocation"
@@ -413,12 +478,13 @@ export default function SectionAllocationPage() {
                 <th>Section</th>
                 <th>Roll No.</th>
                 <th>Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {studentsLoading ? (
                 <tr>
-                  <td colSpan="6">
+                  <td colSpan="7">
                     <div className="cms-empty">Loading admitted students...</div>
                   </td>
                 </tr>
@@ -433,11 +499,12 @@ export default function SectionAllocationPage() {
                     <td>
                       <StatusBadge value={s.status} />
                     </td>
+                    <td><button type="button" className="cms-action-btn" aria-label={`Edit allocation for ${s.name}`} title="Edit programme or section" disabled={!Number(s.studentId) || !Number(s.groupId)} onClick={() => setChangingStudent(s)}><Pencil size={16} aria-hidden="true" /></button></td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="6">
+                  <td colSpan="7">
                     <div className="cms-empty">No admitted students found.</div>
                   </td>
                 </tr>
@@ -446,7 +513,112 @@ export default function SectionAllocationPage() {
           </table>
         </div>
       </section>
-      <Toast message={message} onClose={() => setMessage("")} />
+      {changingStudent ? <ChangeAllocationModal student={changingStudent} onClose={() => setChangingStudent(null)} onChanged={allocationChanged} /> : null}
+      <Toast message={message} type={messageType} onClose={() => setMessage("")} />
     </DashboardLayout>
   );
+}
+
+function ChangeAllocationModal({ student, onClose, onChanged }) {
+  const [detail, setDetail] = useState(student);
+  const [programs, setPrograms] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [programId, setProgramId] = useState(String(student.programId ?? ""));
+  const [sectionId, setSectionId] = useState(String(student.sectionId ?? ""));
+  const [loading, setLoading] = useState(true);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const groupId = valueOf(detail, "groupId", "GroupId") ?? student.groupId;
+  const currentProgramId = String(valueOf(detail, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? student.programId ?? "");
+  const currentSectionId = String(valueOf(detail, "sectionId", "SectionId", "allocatedSectionId", "AllocatedSectionId") ?? student.sectionId ?? "");
+  const currentProgramName = valueOf(detail, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme") ?? student.programme ?? "—";
+  const currentSectionName = valueOf(detail, "sectionName", "SectionName", "allocatedSectionName", "AllocatedSectionName") ?? student.section ?? "—";
+  const currentRoll = valueOf(detail, "rollNumber", "RollNumber", "rollNo", "RollNo") ?? student.roll ?? "Pending";
+
+  useEffect(() => {
+    let active = true;
+    Promise.allSettled([
+      student.admissionId ? apiClient.get(apiEndpoints.studentAdmissions.getById(student.admissionId)) : Promise.resolve({ data: {} }),
+      apiClient.get(apiEndpoints.groups.programs(student.groupId)),
+    ]).then(([detailResult, programsResult]) => {
+      if (!active) return;
+      if (detailResult.status === "fulfilled") {
+        const current = objectFrom(detailResult.value.data);
+        setDetail((value) => ({ ...value, ...current }));
+        setProgramId(String(valueOf(current, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? student.programId ?? ""));
+        setSectionId(String(valueOf(current, "sectionId", "SectionId", "allocatedSectionId", "AllocatedSectionId") ?? student.sectionId ?? ""));
+      }
+      if (programsResult.status === "fulfilled") setPrograms(list(programsResult.value.data));
+      else setError(getApiErrorMessage(programsResult.reason));
+    }).finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, [student]);
+
+  useEffect(() => {
+    if (!programId) { setSections([]); return undefined; }
+    let active = true;
+    const selectedProgram = programs.find((program) => String(programIdOf(program)) === String(programId));
+    const actualProgramId = valueOf(selectedProgram, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? programId;
+    const groupProgramId = valueOf(selectedProgram, "groupProgramId", "GroupProgramId", "groupProgrammeId", "GroupProgrammeId");
+    setSectionsLoading(true);
+    setError("");
+    apiClient.get(apiEndpoints.sections.list, { params: { ProgramId: actualProgramId, IsActive: true } })
+      .then((response) => {
+        if (!active) return;
+        const available = list(response.data).filter((section) => {
+          const sectionProgramId = valueOf(section, "programId", "ProgramId", "programmeId", "ProgrammeId");
+          const sectionGroupProgramId = valueOf(section, "groupProgramId", "GroupProgramId", "groupProgrammeId", "GroupProgrammeId");
+          const sectionGroupId = valueOf(section, "groupId", "GroupId");
+          const belongsToProgram = String(sectionProgramId ?? "") === String(actualProgramId)
+            || (groupProgramId != null && String(sectionGroupProgramId ?? "") === String(groupProgramId));
+          return belongsToProgram && (sectionGroupId == null || String(sectionGroupId) === String(groupId));
+        });
+        setSections(available);
+        setSectionId((current) => available.some((section) => String(sectionIdOf(section)) === String(current)) ? current : "");
+      })
+      .catch((requestError) => active && setError(getApiErrorMessage(requestError)))
+      .finally(() => active && setSectionsLoading(false));
+    return () => { active = false; };
+  }, [groupId, programId, programs]);
+
+  const unchanged = String(programId) === currentProgramId && String(sectionId) === currentSectionId;
+  const selectedSection = sections.find((section) => String(sectionIdOf(section)) === String(sectionId));
+  const selectedProgram = programs.find((program) => String(programIdOf(program)) === String(programId));
+  const confirm = async () => {
+    const admissionId = Number(student.admissionId);
+    const studentId = Number(student.studentId);
+    const nextProgramId = Number(programId);
+    const nextSectionId = Number(sectionId);
+    if (!studentId) return setError("This student does not contain a valid Student ID.");
+    if (!nextProgramId || !nextSectionId) return setError("New Programme and New Section are required.");
+    if (!selectedSection) return setError("The selected section does not belong to the selected programme.");
+    if (unchanged) return setError("Please select a different programme or section.");
+    setSaving(true); setError("");
+    try {
+      const response = await changeStudentAllocation({ admissionId: admissionId || undefined, studentId, currentProgramId: Number(currentProgramId), programId: nextProgramId, sectionId: nextSectionId });
+      const result = objectFrom(response.data);
+      onChanged(student, {
+        programId: nextProgramId,
+        programme: valueOf(result, "programName", "ProgramName", "programmeName", "ProgrammeName") ?? programNameOf(selectedProgram),
+        sectionId: nextSectionId,
+        section: valueOf(result, "sectionName", "SectionName") ?? sectionNameOf(selectedSection),
+        roll: valueOf(result, "rollNumber", "RollNumber", "rollNo", "RollNo") ?? "",
+      });
+    } catch (requestError) { setError(getApiErrorMessage(requestError)); }
+    finally { setSaving(false); }
+  };
+
+  return <Modal title="Change Programme / Section" size="sm" className="section-allocation-change-modal" onClose={saving ? () => {} : onClose} footer={<><button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="cms-btn cms-btn-primary" onClick={confirm} disabled={loading || sectionsLoading || saving || !programId || !sectionId}>{saving ? "Changing..." : "Confirm Change"}</button></>}>
+    <div className="section-allocation-change-content">
+      <div className="section-allocation-student"><strong>{student.name}</strong><span>· {student.admissionNo}</span></div>
+      <p>Current: {currentProgramName} · Section {currentSectionName} · Roll No {currentRoll}</p>
+      {error ? <div className="section-allocation-change-error" role="alert">{error}</div> : null}
+      <div className="section-allocation-change-fields">
+        <label className="cms-field"><span>New Programme <span className="req">*</span></span><select value={programId} disabled={loading || saving} onChange={(event) => { setProgramId(event.target.value); setSectionId(""); setError(""); }}><option value="">Select New Programme</option>{programs.map((program) => <option key={String(programIdOf(program))} value={programIdOf(program)}>{programNameOf(program)}</option>)}</select></label>
+        <label className="cms-field"><span>New Section <span className="req">*</span></span><select value={sectionId} disabled={!programId || sectionsLoading || saving} onChange={(event) => { setSectionId(event.target.value); setError(""); }}><option value="">{sectionsLoading ? "Loading sections..." : "Select New Section"}</option>{sections.map((section) => <option key={String(sectionIdOf(section))} value={sectionIdOf(section)}>{sectionNameOf(section)}</option>)}</select></label>
+      </div>
+    </div>
+  </Modal>;
 }

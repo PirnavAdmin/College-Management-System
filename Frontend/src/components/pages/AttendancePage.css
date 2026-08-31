@@ -198,24 +198,39 @@
 }
 
 .att-student-report-filters {
-  display: contents;
-}
-
-.att-report-card:has(.att-student-report-filters) {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
-.att-student-report-actions {
-  grid-column: 8;
-  grid-row: 1;
-  margin: 0;
-  align-self: end;
+
+.attendance-module .att-report-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.attendance-module .att-student-report-filters {
+  width: 100%;
+}
+.attendance-module .att-student-report-actions {
+  position: static;
+  width: 100%;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  align-self: stretch;
 }
 .att-report-actions {
   display: flex;
+  align-items: center;
+  gap: 8px;
   justify-content: flex-end;
   margin-top: 12px;
+}
+.att-report-actions .cms-btn {
+  flex: 0 0 auto;
+  min-height: 41px;
+  max-width: 100%;
+  white-space: nowrap;
 }
 .att-table-card {
   padding: 0;
@@ -363,6 +378,15 @@
   width: 36px;
   min-width: 36px;
 }
+.att-month-table .att-month-summary {
+  width: 92px;
+  min-width: 92px;
+  background: var(--cms-surface, #fff);
+  text-align: center;
+}
+.att-month-table td.att-month-summary {
+  color: var(--cms-text);
+}
 
 /* Student and staff reports now have three identity columns; day 1 starts at column four. */
 .att-student-month-table th:nth-child(4),
@@ -430,13 +454,6 @@
     display: grid;
   }
 
-  .att-report-card:has(.att-student-report-filters) {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .att-student-report-actions {
-    grid-column: 4;
-    grid-row: 2;
-  }
 }
 @media (max-width: 760px) {
   .att-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -447,13 +464,6 @@
   .att-report-filters,
   .att-student-report-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .att-report-card:has(.att-student-report-filters) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .att-student-report-actions {
-    grid-column: 2;
-    grid-row: auto;
   }
   .att-filter-card {
     grid-template-columns: 1fr;
@@ -482,8 +492,15 @@
     flex: 1;
   }
   .att-context-fields,
-  .att-report-filters {
+  .att-report-filters,
+  .att-student-report-filters {
     grid-template-columns: 1fr;
+  }
+  .att-student-report-actions {
+    justify-content: stretch;
+  }
+  .att-student-report-actions .cms-btn {
+    flex: 1 1 100%;
   }
   .att-nav button {
     flex: 1;

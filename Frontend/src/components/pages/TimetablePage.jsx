@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Download } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -38,6 +39,7 @@ const pick = (x, ...keys) =>
   keys
     .map((key) => x?.[key])
     .find((value) => value !== undefined && value !== null && value !== "");
+const filePart = (value, fallback) => String(value || fallback).trim().replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || fallback;
 const optionize = (x, ids, labels) =>
   list(x)
     .map((raw) => ({
@@ -1221,6 +1223,7 @@ function Draft({ initial, notify }) {
   const [copyTarget, setCopyTarget] = useState({ academicYearId: "", sectionId: "" });
   const [actionBusy, setActionBusy] = useState(false);
   const [activeAction, setActiveAction] = useState("");
+  const [exportBusy, setExportBusy] = useState("");
   const [published, setPublished] = useState(Boolean(initial?.isPublished));
   const [approved, setApproved] = useState(Boolean(initial?.isApproved || initial?.status === "Approved"));
   const firstSection = useRef(true);
@@ -1377,6 +1380,86 @@ function Draft({ initial, notify }) {
       setActionBusy(false);
     }
   };
+  const contextName = (items, id, fallback) => items.find((item) => String(item.id) === String(id))?.name || fallback;
+  const exportSectionPdf = async () => {
+    if (!value.sectionId || exportBusy) return;
+    setExportBusy("section");
+    try {
+      const response = await apiClient.get(apiEndpoints.timetable.getBySection(value.sectionId), {
+        params: { academicYearId: value.academicYearId },
+      });
+      const sectionSlots = list(response.data);
+      if (!sectionSlots.length) throw new Error("No timetable data is available for the selected section.");
+      const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+      const sectionName = contextName(data.sections, value.sectionId, "Section");
+      const academicYear = contextName(data.years, value.academicYearId, "Academic_Year");
+      const document = new jsPDF({ orientation: "landscape" });
+      document.setFontSize(15);
+      document.text(`${sectionName} Timetable`, 14, 16);
+      document.setFontSize(9);
+      document.text(`Academic Year: ${academicYear} | Group: ${contextName(data.groups, value.groupId, "-")} | Programme: ${contextName(data.programs, value.programId, "-")}`, 14, 23);
+      autoTable(document, {
+        startY: 28,
+        head: [["Day", "Period", "Subject", "Faculty", "Room"]],
+        body: sectionSlots.map((slot) => [
+          pick(slot, "day", "Day") ?? DAYS[Number(pick(slot, "dayOfWeek", "DayOfWeek"))] ?? "—",
+          pick(slot, "periodName", "PeriodName") ?? contextName(data.periods, pick(slot, "periodId", "PeriodId"), "—"),
+          slotSubjectName(slot, data.subjects),
+          slotFacultyName(slot),
+          slotRoomName(slot),
+        ]),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [101, 130, 0] },
+      });
+      document.save(`Section_Timetable_${filePart(sectionName, "Section")}_${filePart(academicYear, "Academic_Year")}.pdf`);
+      notify("Section timetable PDF downloaded.");
+    } catch (error) { notify(getApiErrorMessage(error)); }
+    finally { setExportBusy(""); }
+  };
+  const exportGroupExcel = async () => {
+    if (!value.groupId || exportBusy) return;
+    setExportBusy("group");
+    try {
+      const [programResponse, sectionResponse] = await Promise.all([
+        apiClient.get(apiEndpoints.groups.programs(value.groupId)),
+        apiClient.get(apiEndpoints.sections.list, { params: { GroupId: value.groupId, IsActive: true } }),
+      ]);
+      const groupPrograms = list(programResponse.data);
+      const groupSections = list(sectionResponse.data).filter((section) => {
+        const sectionGroupId = pick(section, "groupId", "GroupId");
+        return sectionGroupId == null || String(sectionGroupId) === String(value.groupId);
+      });
+      const results = await Promise.all(groupSections.map(async (section) => {
+        const sectionId = pick(section, "sectionId", "SectionId", "id", "Id");
+        const response = await apiClient.get(apiEndpoints.timetable.getBySection(sectionId), {
+          params: { academicYearId: value.academicYearId },
+        });
+        return { section, slots: list(response.data) };
+      }));
+      const rows = results.flatMap(({ section, slots: sectionSlots }) => {
+        const sectionProgramId = pick(section, "programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId");
+        const program = groupPrograms.find((item) => String(pick(item, "programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId")) === String(sectionProgramId));
+        return sectionSlots.map((slot) => ({
+          Programme: pick(section, "programName", "ProgramName", "programme", "Programme") ?? pick(program, "programName", "ProgramName", "name", "Name") ?? "—",
+          Section: pick(section, "sectionName", "SectionName", "name", "Name") ?? "—",
+          Day: pick(slot, "day", "Day") ?? DAYS[Number(pick(slot, "dayOfWeek", "DayOfWeek"))] ?? "—",
+          Period: pick(slot, "periodName", "PeriodName") ?? contextName(data.periods, pick(slot, "periodId", "PeriodId"), "—"),
+          Subject: slotSubjectName(slot, data.subjects),
+          Faculty: slotFacultyName(slot),
+          Room: slotRoomName(slot),
+        }));
+      });
+      if (!rows.length) throw new Error("No timetable data is available for the selected group.");
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Group Timetable");
+      const groupName = contextName(data.groups, value.groupId, "Group");
+      const academicYear = contextName(data.years, value.academicYearId, "Academic_Year");
+      XLSX.writeFile(workbook, `Group_Timetable_${filePart(groupName, "Group")}_${filePart(academicYear, "Academic_Year")}.xlsx`);
+      notify("Group timetable Excel downloaded.");
+    } catch (error) { notify(getApiErrorMessage(error)); }
+    finally { setExportBusy(""); }
+  };
   return (
     <Page
       title="Generated Draft Grid"
@@ -1402,6 +1485,12 @@ function Draft({ initial, notify }) {
                     <option value="true">Published</option>
                   </select>
                 </label>
+                <Btn className="cms-btn cms-btn-ghost" disabled={Boolean(exportBusy) || !slots.length} onClick={exportSectionPdf}>
+                  <Download size={15} aria-hidden="true" /> {exportBusy === "section" ? "Exporting…" : "Export Section PDF"}
+                </Btn>
+                <Btn className="cms-btn cms-btn-ghost" disabled={Boolean(exportBusy) || !value.groupId} onClick={exportGroupExcel}>
+                  <Download size={15} aria-hidden="true" /> {exportBusy === "group" ? "Exporting…" : "Export Group Excel"}
+                </Btn>
                 <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "copy"} onClick={() => setCopying(true)}>
                   Copy Timetable
                 </Btn>

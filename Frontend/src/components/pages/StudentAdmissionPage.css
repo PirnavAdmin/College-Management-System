@@ -241,22 +241,17 @@
   background: var(--cms-red-soft);
 }
 
-.cms-admission-address-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.cms-form-grid.cms-admission-address-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.cms-admission-address-grid .cms-field.full {
+.cms-form-grid.cms-admission-address-grid .cms-field.full {
   grid-column: 1 / -1;
-}
-
-.cms-admission-address-grid .cms-field:nth-child(5) {
-  grid-column: 1 / span 1;
 }
 
 @media (max-width: 980px) {
   .cms-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cms-admission-address-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .cms-admission-address-grid .cms-field:nth-child(5) { grid-column: auto; }
 }
 
 @media (max-width: 640px) {
@@ -271,9 +266,24 @@
 
 /* Board & Academic Year table-system alignment. */
 .cms-admission-toolbar { position: relative; z-index: 5; display: flex; align-items: flex-end; gap: 12px; min-height: 55px; padding: 9px 12px; }
-.cms-admission-search { flex: 0 1 520px; width: min(100%, 520px); max-width: 520px; height: 36px; min-height: 36px; padding: 0 10px; border-radius: 8px; }
+.cms-admission-search { flex: 0 1 440px; width: min(100%, 440px); max-width: 440px; height: 36px; min-height: 36px; padding: 0 10px; border-radius: 8px; }
 .cms-admission-search input { height: 100%; padding: 0; font-size: 13px; }
-.cms-admission-filters { flex: 0 0 220px; grid-template-columns: minmax(180px, 220px); align-items: end; }
+.cms-admission-filters { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(170px, 210px)); align-items: end; gap: 12px; }
+.cms-admission-filters .cms-field { gap: 0; }
+.cms-admission-filters .cms-field label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.cms-admission-filters .cms-field select {
+  height: 36px;
+  min-height: 36px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .cms-admission-export-control { position: relative; flex: 0 0 auto; margin-left: auto; }
 .cms-admission-export-btn { height: 36px; min-height: 36px; }
 .cms-admission-export-menu {
@@ -313,6 +323,17 @@
 }
 .cms-admission-export-menu button:hover { background: var(--cms-hover); }
 .cms-admission-table { min-width: 1040px; }
+.cms-admission-table th { text-align: center; vertical-align: middle; }
+.cms-admission-table td { vertical-align: middle; }
+.cms-admission-table td:nth-child(8) { text-align: center; white-space: nowrap; }
+.cms-admission-table .cms-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  white-space: nowrap;
+  line-height: 1;
+}
 .cms-admission-actions { justify-content: center; gap: 5px; }
 .cms-admission-actions .cms-action-btn { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; }
 .cms-fee-table { width: 100%; border-collapse: collapse; }
@@ -464,7 +485,7 @@
 @media (max-width: 900px) {
   .cms-admission-toolbar { flex-wrap: wrap; }
   .cms-admission-search { max-width: none; }
-  .cms-admission-filters { flex: 0 0 220px; grid-template-columns: minmax(180px, 220px); }
+  .cms-admission-filters { flex: 1 1 360px; grid-template-columns: repeat(2, minmax(160px, 1fr)); }
   .cms-admission-export-control { flex: 0 0 auto; }
 }
 

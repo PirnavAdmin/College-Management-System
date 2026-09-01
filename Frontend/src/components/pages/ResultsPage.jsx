@@ -338,7 +338,6 @@ export default function ResultProcessingPage() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [rankPage, setRankPage] = useState(1);
-  const [rankFilters, setRankFilters] = useState({ group: "", program: "", section: "", exam: "" });
   const [rankSearch, setRankSearch] = useState("");
   const [rankList, setRankList] = useState([]);
   const [showRankPreview, setShowRankPreview] = useState(false);
@@ -429,11 +428,16 @@ export default function ResultProcessingPage() {
     setQuery("");
     setPage(1);
     setRankList([]);
+    setRankSearch("");
+    setRankPage(1);
+    setShowRankPreview(false);
     setAnalytics(null);
     setFailedStudents([]);
     setFailedStudentsState("idle");
     setAnalyticsDetail(null);
     setConfirm(null);
+    requests.current.rank += 1;
+    requests.current.analytics += 1;
   };
 
   const loadGroups = async (boardId) => {
@@ -626,7 +630,6 @@ export default function ResultProcessingPage() {
         setStudentId(null);
         setPage(1);
         if (restoredSections?.length) setSectionSummaries(restoredSections);
-        await Promise.all([loadRankList(filters), loadAnalytics(filters)]);
         return;
       }
 
@@ -651,7 +654,6 @@ export default function ResultProcessingPage() {
         if (restored && restored.length > 0) {
           setApplied({ ...filters });
           setViewMode("table");
-          await Promise.all([loadRankList(filters), loadAnalytics(filters)]);
         }
       }
     } finally {
@@ -693,12 +695,8 @@ export default function ResultProcessingPage() {
     setSelectedStudentMemo(null);
     setLoadingStudentId(sId);
     try {
-      const memoContext = applied || filters || {
-        exam: rankFilters.exam,
-        group: rankFilters.group,
-        program: rankFilters.program,
-      };
-      const examId = studentExamId || Number(memoContext.exam) || Number(rankFilters.exam) || undefined;
+      const memoContext = applied || filters;
+      const examId = studentExamId || Number(memoContext.exam) || undefined;
       const res = await apiClient.get(RESULT_API.studentMemo(sId), {
         params: examId ? { examId, examinationId: examId } : {},
       });
@@ -723,14 +721,20 @@ export default function ResultProcessingPage() {
     }
   };
 
-  const loadRankList = async (context = applied || filters) => {
-    const seq = ++requests.current.rank;
-    const targetContext = context && context.exam ? context : filters;
-    const useRankFilters = targetContext === applied;
+  const hasGeneratedResults =
+    Boolean(applied?.exam) &&
+    (sectionSummaries.length > 0 || hasExistingResults(readiness));
 
-    const expectedGroupId = (useRankFilters && rankFilters.group) || targetContext.group;
-    const expectedProgramId = (useRankFilters && rankFilters.program) || targetContext.program;
-    const expectedExamId = (useRankFilters && rankFilters.exam) || targetContext.exam;
+  const loadRankList = async (context = applied) => {
+    if (!hasGeneratedResults || !context?.exam) {
+      setRankList([]);
+      return;
+    }
+    const seq = ++requests.current.rank;
+    const targetContext = context;
+    const expectedGroupId = targetContext.group;
+    const expectedProgramId = targetContext.program;
+    const expectedExamId = targetContext.exam;
 
     try {
       const res = await apiClient.get(RESULT_API.rankList, {
@@ -740,11 +744,8 @@ export default function ResultProcessingPage() {
           academicLevelId: targetContext.level ? Number(targetContext.level) : undefined,
           groupId: expectedGroupId ? Number(expectedGroupId) : undefined,
           programId: expectedProgramId ? String(expectedProgramId) : undefined,
-          sectionId:
-            useRankFilters && rankFilters.section ? Number(rankFilters.section) : undefined,
           examId: expectedExamId ? Number(expectedExamId) : undefined,
           examinationId: expectedExamId ? Number(expectedExamId) : undefined,
-          search: rankSearch.trim() || undefined,
         },
       });
       if (seq !== requests.current.rank) return;
@@ -770,9 +771,13 @@ export default function ResultProcessingPage() {
     }
   };
 
-  const loadAnalytics = async (context = applied || filters) => {
+  const loadAnalytics = async (context = applied) => {
+    if (!hasGeneratedResults || !context?.exam) {
+      setAnalytics(null);
+      return;
+    }
     const seq = ++requests.current.analytics;
-    const targetContext = context && context.exam ? context : filters;
+    const targetContext = context;
     try {
       const res = await apiClient.get(RESULT_API.analytics, {
         params: {
@@ -794,11 +799,13 @@ export default function ResultProcessingPage() {
   };
 
   useEffect(() => {
-    if (viewMode === "rankList") loadRankList(applied || filters);
-    if (viewMode === "analytics") loadAnalytics(applied || filters);
-  }, [viewMode, rankFilters, rankSearch, filters.exam]);
+    if (!hasGeneratedResults || !applied?.exam) return;
+    if (viewMode === "rankList" && !rankList.length) loadRankList(applied);
+    if (viewMode === "analytics" && !analytics) loadAnalytics(applied);
+  }, [viewMode, hasGeneratedResults, applied?.exam]);
 
   const openFailedStudents = async () => {
+    if (!hasGeneratedResults || !applied?.exam) return;
     setAnalyticsDetail("failed");
     const embedded = analytics?.failedStudents;
     if (Array.isArray(embedded) && embedded.length > 0) {
@@ -892,17 +899,44 @@ export default function ResultProcessingPage() {
   const pagedStudents = sectionStudents.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Rank List Pagination
-  const rankPages = Math.max(1, Math.ceil(rankList.length / PAGE_SIZE));
-  const pagedRanks = rankList.slice((rankPage - 1) * PAGE_SIZE, rankPage * PAGE_SIZE);
+  const filteredRankList = useMemo(() => {
+    const term = rankSearch.trim().toLowerCase();
+    if (!term) return rankList;
+    return rankList.filter((item, index) => {
+      const rank = item.rank ?? item.groupRank ?? item.sectionRank ?? index + 1;
+      const examinationName = item.examinationName ?? item.examName ?? currentExam?.name ?? "";
+      return [
+        rank,
+        `#${rank}`,
+        item.studentName,
+        item.student,
+        item.rollNo,
+        item.rollNumber,
+        item.groupName,
+        item.group,
+        item.programName,
+        item.program,
+        examinationName,
+      ].some((value) => String(value ?? "").toLowerCase().includes(term));
+    });
+  }, [rankList, rankSearch, currentExam]);
+  const rankPages = Math.max(1, Math.ceil(filteredRankList.length / PAGE_SIZE));
+  const pagedRanks = filteredRankList.slice(
+    (rankPage - 1) * PAGE_SIZE,
+    rankPage * PAGE_SIZE,
+  );
   useEffect(() => {
     if (rankPage > rankPages) setRankPage(rankPages);
   }, [rankPage, rankPages]);
 
   // Exports
-  const exportRows = (rows, includeStatus = true) =>
+  const exportRows = (rows, includeStatus = true, includeExamination = false) =>
     rows.map((item) => {
       const rowData = {
         Rank: item.rank ?? item.sectionRank ?? "—",
+        ...(includeExamination
+          ? { Examination: item.examinationName ?? item.examName ?? currentExam?.name ?? "—" }
+          : {}),
         Roll: item.rollNo || item.rollNumber || "—",
         Student: item.studentName || item.student || "—",
         Group: item.groupName || item.group || "—",
@@ -925,9 +959,11 @@ export default function ResultProcessingPage() {
       .replace(/[\\/:*?"<>|]/g, "")
       .trim() || "Results";
 
-  const exportExcel = (rows, filename, includeStatus = true) => {
+  const exportExcel = (rows, filename, includeStatus = true, includeExamination = false) => {
     if (!rows.length) return showToast("No result records are available to export.", "error");
-    const sheet = XLSX.utils.json_to_sheet(exportRows(rows, includeStatus));
+    const sheet = XLSX.utils.json_to_sheet(
+      exportRows(rows, includeStatus, includeExamination),
+    );
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Results");
     XLSX.writeFile(book, `${safeFileName(filename)}.xlsx`);
@@ -1151,11 +1187,6 @@ export default function ResultProcessingPage() {
         {viewMode === "rankList" && !selectedStudentMemo && (
           <RankList
             rows={pagedRanks}
-            filters={rankFilters}
-            setFilters={(v) => {
-              setRankFilters(v);
-              setRankPage(1);
-            }}
             search={rankSearch}
             setSearch={(v) => {
               setRankSearch(v);
@@ -1164,34 +1195,30 @@ export default function ResultProcessingPage() {
             page={rankPage}
             pages={rankPages}
             setPage={setRankPage}
-            groups={groups}
-            programs={programs}
-            examinations={examinations}
             onStudent={loadStudentMemo}
             loadingStudentId={loadingStudentId}
-            onGroupChange={loadPrograms}
-            onProgramChange={(next) =>
-              loadExaminations({
-                board: (applied || filters)?.board,
-                year: (applied || filters)?.year,
-                level: (applied || filters)?.level,
-                group: next.group,
-                program: next.program,
-              })
-            }
             onExportPreview={() => setShowRankPreview(true)}
+            hasGeneratedResults={hasGeneratedResults}
+            hasRankRecords={rankList.length > 0}
+            examName={currentExam?.name}
           />
         )}
 
         {viewMode === "analytics" && !selectedStudentMemo && (
-          <Analytics data={analytics} onOpen={openFailedStudents} />
+          <Analytics
+            data={analytics}
+            examName={currentExam?.name}
+            hasGeneratedResults={hasGeneratedResults}
+            onOpen={openFailedStudents}
+          />
         )}
 
         {showRankPreview && (
           <RankPreviewModal
             rows={rankList}
+            examName={currentExam?.name}
             onClose={() => setShowRankPreview(false)}
-            onDownload={() => exportExcel(rankList, "Rank-List", false)}
+            onDownload={() => exportExcel(rankList, "Rank-List", false, true)}
           />
         )}
 
@@ -1579,86 +1606,35 @@ function Memo({ student, exam, onBack }) {
 
 function RankList({
   rows,
-  filters,
-  setFilters,
   search,
   setSearch,
   page,
   pages,
   setPage,
-  groups,
-  programs,
-  examinations,
   onStudent,
   loadingStudentId,
-  onGroupChange,
-  onProgramChange,
   onExportPreview,
+  hasGeneratedResults,
+  hasRankRecords,
+  examName,
 }) {
-  const update = (key, val) => {
-    const next = {
-      ...filters,
-      [key]: val,
-      ...(key === "group"
-        ? { program: "", section: "", exam: "" }
-        : key === "program"
-          ? { section: "", exam: "" }
-          : {}),
-    };
-    setFilters(next);
-    if (key === "group") onGroupChange(val);
-    if (key === "program") onProgramChange(next);
-  };
-
   return (
     <div className="cms-card results-rank-card">
       <div className="results-rank-toolbar">
         <div className="results-rank-search">
           <input
             className="cms-input"
-            placeholder="Search student or roll..."
+            placeholder="Search rank, student, group, program or examination..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Select
-          label="Group"
-          showLabel={false}
-          value={filters.group}
-          onChange={(v) => update("group", v)}
-        >
-          {groups.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Program"
-          showLabel={false}
-          value={filters.program}
-          onChange={(v) => update("program", v)}
-        >
-          {programs.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          label="Examination"
-          showLabel={false}
-          value={filters.exam}
-          onChange={(v) => update("exam", v)}
-        >
-          {examinations.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </Select>
         <div className="results-rank-toolbar-spacer" />
-        <button className="cms-btn cms-btn-ghost" onClick={onExportPreview}>
+        <button
+          className="cms-btn cms-btn-ghost"
+          disabled={!hasGeneratedResults || !hasRankRecords}
+          onClick={onExportPreview}
+        >
           Export Rank List
         </button>
       </div>
@@ -1667,6 +1643,7 @@ function RankList({
           <thead>
             <tr>
               <th>RANK</th>
+              <th>EXAMINATION</th>
               <th>ROLL</th>
               <th>STUDENT</th>
               <th>GROUP</th>
@@ -1684,6 +1661,11 @@ function RankList({
               rows.map((item, idx) => (
                 <tr key={`${item.examId || item.examinationId}-${item.studentId}-${idx}`}>
                   <td className="cms-font-semibold">#{item.rank ?? idx + 1}</td>
+                  <td title={item.examinationName ?? item.examName ?? examName ?? "—"}>
+                    <span className="results-rank-exam-name">
+                      {item.examinationName ?? item.examName ?? examName ?? "—"}
+                    </span>
+                  </td>
                   <td>{item.rollNo || item.rollNumber || "—"}</td>
                   <td>{item.studentName || item.student}</td>
                   <td>{item.groupName || item.group}</td>
@@ -1712,8 +1694,12 @@ function RankList({
               ))
             ) : (
               <tr>
-                <td colSpan={11} className="cms-empty-td">
-                  No rank list records available.
+                <td colSpan={12} className="cms-empty-td">
+                  {!hasGeneratedResults
+                    ? "Generate results for the selected examination to view the rank list."
+                    : hasRankRecords
+                      ? "No rank list records match your search."
+                      : "No rank list records are available for the generated results."}
                 </td>
               </tr>
             )}
@@ -1725,7 +1711,7 @@ function RankList({
   );
 }
 
-function RankPreviewModal({ rows, onClose, onDownload }) {
+function RankPreviewModal({ rows, examName, onClose, onDownload }) {
   const [modalPage, setModalPage] = useState(1);
   const modalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = rows.slice((modalPage - 1) * PAGE_SIZE, modalPage * PAGE_SIZE);
@@ -1812,6 +1798,7 @@ function RankPreviewModal({ rows, onClose, onDownload }) {
                   <thead>
                     <tr>
                       <th style={{ padding: "6px 8px" }}>RANK</th>
+                      <th style={{ padding: "6px 8px" }}>EXAMINATION</th>
                       <th style={{ padding: "6px 8px" }}>ROLL</th>
                       <th style={{ padding: "6px 8px" }}>STUDENT</th>
                       <th style={{ padding: "6px 8px" }}>GROUP</th>
@@ -1829,6 +1816,14 @@ function RankPreviewModal({ rows, onClose, onDownload }) {
                       <tr key={`${item.studentId}-${idx}`}>
                         <td className="cms-font-semibold" style={{ padding: "6px 8px" }}>
                           #{item.rank ?? (modalPage - 1) * PAGE_SIZE + idx + 1}
+                        </td>
+                        <td
+                          style={{ padding: "6px 8px" }}
+                          title={item.examinationName ?? item.examName ?? examName ?? "—"}
+                        >
+                          <span className="results-rank-exam-name">
+                            {item.examinationName ?? item.examName ?? examName ?? "—"}
+                          </span>
                         </td>
                         <td style={{ padding: "6px 8px" }}>{item.rollNo || item.rollNumber || "—"}</td>
                         <td style={{ padding: "6px 8px" }}>{item.studentName || item.student || "—"}</td>
@@ -1890,7 +1885,7 @@ function RankPreviewModal({ rows, onClose, onDownload }) {
   );
 }
 
-function Analytics({ data, onOpen }) {
+function Analytics({ data, examName, hasGeneratedResults, onOpen }) {
   const [subjectPage, setSubjectPage] = useState(1);
   useEffect(() => setSubjectPage(1), [data]);
   const cards = [
@@ -1915,29 +1910,38 @@ function Analytics({ data, onOpen }) {
 
   return (
     <div>
-      <div className="results-analytics-grid">
-        {cards.map(([label, value, key]) =>
-          key === "failed" ? (
-            <button
-              type="button"
-              className="results-analytics-card results-analytics-card-button"
-              key={key}
-              onClick={onOpen}
-            >
-              <span>{label}</span>
-              <strong>{value}</strong>
-            </button>
-          ) : (
-            <div className="results-analytics-card" key={key}>
-              <span>{label}</span>
-              <strong>{value}</strong>
-            </div>
-          ),
-        )}
-      </div>
+      {hasGeneratedResults && (
+        <div className="results-analytics-grid">
+          {cards.map(([label, value, key]) =>
+            key === "failed" ? (
+              <button
+                type="button"
+                className="results-analytics-card results-analytics-card-button"
+                key={key}
+                onClick={onOpen}
+              >
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </button>
+            ) : (
+              <div className="results-analytics-card" key={key}>
+                <span>{label}</span>
+                <strong>{value}</strong>
+              </div>
+            ),
+          )}
+        </div>
+      )}
       <div className="cms-card">
         <div className="cms-card-body">
-          <h3 className="cms-card-title">Subject Performance</h3>
+          <div className="results-analytics-heading">
+            <h3 className="cms-card-title">Subject Performance</h3>
+            {hasGeneratedResults && (
+              <span className="results-analytics-exam-name" title={examName || "Selected Examination"}>
+                {examName || data?.examinationName || data?.examName || "Selected Examination"}
+              </span>
+            )}
+          </div>
           <div className="cms-table-wrap">
             <table className="cms-table results-subject-performance-table">
               <thead>
@@ -1951,7 +1955,13 @@ function Analytics({ data, onOpen }) {
                 </tr>
               </thead>
               <tbody>
-                {pagedSubjects.length ? (
+                {!hasGeneratedResults ? (
+                  <tr>
+                    <td colSpan={6} className="cms-empty-td">
+                      Generate results for the selected examination to view analytics.
+                    </td>
+                  </tr>
+                ) : pagedSubjects.length ? (
                   pagedSubjects.map((sub, idx) => (
                     <tr key={sub.subjectId || idx}>
                       <td>{sub.subjectName}</td>
@@ -1973,7 +1983,7 @@ function Analytics({ data, onOpen }) {
                 ) : (
                   <tr>
                     <td colSpan={6} className="cms-empty-td">
-                      No subject analytics data available.
+                      No analytics records are available for the generated results.
                     </td>
                   </tr>
                 )}

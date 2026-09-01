@@ -24,7 +24,7 @@ const EMPTY = {
   room: "",
   teacher: "",
   strength: "",
-  status: "Active",
+  status: "",
   rowVersion: null,
 };
 const EMPTY_ROOM = {
@@ -34,7 +34,7 @@ const EMPTY_ROOM = {
   roomType: "",
   building: "",
   floor: "",
-  isActive: true,
+  isActive: "",
 };
 const EMPTY_FILTERS = { board: "", academicYear: "", academicLevel: "" };
 const EMPTY_ROOM_FILTERS = { building: "", floor: "", roomType: "" };
@@ -222,8 +222,8 @@ export default function SectionManagementPage() {
   const [roomModal, setRoomModal] = useState(false);
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   const [mode, setMode] = useState("add");
-  const [form, setForm] = useState(EMPTY);
-  const [roomForm, setRoomForm] = useState(EMPTY_ROOM);
+  const [form, setForm] = useState(() => ({ ...EMPTY }));
+  const [roomForm, setRoomForm] = useState(() => ({ ...EMPTY_ROOM }));
   const [selectedRoomId, setSelectedRoomId] = useState(null);
   const [roomMode, setRoomMode] = useState("add");
   const [roomModalFromSection, setRoomModalFromSection] = useState(false);
@@ -777,7 +777,11 @@ export default function SectionManagementPage() {
     [formAcademicYears],
   );
   const academicYearFilterOptions = useMemo(
-    () => uniqueAcademicYearsByName(filterAcademicYears.map((item) => item.name), (item) => item),
+    () =>
+      uniqueAcademicYearsByName(
+        filterAcademicYears.map((item) => item.name),
+        (item) => item,
+      ),
     [filterAcademicYears],
   );
   const groupOptions = useMemo(
@@ -842,9 +846,7 @@ export default function SectionManagementPage() {
       sections
         .filter(
           (section) =>
-            section.id !== selectedSectionId &&
-            section.status === "Active" &&
-            section.room,
+            section.id !== selectedSectionId && section.status === "Active" && section.room,
         )
         .map((section) => normalizeRoomCode(resolveSection(section).roomCode).toLowerCase()),
     );
@@ -909,7 +911,7 @@ export default function SectionManagementPage() {
     setModal(false);
     setSelectedSectionId(null);
     setMode("add");
-    setForm(EMPTY);
+    setForm({ ...EMPTY });
     setModalError(null);
     setViewSection(null);
     setViewError(null);
@@ -919,23 +921,7 @@ export default function SectionManagementPage() {
   const openAdd = () => {
     setSelectedSectionId(null);
     setMode("add");
-    const board = boardsList.find((item) => item.name === filters.board);
-    const year = academicYearsList.find(
-      (item) =>
-        item.name === filters.academicYear &&
-        (!board || item.boardId == null || String(item.boardId) === String(board.id)),
-    );
-    const level = academicLevelsList.find((item) => item.name === filters.academicLevel);
-    setForm({
-      ...EMPTY,
-      boardId: board?.id ?? "",
-      academicYearId: year?.id ?? "",
-      academicLevelId: level?.id ?? "",
-      board: filters.board || "",
-      academicYear: filters.academicYear || "",
-      academicLevel: filters.academicLevel || "",
-    });
-    if (board) loadGroups(board.id);
+    setForm({ ...EMPTY });
     setModalError(null);
     setModal(true);
   };
@@ -1032,17 +1018,7 @@ export default function SectionManagementPage() {
     setMode("edit");
   };
   const openRoomModal = (fromSection = false) => {
-    setRoomForm(
-      fromSection
-        ? EMPTY_ROOM
-        : {
-            ...EMPTY_ROOM,
-            building: roomFilters.building || "",
-            floor: roomFilters.floor || "",
-            roomType: roomFilters.roomType || "",
-            isActive: EMPTY_ROOM.isActive,
-          },
-    );
+    setRoomForm({ ...EMPTY_ROOM });
     setSelectedRoomId(null);
     setRoomMode("add");
     setRoomModalFromSection(fromSection);
@@ -1054,7 +1030,7 @@ export default function SectionManagementPage() {
     setSelectedRoomId(null);
     setRoomMode("add");
     setRoomModalFromSection(false);
-    setRoomForm(EMPTY_ROOM);
+    setRoomForm({ ...EMPTY_ROOM });
     setRoomModalError(null);
   };
   const openRoom = (room, preview = false) => {
@@ -1096,6 +1072,8 @@ export default function SectionManagementPage() {
   const save = async (event) => {
     event.preventDefault();
     if (savingSection) return;
+    if (!["Active", "Inactive"].includes(form.status))
+      return setModalError("Please select a valid Section status.");
     const required = [
       "board",
       "academicYear",
@@ -1269,6 +1247,8 @@ export default function SectionManagementPage() {
   const saveRoom = async (event) => {
     event.preventDefault();
     if (savingRoom) return;
+    if (roomForm.isActive !== true && roomForm.isActive !== false)
+      return setRoomModalError("Please select a valid Room status.");
     const room = {
       id: selectedRoomId,
       roomCode: normalizeRoomCode(roomForm.roomCode),
@@ -2134,10 +2114,14 @@ export default function SectionManagementPage() {
                       Status <span className="cms-room-required-mark">*</span>
                     </label>
                     <Select
-                      value={roomForm.isActive ? "Active" : "Inactive"}
-                      onChange={(value) => changeRoom("isActive", value === "Active")}
+                      value={
+                        roomForm.isActive === "" ? "" : roomForm.isActive ? "Active" : "Inactive"
+                      }
+                      onChange={(value) =>
+                        changeRoom("isActive", value === "" ? "" : value === "Active")
+                      }
                       options={["Active", "Inactive"]}
-                      placeholder="Status"
+                      placeholder="Select Status"
                       disabled={roomMode === "preview"}
                     />
                   </div>

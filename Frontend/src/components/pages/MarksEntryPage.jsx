@@ -1,1885 +1,1882 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye } from "lucide-react";
 import DashboardLayout from "../layout/DashboardLayout";
-import apiClient, { getApiErrorMessage } from "../../api/apiClient.js";
-import { uniqueAcademicYearsByName } from "../../api/apiEndpoints.js";
+import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import "./MarksEntryPage.css";
 
-const Check = () => <span aria-hidden="true">✓</span>;
-const Cross = () => <span aria-hidden="true">×</span>;
-const PAGE_SIZE = 5;
-const STATUS_META = {
-  DRAFT: ["DRAFT", "cms-status-submitted"],
-  SUBMITTED: ["SUBMITTED", "cms-status-submitted"],
-  VERIFIED: ["VERIFIED", "cms-status-verified"],
-  APPROVED: ["APPROVED", "cms-status-approved"],
-  REJECTED: ["REJECTED", "cms-status-rejected"],
-};
-const EVALUATION_API = {
+const MARKS_API = {
   boards: "/api/v1/boards",
   academicYears: "/api/v1/academic-years/active",
-  academicLevels: "/api/v1/boards/academic-levels",
-  groupsByBoard: (boardId) => `/api/v1/groups/board/${boardId}`,
-  programsByGroup: (groupId) => `/api/v1/groups/${groupId}/programs`,
+  academicLevels: "/api/v1/academic-levels",
+  groupsByBoard: (id) => `/api/v1/groups/board/${id}`,
+  programsByGroup: (id) => `/api/v1/programs/group/${id}`,
   sections: "/api/v1/Sections",
   examinations: "/api/v1/examinations",
-  search: "/api/v1/evaluations/search",
-  students: (evaluationId) => `/api/v1/evaluations/${evaluationId}/students`,
-  verify: (evaluationId) => `/api/v1/evaluations/${evaluationId}/verify`,
-  approve: (evaluationId) => `/api/v1/evaluations/${evaluationId}/approve`,
-  reject: (evaluationId) => `/api/v1/evaluations/${evaluationId}/reject`,
+  facultyEvaluations: "/api/v1/faculty/evaluations",
+  facultyStudents: (id) => `/api/v1/faculty/evaluations/${id}/students`,
+  facultyMarks: (id) => `/api/v1/faculty/evaluations/${id}/marks`,
+  facultySubmit: (id) => `/api/v1/faculty/evaluations/${id}/submit`,
+  facultyResubmit: (id) => `/api/v1/faculty/evaluations/${id}/resubmit`,
+  readiness: "/api/v1/evaluations/readiness",
+  evaluationSearch: "/api/v1/evaluations/search",
+  evaluationStudents: (id) => `/api/v1/evaluations/${id}/students`,
+  adminMarks: (id) => `/api/v1/evaluations/${id}/marks`,
+  verify: (id) => `/api/v1/evaluations/${id}/verify`,
+  approve: (id) => `/api/v1/evaluations/${id}/approve`,
+  reject: (id) => `/api/v1/evaluations/${id}/reject`,
+  restore: (id) => `/api/v1/evaluations/${id}/restore`,
   verifyAll: "/api/v1/evaluations/verify-all",
   approveAll: "/api/v1/evaluations/approve-all",
-  readiness: "/api/v1/evaluations/readiness",
   studentAnalysis: "/api/v1/student-analysis",
-  studentDetails: (studentId) => `/api/v1/student-analysis/${studentId}/details`,
+  studentDetails: (id) => `/api/v1/student-analysis/${id}/details`,
+  exportEvaluations: "/api/v1/evaluations/export",
 };
-
-const collectionFrom = (data) => {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.result)) return data.result;
-  if (Array.isArray(data?.data?.items)) return data.data.items;
-  if (Array.isArray(data?.result?.items)) return data.result.items;
+const PAGE_SIZE = 5;
+const eq = (a, b) => String(a ?? "") === String(b ?? "");
+const relationId = (item, keys) =>
+  keys.map((key) => item?.[key]).find((value) => value != null && value !== "");
+const matchesOptionalRelation = (item, keys, selectedId) => {
+  const relatedId = relationId(item, keys);
+  return relatedId == null || eq(relatedId, selectedId);
+};
+const collection = (payload) => {
+  const value = payload?.data ?? payload;
+  if (Array.isArray(value)) return value;
+  for (const key of ["data", "items", "results", "records"])
+    if (Array.isArray(value?.[key])) return value[key];
   return [];
 };
-const objectFrom = (data) => {
-  const payload = data?.data ?? data?.result ?? data;
-  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : null;
+const object = (payload) => {
+  const value = payload?.data?.data ?? payload?.data ?? payload;
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 };
-const evaluationCollectionFrom = (data) => {
-  const regularItems = collectionFrom(data);
-  if (regularItems.length) return regularItems;
-  const root = objectFrom(data);
-  if (Array.isArray(root?.requiredSubjects)) return root.requiredSubjects;
-  return [];
-};
-const masterCollectionFrom = (data) => {
-  const items = collectionFrom(data);
-  if (items.length) return items;
-  const item = objectFrom(data);
-  return item && typeof item === "object" && !Array.isArray(item) ? [item] : [];
-};
-const firstNonEmpty = (...values) =>
-  values.find((value) => value != null && String(value).trim() !== "") ?? "";
-const activeValue = (value) => {
-  if (value === true || value === 1) return true;
-  if (value === false || value === 0 || value == null) return false;
-  return ["1", "true", "active"].includes(String(value).trim().toLowerCase());
-};
-const isActive = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status, true));
-const positiveId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
-const finiteNumber = (value) => value !== null && value !== "" && Number.isFinite(Number(value));
-const safePercent = (value) => (finiteNumber(value) ? Number(value).toFixed(2) + "%" : "—");
-const percentageOf = (value, maximum) =>
-  finiteNumber(value) && finiteNumber(maximum) && Number(maximum) > 0
-    ? ((Number(value) / Number(maximum)) * 100).toFixed(2) + "%"
-    : "—";
-
-const matchesIdOrName = (actual, expected, itemsList = []) => {
-  if (expected == null || expected === "" || actual == null || actual === "") return true;
-  const actualStr = String(actual).trim().toLowerCase();
-  const expectedStr = String(expected).trim().toLowerCase();
-  if (actualStr === expectedStr) return true;
-  const numActual = Number(actual);
-  const numExpected = Number(expected);
-  if (Number.isFinite(numActual) && Number.isFinite(numExpected) && numActual === numExpected) return true;
-
-  const matchedItem = itemsList.find(
-    (i) => String(i.id || i.programId) === expectedStr,
+const active = (item) => {
+  const value = item.isActive ?? item.active ?? item.status;
+  return (
+    value == null ||
+    ![false, 0, "0", "false", "inactive", "disabled"].includes(
+      typeof value === "string" ? value.toLowerCase() : value,
+    )
   );
-  if (matchedItem) {
-    const itemName = String(matchedItem.name || matchedItem.programName || "").trim().toLowerCase();
-    const itemCode = String(matchedItem.code || matchedItem.programCode || "").trim().toLowerCase();
-    if (actualStr === itemName || actualStr === itemCode) return true;
-  }
-  return false;
 };
-
-const hasControlCharacters = (value) =>
-  Array.from(String(value ?? "")).some((character) => {
-    const code = character.charCodeAt(0);
-    return code === 127 || (code < 32 && ![9, 10, 13].includes(code));
-  });
-const apiError = (error) => getApiErrorMessage(error);
-const normalizeBoard = (item) => ({
-  boardId: Number(item.boardId ?? item.id),
-  boardName: item.boardName ?? item.name ?? "",
-  boardCode: item.boardCode ?? item.code ?? "",
-});
-const normalizeYear = (item) => ({
-  academicYearId: Number(item.academicYearId ?? item.id),
-  boardId: item.boardId == null ? null : Number(item.boardId),
-  academicYearName: item.academicYearName ?? item.name ?? item.academicYear ?? "",
-  active: item.isActive == null && item.status == null ? true : isActive(item),
-});
-const normalizeLevel = (item) => ({
-  academicLevelId: Number(item.academicLevelId ?? item.id),
-  levelName: item.levelName ?? item.academicLevelName ?? item.name ?? item.academicLevel ?? "",
-});
-const normalizeGroup = (item) => ({
-  groupId: Number(item.groupId ?? item.id),
-  groupName: item.groupName ?? item.name ?? "",
-  groupCode: item.groupCode ?? item.code ?? "",
-  boardId: item.boardId == null ? null : Number(item.boardId),
-});
-const normalizeProgram = (item) => ({
-  groupProgramId: Number(item.groupProgramId ?? item.groupProgrammeId) || "",
-  programId: Number(item.programId ?? item.programmeId ?? item.id),
-  groupId: Number(item.groupId),
-  programName: item.programName ?? item.name ?? "",
-  programCode: item.programCode ?? item.code ?? "",
-  category: item.category ?? item.programCategory ?? item.programType ?? "",
-  active: item.isActive !== false && String(item.status ?? "active").toLowerCase() !== "inactive",
-});
-const normalizeSection = (item) => ({
-  sectionId: Number(item.sectionId ?? item.id),
-  sectionName: item.sectionName ?? item.name ?? "",
-  boardId: item.boardId != null ? Number(item.boardId) : null,
-  academicYearId: item.academicYearId != null ? Number(item.academicYearId) : null,
-  academicLevelId: item.academicLevelId != null ? Number(item.academicLevelId) : null,
-  groupId: item.groupId != null ? Number(item.groupId) : null,
-  programId: item.programId ?? item.programmeId ?? null,
-  groupProgramId: Number(item.groupProgramId ?? item.groupProgrammeId) || "",
-  active: item.isActive == null && item.status == null ? true : isActive(item),
-});
-const normalizeExam = (item) => ({
-  examinationId: Number(item.examinationId ?? item.examId ?? item.id),
-  examCode: item.examCode ?? item.code ?? "",
-  examName: item.examName ?? item.name ?? "",
-  examType: item.examType ?? item.type ?? item.assessmentTypeName ?? item.assessmentType ?? "",
-  examPattern: item.examPattern ?? item.pattern ?? item.patternName ?? "",
-  scheduleMode: item.scheduleMode ?? "",
-  totalMarks: Number(item.totalMarks ?? 0),
-  passPercentage: Number(item.passPercentage ?? 0),
-  status: String(item.status ?? item.examStatus ?? "COMPLETED").toUpperCase(),
-  boardId: item.boardId != null ? Number(item.boardId) : null,
-  academicYearId: item.academicYearId != null ? Number(item.academicYearId) : null,
-  academicLevelId: item.academicLevelId != null ? Number(item.academicLevelId) : null,
-  groupId: item.groupId != null ? Number(item.groupId) : null,
-  programId: item.programId ?? item.programmeId ?? null,
-  groupProgramId: Number(item.groupProgramId ?? item.groupProgrammeId) || "",
-});
-const normalizeStudent = (item) => ({
-  studentId: Number(item.studentId ?? item.id),
-  rollNo: item.rollNo ?? item.rollNumber ?? item.admissionNumber ?? "",
-  studentName: item.studentName ?? item.fullName ?? item.name ?? "",
-  internal: item.internalMarks ?? item.internal ?? null,
-  practical: item.practicalMarks ?? item.practical ?? null,
-  theory: item.theoryMarks ?? item.theory ?? null,
-  obtainedMarks: item.obtainedMarks ?? item.totalMarks ?? item.total ?? item.marks ?? null,
-  maxMarks: item.maxMarks ?? item.subjectMaxMarks ?? null,
-  total: item.totalMarks ?? item.total ?? item.obtainedMarks ?? item.marks ?? null,
-  remarks: item.remarks ?? "",
-  absent: activeValue(item.isAbsent ?? item.absent),
-});
-const EVALUATION_STATUSES = new Set(["DRAFT", "SUBMITTED", "VERIFIED", "APPROVED", "REJECTED"]);
-const normalizeEvaluation = (item) => {
-  const rawStatus = String(item.status ?? "")
+const normalize = (item, type) => {
+  const fields = {
+    board: ["boardId", "id", "boardName", "name"],
+    year: ["academicYearId", "id", "academicYearName", "academicYear", "yearName", "name"],
+    level: ["academicLevelId", "levelId", "id", "levelName", "academicLevelName", "name"],
+    group: ["groupId", "id", "groupName", "name"],
+    program: ["programId", "groupProgramId", "id", "programName", "programmeName", "name"],
+    section: ["sectionId", "id", "sectionName", "name"],
+    exam: ["examinationId", "examId", "id", "examName", "examinationName", "name"],
+  }[type];
+  const id = fields
+    .slice(0, type === "level" ? 3 : type === "program" || type === "exam" ? 3 : 2)
+    .map((k) => item[k])
+    .find((v) => v != null && v !== "");
+  const name = fields
+    .slice(type === "level" || type === "program" || type === "exam" ? 3 : 2)
+    .map((k) => item[k])
+    .find((v) => String(v ?? "").trim());
+  return {
+    ...item,
+    id,
+    name: name || "",
+    code: item.code ?? item[`${type}Code`] ?? item.examCode ?? "",
+    status: String(item.status ?? item.examStatus ?? "").toUpperCase(),
+  };
+};
+const statusOf = (value) =>
+  String(value ?? "NOT STARTED")
     .trim()
-    .toUpperCase();
-  const evalId = item.evaluationId ?? item.id ?? (item.subjectId ? `${item.subjectId}_${item.sectionId || 0}` : null);
-  const subjectMax = Number(item.subjectMaxMarks ?? item.maxMarks ?? item.examTotalMarks ?? 100);
+    .toUpperCase()
+    .replaceAll("_", " ");
+const evaluationKey = (e) => `${e.examinationId}:${e.sectionId}:${e.subjectId}`;
+const validNumber = (value, max) =>
+  value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= max;
+const grade = (p) =>
+  p >= 90
+    ? "A+"
+    : p >= 80
+      ? "A"
+      : p >= 70
+        ? "B+"
+        : p >= 60
+          ? "B"
+          : p >= 50
+            ? "C"
+            : p >= 40
+              ? "D"
+              : "F";
+const IconEye = () => (
+  <svg
+    width="15"
+    height="15"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    aria-hidden="true"
+  >
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const IconEdit = () => (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    aria-hidden="true"
+  >
+    <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+  </svg>
+);
 
-  return {
-    ...item,
-    evaluationId: String(evalId ?? ""),
-    rawEvaluationId: evalId,
-    examinationId: Number(item.examinationId ?? item.examId ?? 0),
-    sectionId: Number(item.sectionId ?? 0),
-    programId: item.programId ?? item.programName ?? null,
-    groupId: Number(item.groupId ?? 0),
-    subjectId: Number(item.subjectId ?? 0),
-    facultyId: Number(item.facultyId ?? 0),
-    subjectMaxMarks: Number.isFinite(subjectMax) && subjectMax > 0 ? subjectMax : 100,
-    status: EVALUATION_STATUSES.has(rawStatus) ? rawStatus : rawStatus || "SUBMITTED",
-    rowVersion: item.rowVersion,
-    submittedAt: item.submittedAt ?? "",
-    verifiedAt: item.verifiedAt ?? "",
-    approvedAt: item.approvedAt ?? "",
-    rejectedAt: item.rejectedAt ?? "",
-    internalMaxMarks: item.internalMaxMarks ?? item.components?.internalMaxMarks ?? null,
-    practicalMaxMarks: item.practicalMaxMarks ?? item.components?.practicalMaxMarks ?? null,
-    theoryMaxMarks: item.theoryMaxMarks ?? item.components?.theoryMaxMarks ?? null,
-    internalApplicable:
-      item.internalApplicable ?? item.hasInternal ?? item.components?.internalApplicable ?? null,
-    practicalApplicable:
-      item.practicalApplicable ?? item.hasPractical ?? item.components?.practicalApplicable ?? null,
-    theoryApplicable:
-      item.theoryApplicable ?? item.hasTheory ?? item.components?.theoryApplicable ?? null,
-    subject: {
-      subjectId: Number(item.subjectId ?? 0),
-      subjectName: item.subjectName ?? item.subject?.subjectName ?? item.subject?.name ?? "",
-      subjectCode: item.subjectCode ?? item.subject?.subjectCode ?? item.subject?.code ?? "",
-      practical: Boolean(item.isPractical ?? item.subject?.practical),
-    },
-    faculty: {
-      facultyId: Number(item.facultyId ?? 0),
-      facultyName: item.facultyName ?? item.faculty?.facultyName ?? item.faculty?.name ?? "Faculty",
-      facultyCode: item.facultyCode ?? item.employeeId ?? item.faculty?.facultyCode ?? "",
-    },
-    rows: collectionFrom(item.students ?? item.rows ?? item.studentMarks ?? item.marksList).map(normalizeStudent),
-    studentsCount: Number(item.totalStudents ?? item.studentsCount ?? item.studentCount ?? 0),
-    average: item.averageMarks ?? item.average ?? "—",
-    highest: item.highestMarks ?? item.highest ?? "—",
-    lowest: item.lowestMarks ?? item.lowest ?? "—",
-    adminReviewMessage: item.adminReviewMessage ?? "",
-    rejectionReason: item.rejectionReason ?? "",
-    resubmissionCount: Number(item.resubmissionCount ?? 0),
-    reviewHistory: collectionFrom(item.reviewHistory),
-  };
-};
-const normalizeAnalysis = (item) => {
-  const rawSubjects = collectionFrom(
-    item.subjects ?? item.subjectMarksList ?? item.studentMarks ?? item.marksList,
-  );
-
-  const subjects = rawSubjects.map((s) => {
-    const sId = Number(s.subjectId ?? s.id ?? 0);
-    const internalVal = s.internal ?? s.internalMarks ?? s.internalObtained ?? null;
-    const practicalVal = s.practical ?? s.practicalMarks ?? s.practicalObtained ?? null;
-    const theoryVal = s.theory ?? s.theoryMarks ?? s.theoryObtained ?? null;
-    const totalVal = s.total ?? s.obtainedMarks ?? s.totalMarks ?? s.marks ?? null;
-    const maxVal = s.maxMarks ?? s.subjectMaxMarks ?? s.maximum ?? 100;
-
-    return {
-      ...s,
-      subjectId: sId,
-      subjectName: s.subjectName ?? s.name ?? "",
-      subjectCode: s.subjectCode ?? s.code ?? "",
-      internal: internalVal != null ? Number(internalVal) : null,
-      practical: practicalVal != null ? Number(practicalVal) : null,
-      theory: theoryVal != null ? Number(theoryVal) : null,
-      total: totalVal != null ? Number(totalVal) : null,
-      obtainedMarks: totalVal != null ? Number(totalVal) : null,
-      maxMarks: Number(maxVal),
-      remarks: s.remarks ?? "",
-      isAbsent: activeValue(s.isAbsent ?? s.absent),
-    };
-  });
-
-  const marksFromSubjects = Object.fromEntries(
-    subjects
-      .filter((s) => s.subjectId > 0)
-      .map((s) => [String(s.subjectId), s.total ?? s.obtainedMarks]),
-  );
-
-  let rawMarks = {};
-  if (item.subjectMarks && typeof item.subjectMarks === "object") {
-    rawMarks = { ...item.subjectMarks };
-  }
-
-  const combinedMarks = {
-    ...rawMarks,
-    ...marksFromSubjects,
-  };
-
-  return {
-    ...item,
-    studentId: Number(item.studentId ?? item.id),
-    rollNo: item.rollNo ?? item.rollNumber ?? item.admissionNumber ?? "",
-    studentName: item.studentName ?? item.fullName ?? item.name ?? "",
-    groupName: item.groupName ?? item.group ?? "",
-    programName: item.programName ?? item.program ?? "",
-    sectionName: item.sectionName ?? item.section ?? "",
-    examName: item.examName ?? item.examination ?? "",
-    examType: item.examType ?? "",
-    examPattern: item.examPattern ?? "",
-    marks: combinedMarks,
-    subjects,
-    total: Number(item.total ?? item.totalMarks ?? item.overallTotal ?? item.marksObtained ?? 0),
-    maximum: Number(item.maximum ?? item.maxTotal ?? item.maxMarks ?? 0),
-    percentage: item.percentage == null ? null : Number(item.percentage),
-    passPercentage: item.passPercentage != null ? Number(item.passPercentage) : null,
-    passingScore: item.passingScore != null ? Number(item.passingScore) : null,
-    rank: item.rank ?? null,
-    examinationId: Number(item.examinationId ?? item.examId) || null,
-    sectionId: Number(item.sectionId) || null,
-    grade: item.grade ?? "—",
-    result: item.result ?? "—",
-  };
-};
-const objectiveExam = (exam) =>
-  ["COMBINED", "COMBINED_OBJECTIVE", "OBJECTIVE_COMBINED"].includes(
-    String(exam?.scheduleMode).trim().toUpperCase(),
-  ) || String(exam?.examType).trim().toLowerCase() === "objective";
-const passingScore = (exam) =>
-  Math.ceil((Number(exam?.totalMarks) * Number(exam?.passPercentage)) / 100);
-
-const normalizeReadiness = (item) => ({
-  examinationId: Number(item?.examinationId ?? item?.examId ?? 0),
-  sectionId: Number(item?.sectionId ?? 0),
-  requiredEvaluationCount: Number(item?.requiredEvaluationCount ?? 0),
-  draftCount: Number(item?.draftCount ?? 0),
-  submittedCount: Number(item?.submittedCount ?? 0),
-  verifiedCount: Number(item?.verifiedCount ?? 0),
-  approvedCount: Number(item?.approvedCount ?? 0),
-  rejectedCount: Number(item?.rejectedCount ?? 0),
-  missingCount: Number(item?.missingCount ?? 0),
-  allRequiredEvaluationsApproved: item?.allRequiredEvaluationsApproved === true,
-  readyForResults:
-    item?.readyForResults === true || item?.allRequiredEvaluationsApproved === true,
-  requiredSubjects: collectionFrom(item?.requiredSubjects),
+const normalizeEvaluation = (raw) => ({
+  ...raw,
+  evaluationId: raw.evaluationId ?? raw.id,
+  examinationId: raw.examinationId ?? raw.examId,
+  sectionId: raw.sectionId,
+  subjectId: raw.subjectId,
+  facultyId: raw.facultyId,
+  status: statusOf(raw.status ?? raw.evaluationStatus),
+  subject: {
+    id: raw.subjectId,
+    name: raw.subjectName ?? raw.subject?.name ?? raw.subject?.subjectName ?? "Subject",
+    code: raw.subjectCode ?? raw.subject?.code ?? raw.subject?.subjectCode ?? "",
+  },
+  faculty: {
+    id: raw.facultyId,
+    name: raw.facultyName ?? raw.faculty?.name ?? raw.faculty?.facultyName ?? "—",
+    code: raw.facultyCode ?? raw.faculty?.code ?? "",
+  },
+  studentsCount: Number(raw.studentsCount ?? raw.studentCount ?? 0),
+  average: raw.average ?? raw.averageMarks ?? "—",
+  highest: raw.highest ?? raw.highestMarks ?? "—",
+  lowest: raw.lowest ?? raw.lowestMarks ?? "—",
+  subjectMaxMarks: Number(raw.subjectMaxMarks ?? raw.maxMarks ?? raw.maximumMarks ?? 0),
+  rowVersion: raw.rowVersion ?? null,
 });
-const isReady = (readiness) =>
-  Boolean(
-    readiness &&
-    readiness.requiredEvaluationCount > 0 &&
-    readiness.approvedCount === readiness.requiredEvaluationCount &&
-    readiness.allRequiredEvaluationsApproved,
-  );
+const normalizeSheet = (raw, header = {}) => {
+  const value = object(raw),
+    source = { ...header, ...(value.header || {}), ...value };
+  const rows = collection(value.students ?? value.rows ?? raw).map((r) => ({
+    ...r,
+    studentId: r.studentId ?? r.id,
+    rollNo: r.rollNo ?? r.rollNumber ?? "",
+    studentName: r.studentName ?? r.name ?? "",
+    internal: r.internalMarks ?? r.internal ?? "",
+    practical: r.practicalMarks ?? r.practical ?? "",
+    theory: r.theoryMarks ?? r.theory ?? "",
+    obtainedMarks: r.obtainedMarks ?? r.totalMarks ?? r.total ?? "",
+    total: r.totalMarks ?? r.obtainedMarks ?? r.total ?? "",
+    absent: Boolean(r.isAbsent ?? r.absent),
+    remarks: r.remarks ?? "",
+  }));
+  const practicalMax = Number(source.practicalMax ?? source.practicalMaximum ?? 0),
+    mode =
+      String(source.mode ?? source.markMode ?? source.examMode ?? "REGULAR").toUpperCase() ===
+      "OBJECTIVE"
+        ? "OBJECTIVE"
+        : "REGULAR";
+  return {
+    evaluationId: source.evaluationId ?? source.id,
+    examinationId: source.examinationId ?? source.examId,
+    sectionId: source.sectionId,
+    subjectId: source.subjectId,
+    facultyId: source.facultyId,
+    faculty: {
+      id: source.facultyId,
+      name: source.facultyName ?? source.faculty?.name ?? "—",
+      code: source.facultyCode ?? source.faculty?.code ?? "",
+    },
+    subject: {
+      id: source.subjectId,
+      name: source.subjectName ?? source.subject?.name ?? "Subject",
+      code: source.subjectCode ?? source.subject?.code ?? "",
+    },
+    status: statusOf(source.status ?? source.evaluationStatus),
+    rejectionReason: source.rejectionReason ?? "",
+    rowVersion: source.rowVersion ?? null,
+    mode,
+    maxMarks: Number(source.maxMarks ?? source.totalMax ?? source.maximumMarks ?? 0),
+    internalMax: Number(source.internalMax ?? source.internalMaximum ?? 0),
+    practicalMax,
+    theoryMax: Number(source.theoryMax ?? source.theoryMaximum ?? 0),
+    passPercentage: Number(source.passPercentage ?? source.passingPercentage ?? 0),
+    rows,
+    dirty: false,
+    validationErrors: {},
+  };
+};
+const paramsFor = (c) => ({
+  boardId: c.board,
+  academicYearId: c.year,
+  academicLevelId: c.level,
+  groupId: c.group,
+  programId: c.program,
+  sectionId: c.section,
+  examinationId: c.exam,
+});
+const marksPayload = (w) => ({
+  ...(w.rowVersion != null ? { rowVersion: w.rowVersion } : {}),
+  students: w.rows.map((r) => ({
+    studentId: r.studentId,
+    internalMarks: r.absent || r.internal === "" ? 0 : Number(r.internal),
+    practicalMarks: r.absent || r.practical === "" ? 0 : Number(r.practical),
+    theoryMarks: r.absent || r.theory === "" ? 0 : Number(r.theory),
+    isAbsent: Boolean(r.absent),
+    remarks: r.remarks || "",
+  })),
+});
 
 export default function MarksEntryPage() {
-  const emptyFilters = {
-    board: "",
-    academicYear: "",
-    academicLevel: "",
-    group: "",
-    program: "",
-    section: "",
-    examination: "",
-  };
-  const [filters, setFilters] = useState(emptyFilters),
+  const [tab, setTab] = useState("entry"),
+    [filters, setFilters] = useState({
+      board: "",
+      year: "",
+      level: "",
+      group: "",
+      program: "",
+      section: "",
+      exam: "",
+    }),
     [applied, setApplied] = useState(null);
   const [boards, setBoards] = useState([]),
-    [academicYears, setAcademicYears] = useState([]),
-    [academicLevels, setAcademicLevels] = useState([]),
+    [years, setYears] = useState([]),
+    [levels, setLevels] = useState([]),
     [groups, setGroups] = useState([]),
     [programs, setPrograms] = useState([]),
     [sections, setSections] = useState([]),
-    [examinations, setExaminations] = useState([]),
+    [exams, setExams] = useState([]);
+  const [workspaces, setWorkspaces] = useState({}),
+    [activeSubjectId, setActiveSubjectId] = useState(""),
     [evaluations, setEvaluations] = useState([]),
-    [studentAnalysis, setStudentAnalysis] = useState([]),
-    [readiness, setReadiness] = useState(null),
-    [evaluationLoadState, setEvaluationLoadState] = useState("idle");
-  const [tab, setTab] = useState("evaluations"),
-    [search, setSearch] = useState(""),
-    [studentSearch, setStudentSearch] = useState("");
-  const [evaluationId, setEvaluationId] = useState(null),
-    [studentId, setStudentId] = useState(null),
-    [page, setPage] = useState(1),
+    [analysis, setAnalysis] = useState([]),
+    [analysisSubjects, setAnalysisSubjects] = useState([]),
+    [readiness, setReadiness] = useState(null);
+  const [selectedEvaluation, setSelectedEvaluation] = useState(null),
+    [selectedStudent, setSelectedStudent] = useState(null),
+    [editingSubmitted, setEditingSubmitted] = useState({});
+  const [entryPage, setEntryPage] = useState(1),
     [evaluationPage, setEvaluationPage] = useState(1),
-    [studentPage, setStudentPage] = useState(1);
-  const [selectedEvaluationDetails, setSelectedEvaluationDetails] = useState(null),
-    [selectedStudentDetails, setSelectedStudentDetails] = useState(null);
-  const [toast, setToast] = useState(null),
-    [decision, setDecision] = useState(null),
+    [studentPage, setStudentPage] = useState(1),
+    [detailPage, setDetailPage] = useState(1);
+  const [evaluationSearch, setEvaluationSearch] = useState(""),
+    [studentSearch, setStudentSearch] = useState(""),
+    [toast, setToast] = useState(null),
+    [processing, setProcessing] = useState(false),
+    [modal, setModal] = useState(null),
     [message, setMessage] = useState(""),
-    [globalStage, setGlobalStage] = useState(null);
-  const [checkingEvaluations, setCheckingEvaluations] = useState(false),
-    [actionLoading, setActionLoading] = useState("");
-  const toastRef = useRef(null),
-    requests = useRef({
-      groups: 0,
-      programs: 0,
-      sections: 0,
-      exams: 0,
-      search: 0,
-      details: 0,
-      readiness: 0,
-      analysis: 0,
-      student: 0,
-    });
-  const showToast = useCallback((msg, type = "success") => {
-    if (toastRef.current) clearTimeout(toastRef.current);
-    setToast({ msg, type });
-    toastRef.current = setTimeout(() => setToast(null), 3500);
+    [pending, setPending] = useState(null);
+  const filtersRef = useRef(filters),
+    timers = useRef(null),
+    requests = useRef({ groups: 0, programs: 0, sections: 0, examinations: 0 });
+  filtersRef.current = filters;
+  const notify = useCallback((text, type = "success") => {
+    clearTimeout(timers.current);
+    setToast({ text, type });
+    timers.current = setTimeout(() => setToast(null), 4500);
   }, []);
-  useEffect(() => () => toastRef.current && clearTimeout(toastRef.current), []);
+  useEffect(() => () => clearTimeout(timers.current), []);
   useEffect(() => {
-    let active = true;
-    Promise.allSettled([
-      apiClient.get(EVALUATION_API.boards),
-      apiClient.get(EVALUATION_API.academicYears),
-      apiClient.get(EVALUATION_API.academicLevels),
-    ]).then(([boardResult, yearResult, levelResult]) => {
-      if (!active) return;
-      if (boardResult.status === "fulfilled")
-        setBoards(
-          masterCollectionFrom(boardResult.value.data)
-            .filter(isActive)
-            .map(normalizeBoard)
-            .filter((item) => item.boardId > 0),
-        );
-      else showToast(apiError(boardResult.reason), "error");
-      if (yearResult.status === "fulfilled")
-        setAcademicYears(
-          masterCollectionFrom(yearResult.value.data)
-            .map(normalizeYear)
-            .filter((item) => item.academicYearId > 0 && item.active),
-        );
-      else showToast(apiError(yearResult.reason), "error");
-      if (levelResult.status === "fulfilled")
-        setAcademicLevels(
-          masterCollectionFrom(levelResult.value.data)
-            .map(normalizeLevel)
-            .filter((item) => item.academicLevelId > 0),
-        );
-      else showToast(apiError(levelResult.reason), "error");
-    });
-    return () => {
-      active = false;
-    };
-  }, [showToast]);
-  const clearResults = () => {
+    (async () => {
+      const settled = await Promise.allSettled([
+        apiClient.get(MARKS_API.boards),
+        apiClient.get(MARKS_API.academicYears),
+        apiClient.get(MARKS_API.academicLevels),
+      ]);
+      const setters = [
+        [setBoards, "board"],
+        [setYears, "year"],
+        [setLevels, "level"],
+      ];
+      settled.forEach((result, i) =>
+        result.status === "fulfilled"
+          ? setters[i][0](
+              collection(result.value)
+                .filter(active)
+                .map((x) => normalize(x, setters[i][1]))
+                .filter((x) => x.id != null && x.name),
+            )
+          : notify(getApiErrorMessage(result.reason), "error"),
+      );
+    })();
+  }, [notify]);
+  const dirty = Object.values(workspaces).some((w) => w.dirty),
+    guard = (fn) => (dirty ? setPending(() => fn) : fn());
+  const clearApplied = () => {
     setApplied(null);
+    setWorkspaces({});
     setEvaluations([]);
-    setStudentAnalysis([]);
-    setEvaluationId(null);
-    setStudentId(null);
-    setSelectedEvaluationDetails(null);
-    setSelectedStudentDetails(null);
+    setAnalysis([]);
     setReadiness(null);
-    setEvaluationLoadState("idle");
+    setEditingSubmitted({});
   };
-  const loadGroups = async (boardId) => {
-    const sequence = ++requests.current.groups;
-    setGroups([]);
-    setPrograms([]);
-    setSections([]);
-    setExaminations([]);
-    const id = Number(boardId);
-    if (!Number.isInteger(id) || id <= 0) return;
-    try {
-      const response = await apiClient.get(EVALUATION_API.groupsByBoard(id));
-      if (sequence !== requests.current.groups) return;
-      setGroups(
-        collectionFrom(response.data)
-          .filter(isActive)
-          .map(normalizeGroup)
-          .filter((item) => item.groupId > 0),
-      );
-    } catch (error) {
-      if (sequence === requests.current.groups) showToast(apiError(error), "error");
-    }
-  };
-  const loadPrograms = async (groupId) => {
-    const sequence = ++requests.current.programs;
-    setPrograms([]);
-    setSections([]);
-    setExaminations([]);
-    const id = Number(groupId);
-    if (!Number.isInteger(id) || id <= 0) return;
-    try {
-      const response = await apiClient.get(EVALUATION_API.programsByGroup(id));
-      if (sequence !== requests.current.programs) return;
-      setPrograms(
-        collectionFrom(response.data)
-          .map(normalizeProgram)
-          .filter((item) => item.programId > 0 && item.programName && item.active),
-      );
-    } catch {
-      if (sequence === requests.current.programs)
-        showToast("Unable to load programs for the selected group.", "error");
-    }
-  };
-  const loadSections = async (context) => {
-    const sequence = ++requests.current.sections;
-    setSections([]);
-
-    const boardId = Number(context.board);
-    const academicYearId = Number(context.academicYear);
-    const academicLevelId = Number(context.academicLevel);
-    const groupId = Number(context.group);
-    const programId = context.program;
-
-    if (
-      ![boardId, academicYearId, academicLevelId, groupId].every(positiveId) ||
-      !String(programId).trim()
-    ) {
-      return [];
-    }
-
-    try {
-      const response = await apiClient.get(EVALUATION_API.sections);
-
-      if (sequence !== requests.current.sections) {
-        return [];
+  const changeFilter = (key, value) =>
+    guard(async () => {
+      const next = { ...filters, [key]: value },
+        clear = {
+          board: ["group", "program", "section", "exam"],
+          year: ["exam"],
+          level: ["exam"],
+          group: ["program", "section", "exam"],
+          program: ["section", "exam"],
+          section: ["exam"],
+        };
+      if (key === "board" && value && next.year) {
+        const selectedYear = years.find((item) => eq(item.id, next.year));
+        const yearBoardId = relationId(selectedYear, ["boardId", "BoardId"]);
+        if (yearBoardId != null && !eq(yearBoardId, value)) next.year = "";
       }
-
-      const allSections = collectionFrom(response.data)
-        .map(normalizeSection)
-        .filter(
-          (item) =>
-            positiveId(item.sectionId) &&
-            Boolean(item.sectionName) &&
-            item.active,
-        );
-
-      const matchingSections = allSections.filter(
-        (item) =>
-          (!item.boardId || item.boardId === boardId) &&
-          (!item.academicYearId || item.academicYearId === academicYearId) &&
-          (!item.academicLevelId || item.academicLevelId === academicLevelId) &&
-          (!item.groupId || item.groupId === groupId) &&
-          matchesIdOrName(item.programId, programId, programs),
-      );
-
-      setSections(matchingSections);
-      return matchingSections;
-    } catch (error) {
-      if (sequence === requests.current.sections) {
+      (clear[key] || []).forEach((k) => {
+        next[k] = "";
+      });
+      setFilters(next);
+      clearApplied();
+      if (key === "board") {
+        const seq = ++requests.current.groups;
+        requests.current.programs += 1;
+        requests.current.sections += 1;
+        requests.current.examinations += 1;
+        setGroups([]);
+        setPrograms([]);
         setSections([]);
-        showToast(apiError(error), "error");
+        setExams([]);
+        if (value)
+          try {
+            const res = await apiClient.get(MARKS_API.groupsByBoard(value));
+            if (seq === requests.current.groups)
+              setGroups(
+                collection(res)
+                  .filter(active)
+                  .map((x) => normalize(x, "group"))
+                  .filter((x) => x.id != null && x.name),
+              );
+          } catch (e) {
+            if (seq === requests.current.groups) notify(getApiErrorMessage(e), "error");
+          }
       }
-
-      return [];
-    }
-  };
-  const loadExaminations = async (context) => {
-    const sequence = ++requests.current.exams;
-    setExaminations([]);
-
-    const boardId = Number(context.board);
-    const academicYearId = Number(context.academicYear);
-    const academicLevelId = Number(context.academicLevel);
-    const groupId = Number(context.group);
-    const programId = context.program;
-
-    if (
-      ![boardId, academicYearId, academicLevelId, groupId].every(positiveId) ||
-      !String(programId).trim()
-    ) {
-      return [];
-    }
-
-    try {
-      let response;
-      try {
-        response = await apiClient.get(EVALUATION_API.examinations, {
-          params: {
-            boardId,
-            BoardId: boardId,
-            academicYearId,
-            AcademicYearId: academicYearId,
-            academicLevelId,
-            AcademicLevelId: academicLevelId,
-            groupId,
-            GroupId: groupId,
-            programId,
-            ProgramId: programId,
-            status: "COMPLETED",
-            Status: "COMPLETED",
-          },
-        });
-      } catch {
-        response = await apiClient.get(EVALUATION_API.examinations);
+      if (key === "group") {
+        const seq = ++requests.current.programs;
+        requests.current.sections += 1;
+        requests.current.examinations += 1;
+        setPrograms([]);
+        setSections([]);
+        setExams([]);
+        if (value)
+          try {
+            const res = await apiClient.get(MARKS_API.programsByGroup(value));
+            if (seq === requests.current.programs)
+              setPrograms(
+                collection(res)
+                  .filter(active)
+                  .map((x) => normalize(x, "program"))
+                  .filter((x) => x.id != null && x.name),
+              );
+          } catch (e) {
+            if (seq === requests.current.programs) notify(getApiErrorMessage(e), "error");
+          }
       }
-
-      if (sequence !== requests.current.exams) return [];
-
-      let rawItems = collectionFrom(response.data);
-      if (!rawItems.length) {
-        // Fallback: Fetch all examinations and filter locally
-        const fallbackRes = await apiClient.get(EVALUATION_API.examinations);
-        if (sequence !== requests.current.exams) return [];
-        rawItems = collectionFrom(fallbackRes.data);
+      if (key === "program") {
+        requests.current.sections += 1;
+        requests.current.examinations += 1;
+        setSections([]);
+        setExams([]);
       }
-
-      const next = rawItems
-        .map(normalizeExam)
-        .filter(
-          (item) =>
-            positiveId(item.examinationId) &&
-            (!item.status || String(item.status).toUpperCase() === "COMPLETED") &&
-            (!item.boardId || Number(item.boardId) === boardId) &&
-            (!item.academicYearId || Number(item.academicYearId) === academicYearId) &&
-            (!item.academicLevelId || Number(item.academicLevelId) === academicLevelId) &&
-            (!item.groupId || Number(item.groupId) === groupId) &&
-            matchesIdOrName(item.programId, programId, programs),
-        );
-
-      setExaminations(next);
-      return next;
-    } catch (error) {
-      if (sequence === requests.current.exams) {
-        setExaminations([]);
-        showToast(apiError(error), "error");
+      if (key === "section" || key === "year" || key === "level") {
+        requests.current.examinations += 1;
+        setExams([]);
       }
-
-      return null;
-    }
-  };
-  const searchPayload = (context) => ({
-    boardId: Number(context.board),
-    academicYearId: Number(context.academicYear),
-    academicLevelId: Number(context.academicLevel),
-    programId: context.program,
-    groupId: Number(context.group),
-    sectionId: Number(context.section),
-    examinationId: Number(context.examination),
-    examId: Number(context.examination),
-    pageNumber: 1,
-    pageSize: 1000,
-  });
-  const loadReadiness = async (context, searchResponse = null) => {
-    const sequence = ++requests.current.readiness;
-    const responseRoot =
-      searchResponse?.data &&
-        typeof searchResponse.data === "object" &&
-        !Array.isArray(searchResponse.data)
-        ? searchResponse.data
-        : null;
-    const embedded =
-      responseRoot?.readiness ??
-      responseRoot?.metadata?.readiness ??
-      responseRoot?.data?.readiness ??
-      responseRoot?.result?.readiness ??
-      (responseRoot?.requiredEvaluationCount != null ? responseRoot : null);
-    if (embedded) {
-      const next = normalizeReadiness(embedded);
-      if (sequence === requests.current.readiness) setReadiness(next);
-      return next;
-    }
-    try {
-      const response = await apiClient.get(EVALUATION_API.readiness, {
-        params: {
-          examinationId: Number(context.examination),
-          examId: Number(context.examination),
-          sectionId: Number(context.section),
-        },
-      });
-      if (sequence !== requests.current.readiness) return null;
-      const payload = objectFrom(response.data);
-      const next = payload ? normalizeReadiness(payload) : null;
-      setReadiness(next);
-      return next;
-    } catch (error) {
-      if (sequence === requests.current.readiness) {
-        setReadiness(null);
-        showToast(apiError(error), "error");
-      }
-      return null;
-    }
-  };
-  const loadEvaluations = async (context) => {
-    const sequence = ++requests.current.search;
-    setEvaluationLoadState("loading");
-    try {
-      const response = await apiClient.post(EVALUATION_API.search, searchPayload(context));
-      if (sequence !== requests.current.search) return null;
-      const root = objectFrom(response.data);
-      let next = evaluationCollectionFrom(response.data)
-        .map((item) =>
-          normalizeEvaluation({
-            ...item,
-            examinationId:
-              item.examinationId ?? item.examId ?? root?.examinationId ?? Number(context.examination),
-            sectionId: item.sectionId ?? root?.sectionId ?? Number(context.section),
-            boardId: item.boardId ?? Number(context.board),
-            academicYearId: item.academicYearId ?? Number(context.academicYear),
-            academicLevelId: item.academicLevelId ?? Number(context.academicLevel),
-            groupId: item.groupId ?? Number(context.group),
-            programId: item.programId ?? context.program,
-          }),
-        )
-        .filter((item) => Boolean(item.evaluationId) && item.evaluationId !== "0");
-
-      next = [...new Map(next.map((item) => [String(item.evaluationId), item])).values()];
-
-      const searchRoot = objectFrom(response.data);
-      const searchContainsSubjects =
-        Array.isArray(searchRoot?.requiredSubjects) && searchRoot.requiredSubjects.length > 0;
-      const latestReadiness = await loadReadiness(
-        context,
-        searchContainsSubjects ? response : null,
-      );
-
-      if (!next.length && latestReadiness?.requiredSubjects?.length) {
-        next = latestReadiness.requiredSubjects
-          .map((item) =>
-            normalizeEvaluation({
-              ...item,
-              examinationId:
-                item.examinationId ??
-                latestReadiness.examinationId ??
-                Number(context.examination),
-              sectionId:
-                item.sectionId ??
-                latestReadiness.sectionId ??
-                Number(context.section),
-              boardId: item.boardId ?? Number(context.board),
-              academicYearId:
-                item.academicYearId ??
-                Number(context.academicYear),
-              academicLevelId:
-                item.academicLevelId ??
-                Number(context.academicLevel),
-              groupId: item.groupId ?? Number(context.group),
-              programId: item.programId ?? context.program,
-            }),
-          )
-          .filter((item) => Boolean(item.evaluationId) && item.evaluationId !== "0");
-      }
-
-      next = [...new Map(next.map((item) => [String(item.evaluationId), item])).values()];
-
-      setEvaluations(next);
-      setEvaluationPage(1);
-      setEvaluationLoadState("success");
-
-      return next;
-    } catch (error) {
-      if (sequence === requests.current.search) {
-        setEvaluations([]);
-        setEvaluationLoadState("error");
-        showToast(apiError(error), "error");
-      }
-      return null;
-    }
-  };
-
-  const loadEvaluationDetails = async (record) => {
-    const sequence = ++requests.current.details;
-    setEvaluationId(record.evaluationId);
-    setSelectedEvaluationDetails((current) =>
-      String(current?.evaluationId) === String(record.evaluationId) ? current : null,
-    );
-    setPage(1);
-    try {
-      const response = await apiClient.get(EVALUATION_API.students(record.evaluationId));
-      if (sequence !== requests.current.details) return;
-      const payload = response.data?.data ?? response.data?.result ?? response.data,
-        normalized =
-          payload && typeof payload === "object" && !Array.isArray(payload)
-            ? normalizeEvaluation(payload)
-            : null;
-
-      const detail = {
-        ...record,
-        ...(normalized || {}),
-        subject: normalized?.subject?.subjectName ? normalized.subject : record.subject,
-        faculty: normalized?.faculty?.facultyName ? normalized.faculty : record.faculty,
-        rows: collectionFrom(
-          payload?.students ?? payload?.studentMarks ?? payload?.marks ?? payload,
-        ).map(normalizeStudent),
-      };
-      setSelectedEvaluationDetails(detail);
-      return detail;
-    } catch (error) {
-      if (sequence === requests.current.details) {
-        showToast(apiError(error), "error");
-      }
-      return null;
-    }
-  };
-  const loadAnalysis = async (context = applied) => {
-    if (!context) return;
-    const sequence = ++requests.current.analysis;
-    try {
-      const response = await apiClient.get(EVALUATION_API.studentAnalysis, {
-        params: {
-          academicYearId: Number(context.academicYear),
-          groupId: Number(context.group),
-          sectionId: Number(context.section),
-          examinationId: Number(context.examination),
-          boardId: Number(context.board),
-          academicLevelId: Number(context.academicLevel),
-        },
-      });
-      if (sequence !== requests.current.analysis) return;
-      const root = response.data?.data ?? response.data?.result ?? response.data;
-      const studentRows = collectionFrom(root?.students ?? root?.studentRows ?? root);
-      setStudentAnalysis(
-        studentRows
-          .map(normalizeAnalysis)
-          .filter((item) => item.studentId > 0),
-      );
-    } catch (error) {
-      if (sequence === requests.current.analysis) {
-        setStudentAnalysis([]);
-        showToast(apiError(error), "error");
-      }
-    }
-  };
-  const loadStudentDetails = async (student) => {
-    const sequence = ++requests.current.student;
-    setStudentId(student.studentId);
-    setSelectedStudentDetails(student);
-    try {
-      const response = await apiClient.get(
-        EVALUATION_API.studentDetails(Number(student.studentId)),
-        {
-          params: {
-            examinationId: Number(applied?.examination),
-            sectionId: Number(applied?.section),
-            academicYearId: Number(applied?.academicYear),
-            boardId: Number(applied?.board),
-            academicLevelId: Number(applied?.academicLevel),
-            groupId: Number(applied?.group),
-          },
-        },
-      );
-      if (sequence !== requests.current.student) return;
-      const payload = objectFrom(response.data) || response.data;
-
-      if (payload && typeof payload === "object") {
-        const normalized = normalizeAnalysis(payload);
-        setSelectedStudentDetails({
-          ...student,
-          ...normalized,
-          subjects: normalized.subjects.length ? normalized.subjects : (student.subjects || []),
-        });
-      }
-    } catch (error) {
-      if (sequence === requests.current.student) {
-        showToast(apiError(error), "error");
-      }
-    }
-  };
-  const changeFilter = (key, value) => {
-    const next = {
-      ...filters,
-      [key]: value,
-    };
-
-    if (key === "board") {
-      const selectedYear = academicYears.find(
-        (item) => String(item.academicYearId) === String(next.academicYear),
-      );
-
-      Object.assign(next, {
-        academicYear:
-          selectedYear &&
-            (selectedYear.boardId == null || String(selectedYear.boardId) === String(value))
-            ? next.academicYear
-            : "",
-        group: "",
-        program: "",
-        section: "",
-        examination: "",
-      });
-
-      requests.current.groups += 1;
-      requests.current.programs += 1;
-    }
-
-    if (key === "academicYear" || key === "academicLevel") {
-      Object.assign(next, {
-        section: "",
-        examination: "",
-      });
-    }
-
-    if (key === "group") {
-      Object.assign(next, {
-        program: "",
-        section: "",
-        examination: "",
-      });
-    }
-
-    if (key === "program") {
-      Object.assign(next, {
-        section: "",
-        examination: "",
-      });
-    }
-
-    setFilters(next);
-
-    requests.current.sections += 1;
-    requests.current.exams += 1;
-    requests.current.search += 1;
-    requests.current.details += 1;
-    requests.current.readiness += 1;
-    requests.current.analysis += 1;
-    requests.current.student += 1;
-
-    clearResults();
-
-    if (key === "board") {
-      loadGroups(value);
-    }
-
-    if (key === "group") {
-      loadPrograms(value);
-    }
-
-    if (
-      [next.board, next.academicYear, next.academicLevel, next.group, next.program].every((v) => String(v).trim().length > 0)
-    ) {
-      loadSections(next);
-      loadExaminations(next);
-    }
-  };
-  const allSelected = Object.values(filters).every(Boolean);
-  const checkData = async () => {
-    if (checkingEvaluations) return;
-    if (!allSelected) return showToast("Select all 7 evaluation filters.", "error");
-    const context = { ...filters };
-    setCheckingEvaluations(true);
-    try {
-      const next = await loadEvaluations(context);
-      if (next === null) return;
-      setApplied(context);
-      setEvaluationId(null);
-      setStudentId(null);
-      setSelectedEvaluationDetails(null);
-      setSelectedStudentDetails(null);
-      setTab("evaluations");
-      setPage(1);
-      setStudentPage(1);
-      loadAnalysis(context);
-    } finally {
-      setCheckingEvaluations(false);
-    }
-  };
-  const exam = examinations.find(
-    (item) => String(item.examinationId) === String(applied?.examination),
-  );
-  const section = sections.find((item) => String(item.sectionId) === String(applied?.section));
-  const contextEvaluations = evaluations;
-  const selectedEvaluation =
-    selectedEvaluationDetails &&
-      String(selectedEvaluationDetails.evaluationId) === String(evaluationId)
-      ? selectedEvaluationDetails
-      : null;
-  const subjects = useMemo(
-    () =>
-      Array.from(
-        new Map(
-          [
-            ...contextEvaluations.map((item) => item.subject),
-            ...studentAnalysis.flatMap((student) =>
-              Array.isArray(student.subjects)
-                ? student.subjects.map((item) => ({
-                  subjectId: Number(item.subjectId),
-                  subjectName: item.subjectName ?? item.name ?? "",
-                  subjectCode: item.subjectCode ?? item.code ?? "",
-                  practical: Boolean(item.isPractical),
-                }))
-                : [],
-            ),
-          ]
-            .filter((item) => item?.subjectId)
-            .map((item) => [String(item.subjectId), item]),
-        ).values(),
-      ),
-    [contextEvaluations, studentAnalysis],
-  );
-  const filteredEvaluations = contextEvaluations.filter((item) =>
-    `${item.subject.subjectName} ${item.faculty.facultyName} ${item.status}`
-      .toLowerCase()
-      .includes(search.toLowerCase()),
-  );
-  const evaluationPages = Math.max(1, Math.ceil(filteredEvaluations.length / PAGE_SIZE));
-  const pagedEvaluations = filteredEvaluations.slice(
-    (evaluationPage - 1) * PAGE_SIZE,
-    evaluationPage * PAGE_SIZE,
-  );
-  const filteredStudents = studentAnalysis.filter((item) =>
-    `${item.rollNo} ${item.studentName}`.toLowerCase().includes(studentSearch.toLowerCase()),
-  ),
-    studentPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE)),
-    pagedStudents = filteredStudents.slice((studentPage - 1) * PAGE_SIZE, studentPage * PAGE_SIZE),
-    selectedStudent =
-      selectedStudentDetails && String(selectedStudentDetails.studentId) === String(studentId)
-        ? selectedStudentDetails
-        : null;
-  const submitted = contextEvaluations.filter((item) => item.status === "SUBMITTED"),
-    verified = contextEvaluations.filter((item) => item.status === "VERIFIED"),
-    globalAction = submitted.length ? "VERIFY_ALL" : verified.length ? "APPROVE_ALL" : null;
-  const readyForResults = isReady(readiness);
-  useEffect(() => setEvaluationPage(1), [search, applied]);
+    });
   useEffect(() => {
-    if (evaluationPage > evaluationPages) setEvaluationPage(evaluationPages);
-  }, [evaluationPage, evaluationPages]);
-  const reloadAfterAction = async () => {
-    const next = await loadEvaluations(applied);
-    const current = next?.find((item) => String(item.evaluationId) === String(evaluationId));
-    if (current) await loadEvaluationDetails(current);
-  };
-  const confirmDecision = async () => {
-    const reviewMessage = message.trim().replace(/\s+/g, " ");
-    if (!selectedEvaluation || reviewMessage.length < 5 || actionLoading) return;
-    if (reviewMessage.length > 500 || hasControlCharacters(message))
-      return showToast(
-        "Review messages must be 5-500 characters and contain no unsupported control characters.",
-        "error",
-      );
-    const latest = await loadEvaluationDetails(selectedEvaluation);
-    if (!latest) return;
-    if (decision === "VERIFY" && latest.status !== "SUBMITTED")
-      return showToast("Only the latest SUBMITTED evaluation can be verified.", "error");
-    if (decision === "REJECT" && !["SUBMITTED", "VERIFIED"].includes(latest.status))
-      return showToast("Only SUBMITTED or VERIFIED evaluations can be rejected.", "error");
-    setActionLoading(decision);
-    try {
-      if (decision === "VERIFY")
-        await apiClient.patch(EVALUATION_API.verify(latest.evaluationId), {
-          message: reviewMessage,
-          ...(latest.rowVersion != null ? { rowVersion: latest.rowVersion } : {}),
-        });
-      else
-        await apiClient.patch(EVALUATION_API.reject(latest.evaluationId), {
-          remarks: reviewMessage,
-          reason: reviewMessage,
-          message: reviewMessage,
-          ...(latest.rowVersion != null ? { rowVersion: latest.rowVersion } : {}),
-        });
-      await reloadAfterAction();
-      setDecision(null);
-      setMessage("");
-      showToast(`Evaluation ${decision === "VERIFY" ? "verified" : "rejected"} successfully.`);
-    } catch (error) {
-      showToast(apiError(error), "error");
-      if (error?.response?.status === 409) await reloadAfterAction();
-    } finally {
-      setActionLoading("");
+    const seq = ++requests.current.sections;
+    if (!filters.program) {
+      setSections([]);
+      return;
     }
-  };
-  const approve = async () => {
-    if (selectedEvaluation?.status !== "VERIFIED")
-      return showToast("Only VERIFIED evaluations can be approved.", "error");
-    if (actionLoading) return;
-    const latest = await loadEvaluationDetails(selectedEvaluation);
-    if (!latest || latest.status !== "VERIFIED")
-      return showToast("Only the latest VERIFIED evaluation can be approved.", "error");
-    setActionLoading("APPROVE");
-    try {
-      await apiClient.patch(EVALUATION_API.approve(latest.evaluationId), {
-        ...(latest.rowVersion != null ? { rowVersion: latest.rowVersion } : {}),
+    const params = {
+      ProgramId: filters.program,
+      IsActive: true,
+      Page: 1,
+      PageSize: 500,
+      ...(filters.board ? { BoardId: filters.board } : {}),
+      ...(filters.year ? { AcademicYearId: filters.year } : {}),
+      ...(filters.level ? { AcademicLevelId: filters.level } : {}),
+      ...(filters.group ? { GroupId: filters.group } : {}),
+    };
+    apiClient
+      .get(MARKS_API.sections, { params })
+      .then((response) => {
+        if (seq !== requests.current.sections) return;
+        const nextSections = collection(response)
+          .filter(active)
+          .map((x) => normalize(x, "section"))
+          .filter((x) => x.id != null && x.name);
+        setSections(nextSections);
+        const currentSection = filtersRef.current.section;
+        if (
+          currentSection &&
+          !nextSections.some((section) => eq(section.id, currentSection))
+        ) {
+          setExams([]);
+          setFilters((current) =>
+            eq(current.section, currentSection)
+              ? { ...current, section: "", exam: "" }
+              : current,
+          );
+        }
+      })
+      .catch((error) => {
+        if (seq === requests.current.sections) notify(getApiErrorMessage(error), "error");
       });
-      await reloadAfterAction();
-      showToast("Evaluation approved successfully.");
-    } catch (error) {
-      showToast(apiError(error), "error");
-      if (error?.response?.status === 409) await reloadAfterAction();
-    } finally {
-      setActionLoading("");
+  }, [filters.board, filters.year, filters.level, filters.group, filters.program, notify]);
+
+  useEffect(() => {
+    const seq = ++requests.current.examinations;
+    const context = [
+      filters.board,
+      filters.year,
+      filters.level,
+      filters.group,
+      filters.program,
+      filters.section,
+    ];
+    if (!context.every(Boolean)) {
+      setExams([]);
+      return;
     }
-  };
-  const confirmGlobal = async () => {
-    if (!globalStage || actionLoading) return;
-    setActionLoading(globalStage);
-    try {
-      const latestEvaluations = await loadEvaluations(applied);
-      if (!latestEvaluations) throw new Error("The latest Evaluation Search could not be loaded.");
-      const targets = latestEvaluations.filter((item) =>
-        globalStage === "VERIFY_ALL" ? item.status === "SUBMITTED" : item.status === "VERIFIED",
-      );
-      if (!targets.length)
-        throw new Error(
-          globalStage === "VERIFY_ALL"
-            ? "No latest SUBMITTED evaluations are available to verify."
-            : "No latest VERIFIED evaluations are available to approve.",
+    const params = {
+      BoardId: filters.board,
+      AcademicYearId: filters.year,
+      AcademicLevelId: filters.level,
+      GroupId: filters.group,
+      ProgramId: filters.program,
+      IsActive: true,
+      Page: 1,
+      PageSize: 500,
+      Status: "COMPLETED",
+    };
+    apiClient
+      .get(MARKS_API.examinations, { params })
+      .then((response) => {
+        if (seq !== requests.current.examinations) return;
+        setExams(
+          collection(response)
+            .map((x) => normalize(x, "exam"))
+            .filter((x) => x.id != null && x.name && x.status === "COMPLETED"),
         );
-      await apiClient.post(
-        globalStage === "VERIFY_ALL" ? EVALUATION_API.verifyAll : EVALUATION_API.approveAll,
-        searchPayload(applied),
+      })
+      .catch((error) => {
+        if (seq === requests.current.examinations)
+          notify(getApiErrorMessage(error), "error");
+      });
+  }, [
+    filters.board,
+    filters.year,
+    filters.level,
+    filters.group,
+    filters.program,
+    filters.section,
+    notify,
+  ]);
+
+  const loadReadiness = useCallback(
+    async (context) => {
+      try {
+        const res = await apiClient.get(MARKS_API.readiness, { params: paramsFor(context) }),
+          r = object(res);
+        setReadiness({
+          requiredSubjectCount: Number(r.requiredEvaluationCount ?? 0),
+          notStartedCount: Number(r.missingCount ?? 0),
+          draftCount: Number(r.draftCount ?? 0),
+          submittedCount: Number(r.submittedCount ?? 0),
+          verifiedCount: Number(r.verifiedCount ?? 0),
+          approvedCount: Number(r.approvedCount ?? 0),
+          rejectedCount: Number(r.rejectedCount ?? 0),
+          allRequiredApproved: Boolean(r.allRequiredEvaluationsApproved),
+          readyForResults: Boolean(r.readyForResults),
+        });
+      } catch (e) {
+        if (e.response?.status !== 404) notify(getApiErrorMessage(e), "error");
+        setReadiness(null);
+      }
+    },
+    [notify],
+  );
+  const loadEvaluationSearch = useCallback(
+    async (context) => {
+      try {
+        const p = paramsFor(context);
+        const res = await apiClient.post(MARKS_API.evaluationSearch, {
+          boardId: p.boardId,
+          academicYearId: p.academicYearId,
+          academicLevelId: p.academicLevelId,
+          levelId: p.academicLevelId,
+          programId: p.programId,
+          groupId: p.groupId,
+          sectionId: p.sectionId,
+          examinationId: p.examinationId,
+          examId: p.examinationId,
+          pageNumber: 1,
+          pageSize: 100,
+        });
+        setEvaluations(
+          collection(res)
+            .map(normalizeEvaluation)
+            .filter((e) => e.evaluationId != null),
+        );
+      } catch (e) {
+        if (e.response?.status === 404) setEvaluations([]);
+        else notify(getApiErrorMessage(e), "error");
+      }
+    },
+    [notify],
+  );
+  const loadAnalysis = useCallback(
+    async (context) => {
+      try {
+        const p = paramsFor(context);
+        const res = await apiClient.get(MARKS_API.studentAnalysis, {
+            params: {
+              boardId: p.boardId,
+              academicYearId: p.academicYearId,
+              academicLevelId: p.academicLevelId,
+              groupId: p.groupId,
+              sectionId: p.sectionId,
+              examinationId: p.examinationId,
+            },
+          }),
+          data = collection(res),
+          subjectMap = new Map();
+        data.forEach((student) =>
+          collection(student.subjects ?? student.subjectMarks).forEach((s) => {
+            const id = s.subjectId ?? s.id;
+            if (id != null && !subjectMap.has(String(id)))
+              subjectMap.set(String(id), {
+                id,
+                name: s.subjectName ?? s.name ?? "Subject",
+                code: s.subjectCode ?? s.code ?? "",
+              });
+          }),
+        );
+        setAnalysisSubjects([...subjectMap.values()]);
+        setAnalysis(
+          data.map((s) => ({
+            ...s,
+            studentId: s.studentId ?? s.id,
+            rollNo: s.rollNo ?? s.rollNumber ?? "",
+            studentName: s.studentName ?? s.name ?? "",
+            subjectResults: collection(s.subjects ?? s.subjectMarks),
+            totalObtained: s.totalMarks ?? s.total ?? 0,
+            totalMaximum: s.maxTotal ?? s.maximum ?? 0,
+            percentage: s.percentage,
+            grade: s.grade ?? "—",
+            result: s.readyForResults === false ? "PENDING" : (s.result ?? "PENDING"),
+            readyForResults: s.readyForResults !== false,
+          })),
+        );
+      } catch (e) {
+        if (e.response?.status === 404) {
+          setAnalysis([]);
+          setAnalysisSubjects([]);
+        } else notify(getApiErrorMessage(e), "error");
+      }
+    },
+    [notify],
+  );
+  const refreshContext = useCallback(
+    async (context) => Promise.all([loadEvaluationSearch(context), loadReadiness(context)]),
+    [loadEvaluationSearch, loadReadiness],
+  );
+  const applyContext = () =>
+    guard(async () => {
+      if (!Object.values(filters).every(Boolean))
+        return notify("Select all seven academic filters.", "error");
+      if (
+        !boards.some((x) => eq(x.id, filters.board)) ||
+        !years.some((x) => eq(x.id, filters.year)) ||
+        !levels.some((x) => eq(x.id, filters.level)) ||
+        !groups.some((x) => eq(x.id, filters.group)) ||
+        !programs.some((x) => eq(x.id, filters.program)) ||
+        !sections.some((x) => eq(x.id, filters.section)) ||
+        !exams.some((x) => eq(x.id, filters.exam) && x.status === "COMPLETED") ||
+        !groups.some(
+          (x) =>
+            eq(x.id, filters.group) &&
+            matchesOptionalRelation(x, ["boardId", "BoardId"], filters.board),
+        ) ||
+        !programs.some(
+          (x) =>
+            eq(x.id, filters.program) &&
+            matchesOptionalRelation(x, ["groupId", "GroupId"], filters.group),
+        ) ||
+        !sections.some(
+          (x) =>
+            eq(x.id, filters.section) &&
+            matchesOptionalRelation(x, ["programId", "ProgramId"], filters.program),
+        ) ||
+        !exams.some(
+          (x) =>
+            eq(x.id, filters.exam) &&
+            matchesOptionalRelation(x, ["boardId", "BoardId"], filters.board) &&
+            matchesOptionalRelation(x, ["academicYearId", "AcademicYearId"], filters.year) &&
+            matchesOptionalRelation(
+              x,
+              ["academicLevelId", "AcademicLevelId", "levelId"],
+              filters.level,
+            ) &&
+            matchesOptionalRelation(x, ["groupId", "GroupId"], filters.group) &&
+            matchesOptionalRelation(x, ["programId", "ProgramId"], filters.program) &&
+            matchesOptionalRelation(x, ["sectionId", "SectionId"], filters.section),
+        )
+      )
+        return notify("The selected academic hierarchy is invalid.", "error");
+      setProcessing(true);
+      try {
+        const context = { ...filters },
+          res = await apiClient.get(MARKS_API.facultyEvaluations, { params: paramsFor(context) }),
+          headers = collection(res)
+            .map(normalizeEvaluation)
+            .filter(
+              (e) =>
+                e.evaluationId != null &&
+                eq(e.examinationId, context.exam) &&
+                eq(e.sectionId, context.section),
+            );
+        if (!headers.length) {
+          setApplied(context);
+          setWorkspaces({});
+          return notify("No faculty evaluations are available for the selected context.", "error");
+        }
+        const sheets = await Promise.allSettled(
+          headers.map((h) =>
+            apiClient
+              .get(MARKS_API.facultyStudents(h.evaluationId))
+              .then((r) => normalizeSheet(r, h)),
+          ),
+        );
+        const next = {};
+        sheets.forEach((result, i) => {
+          if (result.status === "fulfilled") next[String(headers[i].subjectId)] = result.value;
+          else notify(getApiErrorMessage(result.reason), "error");
+        });
+        setApplied(context);
+        setWorkspaces(next);
+        setActiveSubjectId(Object.keys(next)[0] || "");
+        setTab("entry");
+        setEntryPage(1);
+        await refreshContext(context);
+      } catch (e) {
+        notify(getApiErrorMessage(e), "error");
+      } finally {
+        setProcessing(false);
+      }
+    });
+
+  const workspace = workspaces[activeSubjectId],
+    editable =
+      (workspace && ["NOT STARTED", "DRAFT", "REJECTED"].includes(workspace.status)) ||
+      Boolean(editingSubmitted[activeSubjectId]);
+  const setWorkspace = (id, updater) =>
+    setWorkspaces((all) => ({ ...all, [id]: updater(all[id]) }));
+  const updateRow = (studentId, field, value) => {
+    if (!editable) return;
+    setWorkspace(activeSubjectId, (w) => ({
+      ...w,
+      dirty: true,
+      validationErrors: {},
+      rows: w.rows.map((r) => {
+        if (!eq(r.studentId, studentId)) return r;
+        if (field === "absent")
+          return value
+            ? {
+                ...r,
+                absent: true,
+                internal: 0,
+                practical: 0,
+                theory: 0,
+                obtainedMarks: 0,
+                total: 0,
+              }
+            : {
+                ...r,
+                absent: false,
+                internal: "",
+                practical: w.practicalMax ? "" : 0,
+                theory: "",
+                obtainedMarks: "",
+                total: "",
+              };
+        const n = { ...r, [field]: value };
+        if (w.mode === "REGULAR") {
+          const keys = ["internal", ...(w.practicalMax ? ["practical"] : []), "theory"];
+          n.total = keys.every((k) => n[k] !== "" && Number.isFinite(Number(n[k])))
+            ? keys.reduce((sum, k) => sum + Number(n[k]), 0)
+            : "";
+          n.obtainedMarks = n.total;
+        } else {
+          n.obtainedMarks = value;
+          n.total = value;
+        }
+        return n;
+      }),
+    }));
+  };
+  const validate = (w, complete) => {
+    const errors = {};
+    w.rows.forEach((r) => {
+      if (r.absent) return;
+      const checks =
+        w.mode === "OBJECTIVE"
+          ? [["obtainedMarks", w.maxMarks]]
+          : [
+              ["internal", w.internalMax],
+              ...(w.practicalMax ? [["practical", w.practicalMax]] : []),
+              ["theory", w.theoryMax],
+            ];
+      const list = [];
+      checks.forEach(([k, max]) =>
+        r[k] === ""
+          ? complete && list.push(`${k} is required`)
+          : !validNumber(r[k], max) && list.push(`${k} must be between 0 and ${max}`),
       );
-      await loadEvaluations(applied);
-      await loadReadiness(applied);
-      showToast(
-        globalStage === "VERIFY_ALL"
-          ? "All eligible submitted evaluations verified."
-          : "All VERIFIED evaluations approved.",
-      );
-      setGlobalStage(null);
-    } catch (error) {
-      showToast(error?.response ? apiError(error) : error.message, "error");
-      if (error?.response?.status === 409) await loadEvaluations(applied);
-    } finally {
-      setActionLoading("");
+      if (list.length) errors[r.studentId] = list;
+    });
+    return errors;
+  };
+  const reloadSheet = async (w, admin = false) => {
+    const res = await apiClient.get(
+        admin
+          ? MARKS_API.evaluationStudents(w.evaluationId)
+          : MARKS_API.facultyStudents(w.evaluationId),
+      ),
+      next = normalizeSheet(res, w);
+    setWorkspace(String(w.subjectId), () => next);
+    return next;
+  };
+  const saveOne = async (id, complete = false, admin = false) => {
+    const w = workspaces[id],
+      errors = validate(w, complete);
+    if (Object.keys(errors).length) {
+      setWorkspace(id, (x) => ({ ...x, validationErrors: errors }));
+      throw new Error("Complete and correct all marks before continuing.");
+    }
+    await apiClient.put(
+      admin ? MARKS_API.adminMarks(w.evaluationId) : MARKS_API.facultyMarks(w.evaluationId),
+      marksPayload(w),
+    );
+    await reloadSheet(w, admin);
+    return w;
+  };
+  const saveSubjects = async (ids, submit) => {
+    if (processing) return;
+    setProcessing(true);
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        const w = workspaces[id];
+        if (!w || !["DRAFT", "REJECTED", "NOT STARTED"].includes(w.status))
+          throw new Error(`${w?.subject.name ?? "Subject"} is locked.`);
+        if (w.dirty || submit) await saveOne(id, submit);
+        if (submit)
+          await apiClient.post(
+            w.status === "REJECTED"
+              ? MARKS_API.facultyResubmit(w.evaluationId)
+              : MARKS_API.facultySubmit(w.evaluationId),
+            w.status === "REJECTED"
+              ? { correctionNotes: w.rejectionReason || "Corrected marks resubmitted." }
+              : undefined,
+          );
+        await reloadSheet(w);
+        return w.subject.name;
+      }),
+    );
+    const ok = results.filter((r) => r.status === "fulfilled").length,
+      failed = results.filter((r) => r.status === "rejected");
+    if (applied) await refreshContext(applied);
+    notify(
+      ok
+        ? `${ok} subject${ok === 1 ? "" : "s"} ${submit ? "submitted" : "saved"}.${failed.length ? ` ${failed.length} failed.` : ""}`
+        : getApiErrorMessage(failed[0]?.reason) || "No subjects were saved.",
+      ok ? "success" : "error",
+    );
+    setProcessing(false);
+  };
+  const enterSubmittedEdit = async (id) => {
+    const w = workspaces[id];
+    if (w?.status !== "SUBMITTED") return notify("Only submitted marks can be edited.", "error");
+    try {
+      await reloadSheet(w);
+      setActiveSubjectId(String(id));
+      setEditingSubmitted((x) => ({ ...x, [id]: true }));
+    } catch (e) {
+      notify(getApiErrorMessage(e), "error");
     }
   };
-  const display = {
-    group: groups.find((item) => String(item.groupId) === String(applied?.group))?.groupName || "—",
-    program:
-      programs.find((item) => String(item.programId) === String(applied?.program))?.programName ||
-      "—",
-    section: section?.sectionName || "—",
-    examination: exam?.examName || "—",
+  const cancelEdit = () => {
+    if (workspace?.dirty)
+      return setPending(() => async () => {
+        await reloadSheet(workspace);
+        setEditingSubmitted((x) => ({ ...x, [activeSubjectId]: false }));
+      });
+    reloadSheet(workspace).finally(() =>
+      setEditingSubmitted((x) => ({ ...x, [activeSubjectId]: false })),
+    );
   };
-  const options = {
-    boards: boards.map((item) => [item.boardId, item.boardName]),
-    years: uniqueAcademicYearsByName(academicYears
-      .filter(
-        (item) =>
-          !filters.board ||
-          item.boardId == null ||
-          Number(item.boardId) === Number(filters.board),
-      )
-      .map((item) => [item.academicYearId, item.academicYearName]), (item) => item[1]),
-    levels: academicLevels.map((item) => [item.academicLevelId, item.levelName]),
-    groups: groups.map((item) => [item.groupId, item.groupName]),
-    programs: programs.map((item) => [item.programId, item.programName]),
-    sections: sections.map((item) => [item.sectionId, item.sectionName]),
-    exams: examinations.map((item) => [item.examinationId, item.examName]),
+  const saveAdminChanges = async () => {
+    setProcessing(true);
+    try {
+      await saveOne(activeSubjectId, true, true);
+      setEditingSubmitted((x) => ({ ...x, [activeSubjectId]: false }));
+      notify("Submitted marks updated successfully.");
+      if (applied) await refreshContext(applied);
+    } catch (e) {
+      notify(getApiErrorMessage(e), "error");
+    } finally {
+      setProcessing(false);
+    }
   };
+
+  const loadEvaluationDetails = async (item) => {
+    setProcessing(true);
+    try {
+      const res = await apiClient.get(MARKS_API.evaluationStudents(item.evaluationId));
+      setSelectedEvaluation(normalizeSheet(res, item));
+      setDetailPage(1);
+    } catch (e) {
+      notify(getApiErrorMessage(e), "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+  const transition = async (action) => {
+    const item = selectedEvaluation;
+    if (!item || processing) return;
+    const allowed = {
+      VERIFY: ["SUBMITTED"],
+      APPROVE: ["VERIFIED"],
+      REJECT: ["SUBMITTED", "VERIFIED"],
+    };
+    if (!allowed[action].includes(item.status))
+      return notify("Invalid evaluation transition.", "error");
+    if (["VERIFY", "REJECT"].includes(action) && message.trim().length < 5)
+      return notify("Enter at least five characters.", "error");
+    if (
+      action === "VERIFY" &&
+      editingSubmitted[String(item.subjectId)] &&
+      workspaces[item.subjectId]?.dirty
+    )
+      return notify("Save or cancel submitted mark edits before verifying evaluations.", "error");
+    setProcessing(true);
+    try {
+      await apiClient.post(
+        action === "VERIFY"
+          ? MARKS_API.verify(item.evaluationId)
+          : action === "APPROVE"
+            ? MARKS_API.approve(item.evaluationId)
+            : MARKS_API.reject(item.evaluationId),
+        action === "VERIFY"
+          ? { message: message.trim() }
+          : action === "REJECT"
+            ? { remarks: message.trim() }
+            : undefined,
+      );
+      setModal(null);
+      setMessage("");
+      if (applied) {
+        await refreshContext(applied);
+        await loadAnalysis(applied);
+      }
+      const res = await apiClient.get(MARKS_API.evaluationStudents(item.evaluationId));
+      setSelectedEvaluation(normalizeSheet(res, item));
+      notify(`Evaluation ${action.toLowerCase()}d.`);
+    } catch (e) {
+      notify(getApiErrorMessage(e), "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+  const bulkAction = async (action) => {
+    if (!applied || processing) return;
+    if (
+      action === "VERIFY_ALL" &&
+      Object.entries(editingSubmitted).some(([id, on]) => on && workspaces[id]?.dirty)
+    )
+      return notify("Save or cancel submitted mark edits before verifying evaluations.", "error");
+    setProcessing(true);
+    try {
+      await apiClient.post(
+        action === "VERIFY_ALL" ? MARKS_API.verifyAll : MARKS_API.approveAll,
+        paramsFor(applied),
+      );
+      setModal(null);
+      await refreshContext(applied);
+      await loadAnalysis(applied);
+      notify("Bulk action completed successfully.");
+    } catch (e) {
+      notify(getApiErrorMessage(e), "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+  const openStudent = async (student) => {
+    setProcessing(true);
+    try {
+      const res = await apiClient.get(MARKS_API.studentDetails(student.studentId), {
+        params: { sectionId: applied.section, examinationId: applied.exam, examId: applied.exam },
+      });
+      setSelectedStudent({
+        ...student,
+        ...object(res),
+        subjectResults: collection(object(res).subjects ?? object(res).subjectMarks),
+      });
+      setDetailPage(1);
+    } catch (e) {
+      notify(getApiErrorMessage(e), "error");
+    } finally {
+      setProcessing(false);
+    }
+  };
+  const changeTab = (next) =>
+    next === "entry"
+      ? setTab(next)
+      : guard(async () => {
+          setTab(next);
+          if (next === "evaluation" && applied) await loadEvaluationSearch(applied);
+          if (next === "students" && applied) await loadAnalysis(applied);
+        });
+  const filteredEvaluations = evaluations.filter((e) =>
+      `${e.subject.name} ${e.subject.code} ${e.faculty.name} ${e.status}`
+        .toLowerCase()
+        .includes(evaluationSearch.toLowerCase()),
+    ),
+    filteredStudents = analysis.filter((s) =>
+      `${s.rollNo} ${s.studentName}`.toLowerCase().includes(studentSearch.toLowerCase()),
+    );
+  const meta = {
+    entry: ["Marks Entry", "Enter and submit subject-wise examination marks"],
+    evaluation: ["Marks Evaluation", "Verify, reject, and approve submitted marks"],
+    students: ["Student Analysis", "View approved student results and subject details"],
+  }[tab];
   return (
-    <DashboardLayout
-      title="Marks Evaluation"
-      subtitle="Review and approve faculty-submitted examination marks"
-      breadcrumb={["Examinations"]}
-    >
+    <DashboardLayout title={meta[0]} subtitle={meta[1]}>
       <div className="cms-marks-entry">
-        {toast && <div className={`cms-toast-banner cms-toast-${toast.type}`}>{toast.msg}</div>}
-        <section className="cms-card cms-card-filter">
-          <div className="cms-section-heading">
-            <div>
-              <h2>Evaluation Filters</h2>
-              <p>Select the completed examination context to review faculty submissions.</p>
-            </div>
+        {toast && (
+          <div className={`cms-toast-banner cms-toast-${toast.type}`} aria-live="polite">
+            {toast.text}
+          </div>
+        )}
+        <FilterCard
+          {...{
+            filters,
+            boards,
+            years,
+            levels,
+            groups,
+            programs,
+            sections,
+            exams,
+            changeFilter,
+            applyContext,
+            processing,
+          }}
+        />
+        <div className="cms-independent-tab-bar" role="tablist">
+          {[
+            ["entry", "Marks Entry"],
+            ["evaluation", "Marks Evaluation"],
+            ["students", "Student Analysis"],
+          ].map(([id, label]) => (
             <button
               type="button"
-              className="cms-btn cms-btn-primary"
-              disabled={!allSelected || checkingEvaluations}
-              onClick={checkData}
+              role="tab"
+              aria-selected={tab === id}
+              className={`cms-independent-tab-btn ${tab === id ? "cms-active" : ""}`}
+              onClick={() => changeTab(id)}
+              key={id}
             >
-              {checkingEvaluations ? "Checking..." : "Check Evaluation Data"}
+              {label}
             </button>
-          </div>
-          <div className="cms-filter-grid">
-            <Filter
-              label="Board"
-              value={filters.board}
-              options={options.boards}
-              onChange={(v) => changeFilter("board", v)}
-            />
-            <Filter
-              label="Academic Year"
-              value={filters.academicYear}
-              options={options.years}
-              onChange={(v) => changeFilter("academicYear", v)}
-            />
-            <Filter
-              label="Academic Level"
-              value={filters.academicLevel}
-              options={options.levels}
-              onChange={(v) => changeFilter("academicLevel", v)}
-            />
-            <Filter
-              label="Group"
-              value={filters.group}
-              options={options.groups}
-              onChange={(v) => changeFilter("group", v)}
-            />
-            <Filter
-              label="Program"
-              value={filters.program}
-              options={options.programs}
-              onChange={(v) => changeFilter("program", v)}
-            />
-            <Filter
-              label="Section"
-              value={filters.section}
-              options={options.sections}
-              onChange={(v) => changeFilter("section", v)}
-            />
-            <Filter
-              label="Examination"
-              value={filters.examination}
-              options={options.exams}
-              onChange={(v) => changeFilter("examination", v)}
-            />
-          </div>
-        </section>
-        {applied ? (
-          selectedEvaluation ? (
-            <EvaluationDetails
-              evaluation={selectedEvaluation}
-              exam={exam}
-              display={display}
-              page={page}
-              setPage={setPage}
-              onBack={() => {
-                setEvaluationId(null);
-                setSelectedEvaluationDetails(null);
-              }}
-              onVerify={() => {
-                setDecision("VERIFY");
-                setMessage("");
-              }}
-              onReject={() => {
-                setDecision("REJECT");
-                setMessage("");
-              }}
-              onApprove={approve}
-              actionLoading={actionLoading}
-            />
-          ) : selectedStudent ? (
-            <StudentDetails
-              student={selectedStudent}
-              exam={exam}
-              subjects={subjects}
-              evaluations={contextEvaluations}
-              display={display}
-              onBack={() => {
-                setStudentId(null);
-                setSelectedStudentDetails(null);
-              }}
-            />
-          ) : (
-            <section className="cms-card cms-main-card">
-              <div className="cms-detail-grid">
-                <Card label="Exam Pattern" value={exam?.examPattern || "—"} />
-                <Card label="Exam Type" value={exam?.examType || "—"} />
-                <Card label="Total Marks" value={exam?.totalMarks ?? "—"} />
-                <Card label="Pass Percentage" value={`${exam?.passPercentage ?? 0}%`} />
-              </div>
-              <div className="cms-table-toolbar">
-                <div className="cms-tab-bar">
-                  <button
-                    className={`cms-tab-btn ${tab === "evaluations" ? "cms-active" : ""}`}
-                    onClick={() => setTab("evaluations")}
-                  >
-                    Evaluation
-                  </button>
-                  <button
-                    className={`cms-tab-btn ${tab === "students" ? "cms-active" : ""}`}
-                    onClick={() => {
-                      setTab("students");
-                      if (!studentAnalysis.length) loadAnalysis();
-                    }}
-                  >
-                    Student Analysis
-                  </button>
-                </div>
-                <div className="cms-search-wrap">
-                  <span className="cms-search-icon">🔍</span>
-                  <input
-                    className="cms-search-input"
-                    value={tab === "evaluations" ? search : studentSearch}
-                    onChange={(e) => {
-                      if (tab === "evaluations") setSearch(e.target.value);
-                      else {
-                        setStudentSearch(e.target.value);
-                        setStudentPage(1);
-                      }
-                    }}
-                    placeholder={
-                      tab === "evaluations"
-                        ? "Search subject, faculty, status..."
-                        : "Search roll number or student..."
-                    }
-                  />
-                </div>
-                {tab === "evaluations" && globalAction && (
-                  <button
-                    className={`cms-btn cms-evaluation-bulk-action ${globalAction === "VERIFY_ALL" ? "cms-btn-info" : "cms-btn-success"}`}
-                    disabled={Boolean(actionLoading)}
-                    onClick={() => setGlobalStage(globalAction)}
-                  >
-                    {actionLoading === globalAction
-                      ? globalAction === "VERIFY_ALL"
-                        ? "Verifying All..."
-                        : "Approving All..."
-                      : globalAction === "VERIFY_ALL"
-                        ? "Verify All"
-                        : "Approve All"}
-                  </button>
-                )}
-              </div>
-              {tab === "evaluations" ? (
-                <EvaluationTable
-                  rows={pagedEvaluations}
-                  onClick={loadEvaluationDetails}
-                  emptyMessage={
-                    evaluationLoadState === "error"
-                      ? "Evaluation data could not be loaded."
-                      : "No submitted evaluation records are available."
+          ))}
+        </div>
+        {!applied ? (
+          <Empty text="Select all academic filters and click Enter Marks." />
+        ) : (
+          <>
+            <Context context={applied} masters={{ groups, programs, sections, exams }} />
+            {tab === "entry" && (
+              <Entry
+                {...{
+                  workspaces,
+                  activeSubjectId,
+                  setActiveSubjectId,
+                  workspace,
+                  entryPage,
+                  setEntryPage,
+                  updateRow,
+                  processing,
+                  editingSubmitted,
+                  enterSubmittedEdit,
+                  cancelEdit,
+                  saveAdminChanges,
+                }}
+                onSave={() => saveSubjects([activeSubjectId], false)}
+                onSubmit={() => saveSubjects([activeSubjectId], true)}
+                onSaveAll={() => saveSubjects(Object.keys(workspaces), false)}
+                onSubmitAll={() => saveSubjects(Object.keys(workspaces), true)}
+              />
+            )}{" "}
+            {tab === "evaluation" &&
+              (selectedEvaluation ? (
+                <EvaluationDetails
+                  item={selectedEvaluation}
+                  page={detailPage}
+                  setPage={setDetailPage}
+                  onBack={() => setSelectedEvaluation(null)}
+                  onAction={(a) =>
+                    a === "APPROVE" ? transition(a) : (setModal(a), setMessage(""))
                   }
+                  processing={processing}
                 />
               ) : (
-                <StudentTable
-                  rows={pagedStudents}
-                  subjects={subjects}
-                  exam={exam}
-                  onClick={loadStudentDetails}
-                />
-              )}
-              {tab === "evaluations" && filteredEvaluations.length > 0 && (
-                <Pagination
+                <EvaluationList
+                  rows={filteredEvaluations}
+                  search={evaluationSearch}
+                  setSearch={(v) => (setEvaluationSearch(v), setEvaluationPage(1))}
                   page={evaluationPage}
-                  total={evaluationPages}
                   setPage={setEvaluationPage}
+                  onView={loadEvaluationDetails}
+                  readiness={readiness}
+                  onBulk={setModal}
+                  processing={processing}
                 />
-              )}
-              {tab === "students" && (
-                <>
-                  <p className="cms-analysis-status">
-                    {readyForResults
-                      ? "All subject evaluations approved. Ready for Results."
-                      : "Evaluation in progress"}
-                  </p>
-                  <Pagination page={studentPage} total={studentPages} setPage={setStudentPage} />
-                </>
-              )}
-            </section>
-          )
-        ) : (
-          <div className="cms-card cms-empty-table">
-            <p>
-              Select all 7 evaluation filters and click <strong>Check Evaluation Data</strong> to
-              view evaluation status &amp; student marks.
-            </p>
-          </div>
+              ))}{" "}
+            {tab === "students" &&
+              (selectedStudent ? (
+                <StudentDetails
+                  student={selectedStudent}
+                  page={detailPage}
+                  setPage={setDetailPage}
+                  onBack={() => setSelectedStudent(null)}
+                />
+              ) : (
+                <StudentList
+                  rows={filteredStudents}
+                  subjects={analysisSubjects}
+                  search={studentSearch}
+                  setSearch={(v) => (setStudentSearch(v), setStudentPage(1))}
+                  page={studentPage}
+                  setPage={setStudentPage}
+                  onView={openStudent}
+                />
+              ))}
+          </>
         )}
-        {decision && (
-          <MessageModal
-            title={decision === "VERIFY" ? "Verify Evaluation" : "Reject Evaluation"}
-            label={decision === "VERIFY" ? "Admin Review Message" : "Correction Message"}
+        {pending && (
+          <Confirm
+            title="Unsaved Marks"
+            text="Unsaved marks exist in one or more subjects. Discard them and continue?"
+            onCancel={() => setPending(null)}
+            onConfirm={() => {
+              const fn = pending;
+              setPending(null);
+              fn();
+            }}
+          />
+        )}{" "}
+        {["VERIFY", "REJECT"].includes(modal) && (
+          <Message
+            action={modal}
             value={message}
             setValue={setMessage}
-            danger={decision === "REJECT"}
-            onCancel={() => setDecision(null)}
-            onConfirm={confirmDecision}
-            loading={actionLoading === decision}
+            onCancel={() => setModal(null)}
+            onConfirm={() => transition(modal)}
           />
-        )}
-        {globalStage && (
-          <ConfirmModal
-            title={
-              globalStage === "VERIFY_ALL" ? "Verify All Evaluations" : "Approve All Evaluations"
-            }
-            message={
-              globalStage === "VERIFY_ALL"
-                ? `Verify All will apply to ${submitted.length} SUBMITTED evaluations in this selection context.`
-                : `Approve All will apply to ${verified.length} VERIFIED evaluations in this selection context.`
-            }
-            onCancel={() => setGlobalStage(null)}
-            onConfirm={confirmGlobal}
-            loading={actionLoading === globalStage}
-            loadingLabel={globalStage === "VERIFY_ALL" ? "Verifying All..." : "Approving All..."}
+        )}{" "}
+        {["VERIFY_ALL", "APPROVE_ALL"].includes(modal) && (
+          <Confirm
+            title="Confirm Bulk Action"
+            text={`${modal === "VERIFY_ALL" ? "Verify" : "Approve"} all eligible evaluations in this context?`}
+            onCancel={() => setModal(null)}
+            onConfirm={() => bulkAction(modal)}
           />
         )}
       </div>
     </DashboardLayout>
   );
 }
-function Filter({ label, value, options, disabled, onChange }) {
+
+function FilterCard({
+  filters,
+  boards,
+  years,
+  levels,
+  groups,
+  programs,
+  sections,
+  exams,
+  changeFilter,
+  applyContext,
+  processing,
+}) {
+  const fields = [
+    { key: "board", label: "Board", options: boards },
+    { key: "year", label: "Academic Year", options: years },
+    { key: "level", label: "Academic Level", options: levels },
+    { key: "group", label: "Group", options: groups, disabled: !filters.board },
+    { key: "program", label: "Program", options: programs, disabled: !filters.group },
+    { key: "section", label: "Section", options: sections, disabled: !filters.program },
+    { key: "exam", label: "Examination", options: exams, disabled: !filters.section },
+  ];
+  return (
+    <section className="cms-card cms-card-filter">
+      <div className="cms-section-heading">
+        <div>
+          <h2>Academic Context</h2>
+          <p>Apply one group, section, and examination at a time.</p>
+        </div>
+        <button
+          type="button"
+          className="cms-btn cms-btn-primary"
+          disabled={processing || !Object.values(filters).every(Boolean)}
+          onClick={applyContext}
+        >
+          Enter Marks
+        </button>
+      </div>
+      <div className="cms-filter-grid">
+        {fields.map((f) => (
+          <Select
+            key={f.key}
+            id={`marks-${f.key}`}
+            label={f.label}
+            value={filters[f.key]}
+            options={f.options}
+            disabled={f.disabled}
+            onChange={(v) => changeFilter(f.key, v)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+function Context({ context, masters }) {
+  const find = (key, id) => masters[key].find((x) => eq(x.id, id))?.name ?? "—";
+  return (
+    <section className="cms-context-summary">
+      <div>
+        <strong>{find("groups", context.group)}</strong>
+        <span>
+          {find("programs", context.program)} · {find("sections", context.section)} ·{" "}
+          {find("exams", context.exam)}
+        </span>
+      </div>
+    </section>
+  );
+}
+function Entry({
+  workspaces,
+  activeSubjectId,
+  setActiveSubjectId,
+  workspace,
+  entryPage,
+  setEntryPage,
+  updateRow,
+  processing,
+  editingSubmitted,
+  enterSubmittedEdit,
+  cancelEdit,
+  saveAdminChanges,
+  onSave,
+  onSubmit,
+  onSaveAll,
+  onSubmitAll,
+}) {
+  const total = Math.ceil((workspace?.rows.length || 0) / PAGE_SIZE),
+    rows = workspace?.rows.slice((entryPage - 1) * PAGE_SIZE, entryPage * PAGE_SIZE) || [],
+    editing = Boolean(editingSubmitted[activeSubjectId]),
+    locked =
+      workspace && !["NOT STARTED", "DRAFT", "REJECTED"].includes(workspace.status) && !editing;
+  return (
+    <section className="cms-card cms-main-card">
+      <div className="cms-workspace-actions">
+        <div>
+          <h2 className="cms-workspace-title">Subject Workspaces</h2>
+        </div>
+        <div className="cms-bulk-actions">
+          <button
+            type="button"
+            className="cms-btn cms-btn-secondary"
+            disabled={processing}
+            onClick={onSaveAll}
+          >
+            Save All Drafts
+          </button>
+          <button
+            type="button"
+            className="cms-btn cms-btn-primary"
+            disabled={processing}
+            onClick={onSubmitAll}
+          >
+            Submit All Complete Subjects
+          </button>
+        </div>
+      </div>
+      <div className="cms-subject-strip">
+        {Object.values(workspaces).map((w) => (
+          <div className="cms-subject-chip-wrap" key={w.subjectId}>
+            <button
+              type="button"
+              className={`cms-subject-chip ${eq(activeSubjectId, w.subjectId) ? "cms-subject-chip-active" : ""}`}
+              onClick={() => (setActiveSubjectId(String(w.subjectId)), setEntryPage(1))}
+            >
+              <span>
+                {w.subject.name} <small>{w.subject.code}</small>
+              </span>
+              <span className="cms-chip-meta">
+                {w.mode} · {w.rows.length}
+              </span>
+              <span className="cms-chip-status">
+                {w.status}
+                {w.dirty ? " • Unsaved" : ""}
+              </span>
+            </button>
+            {w.status === "SUBMITTED" && (
+              <button
+                type="button"
+                className={`cms-subject-edit-btn ${editingSubmitted[w.subjectId] ? "cms-editing" : ""}`}
+                title="Edit submitted marks"
+                aria-label={`Edit submitted marks for ${w.subject.name}`}
+                onClick={() => enterSubmittedEdit(String(w.subjectId))}
+              >
+                <IconEdit />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {!workspace ? (
+        <Empty text="No faculty evaluations are available for the selected context." />
+      ) : (
+        <>
+          <div className="cms-entry-toolbar">
+            <div className="cms-config-summary">
+              <Badge status={workspace.status} />
+              <span>
+                {workspace.faculty.name} ({workspace.faculty.code}) · {workspace.mode} · Maximum{" "}
+                {workspace.maxMarks} · Pass {workspace.passPercentage}%
+              </span>
+            </div>
+          </div>
+          <div className="cms-table-container">
+            <table className="cms-table">
+              <thead>
+                <tr>
+                  <th>Roll No</th>
+                  <th>Student</th>
+                  {workspace.mode === "REGULAR" ? (
+                    <>
+                      <th>Internal / {workspace.internalMax}</th>
+                      {workspace.practicalMax > 0 && <th>Practical / {workspace.practicalMax}</th>}
+                      <th>Theory / {workspace.theoryMax}</th>
+                      <th>Total / {workspace.maxMarks}</th>
+                    </>
+                  ) : (
+                    <>
+                      <th>Obtained</th>
+                      <th>Maximum</th>
+                    </>
+                  )}
+                  <th>Percentage</th>
+                  <th>Absent</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <MarkRow
+                    key={r.studentId}
+                    row={r}
+                    w={workspace}
+                    locked={locked}
+                    update={(k, v) => updateRow(r.studentId, k, v)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={entryPage} total={total} setPage={setEntryPage} />
+          {editing ? (
+            <div className="cms-marks-actions">
+              <button type="button" className="cms-btn cms-btn-secondary" onClick={cancelEdit}>
+                Cancel Edit
+              </button>
+              <button type="button" className="cms-btn cms-btn-primary" onClick={saveAdminChanges}>
+                Save Changes
+              </button>
+            </div>
+          ) : locked ? (
+            <p className="cms-locked-message">
+              This {workspace.status.toLowerCase()} subject is read-only.
+            </p>
+          ) : (
+            <div className="cms-marks-actions">
+              <button type="button" className="cms-btn cms-btn-secondary" onClick={onSave}>
+                Save Subject Draft
+              </button>
+              <button type="button" className="cms-btn cms-btn-primary" onClick={onSubmit}>
+                Submit Subject
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+function MarkRow({ row, w, locked, update }) {
+  const complete =
+      row.absent ||
+      (w.mode === "OBJECTIVE"
+        ? validNumber(row.obtainedMarks, w.maxMarks)
+        : validNumber(row.internal, w.internalMax) &&
+          validNumber(row.theory, w.theoryMax) &&
+          (!w.practicalMax || validNumber(row.practical, w.practicalMax))),
+    total = w.mode === "OBJECTIVE" ? row.obtainedMarks : row.total;
+  return (
+    <tr>
+      <td>{row.rollNo}</td>
+      <td>
+        {row.studentName}
+        {w.validationErrors[row.studentId]?.map((e) => (
+          <small className="cms-row-error" key={e}>
+            {e}
+          </small>
+        ))}
+      </td>
+      {w.mode === "REGULAR" ? (
+        <>
+          <Num
+            value={row.internal}
+            disabled={locked || row.absent}
+            onChange={(v) => update("internal", v)}
+          />
+          {w.practicalMax > 0 && (
+            <Num
+              value={row.practical}
+              disabled={locked || row.absent}
+              onChange={(v) => update("practical", v)}
+            />
+          )}
+          <Num
+            value={row.theory}
+            disabled={locked || row.absent}
+            onChange={(v) => update("theory", v)}
+          />
+          <td>{row.absent ? "ABS" : complete ? total : "—"}</td>
+        </>
+      ) : (
+        <>
+          <Num
+            value={row.obtainedMarks}
+            disabled={locked || row.absent}
+            onChange={(v) => update("obtainedMarks", v)}
+          />
+          <td>{w.maxMarks}</td>
+        </>
+      )}
+      <td>
+        {row.absent
+          ? "ABS"
+          : complete && w.maxMarks
+            ? `${((Number(total) / w.maxMarks) * 100).toFixed(2)}%`
+            : "—"}
+      </td>
+      <td>
+        <input
+          type="checkbox"
+          className="cms-checkbox"
+          checked={row.absent}
+          disabled={locked}
+          onChange={(e) => update("absent", e.target.checked)}
+          aria-label={`Mark ${row.studentName} absent`}
+        />
+      </td>
+      <td>
+        <input
+          className="cms-remarks-input"
+          value={row.remarks}
+          disabled={locked}
+          onChange={(e) => update("remarks", e.target.value)}
+          aria-label={`${row.studentName} remarks`}
+        />
+      </td>
+    </tr>
+  );
+}
+function EvaluationList({
+  rows,
+  search,
+  setSearch,
+  page,
+  setPage,
+  onView,
+  readiness,
+  onBulk,
+  processing,
+}) {
+  const total = Math.ceil(rows.length / PAGE_SIZE),
+    shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  return (
+    <section className="cms-card cms-main-card">
+      <div className="cms-table-toolbar">
+        <Search value={search} onChange={setSearch} />
+        <div className="cms-bulk-actions">
+          <button
+            type="button"
+            className="cms-btn cms-btn-info"
+            disabled={processing || !readiness?.submittedCount}
+            onClick={() => onBulk("VERIFY_ALL")}
+          >
+            Verify {readiness?.submittedCount || 0} Submitted
+          </button>
+          <button
+            type="button"
+            className="cms-btn cms-btn-success"
+            disabled={processing || !readiness?.verifiedCount}
+            onClick={() => onBulk("APPROVE_ALL")}
+          >
+            Approve {readiness?.verifiedCount || 0} Verified
+          </button>
+        </div>
+      </div>
+      <Table
+        className="cms-evaluation-table"
+        heads={[
+          "Subject",
+          "Faculty",
+          "Students",
+          "Average / Total",
+          "Highest",
+          "Lowest",
+          "Status",
+          "Actions",
+        ]}
+      >
+        {shown.length ? (
+          shown.map((e) => (
+            <tr key={e.evaluationId}>
+              <td>
+                {e.subject.name}
+                <small className="cms-row-subtitle">{e.subject.code}</small>
+              </td>
+              <td>{e.faculty.name}</td>
+              <td>{e.studentsCount}</td>
+              <td>
+                {e.average} / {e.subjectMaxMarks}
+              </td>
+              <td>{e.highest}</td>
+              <td>{e.lowest}</td>
+              <td>
+                <Badge status={e.status} />
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="cms-action-btn"
+                  aria-label={`View ${e.subject.name} evaluation`}
+                  onClick={() => onView(e)}
+                >
+                  <IconEye />
+                </button>
+              </td>
+            </tr>
+          ))
+        ) : (
+          <EmptyRow span={8} text="No evaluations are available for the selected context." />
+        )}
+      </Table>
+      <Pagination page={page} total={total} setPage={setPage} />
+    </section>
+  );
+}
+function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }) {
+  const total = Math.ceil(item.rows.length / PAGE_SIZE),
+    rows = item.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  return (
+    <section className="cms-card cms-main-card">
+      <Back onClick={onBack} title={`${item.subject.name} Marks Breakdown`} />
+      <Table
+        heads={[
+          "Roll No",
+          "Student",
+          ...(item.mode === "REGULAR"
+            ? ["Internal", ...(item.practicalMax ? ["Practical"] : []), "Theory"]
+            : []),
+          "Obtained",
+          "Remarks",
+          "Absent",
+        ]}
+      >
+        {rows.map((r) => (
+          <tr key={r.studentId}>
+            <td>{r.rollNo}</td>
+            <td>{r.studentName}</td>
+            {item.mode === "REGULAR" && (
+              <>
+                <td>{r.absent ? "—" : r.internal}</td>
+                {item.practicalMax > 0 && <td>{r.absent ? "—" : r.practical}</td>}
+                <td>{r.absent ? "—" : r.theory}</td>
+              </>
+            )}
+            <td>{r.absent ? "ABS" : r.obtainedMarks}</td>
+            <td>{r.remarks || "—"}</td>
+            <td>{r.absent ? "Yes" : "No"}</td>
+          </tr>
+        ))}
+      </Table>
+      <Pagination page={page} total={total} setPage={setPage} />
+      <div className="cms-modal-actions">
+        {item.status === "SUBMITTED" && (
+          <>
+            <button
+              type="button"
+              className="cms-btn cms-btn-info"
+              disabled={processing}
+              onClick={() => onAction("VERIFY")}
+            >
+              Verify Evaluation
+            </button>
+            <button
+              type="button"
+              className="cms-btn cms-btn-danger"
+              onClick={() => onAction("REJECT")}
+            >
+              Reject Evaluation
+            </button>
+          </>
+        )}
+        {item.status === "VERIFIED" && (
+          <>
+            <button
+              type="button"
+              className="cms-btn cms-btn-success"
+              onClick={() => onAction("APPROVE")}
+            >
+              Approve Evaluation
+            </button>
+            <button
+              type="button"
+              className="cms-btn cms-btn-danger"
+              onClick={() => onAction("REJECT")}
+            >
+              Reject Evaluation
+            </button>
+          </>
+        )}
+        <Badge status={item.status} />
+      </div>
+    </section>
+  );
+}
+function StudentList({ rows, subjects, search, setSearch, page, setPage, onView }) {
+  const total = Math.ceil(rows.length / PAGE_SIZE),
+    shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  return (
+    <section className="cms-card cms-main-card">
+      <div className="cms-table-toolbar">
+        <Search value={search} onChange={setSearch} />
+      </div>
+      <Table
+        className="cms-student-analysis-table"
+        heads={[
+          "Roll No",
+          "Student",
+          ...subjects.map((s) => s.name),
+          "Total",
+          "Percentage",
+          "Grade",
+          "Result",
+          "Actions",
+        ]}
+      >
+        {shown.length ? (
+          shown.map((s) => {
+            const calculatedPercentage =
+              Number(s.totalMaximum) > 0
+                ? (Number(s.totalObtained) / Number(s.totalMaximum)) * 100
+                : null;
+            const percentage =
+              s.percentage != null && Number.isFinite(Number(s.percentage))
+                ? Number(s.percentage)
+                : calculatedPercentage;
+            return (
+            <tr key={s.studentId}>
+              <td>{s.rollNo}</td>
+              <td>{s.studentName}</td>
+              {subjects.map((sub) => {
+                const r = s.subjectResults.find((x) => eq(x.subjectId ?? x.id, sub.id));
+                return <td key={sub.id}>{r?.obtainedMarks ?? r?.marks ?? "—"}</td>;
+              })}
+              <td>
+                {s.totalObtained} / {s.totalMaximum}
+              </td>
+              <td>
+                {percentage == null || !Number.isFinite(percentage)
+                  ? "—"
+                  : `${percentage.toFixed(2)}%`}
+              </td>
+              <td>{s.grade}</td>
+              <td>
+                <Result status={s.result} />
+              </td>
+              <td>
+                <button
+                  type="button"
+                  className="cms-action-btn"
+                  aria-label={`View ${s.studentName} result`}
+                  onClick={() => onView(s)}
+                >
+                  <IconEye />
+                </button>
+              </td>
+            </tr>
+            );
+          })
+        ) : (
+          <EmptyRow
+            span={7 + subjects.length}
+            text="Approved results are not yet available for this examination."
+          />
+        )}
+      </Table>
+      <Pagination page={page} total={total} setPage={setPage} />
+    </section>
+  );
+}
+function StudentDetails({ student, page, setPage, onBack }) {
+  const rows = student.subjectResults || [],
+    total = Math.ceil(rows.length / PAGE_SIZE);
+  return (
+    <section className="cms-card cms-main-card">
+      <Back onClick={onBack} title="Detailed Student Performance Report" />
+      <div className="cms-detail-grid">
+        <Card label="Roll Number" value={student.rollNo} />
+        <Card label="Student Name" value={student.studentName} />
+        <Card
+          label="Total"
+          value={`${student.totalMarks ?? student.totalObtained ?? 0} / ${student.maxTotal ?? student.totalMaximum ?? 0}`}
+        />
+        <Card
+          label="Percentage"
+          value={student.percentage == null ? "—" : `${Number(student.percentage).toFixed(2)}%`}
+        />
+        <Card label="Grade" value={student.grade ?? "—"} />
+        <Card label="Result" value={student.result ?? "PENDING"} />
+      </div>
+      <Table
+        heads={[
+          "Subject",
+          "Code",
+          "Mode",
+          "Obtained / Maximum",
+          "Pass %",
+          "Percentage",
+          "Grade",
+          "Result",
+        ]}
+      >
+        {rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((r, i) => (
+          <tr key={r.subjectId ?? i}>
+            <td>{r.subjectName ?? r.name}</td>
+            <td>{r.subjectCode ?? r.code ?? "—"}</td>
+            <td>{r.mode ?? r.markMode ?? "—"}</td>
+            <td>
+              {r.isAbsent
+                ? "ABS"
+                : `${r.obtainedMarks ?? r.marks ?? "—"} / ${r.maximumMarks ?? r.maxMarks ?? "—"}`}
+            </td>
+            <td>{r.passPercentage ?? "—"}</td>
+            <td>{r.percentage == null ? "—" : `${Number(r.percentage).toFixed(2)}%`}</td>
+            <td>{r.isAbsent ? "—" : (r.grade ?? "—")}</td>
+            <td>
+              <Result status={r.isAbsent ? "ABSENT" : (r.result ?? "PENDING")} />
+            </td>
+          </tr>
+        ))}
+      </Table>
+      <Pagination page={page} total={total} setPage={setPage} />
+    </section>
+  );
+}
+function Select({ id, label, value, options, disabled, onChange }) {
   return (
     <div className="cms-field-group">
-      <label className="cms-field-label">{label}</label>
+      <label className="cms-field-label" htmlFor={id}>
+        {label}
+      </label>
       <select
+        id={id}
         className="cms-select-input"
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
       >
         <option value="">Select {label}</option>
-        {options.map(([id, name]) => (
-          <option key={id} value={id}>
-            {name}
+        {options.map((o) => (
+          <option value={o.id} key={o.id}>
+            {o.name}
           </option>
         ))}
       </select>
     </div>
   );
 }
-function EvaluationTable({ rows, onClick, emptyMessage }) {
-  return (
-    <div className="cms-table-container">
-      <table className="cms-table cms-evaluation-table">
-        <thead>
-          <tr>
-            <th>SUBJECT</th>
-            <th>FACULTY</th>
-            <th>STUDENTS</th>
-            <th>AVERAGE / MAX</th>
-            <th>HIGHEST</th>
-            <th>LOWEST</th>
-            <th>STATUS</th>
-            <th>ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length ? (
-            rows.map((item) => (
-              <tr key={item.evaluationId}>
-                <td className="cms-font-semibold">
-                  {item.subject.subjectName}
-                  <small className="cms-row-subtitle">{item.subject.subjectCode}</small>
-                </td>
-                <td>
-                  {item.faculty.facultyName} - {item.faculty.facultyCode}
-                </td>
-                <td className="cms-text-center">{item.studentsCount || item.rows.length}</td>
-                <td className="cms-text-center">
-                  {item.average} / {item.subjectMaxMarks}
-                </td>
-                <td className="cms-text-center">{item.highest}</td>
-                <td className="cms-text-center">{item.lowest}</td>
-                <td className="cms-text-center">
-                  <Badge status={item.status} />
-                </td>
-                <td className="cms-text-center">
-                  <button
-                    type="button"
-                    className="cms-action-btn view"
-                    title="View details"
-                    aria-label="View details"
-                    onClick={() => onClick(item)}
-                  >
-                    <Eye size={15} />
-                  </button>
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={8} className="cms-empty-td">
-                {emptyMessage}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-function StudentTable({ rows, subjects, exam, onClick }) {
-  return (
-    <div className="cms-table-container">
-      <table className="cms-table cms-student-analysis-table">
-        <thead>
-          <tr>
-            <th>ROLL NO</th>
-            <th>STUDENT</th>
-            {subjects.map((s) => (
-              <th key={s.subjectId}>{s.subjectName}</th>
-            ))}
-            <th>TOTAL / EXAM TOTAL</th>
-            <th>PERCENTAGE</th>
-            <th>GRADE</th>
-            <th>RESULT</th>
-            <th>ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length ? (
-            rows.map((student) => (
-              <tr key={student.studentId}>
-                <td className="cms-font-semibold">{student.rollNo}</td>
-                <td>{student.studentName}</td>
-                {subjects.map((s) => (
-                  <td className="cms-text-center" key={s.subjectId}>
-                    {student.marks[String(s.subjectId)] ?? student.marks[s.subjectName] ?? "—"}
-                  </td>
-                ))}
-                <td className="cms-text-center">
-                  {student.total} / {exam?.totalMarks ?? "—"}
-                </td>
-                <td className="cms-text-center">{safePercent(student.percentage)}</td>
-                <td className="cms-text-center">{student.grade}</td>
-                <td className="cms-text-center">{student.result}</td>
-                <td className="cms-text-center">
-                  <button
-                    type="button"
-                    className="cms-action-btn view"
-                    title="View student details"
-                    aria-label="View student details"
-                    onClick={() => onClick(student)}
-                  >
-                    <Eye size={15} />
-                  </button>
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan={7 + subjects.length} className="cms-empty-td">
-                No student analysis records available.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-function EvaluationDetails({
-  evaluation,
-  exam,
-  display,
-  page,
-  setPage,
-  onBack,
-  onVerify,
-  onReject,
-  onApprove,
-  actionLoading,
-}) {
-  const subject = evaluation.subject,
-    faculty = evaluation.faculty,
-    total = Math.max(1, Math.ceil(evaluation.rows.length / PAGE_SIZE)),
-    rows = evaluation.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  return (
-    <div className="cms-card cms-main-card cms-evaluation-details">
-      <div className="cms-details-header">
-        <div>
-          <button className="cms-back-btn" onClick={onBack}>
-            ← Back to Evaluations
-          </button>
-          <h2 className="cms-details-title">
-            {subject.subjectName} ({subject.subjectCode}) Evaluation Marks Breakdown
-          </h2>
-          <span className="cms-details-subtitle">
-            Review faculty-submitted student marks for this subject
-          </span>
-        </div>
-      </div>
-      <div className="cms-detail-grid">
-        <Card label="Faculty" value={`${faculty.facultyName} - ${faculty.facultyCode}`} />
-        <Card label="Group" value={display.group} />
-        <Card label="Program" value={display.program} />
-        <Card label="Section" value={display.section} />
-        <Card label="Examination" value={display.examination} />
-        <Card label="Exam Type" value={exam?.examType || "—"} />
-        <Card label="Subject Max Marks" value={evaluation.subjectMaxMarks} />
-        <Card label="Exam Pattern" value={exam?.examPattern || "—"} />
-      </div>
-      <MarksTable rows={rows} objective={objectiveExam(exam)} practical={subject.practical} />
-      <Pagination page={page} total={total} setPage={setPage} />
-      <div className="cms-modal-actions">
-        {evaluation.status === "SUBMITTED" && (
-          <>
-            <button
-              className="cms-btn cms-btn-info"
-              disabled={Boolean(actionLoading)}
-              onClick={onVerify}
-            >
-              <Check /> Verify
-            </button>
-            <button
-              className="cms-btn cms-btn-danger"
-              disabled={Boolean(actionLoading)}
-              onClick={onReject}
-            >
-              <Cross /> Reject
-            </button>
-          </>
-        )}
-        {evaluation.status === "VERIFIED" && (
-          <>
-            <button
-              className="cms-btn cms-btn-success"
-              disabled={Boolean(actionLoading)}
-              onClick={onApprove}
-            >
-              <Check /> {actionLoading === "APPROVE" ? "Approving..." : "Approve"}
-            </button>
-            <button
-              className="cms-btn cms-btn-danger"
-              disabled={Boolean(actionLoading)}
-              onClick={onReject}
-            >
-              <Cross /> Reject
-            </button>
-          </>
-        )}
-        {evaluation.status === "APPROVED" && (
-          <span className="cms-status-pill cms-status-approved">
-            <Check /> Approved
-          </span>
-        )}
-        {evaluation.status === "REJECTED" && (
-          <span className="cms-status-pill cms-status-rejected">
-            <Cross /> Returned to Faculty for correction
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-function MarksTable({ rows, objective, practical }) {
-  return (
-    <div className="cms-table-container cms-details-table-wrap">
-      <table className="cms-table cms-details-table">
-        <thead>
-          <tr>
-            <th>ROLL NO</th>
-            <th>STUDENT NAME</th>
-            {objective ? (
-              <>
-                <th>OBTAINED MARKS</th>
-                <th>MAX MARKS</th>
-                <th>PERCENTAGE</th>
-              </>
-            ) : (
-              <>
-                <th>INTERNAL</th>
-                {practical && <th>PRACTICAL</th>}
-                <th>THEORY</th>
-                <th>TOTAL</th>
-              </>
-            )}
-            <th>REMARKS</th>
-            <th>ABSENT</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.studentId}>
-              <td>{row.rollNo}</td>
-              <td>{row.studentName}</td>
-              {objective ? (
-                <>
-                  <td>{row.absent ? "—" : row.obtainedMarks}</td>
-                  <td>{row.maxMarks}</td>
-                  <td>{row.absent ? "—" : percentageOf(row.obtainedMarks, row.maxMarks)}</td>
-                </>
-              ) : (
-                <>
-                  <td>{row.absent ? "—" : row.internal}</td>
-                  {practical && <td>{row.absent ? "—" : row.practical}</td>}
-                  <td>{row.absent ? "—" : row.theory}</td>
-                  <td>{row.absent ? "—" : row.total}</td>
-                </>
-              )}
-              <td>{row.remarks}</td>
-              <td>{row.absent ? "Yes" : "No"}</td>
-            </tr>
+const Num = ({ value, disabled, onChange }) => (
+  <td>
+    <input
+      type="number"
+      step="any"
+      className="cms-number-input"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  </td>
+);
+const Search = ({ value, onChange }) => (
+  <div className="cms-search-wrap">
+    <input
+      className="cms-search-input cms-search-input-plain"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Search records..."
+    />
+  </div>
+);
+const Table = ({ heads, children, className = "" }) => (
+  <div className="cms-table-container">
+    <table className={`cms-table ${className}`.trim()}>
+      <thead>
+        <tr>
+          {heads.map((h, i) => (
+            <th scope="col" key={`${h}-${i}`}>
+              {h}
+            </th>
           ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-function StudentDetails({ student, exam, subjects, evaluations, display, onBack }) {
-  const combinedSubjects = useMemo(() => {
-    const list = [
-      ...(Array.isArray(student?.subjects) ? student.subjects : []),
-      ...subjects,
-    ];
-    const map = new Map();
-    for (const s of list) {
-      const id = Number(s.subjectId || s.id);
-      if (id > 0 && !map.has(String(id))) {
-        map.set(String(id), {
-          subjectId: id,
-          subjectName: s.subjectName ?? s.name ?? "",
-          subjectCode: s.subjectCode ?? s.code ?? "",
-          practical: Boolean(
-            s.practical != null
-              ? s.practical
-              : s.isPractical != null
-              ? s.isPractical
-              : s.practicalMarks != null && Number(s.practicalMarks) > 0,
-          ),
-        });
-      }
-    }
-    return Array.from(map.values());
-  }, [student?.subjects, subjects]);
-
-  const objective = objectiveExam(exam) || String(student?.examType).trim().toLowerCase() === "objective";
-
-  const details = combinedSubjects.map((subject) => {
-    const analysisRow = Array.isArray(student?.subjects)
-      ? student.subjects.find((item) => Number(item.subjectId || item.id) === Number(subject.subjectId))
-      : null;
-    const record = evaluations.find(
-      (item) => String(item.subjectId) === String(subject.subjectId),
-    );
-    const evalRow = record?.rows?.find((item) => Number(item.studentId) === Number(student.studentId));
-    const markVal =
-      student?.marks?.[String(subject.subjectId)] ??
-      student?.marks?.[subject.subjectName] ??
-      null;
-
-    const row =
-      analysisRow ||
-      evalRow ||
-      (markVal != null ? { obtainedMarks: markVal, total: markVal } : null);
-
-    return {
-      subject,
-      row,
-      max: row?.maxMarks ?? record?.subjectMaxMarks ?? 100,
-    };
-  });
-
-  return (
-    <div className="cms-card cms-main-card cms-student-details">
-      <div className="cms-details-header">
-        <div>
-          <button className="cms-back-btn" onClick={onBack}>
-            ← Back To Student Analysis
-          </button>
-          <h2 className="cms-details-title">Student Detailed Report</h2>
-        </div>
-      </div>
-      <div className="cms-detail-grid">
-        <Card label="Roll Number" value={student.rollNo || student.rollNumber || "—"} />
-        <Card label="Student Name" value={student.studentName || student.fullName || "—"} />
-        <Card label="Group" value={student.groupName || student.group || display.group} />
-        <Card label="Program" value={student.programName || student.program || display.program} />
-        <Card label="Section" value={student.sectionName || student.section || display.section} />
-        <Card label="Examination" value={student.examName || student.examination || display.examination} />
-        <Card label="Exam Type" value={student.examType || exam?.examType || "—"} />
-        <Card label="Exam Pattern" value={student.examPattern || exam?.examPattern || "—"} />
-        <Card label="Percentage" value={safePercent(student.percentage)} />
-        <Card label="Grade" value={student.grade || "—"} />
-        <Card label="Result" value={student.result || "—"} />
-      </div>
-      <div className="cms-table-container cms-details-table-wrap">
-        <table className="cms-table">
-          <thead>
-            <tr>
-              <th>SUBJECT</th>
-              {objective ? (
-                <>
-                  <th>OBTAINED</th>
-                  <th>MAX</th>
-                  <th>PERCENTAGE</th>
-                </>
-              ) : (
-                <>
-                  <th>INTERNAL</th>
-                  <th>PRACTICAL</th>
-                  <th>THEORY</th>
-                  <th>TOTAL</th>
-                </>
-              )}
-              <th>REMARKS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {details.map(({ subject, row, max }) => {
-              const internal = row?.internal != null ? row.internal : "—";
-              const practical = row?.practical != null ? row.practical : "—";
-              const theory = row?.theory != null ? row.theory : "—";
-              const total = row?.total != null ? row.total : (row?.obtainedMarks != null ? row.obtainedMarks : "—");
-              const remarks = row?.remarks || "—";
-              const isAbsent = Boolean(row?.isAbsent ?? row?.absent);
-
-              return (
-                <tr key={subject.subjectId}>
-                  <td className="cms-font-semibold">
-                    {subject.subjectName}
-                    {subject.subjectCode && <small className="cms-row-subtitle">{subject.subjectCode}</small>}
-                  </td>
-                  {objective ? (
-                    <>
-                      <td>{isAbsent ? "—" : total}</td>
-                      <td>{max}</td>
-                      <td>
-                        {row && !isAbsent
-                          ? percentageOf(total !== "—" ? total : 0, max)
-                          : "—"}
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td>{isAbsent ? "—" : internal}</td>
-                      <td>{isAbsent ? "—" : practical}</td>
-                      <td>{isAbsent ? "—" : theory}</td>
-                      <td>{isAbsent ? "—" : total}</td>
-                    </>
-                  )}
-                  <td>{remarks}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-function MessageModal({ title, label, value, setValue, danger, onCancel, onConfirm, loading }) {
-  return (
-    <div className="cms-overlay">
-      <div className="cms-modal sm">
-        <div className="cms-modal-head">
-          <h3>{title}</h3>
-        </div>
-        <div className="cms-modal-body">
-          <div className="cms-field-group">
-            <label className="cms-field-label">{label}</label>
-            <textarea
-              className="cms-marks-textarea"
-              rows={4}
-              value={value}
-              disabled={loading}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Enter at least 5 characters"
-            />
-          </div>
-        </div>
-        <div className="cms-modal-foot">
-          <button className="cms-btn" disabled={loading} onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className={`cms-btn ${danger ? "cms-btn-danger" : "cms-btn-info"}`}
-            disabled={loading || value.trim().length < 5}
-            onClick={onConfirm}
-          >
-            {loading
-              ? danger
-                ? "Rejecting..."
-                : "Verifying..."
-              : danger
-                ? "Confirm Reject"
-                : "Confirm Verify"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-function ConfirmModal({ title, message, onCancel, onConfirm, loading, loadingLabel }) {
-  return (
-    <div className="cms-overlay">
-      <div className="cms-modal sm">
-        <div className="cms-modal-head">
-          <h3>{title}</h3>
-        </div>
-        <div className="cms-modal-body">{message}</div>
-        <div className="cms-modal-foot">
-          <button className="cms-btn" disabled={loading} onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="cms-btn cms-btn-primary" disabled={loading} onClick={onConfirm}>
-            {loading ? loadingLabel || "Processing..." : "Confirm"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  </div>
+);
+const Badge = ({ status }) => (
+  <span className={`cms-badge-status cms-status-${status.toLowerCase().replace(" ", "-")}`}>
+    <span className="cms-badge-dot" />
+    {status}
+  </span>
+);
+const Result = ({ status }) => (
+  <span className={`cms-result cms-result-${status.toLowerCase()}`}>{status}</span>
+);
+const Card = ({ label, value }) => (
+  <div className="cms-detail-card">
+    <span className="cms-detail-label">{label}</span>
+    <span className="cms-detail-value">{value}</span>
+  </div>
+);
+const Back = ({ onClick, title }) => (
+  <div className="cms-details-header">
+    <button type="button" className="cms-back-btn" onClick={onClick}>
+      ← Back
+    </button>
+    <h2 className="cms-details-title">{title}</h2>
+  </div>
+);
+const Empty = ({ text }) => <div className="cms-card cms-empty-card">{text}</div>;
+const EmptyRow = ({ span, text }) => (
+  <tr>
+    <td colSpan={span} className="cms-empty-td">
+      {text}
+    </td>
+  </tr>
+);
 function Pagination({ page, total, setPage }) {
+  useEffect(() => {
+    if (total) setPage((p) => Math.min(p, total));
+  }, [total, setPage]);
+  if (!total) return null;
   return (
-    <div className="cms-pagination">
+    <nav className="cms-pagination">
       <button
+        type="button"
         className="cms-page-btn"
-        disabled={page === 1}
-        onClick={() => setPage((v) => Math.max(1, v - 1))}
+        disabled={page <= 1}
+        onClick={() => setPage((p) => p - 1)}
       >
         Previous
       </button>
       <span>
-        Page {page} of {total}
+        {page} / {total}
       </span>
       <button
+        type="button"
         className="cms-page-btn"
-        disabled={page === total}
-        onClick={() => setPage((v) => Math.min(total, v + 1))}
+        disabled={page >= total}
+        onClick={() => setPage((p) => p + 1)}
       >
         Next
       </button>
+    </nav>
+  );
+}
+const Confirm = ({ title, text, onCancel, onConfirm }) => (
+  <div className="cms-overlay">
+    <div className="cms-modal">
+      <div className="cms-modal-head">
+        <h3>{title}</h3>
+      </div>
+      <div className="cms-modal-body">{text}</div>
+      <div className="cms-modal-foot">
+        <button type="button" className="cms-btn cms-btn-secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="cms-btn cms-btn-primary" onClick={onConfirm}>
+          Confirm
+        </button>
+      </div>
     </div>
-  );
-}
-function Card({ label, value }) {
-  return (
-    <div className="cms-detail-card">
-      <span className="cms-detail-label">{label}</span>
-      <span className="cms-detail-value">{value}</span>
+  </div>
+);
+const Message = ({ action, value, setValue, onCancel, onConfirm }) => (
+  <div className="cms-overlay">
+    <div className="cms-modal">
+      <div className="cms-modal-head">
+        <h3>{action === "VERIFY" ? "Verify Evaluation" : "Reject Evaluation"}</h3>
+      </div>
+      <div className="cms-modal-body">
+        <textarea
+          className="cms-marks-textarea"
+          rows="4"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </div>
+      <div className="cms-modal-foot">
+        <button type="button" className="cms-btn cms-btn-secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="cms-btn cms-btn-primary"
+          disabled={value.trim().length < 5}
+          onClick={onConfirm}
+        >
+          Confirm
+        </button>
+      </div>
     </div>
-  );
-}
-function Badge({ status }) {
-  const meta = STATUS_META[status] || [status || "SUBMITTED", "cms-status-submitted"];
-  return (
-    <span className={`cms-badge-status ${meta[1]}`}>
-      <span className="cms-badge-dot" />
-      {meta[0]}
-    </span>
-  );
-}
+  </div>
+);

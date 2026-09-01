@@ -128,6 +128,12 @@ const hasUsefulChartData = (rows = []) => rows.some((row) => (
   normalizeKey(row.group) && (Number(row.expected || 0) > 0 || Number(row.collected || 0) > 0 || Number(row.outstanding || 0) > 0)
 ));
 
+const accountHasUsefulTotals = (account) => (
+  Number(account?.totalPayable || 0) > 0
+  || Number(account?.totalPaid || 0) > 0
+  || Number(account?.balance || 0) > 0
+);
+
 const accountOverviewTotals = (accounts = []) => {
   const totalExpected = accounts.reduce((sum, account) => sum + Number(account.totalPayable || 0), 0);
   const totalCollected = accounts.reduce((sum, account) => sum + Number(account.totalPaid || 0), 0);
@@ -159,14 +165,16 @@ const accountGroupWiseTotals = (accounts = []) => {
   return Array.from(grouped.values());
 };
 
-const mapById = (rows, ...keys) => {
-  const mapped = new Map();
-  rows.forEach((row) => {
-    const id = read(row, ...keys);
-    if (id !== undefined && id !== null && id !== "") mapped.set(String(id), row);
-  });
-  return mapped;
-};
+const hasAccountIdentityGaps = (rows = []) => rows.some((item) => {
+  const student = read(item, "student", "Student");
+  const admission = read(item, "admission", "Admission", "studentAdmission", "StudentAdmission");
+  return !read(item, "studentId", "StudentId") && !read(student, "studentId", "StudentId", "id", "Id")
+    || !textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      && !textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      && !textValue(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+    || !textValue(item, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+      && !textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName");
+});
 
 const findMatchingAdmission = (admissions, account, student) => {
   const admissionNo = normalizeKey(textValue(account, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
@@ -184,6 +192,14 @@ const feeDetailPayloadRows = (detail) => getCollection(read(detail, "breakdown",
 const feeDetailScheduleRows = (detail) => getCollection(read(detail, "schedules", "Schedules", "installments", "Installments", "feeSchedules", "FeeSchedules"));
 
 const feeDetailPaymentRows = (detail) => getCollection(read(detail, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions"));
+
+const feePaymentRows = (item, detail) => {
+  const sources = [
+    feeDetailPaymentRows(detail),
+    getCollection(read(item, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions")),
+  ];
+  return sources.find((rows) => rows.length) || [];
+};
 
 const toSelectOptions = (rows, idKeys, labelKeys) => rows
   .map((item) => {
@@ -369,11 +385,15 @@ const normalizeInstallmentRows = (rows, account) => rows.map((item, index) => ({
   id: read(item, "feeInstallmentId", "FeeInstallmentId", "installmentId", "InstallmentId", "id", "Id"),
   feeInstallmentId: read(item, "feeInstallmentId", "FeeInstallmentId", "installmentId", "InstallmentId", "id", "Id"),
   no: Number(read(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "no", "No") || index + 1),
-  amount: numberValue(item, "amount", "Amount", "installmentAmount", "InstallmentAmount", "payableAmount", "PayableAmount"),
-  paid: numberValue(item, "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid"),
-  balance: numberValue(item, "balance", "Balance", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount"),
+  amount: numberValue(item, "amount", "Amount", "installmentAmount", "InstallmentAmount", "payableAmount", "PayableAmount", "dueAmount", "DueAmount"),
+  paid: optionalNumberValue(item, "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid"),
+  balance: optionalNumberValue(item, "balance", "Balance", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount", "pendingAmount", "PendingAmount"),
   dueDate: textValue(item, "dueDate", "DueDate", "date", "Date"),
   status: textValue(item, "status", "Status") || account.feeStatus || "Pending",
+})).map((item) => ({
+  ...item,
+  paid: item.paid ?? (item.balance !== undefined ? Math.max(Number(item.amount || 0) - Number(item.balance || 0), 0) : 0),
+  balance: item.balance ?? Math.max(Number(item.amount || 0) - Number(item.paid || 0), 0),
 }));
 
 const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) => {
@@ -407,14 +427,14 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
   const schedules = feeDetailScheduleRows(detail).length
     ? feeDetailScheduleRows(detail)
     : getCollection(read(item, "installments", "Installments", "schedules", "Schedules", "feeSchedules", "FeeSchedules"));
-  const rawTotalPayable = optionalNumberValue(item, "totalPayable", "TotalPayable", "payable", "Payable", "netPayable", "NetPayable")
-    ?? optionalNumberValue(detail, "totalPayable", "TotalPayable", "payable", "Payable", "originalFee", "OriginalFee", "scheduledFees", "ScheduledFees")
+  const rawTotalPayable = optionalNumberValue(item, "totalPayable", "TotalPayable", "payable", "Payable", "netPayable", "NetPayable", "totalAmount", "TotalAmount", "assignedAmount", "AssignedAmount")
+    ?? optionalNumberValue(detail, "totalPayable", "TotalPayable", "payable", "Payable", "originalFee", "OriginalFee", "scheduledFees", "ScheduledFees", "totalAmount", "TotalAmount", "assignedAmount", "AssignedAmount")
     ?? detailTotal;
-  const totalPaid = optionalNumberValue(item, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount")
-    ?? optionalNumberValue(detail, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount")
+  const totalPaid = optionalNumberValue(item, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid", "collectedAmount", "CollectedAmount", "totalCollected", "TotalCollected")
+    ?? optionalNumberValue(detail, "totalPaid", "TotalPaid", "paid", "Paid", "paidAmount", "PaidAmount", "amountPaid", "AmountPaid", "collectedAmount", "CollectedAmount", "totalCollected", "TotalCollected")
     ?? 0;
-  const rawBalance = optionalNumberValue(item, "balance", "Balance", "outstanding", "Outstanding", "dueAmount", "DueAmount")
-    ?? optionalNumberValue(detail, "balance", "Balance", "outstanding", "Outstanding", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount")
+  const rawBalance = optionalNumberValue(item, "balance", "Balance", "outstanding", "Outstanding", "outstandingAmount", "OutstandingAmount", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount", "pendingAmount", "PendingAmount", "balanceAmount", "BalanceAmount")
+    ?? optionalNumberValue(detail, "balance", "Balance", "outstanding", "Outstanding", "outstandingAmount", "OutstandingAmount", "outstandingBalance", "OutstandingBalance", "dueAmount", "DueAmount", "pendingAmount", "PendingAmount", "balanceAmount", "BalanceAmount")
     ?? undefined;
   const nextDueDate = textValue(item, "nextDueDate", "NextDueDate", "nextDue", "NextDue", "dueDate", "DueDate")
     || textValue(detail, "nextDueDate", "NextDueDate", "nextDue", "NextDue", "dueDate", "DueDate");
@@ -452,7 +472,7 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
     admissionDate: textValue(item, "admissionDate", "AdmissionDate", "createdAt", "CreatedAt") || textValue(detail, "admissionDate", "AdmissionDate") || textValue(admissionRecord, "admissionDate", "AdmissionDate"),
     paymentPlan: textValue(item, "paymentPlan", "PaymentPlan", "plan", "Plan") || "Full Payment",
     admissionFee: numberValue(item, "admissionFee", "AdmissionFee"),
-    courseFee: numberValue(item, "courseFee", "CourseFee", "totalPayable", "TotalPayable", "payable", "Payable"),
+    courseFee: numberValue(item, "courseFee", "CourseFee", "totalPayable", "TotalPayable", "payable", "Payable", "totalAmount", "TotalAmount"),
     totalPayable,
     totalPaid,
     balance,
@@ -463,16 +483,19 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
     transactions: [],
     installments: [],
   };
-  account.transactions = normalizeTransactionRows(feeDetailPaymentRows(detail).length ? feeDetailPaymentRows(detail) : getCollection(read(item, "transactions", "Transactions", "payments", "Payments")), account);
+  account.transactions = normalizeTransactionRows(feePaymentRows(item, detail), account);
   account.installments = normalizeInstallmentRows(schedules, account);
   const derived = deriveAccount(account);
+  const nextDue = account.installments
+    .filter((row) => row.status !== "Paid" && row.balance > 0 && row.dueDate)
+    .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0] || null;
   return {
     ...derived,
     totalPayable: account.totalPayable ?? derived.totalPayable,
     totalPaid: account.totalPaid ?? derived.totalPaid,
     balance: account.balance ?? derived.balance,
     feeStatus: account.feeStatus || derived.feeStatus,
-    nextDueDate: account.nextDueDate || derived.nextDueDate,
+    nextDueDate: account.nextDueDate || nextDue?.dueDate || derived.nextDueDate,
   };
 });
 
@@ -584,15 +607,15 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [] }) {
   const dashboardData = dashboard ? normalizeDashboard(dashboard) : null;
   const fallbackTotals = accountOverviewTotals(accounts);
   const dashboardTotals = Object.fromEntries(Object.entries(dashboardData?.totals || {}).filter(([, value]) => value !== undefined));
-  const dashboardOutstandingIsMissing = Number(dashboardTotals.pendingStudents || 0) === 0 && accounts.some((account) => Number(account.balance || 0) > 0);
-  const totals = dashboardOutstandingIsMissing
-    ? { ...dashboardTotals, ...fallbackTotals, totalStudents: Math.max(Number(dashboardTotals.totalStudents || 0), fallbackTotals.totalStudents) }
-    : { ...fallbackTotals, ...dashboardTotals };
+  const hasAccountData = accounts.some(accountHasUsefulTotals);
+  const totals = hasAccountData ? fallbackTotals : { ...fallbackTotals, ...dashboardTotals };
   const dashboardChart = dashboardData?.chartData || [];
   const accountChart = accountGroupWiseTotals(accounts);
-  const chartData = hasUsefulChartData(dashboardChart) ? dashboardChart : hasUsefulChartData(accountChart) ? accountChart : groupWiseTotals(accounts);
-  const upcoming = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : upcomingInstallments(accounts);
-  const recent = dashboardData?.recent?.length ? dashboardData.recent : allTransactions(accounts).slice(0, 8);
+  const chartData = hasUsefulChartData(accountChart) ? accountChart : hasUsefulChartData(dashboardChart) ? dashboardChart : groupWiseTotals(accounts);
+  const accountUpcoming = upcomingInstallments(accounts);
+  const upcoming = accountUpcoming.length ? accountUpcoming : dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
+  const accountTransactions = allTransactions(accounts);
+  const recent = accountTransactions.length ? accountTransactions.slice(0, 8) : dashboardData?.recent?.length ? dashboardData.recent : [];
   const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
 
   return (
@@ -711,6 +734,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const isReferenceRequired = method && method !== "Cash";
 
   const selectTarget = (value) => {
@@ -725,6 +749,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
   };
 
   const save = async () => {
+    if (savingRef.current) return null;
     const value = Number(amount || 0);
     const discountValue = Number(discount || 0);
     const fineValue = Number(fine || 0);
@@ -740,6 +765,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
     const studentIdValue = Number(account.studentId || 0);
     if (!Number.isFinite(studentIdValue) || studentIdValue <= 0) return setError("Student ID is required to collect payment");
     const installment = target === "full" ? null : pending.find((item) => String(item.no) === target);
+    savingRef.current = true;
     setSaving(true);
     try {
       const response = await apiClient.post(apiEndpoints.fee.collect, {
@@ -756,6 +782,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
       });
       const saved = getObject(response.data);
       setSaving(false);
+      savingRef.current = false;
       return onSaved({
         amount: numberValue(saved, "amount", "Amount", "paidAmount", "PaidAmount") || value,
         receiptNo: textValue(saved, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || "-",
@@ -763,6 +790,7 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
     } catch (err) {
       setError(getApiErrorMessage(err));
       setSaving(false);
+      savingRef.current = false;
       return null;
     }
   };
@@ -2153,7 +2181,7 @@ export default function FeeManagementPage() {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const accountRequestRef = useRef({ ledger: 0, collection: 0 });
   const overviewRequestRef = useRef(0);
-  const initialFeeLoadRef = useRef(false);
+  const loadedTabsRef = useRef(new Set());
 
   const structures = apiStructures;
   const overviewAccounts = ledgerAccounts;
@@ -2169,17 +2197,19 @@ export default function FeeManagementPage() {
     setScholarships(nextScholarships);
   };
 
-  const fetchFeeContext = useCallback(async () => {
+  const loadAccountContext = useCallback(async (rows) => {
+    if (!hasAccountIdentityGaps(rows)) return {};
     const [studentsResult, admissionsResult] = await Promise.allSettled([
       apiClient.get(apiEndpoints.students.getAll),
       apiClient.get(apiEndpoints.admissions.getAll),
     ]);
-    const students = studentsResult.status === "fulfilled" ? getCollection(studentsResult.value.data) : [];
-    const admissions = admissionsResult.status === "fulfilled" ? getCollection(admissionsResult.value.data) : [];
     return {
-      admissions,
-      studentsById: mapById(students, "studentId", "StudentId", "id", "Id"),
-      feeDetailsByStudentId: new Map(),
+      studentsById: studentsResult.status === "fulfilled"
+        ? new Map(getCollection(studentsResult.value.data).map((item) => [String(read(item, "studentId", "StudentId", "id", "Id")), item]))
+        : new Map(),
+      admissions: admissionsResult.status === "fulfilled"
+        ? getCollection(admissionsResult.value.data)
+        : [],
     };
   }, []);
 
@@ -2193,7 +2223,7 @@ export default function FeeManagementPage() {
       const response = await apiClient.get(endpoint);
       if (accountRequestRef.current[source] !== requestId) return;
       const rows = getCollection(response.data);
-      const context = await fetchFeeContext();
+      const context = await loadAccountContext(rows);
       if (accountRequestRef.current[source] !== requestId) return;
       const accounts = normalizeFeeAccountRows(rows, context);
       if (source === "collection") {
@@ -2209,7 +2239,7 @@ export default function FeeManagementPage() {
         setAccountLoading((current) => ({ ...current, [source]: false }));
       }
     }
-  }, [fetchFeeContext]);
+  }, [loadAccountContext]);
 
   const loadOverviewData = useCallback(async () => {
     const requestId = overviewRequestRef.current + 1;
@@ -2337,20 +2367,19 @@ export default function FeeManagementPage() {
   }, [modalOpen]);
 
   useEffect(() => {
-    loadFeeApiData();
-    loadFeeAccounts("ledger");
     loadOverviewData();
-  }, [loadFeeApiData, loadFeeAccounts, loadOverviewData]);
+    loadFeeAccounts("ledger");
+    loadedTabsRef.current.add("Overview");
+  }, [loadFeeAccounts, loadOverviewData]);
 
   useEffect(() => {
-    if (!initialFeeLoadRef.current) {
-      initialFeeLoadRef.current = true;
-      return;
-    }
+    if (loadedTabsRef.current.has(tab)) return;
+    loadedTabsRef.current.add(tab);
+    if (tab === "Overview") loadOverviewData();
+    if (tab === "Fee Setup") loadFeeApiData();
     if (tab === "Fee Collection") loadFeeAccounts("collection");
-    if (tab === "Student Fee Ledger" || tab === "Payment History" || tab === "Overview") loadFeeAccounts("ledger");
-    if (tab === "Overview" || tab === "Payment History" || tab === "Fee Collection") loadOverviewData();
-  }, [loadFeeAccounts, loadOverviewData, tab]);
+    if (tab === "Student Fee Ledger" || tab === "Payment History") loadFeeAccounts("ledger");
+  }, [loadFeeAccounts, loadFeeApiData, loadOverviewData, tab]);
 
   return (
     <DashboardLayout
@@ -2411,9 +2440,11 @@ export default function FeeManagementPage() {
           onSaved={(saved) => {
             setCollecting(false);
             setToast(`Payment of ${formatCurrency(saved.amount)} recorded - receipt ${saved.receiptNo}`);
-            loadFeeAccounts("ledger");
-            loadFeeAccounts("collection");
-            loadOverviewData();
+            Promise.allSettled([
+              loadFeeAccounts("ledger"),
+              loadFeeAccounts("collection"),
+              loadOverviewData(),
+            ]);
           }}
         />
       ) : null}

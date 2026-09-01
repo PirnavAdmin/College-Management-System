@@ -3,9 +3,13 @@ import {
   BookOpen,
   BadgeCheck,
   Check,
+  ChevronDown,
   ClipboardList,
+  Download,
   Edit3,
   Eye,
+  FileSpreadsheet,
+  FileText,
   GraduationCap,
   IndianRupee,
   MapPin,
@@ -372,13 +376,33 @@ const appendIfPresent = (formData, key, value) => {
 
 const ADMISSION_DRAFT_KEY = "studentAdmissionDraft";
 const ADMISSION_DRAFT_VERSION = 2;
-const ADMISSION_STATUS_OPTIONS = ["Pending", "Verified", "Approved", "Rejected"];
 const COURSE_PAYMENT_PLANS = ["Full Payment", "Installment Payment"];
 const COURSE_PAYMENT_PLAN_LABELS = {
   "Full Payment": "Full Course Payment",
   "Installment Payment": "Course Fee Schedule",
 };
 const PAGE_SIZE = 8;
+const ADMISSION_EXPORT_COLUMNS = [
+  "Admission No",
+  "Student Name",
+  "Admission Date",
+  "Academic Year",
+  "Board",
+  "Group",
+  "Program",
+  "Status",
+];
+
+const cleanExportValue = (value) => {
+  if (value === undefined || value === null || value === "") return "-";
+  return String(value);
+};
+
+const safeExportFileName = (value) => String(value || "student-admissions")
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-|-$/g, "") || "student-admissions";
 
 const steps = [
   {
@@ -425,11 +449,11 @@ const steps = [
   {
     title: "Address",
     fields: [
-      { name: "address1", label: "Address", required: true, full: true },
+      { name: "pincode", label: "Pincode", required: true, full: true },
       { name: "city", label: "City", required: true },
       { name: "district", label: "District", required: true },
       { name: "state", label: "State", type: "select", options: ["Andhra Pradesh", "Telangana", "Karnataka", "Maharashtra", "Delhi"], required: true },
-      { name: "pincode", label: "Pincode", required: true },
+      { name: "address1", label: "Address", required: true, full: true },
     ],
   },
   {
@@ -742,6 +766,7 @@ const normalizeAdmissionRow = (item) => {
       groupName: readText(item, "groupName", "GroupName") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")),
       program: readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id"),
       programName,
+      status,
       level: readId(item, "academicLevelId", "AcademicLevelId") || readId(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
       levelName: readText(item, "academicLevelName", "AcademicLevelName") || (typeof academicLevel === "string" ? academicLevel : readText(academicLevel, "academicLevelName", "AcademicLevelName", "name", "Name")),
       rollNumber: readText(item, "rollNo", "RollNo", "rollNumber", "RollNumber"),
@@ -832,6 +857,8 @@ const admissionFeeApprovalBody = (admissionId, status) => {
   }
   return { admissionId: id, remarks: "" };
 };
+
+const admissionStatusBody = (admissionId) => admissionFeeApprovalBody(admissionId, "Verified");
 
 const collectPayload = ({ studentId, studentFeeId, amount, values, feeInstallmentId = null, note = "" }) => ({
   studentId: Number(studentId),
@@ -1445,7 +1472,8 @@ export default function AdmissionPage() {
   const [admissions, setAdmissions] = useState([]);
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ year: "", group: "", program: "", status: "" });
+  const [filters, setFilters] = useState({ year: "" });
+  const [exportOpen, setExportOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [approveTarget, setApproveTarget] = useState(null);
   const [rejectTarget, setRejectTarget] = useState(null);
@@ -1470,17 +1498,22 @@ export default function AdmissionPage() {
   const pincodeRequestRef = useRef(0);
   const programRequestRef = useRef(0);
   const boardMappingRequestRef = useRef(0);
-  const approvedFeeSyncRef = useRef(new Set());
   const approveInFlightRef = useRef(new Set());
   const verifiedInFlightRef = useRef(new Set());
-  const locallyApprovedRef = useRef(new Set());
-  const locallyVerifiedRef = useRef(new Set());
   const admissionsRequestRef = useRef(0);
   const autoLocationRef = useRef({ city: "", district: "", state: "" });
 
   const current = allSteps[step];
   const isPreview = current.title === "Preview";
   const isFeeStep = current.custom === "fee";
+  const previewAdmissionStatus = normalizeAdmissionStatus(values.status);
+  const previewVerifyRecord = useMemo(() => ({
+    id: editingAdmissionId,
+    admissionId: editingAdmissionId,
+    admissionNo: values.admissionNo,
+    status: previewAdmissionStatus,
+  }), [editingAdmissionId, previewAdmissionStatus, values.admissionNo]);
+  const canVerifyPreviewAdmission = isPreview && editingAdmissionId && previewAdmissionStatus === "Pending";
   const groupOptions = useMemo(() => {
     const rows = masterOptions.groups || [];
     return rows.filter((item) => (
@@ -1573,16 +1606,66 @@ export default function AdmissionPage() {
         || String(row.studentName || "").toLowerCase().includes(term)
         || String(row.admissionNo || "").toLowerCase().includes(term);
       const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
-      const matchesGroup = !filters.group || String(row.group) === String(filters.group);
-      const rowProgram = row.program;
-      const matchesProgram = !filters.program || String(rowProgram) === String(filters.program);
-      const matchesStatus = !filters.status || row.status === filters.status;
-      return matchesSearch && matchesYear && matchesGroup && matchesProgram && matchesStatus;
+      return matchesSearch && matchesYear;
     });
-  }, [admissions, filters.group, filters.program, filters.status, filters.year, search]);
+  }, [admissions, filters.year, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const admissionExportRows = useMemo(() => displayedAdmissions.map((row) => ({
+    "Admission No": cleanExportValue(row.admissionNo),
+    "Student Name": cleanExportValue(row.studentName),
+    "Admission Date": cleanExportValue(formatDate(row.admissionDate) || "-"),
+    "Academic Year": cleanExportValue(optionLabel(masterOptions.years, row.academicYear) || row.academicYear),
+    Board: cleanExportValue(optionLabel(masterOptions.boards, row.board) || row.board),
+    Group: cleanExportValue(row.group),
+    Program: cleanExportValue(row.program),
+    Status: cleanExportValue(row.status),
+  })), [displayedAdmissions, masterOptions.boards, masterOptions.years]);
+
+  const exportAdmissionsExcel = async () => {
+    if (!admissionExportRows.length) {
+      setToast("No admissions available to export.");
+      setExportOpen(false);
+      return;
+    }
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.json_to_sheet(admissionExportRows, { header: ADMISSION_EXPORT_COLUMNS });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Student Admissions");
+    XLSX.writeFile(workbook, `${safeExportFileName("Student Admissions")}.xlsx`);
+    setExportOpen(false);
+  };
+
+  const exportAdmissionsPdf = async () => {
+    if (!admissionExportRows.length) {
+      setToast("No admissions available to export.");
+      setExportOpen(false);
+      return;
+    }
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const document = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const exportedAt = new Date();
+    document.setFontSize(16);
+    document.text("Student Admissions", 36, 38);
+    document.setFontSize(9);
+    document.setTextColor(88, 97, 84);
+    document.text(`Exported ${exportedAt.toLocaleString()}`, 36, 54);
+    autoTable(document, {
+      startY: 68,
+      head: [ADMISSION_EXPORT_COLUMNS],
+      body: admissionExportRows.map((row) => ADMISSION_EXPORT_COLUMNS.map((column) => row[column])),
+      styles: { fontSize: 8, cellPadding: 5, overflow: "linebreak", textColor: [28, 36, 22] },
+      headStyles: { fillColor: [111, 132, 0], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [247, 248, 239] },
+      margin: { left: 28, right: 28 },
+    });
+    document.save(`${safeExportFileName("Student Admissions")}-${exportedAt.toISOString().slice(0, 10)}.pdf`);
+    setExportOpen(false);
+  };
 
   const refreshAdmissions = async () => {
     const requestId = admissionsRequestRef.current + 1;
@@ -1592,26 +1675,8 @@ export default function AdmissionPage() {
       const response = await apiClient.get(apiEndpoints.admissions.getAll);
       const apiRows = getCollection(response.data).map(normalizeAdmissionRow);
       if (admissionsRequestRef.current !== requestId) return apiRows;
-      const nextRows = apiRows.map((row) => {
-        const key = admissionKeyFor(row);
-        if (locallyApprovedRef.current.has(key)) {
-          if (row.status === "Approved") locallyApprovedRef.current.delete(key);
-          return {
-            ...row,
-            status: "Approved",
-            raw: { ...row.raw, status: "Approved", admissionStatus: "Approved" },
-          };
-        }
-        if (locallyVerifiedRef.current.has(key)) {
-          if (row.status === "Verified" || row.status === "Approved") locallyVerifiedRef.current.delete(key);
-          return row.status === "Pending"
-            ? { ...row, status: "Verified", raw: { ...row.raw, status: "Verified", admissionStatus: "Verified" } }
-            : row;
-        }
-        return row;
-      });
-      setAdmissions(nextRows);
-      return nextRows;
+      setAdmissions(apiRows);
+      return apiRows;
     } catch (err) {
       if (admissionsRequestRef.current === requestId) setToast(getApiErrorMessage(err));
       return [];
@@ -1651,12 +1716,18 @@ export default function AdmissionPage() {
     };
   }, [feeSelection, step, values, viewMode]);
 
+  const feeStructureId = values.feeStructureId;
+  const feeItems = values.feeItems;
+  const paymentPlan = values.paymentPlan;
+  const installmentCount = values.installmentCount;
+  const admissionDate = values.admissionDate;
+
   // Keeps the fee step consistent: default plan, and an installment schedule
   // that always matches the applicable course fee.
   useEffect(() => {
-    if (!values.feeStructureId || !values.feeItems?.length) return;
-    const courseFeePayable = deriveAdmissionFee(values).courseFeePayable;
+    if (!feeStructureId || !feeItems?.length) return;
     setValues((current) => {
+      const courseFeePayable = deriveAdmissionFee(current).courseFeePayable;
       const next = { ...current };
       let changed = false;
       if (!next.paymentPlan) {
@@ -1675,7 +1746,7 @@ export default function AdmissionPage() {
       }
       return changed ? next : current;
     });
-  }, [values]);
+  }, [admissionDate, feeItems, feeStructureId, installmentCount, paymentPlan]);
 
   useEffect(() => {
     if (!isFeeStep) return;
@@ -2172,26 +2243,10 @@ export default function AdmissionPage() {
     });
   };
 
-  const groupFilterOptions = useMemo(() => {
-    const optionsFromRows = (masterOptions.groups || []).map((item) => ({ value: item.label, label: item.label }));
-    return Array.from(new Map(optionsFromRows.filter((item) => item.value).map((item) => [item.value, item])).values());
-  }, [masterOptions.groups]);
   const academicYearFilterOptions = useMemo(() => uniqueAcademicYearsByName(
     (masterOptions.years || []).map((item) => ({ value: item.label, label: item.label })),
     (item) => item.label,
   ), [masterOptions.years]);
-  const programFilterOptions = useMemo(() => {
-    const filteredRows = filters.group
-      ? admissions.filter((item) => String(item.group) === String(filters.group))
-      : admissions;
-    return Array.from(new Map(filteredRows
-      .map((item) => {
-        const value = item.program || item.section;
-        return value ? { value, label: value } : null;
-      })
-      .filter(Boolean)
-      .map((item) => [item.value, item])).values());
-  }, [admissions, filters.group]);
 
   const feeContext = [
     { label: "Student", value: [values.firstName, values.lastName].filter(Boolean).join(" ") },
@@ -2461,7 +2516,7 @@ export default function AdmissionPage() {
     openAdmissionForm({ formValues: {}, targetStep: 0, selection: [] });
   };
 
-  const continueAdmission = async (record) => {
+  const continueAdmission = async (record, targetStep = record.currentStep || 0) => {
     const admissionId = record.admissionId || record.id;
     if (!admissionId) {
       setToast("Admission ID is required to load admission details.");
@@ -2473,7 +2528,7 @@ export default function AdmissionPage() {
       const detailRow = normalizeAdmissionRow(getObject(response.data));
       openAdmissionForm({
         formValues: detailRow.values || {},
-        targetStep: record.currentStep || 0,
+        targetStep,
         selection: [],
         admissionId,
       });
@@ -2599,28 +2654,16 @@ export default function AdmissionPage() {
     setActionBusy(`${status}-${record.id}`);
     const endpoint = status === "Approved" ? apiEndpoints.admissions.approve : apiEndpoints.admissions.reject;
     try {
-      if (status === "Approved") {
-        const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
-        const latestDetail = getObject(detailResponse.data);
-        const latestRow = normalizeAdmissionRow(latestDetail);
-        if (!isAdmissionVerified(record.raw, record, latestDetail, latestRow.raw, latestRow)) {
-          setToast("Verify the admission before approving.");
-          return;
-        }
+      if (status === "Approved" && !isAdmissionVerified(record.raw, record)) {
+        setToast("Verify the admission before approving.");
+        return;
       }
       const response = status === "Approved"
-        ? await apiClient.post(endpoint(admissionId))
+        ? await apiClient.post(endpoint(admissionId), admissionStatusBody(admissionId))
         : await apiClient.post(endpoint(admissionId), admissionFeeApprovalBody(admissionId, status));
       if (status === "Approved") {
-        locallyApprovedRef.current.add(admissionKey);
-        setAdmissions((current) => current.map((row) => (
-          admissionKeyFor(row) === admissionKey
-            ? { ...row, status: "Approved", raw: { ...row.raw, status: "Approved", admissionStatus: "Approved" } }
-            : row
-        )));
         setApproveTarget(null);
         await refreshAdmissions();
-        approvedFeeSyncRef.current.add(String(admissionId));
         try {
           await ensureApprovedStudentFeeAccount({ admissionId, approvedPayload: getObject(response.data) });
         } catch (feeErr) {
@@ -2655,15 +2698,11 @@ export default function AdmissionPage() {
     verifiedInFlightRef.current.add(admissionKey);
     setActionBusy(`Verified-${record.id}`);
     try {
-      await apiClient.post(apiEndpoints.admissions.verify(admissionId));
-      locallyVerifiedRef.current.add(admissionKey);
-      setAdmissions((current) => current.map((row) => (
-        admissionKeyFor(row) === admissionKey
-          ? { ...row, status: "Verified", raw: { ...row.raw, status: "Verified", admissionStatus: "Verified" } }
-          : row
-      )));
+      await apiClient.post(apiEndpoints.admissions.verify(admissionId), admissionStatusBody(admissionId));
       await refreshAdmissions();
       setToast(`Admission ${record.admissionNo} verified successfully.`);
+      setViewMode("list");
+      setPage(1);
     } catch (err) {
       setToast(`Admission verification failed: ${getApiErrorMessage(err)}`);
     } finally {
@@ -2671,37 +2710,6 @@ export default function AdmissionPage() {
       setActionBusy("");
     }
   };
-
-  useEffect(() => {
-    if (listLoading || !admissions.length) return undefined;
-    const approvedRows = admissions.filter((row) => (
-      row.status === "Approved"
-      && row.admissionId
-      && !approvedFeeSyncRef.current.has(String(row.admissionId))
-    ));
-    if (!approvedRows.length) return undefined;
-
-    let cancelled = false;
-    const syncApprovedFeeAccounts = async () => {
-      for (const row of approvedRows) {
-        if (cancelled) return;
-        approvedFeeSyncRef.current.add(String(row.admissionId));
-        try {
-          await ensureApprovedStudentFeeAccount({ admissionId: row.admissionId, approvedPayload: row.raw });
-        } catch (err) {
-          if (!cancelled) {
-            setToast(`Admission ${row.admissionNo} is approved, but fee account creation failed: ${getApiErrorMessage(err)}`);
-          }
-          return;
-        }
-      }
-    };
-    syncApprovedFeeAccounts();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [admissions, ensureApprovedStudentFeeAccount, listLoading]);
 
   const submit = async () => {
     if (saving) return;
@@ -2766,9 +2774,32 @@ export default function AdmissionPage() {
             </div>
             <div className="cms-admission-filters">
               <Field field={{ name: "year", label: "Academic Year", type: "select", options: academicYearFilterOptions }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
-              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value, program: name === "group" ? "" : current.program })); setPage(1); }} />
-              <Field field={{ name: "program", label: "Program", type: "select", options: programFilterOptions }} value={filters.program} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
-              <Field field={{ name: "status", label: "Status", type: "select", options: ADMISSION_STATUS_OPTIONS }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+            </div>
+            <div
+              className="cms-admission-export-control"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost cms-admission-export-btn"
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
+                onClick={() => setExportOpen((open) => !open)}
+              >
+                <Download size={15} /> Export <ChevronDown size={14} />
+              </button>
+              {exportOpen ? (
+                <div className="cms-admission-export-menu" role="menu" aria-label="Admission export options">
+                  <button type="button" role="menuitem" onClick={exportAdmissionsExcel}>
+                    <FileSpreadsheet size={15} /> Export Excel
+                  </button>
+                  <button type="button" role="menuitem" onClick={exportAdmissionsPdf}>
+                    <FileText size={15} /> Export PDF
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -2806,7 +2837,7 @@ export default function AdmissionPage() {
                           <Eye size={15} />
                         </button>
                         {row.status === "Pending" ? (
-                          <button type="button" className="cms-action-btn edit" title="Verify admission" aria-label="Verify admission" disabled={actionBusy === `Verified-${row.id}`} onClick={() => verifyAdmission(row)}>
+                          <button type="button" className="cms-action-btn edit" title="Verify admission" aria-label="Verify admission" disabled={actionBusy === `Load-${row.id}`} onClick={() => continueAdmission(row, allSteps.length - 1)}>
                             <BadgeCheck size={15} />
                           </button>
                         ) : null}
@@ -2852,7 +2883,7 @@ export default function AdmissionPage() {
             onClose={() => setApproveTarget(null)}
             footer={(
               <>
-                <button type="button" className="cms-btn cms-btn-ghost" onClick={() => setApproveTarget(null)}>Cancel</button>
+                <button type="button" className="cms-btn cms-btn-ghost" onClick={() => setApproveTarget(null)} disabled={actionBusy === `Approved-${approveTarget.id}`}>Cancel</button>
                 <button
                   type="button"
                   className="cms-btn cms-btn-primary"
@@ -2993,8 +3024,18 @@ export default function AdmissionPage() {
               {admissionNumberLoading ? "Generating Number..." : step === steps.length - 1 ? "Preview" : "Save & Continue"}
             </button>
           ) : (
-            <button className="cms-btn cms-btn-primary" onClick={submit} disabled={saving || admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))}>
-              {saving ? "Submitting..." : "Submit Admission"}
+            <button
+              className="cms-btn cms-btn-primary"
+              onClick={canVerifyPreviewAdmission ? () => verifyAdmission(previewVerifyRecord) : submit}
+              disabled={
+                canVerifyPreviewAdmission
+                  ? actionBusy === `Verified-${editingAdmissionId}`
+                  : saving || admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))
+              }
+            >
+              {canVerifyPreviewAdmission
+                ? (actionBusy === `Verified-${editingAdmissionId}` ? "Verifying..." : "Verify Admission")
+                : (saving ? "Submitting..." : "Submit Admission")}
             </button>
           )}
         </div>

@@ -415,7 +415,7 @@ export default function SectionManagementPage() {
       active = false;
       mountedRef.current = false;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- initial API load is intentionally one-time.
+  }, []);
 
   useEffect(() => {
     if (!sections.length) return undefined;
@@ -481,6 +481,7 @@ export default function SectionManagementPage() {
       active = false;
     };
   }, [sections]);
+
   const updateFilter = (key, value) => {
     setFilters((previous) =>
       key === "board"
@@ -488,6 +489,7 @@ export default function SectionManagementPage() {
         : { ...previous, [key]: value },
     );
   };
+
   const change = async (key, value) => {
     setModalError(null);
     if (key === "board") {
@@ -587,6 +589,7 @@ export default function SectionManagementPage() {
     }
     setForm((previous) => ({ ...previous, [key]: value }));
   };
+
   const changeRoom = (key, value) => {
     setRoomModalError(null);
     setRoomForm((current) => ({ ...current, [key]: value }));
@@ -631,6 +634,7 @@ export default function SectionManagementPage() {
     () => new Map(programsCatalog.map((item) => [String(item.programId), item])),
     [programsCatalog],
   );
+
   const resolveSection = (section) => {
     const resolvedProgram =
       programsByGroupProgramId.get(String(section.groupProgramId)) ??
@@ -662,6 +666,7 @@ export default function SectionManagementPage() {
         "—",
     };
   };
+
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
     return sections.filter((section) => {
@@ -690,8 +695,6 @@ export default function SectionManagementPage() {
         )
       );
     });
-    // resolveSection is intentionally recreated from the memoized lookup maps above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     sections,
     filters,
@@ -706,6 +709,7 @@ export default function SectionManagementPage() {
     programsByGroupAndProgramId,
     programsById,
   ]);
+
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const sectionRangeStart = rows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
@@ -733,6 +737,7 @@ export default function SectionManagementPage() {
       );
     });
   }, [rooms, roomSearch, roomFilters]);
+
   const roomPages = Math.max(1, Math.ceil(roomRows.length / PAGE_SIZE));
   const shownRooms = roomRows.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE);
   const roomRangeStart = roomRows.length ? (roomPage - 1) * PAGE_SIZE + 1 : 0;
@@ -791,6 +796,7 @@ export default function SectionManagementPage() {
     () => academicLevelsList.map((item) => item.name),
     [academicLevelsList],
   );
+
   useEffect(() => setPage(1), [filters, search]);
   useEffect(() => setRoomPage(1), [roomFilters, roomSearch]);
   useEffect(() => {
@@ -818,53 +824,86 @@ export default function SectionManagementPage() {
   const edit = mode === "edit";
   const preview = mode === "preview";
   const readOnly = mode === "preview";
-  const availableRooms = useMemo(
-    () =>
-      (() => {
-        const options = rooms
-          .filter((room) => room.isActive && room.roomType === "Classroom")
-          .filter(
-            (room) =>
-              !sections.some(
-                (section) =>
-                  section.id !== selectedSectionId &&
-                  section.status === "Active" &&
-                  String(section.boardId) === String(form.boardId) &&
-                  String(section.academicYearId) === String(form.academicYearId) &&
-                  String(section.academicLevelId) === String(form.academicLevelId) &&
-                  ((positiveId(section.roomId) && String(section.roomId) === String(room.id)) ||
-                    (!positiveId(section.roomId) && roomCodesMatch(section.room, label(room)))),
-              ),
-          )
-          .map((room) => ({ value: String(room.id), label: label(room) }));
-        return form.roomId && !options.some((option) => option.value === String(form.roomId))
-          ? [{ value: String(form.roomId), label: form.room }, ...options]
-          : options;
-      })(),
-    [
-      rooms,
-      sections,
-      selectedSectionId,
-      form.boardId,
-      form.academicYearId,
-      form.academicLevelId,
-      form.roomId,
-      form.room,
-    ],
-  );
-  const availableTeachers = useMemo(() => {
-    const assignedTeachers = new Set(
+
+  // 1. Available Rooms: Show Active rooms of type "Classroom" that are NOT assigned to another active section
+  const availableRooms = useMemo(() => {
+    const assignedRoomIds = new Set(
       sections
-        .filter((section) => section.id !== selectedSectionId && positiveId(section.classTeacherId))
+        .filter(
+          (section) =>
+            section.id !== selectedSectionId &&
+            section.status === "Active" &&
+            positiveId(section.roomId),
+        )
+        .map((section) => String(section.roomId)),
+    );
+
+    const assignedRoomCodes = new Set(
+      sections
+        .filter(
+          (section) =>
+            section.id !== selectedSectionId &&
+            section.status === "Active" &&
+            section.room,
+        )
+        .map((section) => normalizeRoomCode(resolveSection(section).roomCode).toLowerCase()),
+    );
+
+    const options = rooms
+      .filter((room) => room.isActive && room.roomType === "Classroom")
+      .filter((room) => {
+        const roomIdStr = String(room.id);
+        const roomCodeNormalized = normalizeRoomCode(room.roomCode).toLowerCase();
+        return !assignedRoomIds.has(roomIdStr) && !assignedRoomCodes.has(roomCodeNormalized);
+      })
+      .map((room) => ({ value: String(room.id), label: label(room) }));
+
+    if (form.roomId && !options.some((option) => option.value === String(form.roomId))) {
+      const currentRoomObj = rooms.find((r) => String(r.id) === String(form.roomId));
+      const roomLabel = currentRoomObj ? label(currentRoomObj) : form.room || "Current Room";
+      return [{ value: String(form.roomId), label: roomLabel }, ...options];
+    }
+
+    return options;
+  }, [rooms, sections, selectedSectionId, form.roomId, form.room]);
+
+  // 2. Available Teachers: Show Active teaching staff NOT assigned as Incharge to another active section
+  const availableTeachers = useMemo(() => {
+    const assignedTeacherIds = new Set(
+      sections
+        .filter(
+          (section) =>
+            section.id !== selectedSectionId &&
+            section.status === "Active" &&
+            positiveId(section.classTeacherId),
+        )
         .map((section) => String(section.classTeacherId)),
     );
-    return teachersList
-      .filter((teacher) => !assignedTeachers.has(String(teacher.id)))
+
+    const options = teachersList
+      .filter((teacher) => teacher.isActive && !assignedTeacherIds.has(String(teacher.id)))
       .map((teacher) => ({
-        value: teacher.id,
+        value: String(teacher.id),
         label: teacher.employeeId ? `${teacher.name} (${teacher.employeeId})` : teacher.name,
       }));
-  }, [teachersList, sections, selectedSectionId]);
+
+    if (
+      form.classTeacherId &&
+      !options.some((option) => option.value === String(form.classTeacherId))
+    ) {
+      const currentTeacherObj = teachersList.find(
+        (t) => String(t.id) === String(form.classTeacherId),
+      );
+      const teacherLabel = currentTeacherObj
+        ? currentTeacherObj.employeeId
+          ? `${currentTeacherObj.name} (${currentTeacherObj.employeeId})`
+          : currentTeacherObj.name
+        : form.teacher || "Current Incharge";
+      return [{ value: String(form.classTeacherId), label: teacherLabel }, ...options];
+    }
+
+    return options;
+  }, [teachersList, sections, selectedSectionId, form.classTeacherId, form.teacher]);
 
   const close = () => {
     setModal(false);
@@ -1142,16 +1181,16 @@ export default function SectionManagementPage() {
         return setModalError("Please select an available active Incharge.");
     }
     const other = (section) => section.id !== selectedSectionId;
-    const conflictingSection =
-      sections.find(
-        (section) =>
-          other(section) &&
-          positiveId(section.classTeacherId) &&
-          String(section.classTeacherId) === String(form.classTeacherId),
-      );
+    const conflictingSection = sections.find(
+      (section) =>
+        other(section) &&
+        section.status === "Active" &&
+        positiveId(section.classTeacherId) &&
+        String(section.classTeacherId) === String(form.classTeacherId),
+    );
     if (conflictingSection)
       return setModalError(
-        `The selected Incharge is already assigned to section "${conflictingSection.name}".`,
+        `The selected Incharge is already assigned to active section "${conflictingSection.name}".`,
       );
     if (
       sections.some(
@@ -1172,9 +1211,6 @@ export default function SectionManagementPage() {
         (section) =>
           other(section) &&
           section.status === "Active" &&
-          String(section.boardId) === String(form.boardId) &&
-          String(section.academicYearId) === String(form.academicYearId) &&
-          String(section.academicLevelId) === String(form.academicLevelId) &&
           ((positiveId(section.roomId) && String(section.roomId) === String(form.roomId)) ||
             (!positiveId(section.roomId) &&
               roomCodesMatch(resolveSection(section).roomCode, selectedRoom.roomCode))),

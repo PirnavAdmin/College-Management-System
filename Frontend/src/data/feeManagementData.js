@@ -157,8 +157,12 @@ export const deriveAccount = (account) => {
   const totalPayable = Math.max(Number(account.totalPayable ?? totalOriginal - totalConcession), 0);
   const courseFee = totalPayable;
   const transactions = Array.isArray(account.transactions) ? account.transactions : [];
-  const totalPaid = Math.min(transactions.reduce((sum, txn) => sum + Number(txn.amount || 0), 0), totalPayable);
-  const balance = Math.max(totalPayable - totalPaid, 0);
+  const transactionPaid = transactions.reduce((sum, txn) => sum + Number(txn.amount || 0), 0);
+  const explicitPaid = account.totalPaid ?? account.paidAmount ?? account.amountPaid;
+  const rawPaid = Math.max(Number(explicitPaid ?? transactionPaid), 0);
+  const totalPaid = totalPayable > 0 ? Math.min(rawPaid, totalPayable) : rawPaid;
+  const explicitBalance = account.balance ?? account.balanceAmount ?? account.outstandingBalance ?? account.dueAmount;
+  const balance = Math.max(Number(explicitBalance ?? totalPayable - totalPaid), 0);
   const installments = (Array.isArray(account.installments) ? account.installments : []).map((item) => ({
     ...item,
     balance: Math.max(Number(item.amount || 0) - Number(item.paid || 0), 0),

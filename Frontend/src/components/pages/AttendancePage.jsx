@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Download } from "lucide-react";
+import { ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -28,11 +28,63 @@ const list = (x) => {
   }
   return [];
 };
+const reportList = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+  for (const key of [
+    "staffRows",
+    "StaffRows",
+    "studentRows",
+    "StudentRows",
+    "rows",
+    "Rows",
+    "students",
+    "Students",
+    "studentAttendance",
+    "studentAttendances",
+    "studentAttendanceReport",
+    "studentAttendanceReports",
+    "staffAttendance",
+    "staffAttendances",
+    "staffAttendanceReport",
+    "staffAttendanceReports",
+    "monthlyAttendance",
+    "monthlyReport",
+    "reportData",
+    "reports",
+    "records",
+    "items",
+    "data",
+    "result",
+    "results",
+    "value",
+    "$values",
+  ]) {
+    if (Array.isArray(payload[key])) return payload[key];
+    if (payload[key] && typeof payload[key] === "object") {
+      const nested = reportList(payload[key]);
+      if (nested.length) return nested;
+    }
+  }
+  for (const value of Object.values(payload)) {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      const nested = reportList(value);
+      if (nested.length) return nested;
+    }
+  }
+  return [];
+};
 const val = (x, ...keys) => keys.map((k) => x?.[k]).find((v) => v !== undefined && v !== null);
-const status = (x) =>
-  STATUS.find(
-    ([n, id]) => String(id) === String(x) || n.toLowerCase() === String(x ?? "").toLowerCase(),
+const status = (x) => {
+  if (["h", "holiday"].includes(String(x ?? "").toLowerCase())) return "Holiday";
+  return STATUS.find(
+    ([n, id, code]) =>
+      String(id) === String(x)
+      || n.toLowerCase() === String(x ?? "").toLowerCase()
+      || code.toLowerCase() === String(x ?? "").toLowerCase(),
   )?.[0] ?? "Present";
+};
 const toOptions = (data, ids, names) =>
   list(data)
     .map((x) => ({ id: String(val(x, ...ids) ?? ""), name: val(x, ...names) ?? "", raw: x }))
@@ -98,18 +150,88 @@ const student = (x) => ({
   remarks: val(x, "remarks", "Remarks") ?? "",
   isAttendanceMarked: Boolean(val(x, "isAttendanceMarked", "IsAttendanceMarked")),
 });
+const dailyAttendanceRecords = (row) => {
+  const source = val(
+    row,
+    "attendanceRecords", "AttendanceRecords",
+    "dailyAttendance", "DailyAttendance",
+    "dailyRecords", "DailyRecords",
+    "attendanceDays", "AttendanceDays",
+    "dayWiseAttendance", "DayWiseAttendance",
+    "dailyStatuses", "DailyStatuses",
+    "dailyStatus", "DailyStatus",
+    "attendanceDetails", "AttendanceDetails",
+    "attendanceByDate", "AttendanceByDate",
+    "attendanceByDay", "AttendanceByDay",
+    "records", "Records",
+  );
+  const records = list(source);
+  if (records.length)
+    return records.map((record, index) =>
+      record && typeof record === "object"
+        ? record
+        : { day: index + 1, status: record, isAttendanceMarked: true },
+    );
+  if (!source || typeof source !== "object" || Array.isArray(source)) return [];
+  return Object.entries(source).map(([recordDate, record]) =>
+    record && typeof record === "object"
+      ? { date: recordDate, ...record }
+      : { date: recordDate, status: record, isAttendanceMarked: true },
+  );
+};
+const hasDateWiseAttendance = (row) =>
+  dailyAttendanceRecords(row).length > 0
+  || Object.keys(row ?? {}).some((key) => /^(day\d+|day\d+status|status\d+)$/i.test(key));
 const attendanceTotals = (row) => {
-  const nestedRecords = list(val(row, "attendanceRecords", "AttendanceRecords", "dailyAttendance", "DailyAttendance", "records", "Records"));
+  const nestedRecords = dailyAttendanceRecords(row);
   const records = nestedRecords.length ? nestedRecords : [row];
   return records.reduce((totals, record) => {
     if (val(record, "isAttendanceMarked", "IsAttendanceMarked") === false) return totals;
-    const rawStatus = val(record, "status", "Status", "attendanceStatus", "AttendanceStatus");
+    const rawStatus = val(
+      record,
+      "status", "Status",
+      "attendanceStatus", "AttendanceStatus",
+      "statusId", "StatusId",
+      "attendanceStatusId", "AttendanceStatusId",
+      "statusCode", "StatusCode",
+      "statusName", "StatusName",
+    );
     if (rawStatus === undefined || rawStatus === null || rawStatus === "") return totals;
     const attendanceStatus = status(rawStatus);
     if (attendanceStatus === "Present") totals.present += 1;
     if (attendanceStatus === "Absent") totals.absent += 1;
+    if (attendanceStatus === "Late") totals.late += 1;
+    if (attendanceStatus === "Leave") totals.leave += 1;
     return totals;
-  }, { present: 0, absent: 0 });
+  }, { present: 0, absent: 0, late: 0, leave: 0 });
+};
+const attendanceRecordForDay = (row, year, month, day, selectedDay) => {
+  const nestedRecords = dailyAttendanceRecords(row);
+  if (nestedRecords.length) {
+    return nestedRecords.find((record) => {
+      const recordDate = val(
+        record,
+        "date", "Date",
+        "attendanceDate", "AttendanceDate",
+        "day", "Day",
+        "dayNumber", "DayNumber",
+        "attendanceDay", "AttendanceDay",
+      );
+      if (!recordDate) return false;
+      if (/^\d{1,2}$/.test(String(recordDate))) return Number(recordDate) === day;
+      const parsed = new Date(String(recordDate).includes("T") ? recordDate : `${recordDate}T00:00:00`);
+      return parsed.getFullYear() === year && parsed.getMonth() === month && parsed.getDate() === day;
+    });
+  }
+  const directStatus = val(
+    row,
+    `day${day}`, `Day${day}`,
+    `day${day}Status`, `Day${day}Status`,
+    `status${day}`, `Status${day}`,
+  );
+  if (directStatus !== undefined && directStatus !== null && directStatus !== "")
+    return { status: directStatus, isAttendanceMarked: true };
+  return day === selectedDay ? row : null;
 };
 const staff = (x) => ({
   id: val(x, "facultyId", "FacultyId", "staffId", "StaffId", "id", "Id"),
@@ -134,6 +256,52 @@ const saveDownload = (data, filename) => {
   link.remove();
   URL.revokeObjectURL(url);
 };
+
+function AttendanceExportMenu({ disabled, exporting, onExport }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    const closeWhenOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", closeWhenOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeWhenOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+  const choose = (format) => () => {
+    setOpen(false);
+    onExport(format);
+  };
+  return (
+    <div ref={menuRef} className={`att-export-menu${open ? " is-open" : ""}${exporting ? " is-busy" : ""}`}>
+      <button
+        type="button"
+        className="cms-btn cms-btn-ghost"
+        aria-label="Export attendance"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled || Boolean(exporting)}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Download size={15} aria-hidden="true" /> {exporting ? "Exporting..." : "Export"} <ChevronDown size={14} aria-hidden="true" />
+      </button>
+      {open ? <div className="att-export-options" role="menu">
+        <button type="button" disabled={disabled || Boolean(exporting)} onClick={choose("excel")}>
+          <FileSpreadsheet size={16} aria-hidden="true" /> Export Excel
+        </button>
+        <button type="button" disabled={disabled || Boolean(exporting)} onClick={choose("csv")}>
+          <FileText size={16} aria-hidden="true" /> Export CSV
+        </button>
+      </div> : null}
+    </div>
+  );
+}
 
 export default function AttendancePage() {
   const { pathname } = useLocation(),
@@ -220,7 +388,8 @@ function StudentMark({ say }) {
     [yearLoading, setYearLoading] = useState(false),
     [levelLoading, setLevelLoading] = useState(false),
     [loading, setLoading] = useState(false),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [exporting, setExporting] = useState("");
   const periodOptions = useMemo(() => {
     const subjectSlots = m.sectionTimetable.filter(
       (slot) => !f.subjectId || String(val(slot, "subjectId", "SubjectId")) === String(f.subjectId),
@@ -594,12 +763,14 @@ function StudentMark({ say }) {
         ...(f.subjectId ? { subjectId: +f.subjectId } : {}),
         ...(f.periodId ? { periodId: +f.periodId } : {}),
       } });
+      const displayRows = list(r.data);
       setRows(
-        list(r.data)
+        displayRows
           .map(student)
           .filter((x, index, students) => x.id && students.findIndex((item) => String(item.id) === String(x.id)) === index),
       );
     } catch (e) {
+      setRows([]);
       say(getApiErrorMessage(e));
     } finally {
       setLoading(false);
@@ -633,6 +804,35 @@ function StudentMark({ say }) {
   };
   const teacherName = (id, name) =>
     name || m.teachers.find((teacher) => teacher.id === id)?.name || "Not assigned";
+  const exportAttendance = async (format) => {
+    if (exporting || !f.academicYearId) return;
+    setExporting(format);
+    try {
+      const selectedDate = new Date(`${f.date}T00:00:00`);
+      const response = await apiClient.get(
+        format === "csv" ? apiEndpoints.attendance.studentMonthlyExportCsv : apiEndpoints.attendance.studentMonthlyExport,
+        {
+          params: {
+            Date: f.date,
+            Month: selectedDate.getMonth() + 1,
+            Year: selectedDate.getFullYear(),
+            BoardId: f.boardId ? Number(f.boardId) : undefined,
+            AcademicYearId: Number(f.academicYearId),
+            AcademicLevelId: f.academicLevelId ? Number(f.academicLevelId) : undefined,
+            GroupId: f.groupId ? Number(f.groupId) : undefined,
+            SectionId: f.sectionId ? Number(f.sectionId) : undefined,
+            SubjectId: f.subjectId ? Number(f.subjectId) : undefined,
+            PeriodId: f.periodId ? Number(f.periodId) : undefined,
+          },
+          responseType: "blob",
+        },
+      );
+      const academicYear = m.years.find((item) => String(item.id) === String(f.academicYearId))?.name || f.date.slice(0, 7);
+      saveDownload(response.data, `Student_Attendance_${filePart(academicYear, "Academic_Year")}.${format === "csv" ? "csv" : "xlsx"}`);
+      say(`Student attendance ${format === "csv" ? "CSV" : "Excel"} downloaded.`);
+    } catch (error) { say(getApiErrorMessage(error)); }
+    finally { setExporting(""); }
+  };
   return (
     <>
       <section className="att-card att-filter-card">
@@ -684,9 +884,12 @@ function StudentMark({ say }) {
             </Field>
           </div>
         </div>
-        <button className="cms-btn cms-btn-ghost" disabled={loading} onClick={load}>
-          {loading ? "Loading..." : "Load Records"}
-        </button>
+        <div className="att-detail-actions">
+          <button className="cms-btn cms-btn-ghost" disabled={loading} onClick={load}>
+            {loading ? "Loading..." : "Load Records"}
+          </button>
+          <AttendanceExportMenu disabled={loading || !f.academicYearId} exporting={exporting} onExport={exportAttendance} />
+        </div>
       </section>
       <Table rows={rows} setRows={setRows} loading={loading} saving={saving} save={save} />
     </>
@@ -705,7 +908,8 @@ function StaffMark({ say }) {
     [rows, setRows] = useState([]),
     [yearLoading, setYearLoading] = useState(false),
     [loading, setLoading] = useState(false),
-    [saving, setSaving] = useState(false);
+    [saving, setSaving] = useState(false),
+    [exporting, setExporting] = useState("");
   useEffect(() => {
     Promise.allSettled([
       apiClient.get(apiEndpoints.boards.list),
@@ -767,12 +971,14 @@ function StaffMark({ say }) {
         staffType: type,
         departmentId: dept ? +dept : null,
       });
+      const displayRows = list(r.data);
       setRows(
-        list(r.data)
+        displayRows
           .map(staff)
           .filter((x) => x.id),
       );
     } catch (e) {
+      setRows([]);
       say(getApiErrorMessage(e));
     } finally {
       setLoading(false);
@@ -795,6 +1001,32 @@ function StaffMark({ say }) {
     } finally {
       setSaving(false);
     }
+  };
+  const exportAttendance = async (format) => {
+    if (exporting || !board || !year) return;
+    setExporting(format);
+    try {
+      const selectedDate = new Date(`${date}T00:00:00`);
+      const response = await apiClient.get(
+        format === "csv" ? apiEndpoints.staffAttendance.monthlyExportCsv : apiEndpoints.staffAttendance.monthlyExport,
+        {
+          params: {
+            Month: selectedDate.getMonth() + 1,
+            Year: selectedDate.getFullYear(),
+            AcademicYearId: Number(year),
+            BoardId: Number(board),
+            DepartmentId: dept ? Number(dept) : 0,
+            StaffType: type,
+            FacultyId: 0,
+          },
+          responseType: "blob",
+        },
+      );
+      const academicYear = years.find((item) => String(item.id) === String(year))?.name || date.slice(0, 7);
+      saveDownload(response.data, `Faculty_Attendance_${filePart(academicYear, "Academic_Year")}.${format === "csv" ? "csv" : "xlsx"}`);
+      say(`Faculty attendance ${format === "csv" ? "CSV" : "Excel"} downloaded.`);
+    } catch (error) { say(getApiErrorMessage(error)); }
+    finally { setExporting(""); }
   };
   return (
     <>
@@ -840,6 +1072,7 @@ function StaffMark({ say }) {
           <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
             {loading ? "Loading..." : "Load Staff"}
           </button>
+          <AttendanceExportMenu disabled={loading || !board || !year} exporting={exporting} onExport={exportAttendance} />
         </div>
       </section>
       <Table
@@ -996,7 +1229,7 @@ function StaffReports({ say }) {
   const [rows, setRows] = useState([]);
   const [yearLoading, setYearLoading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState("");
   useEffect(() => {
     Promise.allSettled([
       apiClient.get(apiEndpoints.boards.list),
@@ -1047,41 +1280,70 @@ function StaffReports({ say }) {
     };
   }, [board]);
   const load = async () => {
+    if (loading) return;
+    if (!board || !year) return say("Select Board and Academic Year to load the staff monthly report.");
     setLoading(true);
     try {
+      const selectedDate = new Date(`${date}T00:00:00`);
       const response = await apiClient.post(apiEndpoints.staffAttendance.monthlyReport, {
-        date,
+        month: selectedDate.getMonth() + 1,
+        year: selectedDate.getFullYear(),
+        academicYearId: Number(year),
+        boardId: Number(board),
+        departmentId: departmentId ? Number(departmentId) : 0,
         staffType,
-        departmentId: departmentId ? Number(departmentId) : null,
+        facultyId: 0,
       });
-      setRows(list(response.data));
+      const reportData = val(response.data, "data", "Data") ?? response.data;
+      const selectedDepartmentName = departments.find(
+        (department) => String(department.id) === String(departmentId),
+      )?.name;
+      const reportRows = reportList(reportData).map((row) => ({
+        ...row,
+        departmentName: departmentId
+          ? selectedDepartmentName
+            ?? val(reportData, "departmentName", "DepartmentName")
+            ?? val(row, "departmentName", "DepartmentName")
+          : val(row, "departmentName", "DepartmentName")
+            ?? val(reportData, "departmentName", "DepartmentName"),
+        staffTypeName: val(row, "staffTypeName", "StaffTypeName")
+          ?? val(reportData, "staffTypeName", "StaffTypeName"),
+        totalWorkingDays: val(row, "totalWorkingDays", "TotalWorkingDays")
+          ?? val(reportData, "totalWorkingDays", "TotalWorkingDays"),
+      }));
+      setRows(reportRows);
+      if (!reportRows.length) say("No staff attendance records found for the selected month and filters.");
+      else if (!reportRows.some(hasDateWiseAttendance))
+        say("Monthly totals loaded. The API response does not include date-wise staff attendance records.");
     } catch (error) {
+      setRows([]);
       say(getApiErrorMessage(error));
     } finally {
       setLoading(false);
     }
   };
-  const exportAttendance = async () => {
+  const exportAttendance = async (format) => {
     if (exporting) return;
-    setExporting(true);
+    setExporting(format);
     try {
       const selectedDate = new Date(`${date}T00:00:00`);
-      const response = await apiClient.get(apiEndpoints.staffAttendance.monthlyExport, {
+      const response = await apiClient.get(format === "csv" ? apiEndpoints.staffAttendance.monthlyExportCsv : apiEndpoints.staffAttendance.monthlyExport, {
         params: {
-          Date: date,
           Month: selectedDate.getMonth() + 1,
           Year: selectedDate.getFullYear(),
-          AcademicYearId: year ? Number(year) : undefined,
-          DepartmentId: departmentId ? Number(departmentId) : undefined,
+          AcademicYearId: Number(year),
+          BoardId: Number(board),
+          DepartmentId: departmentId ? Number(departmentId) : 0,
           StaffType: staffType,
+          FacultyId: 0,
         },
         responseType: "blob",
       });
       const academicYear = years.find((item) => String(item.id) === String(year))?.name || date.slice(0, 7);
-      saveDownload(response.data, `Faculty_Attendance_${filePart(academicYear, "Academic_Year")}.xlsx`);
-      say("Faculty attendance Excel downloaded.");
+      saveDownload(response.data, `Faculty_Attendance_${filePart(academicYear, "Academic_Year")}.${format === "csv" ? "csv" : "xlsx"}`);
+      say(`Faculty attendance ${format === "csv" ? "CSV" : "Excel"} downloaded.`);
     } catch (error) { say(getApiErrorMessage(error)); }
-    finally { setExporting(false); }
+    finally { setExporting(""); }
   };
   const totals = rows.reduce(
     (summary, row) => ({
@@ -1095,6 +1357,11 @@ function StaffReports({ say }) {
     }),
     { total: 0, present: 0, absent: 0, leave: 0, percentage: 0 },
   );
+  const facultyReportDate = new Date(`${date}T00:00:00`);
+  const facultyReportYear = facultyReportDate.getFullYear();
+  const facultyReportMonth = facultyReportDate.getMonth();
+  const facultyReportDays = Array.from({ length: new Date(facultyReportYear, facultyReportMonth + 1, 0).getDate() }, (_, index) => index + 1);
+  const facultyReportMonthLabel = facultyReportDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const reportRows = rows.map((row) => ({
     id: val(row, "facultyId", "staffId", "id", "Id"),
     code: val(row, "employeeId", "staffCode", "facultyCode", "EmployeeId") ?? "—",
@@ -1114,7 +1381,11 @@ function StaffReports({ say }) {
             <input
               type="month"
               value={date.slice(0, 7)}
-              onChange={(e) => setDate(`${e.target.value}-01`)}
+              onChange={(e) => {
+                const nextDate = `${e.target.value}-01`;
+                setDate(nextDate);
+                setRows([]);
+              }}
             />
           </Field>
           <Select
@@ -1161,53 +1432,74 @@ function StaffReports({ say }) {
           <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
             {loading ? "Loading..." : "Apply"}
           </button>
-          <button className="cms-btn cms-btn-ghost" disabled={loading || exporting || !year} onClick={exportAttendance}>
-            <Download size={15} aria-hidden="true" /> {exporting ? "Exporting..." : "Export Faculty Attendance"}
-          </button>
+          <AttendanceExportMenu disabled={loading || !board || !year} exporting={exporting} onExport={exportAttendance} />
         </div>
       </section>
       <section className="att-card att-table-card">
         <div className="att-table-top">
-          <b>Attendance Report</b>
+          <div>
+            <b>Monthly Faculty Attendance</b>
+            <span className="att-days-label">{facultyReportMonthLabel} · {facultyReportDays.length} days</span>
+            <div className="att-legend">P Present · A Absent · L Late · LV Leave</div>
+          </div>
         </div>
         <div className="att-scroll">
-          <table className="cms-table att-table">
+          <table className="cms-table att-table att-month-table att-staff-month-table">
             <thead>
               <tr>
                 <th>Staff ID</th>
                 <th>Staff Name</th>
                 <th>Department</th>
-                <th>Total Working Days</th>
-                <th>Present</th>
-                <th>Absent</th>
-                <th>Leave</th>
-                <th>Attendance %</th>
+                {facultyReportDays.map((day) => <th className="att-day-header" key={day}><span>{day}</span><small>{new Date(facultyReportYear, facultyReportMonth, day).toLocaleDateString("en-US", { weekday: "short" }).slice(0, 3)}</small></th>)}
+                <th className="att-month-summary">Present Days</th>
+                <th className="att-month-summary">Absent Days</th>
+                <th className="att-month-summary">Late Days</th>
+                <th className="att-month-summary">Leave Days</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="8">Loading report...</td>
+                  <td colSpan={facultyReportDays.length + 7}>Loading report...</td>
                 </tr>
-              ) : reportRows.length ? (
-                reportRows.map((row, index) => (
-                  <tr key={row.id ?? index}>
-                    <td>{row.code}</td>
-                    <td>{row.name}</td>
-                    <td>{row.department}</td>
-                    <td>{row.workingDays}</td>
-                    <td>{row.present}</td>
-                    <td>{row.absent}</td>
-                    <td>{row.leave}</td>
-                    <td>
-                      {row.percentage}
-                      {String(row.percentage).includes("%") ? "" : "%"}
-                    </td>
-                  </tr>
-                ))
+              ) : rows.length ? (
+                rows.map((row, index) => {
+                  const calculatedTotals = attendanceTotals(row);
+                  const hasDailyRecords = dailyAttendanceRecords(row).length > 0;
+                  const presentDays = hasDailyRecords ? calculatedTotals.present : val(row, "present", "presentCount", "Present") ?? calculatedTotals.present;
+                  const absentDays = hasDailyRecords ? calculatedTotals.absent : val(row, "absent", "absentCount", "Absent") ?? calculatedTotals.absent;
+                  const lateDays = hasDailyRecords ? calculatedTotals.late : val(row, "late", "lateCount", "Late") ?? calculatedTotals.late;
+                  const leaveDays = hasDailyRecords ? calculatedTotals.leave : val(row, "leave", "leaveCount", "Leave") ?? calculatedTotals.leave;
+                  return <tr key={val(row, "facultyId", "staffId", "id", "Id") ?? index}>
+                    <td>{val(row, "employeeId", "staffCode", "facultyCode", "EmployeeId") || "—"}</td>
+                    <td>{val(row, "facultyName", "staffName", "name", "Name") || "—"}</td>
+                    <td>{val(row, "departmentName", "department", "Department") || "—"}</td>
+                    {facultyReportDays.map((day) => {
+                      const attendanceRecord = attendanceRecordForDay(row, facultyReportYear, facultyReportMonth, day, facultyReportDate.getDate());
+                      const rawStatus = attendanceRecord && val(
+                        attendanceRecord,
+                        "status", "Status",
+                        "attendanceStatus", "AttendanceStatus",
+                        "statusId", "StatusId",
+                        "attendanceStatusId", "AttendanceStatusId",
+                        "statusCode", "StatusCode",
+                        "statusName", "StatusName",
+                      );
+                      if (rawStatus === undefined || rawStatus === null || rawStatus === "" || val(attendanceRecord, "isAttendanceMarked", "IsAttendanceMarked") === false)
+                        return <td key={day}><span className="att-status-dash">—</span></td>;
+                      const attendanceStatus = status(rawStatus);
+                      const statusCode = STATUS.find(([name]) => name === attendanceStatus)?.[2] ?? "—";
+                      return <td key={day}><span className={`att-status-pill att-${attendanceStatus.toLowerCase()}`}>{statusCode}</span></td>;
+                    })}
+                    <td className="att-month-summary"><b>{presentDays}</b></td>
+                    <td className="att-month-summary"><b>{absentDays}</b></td>
+                    <td className="att-month-summary"><b>{lateDays}</b></td>
+                    <td className="att-month-summary"><b>{leaveDays}</b></td>
+                  </tr>;
+                })
               ) : (
                 <tr>
-                  <td colSpan="8">Apply filters to load the report.</td>
+                  <td colSpan={facultyReportDays.length + 7}>No staff attendance records loaded. Apply filters to view the monthly report.</td>
                 </tr>
               )}
             </tbody>
@@ -1246,7 +1538,7 @@ function Reports({ staffMode, say }) {
     [yearLoading, setYearLoading] = useState(false),
     [levelLoading, setLevelLoading] = useState(false),
     [loading, setLoading] = useState(false),
-    [exporting, setExporting] = useState(false);
+    [exporting, setExporting] = useState("");
   const change = (k) => (e) =>
     setF((x) => {
       const value = e.target.value;
@@ -1402,8 +1694,6 @@ function Reports({ staffMode, say }) {
     if (!staffMode) {
       if ([f.date, f.board, f.level, f.group, f.program, f.section].some((value) => !value))
         return say("Select Board, Academic Level, Group, Program, and Section.");
-      if (Boolean(f.subject) !== Boolean(f.period))
-        return say("Select both Subject and Period, or leave both as All.");
     }
     setLoading(true);
     try {
@@ -1414,36 +1704,35 @@ function Reports({ staffMode, say }) {
         );
         setRows(list(response.data));
       } else {
-        const response = await apiClient.get(apiEndpoints.attendance.students, {
-          params: {
-            date: f.date,
-            boardId: +f.board,
-            academicLevelId: +f.level,
-            groupId: +f.group,
-            sectionId: +f.section,
-            ...(f.subject ? { subjectId: +f.subject } : {}),
-            ...(f.period ? { periodId: +f.period } : {}),
-          },
+        const response = await apiClient.post(apiEndpoints.attendance.studentMonthlyReport, {
+          date: f.date,
+          groupId: Number(f.group),
+          sectionId: Number(f.section),
         });
+        const displayRows = reportList(response.data);
         setRows(
-          list(response.data).filter((row, index, records) => {
+          displayRows.filter((row, index, records) => {
             const studentId = val(row, "studentId", "StudentId", "id", "Id");
             return records.findIndex((item) => String(val(item, "studentId", "StudentId", "id", "Id")) === String(studentId)) === index;
           }),
         );
+        if (!displayRows.length) say("No student attendance records found for the selected month and filters.");
+        else if (!displayRows.some(hasDateWiseAttendance))
+          say("Monthly totals loaded. The API response does not include date-wise student attendance records.");
       }
     } catch (e) {
+      setRows([]);
       say(getApiErrorMessage(e));
     } finally {
       setLoading(false);
     }
   };
-  const exportAttendance = async () => {
+  const exportAttendance = async (format) => {
     if (exporting) return;
-    setExporting(true);
+    setExporting(format);
     try {
       const selectedDate = new Date(`${f.date}T00:00:00`);
-      const response = await apiClient.get(apiEndpoints.attendance.studentMonthlyExport, {
+      const response = await apiClient.get(format === "csv" ? apiEndpoints.attendance.studentMonthlyExportCsv : apiEndpoints.attendance.studentMonthlyExport, {
         params: {
           Date: f.date,
           Month: selectedDate.getMonth() + 1,
@@ -1459,10 +1748,10 @@ function Reports({ staffMode, say }) {
         responseType: "blob",
       });
       const academicYear = m.years.find((item) => String(item.id) === String(f.year))?.name || f.date.slice(0, 7);
-      saveDownload(response.data, `Student_Attendance_${filePart(academicYear, "Academic_Year")}.xlsx`);
-      say("Student attendance Excel downloaded.");
+      saveDownload(response.data, `Student_Attendance_${filePart(academicYear, "Academic_Year")}.${format === "csv" ? "csv" : "xlsx"}`);
+      say(`Student attendance ${format === "csv" ? "CSV" : "Excel"} downloaded.`);
     } catch (error) { say(getApiErrorMessage(error)); }
-    finally { setExporting(false); }
+    finally { setExporting(""); }
   };
   const reportDate = new Date(`${f.date}T00:00:00`);
   const reportYear = reportDate.getFullYear();
@@ -1501,20 +1790,6 @@ function Reports({ staffMode, say }) {
                 empty="All sections"
                 disabled={!f.program}
               />
-              <Select
-                l="Subject"
-                v={f.subject}
-                on={change("subject")}
-                o={m.subjects}
-                empty="All subjects"
-              />
-              <Select
-                l="Period"
-                v={f.period}
-                on={change("period")}
-                o={m.periods}
-                empty="All periods"
-              />
             </>
           )}
         </div>
@@ -1522,9 +1797,7 @@ function Reports({ staffMode, say }) {
           <button className="cms-btn cms-btn-primary" disabled={loading} onClick={load}>
             {loading ? "Loading..." : "Apply Filters"}
           </button>
-          <button className="cms-btn cms-btn-ghost" disabled={loading || exporting || !f.year} onClick={exportAttendance}>
-            <Download size={15} aria-hidden="true" /> {exporting ? "Exporting..." : "Export Student Attendance"}
-          </button>
+          <AttendanceExportMenu disabled={loading || !f.year} exporting={exporting} onExport={exportAttendance} />
         </div>
       </section>
       <section className="att-card att-table-card">
@@ -1561,9 +1834,18 @@ function Reports({ staffMode, say }) {
                     <td>{val(row, "groupName", "GroupName") || selectedGroupName}</td>
                     <td>{val(row, "sectionName", "SectionName") || selectedSectionName}</td>
                     {reportDays.map((day) => {
-                      if (day !== selectedReportDay || val(row, "isAttendanceMarked", "IsAttendanceMarked") === false)
+                      const attendanceRecord = attendanceRecordForDay(row, reportYear, reportMonth, day, selectedReportDay);
+                      if (!attendanceRecord || val(attendanceRecord, "isAttendanceMarked", "IsAttendanceMarked") === false)
                         return <td key={day}><span className="att-status-dash">—</span></td>;
-                      const attendanceStatus = status(val(row, "status", "Status", "attendanceStatus"));
+                      const attendanceStatus = status(val(
+                        attendanceRecord,
+                        "status", "Status",
+                        "attendanceStatus", "AttendanceStatus",
+                        "statusId", "StatusId",
+                        "attendanceStatusId", "AttendanceStatusId",
+                        "statusCode", "StatusCode",
+                        "statusName", "StatusName",
+                      ));
                       const statusCode = STATUS.find(([name]) => name === attendanceStatus)?.[2] ?? "—";
                       return <td key={day}><span className={`att-status-pill att-${attendanceStatus.toLowerCase()}`}>{statusCode}</span></td>;
                     })}

@@ -449,7 +449,7 @@ const steps = [
   {
     title: "Address",
     fields: [
-      { name: "pincode", label: "Pincode", required: true, full: true },
+      { name: "pincode", label: "Pincode", required: true },
       { name: "city", label: "City", required: true },
       { name: "district", label: "District", required: true },
       { name: "state", label: "State", type: "select", options: ["Andhra Pradesh", "Telangana", "Karnataka", "Maharashtra", "Delhi"], required: true },
@@ -460,7 +460,7 @@ const steps = [
     title: "Previous School",
     fields: [
       { name: "prevSchool", label: "Previous School Name", required: true },
-      { name: "prevBoard", label: "Previous Board", type: "select", options: [] },
+      { name: "prevBoard", label: "Previous Board", placeholder: "Enter Previous Board" },
       { name: "passYear", label: "Year of Passing", type: "number" },
       { name: "prevMarks", label: "Marks / GPA Obtained" },
       { name: "hallTicket", label: "Hall Ticket Number" },
@@ -561,6 +561,7 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "AcademicLevel", values.levelName || values.level);
   appendIfPresent(formData, "GroupId", values.group);
   appendIfPresent(formData, "ProgramId", values.program);
+  appendIfPresent(formData, "FeeStructureId", numericId(values.feeStructureId));
   appendIfPresent(formData, "Medium", values.medium);
   appendIfPresent(formData, "SecondLanguage", values.secondLanguage);
   appendIfPresent(formData, "AdmissionType", values.admissionType);
@@ -783,6 +784,12 @@ const numericId = (value) => {
 
 const admissionKeyFor = (record) => String(record?.admissionId || record?.id || "");
 
+const findAdmissionByNumber = (rows = [], admissionNo = "") => {
+  const target = String(admissionNo || "").trim().toLowerCase();
+  if (!target) return null;
+  return rows.find((row) => String(row.admissionNo || "").trim().toLowerCase() === target) || null;
+};
+
 const readStudentFeeAssignmentId = (payload) => {
   const data = getObject(payload);
   const rows = getCollection(payload);
@@ -975,7 +982,10 @@ const deriveAdmissionFee = (values) => {
 const feeStepErrors = (values) => {
   const next = {};
   const fee = deriveAdmissionFee(values);
-  if (!values.feeStructureId || !fee.feeItems.length) return next;
+  if (!numericId(values.feeStructureId) || !fee.feeItems.length) {
+    next.feeStructure = "No fee structure is configured for the selected Academic Year, Group and Program.";
+    return next;
+  }
   if (!fee.admissionFee) next.feeStructure = "Admission Fee is not configured in the selected fee structure";
   if (!fee.courseFeeOriginal) next.feeStructure = "Course Fee is not configured in the selected fee structure";
   if (fee.feeItems.some((item) => item.required && !item.selected)) next.feeItems = "Mandatory fees cannot be removed";
@@ -1007,6 +1017,7 @@ const formatPreviewValue = (field, value) => {
   if (value === undefined || value === null || String(value).trim() === "") return "-";
   if (field.type === "file") return value?.name || "Uploaded";
   if (field.type === "checkbox") return value ? "Yes" : "No";
+  if (field.type === "select") return optionLabel(field.options || [], value) || String(value);
   if (AMOUNT_FIELDS.has(field.name)) return formatAmount(value);
   return String(value);
 };
@@ -1472,7 +1483,7 @@ export default function AdmissionPage() {
   const [admissions, setAdmissions] = useState([]);
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ year: "" });
+  const [filters, setFilters] = useState({ year: "", group: "" });
   const [exportOpen, setExportOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [approveTarget, setApproveTarget] = useState(null);
@@ -1489,6 +1500,8 @@ export default function AdmissionPage() {
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [feeSelection, setFeeSelection] = useState(initialDraft.feeSelection);
   const fileInputRefs = useRef({});
+  const committedAdmissionRef = useRef(null);
+  const submitInFlightRef = useRef(false);
   const stepNavRef = useRef(null);
   const stepButtonRefs = useRef({});
   const persistTimerRef = useRef(null);
@@ -1499,6 +1512,7 @@ export default function AdmissionPage() {
   const programRequestRef = useRef(0);
   const boardMappingRequestRef = useRef(0);
   const approveInFlightRef = useRef(new Set());
+  const approveStatusCheckRef = useRef(new Set());
   const verifiedInFlightRef = useRef(new Set());
   const admissionsRequestRef = useRef(0);
   const autoLocationRef = useRef({ city: "", district: "", state: "" });
@@ -1535,6 +1549,7 @@ export default function AdmissionPage() {
     ));
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
   const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
+  const groupFilterOptions = useMemo(() => masterOptions.groups || [], [masterOptions.groups]);
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
     (masterOptions.years || []).filter((item) => (
       !values.board || !item.boardId || String(item.boardId) === String(values.board)
@@ -1562,7 +1577,6 @@ export default function AdmissionPage() {
     }
     if (field.name === "dob") return { ...field, max: yesterdayISO() };
     if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
-    if (field.name === "prevBoard" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
     if (field.name === "year" && masterOptions.years?.length) return { ...field, options: academicYearOptions };
     if (field.name === "level") {
       if (!values.board) return { ...field, options: [], selectPlaceholder: "Select Board first", disabled: true };
@@ -1606,9 +1620,12 @@ export default function AdmissionPage() {
         || String(row.studentName || "").toLowerCase().includes(term)
         || String(row.admissionNo || "").toLowerCase().includes(term);
       const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
-      return matchesSearch && matchesYear;
+      const matchesGroup = !filters.group
+        || String(row.values?.group || "") === String(filters.group)
+        || String(row.group || "").trim().toLowerCase() === String(optionLabel(groupFilterOptions, filters.group) || filters.group).trim().toLowerCase();
+      return matchesSearch && matchesYear && matchesGroup;
     });
-  }, [admissions, filters.year, search]);
+  }, [admissions, filters.group, filters.year, groupFilterOptions, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -1665,6 +1682,65 @@ export default function AdmissionPage() {
     });
     document.save(`${safeExportFileName("Student Admissions")}-${exportedAt.toISOString().slice(0, 10)}.pdf`);
     setExportOpen(false);
+  };
+
+  const downloadAdmissionPreview = async () => {
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const admissionNo = values.admissionNo || "admission";
+    const document = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    document.setFontSize(16);
+    document.text("Student Admission Form", 36, 38);
+    document.setFontSize(10);
+    document.setTextColor(88, 97, 84);
+    document.text(`Admission No: ${admissionNo}`, 36, 56);
+    let startY = 76;
+
+    previewSections.forEach((section) => {
+      if (section.custom === "fee") {
+        const feeRows = [
+          ["Admission Fee", formatCurrency(fee.admissionFee)],
+          ["Course Fee", formatCurrency(fee.courseFee)],
+          ["Total Payable", formatCurrency(fee.totalPayable)],
+          ["Paid Today", formatCurrency(fee.paidToday)],
+          ["Remaining", formatCurrency(fee.remaining)],
+          ["Payment Plan", paymentPlanLabel(fee.paymentPlan) || "-"],
+        ];
+        autoTable(document, {
+          startY,
+          head: [[section.title, ""]],
+          body: feeRows,
+          styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", textColor: [28, 36, 22] },
+          headStyles: { fillColor: [111, 132, 0], textColor: [255, 255, 255] },
+          margin: { left: 36, right: 36 },
+        });
+        startY = document.lastAutoTable.finalY + 14;
+        return;
+      }
+
+      const body = (section.previewFields ?? section.fields).map((field) => [
+        field.label,
+        cleanExportValue(formatPreviewValue(field, values[field.name])),
+      ]);
+      autoTable(document, {
+        startY,
+        head: [[section.title, "Details"]],
+        body,
+        styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", textColor: [28, 36, 22] },
+        headStyles: { fillColor: [111, 132, 0], textColor: [255, 255, 255] },
+        columnStyles: { 0: { cellWidth: 150, fontStyle: "bold" } },
+        margin: { left: 36, right: 36 },
+      });
+      startY = document.lastAutoTable.finalY + 14;
+      if (startY > 720) {
+        document.addPage();
+        startY = 40;
+      }
+    });
+
+    document.save(`${safeExportFileName(`Admission ${admissionNo}`)}.pdf`);
   };
 
   const refreshAdmissions = async () => {
@@ -2088,7 +2164,7 @@ export default function AdmissionPage() {
               paymentPlan: "",
               collectFirstInstallment: false,
             }));
-            setFeeStructureError("No active fee structure is configured for the selected academic combination. Configure it in Fee Management -> Fee Setup -> Fee Structure.");
+            setFeeStructureError("No fee structure is configured for the selected Academic Year, Group and Program.");
           }
           return;
         }
@@ -2472,6 +2548,7 @@ export default function AdmissionPage() {
   const resetAdmissionDraftState = () => {
     suppressPersistRef.current = true;
     clearAdmissionDraft();
+    committedAdmissionRef.current = null;
     setValues({});
     setFeeSelection([]);
     feeSelectionInitializedRef.current = false;
@@ -2503,6 +2580,9 @@ export default function AdmissionPage() {
     suppressPersistRef.current = false;
     setAdmissionNumberError("");
     setEditingAdmissionId(admissionId ? String(admissionId) : "");
+    committedAdmissionRef.current = admissionId
+      ? { admissionId: String(admissionId), admissionNo: formValues.admissionNo || "" }
+      : null;
     setValues(formValues);
     setFeeSelection(Array.isArray(selection) ? selection : []);
     feeSelectionInitializedRef.current = Array.isArray(selection);
@@ -2649,11 +2729,31 @@ export default function AdmissionPage() {
       setToast("Admission ID is required for this action.");
       return;
     }
+    if (normalizeAdmissionStatus(record.status) === "Approved") {
+      setToast(`Admission ${record.admissionNo} is already approved.`);
+      setApproveTarget(null);
+      return;
+    }
     if (status === "Approved" && approveInFlightRef.current.has(admissionKey)) return;
     if (status === "Approved") approveInFlightRef.current.add(admissionKey);
     setActionBusy(`${status}-${record.id}`);
     const endpoint = status === "Approved" ? apiEndpoints.admissions.approve : apiEndpoints.admissions.reject;
     try {
+      if (status === "Approved" && approveStatusCheckRef.current.has(admissionKey)) {
+        const latestResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
+        const latestRow = normalizeAdmissionRow(getObject(latestResponse.data));
+        if (latestRow.status === "Approved") {
+          setApproveTarget(null);
+          await refreshAdmissions();
+          setToast(`Admission ${latestRow.admissionNo || record.admissionNo} is already approved.`);
+          return;
+        }
+        if (latestRow.status !== "Verified") {
+          await refreshAdmissions();
+          setToast(`Admission ${latestRow.admissionNo || record.admissionNo} is ${latestRow.status}. Verify it before approving.`);
+          return;
+        }
+      }
       if (status === "Approved" && !isAdmissionVerified(record.raw, record)) {
         setToast("Verify the admission before approving.");
         return;
@@ -2670,12 +2770,14 @@ export default function AdmissionPage() {
           setToast(`Admission ${record.admissionNo} was approved, but fee account creation failed: ${getApiErrorMessage(feeErr)}`);
           return;
         }
+        approveStatusCheckRef.current.delete(admissionKey);
         setToast(`Admission ${record.admissionNo} approved and fee account is ready.`);
         return;
       }
       await refreshAdmissions();
       setToast(`Admission ${record.admissionNo} marked as ${status}.`);
     } catch (err) {
+      if (status === "Approved") approveStatusCheckRef.current.add(admissionKey);
       setToast(status === "Approved"
         ? `Admission approval failed: ${getApiErrorMessage(err)}`
         : getApiErrorMessage(err));
@@ -2712,7 +2814,11 @@ export default function AdmissionPage() {
   };
 
   const submit = async () => {
-    if (saving) return;
+    if (saving || submitInFlightRef.current) return;
+    if (feeStructureLoading) {
+      setToast("Loading applicable fee structure. Please wait.");
+      return;
+    }
     if (!validateAdmission()) {
       setToast("Please complete required admission details before submitting");
       return;
@@ -2724,26 +2830,69 @@ export default function AdmissionPage() {
       return;
     }
 
+    const committed = committedAdmissionRef.current;
+    const committedAdmissionId = committed
+      && String(committed.admissionNo || "").trim().toLowerCase() === String(values.admissionNo || "").trim().toLowerCase()
+      ? committed.admissionId
+      : "";
+    const submitAdmissionId = editingAdmissionId || committedAdmissionId;
+    const isUpdate = Boolean(submitAdmissionId);
+
+    submitInFlightRef.current = true;
     setSaving(true);
     try {
-      const endpoint = editingAdmissionId
-        ? apiEndpoints.admissions.update(editingAdmissionId)
+      const endpoint = isUpdate
+        ? apiEndpoints.admissions.update(submitAdmissionId)
         : apiEndpoints.admissions.create;
-      const method = editingAdmissionId ? "put" : "post";
-      await apiClient[method](endpoint, buildAdmissionFormData(values), {
+      const method = isUpdate ? "put" : "post";
+      const response = await apiClient[method](endpoint, buildAdmissionFormData(values), {
         headers: { "Content-Type": undefined },
       });
+      if (!isUpdate) {
+        const savedRow = normalizeAdmissionRow(getObject(response.data));
+        if (savedRow.admissionId) {
+          committedAdmissionRef.current = {
+            admissionId: savedRow.admissionId,
+            admissionNo: savedRow.admissionNo || values.admissionNo,
+          };
+        }
+      }
     } catch (err) {
-      setToast(getApiErrorMessage(err));
+      const message = getApiErrorMessage(err);
+      if (!isUpdate && values.admissionNo) {
+        const latestAdmissions = await refreshAdmissions();
+        const committedRow = findAdmissionByNumber(latestAdmissions, values.admissionNo);
+        if (committedRow?.admissionId) {
+          committedAdmissionRef.current = {
+            admissionId: committedRow.admissionId,
+            admissionNo: committedRow.admissionNo || values.admissionNo,
+          };
+          setEditingAdmissionId(committedRow.admissionId);
+          setValues((current) => ({
+            ...current,
+            admissionNo: committedRow.admissionNo || current.admissionNo,
+            status: committedRow.status || current.status,
+          }));
+          setViewMode("list");
+          setPage(1);
+          setToast(`Admission ${committedRow.admissionNo || values.admissionNo} was created successfully, but fee setup could not be completed: ${message}`);
+          submitInFlightRef.current = false;
+          setSaving(false);
+          return;
+        }
+      }
+      setToast(message);
+      submitInFlightRef.current = false;
       setSaving(false);
       return;
     }
 
-    setToast(`Admission ${values.admissionNo} ${editingAdmissionId ? "updated" : "submitted"} successfully.`);
+    setToast(`Admission ${values.admissionNo} ${isUpdate ? "updated" : "submitted"} successfully.`);
     resetAdmissionDraftState();
     setViewMode("list");
     setPage(1);
     await refreshAdmissions();
+    submitInFlightRef.current = false;
     setSaving(false);
   };
 
@@ -2774,6 +2923,7 @@ export default function AdmissionPage() {
             </div>
             <div className="cms-admission-filters">
               <Field field={{ name: "year", label: "Academic Year", type: "select", options: academicYearFilterOptions }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
             </div>
             <div
               className="cms-admission-export-control"
@@ -2999,7 +3149,7 @@ export default function AdmissionPage() {
               feeStructureError={feeStructureError}
             />
           ) : (
-            <div className={`cms-form-grid cols-3 ${current.title === "Address" ? "cms-admission-address-grid" : ""}`}>
+            <div className={`cms-form-grid ${current.title === "Address" ? "cms-admission-address-grid" : "cols-3"}`}>
               {currentFields.map((f) => (
                 <AdmissionField
                   key={f.name}
@@ -3019,6 +3169,11 @@ export default function AdmissionPage() {
           <button className="cms-btn cms-btn-ghost" onClick={backOrCancel}>
             {step === 0 ? "Back to Admissions" : isPreview ? "Back" : "Previous"}
           </button>
+          {isPreview ? (
+            <button type="button" className="cms-btn cms-btn-ghost" onClick={downloadAdmissionPreview}>
+              <Download size={14} /> Download
+            </button>
+          ) : null}
           {!isPreview ? (
             <button className="cms-btn cms-btn-primary" onClick={next} disabled={admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))}>
               {admissionNumberLoading ? "Generating Number..." : step === steps.length - 1 ? "Preview" : "Save & Continue"}
@@ -3030,7 +3185,7 @@ export default function AdmissionPage() {
               disabled={
                 canVerifyPreviewAdmission
                   ? actionBusy === `Verified-${editingAdmissionId}`
-                  : saving || admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))
+                  : saving || feeStructureLoading || admissionNumberLoading || (!editingAdmissionId && (!values.admissionNo || admissionNumberError))
               }
             >
               {canVerifyPreviewAdmission

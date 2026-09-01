@@ -25,7 +25,13 @@
 .results-rank-toolbar .cms-select { width:100%; }
 .results-rank-toolbar-spacer { flex:1 1 16px; }
 .results-rank-table-wrap { margin:0; }
+.results-rank-table-wrap .cms-table th,.results-rank-table-wrap .cms-table td { padding:7px 8px; }
+.results-rank-table-wrap .cms-table th:first-child,.results-rank-table-wrap .cms-table td:first-child { width:54px; }
+.results-rank-exam-name { display:-webkit-box; width:150px; min-width:130px; max-width:170px; overflow:hidden; color:var(--cms-text); line-height:1.3; overflow-wrap:anywhere; white-space:normal; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .results-rank-card > .results-pagination { margin:0; padding:12px 16px; border-top:1px solid var(--cms-border); }
+.results-analytics-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.results-analytics-heading .cms-card-title { margin-bottom:0; }
+.results-analytics-exam-name { max-width:min(420px,55%); color:var(--cms-muted); font-size:12px; font-weight:600; line-height:1.35; text-align:right; overflow-wrap:anywhere; }
 .results-table-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0; flex-wrap:wrap; }
 .results-table-search { width:min(300px,100%); }
 .results-table-search .cms-input { width:100%; }
@@ -123,6 +129,8 @@
   .results-rank-toolbar { align-items:stretch; flex-direction:column; padding:14px; }
   .results-rank-search,.results-rank-toolbar > .cms-field-group { flex:none; width:100%; min-width:0; max-width:none; }
   .results-rank-toolbar > .cms-btn { width:100%; }
+  .results-analytics-heading { align-items:flex-start; flex-direction:column; }
+  .results-analytics-exam-name { max-width:100%; text-align:left; }
   .results-toolbar { align-items:stretch; flex-direction:column; }
   .results-toolbar > div:first-child { margin-right:0; }
   .results-toolbar .cms-input,.results-toolbar .cms-btn { width:100%; }

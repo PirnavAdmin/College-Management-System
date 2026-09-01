@@ -1,15 +1,12 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
-import path from "node:path";
 import https from "node:https";
+import path from "node:path";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const apiBaseUrl = env.VITE_API_BASE_URL || "https://willfully-external-disinfect.ngrok-free.dev";
-  const apiProxyAgent = new https.Agent({
-    keepAlive: true,
-    rejectUnauthorized: false,
-  });
+  const apiBaseUrl = env.VITE_API_BASE_URL || "https://sterile-retorted-tightness.ngrok-free.dev";
+  const isHttpsApi = apiBaseUrl.startsWith("https://");
 
   return {
     plugins: [react()],
@@ -30,10 +27,10 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: apiBaseUrl,
           changeOrigin: true,
-          secure: false,
-          agent: apiProxyAgent,
-          timeout: 60000,
-          proxyTimeout: 60000,
+          secure: !isHttpsApi ? true : false,
+          agent: isHttpsApi ? new https.Agent({ keepAlive: false, rejectUnauthorized: false }) : undefined,
+          proxyTimeout: 30000,
+          timeout: 30000,
           headers: {
             "ngrok-skip-browser-warning": "true",
           },
@@ -42,3 +39,6 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+
+

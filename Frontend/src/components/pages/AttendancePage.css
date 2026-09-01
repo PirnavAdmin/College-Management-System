@@ -232,7 +232,65 @@
   max-width: 100%;
   white-space: nowrap;
 }
+.attendance-module .att-export-menu {
+  position: relative;
+  z-index: 31;
+  flex: 0 0 auto;
+}
+.attendance-module .att-filter-card,
+.attendance-module .att-report-card,
+.attendance-module .att-staff-details {
+  position: relative;
+  overflow: visible;
+  z-index: 2;
+}
+.attendance-module .att-filter-card:has(.att-export-menu.is-open),
+.attendance-module .att-report-card:has(.att-export-menu.is-open),
+.attendance-module .att-staff-details:has(.att-export-menu.is-open) {
+  z-index: 30;
+}
+.attendance-module .att-export-menu > .cms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.attendance-module .att-export-menu.is-busy > .cms-btn { cursor: not-allowed; opacity: .65; }
+.attendance-module .att-export-options {
+  position: absolute;
+  z-index: 32;
+  top: calc(100% + 5px);
+  right: 0;
+  display: grid;
+  width: 148px;
+  padding: 4px;
+  border: 1px solid var(--cms-border, #d9dfce);
+  border-radius: 8px;
+  background: var(--cms-surface, #fff);
+  box-shadow: 0 8px 20px rgb(15 23 42 / 14%);
+}
+.attendance-module .att-export-options > button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cms-text, #202719);
+  font: 650 12px/1.2 inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.attendance-module .att-export-options > button:hover:not(:disabled) {
+  background: var(--cms-primary-soft, #f1f5df);
+  color: var(--cms-primary, #718c00);
+}
+.attendance-module .att-export-options > button:disabled { cursor: not-allowed; opacity: .55; }
 .att-table-card {
+  position: relative;
+  z-index: 1;
   padding: 0;
   overflow: hidden;
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Download } from "lucide-react";
+import { ChevronDown, Copy, Download, Eye, FileSpreadsheet, FileText, Pencil, Power, Trash2, UserPlus } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -17,7 +17,7 @@ const EMPTY = {
 };
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5, 6];
-const WORKING_DAY_OPTIONS = DEFAULT_WORKING_DAYS.map((value) => ({
+const WORKING_DAY_OPTIONS = [0, ...DEFAULT_WORKING_DAYS].map((value) => ({
   value,
   shortLabel: DAYS[value].slice(0, 3),
 }));
@@ -39,7 +39,43 @@ const pick = (x, ...keys) =>
   keys
     .map((key) => x?.[key])
     .find((value) => value !== undefined && value !== null && value !== "");
+const timetableWorkflowStatus = (source) => {
+  const entries = Array.isArray(source) ? source : [source];
+  const statuses = entries.map((entry) => String(pick(entry, "status", "Status", "timetableStatus", "TimetableStatus") ?? "").toLowerCase());
+  if (entries.some((entry) => pick(entry, "isPublished", "IsPublished") === true) || statuses.some((status) => status === "published")) return "published";
+  if (entries.some((entry) => pick(entry, "isApproved", "IsApproved") === true) || statuses.some((status) => status === "approved")) return "approved";
+  if (entries.some((entry) => pick(entry, "isValidated", "IsValidated") === true) || statuses.some((status) => status === "validated")) return "validated";
+  return "draft";
+};
 const filePart = (value, fallback) => String(value || fallback).trim().replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || fallback;
+const responseFilename = (response, fallback) => {
+  const disposition = String(response?.headers?.["content-disposition"] || "");
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plain = disposition.match(/filename\s*=\s*"?([^";]+)"?/i)?.[1];
+  try { return decodeURIComponent(encoded || plain || "").trim() || fallback; }
+  catch { return (encoded || plain || "").trim() || fallback; }
+};
+const downloadResponseFile = (response, fallback) => {
+  const blob = response.data instanceof Blob ? response.data : new Blob([response.data]);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = responseFilename(response, fallback);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+const exportErrorMessage = async (error) => {
+  if (error?.response?.data instanceof Blob) {
+    try {
+      const text = await error.response.data.text();
+      const parsed = JSON.parse(text);
+      return parsed?.message || parsed?.detail || parsed?.title || text;
+    } catch { /* Fall through to the shared formatter. */ }
+  }
+  return getApiErrorMessage(error);
+};
 const optionize = (x, ids, labels) =>
   list(x)
     .map((raw) => ({
@@ -50,21 +86,29 @@ const optionize = (x, ids, labels) =>
     .filter((item) => item.id && item.name);
 const sameOptions = (left, right) =>
   left.length === right.length && left.every((item, index) => item.id === right[index].id && item.name === right[index].name);
-const sectionsForProgramme = (payload, program, groupId) => {
+const sectionsForProgramme = (payload, program, groupId, academicLevelId) => {
   if (!program) return [];
   const programId = String(pick(program.raw, "programId", "ProgramId", "id", "Id") ?? "");
   const groupProgramId = String(pick(program.raw, "groupProgramId", "GroupProgramId") ?? "");
-  const programmeName = String(program.name || "").trim().toLowerCase();
-  const matched = list(payload).filter((section) => {
+  return list(payload).filter((section) => {
+    const sectionGroupId = pick(section, "groupId", "GroupId");
+    const sectionAcademicLevelId = pick(
+      section,
+      "academicLevelId", "AcademicLevelId",
+      "levelId", "LevelId",
+      "yearOfStudyId", "YearOfStudyId",
+    );
     const sectionProgramId = String(pick(section, "programId", "ProgramId") ?? "");
     const sectionGroupProgramId = String(pick(section, "groupProgramId", "GroupProgramId") ?? "");
-    const sectionProgramme = String(pick(section, "programme", "program", "programName", "Programme", "Program") ?? "").trim().toLowerCase();
-    return (programId && sectionProgramId === programId)
-      || (groupProgramId && sectionGroupProgramId === groupProgramId)
-      || (programmeName && sectionProgramme === programmeName);
+    const groupMatches = sectionGroupId == null || String(sectionGroupId) === String(groupId);
+    const academicLevelMatches = sectionAcademicLevelId == null
+      || String(sectionAcademicLevelId) === String(academicLevelId);
+    const hasProgramMapping = Boolean(sectionProgramId || sectionGroupProgramId);
+    const programMatches = !hasProgramMapping
+      || (programId && sectionProgramId === programId)
+      || (groupProgramId && sectionGroupProgramId === groupProgramId);
+    return academicLevelMatches && groupMatches && programMatches;
   });
-  const matchingGroup = matched.filter((section) => String(pick(section, "groupId", "GroupId") ?? "") === String(groupId));
-  return matchingGroup.length ? matchingGroup : matched;
 };
 const activeYearId = (payload) => {
   const entries = Array.isArray(payload)
@@ -328,8 +372,6 @@ function useLookups(initial = {}) {
       .get(apiEndpoints.groups.list, {
         params: {
           boardId: value.boardId,
-          academicYearId: value.academicYearId || undefined,
-          academicLevelId: value.academicLevelId || undefined,
           isActive: true,
         },
       })
@@ -356,8 +398,6 @@ function useLookups(initial = {}) {
       .catch(() => setData((current) => ({ ...current, groups: [] })));
   }, [
     value.boardId,
-    value.academicYearId,
-    value.academicLevelId,
     data.allYears,
     data.allLevels,
     data.boards,
@@ -376,10 +416,8 @@ function useLookups(initial = {}) {
       value.programId && selectedProgram
         ? apiClient.get(apiEndpoints.sections.search, {
             params: {
-              // Programme is the required dependency for this dropdown. Do
-              // not over-constrain it with optional context IDs because older
-              // section records can carry a different year/level mapping.
-              Programme: selectedProgram?.name,
+              AcademicLevelId: Number(value.academicLevelId),
+              GroupId: Number(value.groupId),
               ProgramId: pick(selectedProgram?.raw, "programId", "ProgramId", "id", "Id"),
               IsActive: true,
             },
@@ -411,13 +449,17 @@ function useLookups(initial = {}) {
         })(),
         sections:
           r[1].status === "fulfilled"
-            ? optionize(sectionsForProgramme(r[1].value.data, selectedProgram, value.groupId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+            ? optionize(sectionsForProgramme(r[1].value.data, selectedProgram, value.groupId, value.academicLevelId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
             : [],
         sectionsLoading: false,
         sectionsError: Boolean(value.programId) && r[1].status === "rejected",
         subjects:
           r[2].status === "fulfilled"
-            ? optionize(r[2].value.data, ["subjectId", "id", "Id"], ["subjectName", "name", "Name"])
+            ? optionize(
+                r[2].value.data,
+                ["subjectId", "SubjectId", "subjectID", "SubjectID", "subjectDefinitionId", "SubjectDefinitionId", "id", "Id"],
+                ["subjectName", "SubjectName", "name", "Name"],
+              )
             : [],
         periods:
           r[3].status === "fulfilled"
@@ -429,19 +471,41 @@ function useLookups(initial = {}) {
   const change = (key) => (event) =>
     setValue((current) => {
       const next = event.target.value;
-      if (key === "boardId") return { ...EMPTY, boardId: next };
+      if (key === "boardId") {
+        setData((currentData) => ({
+          ...currentData,
+          years: [],
+          levels: [],
+          groups: [],
+          programs: [],
+          sections: [],
+          subjects: [],
+          periods: [],
+          sectionsLoading: false,
+          sectionsError: false,
+        }));
+        return { ...EMPTY, boardId: next };
+      }
       if (key === "academicYearId")
-        return {
+        {
+          setData((currentData) => ({ ...currentData, programs: [], sections: [], subjects: [], periods: [], sectionsLoading: false, sectionsError: false }));
+          return {
           ...current,
           academicYearId: next,
           academicLevelId: "",
           groupId: "",
           programId: "",
           sectionId: "",
-        };
-      if (key === "academicLevelId")
+          };
+        }
+      if (key === "academicLevelId") {
+        setData((currentData) => ({ ...currentData, programs: [], sections: [], subjects: [], periods: [], sectionsLoading: false, sectionsError: false }));
         return { ...current, academicLevelId: next, groupId: "", programId: "", sectionId: "" };
-      if (key === "groupId") return { ...current, groupId: next, programId: "", sectionId: "" };
+      }
+      if (key === "groupId") {
+        setData((currentData) => ({ ...currentData, programs: [], sections: [], sectionsLoading: false, sectionsError: false }));
+        return { ...current, groupId: next, programId: "", sectionId: "" };
+      }
       if (key === "programId") {
         setData((data) => ({ ...data, sections: [], sectionsLoading: Boolean(next), sectionsError: false }));
         return { ...current, programId: next, sectionId: "" };
@@ -453,7 +517,7 @@ function useLookups(initial = {}) {
   };
   return { value, data, change, setValue, reloadSections };
 }
-function Context({ state, section = true }) {
+function Context({ state, section = true, compact = false }) {
   const { value, data, change } = state;
   const select = (label, key, values, disabled) => (
     <Field label={label}>
@@ -468,7 +532,7 @@ function Context({ state, section = true }) {
     </Field>
   );
   return (
-    <div className="ttm-context">
+    <div className={`ttm-context${compact ? " ttm-draft-context" : ""}`}>
       {select("Board", "boardId", data.boards)}
       {select("Academic Year", "academicYearId", data.years, !value.boardId)}
       {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
@@ -482,8 +546,8 @@ function ProgrammeSections({ data, onRetry }) {
   return (
     <section className="ttm-programme-sections" aria-live="polite">
       <header>
-        <b>Sections for this Programme</b>
-        <span>Sections are automatically loaded from the selected programme.</span>
+        <b>Sections for this Academic Level</b>
+        <span>Sections are automatically loaded for the selected group and programme.</span>
       </header>
       {data.sectionsLoading ? <p>Loading sections...</p> : null}
       {data.sectionsError ? (
@@ -492,7 +556,7 @@ function ProgrammeSections({ data, onRetry }) {
           <Btn className="cms-btn cms-btn-ghost" onClick={onRetry}>Retry sections</Btn>
         </div>
       ) : null}
-      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for this programme.</p> : null}
+      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for the selected group and programme.</p> : null}
       {!data.sectionsLoading && data.sections.length ? (
         <div className="ttm-section-chips">
           {data.sections.map((section) => <span key={section.id}>{section.name}</span>)}
@@ -556,7 +620,7 @@ function StructureForm({ item, close, saved }) {
       structureId(item)
         ? await apiClient.put(apiEndpoints.periodStructures.update(structureId(item)), payload)
         : await apiClient.post(apiEndpoints.periodStructures.create, payload);
-      saved();
+      saved("Timetable slot saved.");
     } catch (e) {
       setError(getApiErrorMessage(e));
     } finally {
@@ -848,7 +912,14 @@ function Structures({ notify }) {
         ) : !items.length ? (
           <p className="ttm-empty">No period structures are available.</p>
         ) : (
-          <table className="cms-table ttm-table">
+          <table className="cms-table ttm-table ttm-period-structures-table">
+            <colgroup>
+              <col className="ttm-structure-name-column" />
+              <col className="ttm-periods-column" />
+              <col className="ttm-duration-column" />
+              <col className="ttm-status-column" />
+              <col className="ttm-actions-column" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Structure Name</th>
@@ -866,23 +937,30 @@ function Structures({ notify }) {
                   </td>
                   <td>{pick(row, "totalTeachingPeriods")}</td>
                   <td>{pick(row, "periodDurationMinutes")} min</td>
-                  <td>
+                  <td className="ttm-status-cell">
                     <span className="ttm-badge">
                       {pick(row, "isActive") ? "Active" : "Inactive"}
                     </span>
                   </td>
-                  <td className="ttm-actions">
+                  <td className="ttm-actions-cell">
+                    <div className="ttm-actions">
                     <button
+                      className="ttm-action-edit"
+                      aria-label="Edit"
+                      title="Edit"
                       onClick={() => {
                         setItem(row);
                         setModal("form");
                       }}
                     >
-                      Edit
+                      <Pencil size={16} aria-hidden="true" />
                     </button>
-                    <button onClick={() => { setItem(row); setModal("preview"); }}>Preview</button>
-                    <button onClick={() => { setItem(row); setModal("assign"); }}>Assign</button>
+                    <button className="ttm-action-preview" aria-label="Preview" title="Preview" onClick={() => { setItem(row); setModal("preview"); }}><Eye size={16} aria-hidden="true" /></button>
+                    <button className="ttm-action-assign" aria-label="Assign" title="Assign" onClick={() => { setItem(row); setModal("assign"); }}><UserPlus size={16} aria-hidden="true" /></button>
                     <button
+                      className={pick(row, "isActive") ? "ttm-action-deactivate" : "ttm-action-activate"}
+                      aria-label={pick(row, "isActive") ? "Deactivate" : "Activate"}
+                      title={pick(row, "isActive") ? "Deactivate" : "Activate"}
                       onClick={async () => {
                         try {
                           const detail = await apiClient.get(apiEndpoints.periodStructures.getById(structureId(row)));
@@ -902,17 +980,21 @@ function Structures({ notify }) {
                         }
                       }}
                     >
-                      {pick(row, "isActive") ? "Deactivate" : "Activate"}
+                      <Power size={16} aria-hidden="true" />
                     </button>
                     <button
+                      className="ttm-action-delete"
+                      aria-label="Delete"
+                      title="Delete"
                       onClick={() => {
                         setItem(row);
                         setDeleteError("");
                         setModal("delete");
                       }}
                     >
-                      Delete
+                      <Trash2 size={16} aria-hidden="true" />
                     </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -966,6 +1048,7 @@ function Generate({ goDraft, notify, initial }) {
   );
   const [capacityError, setCapacityError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   // The periods endpoint can include break slots. Capacity is based on actual
   // teaching periods, not every timeline entry returned by the API.
   const periodsPerDay = data.periods.filter((period) => !isBreakPeriod(period)).length;
@@ -989,6 +1072,37 @@ function Generate({ goDraft, notify, initial }) {
     );
     setCapacityError("");
   };
+  const exportGroupTimetable = async () => {
+    if (exporting) return;
+    const ids = [value.boardId, value.academicYearId, value.academicLevelId, value.groupId];
+    if (!ids.every((id) => Number.isInteger(Number(id)) && Number(id) > 0)) {
+      notify("Please select Board, Academic Level, Academic Year and Group before exporting.");
+      return;
+    }
+    setExporting(true);
+    try {
+      const response = await apiClient.get(apiEndpoints.timetable.exportGroupExcel, {
+        params: {
+          boardId: Number(value.boardId),
+          academicLevelId: Number(value.academicLevelId),
+          academicYearId: Number(value.academicYearId),
+          groupId: Number(value.groupId),
+          "api-version": "1.0",
+        },
+        responseType: "blob",
+      });
+      const groupName = data.groups.find((item) => String(item.id) === String(value.groupId))?.name || "Group";
+      const academicYear = data.years.find((item) => String(item.id) === String(value.academicYearId))?.name || "Academic_Year";
+      downloadResponseFile(response, `Timetable_${filePart(groupName, "Group")}_${filePart(academicYear, "Academic_Year")}.xlsx`);
+      notify("Group timetable exported successfully.");
+    } catch (error) {
+      notify(error?.response?.status === 404
+        ? "No timetable found for the selected group."
+        : await exportErrorMessage(error));
+    } finally {
+      setExporting(false);
+    }
+  };
   const generate = async () => {
     if (busy) return;
     const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
@@ -1001,7 +1115,7 @@ function Generate({ goDraft, notify, initial }) {
       return;
     }
     if (!sectionIds.length) {
-      notify("No sections found for this programme. Create sections in Section Management first.");
+      notify("No sections found for the selected group and programme. Create sections in Section Management first.");
       return;
     }
     if (totalRequiredPeriods > weeklyCapacity) {
@@ -1118,6 +1232,9 @@ function Generate({ goDraft, notify, initial }) {
           </div>
         ) : null}
         <footer className={`ttm-screen-actions${value.programId ? " ttm-generation-footer" : ""}`}>
+          <Btn className="cms-btn cms-btn-ghost" disabled={exporting} onClick={exportGroupTimetable} title="Export Excel">
+            <Download size={15} aria-hidden="true" /> {exporting ? "Exporting…" : "Export Excel"}
+          </Btn>
           <Btn disabled={!ready || busy} onClick={generate}>
             {busy ? "Generating…" : "Generate Timetable"}
           </Btn>
@@ -1167,7 +1284,34 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
       timetableId(slot)
         ? await apiClient.put(apiEndpoints.timetable.update(timetableId(slot)), payload)
         : await apiClient.post(apiEndpoints.timetable.create, payload);
-      saved();
+      saved("Timetable slot saved.");
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const deleteSlot = async () => {
+    const id = timetableId(slot);
+    if (!id || saving || !window.confirm("Delete this timetable slot?")) return;
+    setSaving(true);
+    try {
+      await apiClient.delete(apiEndpoints.timetable.delete(id));
+      saved("Timetable slot deleted.");
+    } catch (e) {
+      notify(getApiErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const toggleSlotPublish = async () => {
+    const id = timetableId(slot);
+    if (!id || saving) return;
+    const nextPublished = !pick(slot, "isPublished", "IsPublished");
+    setSaving(true);
+    try {
+      await apiClient.patch(apiEndpoints.timetable.publish(id), { isPublished: nextPublished });
+      saved(`Timetable slot ${nextPublished ? "published" : "unpublished"}.`);
     } catch (e) {
       notify(getApiErrorMessage(e));
     } finally {
@@ -1204,10 +1348,16 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
           </Field>
         </div>
         <footer>
-      <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>
+          {timetableId(slot) ? <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={deleteSlot}>Delete</Btn> : null}
+          {timetableId(slot) ? (
+            <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={toggleSlotPublish}>
+              {pick(slot, "isPublished", "IsPublished") ? "Unpublish Slot" : "Publish Slot"}
+            </Btn>
+          ) : null}
+          <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>
             Cancel
           </Btn>
-      <Btn disabled={saving} onClick={save}>{saving ? "Saving…" : lab ? "Add Lab" : "Save Slot"}</Btn>
+          <Btn disabled={saving} onClick={save}>{saving ? "Saving…" : lab ? "Add Lab" : "Save Slot"}</Btn>
         </footer>
       </div>
     </Modal>
@@ -1224,11 +1374,15 @@ function Draft({ initial, notify }) {
   const [actionBusy, setActionBusy] = useState(false);
   const [activeAction, setActiveAction] = useState("");
   const [exportBusy, setExportBusy] = useState("");
-  const [published, setPublished] = useState(Boolean(initial?.isPublished));
-  const [approved, setApproved] = useState(Boolean(initial?.isApproved || initial?.status === "Approved"));
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportMenuRef = useRef(null);
+  const [workflowStatus, setWorkflowStatus] = useState(() => timetableWorkflowStatus(initial));
   const firstSection = useRef(true);
   const [validation, setValidation] = useState(null);
   const [validationOpen, setValidationOpen] = useState(false);
+  const [studentChoices, setStudentChoices] = useState([]);
+  const [studentViewOpen, setStudentViewOpen] = useState(false);
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const [publishedFilter, setPublishedFilter] = useState(
     initial?.isPublished === undefined ? "" : String(Boolean(initial.isPublished)),
   );
@@ -1236,6 +1390,20 @@ function Draft({ initial, notify }) {
     .map(Number)
     .filter((day) => WORKING_DAY_OPTIONS.some((option) => option.value === day));
   const generatedSlots = useMemo(() => list(initial?.generatedSlots), [initial?.generatedSlots]);
+  useEffect(() => {
+    const closeWhenOutside = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setExportOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setExportOpen(false);
+    };
+    document.addEventListener("mousedown", closeWhenOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeWhenOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
   useEffect(() => {
     if (!value.programId || !data.sections.length) return;
     if (value.sectionId) return;
@@ -1264,7 +1432,9 @@ function Draft({ initial, notify }) {
       const responseSlots = generatedSlots.filter(
         (slot) => String(pick(slot, "sectionId", "SectionId")) === String(value.sectionId),
       );
-      setSlots(fetchedSlots.length ? fetchedSlots : responseSlots);
+      const currentSlots = fetchedSlots.length ? fetchedSlots : responseSlots;
+      setSlots(currentSlots);
+      setWorkflowStatus(timetableWorkflowStatus(currentSlots.length ? currentSlots : initial));
     } catch (e) {
       setSlots([]);
       notify(getApiErrorMessage(e));
@@ -1276,22 +1446,14 @@ function Draft({ initial, notify }) {
     load();
   }, [load]);
   useEffect(() => {
-    if (publishedFilter === "true") {
-      setPublished(true);
-      setApproved(true);
-    } else if (publishedFilter === "false") {
-      setPublished(false);
-    }
-  }, [publishedFilter]);
-  useEffect(() => {
     if (firstSection.current) {
       firstSection.current = false;
       return;
     }
     setValidation(null);
-    setApproved(false);
-    setPublished(false);
   }, [value.sectionId]);
+  const published = workflowStatus === "published";
+  const approved = workflowStatus === "approved";
   const find = (day, periodId) =>
     slots.find(
       (slot) =>
@@ -1299,21 +1461,44 @@ function Draft({ initial, notify }) {
           || String(pick(slot, "day", "Day")).toLowerCase() === String(DAYS[day]).toLowerCase()) &&
         String(pick(slot, "periodId", "PeriodId", "periodNumber", "PeriodNumber")) === String(periodId),
     );
+  const openSlotEditor = async (slot) => {
+    const id = timetableId(slot);
+    if (!id || actionBusy) return;
+    setActionBusy(true);
+    setActiveAction("slot");
+    try {
+      const response = await apiClient.get(apiEndpoints.timetable.getById(id));
+      setEditing(response.data?.data ?? response.data ?? slot);
+    } catch (error) {
+      notify(getApiErrorMessage(error));
+    } finally {
+      setActionBusy(false);
+      setActiveAction("");
+    }
+  };
   const action = async (path, method = "post", body) => {
     if (actionBusy) return;
     const actionName = path.includes("validate") ? "validate" : path.includes("approve") ? "approve" : path.includes("publish") ? "publish" : "action";
     setActiveAction(actionName);
     setActionBusy(true);
     try {
-      const r = await apiClient[method](path, body, {
-        params: { academicYearId: value.academicYearId },
-      });
+      const requestConfig = {
+        url: path,
+        method,
+        params: { academicYearId: Number(value.academicYearId) },
+      };
+      if (body !== undefined) requestConfig.data = body;
+      else requestConfig.headers = { "Content-Type": undefined };
+      const r = await apiClient.request(requestConfig);
       if (method === "post" && path.includes("validate")) {
         setValidation(r.data);
         setValidationOpen(true);
       }
       else notify(r.data?.message ?? "Timetable updated.");
-      load();
+      // Publishing changes which server-side status collection owns the
+      // slots. The successful publish handler switches the status filter,
+      // and that filter change performs the correctly scoped reload.
+      if (actionName !== "publish") load();
       return true;
     } catch (e) {
       notify(getApiErrorMessage(e));
@@ -1353,8 +1538,33 @@ function Draft({ initial, notify }) {
       setActiveAction("");
     }
   };
-  const viewPublished = async (kind) => {
+  const viewPublished = async (kind, studentId = "") => {
     if (actionBusy) return;
+    if (kind === "student" && !studentId) {
+      setActionBusy(true);
+      setActiveAction("student");
+      try {
+        const response = await apiClient.get(apiEndpoints.students.getBySection(value.sectionId));
+        const students = optionize(
+          response.data,
+          ["studentId", "StudentId", "id", "Id"],
+          ["studentName", "StudentName", "fullName", "FullName", "name", "Name"],
+        );
+        if (!students.length) {
+          notify("No students are available in the selected section.");
+          return;
+        }
+        setStudentChoices(students);
+        setSelectedStudentId(students[0].id);
+        setStudentViewOpen(true);
+      } catch (error) {
+        notify(getApiErrorMessage(error));
+      } finally {
+        setActionBusy(false);
+        setActiveAction("");
+      }
+      return;
+    }
     const staffId = pick(slots[0], "facultyId", "FacultyId", "staffId", "StaffId")
       ?? pick(JSON.parse(localStorage.getItem("user") || "{}"), "id", "userId");
     if (kind === "faculty" && !staffId) {
@@ -1365,10 +1575,10 @@ function Draft({ initial, notify }) {
     setActiveAction(kind);
     try {
       const endpoint = kind === "student"
-        ? apiEndpoints.timetable.getBySection(value.sectionId)
+        ? apiEndpoints.timetable.getByStudent(studentId)
         : apiEndpoints.timetable.getByFaculty(staffId);
       const params = kind === "student"
-        ? { academicYearId: value.academicYearId, isPublished: true }
+        ? { academicYearId: value.academicYearId }
         : { academicYearId: value.academicYearId };
       const response = await apiClient.get(endpoint, { params });
       const viewed = list(response.data);
@@ -1381,84 +1591,63 @@ function Draft({ initial, notify }) {
     }
   };
   const contextName = (items, id, fallback) => items.find((item) => String(item.id) === String(id))?.name || fallback;
+  const validId = (id) => Number.isInteger(Number(id)) && Number(id) > 0;
   const exportSectionPdf = async () => {
-    if (!value.sectionId || exportBusy) return;
+    if (exportBusy) return;
+    if (![value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId, value.sectionId].every(validId)) {
+      notify("Please select Board, Academic Year, Academic Level, Group, Programme and Section before exporting.");
+      return;
+    }
     setExportBusy("section");
     try {
-      const response = await apiClient.get(apiEndpoints.timetable.getBySection(value.sectionId), {
-        params: { academicYearId: value.academicYearId },
+      const response = await apiClient.get(apiEndpoints.timetable.exportSectionPdf, {
+        params: {
+          boardId: Number(value.boardId),
+          academicLevelId: Number(value.academicLevelId),
+          academicYearId: Number(value.academicYearId),
+          groupId: Number(value.groupId),
+          programId: Number(value.programId),
+          sectionId: Number(value.sectionId),
+          "api-version": 1,
+        },
+        responseType: "blob",
       });
-      const sectionSlots = list(response.data);
-      if (!sectionSlots.length) throw new Error("No timetable data is available for the selected section.");
-      const [{ jsPDF }, { default: autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
       const sectionName = contextName(data.sections, value.sectionId, "Section");
       const academicYear = contextName(data.years, value.academicYearId, "Academic_Year");
-      const document = new jsPDF({ orientation: "landscape" });
-      document.setFontSize(15);
-      document.text(`${sectionName} Timetable`, 14, 16);
-      document.setFontSize(9);
-      document.text(`Academic Year: ${academicYear} | Group: ${contextName(data.groups, value.groupId, "-")} | Programme: ${contextName(data.programs, value.programId, "-")}`, 14, 23);
-      autoTable(document, {
-        startY: 28,
-        head: [["Day", "Period", "Subject", "Faculty", "Room"]],
-        body: sectionSlots.map((slot) => [
-          pick(slot, "day", "Day") ?? DAYS[Number(pick(slot, "dayOfWeek", "DayOfWeek"))] ?? "—",
-          pick(slot, "periodName", "PeriodName") ?? contextName(data.periods, pick(slot, "periodId", "PeriodId"), "—"),
-          slotSubjectName(slot, data.subjects),
-          slotFacultyName(slot),
-          slotRoomName(slot),
-        ]),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [101, 130, 0] },
-      });
-      document.save(`Section_Timetable_${filePart(sectionName, "Section")}_${filePart(academicYear, "Academic_Year")}.pdf`);
+      downloadResponseFile(response, `Section_Timetable_${filePart(sectionName, "Section")}_${filePart(academicYear, "Academic_Year")}.pdf`);
       notify("Section timetable PDF downloaded.");
-    } catch (error) { notify(getApiErrorMessage(error)); }
+    } catch (error) { notify(await exportErrorMessage(error)); }
     finally { setExportBusy(""); }
   };
   const exportGroupExcel = async () => {
-    if (!value.groupId || exportBusy) return;
+    if (exportBusy) return;
+    if (![value.boardId, value.academicLevelId, value.academicYearId, value.groupId].every(validId)) {
+      notify("Please select Board, Academic Level, Academic Year and Group before exporting.");
+      return;
+    }
     setExportBusy("group");
     try {
-      const [programResponse, sectionResponse] = await Promise.all([
-        apiClient.get(apiEndpoints.groups.programs(value.groupId)),
-        apiClient.get(apiEndpoints.sections.list, { params: { GroupId: value.groupId, IsActive: true } }),
-      ]);
-      const groupPrograms = list(programResponse.data);
-      const groupSections = list(sectionResponse.data).filter((section) => {
-        const sectionGroupId = pick(section, "groupId", "GroupId");
-        return sectionGroupId == null || String(sectionGroupId) === String(value.groupId);
+      const response = await apiClient.get(apiEndpoints.timetable.exportGroupExcel, {
+        params: {
+          boardId: Number(value.boardId),
+          academicLevelId: Number(value.academicLevelId),
+          academicYearId: Number(value.academicYearId),
+          groupId: Number(value.groupId),
+          "api-version": "1.0",
+        },
+        responseType: "blob",
       });
-      const results = await Promise.all(groupSections.map(async (section) => {
-        const sectionId = pick(section, "sectionId", "SectionId", "id", "Id");
-        const response = await apiClient.get(apiEndpoints.timetable.getBySection(sectionId), {
-          params: { academicYearId: value.academicYearId },
-        });
-        return { section, slots: list(response.data) };
-      }));
-      const rows = results.flatMap(({ section, slots: sectionSlots }) => {
-        const sectionProgramId = pick(section, "programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId");
-        const program = groupPrograms.find((item) => String(pick(item, "programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId")) === String(sectionProgramId));
-        return sectionSlots.map((slot) => ({
-          Programme: pick(section, "programName", "ProgramName", "programme", "Programme") ?? pick(program, "programName", "ProgramName", "name", "Name") ?? "—",
-          Section: pick(section, "sectionName", "SectionName", "name", "Name") ?? "—",
-          Day: pick(slot, "day", "Day") ?? DAYS[Number(pick(slot, "dayOfWeek", "DayOfWeek"))] ?? "—",
-          Period: pick(slot, "periodName", "PeriodName") ?? contextName(data.periods, pick(slot, "periodId", "PeriodId"), "—"),
-          Subject: slotSubjectName(slot, data.subjects),
-          Faculty: slotFacultyName(slot),
-          Room: slotRoomName(slot),
-        }));
-      });
-      if (!rows.length) throw new Error("No timetable data is available for the selected group.");
-      const XLSX = await import("xlsx");
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Group Timetable");
       const groupName = contextName(data.groups, value.groupId, "Group");
       const academicYear = contextName(data.years, value.academicYearId, "Academic_Year");
-      XLSX.writeFile(workbook, `Group_Timetable_${filePart(groupName, "Group")}_${filePart(academicYear, "Academic_Year")}.xlsx`);
-      notify("Group timetable Excel downloaded.");
-    } catch (error) { notify(getApiErrorMessage(error)); }
-    finally { setExportBusy(""); }
+      downloadResponseFile(response, `Timetable_${filePart(groupName, "Group")}_${filePart(academicYear, "Academic_Year")}.xlsx`);
+      notify("Group timetable exported successfully.");
+    } catch (error) {
+      notify(error?.response?.status === 404
+        ? "No timetable found for the selected group."
+        : await exportErrorMessage(error));
+    } finally {
+      setExportBusy("");
+    }
   };
   return (
     <Page
@@ -1471,7 +1660,7 @@ function Draft({ initial, notify }) {
       }
     >
       <section className="ttm-card">
-        <Context state={state} />
+        <Context state={state} compact />
         {value.sectionId && (
           <>
             <div className="ttm-grid-head">
@@ -1485,46 +1674,56 @@ function Draft({ initial, notify }) {
                     <option value="true">Published</option>
                   </select>
                 </label>
-                <Btn className="cms-btn cms-btn-ghost" disabled={Boolean(exportBusy) || !slots.length} onClick={exportSectionPdf}>
-                  <Download size={15} aria-hidden="true" /> {exportBusy === "section" ? "Exporting…" : "Export Section PDF"}
-                </Btn>
-                <Btn className="cms-btn cms-btn-ghost" disabled={Boolean(exportBusy) || !value.groupId} onClick={exportGroupExcel}>
-                  <Download size={15} aria-hidden="true" /> {exportBusy === "group" ? "Exporting…" : "Export Group Excel"}
-                </Btn>
-                <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "copy"} onClick={() => setCopying(true)}>
-                  Copy Timetable
-                </Btn>
-                <Btn className="cms-btn cms-btn-ghost" onClick={() => setEditing({})}>
-                  + Add Slot
-                </Btn>
-                <Btn className="cms-btn cms-btn-ghost" onClick={() => setEditing({ remarks: "Lab / Practical", __lab: true })}>
-                  + Add Lab
+                <div ref={exportMenuRef} className={`ttm-export-menu${exportBusy ? " is-busy" : ""}`}>
+                  <button type="button" className="cms-btn cms-btn-ghost" aria-haspopup="menu" aria-expanded={exportOpen} disabled={Boolean(exportBusy)} onClick={() => setExportOpen((open) => !open)}>
+                    <Download size={15} aria-hidden="true" /> {exportBusy ? "Exporting…" : "Export"} <ChevronDown size={14} aria-hidden="true" />
+                  </button>
+                  {exportOpen ? <div className="ttm-export-options" role="menu">
+                    <button type="button" disabled={Boolean(exportBusy)} onClick={() => {
+                      setExportOpen(false);
+                      exportSectionPdf();
+                    }}>
+                      <FileText size={16} aria-hidden="true" /> Export PDF
+                    </button>
+                    <button type="button" disabled={Boolean(exportBusy)} onClick={() => {
+                      setExportOpen(false);
+                      exportGroupExcel();
+                    }}>
+                      <FileSpreadsheet size={16} aria-hidden="true" /> Export Excel
+                    </button>
+                  </div> : null}
+                </div>
+                <Btn className="cms-btn cms-btn-ghost ttm-icon-action" disabled={activeAction === "copy"} onClick={() => setCopying(true)} title="Copy Timetable" aria-label="Copy Timetable">
+                  <Copy size={16} aria-hidden="true" />
                 </Btn>
                 <Btn
                   className="cms-btn cms-btn-ghost"
-                  disabled={published || activeAction === "validate"}
+                  disabled={workflowStatus !== "draft" || activeAction === "validate"}
                   onClick={() => action(apiEndpoints.timetable.validateSection(value.sectionId))}
                 >
                   {activeAction === "validate" ? "Validating…" : "Validate"}
                 </Btn>
-                <Btn disabled={published || activeAction === "approve" || !validation?.isValid || approved} onClick={async () => {
+                <Btn disabled={(workflowStatus !== "validated" && !validation?.isValid) || published || activeAction === "approve" || approved} onClick={async () => {
                   const ok = await action(apiEndpoints.timetable.approveSection(value.sectionId));
-                  if (ok) setApproved(true);
+                  if (ok) setWorkflowStatus("approved");
                 }}>
                   {activeAction === "approve" ? "Approving…" : "Approve"}
                 </Btn>
-                <Btn disabled={activeAction === "publish" || !approved || published}
+                <Btn className={published ? "cms-btn ttm-published-action" : undefined} disabled={activeAction === "publish" || !approved || published}
                   onClick={async () => {
                     const ok = await action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", { isPublished: true });
-                    if (ok) setPublished(true);
+                    if (ok) {
+                      setWorkflowStatus("published");
+                      setPublishedFilter("true");
+                    }
                   }}
                 >
-                  {activeAction === "publish" ? "Publishing…" : published ? "Published" : approved ? "Publish" : "Approve first"}
+                  {activeAction === "publish" ? "Publishing…" : published ? "Published" : "Publish"}
                 </Btn>
                 {published && (
                   <>
-                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "faculty"} onClick={() => viewPublished("faculty")}>Faculty View Timetable</Btn>
-                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "student"} onClick={() => viewPublished("student")}>Student View Timetable</Btn>
+                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "faculty"} onClick={() => viewPublished("faculty")}>Staff View</Btn>
+                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "student"} onClick={() => viewPublished("student")}>Student View</Btn>
                   </>
                 )}
               </div>
@@ -1568,8 +1767,8 @@ function Draft({ initial, notify }) {
                         return (
                           <td className="slot" key={period.id}>
                             <button
-                              onClick={() => setEditing(slot)}
-                              disabled={!slot}
+                              onClick={() => openSlotEditor(slot)}
+                              disabled={!slot || (actionBusy && activeAction === "slot")}
                             >
                               {slot ? (
                                 <>
@@ -1616,17 +1815,36 @@ function Draft({ initial, notify }) {
           workingDays={workingDays}
           close={() => setEditing(null)}
           notify={notify}
-          saved={() => {
+          saved={(message) => {
             setEditing(null);
             // Any change to a published slot creates a new draft revision.
             // Require validation and approval before it can be published again.
-            setPublished(false);
-            setApproved(false);
             setValidation(null);
-            notify("Timetable slot saved.");
+            notify(message || "Timetable slot updated.");
             load();
           }}
         />
+      )}
+      {studentViewOpen && (
+        <Modal title="Student View" onClose={() => setStudentViewOpen(false)}>
+          <div className="ttm-modal-body">
+            <Field label="Student">
+              <select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}>
+                {studentChoices.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
+              </select>
+            </Field>
+            <footer>
+              <Btn className="cms-btn cms-btn-ghost" onClick={() => setStudentViewOpen(false)}>Cancel</Btn>
+              <Btn disabled={!selectedStudentId || activeAction === "student"} onClick={async () => {
+                const studentId = selectedStudentId;
+                setStudentViewOpen(false);
+                await viewPublished("student", studentId);
+              }}>
+                View Timetable
+              </Btn>
+            </footer>
+          </div>
+        </Modal>
       )}
       {copying && (
         <Modal title="Copy Timetable" onClose={() => setCopying(false)}>

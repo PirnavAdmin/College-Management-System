@@ -1031,7 +1031,6 @@ export default function ExaminationPage() {
         exams={exams}
         schedules={schedules}
         editId={id}
-        initialExamFilters={loc.state?.initialExamFilters}
         onAcademicChange={loadGroups}
         onGroupChange={loadPrograms}
         onSave={async (record) => {
@@ -1090,17 +1089,7 @@ export default function ExaminationPage() {
         {tab === "exams" && (
           <button
             className="cms-btn cms-btn-primary exam-header-create-btn"
-            onClick={() =>
-              nav("/dashboard/examinations/add", {
-                state: {
-                  initialExamFilters: {
-                    boardId: filters.boardId,
-                    yearId: filters.yearId,
-                    levelId: filters.levelId,
-                  },
-                },
-              })
-            }
+            onClick={() => nav("/dashboard/examinations/add")}
           >
             <Plus size={16} /> Create Examination
           </button>
@@ -1792,7 +1781,6 @@ function ExamForm({
   exams,
   schedules,
   editId,
-  initialExamFilters,
   onSave,
   onAcademicChange,
   onGroupChange,
@@ -1815,19 +1803,11 @@ function ExamForm({
           programId: String(existing.programId),
           groupProgramId: String(existing.groupProgramId || ""),
         }
-        : {
-          ...emptyExam(),
-          boardId: initialExamFilters?.boardId || "",
-          yearId: initialExamFilters?.yearId || "",
-          levelId: initialExamFilters?.levelId || "",
-        },
+        : emptyExam(),
     ),
     [errors, setErrors] = useState({}),
     [saving, setSaving] = useState(false),
     locked = !!(existing && schedules.some((s) => String(s.examId) === String(existing.id)));
-  useEffect(() => {
-    if (!existing && form.boardId) onAcademicChange({ boardId: form.boardId });
-  }, []);
   const change = (n, v) => {
     if (n === "boardId") onAcademicChange({ boardId: v });
     if (n === "groupId") onGroupChange(v);
@@ -3103,4 +3083,4 @@ function Field({
       {error && <span className="cms-error">{error}</span>}
     </div>
   );
-} 
+}

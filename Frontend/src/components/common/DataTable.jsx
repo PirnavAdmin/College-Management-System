@@ -35,6 +35,7 @@ export default function DataTable({
   onSearchChange,
   addLabel = "Add New",
   title,
+  searchPlaceholder,
   toolbarExtra,
   emptyMessage,
   paginationCurrentOnly = false,
@@ -128,7 +129,7 @@ export default function DataTable({
           <Search size={16} />
           <input
             value={query}
-            placeholder={`Search ${title || "records"}...`}
+            placeholder={searchPlaceholder || `Search ${title || "records"}...`}
             onChange={(e) => {
               setQuery(e.target.value);
               setPage(1);

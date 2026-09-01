@@ -31,7 +31,9 @@ namespace CollegeManagement.API.Repositories.Implementations
         {
             var result = await _context.Database
                 .SqlQueryRaw<long>("CALL usp_AddAcademicYear({0}, {1}, {2}, {3}, {4}, {5})",
-                    academicYear.AcademicYearName, academicYear.StartDate, academicYear.EndDate,
+                    academicYear.AcademicYearName,
+                    academicYear.StartDate.HasValue ? academicYear.StartDate.Value : DBNull.Value,
+                    academicYear.EndDate.HasValue ? academicYear.EndDate.Value : DBNull.Value,
                     academicYear.AdmissionStartDate, academicYear.AdmissionEndDate, academicYear.IsActive)
                 .ToListAsync();
             academicYear.AcademicYearId = (int)result.FirstOrDefault();
@@ -40,7 +42,9 @@ namespace CollegeManagement.API.Repositories.Implementations
         {
             await _context.Database.ExecuteSqlRawAsync(
                 "CALL usp_UpdateAcademicYear({0}, {1}, {2}, {3}, {4}, {5}, {6})",
-                academicYear.AcademicYearId, academicYear.AcademicYearName, academicYear.StartDate, academicYear.EndDate,
+                academicYear.AcademicYearId, academicYear.AcademicYearName,
+                academicYear.StartDate.HasValue ? academicYear.StartDate.Value : DBNull.Value,
+                academicYear.EndDate.HasValue ? academicYear.EndDate.Value : DBNull.Value,
                 academicYear.AdmissionStartDate, academicYear.AdmissionEndDate, academicYear.IsActive);
         }
         public async Task DeleteAsync(AcademicYear academicYear)

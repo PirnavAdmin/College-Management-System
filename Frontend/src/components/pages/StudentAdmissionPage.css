@@ -270,9 +270,48 @@
 }
 
 /* Board & Academic Year table-system alignment. */
-.cms-admission-toolbar { gap: 9px; min-height: 55px; padding: 9px 12px; }
-.cms-admission-search { width: min(100%, 650px); height: 36px; min-height: 36px; padding: 0 10px; border-radius: 8px; }
+.cms-admission-toolbar { position: relative; z-index: 5; display: flex; align-items: flex-end; gap: 12px; min-height: 55px; padding: 9px 12px; }
+.cms-admission-search { flex: 0 1 520px; width: min(100%, 520px); max-width: 520px; height: 36px; min-height: 36px; padding: 0 10px; border-radius: 8px; }
 .cms-admission-search input { height: 100%; padding: 0; font-size: 13px; }
+.cms-admission-filters { flex: 0 0 220px; grid-template-columns: minmax(180px, 220px); align-items: end; }
+.cms-admission-export-control { position: relative; flex: 0 0 auto; margin-left: auto; }
+.cms-admission-export-btn { height: 36px; min-height: 36px; }
+.cms-admission-export-menu {
+  position: absolute;
+  z-index: 1000;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 158px;
+  padding: 6px;
+  border: 1px solid var(--cms-border);
+  border-radius: 10px;
+  background: #fff;
+  background-color: #fff;
+  opacity: 1;
+  box-shadow: var(--cms-shadow);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.cms-admission-list-card .cms-table-wrap { position: relative; z-index: 1; }
+[data-theme="dark"] .cms-admission-export-menu,
+:root[data-theme="dark"] .cms-admission-export-menu {
+  background: #171A17;
+  background-color: #171A17;
+}
+.cms-admission-export-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cms-text);
+  cursor: pointer;
+  text-align: left;
+}
+.cms-admission-export-menu button:hover { background: var(--cms-hover); }
 .cms-admission-table { min-width: 1040px; }
 .cms-admission-actions { justify-content: center; gap: 5px; }
 .cms-admission-actions .cms-action-btn { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; }
@@ -423,11 +462,18 @@
 }
 
 @media (max-width: 900px) {
-  .cms-admission-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-admission-toolbar { flex-wrap: wrap; }
+  .cms-admission-search { max-width: none; }
+  .cms-admission-filters { flex: 0 0 220px; grid-template-columns: minmax(180px, 220px); }
+  .cms-admission-export-control { flex: 0 0 auto; }
 }
 
 @media (max-width: 640px) {
-  .cms-admission-toolbar { padding: 14px; }
+  .cms-admission-toolbar { align-items: stretch; flex-direction: column; padding: 14px; }
   .cms-admission-search { width: 100%; }
-  .cms-admission-filters { grid-template-columns: 1fr; }
+  .cms-admission-filters { flex: 0 0 auto; grid-template-columns: 1fr; width: 100%; }
+  .cms-admission-export-control,
+  .cms-admission-export-btn { width: 100%; }
+  .cms-admission-export-control { margin-left: 0; }
+  .cms-admission-export-menu { left: 0; right: auto; width: 100%; }
 }

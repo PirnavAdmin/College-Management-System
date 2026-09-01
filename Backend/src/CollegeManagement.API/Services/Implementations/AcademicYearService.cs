@@ -114,9 +114,9 @@ namespace CollegeManagement.API.Services.Implementations
             return true;
         }
 
-        private void ValidateDates(DateOnly start, DateOnly end, DateOnly admissionStart, DateOnly admissionEnd)
+        private void ValidateDates(DateOnly? start, DateOnly? end, DateOnly admissionStart, DateOnly admissionEnd)
         {
-            if (start >= end)
+            if (start.HasValue && end.HasValue && start.Value >= end.Value)
             {
                 throw new ArgumentException("Start Date must be before End Date.");
             }

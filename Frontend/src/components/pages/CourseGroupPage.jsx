@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Plus } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
@@ -12,7 +12,6 @@ const MODULE_SLUG = "courses";
 const STATUS_OPTIONS = ["Active", "Inactive"];
 const PROGRAMS_STORAGE_KEY = "cms.groupPrograms.v1";
 const PROGRAM_MAPPINGS_STORAGE_KEY = "cms.groupProgramMappings.v1";
-const CONTEXT_FIELD_NAMES = ["board", "year", "level"];
 
 const DEFAULT_PROGRAMS = [
   { programId: "regular", backendProgramId: 1, programName: "Regular", programCode: "REG", status: "Active" },
@@ -149,13 +148,7 @@ const getMappedYearsForBoard = (masters, boardId) => {
   return [];
 };
 
-const pickActiveYear = (masters, boardId, currentYear = "") => {
-  const years = getMappedYearsForBoard(masters, boardId);
-  if (currentYear && years.some((year) => String(year.value) === String(currentYear))) return currentYear;
-  return years[0]?.value || "";
-};
-
-const pickMappedLevel = (masters, boardId, currentLevel = "") => {
+const defaultLevelForBoard = (masters, boardId, currentLevel = "") => {
   const levels = getMappedLevelsForBoard(masters, boardId);
   if (currentLevel && levels.some((level) => String(level.value) === String(currentLevel))) return currentLevel;
   return levels[0]?.value || "";
@@ -168,35 +161,40 @@ const normalizeStatus = (item) => {
   return read(item, "isActive", "IsActive") ? "Active" : "Inactive";
 };
 
-const normalizeGroup = (item) => ({
-  id: read(item, "groupId", "GroupId", "id", "Id"),
-  name: read(item, "groupName", "GroupName", "name") || "-",
-  code: read(item, "groupCode", "GroupCode", "code") || "-",
-  boardId: String(read(item, "boardId", "BoardId") || ""),
-  board: read(item, "boardName", "BoardName", "board", "Board") || "-",
-  year: String(read(item, "academicYearId", "AcademicYearId", "yearId", "YearId", "year", "id", "Id") || ""),
-  yearName: read(item, "academicYearName", "AcademicYearName") || "",
-  levelId: String(read(item, "academicLevelId", "AcademicLevelId") || ""),
-  level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || "-",
-  programs: programNamesForGroup(read(item, "groupId", "GroupId", "id", "Id"), read(item, "groupCode", "GroupCode", "code")).join(", ") || "-",
-  subjects: read(item, "subjects", "Subjects", "subjectCount", "SubjectCount", "totalSubjects", "TotalSubjects") ?? "-",
-  status: normalizeStatus(item),
-});
+const masterLabel = (options = [], value) => (
+  value ? options.find((option) => String(option.value) === String(value))?.label : ""
+);
+
+const normalizeGroup = (item, masters = {}) => {
+  const id = read(item, "groupId", "GroupId", "id", "Id");
+  const code = read(item, "groupCode", "GroupCode", "code") || "-";
+  const boardId = String(read(item, "boardId", "BoardId") || "");
+  const year = String(read(item, "academicYearId", "AcademicYearId", "yearId", "YearId", "year") || "");
+  const levelId = String(read(item, "academicLevelId", "AcademicLevelId") || "");
+
+  return {
+    id,
+    name: read(item, "groupName", "GroupName", "name") || "-",
+    code,
+    boardId,
+    board: read(item, "boardName", "BoardName", "board", "Board") || masterLabel(masters.boards, boardId) || "-",
+    year,
+    yearName: read(item, "academicYearName", "AcademicYearName", "yearName", "YearName") || masterLabel(masters.years, year) || "",
+    levelId,
+    level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || masterLabel(masters.levels, levelId) || "-",
+    programs: programNamesForGroup(id, code).join(", ") || "-",
+    subjects: read(item, "subjects", "Subjects", "subjectCount", "SubjectCount", "totalSubjects", "TotalSubjects") ?? "-",
+    status: normalizeStatus(item),
+  };
+};
 
 const groupFormFields = [
+  { name: "board", label: "Board", type: "select", options: [], required: true },
+  { name: "year", label: "Academic Year", type: "select", options: [], required: true },
   { name: "name", label: "Group Name", required: true },
   { name: "code", label: "Group Code", required: true },
   { name: "status", label: "Status", type: "select", options: STATUS_OPTIONS, required: true },
 ];
-
-const makeContextQuery = (values) => {
-  const params = new URLSearchParams();
-  CONTEXT_FIELD_NAMES.forEach((name) => {
-    if (values?.[name]) params.set(name, values[name]);
-  });
-  const query = params.toString();
-  return query ? `?${query}` : "";
-};
 
 const optionLabel = (options, value, fallback = "-") => (
   options.find((option) => String(option.value) === String(value))?.label || fallback
@@ -214,27 +212,6 @@ const programIdFromBackendId = (backendProgramId) => {
   const program = getProgramMaster().find((item) => String(item.backendProgramId || item.programId) === String(backendProgramId));
   return String(program?.programId || backendProgramId);
 };
-
-const buildGroupFilterFields = (masters, values) => (
-  pageConfig.filters.map((field) => {
-    if (field.name === "board") return { ...field, options: masters.boards || [] };
-    if (field.name === "year") {
-      return {
-        ...field,
-        options: getMappedYearsForBoard(masters, values.board),
-        disabled: false,
-      };
-    }
-    if (field.name === "level") {
-      return {
-        ...field,
-        options: getMappedLevelsForBoard(masters, values.board),
-        disabled: !values.board || !getMappedLevelsForBoard(masters, values.board).length,
-      };
-    }
-    return field;
-  })
-);
 
 const normalizeGroupForm = (item) => {
   const group = normalizeGroup(item);
@@ -407,63 +384,15 @@ const findSavedGroupId = async (values) => {
   return savedGroup?.id;
 };
 
-const matchesFilters = (row, search, filters) => {
+const matchesSearch = (row, search) => {
   const query = search.trim().toLowerCase();
-  if (query && !Object.values(row).some((value) => String(value).toLowerCase().includes(query))) return false;
-  if (filters.board && row.boardId !== filters.board) return false;
-  if (filters.year && row.year !== filters.year) return false;
-  return true;
+  if (!query) return true;
+  return [row.name, row.code, row.board, row.yearName, row.level]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(query));
 };
 
 let groupMastersPromise = null;
-const activeYearByBoardPromises = new Map();
-const academicLevelByBoardPromises = new Map();
-
-const readActiveYearFromResponse = (payload, boardId) => {
-  const direct = normalizeAcademicYearOption(responseData({ data: payload }) || payload);
-  if (direct?.value && (!direct.boardId || String(direct.boardId) === String(boardId))) return direct.value;
-  return getCollection(payload)
-    .map(normalizeAcademicYearOption)
-    .find((year) => year?.isActive && String(year.boardId) === String(boardId))?.value || "";
-};
-
-const loadActiveYearForBoard = async (boardId, masters) => {
-  if (!boardId) return "";
-  const key = String(boardId);
-  if (!activeYearByBoardPromises.has(key)) {
-    activeYearByBoardPromises.set(key, apiClient.get(apiEndpoints.academicYears.active, {
-      params: { boardId },
-    }).then((response) => readActiveYearFromResponse(response.data, boardId)).catch((error) => {
-      activeYearByBoardPromises.delete(key);
-      throw error;
-    }));
-  }
-  const activeYear = await activeYearByBoardPromises.get(key);
-  return activeYear || pickActiveYear(masters, boardId);
-};
-
-const readAcademicLevelFromBoardResponse = (payload, boardId, masters) => {
-  const board = normalizeBoardOption(responseData({ data: payload }) || payload);
-  if (board?.value && String(board.value) !== String(boardId)) return "";
-  return getLevelsForBoardOption(masters.levels || [], board)[0]?.value || "";
-};
-
-const loadAcademicLevelForBoard = async (boardId, masters, currentLevel = "") => {
-  if (!boardId) return "";
-  const mappedLevel = pickMappedLevel(masters, boardId, currentLevel);
-  if (mappedLevel) return mappedLevel;
-  const key = String(boardId);
-  if (!academicLevelByBoardPromises.has(key)) {
-    academicLevelByBoardPromises.set(key, apiClient.get(apiEndpoints.boards.getById(boardId))
-      .then((response) => readAcademicLevelFromBoardResponse(response.data, boardId, masters))
-      .catch((error) => {
-        academicLevelByBoardPromises.delete(key);
-        throw error;
-      }));
-  }
-  return academicLevelByBoardPromises.get(key);
-};
-
 const loadGroupMasters = async () => {
   if (groupMastersPromise) return groupMastersPromise;
   groupMastersPromise = (async () => {
@@ -495,21 +424,13 @@ const loadGroupMasters = async () => {
 };
 
 const groupApi = {
-  fetchRows: async ({ search = "", filters = {} } = {}) => {
-    const endpoint = filters.board
-      ? apiEndpoints.groups.getByBoard(filters.board)
-      : apiEndpoints.groups.getAll;
-    const params = {
-      search: search || undefined,
-      academicYearId: filters.year || undefined,
-      academicLevelId: filters.level || undefined,
-      isActive: filters.status ? filters.status === "Active" : undefined,
-    };
-    const response = await apiClient.get(endpoint, { params });
+  fetchRows: async ({ search = "" } = {}) => {
+    const masters = await loadGroupMasters();
+    const response = await apiClient.get(apiEndpoints.groups.getAll);
     return getCollection(response.data)
-      .map(normalizeGroup)
+      .map((item) => normalizeGroup(item, masters))
       .filter((row) => row.id)
-      .filter((row) => matchesFilters(row, search, filters));
+      .filter((row) => matchesSearch(row, search));
   },
   fetchRow: async (groupId) => {
     const response = await apiClient.get(apiEndpoints.groups.getById(groupId));
@@ -551,18 +472,6 @@ const groupApi = {
             : field
     ));
   },
-  loadFilters: async (filters) => {
-    const masters = await loadGroupMasters();
-    return filters.map((field) => (
-      field.name === "board"
-        ? { ...field, options: masters.boards }
-        : field.name === "year"
-          ? { ...field, options: uniqueAcademicYearsByName(masters.years, (year) => year.label) }
-        : field.name === "level"
-          ? { ...field, options: masters.levels }
-          : field
-    ));
-  },
 };
 
 export const pageConfig = {
@@ -580,14 +489,9 @@ export const pageConfig = {
       { key: "level", label: "Academic Level" },
       { key: "status", label: "Status", badge: true },
     ],
-    filters: [
-      { name: "board", label: "Board", type: "select", options: [] },
-      { name: "year", label: "Academic Year", type: "select", options: [] },
-    ],
     fields: [
       { name: "board", label: "Board", type: "select", options: [], required: true },
       { name: "year", label: "Academic Year", type: "select", options: [], required: true },
-      { name: "level", label: "Academic Level", type: "select", options: [], required: true },
       { name: "name", label: "Group Name", required: true },
       { name: "code", label: "Group Code", required: true },
       { name: "subjects", label: "Total Subjects", type: "number" },
@@ -722,30 +626,37 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
 function CourseGroupFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [contextOptions, setContextOptions] = useState({ boards: [], years: [], levels: [] });
   const [toast, setToast] = useState("");
   const [toastType, setToastType] = useState("success");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const initialContext = useMemo(() => ({
-    board: searchParams.get("board") || "",
-    year: searchParams.get("year") || "",
-    level: searchParams.get("level") || "",
-  }), [searchParams]);
-  const { values, errors, setValue, validate, setValues, setErrors } = useForm(groupFormFields, { ...initialContext, status: "Active" });
+  const { values, errors, setValue, validate, setValues, setErrors } = useForm(groupFormFields, { status: "Active" });
   const [selectedProgramIds, setSelectedProgramIds] = useState([]);
-  const activeYearRequest = useRef(0);
   const mode = id ? "Edit" : "Add";
-  const listPath = `/dashboard/courses${makeContextQuery(values)}`;
-  const contextSummary = [
-    { label: "Board", value: optionLabel(contextOptions.boards, values.board, values.board || "-") },
-    { label: "Academic Year", value: optionLabel(contextOptions.years, values.year, values.year || "-") },
-  ];
+  const listPath = "/dashboard/courses";
+  const mappedYearOptions = values.board ? getMappedYearsForBoard(contextOptions, values.board) : [];
+  const yearOptions = values.board && mappedYearOptions.length
+    ? mappedYearOptions
+    : uniqueAcademicYearsByName(contextOptions.years, (year) => year.label);
+  const fields = groupFormFields.map((field) => {
+    if (field.name === "board") return { ...field, options: contextOptions.boards };
+    if (field.name === "year") return { ...field, options: yearOptions };
+    return field;
+  });
   const showProgramError = useCallback((message) => {
     setToastType("error");
     setToast(message);
   }, []);
+
+  const setGroupValue = (name, value) => {
+    if (name === "board") {
+      setValues((current) => ({ ...current, board: value, year: "", level: defaultLevelForBoard(contextOptions, value, current.level) }));
+      setErrors((current) => ({ ...current, board: undefined, year: undefined }));
+      return;
+    }
+    setValue(name, value);
+  };
 
   useEffect(() => {
     let ignore = false;
@@ -761,18 +672,6 @@ function CourseGroupFormPage() {
         if (loadedGroup) {
           setValues(loadedGroup);
           setSelectedProgramIds(await fetchProgramIdsForGroup(id, loadedGroup.code));
-        } else if (initialContext.board) {
-          const [activeYear, academicLevel] = await Promise.all([
-            loadActiveYearForBoard(initialContext.board, masters),
-            loadAcademicLevelForBoard(initialContext.board, masters, initialContext.level),
-          ]);
-          if (ignore) return;
-          setValues((current) => ({
-            ...current,
-            board: initialContext.board,
-            year: activeYear,
-            level: academicLevel,
-          }));
         }
       } catch (error) {
         if (!ignore) {
@@ -785,49 +684,19 @@ function CourseGroupFormPage() {
     };
     load();
     return () => { ignore = true; };
-  }, [id, initialContext.board, initialContext.level, initialContext.year, setValues]);
+  }, [id, setValues]);
 
   useEffect(() => {
     if (id) return;
     setSelectedProgramIds(defaultProgramIdsForCode(values.code));
   }, [id, values.code]);
 
-  useEffect(() => {
-    if (id || !values.board) return undefined;
-    const currentRequest = activeYearRequest.current + 1;
-    activeYearRequest.current = currentRequest;
-    Promise.all([
-      loadActiveYearForBoard(values.board, contextOptions),
-      loadAcademicLevelForBoard(values.board, contextOptions, values.level),
-    ])
-      .then(([year, academicLevel]) => {
-        if (activeYearRequest.current === currentRequest && (year || academicLevel)) {
-          setValues((current) => {
-            const nextYear = year || current.year;
-            const nextLevel = academicLevel || current.level;
-            if (current.year === nextYear && current.level === nextLevel) return current;
-            return { ...current, year: nextYear, level: nextLevel };
-          });
-        }
-      })
-      .catch((error) => {
-        if (activeYearRequest.current === currentRequest) {
-          setToastType("error");
-          setToast(getApiErrorMessage(error));
-        }
-      });
-    return undefined;
-  }, [contextOptions, id, setValues, values.board, values.year]);
-
   const submit = async (event) => {
     event.preventDefault();
     if (!validate()) return;
     setSaving(true);
     try {
-      const saveValues = { ...values };
-      if (saveValues.board && !saveValues.level) {
-        saveValues.level = await loadAcademicLevelForBoard(saveValues.board, contextOptions, saveValues.level);
-      }
+      const saveValues = { ...values, level: values.level || defaultLevelForBoard(contextOptions, values.board) };
       saveValues.boardName = optionLabel(contextOptions.boards, saveValues.board, saveValues.board);
       saveValues.levelName = optionLabel(contextOptions.levels, saveValues.level, saveValues.level);
       const validationErrors = await groupApi.validateValues(saveValues, id);
@@ -838,7 +707,7 @@ function CourseGroupFormPage() {
       await groupApi.saveRow(saveValues, id, selectedProgramIds);
       setToastType("success");
       setToast(`Group ${id ? "updated" : "created"} successfully`);
-      navigate(`/dashboard/courses${makeContextQuery(saveValues)}`);
+      navigate("/dashboard/courses");
     } catch (error) {
       setToastType("error");
       setToast(getApiErrorMessage(error));
@@ -857,17 +726,9 @@ function CourseGroupFormPage() {
               <div className="cms-empty">Loading record...</div>
             ) : (
               <>
-                <div className="course-context-summary" aria-label="Selected group context">
-                  {contextSummary.map((item) => (
-                    <div key={item.label}>
-                      <span>{item.label}</span>
-                      <strong>{item.value}</strong>
-                    </div>
-                  ))}
-                </div>
                 <div className="cms-form-grid">
-                  {groupFormFields.map((field) => (
-                    <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={setValue} />
+                  {fields.map((field) => (
+                    <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={setGroupValue} />
                   ))}
                 </div>
                 <ProgramsPanel
@@ -894,14 +755,7 @@ function CourseGroupFormPage() {
 
 function CourseGroupListPage() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
-  const [filters, setFilters] = useState(() => ({
-    board: searchParams.get("board") || "",
-    year: searchParams.get("year") || "",
-    level: searchParams.get("level") || "",
-  }));
-  const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [] });
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
@@ -909,15 +763,14 @@ function CourseGroupListPage() {
   const [error, setError] = useState("");
   const initialLoadStarted = useRef(false);
   const requestId = useRef(0);
-  const activeYearRequest = useRef(0);
 
-  const loadRows = useCallback(async (nextSearch = search, nextFilters = filters) => {
+  const loadRows = useCallback(async (nextSearch = search) => {
     const currentRequest = requestId.current + 1;
     requestId.current = currentRequest;
     setLoading(true);
     setError("");
     try {
-      const loadedRows = await groupApi.fetchRows({ search: nextSearch, filters: nextFilters });
+      const loadedRows = await groupApi.fetchRows({ search: nextSearch });
       if (requestId.current === currentRequest) setRows(loadedRows);
     } catch (err) {
       if (requestId.current === currentRequest) {
@@ -927,89 +780,18 @@ function CourseGroupListPage() {
     } finally {
       if (requestId.current === currentRequest) setLoading(false);
     }
-  }, [filters, search]);
+  }, [search]);
 
   useEffect(() => {
     if (initialLoadStarted.current) return;
     initialLoadStarted.current = true;
-    loadGroupMasters()
-      .then(async (masters) => {
-        setMasterOptions(masters);
-        let nextFilters = filters;
-        if (filters.board) {
-          const [activeYear, academicLevel] = await Promise.all([
-            loadActiveYearForBoard(filters.board, masters),
-            loadAcademicLevelForBoard(filters.board, masters, filters.level),
-          ]);
-          nextFilters = { ...filters, year: activeYear, level: academicLevel };
-          setFilters(nextFilters);
-          updateRouteContext(nextFilters);
-        }
-        loadRows("", nextFilters);
-      })
-      .catch((err) => {
-        setError(getApiErrorMessage(err));
-        loadRows("", filters);
-      });
-  }, [filters, loadRows]);
-
-  const updateRouteContext = (nextFilters) => {
-    const params = new URLSearchParams(searchParams);
-    CONTEXT_FIELD_NAMES.forEach((name) => {
-      if (nextFilters[name]) params.set(name, nextFilters[name]);
-      else params.delete(name);
-    });
-    setSearchParams(params, { replace: true });
-  };
-
-  const setFilter = (name, value) => {
-    if (name === "__reset__") {
-      const nextFilters = {};
-      setFilters(nextFilters);
-      updateRouteContext(nextFilters);
-      loadRows(search, nextFilters);
-      return;
-    }
-    const next = { ...filters, [name]: value };
-    if (name === "board") {
-      next.year = "";
-      next.level = value ? pickMappedLevel(masterOptions, value, filters.level) : "";
-      const currentRequest = activeYearRequest.current + 1;
-      activeYearRequest.current = currentRequest;
-      if (value) {
-        Promise.all([
-          loadActiveYearForBoard(value, masterOptions),
-          loadAcademicLevelForBoard(value, masterOptions, filters.level),
-        ])
-          .then(([year, academicLevel]) => {
-            if (activeYearRequest.current !== currentRequest) return;
-            setFilters((current) => {
-              if (current.board !== value) return current;
-              const withContext = { ...current, year, level: academicLevel };
-              updateRouteContext(withContext);
-              loadRows(search, withContext);
-              return withContext;
-            });
-          })
-          .catch((err) => {
-            if (activeYearRequest.current === currentRequest) setError(getApiErrorMessage(err));
-          });
-      } else {
-        loadRows(search, next);
-      }
-    }
-    if (name === "year") {
-      next.level = "";
-    }
-    setFilters(next);
-    updateRouteContext(next);
-    if (name !== "board") loadRows(search, next);
-  };
+    loadRows("");
+  }, [loadRows]);
 
   const handleSearch = (value) => {
     if (value === search) return;
     setSearch(value);
-    loadRows(value, filters);
+    loadRows(value);
   };
 
   const deleteGroup = async (row) => {
@@ -1017,7 +799,7 @@ function CourseGroupListPage() {
       await groupApi.deleteRow(row.id);
       setToastType("success");
       setToast("Group deleted successfully");
-      await loadRows(search, filters);
+      await loadRows(search);
     } catch (err) {
       setToastType("error");
       setToast(getApiErrorMessage(err));
@@ -1025,30 +807,12 @@ function CourseGroupListPage() {
   };
 
   const addGroup = () => {
-    navigate(`/dashboard/courses/add${makeContextQuery(filters)}`);
+    navigate("/dashboard/courses/add");
   };
 
   const columns = useMemo(() => pageConfig.columns.map((column) => (
     column.badge ? { ...column, render: (row) => <StatusBadge value={row[column.key]} /> } : column
   )), []);
-
-  const yearOptions = getMappedYearsForBoard(masterOptions, filters.board);
-  const toolbarFilters = (
-    <div className="course-table-filters">
-      <select aria-label="Board" value={filters.board || ""} onChange={(event) => setFilter("board", event.target.value)}>
-        <option value="">Select Board</option>
-        {(masterOptions.boards || []).map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-      <select aria-label="Academic Year" value={filters.year || ""} disabled={!filters.board} onChange={(event) => setFilter("year", event.target.value)}>
-        <option value="">Select Academic Year</option>
-        {yearOptions.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </div>
-  );
 
   return (
     <DashboardLayout title={pageConfig.title} subtitle={pageConfig.subtitle} breadcrumb={pageConfig.breadcrumb}>
@@ -1057,7 +821,7 @@ function CourseGroupListPage() {
           <div className="cms-card" style={{ marginBottom: 16 }}>
             <div className="cms-card-body">
               <div className="cms-empty">{error}</div>
-              <button className="cms-btn cms-btn-ghost" onClick={() => loadRows(search, filters)}>Retry</button>
+              <button className="cms-btn cms-btn-ghost" onClick={() => loadRows(search)}>Retry</button>
             </div>
           </div>
         ) : null}
@@ -1067,10 +831,10 @@ function CourseGroupListPage() {
           rows={rows}
           loading={loading}
           addLabel={pageConfig.addLabel}
-          toolbarExtra={toolbarFilters}
+          searchPlaceholder="Search by group, code, board, academic year..."
           onSearchChange={handleSearch}
           onAdd={addGroup}
-          onEdit={(row) => navigate(`/dashboard/courses/${row.id}/edit${makeContextQuery(filters)}`)}
+          onEdit={(row) => navigate(`/dashboard/courses/${row.id}/edit`)}
           onDelete={deleteGroup}
         />
       </div>

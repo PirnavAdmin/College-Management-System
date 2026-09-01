@@ -335,7 +335,7 @@ export default function DashboardLayout({
                     </div>
                   );
                 }
-                return <Link key={item.to} to={item.to} className={`cms-nav-link ${active ? "is-active" : ""}`} onClick={closeOnMobile}><Icon size={17} /> {item.label}</Link>;
+                return <Link key={item.to} to={item.to} className={`cms-nav-link ${active ? "is-active" : ""}`} onClick={closeOnMobile}><Icon size={17} /><span className="cms-nav-label">{item.to === "/dashboard/board-academic-year" ? <>Board &amp; Academic Year<br />Management</> : item.label}</span></Link>;
               })}
             </div>
           ))}

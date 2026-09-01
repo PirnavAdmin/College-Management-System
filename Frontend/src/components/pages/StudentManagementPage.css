@@ -14,11 +14,12 @@
 .cms-progress { height: 8px; border-radius: 999px; background: #eef2f7; overflow: hidden; }
 .cms-progress i { display: block; height: 100%; background: linear-gradient(90deg, #6F8400, #9CAF27); border-radius: 999px; }
 [data-theme="dark"] .cms-progress { background: var(--cms-subtle); }
-.student-management-search { display:flex; align-items:center; gap:10px; max-width:520px; border:1px solid var(--cms-border); border-radius:10px; padding:0 13px; color:var(--cms-muted); }
+.student-management-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.student-management-search { display:flex; align-items:center; gap:10px; flex:1 1 320px; max-width:520px; border:1px solid var(--cms-border); border-radius:10px; padding:0 13px; color:var(--cms-muted); }
 .student-management-search input { width:100%; border:0; outline:0; padding:12px 0; background:transparent; color:var(--cms-text); font:inherit; }
 .student-management-filters {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 16px;
   padding: 0 26px 22px;
   box-sizing: border-box;
@@ -30,14 +31,39 @@
 .student-summary > div { background:var(--cms-surface); border:1px solid var(--cms-border); border-radius:14px; padding:16px 18px; box-shadow:var(--cms-shadow); }
 .student-summary span { display:block; color:var(--cms-muted); font-size:13px; }
 .student-summary strong { display:block; margin-top:6px; font-size:25px; color:var(--cms-text); }
-@media (max-width: 1200px) { .student-management-filters { grid-template-columns:repeat(3,minmax(150px,1fr)); } }
+@media (max-width: 1200px) { .student-management-filters { grid-template-columns:repeat(4,minmax(150px,1fr)); } }
 @media (max-width: 900px) { .student-management-filters { grid-template-columns:repeat(2,minmax(150px,1fr)); } }
 @media (max-width: 560px) { .student-management-filters { grid-template-columns:1fr; padding:0 16px 18px; } }
 @media (max-width: 700px) { .student-summary { grid-template-columns:repeat(2,1fr); } }
 .student-action-buttons { display:flex; gap:8px; white-space:nowrap; }
-.student-action-buttons a { display:inline-flex; gap:5px; align-items:center; color:var(--cms-primary); font-weight:600; font-size:13px; }
+.student-action-buttons a, .student-action-buttons button { display:inline-flex; gap:5px; align-items:center; color:var(--cms-primary); font-weight:600; font-size:13px; }
 .student-roll-preview { margin:22px 0; padding:16px 18px; border-radius:12px; background:var(--cms-subtle); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .student-roll-preview span { color:var(--cms-muted); }.student-roll-preview strong { font-size:24px; color:var(--cms-primary); }.student-roll-preview small { width:100%; color:var(--cms-muted); }
 
 /* Compact action family aligned with Board & Academic Year Management. */
-.student-action-buttons{gap:5px}.student-action-buttons a{min-height:34px;padding:0 9px;border:1px solid var(--cms-border);border-radius:10px;background:var(--cms-surface);font-size:12px;text-decoration:none}.student-action-buttons a:hover{border-color:var(--cms-primary-border);background:var(--cms-primary-soft);transform:translateY(-1px)}.student-action-buttons a svg{width:13px;height:13px;stroke-width:2.2}
+.student-action-buttons{gap:5px}.student-action-buttons a,.student-action-buttons button{min-height:34px;padding:0 9px;border:1px solid var(--cms-border);border-radius:10px;background:var(--cms-surface);font-size:12px;text-decoration:none;cursor:pointer}.student-action-buttons a:hover,.student-action-buttons button:hover{border-color:var(--cms-primary-border);background:var(--cms-primary-soft);transform:translateY(-1px)}.student-action-buttons button:disabled{cursor:not-allowed;opacity:.6;transform:none}.student-action-buttons a svg,.student-action-buttons button svg{width:13px;height:13px;stroke-width:2.2}
+.student-export-menu { position:relative; }
+.student-export-options { position:absolute; z-index:20; right:0; top:calc(100% + 6px); min-width:165px; padding:5px; border:1px solid var(--cms-border); border-radius:10px; background:var(--cms-surface); box-shadow:var(--cms-shadow); }
+.student-export-options button { width:100%; display:flex; align-items:center; gap:8px; border:0; border-radius:7px; padding:9px 10px; background:transparent; color:var(--cms-text); cursor:pointer; font:inherit; font-size:13px; text-align:left; }
+.student-export-options button:hover:not(:disabled) { background:var(--cms-primary-soft); color:var(--cms-primary); }
+.student-export-options button:disabled { opacity:.55; cursor:not-allowed; }
+
+/* Preserve readable desktop columns and scroll on narrow screens instead of
+   compressing content into character-by-character wrapping. */
+.student-management-table-wrap { overflow-x: auto; }
+.student-management-table { width: 100%; min-width: 1160px; table-layout: fixed; }
+.student-management-table th,
+.student-management-table td { vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.student-management-table th { overflow: visible; text-overflow: clip; }
+.student-col-id { width: 8%; }
+.student-col-admission { width: 10%; }
+.student-col-name { width: 13%; }
+.student-col-year { width: 10%; }
+.student-col-level { width: 12%; }
+.student-col-group { width: 7%; }
+.student-col-programme { width: 10%; }
+.student-col-section { width: 8%; }
+.student-col-roll { width: 7%; }
+.student-col-status { width: 7%; }
+.student-col-actions { width: 8%; }
+.student-management-table td:last-child { overflow: visible; }

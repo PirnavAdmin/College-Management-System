@@ -10,6 +10,8 @@ namespace CollegeManagement.API.DTOs.Board.Responses
 
         public string BoardCode { get; set; } = string.Empty;
 
+        public string BoardType { get; set; } = string.Empty;
+
         public int CountryId { get; set; }
 
         public string CountryName { get; set; } = string.Empty;

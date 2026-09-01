@@ -143,13 +143,13 @@ namespace CollegeManagement.API.Migrations
                     b.Property<DateOnly>("AdmissionStartDate")
                         .HasColumnType("date");
 
-                    b.Property<DateOnly>("EndDate")
+                    b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("tinyint(1)");
 
-                    b.Property<DateOnly>("StartDate")
+                    b.Property<DateOnly?>("StartDate")
                         .HasColumnType("date");
 
                     b.HasKey("AcademicYearId");
@@ -214,6 +214,11 @@ namespace CollegeManagement.API.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("varchar(100)");
+
+                    b.Property<string>("BoardType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("varchar(50)");
 
                     b.Property<int>("CountryId")
                         .HasColumnType("int");

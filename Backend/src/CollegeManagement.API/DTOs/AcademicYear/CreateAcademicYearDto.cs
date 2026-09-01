@@ -9,11 +9,9 @@ namespace CollegeManagement.API.DTOs.AcademicYear
         [StringLength(50)]
         public string AcademicYearName { get; set; } = string.Empty;
 
-        [Required]
-        public DateOnly StartDate { get; set; }
+        public DateOnly? StartDate { get; set; }
 
-        [Required]
-        public DateOnly EndDate { get; set; }
+        public DateOnly? EndDate { get; set; }
 
         [Required]
         public DateOnly AdmissionStartDate { get; set; }

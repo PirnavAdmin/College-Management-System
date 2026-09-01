@@ -66,11 +66,17 @@ namespace CollegeManagement.API.Repositories.Implementations
                 },
                 splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId"
             ).FirstOrDefault();
+            multi.Dispose();
 
             if (created == null)
             {
                 throw new InvalidOperationException("Failed to create board.");
             }
+
+            await Connection.ExecuteAsync(
+                "UPDATE Boards SET BoardType = @BoardType WHERE BoardId = @BoardId",
+                new { board.BoardType, created.BoardId });
+            created.BoardType = board.BoardType;
 
             return created;
         }
@@ -112,6 +118,15 @@ namespace CollegeManagement.API.Repositories.Implementations
                 },
                 splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId"
             ).FirstOrDefault();
+            multi.Dispose();
+
+            if (updated != null)
+            {
+                await Connection.ExecuteAsync(
+                    "UPDATE Boards SET BoardType = @BoardType WHERE BoardId = @BoardId",
+                    new { board.BoardType, board.BoardId });
+                updated.BoardType = board.BoardType;
+            }
 
             return updated;
         }
@@ -164,6 +179,10 @@ namespace CollegeManagement.API.Repositories.Implementations
                 ).ToList();
 
                 board.BoardAcademicLevels = academicLevels;
+                multi.Dispose();
+                board.BoardType = await Connection.QuerySingleOrDefaultAsync<string>(
+                    "SELECT BoardType FROM Boards WHERE BoardId = @BoardId",
+                    new { boardId }) ?? string.Empty;
             }
 
             return board;
@@ -195,7 +214,15 @@ namespace CollegeManagement.API.Repositories.Implementations
                 splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId",
                 commandType: CommandType.StoredProcedure);
 
-            return result.ToList();
+            var boards = result.ToList();
+            foreach (var board in boards)
+            {
+                board.BoardType = await Connection.QuerySingleOrDefaultAsync<string>(
+                    "SELECT BoardType FROM Boards WHERE BoardId = @BoardId",
+                    new { board.BoardId }) ?? string.Empty;
+            }
+
+            return boards;
         }
 
         /// <summary>

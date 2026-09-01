@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaMagnifyingGlass, FaPaperPlane, FaPlus, FaPrint, FaRotateLeft, FaTrash, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaMagnifyingGlass, FaPaperPlane, FaPlus, FaPrint, FaRotateLeft, FaTrash, FaUsers, FaXmark } from "react-icons/fa6";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
@@ -365,6 +365,11 @@ const normalizeStudentRecord = (raw) => {
     admissionNo: String(pick(source, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no", "studentAdmissionNo", "StudentAdmissionNo", "enrollmentNo", "EnrollmentNo"]) || "").trim(),
     name: fullName,
     rollNo: String(pick(source, ["rollNo", "RollNo", "rollNumber", "RollNumber"]) || "").trim(),
+    board: getReferenceLabel(
+      pick(source, ["boardName", "BoardName", "board", "Board"]),
+      ["boardName", "BoardName", "name", "Name", "label", "Label"],
+    ) || "",
+    boardId: Number(pick(source, ["boardId", "BoardId"])) || null,
     group: pick(source, ["groupName", "GroupName", "groupCode", "GroupCode", "group", "Group", "courseGroup", "CourseGroup"]) || "",
     level: getReferenceLabel(
       pick(source, [
@@ -507,7 +512,7 @@ function formatDateDdMmYyyy(value) {
 const baseFormFields = [
   { name: "admissionNo", label: "Admission No.", type: "text", placeholder: "Enter admission number", required: true },
   { name: "type", label: "Certificate Type", type: "select", required: true },
-  { name: "purpose", label: "Purpose", required: true },
+  { name: "purpose", label: "Purpose" },
   { name: "requestDate", label: "Request Date", type: "date", required: true },
   { name: "remarks", label: "Remarks" },
 ];
@@ -1064,6 +1069,10 @@ export default function CertificatesPage() {
   const [busyAction, setBusyAction] = useState({ id: null, type: "" });
   const [bulkAction, setBulkAction] = useState("");
   const [printingId, setPrintingId] = useState(null);
+  const [generationMode, setGenerationMode] = useState("single");
+  const [bulkStudentSearch, setBulkStudentSearch] = useState("");
+  const [selectedBulkStudents, setSelectedBulkStudents] = useState([]);
+  const [bulkStudentFilters, setBulkStudentFilters] = useState({ academicYear: "", board: "", group: "", section: "" });
 
   const [form, setForm] = useState({
     admissionNo: "",
@@ -1091,6 +1100,7 @@ export default function CertificatesPage() {
   const [activeTab, setActiveTab] = useState("generate");
   const [page, setPage] = useState(1);
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState("All");
+  const [workflowQuery, setWorkflowQuery] = useState("");
   const [actionPage, setActionPage] = useState(1);
   const [printPreview, setPrintPreview] = useState(null);
   const [toast, setToast] = useState("");
@@ -1202,6 +1212,7 @@ export default function CertificatesPage() {
         academicLevelsResult,
         groupsResult,
         sectionsResult,
+        boardsResult,
       ] = await Promise.allSettled([
         apiClient.get(apiEndpoints.students.getAll),
         apiClient.get(CERTIFICATE_API.studentsDropdown),
@@ -1210,6 +1221,7 @@ export default function CertificatesPage() {
         apiClient.get(apiEndpoints.academicLevels.list),
         apiClient.get(apiEndpoints.groups.list),
         apiClient.get(apiEndpoints.sections.list),
+        apiClient.get(apiEndpoints.boards.getAll),
       ]);
       if (studentManagementResult.status === "rejected" && certificateDropdownResult.status === "rejected") {
         throw studentManagementResult.reason || certificateDropdownResult.reason;
@@ -1250,8 +1262,14 @@ export default function CertificatesPage() {
         ["sectionId", "SectionId", "id", "Id"],
         ["sectionName", "SectionName", "name", "Name", "code", "Code"],
       );
+      const boardsById = makeReferenceMap(
+        boardsResult,
+        ["boardId", "BoardId", "id", "Id"],
+        ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"],
+      );
       const enrichedStudents = mapped.map((student) => ({
         ...student,
+        board: boardsById.get(Number(student.boardId)) || student.board || "",
         academicYear: academicYearsById.get(Number(student.academicYearId)) || student.academicYear || "",
         level: academicLevelsById.get(Number(student.academicLevelId)) || student.level || "",
         group: groupsById.get(Number(student.groupId)) || student.group || "",
@@ -1292,6 +1310,44 @@ export default function CertificatesPage() {
   const findStudentByAdmission = (admissionNo) =>
     studentRows.find((student) => String(student.admissionNo).trim().toLowerCase() === String(admissionNo).trim().toLowerCase()) || null;
 
+  const bulkStudentFilterOptions = useMemo(() => {
+    const uniqueValues = (key) => Array.from(new Set(studentRows
+      .map((student) => String(student[key] || "").trim())
+      .filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
+    return {
+      academicYears: uniqueValues("academicYear"),
+      boards: uniqueValues("board"),
+      groups: uniqueValues("group"),
+      sections: uniqueValues("section"),
+    };
+  }, [studentRows]);
+
+  const visibleBulkStudents = useMemo(() => {
+    const search = bulkStudentSearch.trim().toLowerCase();
+    return studentRows.filter((student) => (
+      (!bulkStudentFilters.academicYear || String(student.academicYear) === bulkStudentFilters.academicYear)
+      && (!bulkStudentFilters.board || String(student.board) === bulkStudentFilters.board)
+      && (!bulkStudentFilters.group || String(student.group) === bulkStudentFilters.group)
+      && (!bulkStudentFilters.section || String(student.section) === bulkStudentFilters.section)
+      && (!search || [student.admissionNo, student.name, student.rollNo, student.group, student.section]
+        .some((value) => String(value || "").toLowerCase().includes(search)))
+    ));
+  }, [bulkStudentFilters, bulkStudentSearch, studentRows]);
+
+  const selectedBulkAdmissionNumbers = useMemo(
+    () => new Set(selectedBulkStudents.map(String)),
+    [selectedBulkStudents],
+  );
+
+  const toggleBulkStudent = (admissionNo) => {
+    const key = String(admissionNo);
+    setSelectedBulkStudents((current) => current.includes(key)
+      ? current.filter((value) => value !== key)
+      : [...current, key]);
+    setErrors((current) => ({ ...current, bulkStudents: undefined }));
+  };
+
   useEffect(() => {
     const lookupId = ++admissionLookupRef.current;
     const matchedStudent = findStudentByAdmission(form.admissionNo);
@@ -1301,7 +1357,7 @@ export default function CertificatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.admissionNo, studentRows]);
 
-  const validate = () => {
+  const validate = ({ bulk = false } = {}) => {
     const next = {};
     const admissionNo = String(form.admissionNo || "").trim();
     const selectedType = String(form.type || "").trim();
@@ -1311,11 +1367,12 @@ export default function CertificatesPage() {
     const remarks = normalizeText(form.remarks);
 
     formFields.forEach((field) => {
+      if (bulk && field.name === "admissionNo") return;
       const value = form[field.name];
       if (field.required && !String(value || "").trim()) next[field.name] = `${field.label} is required`;
     });
 
-    if (admissionNo && !findStudentByAdmission(admissionNo)) {
+    if (!bulk && admissionNo && !findStudentByAdmission(admissionNo)) {
       next.admissionNo = "Select a valid admission number";
     }
 
@@ -1327,7 +1384,7 @@ export default function CertificatesPage() {
       next.customType = "Enter the certificate type";
     }
 
-    if (purpose.length < 5) {
+    if (purpose && purpose.length < 5) {
       next.purpose = "Purpose should be at least 5 characters";
     } else if (purpose.length > MAX_PURPOSE_LENGTH) {
       next.purpose = `Purpose should not exceed ${MAX_PURPOSE_LENGTH} characters`;
@@ -1345,7 +1402,7 @@ export default function CertificatesPage() {
       next.remarks = `Remarks should not exceed ${MAX_REMARKS_LENGTH} characters`;
     }
 
-    const duplicate = rows.some(
+    const duplicate = !bulk && rows.some(
       (row) =>
         row.admissionNo === admissionNo &&
         row.type === type &&
@@ -1355,6 +1412,10 @@ export default function CertificatesPage() {
     if (duplicate) {
       next.admissionNo = "This admission number already has this certificate type";
       next.type = "Duplicate certificate type for this student";
+    }
+
+    if (bulk && !selectedBulkStudents.length) {
+      next.bulkStudents = "Select at least one student";
     }
 
     setErrors(next);
@@ -1377,6 +1438,9 @@ export default function CertificatesPage() {
       requestDate: todayIso(),
       remarks: "",
     });
+    setSelectedBulkStudents([]);
+    setBulkStudentSearch("");
+    setBulkStudentFilters({ academicYear: "", board: "", group: "", section: "" });
     setErrors({});
   };
 
@@ -1417,7 +1481,7 @@ export default function CertificatesPage() {
       const specializedPayload = withOptionalRemarks({
         admissionNo,
         certificateType: certificateRequest.type,
-        purpose,
+        ...(purpose ? { purpose } : {}),
         requestDate: normalizedRequestDate,
       }, remarks);
       const response = await apiClient.post(certificateRequest.endpoint, specializedPayload);
@@ -1442,6 +1506,73 @@ export default function CertificatesPage() {
       setToast(`${certificateRequest.type} generated successfully.`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Failed to generate certificate. Please try again."));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const generateBulkCertificates = async () => {
+    if (!validate({ bulk: true }) || creating) return;
+
+    const certificateRequest = resolveCertificateRequest(form);
+    if (!certificateRequest) return setToast("Unsupported certificate type.");
+    const requestDate = toApiDateTime(form.requestDate);
+    if (!requestDate) {
+      setErrors((current) => ({ ...current, requestDate: "Enter a valid request date" }));
+      return;
+    }
+
+    const selectedStudents = selectedBulkStudents
+      .map((admissionNo) => findStudentByAdmission(admissionNo))
+      .filter(Boolean);
+    const duplicates = selectedStudents.filter((student) => rows.some((row) =>
+      String(row.admissionNo).trim().toLowerCase() === String(student.admissionNo).trim().toLowerCase()
+      && certificateTypesMatch(row.type, certificateRequest.type)
+      && row.status !== "Cancelled"));
+    if (duplicates.length) {
+      setErrors((current) => ({
+        ...current,
+        bulkStudents: `${duplicates.length} selected student${duplicates.length === 1 ? " already has" : "s already have"} this certificate type`,
+      }));
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: "Generate bulk certificates?",
+      message: `Generate ${certificateRequest.type} for ${selectedStudents.length} selected student${selectedStudents.length === 1 ? "" : "s"}?`,
+      confirmLabel: "Generate All",
+    });
+    if (!confirmed) return;
+
+    setCreating(true);
+    try {
+      const purpose = normalizeText(form.purpose);
+      const remarks = normalizeText(form.remarks);
+      const results = await Promise.allSettled(selectedStudents.map((student) => apiClient.post(
+        certificateRequest.endpoint,
+        withOptionalRemarks({
+          admissionNo: student.admissionNo,
+          certificateType: certificateRequest.type,
+          ...(purpose ? { purpose } : {}),
+          requestDate,
+        }, remarks),
+      )));
+      const failedAdmissions = selectedStudents
+        .filter((_, index) => results[index].status === "rejected")
+        .map((student) => String(student.admissionNo));
+      const generatedCount = selectedStudents.length - failedAdmissions.length;
+      setSelectedBulkStudents(failedAdmissions);
+      await refreshCertificateData({ showLoader: false });
+      setPage(1);
+      if (!failedAdmissions.length) {
+        resetForm();
+        setActiveTab("certificates");
+      }
+      setToast(failedAdmissions.length
+        ? `${generatedCount} certificate${generatedCount === 1 ? "" : "s"} generated; ${failedAdmissions.length} failed and remain selected.`
+        : `${generatedCount} certificate${generatedCount === 1 ? "" : "s"} generated successfully.`);
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to generate bulk certificates. Please try again."));
     } finally {
       setCreating(false);
     }
@@ -1485,6 +1616,7 @@ export default function CertificatesPage() {
     if (bulkAction || busyAction.id) return;
 
     const actionMap = {
+      review: { currentStatus: "Generated", label: "reviewed" },
       approve: { currentStatus: "Reviewed", endpoint: CERTIFICATE_API.bulkApprove, label: "approved" },
       issue: { currentStatus: "Approved", endpoint: CERTIFICATE_API.bulkIssue, label: "issued" },
     };
@@ -1506,13 +1638,33 @@ export default function CertificatesPage() {
 
     setBulkAction(action);
     try {
-      const requestConfig = action === "issue" ? { params: { issuedBy: getIssuedBy() || undefined } } : undefined;
-      await apiClient.patch(selected.endpoint, null, requestConfig);
-      await Promise.all(eligibleRows.map((row) => (
-        verifyPersistedCertificateType(row.backendId || row.id, row.type)
-      )));
+      let completedCount = eligibleRows.length;
+
+      if (action === "review") {
+        const reviewResults = await Promise.allSettled(eligibleRows.map(async (row) => {
+          const certificateId = row.backendId || row.id;
+          await apiClient.patch(CERTIFICATE_API.review(certificateId));
+          await verifyPersistedCertificateType(certificateId, row.type);
+        }));
+        completedCount = reviewResults.filter((result) => result.status === "fulfilled").length;
+
+        if (!completedCount) {
+          const firstFailure = reviewResults.find((result) => result.status === "rejected");
+          throw firstFailure?.reason || new Error("Failed to bulk review certificates.");
+        }
+      } else {
+        const requestConfig = action === "issue" ? { params: { issuedBy: getIssuedBy() || undefined } } : undefined;
+        await apiClient.patch(selected.endpoint, null, requestConfig);
+        await Promise.all(eligibleRows.map((row) => (
+          verifyPersistedCertificateType(row.backendId || row.id, row.type)
+        )));
+      }
+
       await refreshCertificateData({ showLoader: false });
-      setToast(`${eligibleRows.length} eligible certificate${eligibleRows.length === 1 ? "" : "s"} ${selected.label}.`);
+      const failedCount = eligibleRows.length - completedCount;
+      setToast(failedCount
+        ? `${completedCount} certificate${completedCount === 1 ? "" : "s"} ${selected.label}; ${failedCount} could not be processed and can be retried.`
+        : `${completedCount} eligible certificate${completedCount === 1 ? "" : "s"} ${selected.label}.`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, `Failed to bulk ${action} certificates.`));
     } finally {
@@ -1792,9 +1944,20 @@ export default function CertificatesPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const actionRows = rows.filter((row) =>
-    ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status)
-    && (workflowStatusFilter === "All" || row.status === workflowStatusFilter));
+  const normalizedWorkflowQuery = workflowQuery.trim().toLowerCase();
+  const actionRows = rows.filter((row) => {
+    const isWorkflowRecord = ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status);
+    const matchesStatus = workflowStatusFilter === "All" || row.status === workflowStatusFilter;
+    const matchesSearch = !normalizedWorkflowQuery || [
+      row.number,
+      row.admissionNo,
+      row.student,
+      row.type,
+      row.status,
+      formatDateDdMmYyyy(row.requestDate),
+    ].some((value) => String(value || "").toLowerCase().includes(normalizedWorkflowQuery));
+    return isWorkflowRecord && matchesStatus && matchesSearch;
+  });
   const actionTotalPages = Math.max(1, Math.ceil(actionRows.length / PAGE_SIZE));
   const currentActionPage = Math.min(actionPage, actionTotalPages);
   const actionPageRows = actionRows.slice((currentActionPage - 1) * PAGE_SIZE, currentActionPage * PAGE_SIZE);
@@ -1852,14 +2015,67 @@ export default function CertificatesPage() {
           <div className="cms-card cert-form-card">
             <div className="cms-card-head cert-section-head">
               <div>
-                <h2>Create Certificate</h2>
-                <p>Enter request details and generate a certificate request.</p>
+                <h2>{generationMode === "bulk" ? "Bulk Certificate Issue" : "Create Certificate"}</h2>
+                <p>{generationMode === "bulk" ? "Select multiple students and generate their certificate requests together." : "Enter request details and generate a certificate request."}</p>
+              </div>
+              <div className="cert-generation-mode" role="group" aria-label="Certificate generation mode">
+                <button type="button" className={generationMode === "single" ? "is-active" : ""} onClick={() => { setGenerationMode("single"); setSelectedBulkStudents([]); setErrors({}); }}>Single</button>
+                <button type="button" className={generationMode === "bulk" ? "is-active" : ""} onClick={() => { setGenerationMode("bulk"); setForm((current) => ({ ...current, admissionNo: "", student: "", group: "", level: "", academicYear: "", rollNo: "", section: "" })); setErrors({}); }}><FaUsers size={13} aria-hidden="true" /> Bulk Issue</button>
               </div>
             </div>
             <div className="cms-card-body">
+              {generationMode === "bulk" ? (
+                <section className={`cert-bulk-students ${errors.bulkStudents ? "has-error" : ""}`}>
+                  <div className="cert-bulk-students-head">
+                    <div><h3>Select Students</h3><span>{selectedBulkStudents.length} selected</span></div>
+                  </div>
+                  <div className="cert-bulk-filter-row">
+                    <label className="cert-bulk-search">
+                      <FaMagnifyingGlass size={14} aria-hidden="true" />
+                      <input type="search" value={bulkStudentSearch} onChange={(event) => setBulkStudentSearch(event.target.value)} placeholder="Search admission no., student, roll no., group or section" />
+                    </label>
+                    <select aria-label="Filter students by academic year" value={bulkStudentFilters.academicYear} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, academicYear: event.target.value }))}>
+                      <option value="">Select Academic Year</option>
+                      {bulkStudentFilterOptions.academicYears.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select aria-label="Filter students by board" value={bulkStudentFilters.board} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, board: event.target.value }))}>
+                      <option value="">Select Board</option>
+                      {bulkStudentFilterOptions.boards.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select aria-label="Filter students by group" value={bulkStudentFilters.group} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, group: event.target.value }))}>
+                      <option value="">Select Group</option>
+                      {bulkStudentFilterOptions.groups.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select aria-label="Filter students by section" value={bulkStudentFilters.section} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, section: event.target.value }))}>
+                      <option value="">Select Section</option>
+                      {bulkStudentFilterOptions.sections.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  </div>
+                  <div className="cert-bulk-select-actions">
+                    <button type="button" onClick={() => { setSelectedBulkStudents((current) => Array.from(new Set([...current, ...visibleBulkStudents.map((student) => String(student.admissionNo))]))); setErrors((current) => ({ ...current, bulkStudents: undefined })); }} disabled={!visibleBulkStudents.length}>Select All Results</button>
+                    <button type="button" onClick={() => setSelectedBulkStudents([])} disabled={!selectedBulkStudents.length}>Clear Selection</button>
+                  </div>
+                  <div className="cert-bulk-student-list">
+                    {loadingStudents ? <Loader label="Loading students..." /> : visibleBulkStudents.length ? visibleBulkStudents.map((student) => {
+                      const admissionNo = String(student.admissionNo);
+                      return (
+                        <label key={student.id || admissionNo} className={selectedBulkAdmissionNumbers.has(admissionNo) ? "is-selected" : ""}>
+                          <input type="checkbox" checked={selectedBulkAdmissionNumbers.has(admissionNo)} onChange={() => toggleBulkStudent(admissionNo)} />
+                          <span>
+                            <strong>{student.name || "Student"}</strong>
+                            <small>{[admissionNo, student.rollNo ? `Roll ${student.rollNo}` : "", student.group, student.section].filter(Boolean).join(" · ")}</small>
+                          </span>
+                        </label>
+                      );
+                    }) : <p>No matching students found.</p>}
+                  </div>
+                  {errors.bulkStudents ? <span className="cms-error">{errors.bulkStudents}</span> : null}
+                </section>
+              ) : null}
               <div className="cms-form-grid cols-3">
                 {formFields.map((field) => {
                   if (field.name === "admissionNo") {
+                    if (generationMode === "bulk") return null;
                     return (
                       <CertificateStudentSearch
                         key={field.name}
@@ -1886,24 +2102,27 @@ export default function CertificatesPage() {
                           {field.label} {field.required ? <span className="req">*</span> : null}
                         </label>
                         {field.name === "type" ? (
-                          <select
-                            id="certificate-type"
-                            className={form.type ? "" : "cert-field-placeholder"}
-                            value={form.type}
-                            onChange={(e) => {
-                              const nextType = e.target.value;
-                              setForm((prev) => ({
-                                ...prev,
-                                type: nextType,
-                                customType: "",
-                                orientation: nextType === "Transfer Certificate" ? "landscape" : "portrait",
-                              }));
-                              setErrors((prev) => ({ ...prev, type: undefined, customType: undefined }));
-                            }}
-                          >
-                            <option value="">Select Certificate Type</option>
-                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                          </select>
+                          <div className="cert-type-select-control">
+                            <select
+                              id="certificate-type"
+                              className={form.type ? "" : "cert-field-placeholder"}
+                              value={form.type}
+                              onChange={(e) => {
+                                const nextType = e.target.value;
+                                setForm((prev) => ({
+                                  ...prev,
+                                  type: nextType,
+                                  customType: "",
+                                  orientation: nextType === "Transfer Certificate" ? "landscape" : "portrait",
+                                }));
+                                setErrors((prev) => ({ ...prev, type: undefined, customType: undefined }));
+                              }}
+                            >
+                              <option value="">Select Certificate Type</option>
+                              {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                            <FaChevronDown size={13} aria-hidden="true" />
+                          </div>
                         ) : (
                           <input
                             id="certificate-requestDate"
@@ -1979,7 +2198,7 @@ export default function CertificatesPage() {
                 ) : null}
               </div>
 
-              <div className="cms-form-grid cert-student-fields cert-space-top-12">
+              {generationMode === "single" ? <div className="cms-form-grid cert-student-fields cert-space-top-12">
                 <div className="cms-field cert-readonly">
                   <label>Student Name</label>
                   <input type="text" value={form.student} readOnly placeholder="Auto-filled from admission number" />
@@ -2004,13 +2223,13 @@ export default function CertificatesPage() {
                   <label>Section</label>
                   <input type="text" value={form.section} readOnly placeholder="Auto-filled" />
                 </div>
-              </div>
+              </div> : null}
               <div className="cms-form-actions">
                 <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} disabled={creating} title="Clear certificate form" aria-label="Clear certificate form">
                   <FaEraser size={14} aria-hidden="true" /> Clear
                 </button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents} title="Generate certificate draft" aria-label="Generate certificate draft">
-                  <FaFileCirclePlus size={14} aria-hidden="true" /> {form.type === "Others" ? "Create Draft" : "Generate"}
+                <button type="button" className="cms-btn cms-btn-primary" onClick={generationMode === "bulk" ? generateBulkCertificates : generateCertificate} disabled={creating || loadingStudents} title={generationMode === "bulk" ? "Generate certificates for selected students" : "Generate certificate draft"} aria-label={generationMode === "bulk" ? "Generate certificates for selected students" : "Generate certificate draft"}>
+                  {generationMode === "bulk" ? <FaUsers size={14} aria-hidden="true" /> : <FaFileCirclePlus size={14} aria-hidden="true" />} {creating ? "Generating..." : generationMode === "bulk" ? `Generate ${selectedBulkStudents.length || ""} Certificate${selectedBulkStudents.length === 1 ? "" : "s"}` : form.type === "Others" ? "Create Draft" : "Generate"}
                 </button>
               </div>
             </div>
@@ -2141,13 +2360,21 @@ export default function CertificatesPage() {
         </> : null}
 
         {activeTab === "actions" ? (
-          <section className="cert-records-card">
+          <section className="cert-records-card cert-workflow-card">
             <div className="cert-records-head">
               <div>
                 <h3>Certificate Workflow</h3>
                 <p>Process all eligible certificates at each workflow stage.</p>
               </div>
               <div className="cms-actions cert-action-buttons">
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => handleBulkWorkflow("review")}
+                  disabled={Boolean(bulkAction) || Boolean(busyAction.id) || !rows.some((row) => row.status === "Generated")}
+                >
+                  <FaClipboardCheck size={13} aria-hidden="true" /> {bulkAction === "review" ? "Reviewing..." : "Review All"}
+                </button>
                 <button
                   type="button"
                   className="cms-btn cms-btn-ghost"
@@ -2190,6 +2417,21 @@ export default function CertificatesPage() {
                 </button>
               ))}
             </div>
+            <div className="cert-workflow-toolbar">
+              <label className="cert-search-box" htmlFor="certificate-workflow-search">
+                <FaMagnifyingGlass size={15} aria-hidden="true" />
+                <input
+                  id="certificate-workflow-search"
+                  type="search"
+                  value={workflowQuery}
+                  onChange={(event) => {
+                    setWorkflowQuery(event.target.value);
+                    setActionPage(1);
+                  }}
+                  placeholder="Search certificate no., admission no., student, type, status or date"
+                />
+              </label>
+            </div>
             <div className="cms-table-wrap cert-table-wrap-modern">
               <table className="cms-table cert-table-fit cert-workflow-table">
                 <thead>
@@ -2207,7 +2449,7 @@ export default function CertificatesPage() {
                   {loadingList ? (
                     <tr><td colSpan={7}><Loader label="Loading certificates..." /></td></tr>
                   ) : !actionPageRows.length ? (
-                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No {workflowStatusFilter === "All" ? "workflow" : workflowStatusFilter.toLowerCase()} certificates found</h4><p>{workflowStatusFilter === "All" ? "Certificate requests will appear here as they move through the workflow." : `There are no certificates with ${workflowStatusFilter.toLowerCase()} status.`}</p></div></td></tr>
+                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No matching certificates found</h4><p>{workflowQuery.trim() ? "Try a different certificate number, admission number, student, type, status, or date." : workflowStatusFilter === "All" ? "Certificate requests will appear here as they move through the workflow." : `There are no certificates with ${workflowStatusFilter.toLowerCase()} status.`}</p></div></td></tr>
                   ) : actionPageRows.map((row) => (
                     <tr key={row.id}>
                       <td className="cms-strong" title={row.number}>{row.number}</td>

@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, Layers3, Plus, RotateCcw, School, Users, UserRoundCheck, UserRoundCog } from "lucide-react";
+import { Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, RotateCcw, Users } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import totalStudentsIcon from "@/assets/dashboard-3d/total-students.png";
+import teachingStaffIcon from "@/assets/dashboard-3d/teaching-staff.png";
+import nonTeachingStaffIcon from "@/assets/dashboard-3d/non-teaching-staff.png";
+import totalGroupsIcon from "@/assets/dashboard-3d/total-groups.png";
+import totalSectionsIcon from "@/assets/dashboard-3d/total-sections.png";
+import addStudentIcon from "@/assets/dashboard-3d/add-student.png";
+import addStaffIcon from "@/assets/dashboard-3d/add-staff.png";
+import createGroupIcon from "@/assets/dashboard-3d/create-group.png";
+import createSectionIcon from "@/assets/dashboard-3d/create-section.png";
+import createExamIcon from "@/assets/dashboard-3d/create-exam.png";
+import markAttendanceIcon from "@/assets/dashboard-3d/mark-attendance.png";
 import "./DashboardPage.css";
 
 const REQUEST_TIMEOUT = 12000;
 const GROUP_COLORS = ["#2563eb", "#7c3aed", "#f59e0b", "#16a34a", "#e11d48", "#0891b2", "#64748b"];
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const CERTIFICATE_TYPES = [
   { key: "bonafide", label: "Bonafide Certificate", icon: GraduationCap, tone: "blue" },
   { key: "study", label: "Study Certificate", icon: BookOpen, tone: "violet" },
@@ -20,22 +32,24 @@ const DASHBOARD_API = {
   summary: "/api/v1/dashboard/summary",
   studentsOverview: "/api/v1/dashboard/students-overview",
   groupDistribution: "/api/v1/dashboard/group-distribution",
+  admissionTrend: "/api/v1/dashboard/admission-trend",
   weeklyAttendance: "/api/v1/dashboard/weekly-attendance",
   certificateRequests: "/api/v1/dashboard/certificate-requests",
-  admissionTrend: "/api/v1/dashboard/admission-trend",
   upcomingExaminations: "/api/v1/dashboard/upcoming-examinations",
 };
-const DASHBOARD_WIDGETS = Object.entries(DASHBOARD_API).filter(([key]) => key !== "filters");
+const DASHBOARD_WIDGET_KEYS = Object.keys(DASHBOARD_API).filter((key) => key !== "filters");
+const DATE_WIDGET_KEYS = ["summary", "studentsOverview", "weeklyAttendance", "certificateRequests"];
+const SCOPE_WIDGET_KEYS = ["groupDistribution", "admissionTrend", "upcomingExaminations"];
 const QUICK_ACTIONS = [
-  { label: "Add Student", to: "/dashboard/admission", icon: Users, tone: "green", add: true },
-  { label: "Add Staff", to: "/dashboard/faculty/add?staffTab=teaching", icon: UserRoundCheck, tone: "blue", add: true },
-  { label: "Create Group", to: "/dashboard/courses/add", icon: Layers3, tone: "violet", add: true },
-  { label: "Create Section", to: "/dashboard/sections", icon: School, tone: "cyan", add: true },
-  { label: "Create Exam", to: "/dashboard/examinations/add", icon: FileText, tone: "orange", add: true },
-  { label: "Mark Attendance", to: "/dashboard/attendance/student", icon: ClipboardCheck, tone: "green" },
+  { label: "Add Student", to: "/dashboard/admission", icon: addStudentIcon, tone: "green" },
+  { label: "Add Staff", to: "/dashboard/faculty", icon: addStaffIcon, tone: "blue" },
+  { label: "Create Group", to: "/dashboard/courses/add", icon: createGroupIcon, tone: "violet" },
+  { label: "Create Section", to: "/dashboard/sections", icon: createSectionIcon, tone: "cyan" },
+  { label: "Create Exam", to: "/dashboard/examinations/add", icon: createExamIcon, tone: "orange" },
+  { label: "Mark Attendance", to: "/dashboard/attendance/student", icon: markAttendanceIcon, tone: "green" },
 ];
-const EMPTY_WIDGETS = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, null]));
-const EMPTY_LOADING = Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, false]));
+const EMPTY_WIDGETS = Object.fromEntries(DASHBOARD_WIDGET_KEYS.map((key) => [key, null]));
+const EMPTY_LOADING = Object.fromEntries(DASHBOARD_WIDGET_KEYS.map((key) => [key, false]));
 function unwrap(payload) {
   let value = payload;
   const visited = new Set();
@@ -121,12 +135,12 @@ function shiftLocalDate(value, days) {
   return localDateValue(date);
 }
 
-function weekDateRange(anchorDate) {
+function calendarWeekRange(anchorDate) {
   const [year, month, day] = String(anchorDate).split("-").map(Number);
   const date = new Date(year, month - 1, day);
   const daysSinceMonday = (date.getDay() + 6) % 7;
-  const from = shiftLocalDate(anchorDate, -daysSinceMonday);
-  return { from, to: shiftLocalDate(from, 6) };
+  const start = shiftLocalDate(anchorDate, -daysSinceMonday);
+  return { start, end: shiftLocalDate(start, 6) };
 }
 
 function formatDateLabel(value, options = { month: "short", day: "numeric" }) {
@@ -144,34 +158,58 @@ function optionRows(payload, kind) {
   const definitions = kind === "year"
     ? { preferred: ["academicYears", "AcademicYears", "years", "Years"], ids: ["academicYearId", "AcademicYearId", "id", "Id"], labels: ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"] }
     : { preferred: ["boards", "Boards"], ids: ["boardId", "BoardId", "id", "Id"], labels: ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"] };
-  const seen = new Set();
-  return collection(payload, definitions.preferred).flatMap((item) => {
+  const optionsByLabel = new Map();
+  collection(payload, definitions.preferred).forEach((item) => {
     const id = read(item, ...definitions.ids);
     const label = String(read(item, ...definitions.labels) ?? "").trim();
-    const dedupeKey = kind === "year" ? label.toLowerCase() : String(id);
-    if (!id || !label || seen.has(dedupeKey)) return [];
-    seen.add(dedupeKey);
-    const marker = read(item, "isCurrent", "IsCurrent", "isDefault", "IsDefault", "isActive", "IsActive", "status", "Status");
-    const current = marker === true || ["true", "active", "current", "default"].includes(String(marker).toLowerCase());
-    return [{ value: String(id), label, current }];
+    if (!id || !label) return;
+    const isCurrent = read(item, "isCurrent", "IsCurrent") === true;
+    const isDefault = read(item, "isDefault", "IsDefault") === true;
+    const activeValue = read(item, "isActive", "IsActive", "status", "Status");
+    const isActive = activeValue === true || ["true", "active", "current", "default"].includes(String(activeValue).toLowerCase());
+    const option = { value: String(id), label, priority: isCurrent ? 3 : isDefault ? 2 : isActive ? 1 : 0 };
+    const dedupeKey = label.toLowerCase();
+    const existing = optionsByLabel.get(dedupeKey);
+    if (!existing || option.priority > existing.priority) optionsByLabel.set(dedupeKey, option);
   });
+  return Array.from(optionsByLabel.values());
 }
 
-function buildDashboardParams(widget, filters) {
-  const scope = {
+function defaultOptionValue(options) {
+  return [...options].sort((left, right) => right.priority - left.priority)[0]?.value || "";
+}
+
+function preferredAcademicYearValue(options, preferredLabel = "2026-2027") {
+  const normalizeYear = (value) => String(value).trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
+  return options.find((item) => normalizeYear(item.label) === normalizeYear(preferredLabel))?.value
+    || defaultOptionValue(options);
+}
+
+function buildScopeParams(filters) {
+  return {
     ...(Number(filters.year) > 0 ? { academicYearId: Number(filters.year) } : {}),
     ...(Number(filters.board) > 0 ? { boardId: Number(filters.board) } : {}),
   };
-  if (["groupDistribution", "admissionTrend", "upcomingExaminations"].includes(widget)) return scope;
-  const date = `${filters.date}T00:00:00`;
-  if (widget !== "weeklyAttendance") return { ...scope, date };
-  const week = weekDateRange(filters.date);
+}
+
+function buildDateParams(filters) {
+  return { ...buildScopeParams(filters), date: `${filters.date}T00:00:00` };
+}
+
+function buildWeeklyAttendanceParams(filters) {
+  const range = calendarWeekRange(filters.date);
   return {
-    ...scope,
-    date,
-    startDate: `${week.from}T00:00:00`,
-    endDate: `${week.to}T23:59:59`,
+    ...buildDateParams(filters),
+    startDate: `${range.start}T00:00:00`,
+    endDate: `${range.end}T23:59:59`,
   };
+}
+
+function paramsForWidget(key, filters) {
+  if (key === "weeklyAttendance") return buildWeeklyAttendanceParams(filters);
+  if (DATE_WIDGET_KEYS.includes(key)) return buildDateParams(filters);
+  if (SCOPE_WIDGET_KEYS.includes(key)) return buildScopeParams(filters);
+  return {};
 }
 
 function normalizeAdmissionTrend(payload) {
@@ -218,28 +256,29 @@ function normalizeGroupDistribution(payload) {
 
 function normalizeWeeklyAttendance(payload, anchorDate) {
   const source = findCollection(payload, ["weeklyAttendance", "WeeklyAttendance", "dailyAttendance", "DailyAttendance", "attendanceByDate", "AttendanceByDate", "attendanceTrend", "AttendanceTrend", "days", "Days"]);
-  const week = weekDateRange(anchorDate);
+  const range = calendarWeekRange(anchorDate);
   const attendanceByDate = new Map();
 
   source.forEach((item) => {
     const date = String(read(item, "attendanceDate", "AttendanceDate", "date", "Date", "day", "Day") ?? "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < week.from || date > week.to) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < range.start || date > range.end) return;
     const present = numeric(item, "present", "Present", "presentCount", "PresentCount");
     const absent = numeric(item, "absent", "Absent", "absentCount", "AbsentCount");
-    const leave = numeric(item, "leave", "Leave", "leaveCount", "LeaveCount", "onLeave", "OnLeave");
-    if (present === undefined && absent === undefined && leave === undefined) return;
-    const current = attendanceByDate.get(date) || { present: 0, absent: 0, leave: 0 };
+    const late = numeric(item, "late", "Late", "lateCount", "LateCount");
+    const percentage = numeric(item, "percentage", "Percentage", "attendancePercentage", "AttendancePercentage");
+    if (present === undefined && absent === undefined && late === undefined && percentage === undefined) return;
+    const current = attendanceByDate.get(date) || { present: 0, absent: 0, late: 0, percentage: undefined };
     attendanceByDate.set(date, {
       present: current.present + (present ?? 0),
       absent: current.absent + (absent ?? 0),
-      leave: current.leave + (leave ?? 0),
+      late: current.late + (late ?? 0),
+      percentage: percentage ?? current.percentage,
     });
   });
 
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = shiftLocalDate(week.from, index);
-    return { date, ...(attendanceByDate.get(date) || { present: 0, absent: 0, leave: 0 }) };
-  });
+  return Array.from(attendanceByDate, ([date, values]) => ({ date, ...values }))
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-7);
 }
 
 function normalizeCertificateRequests(payload) {
@@ -285,8 +324,8 @@ function greetingForHour(hour) {
 function LoadingState({ label = "Loading data..." }) { return <div className="dashboard-state" role="status"><span className="dashboard-spinner" />{label}</div>; }
 function EmptyState({ message = "No data available" }) { return <div className="dashboard-state dashboard-state-empty">{message}</div>; }
 function CardHeader({ title, action }) { return <header className="dashboard-card-head"><h2>{title}</h2>{action}</header>; }
-function KpiCard({ label, value, icon: Icon, tone, loading }) {
-  return <article className={`dashboard-kpi dashboard-kpi-${tone}`}><span className="dashboard-kpi-icon"><Icon size={22} aria-hidden="true" /></span><div><span>{label}</span><strong>{loading ? "—" : formatNumber(value)}</strong></div></article>;
+function KpiCard({ label, value, icon, tone, loading }) {
+  return <article className={`dashboard-kpi dashboard-kpi-${tone}`}><span className="dashboard-kpi-icon"><img src={icon} alt="" aria-hidden="true" /></span><div><span>{label}</span><strong>{loading ? "—" : formatNumber(value)}</strong></div></article>;
 }
 
 export default function DashboardPage() {
@@ -295,16 +334,19 @@ export default function DashboardPage() {
   const [filters, setFilters] = useState({ year: "", board: "", date: localDateValue() });
   const [widgets, setWidgets] = useState(EMPTY_WIDGETS);
   const [loadingFilters, setLoadingFilters] = useState(true);
+  const [filtersReady, setFiltersReady] = useState(false);
   const [loading, setLoading] = useState(EMPTY_LOADING);
   const [errors, setErrors] = useState({});
   const filterRequestRef = useRef(0);
-  const widgetRequestRef = useRef(0);
-  const widgetControllerRef = useRef(null);
+  const dateRequestRef = useRef(0);
+  const scopeRequestRef = useRef(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const nextHour = new Date().getHours();
       setCurrentHour((hour) => hour === nextHour ? hour : nextHour);
+      const today = localDateValue();
+      setFilters((current) => current.date === today ? current : { ...current, date: today });
     }, 60_000);
     return () => window.clearInterval(timer);
   }, []);
@@ -319,56 +361,95 @@ export default function DashboardPage() {
       const years = optionRows(response.data, "year");
       const boards = optionRows(response.data, "board");
       setMasterOptions({ years, boards });
-      setFilters((current) => ({ ...current, year: current.year || years.find((item) => item.current)?.value || years[0]?.value || "", board: current.board || boards.find((item) => item.current)?.value || boards[0]?.value || "" }));
+      setFilters({ year: preferredAcademicYearValue(years), board: "", date: localDateValue() });
       setErrors((current) => ({ ...current, filters: "" }));
+      setFiltersReady(true);
     }).catch((error) => {
       if (requestId !== filterRequestRef.current || error?.code === "ERR_CANCELED") return;
       setMasterOptions({ years: [], boards: [] });
       setErrors((current) => ({ ...current, filters: getApiErrorMessage(error, "Unable to load dashboard filters.") }));
+      setFiltersReady(true);
     }).finally(() => { if (requestId === filterRequestRef.current) setLoadingFilters(false); });
     return () => { filterRequestRef.current += 1; controller.abort(); };
   }, []);
 
   useEffect(() => {
-    if (loadingFilters) return undefined;
-    const requestId = ++widgetRequestRef.current;
-    widgetControllerRef.current?.abort();
+    if (!filtersReady || !filters.year || !filters.board) {
+      if (filtersReady) {
+        setWidgets((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, null])) }));
+        setLoading((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, false])) }));
+        setErrors((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, ""])) }));
+      }
+      return undefined;
+    }
+    const requestId = ++dateRequestRef.current;
     const controller = new AbortController();
-    widgetControllerRef.current = controller;
-    setWidgets(EMPTY_WIDGETS);
-    setLoading(Object.fromEntries(DASHBOARD_WIDGETS.map(([key]) => [key, true])));
-    setErrors((current) => ({ filters: current.filters || "" }));
-    const requests = DASHBOARD_WIDGETS.map(([key, endpoint]) => apiClient.get(endpoint, {
-      params: buildDashboardParams(key, filters),
-      signal: controller.signal,
-      timeout: REQUEST_TIMEOUT,
+    const requestFilters = { year: filters.year, board: filters.board, date: filters.date };
+    setWidgets((current) => ({
+      ...current,
+      ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, null])),
     }));
+    setLoading((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, true])) }));
+    setErrors((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, ""])) }));
+    const requests = DATE_WIDGET_KEYS.map((key) => apiClient.get(DASHBOARD_API[key], { params: paramsForWidget(key, requestFilters), signal: controller.signal, timeout: REQUEST_TIMEOUT }));
     Promise.allSettled(requests).then((results) => {
-      if (requestId !== widgetRequestRef.current) return;
-      const next = { ...EMPTY_WIDGETS };
+      if (requestId !== dateRequestRef.current) return;
       const nextErrors = {};
-      DASHBOARD_WIDGETS.forEach(([key], index) => {
+      const successful = {};
+      DATE_WIDGET_KEYS.forEach((key, index) => {
         const result = results[index];
-        if (result.status === "fulfilled") next[key] = result.value.data;
-        else nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
+        if (result.status === "fulfilled") successful[key] = result.value.data;
+        else if (result.reason?.code !== "ERR_CANCELED" && result.reason?.name !== "CanceledError" && result.reason?.name !== "AbortError") nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
       });
-      setWidgets(next);
-      setErrors((current) => ({ filters: current.filters || "", ...nextErrors }));
-      setLoading(EMPTY_LOADING);
+      setWidgets((current) => ({ ...current, ...successful }));
+      setErrors((current) => ({ ...current, ...nextErrors }));
+      setLoading((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, false])) }));
     });
-    return () => {
-      widgetRequestRef.current += 1;
-      controller.abort();
-    };
-  }, [filters, loadingFilters]);
+    return () => { dateRequestRef.current += 1; controller.abort(); };
+  }, [filters.year, filters.board, filters.date, filtersReady]);
+
+  useEffect(() => {
+    if (!filtersReady || !filters.year || !filters.board) {
+      if (filtersReady) {
+        setWidgets((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, null])) }));
+        setLoading((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, false])) }));
+        setErrors((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, ""])) }));
+      }
+      return undefined;
+    }
+    const requestId = ++scopeRequestRef.current;
+    const controller = new AbortController();
+    const requestFilters = { year: filters.year, board: filters.board, date: "" };
+    setWidgets((current) => ({
+      ...current,
+      ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, null])),
+    }));
+    setLoading((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, true])) }));
+    setErrors((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, ""])) }));
+    const requests = SCOPE_WIDGET_KEYS.map((key) => apiClient.get(DASHBOARD_API[key], { params: paramsForWidget(key, requestFilters), signal: controller.signal, timeout: REQUEST_TIMEOUT }));
+    Promise.allSettled(requests).then((results) => {
+      if (requestId !== scopeRequestRef.current) return;
+      const nextErrors = {};
+      const successful = {};
+      SCOPE_WIDGET_KEYS.forEach((key, index) => {
+        const result = results[index];
+        if (result.status === "fulfilled") successful[key] = result.value.data;
+        else if (result.reason?.code !== "ERR_CANCELED" && result.reason?.name !== "CanceledError" && result.reason?.name !== "AbortError") nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
+      });
+      setWidgets((current) => ({ ...current, ...successful }));
+      setErrors((current) => ({ ...current, ...nextErrors }));
+      setLoading((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, false])) }));
+    });
+    return () => { scopeRequestRef.current += 1; controller.abort(); };
+  }, [filters.year, filters.board, filtersReady]);
 
   const totalStudents = metric(widgets.summary, ["totalStudents", "totalStudentCount", "studentCount", "studentsCount", "activeStudents", "students"]);
   const kpis = [
-    { label: "Total Students", value: totalStudents, icon: Users, tone: "green" },
-    { label: "Teaching Staff", value: metric(widgets.summary, ["teachingStaff", "teachingStaffCount", "totalTeachingStaff", "totalTeachingStaffCount"]), icon: UserRoundCheck, tone: "blue" },
-    { label: "Non-Teaching Staff", value: metric(widgets.summary, ["nonTeachingStaff", "nonTeachingStaffCount", "totalNonTeachingStaff", "totalNonTeachingStaffCount"]), icon: UserRoundCog, tone: "orange" },
-    { label: "Total Groups", value: metric(widgets.summary, ["totalGroups", "totalGroupCount", "groupCount", "groupsCount", "groups"]), icon: Layers3, tone: "violet" },
-    { label: "Total Sections", value: metric(widgets.summary, ["totalSections", "totalSectionCount", "sectionCount", "sectionsCount", "sections"]), icon: School, tone: "cyan" },
+    { label: "Total Students", value: totalStudents, icon: totalStudentsIcon, tone: "green" },
+    { label: "Teaching Staff", value: metric(widgets.summary, ["teachingStaff", "teachingStaffCount", "totalTeachingStaff", "totalTeachingStaffCount"]), icon: teachingStaffIcon, tone: "blue" },
+    { label: "Non-Teaching Staff", value: metric(widgets.summary, ["nonTeachingStaff", "nonTeachingStaffCount", "totalNonTeachingStaff", "totalNonTeachingStaffCount"]), icon: nonTeachingStaffIcon, tone: "orange" },
+    { label: "Total Groups", value: metric(widgets.summary, ["totalGroups", "totalGroupCount", "groupCount", "groupsCount", "groups"]), icon: totalGroupsIcon, tone: "violet" },
+    { label: "Total Sections", value: metric(widgets.summary, ["totalSections", "totalSectionCount", "sectionCount", "sectionsCount", "sections"]), icon: totalSectionsIcon, tone: "cyan" },
   ];
   const admissionTrend = useMemo(() => normalizeAdmissionTrend(widgets.admissionTrend), [widgets.admissionTrend]);
   const gender = {
@@ -378,13 +459,13 @@ export default function DashboardPage() {
   };
   const groupDistribution = useMemo(() => normalizeGroupDistribution(widgets.groupDistribution), [widgets.groupDistribution]);
   const groupTotal = groupDistribution.reduce((sum, item) => sum + item.value, 0);
-  const attendanceWeek = useMemo(() => weekDateRange(filters.date), [filters.date]);
+  const attendanceWeek = useMemo(() => calendarWeekRange(filters.date), [filters.date]);
   const weeklyAttendance = useMemo(() => normalizeWeeklyAttendance(widgets.weeklyAttendance, filters.date), [widgets.weeklyAttendance, filters.date]);
   const certificateRows = useMemo(() => normalizeCertificateRequests(widgets.certificateRequests), [widgets.certificateRequests]);
   const certificateTotal = metric(widgets.certificateRequests, ["totalRequests", "totalCertificateRequests", "requestCount"])
     ?? (certificateRows.length ? certificateRows.reduce((sum, item) => sum + item.value, 0) : undefined);
   const upcomingExaminations = useMemo(() => normalizeUpcomingExaminations(widgets.upcomingExaminations), [widgets.upcomingExaminations]);
-  const selectedBoardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label || "All Boards";
+  const selectedBoardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label || "Select Board Name";
   const greeting = greetingForHour(currentHour);
   const dashboardTitle = (
     <span className="dashboard-welcome-title">
@@ -398,15 +479,15 @@ export default function DashboardPage() {
   );
   const resetFilters = () => {
     setFilters({
-      year: masterOptions.years.find((item) => item.current)?.value || masterOptions.years[0]?.value || "",
-      board: masterOptions.boards.find((item) => item.current)?.value || masterOptions.boards[0]?.value || "",
+      year: preferredAcademicYearValue(masterOptions.years),
+      board: "",
       date: localDateValue(),
     });
   };
 
   const filtersContent = <div className="dashboard-filters" aria-label="Dashboard filters">
-    <label htmlFor="dashboard-year"><span>Academic Year</span><select id="dashboard-year" aria-label="Academic Year" value={filters.year} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, year: event.target.value }))}><option value="">All Academic Years</option>{masterOptions.years.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-    <label className="dashboard-board-filter" htmlFor="dashboard-board" style={{ "--board-select-width": `${Math.min(Math.max(selectedBoardLabel.length + 5, 20), 50)}ch` }}><span>Board</span><select id="dashboard-board" aria-label="Board" value={filters.board} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, board: event.target.value }))}><option value="">All Boards</option>{masterOptions.boards.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+    <label htmlFor="dashboard-year"><span>Academic Year</span><select id="dashboard-year" aria-label="Academic Year" value={filters.year} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, year: event.target.value }))}><option value="">Select Academic Year</option>{masterOptions.years.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+    <label className="dashboard-board-filter" htmlFor="dashboard-board" style={{ "--board-select-width": `${Math.min(Math.max(selectedBoardLabel.length + 5, 20), 50)}ch` }}><span>Board</span><select id="dashboard-board" aria-label="Board" value={filters.board} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, board: event.target.value }))}><option value="">Select Board Name</option>{masterOptions.boards.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
     <button type="button" className="dashboard-reset-button" onClick={resetFilters} disabled={loadingFilters} aria-label="Reset dashboard filters"><RotateCcw size={16} aria-hidden="true" /> Reset</button>
   </div>;
 
@@ -417,11 +498,10 @@ export default function DashboardPage() {
       <nav className="dashboard-quick-actions" aria-label="Quick Actions">
         <h2>Quick Actions</h2>
         <div>
-          {QUICK_ACTIONS.map(({ label, to, icon: Icon, tone, add }) => (
+          {QUICK_ACTIONS.map(({ label, to, icon, tone }) => (
             <Link key={label} to={to} className={`dashboard-quick-action tone-${tone}`}>
               <span className="dashboard-quick-action-icon">
-                <Icon size={18} aria-hidden="true" />
-                {add ? <Plus className="dashboard-quick-action-plus" size={10} strokeWidth={3} aria-hidden="true" /> : null}
+                <img src={icon} alt="" aria-hidden="true" />
               </span>
               {label}
             </Link>
@@ -429,15 +509,19 @@ export default function DashboardPage() {
         </div>
       </nav>
       <section className="dashboard-main-grid" aria-label="Dashboard analytics">
-        <article className="dashboard-card dashboard-students-card"><CardHeader title="Students Overview" />
-          {loading.admissionTrend ? <LoadingState label="Loading admission trend..." /> : admissionTrend.length ? <div className="dashboard-chart dashboard-line-chart" role="img" aria-label="Students joined by month"><ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}><defs><linearGradient id="studentsArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.28} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" tickLine={false} axisLine={false} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [formatNumber(value), "Students joined"]} /><Area type="monotone" dataKey="studentsJoined" name="Students joined" stroke="#2563eb" strokeWidth={2.5} fill="url(#studentsArea)" dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div> : <EmptyState message={errors.admissionTrend ? "Unable to load admission trend." : "No admission trend is available for the selected filters."} />}
-          {!loading.studentsOverview && (gender.male !== undefined || gender.female !== undefined || gender.other !== undefined) ? <div className="dashboard-gender-summary" aria-label="Student gender summary"><div><span className="dashboard-gender-icon male"><Users size={17} /></span><p>Male<strong>{formatNumber(gender.male)}</strong></p></div><div><span className="dashboard-gender-icon female"><Users size={17} /></span><p>Female<strong>{formatNumber(gender.female)}</strong></p></div>{gender.other !== undefined ? <div><span className="dashboard-gender-icon other"><Users size={17} /></span><p>Other<strong>{formatNumber(gender.other)}</strong></p></div> : null}</div> : null}
+        <article className="dashboard-card dashboard-students-overview-card"><CardHeader title="Students Overview" />
+          {loading.admissionTrend ? <LoadingState label="Loading admission trend..." /> : errors.admissionTrend ? <EmptyState message="Unable to load admission trend." /> : admissionTrend.length ? <div className="dashboard-chart dashboard-admission-chart" role="img" aria-label="Students joined by month"><ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ top: 10, right: 5, left: -24, bottom: 0 }}><defs><linearGradient id="studentsAdmissionArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.3} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.03} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" tickLine={false} axisLine={false} interval={0} height={20} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [formatNumber(value), "Students joined"]} /><Area type="monotone" dataKey="studentsJoined" name="Students Joined" stroke="#2563eb" strokeWidth={2.5} fill="url(#studentsAdmissionArea)" dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div> : <EmptyState message="No admission trend is available for the selected filters." />}
+          <div className="dashboard-gender-summary dashboard-gender-summary-compact" aria-label="Student gender summary" aria-busy={loading.studentsOverview}>
+            <div><span className="dashboard-gender-icon male"><Users size={15} /></span><p>Male <strong>{loading.studentsOverview ? "…" : formatNumber(gender.male)}</strong></p></div>
+            <div><span className="dashboard-gender-icon female"><Users size={15} /></span><p>Female <strong>{loading.studentsOverview ? "…" : formatNumber(gender.female)}</strong></p></div>
+            <div><span className="dashboard-gender-icon other"><Users size={15} /></span><p>Other <strong>{loading.studentsOverview ? "…" : formatNumber(gender.other)}</strong></p></div>
+          </div>
         </article>
         <article className="dashboard-card dashboard-group-card"><CardHeader title="Students by Group" />
           {loading.groupDistribution ? <LoadingState label="Loading group distribution..." /> : groupDistribution.length ? <div className="dashboard-group-content"><div className={`dashboard-donut${groupTotal ? "" : " is-empty"}`} role="img" aria-label="Student distribution by group"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={GROUP_COLORS[index % GROUP_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [formatNumber(value), "Students"]} /></PieChart></ResponsiveContainer><div><strong>{formatNumber(totalStudents ?? groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-list">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ backgroundColor: GROUP_COLORS[index % GROUP_COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{formatNumber(item.value)}</strong><em>{groupTotal ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0%"}</em></div>)}</div></div> : <EmptyState message={errors.groupDistribution ? "Unable to load group distribution." : "No group distribution is available for the selected filters."} />}
         </article>
         <article className="dashboard-card dashboard-attendance-card"><CardHeader title="Students Attendance Overview (This Week)" />
-          {loading.weeklyAttendance ? <LoadingState label="Loading weekly attendance..." /> : errors.weeklyAttendance ? <EmptyState message="Unable to load weekly attendance." /> : <><div className="dashboard-chart dashboard-attendance-chart" role="img" aria-label={`Attendance from ${formatDateLabel(attendanceWeek.from)} through ${formatDateLabel(attendanceWeek.to)}`}><ResponsiveContainer width="100%" height="100%"><BarChart data={weeklyAttendance} margin={{ top: 22, right: 4, left: -24, bottom: 6 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} height={24} interval={0} tickFormatter={(date) => formatDateLabel(date, { weekday: "short" })} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip labelFormatter={(_, entries) => entries?.[0]?.payload?.date ? formatDateLabel(entries[0].payload.date, { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : ""} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#22a447" radius={[3, 3, 0, 0]} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" /><Bar dataKey="leave" name="Leave" stackId="attendance" fill="#f59e0b" /></BarChart></ResponsiveContainer></div><div className="dashboard-attendance-legend" aria-label="Attendance categories"><span><i className="present" />Present</span><span><i className="absent" />Absent</span><span><i className="leave" />Leave</span></div></>}<p className="dashboard-card-note">Current week · {formatNumericDate(attendanceWeek.from)} – {formatNumericDate(attendanceWeek.to)}</p>
+          {loading.weeklyAttendance ? <LoadingState label="Loading weekly attendance..." /> : errors.weeklyAttendance ? <EmptyState message="Unable to load weekly attendance." /> : weeklyAttendance.length ? <><div className="dashboard-chart dashboard-attendance-chart" role="img" aria-label={`Attendance from ${formatDateLabel(attendanceWeek.start)} through ${formatDateLabel(attendanceWeek.end)}`}><ResponsiveContainer width="100%" height="100%"><BarChart data={weeklyAttendance} margin={{ top: 22, right: 4, left: -24, bottom: 6 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} height={24} interval={0} tickFormatter={(date) => formatDateLabel(date, { weekday: "short" })} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip labelFormatter={(_, entries) => entries?.[0]?.payload?.date ? formatDateLabel(entries[0].payload.date, { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : ""} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#22a447" radius={[3, 3, 0, 0]} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" /><Bar dataKey="late" name="Late" stackId="attendance" fill="#f59e0b" /></BarChart></ResponsiveContainer></div><div className="dashboard-attendance-legend" aria-label="Attendance categories"><span><i className="present" />Present</span><span><i className="absent" />Absent</span><span><i className="late" />Late</span></div></> : <EmptyState message="No attendance data is available for the selected week." />}<p className="dashboard-card-note">Current week (Monday–Sunday) · {formatNumericDate(attendanceWeek.start)} – {formatNumericDate(attendanceWeek.end)}</p>
         </article>
       </section>
       <section className="dashboard-lower-grid" aria-label="Certificate requests and upcoming examinations">

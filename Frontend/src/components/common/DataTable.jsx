@@ -40,6 +40,7 @@ export default function DataTable({
   emptyMessage,
   paginationCurrentOnly = false,
   enablePdfExport = false,
+  enableTablePrint = true,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -163,9 +164,11 @@ export default function DataTable({
                     <FileText size={15} /> Export PDF
                   </button>
                 ) : null}
-                <button type="button" role="menuitem" onClick={printRows}>
-                  <Printer size={15} /> Print table
-                </button>
+                {enableTablePrint ? (
+                  <button type="button" role="menuitem" onClick={printRows}>
+                    <Printer size={15} /> Print table
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -51,6 +51,7 @@ const REPORTS_API = {
     academicYears: "/api/v1/reports/filters/academic-years",
     academicLevels: "/api/v1/reports/filters/academic-levels",
     groups: "/api/v1/reports/filters/groups",
+    groupsSource: "/api/v1/groups",
     sections: "/api/v1/reports/filters/sections",
   },
   dashboard: "/api/v1/reports/dashboard",
@@ -742,9 +743,9 @@ export default function ReportsPage() {
       params: buildFilterQuery({ boardId, academicYearId, academicLevelId }),
       signal: controller.signal,
       skipGlobalLoader: true,
-    }).then((response) => {
+    }).then(async (response) => {
       if (controller.signal.aborted) return;
-      const groups = matchingGroupOptions(
+      let groups = matchingGroupOptions(
         response.data,
         boardId,
         academicYearId,
@@ -752,6 +753,21 @@ export default function ReportsPage() {
         masterOptions.boards,
         masterOptions.levels,
       );
+      if (!groups.length) {
+        const sourceResponse = await apiClient.get(REPORTS_API.filters.groupsSource, {
+          signal: controller.signal,
+          skipGlobalLoader: true,
+        });
+        if (controller.signal.aborted) return;
+        groups = matchingGroupOptions(
+          sourceResponse.data,
+          boardId,
+          academicYearId,
+          academicLevelId,
+          masterOptions.boards,
+          masterOptions.levels,
+        );
+      }
       cacheFilterOptions(filterOptionsCacheRef.current.groups, cacheKey, groups);
       setMasterOptions((current) => ({ ...current, groups }));
       if (!groups.length) setToast("No groups available for the selected filters.");

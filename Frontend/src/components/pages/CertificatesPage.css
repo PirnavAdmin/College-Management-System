@@ -161,6 +161,80 @@
   max-width: none;
 }
 
+.cert-generation-mode {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--cms-border);
+  border-radius: 10px;
+  background: var(--cms-subtle);
+}
+
+.cert-generation-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--cms-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cert-generation-mode button.is-active {
+  background: var(--cms-primary);
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(111, 132, 0, 0.2);
+}
+
+.cert-bulk-students {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--cms-border);
+  border-radius: 12px;
+  background: var(--cms-subtle);
+}
+
+.cert-bulk-students > .cert-bulk-students-head,
+.cert-bulk-students > .cert-bulk-filter-row,
+.cert-bulk-students > .cert-bulk-select-actions,
+.cert-bulk-students > .cert-bulk-student-list {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.cert-bulk-students.has-error { border-color: var(--cms-red); }
+.cert-bulk-students-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.cert-bulk-students-head > div { display: flex; align-items: baseline; gap: 9px; }
+.cert-bulk-students-head h3 { margin: 0; color: var(--cms-text); font-size: 15px; }
+.cert-bulk-students-head span { color: var(--cms-primary); font-size: 12px; font-weight: 700; }
+.cert-bulk-filter-row { display: grid; grid-template-columns: minmax(280px, 2fr) repeat(4, minmax(120px, 1fr)); align-items: center; gap: 8px; }
+.cert-bulk-search { position: relative; display: flex; align-items: center; min-width: 0; }
+.cert-bulk-search svg { position: absolute; left: 12px; z-index: 2; color: var(--cms-muted); pointer-events: none; }
+.cert-form-card .cert-bulk-search input { width: 100%; min-height: 36px; padding: 7px 11px 7px 36px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); color: var(--cms-text); font: inherit; font-size: 12px; }
+.cert-form-card .cert-bulk-filter-row select { width: 100%; min-width: 0; min-height: 36px; padding: 7px 30px 7px 10px; border: 1px solid var(--cms-border); border-radius: 8px; background-color: var(--cms-surface); color: var(--cms-text); font: inherit; font-size: 11px; font-weight: 600; }
+.cert-bulk-select-actions { display: flex; align-items: center; justify-content: flex-start; gap: 8px; white-space: nowrap; }
+.cert-bulk-select-actions button { padding: 5px 9px; border: 1px solid var(--cms-border); border-radius: 7px; background: var(--cms-surface); color: var(--cms-primary); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.cert-bulk-select-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.cert-bulk-student-list { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 7px; max-height: 240px; padding: 2px; overflow-y: auto; }
+.cert-bulk-student-list > label { display: flex !important; align-items: flex-start; gap: 9px; width: 100%; min-width: 0; min-height: 54px; padding: 9px; border: 1px solid var(--cms-border); border-radius: 9px; background: var(--cms-surface); cursor: pointer; box-sizing: border-box; }
+.cert-bulk-student-list > label.is-selected { border-color: var(--cms-primary); background: var(--cms-primary-soft); }
+.cert-bulk-student-list input { flex: 0 0 auto; width: 15px !important; min-height: 15px !important; margin-top: 2px; accent-color: var(--cms-primary); }
+.cert-bulk-student-list label span { display: grid; min-width: 0; gap: 3px; }
+.cert-bulk-student-list strong { overflow: hidden; color: var(--cms-text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.cert-bulk-student-list small { overflow: hidden; color: var(--cms-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.cert-bulk-student-list > p { grid-column: 1 / -1; margin: 0; padding: 18px; color: var(--cms-muted); text-align: center; font-size: 12px; }
+
 .cert-admission-search { z-index: 2; }
 .cert-admission-search:focus-within { z-index: 60; }
 .cert-admission-search-control { position: relative; display: flex; align-items: center; }
@@ -236,6 +310,26 @@
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
+}
+
+.cert-type-select-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cert-form-card .cert-type-select-control select {
+  width: 100%;
+  padding-right: 40px;
+  background-image: none;
+}
+
+.cert-type-select-control > svg {
+  position: absolute;
+  z-index: 3;
+  right: 14px;
+  color: var(--cms-text);
+  pointer-events: none;
 }
 
 .cert-form-card .cms-field input:hover,
@@ -342,8 +436,8 @@
 }
 
 .cert-records-head > .cert-action-buttons {
-  display: flex;
-  grid-template-columns: none;
+  display: flex !important;
+  grid-template-columns: none !important;
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
@@ -355,7 +449,85 @@
 .cert-records-head > .cert-action-buttons .cms-btn {
   min-height: 42px;
   min-width: 138px;
+  width: auto;
+  flex: 0 0 auto;
   justify-content: center;
+}
+
+.cert-workflow-toolbar {
+  display: flex;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--cert-border);
+  background: var(--cert-surface);
+}
+
+.cert-workflow-toolbar .cert-search-box {
+  flex: 0 1 560px;
+  max-width: 560px;
+}
+
+/* Keep the Review & Issue workspace compact without changing other certificate cards. */
+.cert-workflow-card .cert-records-head {
+  min-height: 76px;
+  padding: 12px 18px;
+  gap: 12px;
+}
+
+.cert-workflow-card .cert-records-head h3 {
+  font-size: 18px;
+}
+
+.cert-workflow-card .cert-records-head p {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.cert-workflow-card .cert-records-head > .cert-action-buttons {
+  gap: 8px;
+}
+
+.cert-workflow-card .cert-records-head > .cert-action-buttons .cms-btn {
+  min-width: 120px;
+  min-height: 36px;
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.cert-workflow-card .cert-workflow-summary {
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+.cert-workflow-card .cert-workflow-summary-card {
+  min-height: 52px;
+  gap: 2px;
+  padding: 8px 11px;
+  border-radius: 8px;
+}
+
+.cert-workflow-card .cert-workflow-summary-card strong {
+  font-size: 12px;
+}
+
+.cert-workflow-card .cert-workflow-summary-card span {
+  font-size: 11px;
+}
+
+.cert-workflow-card .cert-workflow-toolbar {
+  padding: 9px 18px;
+}
+
+.cert-workflow-card .cert-workflow-toolbar .cert-search-box {
+  flex-basis: 500px;
+  max-width: 500px;
+  min-height: 34px;
+  height: 34px;
+}
+
+.cert-workflow-card .cert-workflow-table thead th,
+.cert-workflow-card .cert-workflow-table tbody td {
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .cert-records-head h3 {
@@ -2336,6 +2508,9 @@
 }
 
 @media (max-width: 1000px) {
+  .cert-bulk-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cert-bulk-search { grid-column: 1 / -1; }
+  .cert-bulk-student-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cert-records-toolbar-main {
     align-items: stretch;
     flex-direction: column;
@@ -2347,6 +2522,14 @@
 }
 
 @media (max-width: 640px) {
+  .cert-form-card .cert-section-head,
+  .cert-bulk-students-head { align-items: stretch; flex-direction: column; }
+  .cert-generation-mode,
+  .cert-bulk-search { width: 100%; }
+  .cert-bulk-filter-row { grid-template-columns: 1fr; }
+  .cert-bulk-search { grid-column: auto; }
+  .cert-generation-mode button { flex: 1; justify-content: center; }
+  .cert-bulk-student-list { grid-template-columns: 1fr; }
   .cert-records-toolbar-actions {
     align-items: stretch;
     flex-direction: column;
@@ -2543,6 +2726,19 @@
 }
 
 @media screen {
+  /* Use the full dashboard workspace for every Certificate Management tab. */
+  .cms-content:has(> .cert-page) {
+    padding-inline: clamp(7px, 0.7vw, 11px);
+  }
+
+  .cert-page,
+  .cert-page > .cert-section-gap,
+  .cert-page .cert-form-card,
+  .cert-page .cert-records-card {
+    width: 100%;
+    max-width: none;
+  }
+
   /* Final Board & Academic Year table-system sizing while preserving every certificate field. */
   .cert-page .cert-records-card { border-radius: 12px; }
   .cert-page .cert-records-toolbar-main { min-height: 55px; padding: 9px 12px; gap: 9px; }
@@ -2562,4 +2758,37 @@
   .cert-page .cert-record-row-actions svg,
   .cert-page .cert-action-buttons svg { width: 13px; height: 13px; stroke-width: 2.2; }
   .cert-page .cert-records-card > .cert-table-footer { min-height: 46px; padding: 5px 14px; font-size: 14px; font-weight: 600; }
+}
+
+@media (min-width: 1200px) {
+  /* Wide screens have enough room to size columns from their complete values. */
+  .cert-page .cert-records-table,
+  .cert-page .cert-workflow-table {
+    width: 100%;
+    min-width: 100%;
+    table-layout: auto;
+  }
+
+  .cert-page .cert-records-table thead th,
+  .cert-page .cert-workflow-table thead th,
+  .cert-page .cert-records-table tbody td:not(:last-child),
+  .cert-page .cert-workflow-table tbody td:not(:last-child) {
+    overflow: visible;
+    overflow-wrap: break-word;
+    word-break: normal;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .cert-page .cert-records-table th:last-child,
+  .cert-page .cert-records-table td:last-child {
+    width: 176px;
+    min-width: 176px;
+  }
+
+  .cert-page .cert-workflow-table th:last-child,
+  .cert-page .cert-workflow-table td:last-child {
+    width: 154px;
+    min-width: 154px;
+  }
 }

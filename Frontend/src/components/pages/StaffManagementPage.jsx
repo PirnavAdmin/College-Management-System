@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   BriefcaseBusiness,
   Check,
+  ChevronDown,
   Eye,
   GraduationCap,
   Mail,
@@ -30,7 +31,6 @@ import "./StaffManagementPage.css";
 const STAFF_API = {
   list: "/api/v1/staff",
   create: "/api/v1/staff",
-  nextEmployeeId: "/api/v1/staff/next-employee-id",
   dropdown: "/api/v1/staff/dropdown",
   getById: (id) => `/api/v1/staff/${id}`,
   update: (id) => `/api/v1/staff/${id}`,
@@ -51,6 +51,7 @@ const STAFF_SUBJECT_ALLOCATION_API = {
 
 const API_STAFF_TYPES = { teaching: "Teaching", "non-teaching": "NonTeaching" };
 const STAFF_PAGE_SIZE = 5;
+const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 const fields = [
   { name: "empId", label: "Employee ID", required: true },
@@ -58,7 +59,7 @@ const fields = [
   { name: "lastName", label: "Last Name", required: true },
   { name: "gender", label: "Gender", type: "select", options: [], required: true },
   { name: "dob", label: "Date of Birth", type: "date", required: true },
-  { name: "bloodGroup", label: "Blood Group" },
+  { name: "bloodGroup", label: "Blood Group", type: "select", options: BLOOD_GROUP_OPTIONS, required: true },
   { name: "mobile", label: "Mobile", type: "tel", required: true },
   { name: "email", label: "Email", type: "email", required: true },
   { name: "aadhaar", label: "Aadhaar Number" },
@@ -91,10 +92,14 @@ const extractItems = (payload) =>
       payload?.data ||
       [];
 const extractRecord = (payload) => payload?.data ?? payload?.Data ?? payload;
-const boardOptionsFrom = (payload) => extractItems(payload).map((board) => ({
-  id: firstValue(board, "boardId", "BoardId", "id", "Id"),
-  name: String(firstValue(board, "boardName", "BoardName", "name", "Name") || "").trim(),
-})).filter((board) => board.name);
+const boardOptionsFrom = (payload) => extractItems(payload).map((board) => {
+  const status = firstValue(board, "status", "Status", "isActive", "IsActive");
+  return {
+    id: firstValue(board, "boardId", "BoardId", "id", "Id"),
+    name: String(firstValue(board, "boardName", "BoardName", "name", "Name") || "").trim(),
+    active: status == null || status === true || ["true", "active"].includes(String(status).toLowerCase()),
+  };
+}).filter((board) => board.name);
 const facultyName = (item = {}) =>
   item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "—";
 const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
@@ -129,6 +134,17 @@ const facultyTypeValue = (item = {}) => {
 const toApiStaffType = (value) => {
   const normalized = normalizeStaffType(value);
   return normalized === "Non-Teaching Staff" ? API_STAFF_TYPES["non-teaching"] : API_STAFF_TYPES.teaching;
+};
+const employeeIdPrefix = (staffType) => normalizeStaffType(staffType) === "Non-Teaching Staff" ? "PCNTCH" : "PCTCH";
+const nextEmployeeId = (items, staffType) => {
+  const prefix = employeeIdPrefix(staffType);
+  const pattern = new RegExp(`^${prefix}(\\d+)$`, "i");
+  const highestSequence = items.reduce((highest, item) => {
+    const employeeId = String(firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId") || "").trim();
+    const match = employeeId.match(pattern);
+    return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+  }, 0);
+  return `${prefix}${String(highestSequence + 1).padStart(4, "0")}`;
 };
 const readStoredStaffBoards = () => {
   try {
@@ -360,7 +376,7 @@ const buildStaffPrintHtml = (record, photoSource, staffTypeLabel) => {
   </style></head><body><main class="sheet"><header class="head">${photo}<div><h1>${escapePrintValue(facultyName(record))}</h1><p class="subtitle">${escapePrintValue(staffTypeLabel)} · Pirnav College</p></div></header><section class="grid">${details}</section><footer class="foot">Printed ${escapePrintValue(new Date().toLocaleString())}</footer></main></body></html>`;
 };
 
-const BLOOD_GROUPS = new Set(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]);
+const BLOOD_GROUPS = new Set(BLOOD_GROUP_OPTIONS);
 const DESIGNATIONS = {
   "Teaching Staff": ["Junior Lecturer", "Lecturer", "Senior Lecturer", "Subject Teacher", "Academic Coordinator", "Examination Coordinator", "Vice Principal", "Principal"],
   "Non-Teaching Staff": ["Principal", "Administrative Officer", "Accountant", "Librarian", "Lab Assistant", "Office Assistant", "Clerk", "Receptionist"],
@@ -384,6 +400,30 @@ const NON_TEACHING_DEPARTMENTS = [
   "Student Support Services",
   "Campus Operations",
 ];
+const SUBJECT_DEPARTMENT_ALIASES = {
+  mathematics: ["mathematics", "maths"],
+  accountancy: ["accountancy", "accounting"],
+  "political science": ["political science", "politicalscience"],
+  "computer science": ["computer science", "computerscience"],
+  "computer applications": ["computer applications", "computerapplications"],
+  "physical education": ["physical education", "physicaleducation"],
+  "environmental studies": ["environmental studies", "environmentalstudies", "environmental science"],
+};
+const normalizeSubjectText = (value) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const subjectMatchesDepartment = (subject, department) => {
+  const normalizedDepartment = normalizeSubjectText(department);
+  if (!normalizedDepartment) return false;
+  const aliases = SUBJECT_DEPARTMENT_ALIASES[normalizedDepartment] ?? [normalizedDepartment];
+  const searchableSubject = normalizeSubjectText([
+    subjectName(subject),
+    firstValue(subject, "subjectCode", "SubjectCode"),
+  ].filter(Boolean).join(" "));
+  const compactSubject = searchableSubject.replace(/\s+/g, "");
+  return aliases.some((alias) => {
+    const normalizedAlias = normalizeSubjectText(alias);
+    return searchableSubject.includes(normalizedAlias) || compactSubject.includes(normalizedAlias.replace(/\s+/g, ""));
+  });
+};
 const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
 const EMPLOYEE_ID_PATTERN = /^[A-Za-z0-9-]+$/;
 const today = () => new Date().toISOString().slice(0, 10);
@@ -419,7 +459,8 @@ const facultyValidation = (source, { departments = [], genders = [], boards = []
   if (values.aadhaar && !/^\d{12}$/.test(values.aadhaar)) errors.aadhaar = "Aadhaar number must contain exactly 12 digits.";
   if (!/^[6-9]\d{9}$/.test(values.mobile) || /^0+$/.test(values.mobile)) errors.mobile = "Please enter a valid 10-digit mobile number.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.email = "Please enter a valid email address.";
-  if (values.bloodGroup && !BLOOD_GROUPS.has(values.bloodGroup)) errors.bloodGroup = "Please select a valid blood group.";
+  if (!values.bloodGroup) errors.bloodGroup = "Blood group is required.";
+  else if (!BLOOD_GROUPS.has(values.bloodGroup)) errors.bloodGroup = "Please select a valid blood group.";
   if (!values.qualification || values.qualification.length > 100) errors.qualification = "Qualification is required.";
   if (!values.designation || values.designation.length > 100) errors.designation = "Please select or enter a valid designation.";
   if (!["Teaching Staff", "Non-Teaching Staff"].includes(values.facultyType)) errors.facultyType = "Please select a faculty type.";
@@ -499,7 +540,21 @@ function SearchableStaffField({ name, label, value, options, placeholder, requir
             }
           }}
         />
-        {custom ? <button type="button" className="staff-change-option" onClick={() => { setCustom(false); onChange(name, ""); setOpen(true); }}>List</button> : null}
+        {custom ? <button type="button" className="staff-change-option" onClick={() => { setCustom(false); onChange(name, ""); setOpen(true); }}>List</button> : (
+          <button
+            type="button"
+            className={`staff-dropdown-toggle${open ? " is-open" : ""}`}
+            aria-label={`${open ? "Close" : "Open"} ${label} options`}
+            aria-expanded={open}
+            disabled={disabled}
+            onClick={() => {
+              setQuery("");
+              setOpen((current) => !current);
+            }}
+          >
+            <ChevronDown size={18} />
+          </button>
+        )}
       </div>
       {!custom && open ? <div className="staff-search-options" role="listbox">
         {filtered.map((option) => <button type="button" title="" role="option" aria-selected={option === value} key={option} onClick={() => { onChange(name, option); setQuery(""); setOpen(false); }}>{option}</button>)}
@@ -650,18 +705,17 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     const requestId = ++employeeIdRequestRef.current;
     setGeneratingEmployeeId(true);
     apiClient
-      .get(STAFF_API.nextEmployeeId, { params: { staffType: toApiStaffType(staffType) } })
+      .get(STAFF_API.dropdown, { params: { staffType: toApiStaffType(staffType) }, skipGlobalLoader: true })
       .then((response) => {
         if (requestId !== employeeIdRequestRef.current) return;
-        const employeeId = typeof response.data === "string" ? response.data : firstValue(response.data, "employeeId", "EmployeeId", "value", "Value");
-        if (!employeeId) throw new Error("Employee ID was not returned by the server.");
-        setValues((current) => ({ ...current, empId: String(employeeId) }));
+        const employeeId = nextEmployeeId(extractItems(response.data), staffType);
+        setValues((current) => ({ ...current, empId: employeeId }));
         setErrors((current) => ({ ...current, empId: undefined }));
       })
       .catch((error) => {
         if (requestId !== employeeIdRequestRef.current) return;
         setValues((current) => ({ ...current, empId: "" }));
-        setToast(error?.message === "Employee ID was not returned by the server." ? error.message : "Unable to generate Employee ID.");
+        setToast("Unable to generate Employee ID.");
       })
       .finally(() => {
         if (requestId === employeeIdRequestRef.current) setGeneratingEmployeeId(false);
@@ -691,10 +745,13 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   useEffect(() => {
     let active = true;
     setLoadingBoards(true);
-    apiClient.get(apiEndpoints.boards.getAll, { skipGlobalLoader: true })
+    apiClient.get(apiEndpoints.boards.getAll, {
+      params: { Status: true, PageNumber: 1, PageSize: 100 },
+      skipGlobalLoader: true,
+    })
       .then((response) => {
         if (!active) return;
-        const options = boardOptionsFrom(response.data);
+        const options = boardOptionsFrom(response.data).filter((board) => board.active);
         setBoards(options);
       })
       .catch((error) => {
@@ -948,8 +1005,10 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     allocations.map((allocation) => String(allocationSubjectId(allocation) ?? "")).filter(Boolean),
   );
   const pendingIds = new Set(pendingSubjects.map((subject) => String(subjectId(subject) ?? "")).filter(Boolean));
+  const allocationDepartment = saved?.department ?? saved?.Department ?? values.department;
   const available = subjects.filter(
     (s) =>
+      subjectMatchesDepartment(s, allocationDepartment) &&
       !allocatedIds.has(String(subjectId(s))) &&
       !pendingIds.has(String(subjectId(s))) &&
       !allocations.some((a) => subjectName(a) === subjectName(s)),
@@ -1512,7 +1571,7 @@ export default function StaffManagementPage() {
                 rows={rows}
                 loading={loading}
                 onSearchChange={handleSearchChange}
-                enablePdfExport
+                enableTablePrint={false}
                 paginationCurrentOnly
                 toolbarExtra={<div className="staff-list-filters"><label><span className="sr-only">Department</span><select aria-label="Filter by department" value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPageNumber(1); }}><option value="">All Departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label><span className="sr-only">Status</span><select aria-label="Filter by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageNumber(1); }}><option value="">All Status</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select></label></div>}
                 emptyMessage={`No ${activeStaffType.toLowerCase()} found.`}

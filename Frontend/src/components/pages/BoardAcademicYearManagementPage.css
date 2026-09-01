@@ -2,6 +2,7 @@
   display: grid;
   gap: 8px;
   width: calc(100% + 20px);
+  max-width: none;
   margin-inline: -10px;
   color: var(--cms-text);
 }
@@ -121,25 +122,25 @@
   border-collapse: collapse;
 }
 .bay-table-wrap th:nth-child(1) {
-  width: 29%;
+  width: 26%;
 }
 .bay-table-wrap th:nth-child(2) {
-  width: 9%;
+  width: 8%;
 }
 .bay-table-wrap th:nth-child(3) {
   width: 11%;
 }
 .bay-table-wrap th:nth-child(4) {
-  width: 12%;
+  width: 10%;
 }
 .bay-table-wrap th:nth-child(5) {
-  width: 17%;
+  width: 24%;
 }
 .bay-table-wrap th:nth-child(6) {
   width: 11%;
 }
 .bay-table-wrap th:nth-child(7) {
-  width: 11%;
+  width: 10%;
 }
 .bay-table-wrap th {
   box-sizing: border-box;
@@ -166,6 +167,13 @@
 .bay-table-wrap td:nth-child(1) {
   overflow: visible;
   overflow-wrap: break-word;
+  text-overflow: clip;
+  white-space: normal;
+}
+.bay-board-list-card .bay-table-wrap td:nth-child(3),
+.bay-board-list-card .bay-table-wrap td:nth-child(5) {
+  overflow: visible;
+  overflow-wrap: anywhere;
   text-overflow: clip;
   white-space: normal;
 }
@@ -447,6 +455,15 @@
 }
 .bay-form .bay-field-error {
   color: #dc2626;
+}
+.bay-country-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+.bay-country-controls.has-other-country {
+  grid-template-columns: minmax(105px, 0.7fr) minmax(145px, 1.3fr);
 }
 .bay-custom-board-control {
   display: grid;
@@ -1118,6 +1135,9 @@
     grid-template-columns: 1fr;
   }
   .bay-custom-board-control {
+    grid-template-columns: 1fr;
+  }
+  .bay-country-controls.has-other-country {
     grid-template-columns: 1fr;
   }
   .bay-choose-board-button {

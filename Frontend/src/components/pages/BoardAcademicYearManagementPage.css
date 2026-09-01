@@ -537,16 +537,24 @@
   max-height: 112px;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--cms-primary) 45%, var(--cms-border)) transparent;
 }
 .bay-api-picker .bay-api-options::-webkit-scrollbar {
-  display: none;
+  display: block;
+  width: 8px;
+}
+.bay-api-picker .bay-api-options::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cms-primary) 45%, var(--cms-border));
+  background-clip: padding-box;
 }
 .bay-api-options button:disabled {
   cursor: not-allowed;
   opacity: 0.62;
 }
+.bay-other-country-select { margin-top: 7px; }
 .bay-api-options button span small {
   display: block;
   margin-top: 2px;

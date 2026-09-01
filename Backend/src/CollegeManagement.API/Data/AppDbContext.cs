@@ -339,6 +339,10 @@ namespace CollegeManagement.API.Data
                     .IsRequired()
                     .HasMaxLength(100);
 
+                entity.Property(b => b.BoardType)
+                    .IsRequired()
+                    .HasMaxLength(50);
+
                 entity.Property(b => b.Description)
                     .HasMaxLength(500);
 

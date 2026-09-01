@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -111,6 +112,7 @@ const NORMALIZED_DEFAULT_BOARD_CONFIG = Object.fromEntries(
   Object.entries(DEFAULT_BOARD_CONFIG).map(([name, config]) => [normalizeMasterName(name), config]),
 );
 const CUSTOM_BOARD_VALUE = "__custom_board__";
+const OTHER_COUNTRY_VALUE = "__other_country__";
 const BOARD_NAME_OPTIONS = [
   ...Object.keys(DEFAULT_BOARD_CONFIG).map((boardName) => ({ value: boardName, label: boardName })),
   { value: CUSTOM_BOARD_VALUE, label: "Others" },
@@ -140,7 +142,9 @@ const mapBoardListItem = (item = {}) => ({
   id: item.boardId ?? item.BoardId ?? item.id ?? item.Id,
   board: item.boardName ?? item.BoardName ?? "",
   code: item.boardCode ?? item.BoardCode ?? "",
-  type: item.boardType ?? item.BoardType ?? "",
+  type: item.boardType || item.BoardType || NORMALIZED_DEFAULT_BOARD_CONFIG[
+    normalizeMasterName(item.boardName ?? item.BoardName ?? "")
+  ]?.boardType || "",
   countryId: item.countryId ?? item.CountryId ?? null,
   country: item.countryName ?? item.CountryName ?? "",
   stateId: item.stateId ?? item.StateId ?? null,
@@ -167,6 +171,43 @@ const mapBoardDetails = (item = {}) => ({
   rankCalculation: Boolean(item.rankCalculation ?? item.RankCalculation),
 });
 
+const yesNo = (value) => (value ? "Yes" : "No");
+const formatBoardDate = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(date);
+};
+const boardDetailEntries = (board) => [
+  ["Board Name", board.board || "—"],
+  ["Board Code", board.code || "—"],
+  ["Board Type", board.type || "—"],
+  ["Country", board.country || "—"],
+  ["State", board.state || "—"],
+  ["Academic Pattern", board.pattern || "—"],
+  ["Academic Levels", board.level || "—"],
+  ["Grading System", board.gradingSystem || "—"],
+  ["Internal Assessment", yesNo(board.internalAssessment)],
+  ["Practical Exams", yesNo(board.practicalExams)],
+  ["Board Exams", yesNo(board.boardExams)],
+  ["Rank Calculation", yesNo(board.rankCalculation)],
+  ["Status", board.status || "—"],
+  ["Created Date", formatBoardDate(board.createdDate)],
+  ["Description / Notes", board.description || "—"],
+];
+const HIDDEN_BOARD_DETAIL_FIELDS = new Set([
+  "Academic Pattern",
+  "Internal Assessment",
+  "Practical Exams",
+  "Board Exams",
+  "Rank Calculation",
+]);
+
 const unwrapPayload = (value) => value?.data ?? value?.Data ?? value;
 const asArray = (value) => {
   const payload = unwrapPayload(value);
@@ -176,13 +217,16 @@ const asArray = (value) => {
 
 const optionValue = (item, camel, pascal) => item?.[camel] ?? item?.[pascal];
 
-function SearchableApiSelect({ value, options, idKey, nameKey, placeholder, onChange, disabled = false }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
+function SearchableApiSelect({ value, options, idKey, nameKey, placeholder, onChange, disabled = false, initiallyOpen = false }) {
+  const [query, setQuery] = useState(initiallyOpen ? String(value ?? "") : "");
+  const [filterByQuery, setFilterByQuery] = useState(!initiallyOpen);
+  const [open, setOpen] = useState(initiallyOpen);
   const selected = options.find((item) => String(optionValue(item, idKey, idKey[0].toUpperCase() + idKey.slice(1))) === String(value));
+  const selectedName = optionValue(selected, nameKey, nameKey[0].toUpperCase() + nameKey.slice(1)) || "";
+  const activeQuery = filterByQuery ? query : "";
   const filtered = options.filter((item) =>
     String(optionValue(item, nameKey, nameKey[0].toUpperCase() + nameKey.slice(1)) || "")
-      .toLowerCase().includes(query.trim().toLowerCase()),
+      .toLowerCase().includes(activeQuery.trim().toLowerCase()),
   );
   return (
     <div className="bay-api-picker" onBlur={(event) => {
@@ -195,10 +239,10 @@ function SearchableApiSelect({ value, options, idKey, nameKey, placeholder, onCh
           aria-expanded={open}
           aria-autocomplete="list"
           disabled={disabled}
-          value={open ? query : optionValue(selected, nameKey, nameKey[0].toUpperCase() + nameKey.slice(1)) || ""}
-          placeholder={placeholder}
-          onFocus={() => { setQuery(""); setOpen(true); }}
-          onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+          value={open ? query : (selectedName || query)}
+          placeholder={open && selectedName ? selectedName : placeholder}
+          onFocus={() => { if (!open) setQuery(""); setFilterByQuery(false); setOpen(true); }}
+          onChange={(event) => { setQuery(event.target.value); setFilterByQuery(true); setOpen(true); }}
           onKeyDown={(event) => {
             if (event.key === "Escape") setOpen(false);
             if (event.key === "Enter" && filtered[0]) {
@@ -230,6 +274,10 @@ function ApiLevelMultiSelect({ value, options, onChange }) {
   const [showOthers, setShowOthers] = useState(false);
   const selectedIds = value.map(String);
   const selected = options.filter((item) => selectedIds.includes(String(optionValue(item, "academicLevelId", "AcademicLevelId"))));
+  const selectedNames = selected
+    .map((item) => optionValue(item, "levelName", "LevelName"))
+    .filter(Boolean)
+    .join(", ");
   const normalizedQuery = query.trim().toLowerCase();
   const filtered = options.filter((item) => {
     const name = String(optionValue(item, "levelName", "LevelName") || "");
@@ -247,8 +295,9 @@ function ApiLevelMultiSelect({ value, options, onChange }) {
     }}>
       <div className="bay-level-combobox">
         <Search size={16} />
-        <input role="combobox" aria-expanded={open} value={query} placeholder={selected.length ? "Search another level" : "Search academic level"}
-          onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+        <input role="combobox" aria-expanded={open} value={open ? query : selectedNames} placeholder={selected.length ? "Search another level" : "Search academic level"}
+          title={!open ? selectedNames : undefined}
+          onFocus={() => { setQuery(""); setOpen(true); }} onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
           onKeyDown={(event) => {
             if (event.key === "Escape") setOpen(false);
             if (event.key === "Enter" && filtered[0]) {
@@ -256,7 +305,7 @@ function ApiLevelMultiSelect({ value, options, onChange }) {
               toggle(optionValue(filtered[0], "academicLevelId", "AcademicLevelId"));
             }
           }} />
-        {selected.length ? <span className="bay-level-count">{selected.length} selected</span> : null}
+        {open && selected.length ? <span className="bay-level-count">{selected.length} selected</span> : null}
       </div>
       {open ? <div className="bay-level-options" role="listbox">
         {filtered.map((item) => {
@@ -364,11 +413,11 @@ const academicYearPayload = (draft) => {
   const payload = {
     boardId: Number(draft.boardId),
     academicYearName: draft.year.trim(),
-    startDate: draft.start,
-    endDate: draft.end,
     isActive: draft.status === "Active",
     description: draft.description?.trim() || "",
   };
+  if (draft.start) payload.startDate = draft.start;
+  if (draft.end) payload.endDate = draft.end;
   if (draft.admissionStart) payload.admissionStartDate = draft.admissionStart;
   if (draft.admissionEnd) payload.admissionEndDate = draft.admissionEnd;
   return payload;
@@ -425,6 +474,7 @@ function ExportDropdown({ onPdf, onExcel, disabled = false }) {
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const wrapperRef = useRef(null);
   const triggerRef = useRef(null);
+  const menuRef = useRef(null);
 
   const toggleMenu = () => {
     setOpen((current) => {
@@ -444,7 +494,12 @@ function ExportDropdown({ onPdf, onExcel, disabled = false }) {
   useEffect(() => {
     if (!open) return undefined;
     const closeOnOutside = (event) => {
-      if (!wrapperRef.current?.contains(event.target)) setOpen(false);
+      if (
+        !wrapperRef.current?.contains(event.target) &&
+        !menuRef.current?.contains(event.target)
+      ) {
+        setOpen(false);
+      }
     };
     const closeOnEscape = (event) => {
       if (event.key === "Escape") {
@@ -499,8 +554,9 @@ function ExportDropdown({ onPdf, onExcel, disabled = false }) {
       >
         <Download size={16} /> Export <ChevronDown size={14} />
       </button>
-      {open ? (
+      {open ? createPortal(
         <div
+          ref={menuRef}
           role="menu"
           aria-label="Export options"
           style={{
@@ -536,7 +592,8 @@ function ExportDropdown({ onPdf, onExcel, disabled = false }) {
           >
             <FileSpreadsheet size={16} /> Export Excel
           </button>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
@@ -661,11 +718,11 @@ function AcademicYearWorkspace() {
   const save = async (event) => {
     event.preventDefault();
     if (saving) return;
-    if (!draft.boardId || !draft.year?.trim() || !draft.start || !draft.end || !draft.status) {
+    if (!draft.boardId || !draft.year?.trim() || !draft.status) {
       setToast("Complete all required fields.");
       return;
     }
-    if (draft.start > draft.end) {
+    if (draft.start && draft.end && draft.start > draft.end) {
       setToast("Start Date cannot be after End Date.");
       return;
     }
@@ -1033,7 +1090,7 @@ function AcademicYearWorkspace() {
             </label>
             <label>
               <span>
-                Start Date <b>*</b>
+                Start Date
               </span>
               <input
                 type="date"
@@ -1043,7 +1100,7 @@ function AcademicYearWorkspace() {
             </label>
             <label>
               <span>
-                End Date <b>*</b>
+                End Date
               </span>
               <input
                 type="date"
@@ -1136,6 +1193,8 @@ export default function BoardAcademicYearManagementPage() {
   const [boardDeletingId, setBoardDeletingId] = useState(null);
   const [codeValidationMessage, setCodeValidationMessage] = useState("");
   const [customBoardEntry, setCustomBoardEntry] = useState(false);
+  const [openExistingBoardPicker, setOpenExistingBoardPicker] = useState(false);
+  const [choosingOtherCountry, setChoosingOtherCountry] = useState(false);
   const [formData, setFormData] = useState({
     countries: [],
     academicPatterns: [],
@@ -1157,6 +1216,16 @@ export default function BoardAcademicYearManagementPage() {
       return { stateId: `frontend:${stateName}`, stateName, frontendOnly: true };
     });
   }, [states]);
+  const indiaCountry = useMemo(() => formData.countries.find((item) =>
+    normalizeMasterName(optionValue(item, "countryName", "CountryName")) === "india",
+  ), [formData.countries]);
+  const otherCountries = useMemo(() => formData.countries.filter((item) =>
+    normalizeMasterName(optionValue(item, "countryName", "CountryName")) !== "india",
+  ), [formData.countries]);
+  const stateOptions = useMemo(() => {
+    const indiaId = optionValue(indiaCountry, "countryId", "CountryId");
+    return String(form.countryId) === String(indiaId) ? indiaStates : states;
+  }, [form.countryId, indiaCountry, indiaStates, states]);
   const boardAcademicLevels = useMemo(() => {
     const apiLevels = [...formData.academicLevels];
     const apiNames = new Set(apiLevels.map((item) => String(optionValue(item, "levelName", "LevelName")).trim().toLowerCase()));
@@ -1284,11 +1353,23 @@ export default function BoardAcademicYearManagementPage() {
   }, [setSearchParams]);
 
   const update = (name, value) => setForm((current) => ({ ...current, [name]: value }));
+  const handleCountryChange = async (value, keepOtherPicker = false) => {
+    if (value === OTHER_COUNTRY_VALUE) {
+      setChoosingOtherCountry(true);
+      setForm((current) => ({ ...current, countryId: "", stateId: "" }));
+      setStates([]);
+      return;
+    }
+    setChoosingOtherCountry(keepOtherPicker);
+    setForm((current) => ({ ...current, countryId: value, stateId: "" }));
+    await loadStates(value);
+  };
   const handleBoardNameChange = async (value) => {
     const requestId = ++boardSelectionRequestRef.current;
     setCodeValidationMessage("");
     if (value === CUSTOM_BOARD_VALUE) {
       setCustomBoardEntry(true);
+      setOpenExistingBoardPicker(false);
       setForm((current) => ({
         ...current,
         boardName: "",
@@ -1301,6 +1382,8 @@ export default function BoardAcademicYearManagementPage() {
     }
 
     setCustomBoardEntry(false);
+    setOpenExistingBoardPicker(false);
+    setChoosingOtherCountry(false);
     const config = NORMALIZED_DEFAULT_BOARD_CONFIG[normalizeMasterName(value)];
     if (!config) {
       setForm((current) => ({ ...current, boardName: value }));
@@ -1310,7 +1393,7 @@ export default function BoardAcademicYearManagementPage() {
     const masters = formData.countries.length ? formData : await loadFormData();
     if (!masters || requestId !== boardSelectionRequestRef.current) return;
     const india = masters.countries.find((item) => normalizeMasterName(optionValue(item, "countryName", "CountryName")) === "india");
-    const countryId = form.countryId || optionValue(india, "countryId", "CountryId") || "";
+    const countryId = optionValue(india, "countryId", "CountryId") || "";
     const availableStates = countryId ? await loadStates(countryId) : [];
     if (requestId !== boardSelectionRequestRef.current) return;
 
@@ -1338,6 +1421,8 @@ export default function BoardAcademicYearManagementPage() {
     setEditingId(null);
     setForm(emptyBoardForm);
     setCustomBoardEntry(false);
+    setOpenExistingBoardPicker(false);
+    setChoosingOtherCountry(false);
     setSelected(null);
     setStates([]);
     setCodeValidationMessage("");
@@ -1361,10 +1446,15 @@ export default function BoardAcademicYearManagementPage() {
   const startEdit = async (row) => {
     const record = row.academicLevelIds ? row : await fetchBoardDetails(row.id, false);
     if (!record) return;
-    await loadFormData();
+    const masters = await loadFormData();
     if (record.countryId) await loadStates(record.countryId);
     setEditingId(record.id);
     setCustomBoardEntry(false);
+    setOpenExistingBoardPicker(false);
+    const editIndia = masters?.countries?.find((item) =>
+      normalizeMasterName(optionValue(item, "countryName", "CountryName")) === "india",
+    );
+    setChoosingOtherCountry(Boolean(record.countryId && String(record.countryId) !== String(optionValue(editIndia, "countryId", "CountryId"))));
     setForm({
       boardName: record.board,
       boardCode: record.code,
@@ -1408,7 +1498,7 @@ export default function BoardAcademicYearManagementPage() {
     if (boardSaving) return;
     const boardName = form.boardName.trim();
     const boardCode = form.boardCode.trim().toUpperCase();
-    const passPercentage = form.passPercentage === "" ? 0 : Number(form.passPercentage);
+    const passPercentage = editingId ? Number(form.passPercentage || 0) : 0;
     const academicPatternId = form.academicPatternId ||
       optionValue(formData.academicPatterns[0], "academicPatternId", "AcademicPatternId") || "";
     const missingBoardFields = [
@@ -1421,13 +1511,8 @@ export default function BoardAcademicYearManagementPage() {
       [!form.gradingSystemId, "Grading System"],
       [!form.status, "Status"],
     ].filter(([missing]) => missing).map(([, label]) => label);
-    if (
-      missingBoardFields.length || !Number.isFinite(passPercentage) ||
-      passPercentage < 0 || passPercentage > 100
-    ) {
-      setToast(missingBoardFields.length
-        ? `Select the required field${missingBoardFields.length > 1 ? "s" : ""}: ${missingBoardFields.join(", ")}.`
-        : "Enter a valid Pass Percentage between 0 and 100.");
+    if (missingBoardFields.length) {
+      setToast(`Select the required field${missingBoardFields.length > 1 ? "s" : ""}: ${missingBoardFields.join(", ")}.`);
       return;
     }
     if (!(await validateBoardCode(boardCode))) return;
@@ -1500,20 +1585,43 @@ export default function BoardAcademicYearManagementPage() {
     if (boardExporting) return;
     setBoardExporting(true);
     try {
-      const response = await apiClient.get(
-        kind === "pdf" ? BOARD_API.exportPdf : BOARD_API.exportExcel,
-        {
-          params: { Search: debouncedQuery || undefined },
-          responseType: "blob",
-        },
+      const listResponse = await apiClient.get(BOARD_API.list);
+      const normalizedQuery = debouncedQuery.toLowerCase();
+      const matchingRows = asArray(listResponse.data)
+        .map(mapBoardListItem)
+        .filter((row) => !normalizedQuery || [row.board, row.code, row.type, row.country, row.state, row.level]
+          .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)));
+      if (!matchingRows.length) {
+        setToast("No Board records available to export.");
+        return;
+      }
+      const details = await Promise.all(
+        matchingRows.map(async (row) => {
+          const response = await apiClient.get(BOARD_API.byId(row.id));
+          return mapBoardDetails(unwrapPayload(response.data));
+        }),
       );
-      downloadBlob(
-        response.data,
-        filenameFromDisposition(
-          response.headers?.["content-disposition"],
-          kind === "pdf" ? "Board-Management-Report.pdf" : "Board-Management-Report.xlsx",
-        ),
-      );
+      if (kind === "pdf") {
+        createPdfReport({
+          title: "Board Management Details",
+          columns: ["Board", "Field", "Value"],
+          rows: details.flatMap((board) =>
+            boardDetailEntries(board).map(([field, value]) => [board.board || "—", field, String(value)]),
+          ),
+          filename: "Board-Management-Report.pdf",
+          orientation: "portrait",
+        });
+      } else {
+        const XLSX = await import("xlsx");
+        const records = details.map((board) => Object.fromEntries(boardDetailEntries(board)));
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(records);
+        worksheet["!cols"] = Object.keys(records[0]).map((heading) => ({
+          wch: Math.min(45, Math.max(14, heading.length + 2)),
+        }));
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Board Details");
+        XLSX.writeFile(workbook, "Board-Management-Report.xlsx");
+      }
     } catch (error) {
       setToast(getApiErrorMessage(error, `Unable to export Board ${kind.toUpperCase()}.`));
     } finally {
@@ -1747,16 +1855,9 @@ export default function BoardAcademicYearManagementPage() {
                   <p className="bay-empty">Loading Board details...</p>
                 ) : selected ? (
                   <dl>
-                    {[
-                      ["Board Name", selected.board],
-                      ["Board Code", selected.code],
-                      ["Board Type", selected.type],
-                      ["State", selected.state],
-                      ["Academic Levels", selected.level],
-                      ["Grading System", selected.gradingSystem],
-                      ["Status", selected.status],
-                      ["Description / Notes", selected.description],
-                    ].map(([k, v]) => (
+                    {boardDetailEntries(selected)
+                      .filter(([key]) => !HIDDEN_BOARD_DETAIL_FIELDS.has(key))
+                      .map(([k, v]) => (
                       <div key={k}>
                         <dt>{k}</dt>
                         <span className="bay-detail-separator" aria-hidden="true">
@@ -1764,7 +1865,7 @@ export default function BoardAcademicYearManagementPage() {
                         </span>
                         <dd>{v || "—"}</dd>
                       </div>
-                    ))}
+                      ))}
                   </dl>
                 ) : (
                   <p className="bay-empty">Select a configuration to view details.</p>
@@ -1797,7 +1898,7 @@ export default function BoardAcademicYearManagementPage() {
                           className="bay-choose-board-button"
                           onClick={() => {
                             setCustomBoardEntry(false);
-                            setForm((current) => ({ ...current, boardName: "", boardCode: "" }));
+                            setOpenExistingBoardPicker(true);
                             setCodeValidationMessage("");
                           }}
                         >
@@ -1807,12 +1908,11 @@ export default function BoardAcademicYearManagementPage() {
                     ) : (
                       <SearchableApiSelect
                         value={form.boardName}
-                        options={BOARD_NAME_OPTIONS.some((item) => item.value === form.boardName) || !form.boardName
-                          ? BOARD_NAME_OPTIONS
-                          : [...BOARD_NAME_OPTIONS.slice(0, -1), { value: form.boardName, label: form.boardName }, BOARD_NAME_OPTIONS.at(-1)]}
+                        options={BOARD_NAME_OPTIONS}
                         idKey="value"
                         nameKey="label"
                         placeholder="Search board name"
+                        initiallyOpen={openExistingBoardPicker}
                         onChange={handleBoardNameChange}
                       />
                     )}
@@ -1828,6 +1928,43 @@ export default function BoardAcademicYearManagementPage() {
                       onBlur={() => validateBoardCode()}
                     />
                     {codeValidationMessage ? <small className="bay-field-error">{codeValidationMessage}</small> : null}
+                  </label>
+                  <label>
+                    <span>
+                      Country <b>*</b>
+                    </span>
+                    <select
+                      value={choosingOtherCountry ? OTHER_COUNTRY_VALUE : form.countryId}
+                      disabled={boardFormDataLoading}
+                      onChange={(event) => handleCountryChange(event.target.value)}
+                    >
+                      <option value="">Select country</option>
+                      {indiaCountry ? (
+                        <option value={optionValue(indiaCountry, "countryId", "CountryId")}>
+                          {optionValue(indiaCountry, "countryName", "CountryName")}
+                        </option>
+                      ) : null}
+                      <option value={OTHER_COUNTRY_VALUE}>Other</option>
+                    </select>
+                    {choosingOtherCountry ? (
+                      <select
+                        className="bay-other-country-select"
+                        aria-label="Select other country"
+                        value={form.countryId}
+                        onChange={(event) => handleCountryChange(event.target.value, true)}
+                      >
+                        <option value="">Select other country</option>
+                        {!otherCountries.length ? <option disabled>No other countries configured</option> : null}
+                        {otherCountries.map((item) => (
+                          <option
+                            key={optionValue(item, "countryId", "CountryId")}
+                            value={optionValue(item, "countryId", "CountryId")}
+                          >
+                            {optionValue(item, "countryName", "CountryName")}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                   </label>
                   <label>
                     <span>
@@ -1848,7 +1985,7 @@ export default function BoardAcademicYearManagementPage() {
                     </span>
                     <SearchableApiSelect
                       value={form.stateId}
-                      options={indiaStates}
+                      options={stateOptions}
                       idKey="stateId"
                       nameKey="stateName"
                       placeholder="Search state"
@@ -1910,6 +2047,7 @@ export default function BoardAcademicYearManagementPage() {
                       onClick={() => {
                         setForm(emptyBoardForm);
                         setCustomBoardEntry(false);
+                        setOpenExistingBoardPicker(false);
                         setEditingId(selected?.id || null);
                         setSearchParams({});
                       }}

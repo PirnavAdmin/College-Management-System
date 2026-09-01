@@ -32,6 +32,10 @@ namespace CollegeManagement.API.Models
         [MaxLength(100)]
         public string BoardName { get; set; } = string.Empty;
 
+        [Required]
+        [MaxLength(50)]
+        public string BoardType { get; set; } = string.Empty;
+
         /// <summary>
         /// Gets or sets the board description.
         /// </summary>

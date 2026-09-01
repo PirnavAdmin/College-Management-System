@@ -13,12 +13,12 @@ const PAGE_SIZE = 5;
 const SUBJECT_PAGE_SIZE = 6;
 
 const RESULT_API = {
-  boards: "/api/v1/boards",
-  academicYears: "/api/v1/academic-years/active",
-  academicLevels: "/api/v1/academic-levels",
-  groupsByBoard: (id) => `/api/v1/groups/board/${id}`,
-  programsByGroup: (id) => `/api/v1/programs/group/${id}`,
-  examinations: "/api/v1/examinations",
+  boards: apiEndpoints.boards.list,
+  academicYears: apiEndpoints.academicYears.active,
+  academicLevels: apiEndpoints.boards.academicLevels,
+  groupsByBoard: apiEndpoints.groups.getByBoard,
+  programsByGroup: apiEndpoints.groups.programs,
+  examinations: apiEndpoints.examinations.getAll,
   generate: "/api/v1/results/generate",
   resultsList: "/api/v1/results",
   readiness: "/api/v1/results/readiness",
@@ -512,7 +512,7 @@ export default function ResultProcessingPage() {
       const items = collectionFrom(data);
       const next = items
         .map(normalizeExam)
-        .filter((i) => i.id > 0 && i.name && (i.status === "COMPLETED" || !i.status)); // ✅ Aligned with Marks module
+        .filter((i) => i.id > 0 && i.name && (i.status === "COMPLETED" || !i.status));
       setExaminations(next);
       return next;
     } catch (err) {
@@ -1063,7 +1063,12 @@ export default function ResultProcessingPage() {
                   onChange={(v) => changeFilter("year", v)}
                 >
                   {renderSelectOptions(
-                    uniqueAcademicYearsByName(academicYears, (item) => item.name),
+                    uniqueAcademicYearsByName(
+                      academicYears.filter(
+                        (i) => i.boardId == null || Number(i.boardId) === Number(filters.board),
+                      ),
+                      (item) => item.name,
+                    ),
                   )}
                 </Select>
                 <Select

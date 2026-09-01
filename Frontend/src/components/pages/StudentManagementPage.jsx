@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Eye, Search, UserRoundCheck } from "lucide-react";
+import { Eye, FileText, Search, UserRoundCheck } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { StatusBadge } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -16,9 +16,25 @@ const list = (payload) => {
 const value = (record, ...keys) => keys.map((key) => record?.[key]).find((item) => item != null && item !== "");
 const normalizedName = (item) => String(item ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 const nameFor = (items, id, idKeys, labelKeys) => value(items.find((item) => String(value(item, ...idKeys)) === String(id)), ...labelKeys) ?? "";
+const saveDownload = (data, filename) => {
+  const url = URL.createObjectURL(data instanceof Blob ? data : new Blob([data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+const downloadName = (header, fallback) => {
+  const match = String(header ?? "").match(/filename\*?=(?:UTF-8''|\")?([^;\"]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1].trim()) : fallback;
+};
+
 export default function StudentManagementPage() {
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState({
+    board: "",
     academicYear: "",
     level: "",
     group: "",
@@ -29,6 +45,8 @@ export default function StudentManagementPage() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [exporting, setExporting] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   useEffect(() => {
     let active = true;
     apiClient
@@ -43,6 +61,7 @@ export default function StudentManagementPage() {
           studentId: x.studentId ?? x.id ?? "—",
           name: x.studentName ?? x.fullName ?? x.name ?? "Unnamed Student",
           admissionNo: x.admissionNo ?? x.admissionNumber ?? "—",
+          board: x.boardName ?? x.board ?? "",
           academicYear: x.academicYearName ?? x.academicYear ?? "",
           level: x.academicLevelName ?? x.academicLevel ?? x.levelName ?? "",
           group: x.groupName ?? x.group ?? "",
@@ -55,9 +74,9 @@ export default function StudentManagementPage() {
         return Promise.allSettled([
           apiClient.get(apiEndpoints.admissions.getAll), apiClient.get(apiEndpoints.academicYears.list),
           apiClient.get(apiEndpoints.academicLevels.list), apiClient.get(apiEndpoints.groups.list),
-          apiClient.get(apiEndpoints.programs.list), apiClient.get(apiEndpoints.sections.list),
+          apiClient.get(apiEndpoints.programs.list), apiClient.get(apiEndpoints.sections.list), apiClient.get(apiEndpoints.boards.list),
         ]).then((responses) => {
-          const [admissions, years, levels, groups, programs, sections] = responses.map((response) =>
+          const [admissions, years, levels, groups, programs, sections, boards] = responses.map((response) =>
             response.status === "fulfilled" ? list(response.value.data) : [],
           );
           const byNo = new Map(admissions.map((item) => [String(value(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") ?? "").trim(), item]));
@@ -70,12 +89,14 @@ export default function StudentManagementPage() {
               ?? byNo.get(String(student.admissionNo ?? "").trim())
               ?? byName.get(normalizedName(student.name));
             const yearId = value(student, "academicYearId", "AcademicYearId") ?? value(admission, "academicYearId", "AcademicYearId");
+            const boardId = value(student, "boardId", "BoardId") ?? value(admission, "boardId", "BoardId");
             const levelId = value(student, "academicLevelId", "AcademicLevelId") ?? value(admission, "academicLevelId", "AcademicLevelId");
             const groupId = value(student, "groupId", "GroupId") ?? value(admission, "groupId", "GroupId");
             const programId = value(student, "programId", "ProgramId", "programmeId", "ProgrammeId") ?? value(admission, "programId", "ProgramId", "programmeId", "ProgrammeId");
             const sectionId = value(student, "sectionId", "SectionId") ?? value(admission, "sectionId", "SectionId", "allocatedSectionId", "AllocatedSectionId");
             return {
               ...student,
+              board: student.board || value(admission, "boardName", "BoardName") || nameFor(boards, boardId, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]),
               academicYear: student.academicYear || value(admission, "academicYearName", "AcademicYearName") || nameFor(years, yearId, ["academicYearId", "AcademicYearId", "id"], ["academicYearName", "AcademicYearName", "name"]),
               level: student.level || value(admission, "academicLevelName", "AcademicLevelName") || nameFor(levels, levelId, ["academicLevelId", "AcademicLevelId", "id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name"]),
               group: student.group || value(admission, "groupName", "GroupName") || nameFor(groups, groupId, ["groupId", "GroupId", "id"], ["groupName", "GroupName", "name"]),
@@ -112,6 +133,49 @@ export default function StudentManagementPage() {
     [students, query, filters],
   );
   const values = (key) => [...new Set(students.map((student) => student[key]).filter(Boolean))];
+  const levelValues = filters.board
+    ? [...new Set(students.filter((student) => student.board === filters.board).map((student) => student.level).filter(Boolean))]
+    : values("level");
+  const updateFilter = (key, selectedValue) => {
+    if (key === "board") return setFilters((current) => ({ ...current, board: selectedValue, academicYear: "", level: "", group: "", programme: "", section: "" }));
+    setFilters((current) => ({ ...current, [key]: selectedValue }));
+  };
+  const selectedStudent = students.find((student) => String(student.id) === String(selectedStudentId));
+  const exportStudents = async (format, studentForPdf = selectedStudent) => {
+    setError("");
+    setExporting(format);
+    try {
+      if (format === "pdf") {
+        if (!studentForPdf) return;
+        const response = await apiClient.get(apiEndpoints.students.exportPdf(studentForPdf.id), { responseType: "blob" });
+        saveDownload(response.data, downloadName(response.headers?.["content-disposition"], `Student_${studentForPdf.id}_Profile.pdf`));
+        return;
+      }
+      const filterIds = {
+        board: ["boardId", "BoardId"],
+        academicYear: ["academicYearId", "AcademicYearId"],
+        level: ["academicLevelId", "AcademicLevelId"],
+        group: ["groupId", "GroupId"],
+        programme: ["programId", "ProgramId", "programmeId", "ProgrammeId"],
+        section: ["sectionId", "SectionId"],
+      };
+      const params = {};
+      const paramNames = { board: "BoardId", academicYear: "AcademicYearId", level: "AcademicLevelId", group: "GroupId", programme: "ProgramId", section: "SectionId" };
+      Object.entries(filterIds).forEach(([filterKey, idKeys]) => {
+        if (!filters[filterKey]) return;
+        const matchingStudent = students.find((student) => String(student[filterKey]) === String(filters[filterKey]));
+        const id = value(matchingStudent, ...idKeys);
+        if (id != null && id !== "") params[paramNames[filterKey]] = id;
+      });
+      if (filters.status) params.Status = filters.status;
+      const response = await apiClient.get(apiEndpoints.students.exportExcel, { params, responseType: "blob" });
+      saveDownload(response.data, downloadName(response.headers?.["content-disposition"], "Students.xlsx"));
+    } catch (e) {
+      setError(getApiErrorMessage(e));
+    } finally {
+      setExporting("");
+    }
+  };
   return (
     <DashboardLayout
       title="Student Management"
@@ -142,7 +206,7 @@ export default function StudentManagementPage() {
         </div>
       </section>
       <section className="cms-card">
-        <div className="cms-card-body">
+        <div className="cms-card-body student-management-toolbar">
           <label className="student-management-search">
             <Search size={18} />
             <input
@@ -154,6 +218,7 @@ export default function StudentManagementPage() {
         </div>
         <div className="student-management-filters">
           {[
+            ["Board", "board"],
             ["Academic Year", "academicYear"],
             ["Academic Level", "level"],
             ["Group", "group"],
@@ -165,18 +230,24 @@ export default function StudentManagementPage() {
               <span>{label}</span>
               <select
                 value={filters[key]}
-                onChange={(event) => setFilters({ ...filters, [key]: event.target.value })}
+                onChange={(event) => updateFilter(key, event.target.value)}
               >
                 <option value="">All {label}s</option>
-                {values(key).map((value) => (
+                {(key === "level" ? levelValues : values(key)).map((value) => (
                   <option key={value}>{value}</option>
                 ))}
               </select>
             </label>
           ))}
         </div>
-        <div className="cms-table-wrap">
-          <table className="cms-table">
+        <div className="cms-table-wrap student-management-table-wrap">
+          <table className="cms-table student-management-table">
+            <colgroup>
+              <col className="student-col-id" /><col className="student-col-admission" /><col className="student-col-name" />
+              <col className="student-col-year" /><col className="student-col-level" /><col className="student-col-group" />
+              <col className="student-col-programme" /><col className="student-col-section" /><col className="student-col-roll" />
+              <col className="student-col-status" /><col className="student-col-actions" />
+            </colgroup>
             <thead>
               <tr>
                 {[
@@ -201,7 +272,7 @@ export default function StudentManagementPage() {
                 <tr><td colSpan="11"><div className="cms-empty">Loading approved students...</div></td></tr>
               ) : rows.length ? (
                 rows.map((s) => (
-                  <tr key={s.id}>
+                  <tr key={s.id} onClick={() => setSelectedStudentId(String(s.id))}>
                     <td>{s.studentId}</td>
                     <td>{s.admissionNo}</td>
                     <td className="cms-font-semibold">{s.name}</td>
@@ -215,7 +286,8 @@ export default function StudentManagementPage() {
                       <StatusBadge value={s.status || "Pending assignment"} />
                     </td>
                     <td>
-                      <div className="student-action-buttons">
+                    <div className="student-action-buttons">
+                      <button type="button" aria-label={`Export ${s.name} PDF`} title="Export profile PDF" disabled={Boolean(exporting)} onClick={() => { setSelectedStudentId(String(s.id)); exportStudents("pdf", s); }}><FileText size={16} /></button>
                         <Link to={`/dashboard/students/${s.id}`} aria-label="View student" title="View student">
                           <Eye size={16} />
                         </Link>

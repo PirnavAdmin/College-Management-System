@@ -233,6 +233,7 @@
     bulk: "/api/v1/staff-attendance/bulk",
     details: (facultyId) => `/api/v1/staff-attendance/staff/${facultyId}/details`,
     monthlyReport: "/api/v1/staff-attendance/monthly-report",
+    monthlyExportCsv: "/api/v1/staff-attendance/monthly-report/export/csv",
     monthlyExport: "/api/v1/staff-attendance/monthly-report/export/excel",
   },
   students: {
@@ -255,6 +256,8 @@
     getBySection: (sectionId) => `/api/v1/students/section/${sectionId}`,
     checkEmail: "/api/v1/students/check-email",
     checkMobile: "/api/v1/students/check-mobile",
+    exportExcel: "/api/v1/students/export/excel",
+    exportPdf: (studentId) => `/api/v1/students/${encodeURIComponent(studentId)}/export/pdf`,
   },
   academicLevels: {
     list: "/api/v1/academic-levels",
@@ -333,6 +336,8 @@
     approveSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/approve`,
     validateSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/validate`,
     generate: "/api/v1/timetable/generate",
+    exportSectionPdf: "/api/v1/timetable/export/section-pdf",
+    exportGroupExcel: "/api/v1/timetable/export/group-excel",
   },
   promotions: {
     eligible: "/api/v1/promotions/eligible",

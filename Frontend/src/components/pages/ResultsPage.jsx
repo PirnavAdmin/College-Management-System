@@ -13,12 +13,12 @@ const PAGE_SIZE = 5;
 const SUBJECT_PAGE_SIZE = 6;
 
 const RESULT_API = {
-  boards: apiEndpoints.boards.list,
-  academicYears: apiEndpoints.academicYears.active,
-  academicLevels: apiEndpoints.boards.academicLevels,
-  groupsByBoard: apiEndpoints.groups.getByBoard,
-  programsByGroup: apiEndpoints.groups.programs,
-  examinations: apiEndpoints.examinations.getAll,
+  boards: "/api/v1/boards",
+  academicYears: "/api/v1/academic-years/active",
+  academicLevels: "/api/v1/academic-levels",
+  groupsByBoard: (id) => `/api/v1/groups/board/${id}`,
+  programsByGroup: (id) => `/api/v1/programs/group/${id}`,
+  examinations: "/api/v1/examinations",
   generate: "/api/v1/results/generate",
   resultsList: "/api/v1/results",
   readiness: "/api/v1/results/readiness",
@@ -138,11 +138,11 @@ const matchesIdOrName = (actual, expected, itemsList = []) => {
 const normalizeSectionSummary = (section) => {
   const studentCount = Number(
     section.studentCount ??
-      section.count ??
-      section.studentsCount ??
-      section.students ??
-      section.totalStudents ??
-      0,
+    section.count ??
+    section.studentsCount ??
+    section.students ??
+    section.totalStudents ??
+    0,
   );
   const passed = Number(section.passed ?? section.passedCount ?? 0);
   const failed = Number(section.failed ?? section.failedCount ?? 0);
@@ -183,9 +183,9 @@ const generatedSectionsFrom = (data) => {
 const hasExistingResults = (item) =>
   Boolean(
     item &&
-      (["GENERATED", "VALIDATED", "PUBLISHED"].includes(item.publicationStatus) ||
-        (item.generatedSectionCount ?? 0) > 0 ||
-        (item.sections ?? []).length > 0),
+    (["GENERATED", "VALIDATED", "PUBLISHED"].includes(item.publicationStatus) ||
+      (item.generatedSectionCount ?? 0) > 0 ||
+      (item.sections ?? []).length > 0),
   );
 
 const sectionSummariesFromResultRows = (data, context, programsList = []) => {
@@ -491,29 +491,28 @@ export default function ResultProcessingPage() {
     )
       return;
     try {
-      const res = await apiClient.get(RESULT_API.examinations, {
-        params: {
-          BoardId: Number(context.board),
-          AcademicYearId: Number(context.year),
-          AcademicLevelId: Number(context.level),
-          GroupId: Number(context.group),
-          ProgramId: context.program,
-          Status: "COMPLETED",
-        },
+      const queryParams = new URLSearchParams({
+        BoardId: Number(context.board),
+        AcademicYearId: Number(context.year),
+        AcademicLevelId: Number(context.level),
+        GroupId: Number(context.group),
+        ProgramId: context.program,
+        IsActive: true,
+        Page: 1,
+        PageSize: 500,
+        Status: "COMPLETED",
       });
+      const res = await fetch(`${RESULT_API.examinations}?${queryParams}`);
+      if (res.status === 401) {
+        showToast("Session expired or unauthorized. Please sign in again.", "error");
+        return;
+      }
+      const data = await res.json();
       if (seq !== requests.current.exams) return;
-      const items = collectionFrom(res.data);
+      const items = collectionFrom(data);
       const next = items
         .map(normalizeExam)
-        .filter((i) => {
-          if (!i.id || i.id <= 0) return false;
-          const boardMatch = !i.boardId || i.boardId === Number(context.board);
-          const yearMatch = !i.academicYearId || i.academicYearId === Number(context.year);
-          const levelMatch = !i.academicLevelId || i.academicLevelId === Number(context.level);
-          const groupMatch = !i.groupId || i.groupId === Number(context.group);
-          const programMatch = matchesIdOrName(i.programId || i.programName, context.program, programs);
-          return boardMatch && yearMatch && levelMatch && groupMatch && programMatch;
-        });
+        .filter((i) => i.id > 0 && i.name && (i.status === "COMPLETED" || !i.status)); // ✅ Aligned with Marks module
       setExaminations(next);
       return next;
     } catch (err) {
@@ -597,7 +596,6 @@ export default function ResultProcessingPage() {
     if (key === "board") loadGroups(value);
     if (key === "group") loadPrograms(value);
     if (
-      ["year", "level", "program"].includes(key) &&
       [next.board, next.year, next.level, next.group, next.program].every(
         (item) => String(item).trim().length > 0,
       )
@@ -821,14 +819,14 @@ export default function ResultProcessingPage() {
       const res = await apiClient.get(RESULT_API.failedStudents, {
         params: activeContext.exam
           ? {
-              boardId: Number(activeContext.board),
-              academicYearId: Number(activeContext.year),
-              academicLevelId: Number(activeContext.level),
-              groupId: Number(activeContext.group),
-              programId: String(activeContext.program),
-              examId: Number(activeContext.exam),
-              examinationId: Number(activeContext.exam),
-            }
+            boardId: Number(activeContext.board),
+            academicYearId: Number(activeContext.year),
+            academicLevelId: Number(activeContext.level),
+            groupId: Number(activeContext.group),
+            programId: String(activeContext.program),
+            examId: Number(activeContext.exam),
+            examinationId: Number(activeContext.exam),
+          }
           : undefined,
       });
       if (seq !== requests.current.failed) return;
@@ -1065,12 +1063,7 @@ export default function ResultProcessingPage() {
                   onChange={(v) => changeFilter("year", v)}
                 >
                   {renderSelectOptions(
-                    uniqueAcademicYearsByName(
-                      academicYears.filter(
-                        (i) => i.boardId == null || Number(i.boardId) === Number(filters.board),
-                      ),
-                      (item) => item.name,
-                    ),
+                    uniqueAcademicYearsByName(academicYears, (item) => item.name),
                   )}
                 </Select>
                 <Select

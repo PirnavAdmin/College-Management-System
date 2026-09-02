@@ -223,6 +223,15 @@
 .faculty-subject-list.allocated .cms-btn { border-color: var(--cms-border); color: var(--cms-red); }
 .faculty-subject-list.available .cms-btn:hover { border-color: var(--cms-primary-border); background: var(--cms-primary-soft); }
 .faculty-subject-list.allocated .cms-btn:hover { border-color: #fecaca; background: #fef2f2; }
+.staff-workload-summary {
+  margin: -2px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--cms-subtle);
+  color: var(--cms-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 /* The available-subject selector uses the same neutral form-control styling as the rest of the CMS. */
 .faculty-subject-list.available select {

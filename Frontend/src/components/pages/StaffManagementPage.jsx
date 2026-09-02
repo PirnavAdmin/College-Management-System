@@ -15,7 +15,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import apiClient from "@/api/axios.js";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import DataTable from "@/components/common/DataTable.jsx";
@@ -31,26 +31,23 @@ import "./StaffManagementPage.css";
 const STAFF_API = {
   list: "/api/v1/staff",
   create: "/api/v1/staff",
+  nextEmployeeId: "/api/v1/staff/next-employee-id",
   dropdown: "/api/v1/staff/dropdown",
-  getById: (id) => `/api/v1/staff/${id}`,
-  update: (id) => `/api/v1/staff/${id}`,
-  delete: (id) => `/api/v1/staff/${id}`,
+  getById: (id) => `/api/v1/staff/${encodeURIComponent(id)}`,
+  update: (id) => `/api/v1/staff/${encodeURIComponent(id)}`,
+  delete: (id) => `/api/v1/staff/${encodeURIComponent(id)}`,
   uploadPhoto: "/api/v1/staff/upload-photo",
-  photo: (id) => `/api/v1/staff/photo/${id}`,
-};
-
-// Subject-allocation routes are scoped to this screen so the existing shared
-// Staff and Teaching Staff API configuration remains unchanged.
-const STAFF_SUBJECT_ALLOCATION_API = {
-  create: "/api/v1/staff/assign-subject",
-  update: (allocationId) => `/api/v1/staff/assign-subject/${encodeURIComponent(allocationId)}`,
-  delete: (allocationId) => `/api/v1/staff/assign-subject/${encodeURIComponent(allocationId)}`,
-  list: (staffId) => `/api/v1/staff/${encodeURIComponent(staffId)}/subject-allocations`,
+  photo: (id) => `/api/v1/staff/photo/${encodeURIComponent(id)}`,
+  assignSubject: "/api/v1/staff/assign-subject",
+  updateSubjectAllocation: (id) => `/api/v1/staff/assign-subject/${encodeURIComponent(id)}`,
+  deleteSubjectAllocation: (id) => `/api/v1/staff/assign-subject/${encodeURIComponent(id)}`,
+  subjectAllocations: (staffId) => `/api/v1/staff/${encodeURIComponent(staffId)}/subject-allocations`,
   workload: (staffId) => `/api/v1/staff/workload/${encodeURIComponent(staffId)}`,
 };
 
 const API_STAFF_TYPES = { teaching: "Teaching", "non-teaching": "NonTeaching" };
 const STAFF_PAGE_SIZE = 5;
+const STAFF_BOARD_STORAGE_KEY = "pjc-staff-board-names";
 const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 const fields = [
@@ -105,10 +102,7 @@ const facultyName = (item = {}) =>
 const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
 const getCrudId = (item = {}) => item.id ?? item.Id;
 const getStaffId = (item = {}) => item.staffId ?? item.StaffId;
-const getAllocationStaffId = (item = {}) => getStaffId(item) ?? getCrudId(item);
 const getFacultyId = (item = {}) => item.facultyId ?? item.FacultyId;
-const facultyId = (item = {}) => getFacultyId(item);
-const STAFF_BOARD_STORAGE_KEY = "cms.staff-board-assignments";
 const firstValue = (item = {}, ...keys) =>
   keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null && value !== "") ??
   Object.entries(item || {}).find(([key, value]) =>
@@ -118,7 +112,14 @@ const firstValue = (item = {}, ...keys) =>
 const lookupValue = (value) => {
   if (value === undefined || value === null) return value;
   if (typeof value !== "object") return value;
-  return firstValue(value, "name", "Name", "value", "Value", "bloodGroup", "BloodGroup", "bloodType", "BloodType", "bloodGroupName", "BloodGroupName", "facultyTypeName", "FacultyTypeName", "typeName", "TypeName") ?? "";
+  return firstValue(
+    value,
+    "name", "Name", "value", "Value",
+    "boardName", "BoardName",
+    "bloodGroup", "BloodGroup", "bloodType", "BloodType",
+    "bloodGroupName", "BloodGroupName", "bloodTypeName", "BloodTypeName",
+    "displayName", "DisplayName", "facultyTypeName", "FacultyTypeName", "typeName", "TypeName",
+  ) ?? "";
 };
 const normalizeStaffType = (value) => {
   const normalized = String(lookupValue(value) ?? "").trim().toLowerCase().replace(/[\s_-]/g, "");
@@ -126,7 +127,32 @@ const normalizeStaffType = (value) => {
   if (normalized === "nonteaching" || normalized === "nonteachingstaff") return "Non-Teaching Staff";
   return lookupValue(value) ?? "";
 };
-const normalizeFacultyType = (value) => String(lookupValue(value) ?? "").trim();
+const staffBoardKeys = (item = {}) => [
+  getCrudId(item),
+  getStaffId(item),
+  getFacultyId(item),
+  firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
+].filter((value) => value !== undefined && value !== null && String(value).trim() !== "").map(String);
+const savedStaffBoardName = (item = {}) => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STAFF_BOARD_STORAGE_KEY) || "{}");
+    return staffBoardKeys(item).map((key) => saved[key]).find(Boolean) || "";
+  } catch {
+    return "";
+  }
+};
+const rememberStaffBoardName = (item = {}, boardName = "") => {
+  const name = String(boardName || "").trim();
+  const keys = staffBoardKeys(item);
+  if (!name || !keys.length) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(STAFF_BOARD_STORAGE_KEY) || "{}");
+    keys.forEach((key) => { saved[key] = name; });
+    localStorage.setItem(STAFF_BOARD_STORAGE_KEY, JSON.stringify(saved));
+  } catch {
+    // The API payload still carries BoardId and BoardName if storage is unavailable.
+  }
+};
 const facultyTypeValue = (item = {}) => {
   const value = firstValue(item, "staffType", "StaffType");
   return normalizeStaffType(value);
@@ -136,37 +162,22 @@ const toApiStaffType = (value) => {
   return normalized === "Non-Teaching Staff" ? API_STAFF_TYPES["non-teaching"] : API_STAFF_TYPES.teaching;
 };
 const employeeIdPrefix = (staffType) => normalizeStaffType(staffType) === "Non-Teaching Staff" ? "PCNTCH" : "PCTCH";
-const nextEmployeeId = (items, staffType) => {
-  const prefix = employeeIdPrefix(staffType);
-  const pattern = new RegExp(`^${prefix}(\\d+)$`, "i");
-  const highestSequence = items.reduce((highest, item) => {
-    const employeeId = String(firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId") || "").trim();
-    const match = employeeId.match(pattern);
-    return match ? Math.max(highest, Number(match[1]) || 0) : highest;
+const employeeIdFromServerSequence = (payload, staffType) => {
+  const record = extractRecord(payload);
+  const serverEmployeeId = typeof record === "string" || typeof record === "number"
+    ? record
+    : firstValue(record, "employeeId", "EmployeeId", "nextEmployeeId", "NextEmployeeId", "value", "Value");
+  const sequence = String(serverEmployeeId ?? "").trim().match(/(\d+)$/)?.[1];
+  if (!sequence) return "";
+  return `${employeeIdPrefix(staffType)}${sequence.padStart(4, "0")}`;
+};
+const employeeIdFromStaffItems = (payload, staffType) => {
+  const highestSequence = extractItems(payload).reduce((highest, item) => {
+    const employeeId = firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId");
+    const sequence = String(employeeId ?? "").trim().match(/(\d+)$/)?.[1];
+    return sequence ? Math.max(highest, Number(sequence) || 0) : highest;
   }, 0);
-  return `${prefix}${String(highestSequence + 1).padStart(4, "0")}`;
-};
-const readStoredStaffBoards = () => {
-  try {
-    return JSON.parse(window.localStorage.getItem(STAFF_BOARD_STORAGE_KEY) || "{}") || {};
-  } catch {
-    return {};
-  }
-};
-const staffBoardStorageKeys = (item = {}) => [
-  firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
-  getCrudId(item),
-].filter((value) => value !== undefined && value !== null && value !== "").map(String);
-const withStoredStaffBoard = (item = {}) => {
-  const storedBoards = readStoredStaffBoards();
-  const stored = staffBoardStorageKeys(item).map((key) => storedBoards[key]).find(Boolean);
-  return stored ? { ...item, boardId: stored.boardId, boardName: stored.boardName } : item;
-};
-const storeStaffBoard = (item, board) => {
-  if (!board?.boardName) return;
-  const storedBoards = readStoredStaffBoards();
-  staffBoardStorageKeys(item).forEach((key) => { storedBoards[key] = board; });
-  window.localStorage.setItem(STAFF_BOARD_STORAGE_KEY, JSON.stringify(storedBoards));
+  return `${employeeIdPrefix(staffType)}${String(highestSequence + 1).padStart(4, "0")}`;
 };
 const normalizeStaffPage = (payload) => {
   const source = payload?.data ?? payload?.Data ?? payload ?? {};
@@ -179,35 +190,33 @@ const normalizeStaffPage = (payload) => {
     totalPages: Math.max(1, Number(source.totalPages ?? source.TotalPages ?? 1) || 1),
   };
 };
-const staffDropdownItem = (item = {}) => ({
-  id: getCrudId(item),
-  staffId: getStaffId(item),
-  facultyId: getFacultyId(item),
-  employeeId: firstValue(item, "employeeId", "EmployeeId"),
-  fullName: facultyName(item),
-  designation: firstValue(item, "designation", "Designation"),
-  designationId: firstValue(item, "designationId", "DesignationId"),
-  staffType: normalizeStaffType(firstValue(item, "staffType", "StaffType")),
-  facultyType: normalizeFacultyType(firstValue(item, "facultyType", "FacultyType")),
-});
 const subjectId = (item = {}) => item.subjectId ?? item.id ?? item.SubjectId ?? item.Id;
 const subjectName = (item = {}) =>
-  item.subjectName || item.name || item.SubjectName || item.subject?.subjectName || item.subject?.name || item.Subject?.SubjectName || "Unnamed subject";
+  firstValue(item, "subjectDisplayName", "SubjectDisplayName", "subjectName", "SubjectName", "name", "Name")
+  || firstValue(item.subject || item.Subject, "subjectDisplayName", "SubjectDisplayName", "subjectName", "SubjectName", "name", "Name")
+  || "Unnamed subject";
 const allocationSubjectId = (item = {}) =>
   item.subjectId ?? item.SubjectId ?? item.subject?.subjectId ?? item.subject?.id ?? item.Subject?.SubjectId ?? item.Subject?.Id;
 const allocationId = (item = {}) =>
   item.assignmentId ?? item.allocationId ?? item.id ?? item.AssignmentId ?? item.AllocationId;
 const buildSubjectAllocationPayload = (staff, subject) => {
-  const staffId = Number(getAllocationStaffId(staff));
+  const staffId = Number(getStaffId(staff));
   const selectedSubjectId = Number(subjectId(subject));
   const academicYearId = Number(firstValue(subject, "academicYearId", "AcademicYearId"));
-  const maxWeeklyHours = Number(firstValue(subject, "maxWeeklyHours", "MaxWeeklyHours"));
+  const maxWeeklyHours = Number(firstValue(subject, "maxWeeklyHours", "MaxWeeklyHours", "weeklyHours", "WeeklyHours"));
   return {
     staffId,
     subjectId: selectedSubjectId,
-    ...(Number.isInteger(academicYearId) && academicYearId > 0 ? { academicYearId } : {}),
-    ...(Number.isFinite(maxWeeklyHours) && maxWeeklyHours >= 0 ? { maxWeeklyHours } : {}),
+    academicYearId,
+    maxWeeklyHours,
   };
+};
+const validateSubjectAllocationPayload = (payload) => {
+  if (!Number.isInteger(payload.staffId) || payload.staffId <= 0) return "The Staff API did not return the StaffId required for subject allocation.";
+  if (!Number.isInteger(payload.subjectId) || payload.subjectId <= 0) return "The selected subject does not have a valid SubjectId.";
+  if (!Number.isInteger(payload.academicYearId) || payload.academicYearId <= 0) return "The selected subject does not provide the required AcademicYearId.";
+  if (!Number.isFinite(payload.maxWeeklyHours) || payload.maxWeeklyHours < 0) return "The selected subject does not provide valid maximum weekly hours.";
+  return "";
 };
 const allocationItems = (payload) => {
   const data = extractRecord(payload) ?? {};
@@ -221,18 +230,20 @@ const allocationItems = (payload) => {
       ?? data,
   );
 };
+const workloadTotals = (payload) => {
+  const data = extractRecord(payload) || {};
+  return {
+    subjects: Number(firstValue(data, "totalAssignedSubjects", "TotalAssignedSubjects")) || 0,
+    sections: Number(firstValue(data, "totalSections", "TotalSections")) || 0,
+    classes: Number(firstValue(data, "weeklyClasses", "WeeklyClasses")) || 0,
+    hours: Number(firstValue(data, "totalWorkloadHours", "TotalWorkloadHours")) || 0,
+  };
+};
 const assignedSubjectNames = (payload) => [...new Set(
   allocationItems(payload)
     .map((allocation) => subjectName(allocation))
     .filter((name) => name && name !== "Unnamed subject"),
 )];
-const assignedBoard = (payload) => {
-  const allocation = allocationItems(payload).find((item) => firstValue(item, "boardName", "BoardName"));
-  return allocation ? {
-    boardId: firstValue(allocation, "boardId", "BoardId"),
-    boardName: firstValue(allocation, "boardName", "BoardName"),
-  } : null;
-};
 const sharedPayloadFor = (values) => ({
   firstName: values.firstName,
   lastName: values.lastName,
@@ -250,6 +261,7 @@ const sharedPayloadFor = (values) => ({
   ...(values.departmentId ? { departmentId: Number(values.departmentId) } : {}),
   ...(values.boardId ? { boardId: Number(values.boardId) } : {}),
   ...(values.boardName ? { boardName: values.boardName } : {}),
+  ...(values.boardName ? { board: values.boardName } : {}),
   joiningDate: values.joining,
   experience: Number(values.experience) || 0,
   status: values.status || "Active",
@@ -257,7 +269,7 @@ const sharedPayloadFor = (values) => ({
 });
 const buildCreatePayload = (values) => ({ employeeId: values.empId, ...sharedPayloadFor(values) });
 const buildUpdatePayload = (values) => sharedPayloadFor(values);
-const rowFor = (item) => ({
+const rowFor = (item, boardLookup = new Map()) => ({
   ...item,
   id: getCrudId(item),
   staffId: getStaffId(item),
@@ -272,7 +284,10 @@ const rowFor = (item) => ({
         : "Inactive"
       : item.status || "—",
   department: item.department,
-  boardName: firstValue(item, "boardName", "BoardName", "board", "Board") || "—",
+  boardName: boardLookup.get(String(firstValue(item, "boardId", "BoardId") ?? ""))
+    || lookupValue(firstValue(item, "boardName", "BoardName", "board", "Board", "boardDisplayName", "BoardDisplayName"))
+    || savedStaffBoardName(item)
+    || "—",
   designation: item.designation,
   facultyType: facultyTypeValue(item),
   qualification: item.qualification ?? item.Qualification,
@@ -288,7 +303,7 @@ const valuesFor = (item = {}) => ({
   aadhaar: firstValue(item, "aadhaar", "Aadhaar", "aadhaarNumber", "AadhaarNumber"),
   mobile: firstValue(item, "mobile", "Mobile", "phoneNumber", "PhoneNumber"),
   email: firstValue(item, "email", "Email"),
-  bloodGroup: lookupValue(firstValue(item, "bloodGroup", "BloodGroup", "bloodGroupName", "BloodGroupName", "bloodType", "BloodType", "blood", "Blood")),
+  bloodGroup: lookupValue(firstValue(item, "bloodGroup", "BloodGroup", "bloodGroupName", "BloodGroupName", "bloodType", "BloodType", "bloodTypeName", "BloodTypeName", "bloodGroupDisplayName", "BloodGroupDisplayName", "blood", "Blood")),
   qualification: firstValue(item, "qualification", "Qualification"),
   designation: lookupValue(firstValue(item, "designation", "Designation", "designationName", "DesignationName")),
   designationId: firstValue(item, "designationId", "DesignationId"),
@@ -296,7 +311,7 @@ const valuesFor = (item = {}) => ({
   department: lookupValue(firstValue(item, "department", "Department", "departmentName", "DepartmentName")),
   departmentId: firstValue(item, "departmentId", "DepartmentId"),
   boardId: firstValue(item, "boardId", "BoardId"),
-  boardName: lookupValue(firstValue(item, "boardName", "BoardName", "board", "Board")),
+  boardName: lookupValue(firstValue(item, "boardName", "BoardName", "board", "Board", "boardDisplayName", "BoardDisplayName")) || savedStaffBoardName(item),
   joining: dateOnly(firstValue(item, "joiningDate", "JoiningDate", "joining", "Joining")),
   experience: firstValue(item, "experience", "Experience"),
   status: firstValue(item, "status", "Status") || "Active",
@@ -497,7 +512,8 @@ const friendlyFacultyError = (error) => {
   if (status === 400) return rawMessage || "Please correct the highlighted staff details.";
   if ([500, 502, 503, 504].includes(status)) return "Unable to complete the request right now. Please try again later.";
   if (error?.message === "Network Error") return "Unable to connect to the service. Please check your internet connection and try again.";
-  return "Please check the entered information and try again.";
+  if (!error?.response && error?.message) return error.message;
+  return getApiErrorMessage(error, "Please check the entered information and try again.");
 };
 
 function SearchableStaffField({ name, label, value, options, placeholder, required, error, allowOther = false, disabled = false, onChange, onBlur }) {
@@ -658,6 +674,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const [genders, setGenders] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [allocations, setAllocations] = useState([]);
+  const [workload, setWorkload] = useState(null);
   const [removing, setRemoving] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState("");
   const [selectedFacultyType, setSelectedFacultyType] = useState(staffType);
@@ -669,10 +686,9 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const [, setStaffDropdown] = useState([]);
-  const [, setLoadingStaffDropdown] = useState(false);
   const employeeIdRequestRef = useRef(0);
   const workflowDetailRequestRef = useRef(0);
+  const allocationRequestRef = useRef(0);
   useEffect(() => {
     if (!photoFile) {
       setPhotoPreview("");
@@ -704,39 +720,41 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     if (existingId) return;
     const requestId = ++employeeIdRequestRef.current;
     setGeneratingEmployeeId(true);
-    apiClient
-      .get(STAFF_API.dropdown, { params: { staffType: toApiStaffType(staffType) }, skipGlobalLoader: true })
-      .then((response) => {
+    const apiStaffType = toApiStaffType(staffType);
+    const loadEmployeeId = async () => {
+      try {
+        const response = await apiClient.get(STAFF_API.nextEmployeeId, {
+          params: { staffType: apiStaffType },
+          skipGlobalLoader: true,
+        });
         if (requestId !== employeeIdRequestRef.current) return;
-        const employeeId = nextEmployeeId(extractItems(response.data), staffType);
+        const employeeId = employeeIdFromServerSequence(response.data, staffType);
+        if (!employeeId) throw new Error("The Employee ID service returned an invalid value.");
         setValues((current) => ({ ...current, empId: employeeId }));
         setErrors((current) => ({ ...current, empId: undefined }));
-      })
-      .catch((error) => {
+      } catch {
         if (requestId !== employeeIdRequestRef.current) return;
-        setValues((current) => ({ ...current, empId: "" }));
-        setToast("Unable to generate Employee ID.");
-      })
-      .finally(() => {
+        try {
+          const fallbackResponse = await apiClient.get(STAFF_API.dropdown, {
+            params: { staffType: apiStaffType },
+            skipGlobalLoader: true,
+          });
+          if (requestId !== employeeIdRequestRef.current) return;
+          const employeeId = employeeIdFromStaffItems(fallbackResponse.data, staffType);
+          setValues((current) => ({ ...current, empId: employeeId }));
+          setErrors((current) => ({ ...current, empId: undefined }));
+        } catch {
+          if (requestId !== employeeIdRequestRef.current) return;
+          setValues((current) => ({ ...current, empId: "" }));
+          setToast("Unable to generate Employee ID.");
+        }
+      } finally {
         if (requestId === employeeIdRequestRef.current) setGeneratingEmployeeId(false);
-      });
+      }
+    };
+    loadEmployeeId();
     return () => { employeeIdRequestRef.current += 1; };
   }, [existingId, setErrors, setValues, staffType]);
-  const loadStaffDropdown = useCallback(async () => {
-    setLoadingStaffDropdown(true);
-    try {
-      const response = await apiClient.get(STAFF_API.dropdown, { params: { staffType: toApiStaffType(staffType) } });
-      const normalized = extractItems(response.data).map(staffDropdownItem);
-      setStaffDropdown(normalized);
-      return normalized;
-    } catch (error) {
-      setStaffDropdown([]);
-      setToast(friendlyFacultyError(error));
-      return [];
-    } finally {
-      setLoadingStaffDropdown(false);
-    }
-  }, [staffType]);
   useEffect(() => {
     setDepartments(teaching ? TEACHING_DEPARTMENTS : NON_TEACHING_DEPARTMENTS);
     setGenders(["Male", "Female", "Other"]);
@@ -764,36 +782,13 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     return () => { active = false; };
   }, []);
   useEffect(() => {
-    if (loadingDetails || boards.length !== 1) return;
-    setValues((current) => {
-      if (current.boardName) return current;
-      const board = { boardId: boards[0].id, boardName: boards[0].name };
-      const hydrated = { ...current, ...board };
-      if (current.empId || existingId) storeStaffBoard({ ...hydrated, id: existingId }, board);
-      return hydrated;
-    });
-  }, [boards, existingId, loadingDetails, setValues]);
-  useEffect(() => {
     if (!existingId) return;
     const requestId = ++workflowDetailRequestRef.current;
     apiClient
       .get(STAFF_API.getById(existingId))
       .then(async (r) => {
         if (requestId !== workflowDetailRequestRef.current) return;
-        let record = withStoredStaffBoard(extractRecord(r.data));
-        const allocationStaffId = getAllocationStaffId(record);
-        if (teaching && allocationStaffId && !firstValue(record, "boardName", "BoardName")) {
-          try {
-            const allocationResponse = await apiClient.get(STAFF_SUBJECT_ALLOCATION_API.list(allocationStaffId), { skipGlobalLoader: true });
-            const board = assignedBoard(allocationResponse.data);
-            if (board) {
-              record = { ...record, ...board };
-              storeStaffBoard(record, board);
-            }
-          } catch (error) {
-            console.error("Unable to recover the staff board from subject allocations:", error);
-          }
-        }
+        const record = extractRecord(r.data);
         if (requestId !== workflowDetailRequestRef.current) return;
         setValues(valuesFor(record));
         setSelectedFacultyType(facultyTypeValue(record));
@@ -808,10 +803,12 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     return () => { workflowDetailRequestRef.current += 1; };
   }, [existingId, setValues, teaching]);
   const loadAllocation = async (faculty) => {
+    const requestId = ++allocationRequestRef.current;
     setLoadingAllocation(true);
     const loadSubjects = apiClient
       .get(apiEndpoints.subjects.getAll)
       .then((subjectResponse) => {
+        if (requestId !== allocationRequestRef.current) return;
         setSubjects(
           extractItems(subjectResponse.data).filter(
             (subject) => subject.isActive !== false && subject.status?.toLowerCase?.() !== "inactive",
@@ -820,19 +817,31 @@ function Workflow({ existingId, staffTab = "teaching" }) {
       })
       .catch((e) => setToast(friendlyFacultyError(e)));
 
-    const allocationStaffId = getAllocationStaffId(faculty);
-    const loadAssignedSubjects = allocationStaffId ? apiClient
-      .get(STAFF_SUBJECT_ALLOCATION_API.list(allocationStaffId))
-      .then((allocationResponse) => {
-      setAllocations(allocationItems(allocationResponse.data));
+    const allocationStaffId = getStaffId(faculty);
+    const loadAssignedSubjects = allocationStaffId ? Promise.allSettled([
+      apiClient.get(STAFF_API.subjectAllocations(allocationStaffId)),
+      apiClient.get(STAFF_API.workload(allocationStaffId), { skipGlobalLoader: true }),
+    ]).then(([allocationResult, workloadResult]) => {
+      if (requestId !== allocationRequestRef.current) return;
+      if (allocationResult.status === "fulfilled") setAllocations(allocationItems(allocationResult.value.data));
+      else {
+        setAllocations([]);
+        setToast("Unable to load assigned subjects.");
+      }
+      if (workloadResult.status === "fulfilled") setWorkload(extractRecord(workloadResult.value.data));
+      else {
+        setWorkload(null);
+        if (allocationResult.status === "fulfilled") setToast("Assigned subjects loaded, but workload could not be retrieved.");
+      }
       })
-      .catch((e) => setToast(friendlyFacultyError(e))) : Promise.resolve().then(() => {
+      : Promise.resolve().then(() => {
       setAllocations([]);
+      setWorkload(null);
       setToast("Subject allocation is unavailable because the Staff API did not return a StaffId.");
     });
 
     await Promise.all([loadSubjects, loadAssignedSubjects]);
-    setLoadingAllocation(false);
+    if (requestId === allocationRequestRef.current) setLoadingAllocation(false);
   };
   useEffect(() => {
     if (step !== 1 || !teaching) return;
@@ -901,15 +910,14 @@ function Workflow({ existingId, staffTab = "teaching" }) {
         staffId: getStaffId(record),
         facultyId: getFacultyId(record),
       };
-      storeStaffBoard(next, { boardId: result.values.boardId, boardName: result.values.boardName });
-      next = { ...next, boardId: result.values.boardId, boardName: result.values.boardName };
+      next = {
+        ...next,
+        boardId: firstValue(record, "boardId", "BoardId") ?? result.values.boardId,
+        boardName: lookupValue(firstValue(record, "boardName", "BoardName", "board", "Board")) || result.values.boardName,
+      };
+      rememberStaffBoardName(next, next.boardName);
       let photoUploadFailed = false;
       if (photoFile) {
-        if (!getStaffId(next)) {
-          const dropdown = await loadStaffDropdown();
-          const match = dropdown.find((item) => String(item.employeeId) === String(result.values.empId));
-          if (match) next = { ...next, staffId: match.staffId, facultyId: getFacultyId(next) ?? match.facultyId };
-        }
         const requiredStaffId = getStaffId(next);
         try {
           if (!requiredStaffId) throw new Error("The server did not return a StaffId required for photo upload.");
@@ -930,12 +938,11 @@ function Workflow({ existingId, staffTab = "teaching" }) {
       let allocationFailed = false;
       if (teaching && pendingSubjects.length) {
         try {
-          if (!getStaffId(next)) throw new Error("The Staff API did not return a StaffId required for subject allocation.");
+          const payloads = pendingSubjects.map((subject) => buildSubjectAllocationPayload(next, subject));
+          const payloadError = payloads.map(validateSubjectAllocationPayload).find(Boolean);
+          if (payloadError) throw new Error(payloadError);
           const allocationResults = await Promise.allSettled(
-            pendingSubjects.map((subject) => apiClient.post(
-              STAFF_SUBJECT_ALLOCATION_API.create,
-              buildSubjectAllocationPayload(next, subject),
-            )),
+            payloads.map((payload) => apiClient.post(STAFF_API.assignSubject, payload)),
           );
           allocationFailed = allocationResults.some((allocationResult) => allocationResult.status === "rejected");
         } catch (allocationError) {
@@ -969,7 +976,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
   const allocate = async (subject) => {
     if (!saved) return;
     const selectedId = subjectId(subject);
-    const selectedStaffId = getAllocationStaffId(saved);
+    const selectedStaffId = getStaffId(saved);
     if (selectedId === undefined || selectedId === null || !selectedStaffId) {
       return setToast("A valid staff member and subject must be selected.");
     }
@@ -982,7 +989,10 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     )
       return setToast("This subject is already allocated.");
     try {
-      await apiClient.post(STAFF_SUBJECT_ALLOCATION_API.create, buildSubjectAllocationPayload(saved, subject));
+      const payload = buildSubjectAllocationPayload(saved, subject);
+      const payloadError = validateSubjectAllocationPayload(payload);
+      if (payloadError) throw new Error(payloadError);
+      await apiClient.post(STAFF_API.assignSubject, payload);
       await loadAllocation(saved);
       setToast(`${subjectName(subject)} allocated successfully.`);
     } catch (e) {
@@ -993,7 +1003,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     try {
       const selectedAllocationId = allocationId(removing);
       if (!selectedAllocationId) throw new Error("The selected subject allocation does not have a valid allocation ID.");
-      await apiClient.delete(STAFF_SUBJECT_ALLOCATION_API.delete(selectedAllocationId));
+      await apiClient.delete(STAFF_API.deleteSubjectAllocation(selectedAllocationId));
       setRemoving(null);
       await loadAllocation(saved);
       setToast("Subject allocation removed.");
@@ -1037,13 +1047,13 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     if (!saved) return setToast("Faculty must be saved before subjects can be allocated.");
     setSavingAllocation(true);
     try {
-      const selectedStaffId = getAllocationStaffId(saved);
+      const selectedStaffId = getStaffId(saved);
       if (!selectedStaffId) throw new Error("The Staff API did not return a StaffId required for subject allocation.");
       const subjectsToSave = [...pendingSubjects];
-      const results = await Promise.allSettled(subjectsToSave.map((subject) => apiClient.post(
-        STAFF_SUBJECT_ALLOCATION_API.create,
-        buildSubjectAllocationPayload(saved, subject),
-      )));
+      const payloads = subjectsToSave.map((subject) => buildSubjectAllocationPayload(saved, subject));
+      const payloadError = payloads.map(validateSubjectAllocationPayload).find(Boolean);
+      if (payloadError) throw new Error(payloadError);
+      const results = await Promise.allSettled(payloads.map((payload) => apiClient.post(STAFF_API.assignSubject, payload)));
       const failedSubjects = subjectsToSave.filter((_, index) => results[index].status === "rejected");
       const savedCount = subjectsToSave.length - failedSubjects.length;
       setPendingSubjects(failedSubjects);
@@ -1054,6 +1064,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     } catch (error) { setToast(friendlyFacultyError(error)); }
     finally { setSavingAllocation(false); }
   };
+  const currentWorkload = workloadTotals(workload);
   return (
     <DashboardLayout
       title="Staff Management"
@@ -1167,6 +1178,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                     </section>
                     <section className="faculty-subject-list allocated">
                       <h3>Allocated Subjects <small>{allocations.length + pendingSubjects.length}</small></h3>
+                      <p className="staff-workload-summary">{currentWorkload.subjects} subjects · {currentWorkload.sections} sections · {currentWorkload.classes} weekly classes · {currentWorkload.hours} hours</p>
                       {allocations.map((allocation, index) => <article key={allocationId(allocation) ?? `${subjectName(allocation)}-${index}`}><span>{subjectName(allocation)}</span><button type="button" className="cms-btn" onClick={() => setRemoving(allocation)}><X size={15}/> Remove</button></article>)}
                       {pendingSubjects.map((subject) => <article className="is-pending" key={`pending-${subjectId(subject)}`}><span>{subjectName(subject)}</span><button type="button" className="cms-btn" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))}><X size={15}/> Remove</button></article>)}
                       {!allocations.length && !pendingSubjects.length ? <p className="faculty-empty">No subjects allocated yet.</p> : null}
@@ -1242,6 +1254,7 @@ function Workflow({ existingId, staffTab = "teaching" }) {
                 <h3>
                   Allocated Subjects <small>{allocations.length + pendingSubjects.length}</small>
                 </h3>
+                <p className="staff-workload-summary">{currentWorkload.subjects} subjects · {currentWorkload.sections} sections · {currentWorkload.classes} weekly classes · {currentWorkload.hours} hours</p>
                 {allocations.map((allocation, index) => (
                   <article
                     key={
@@ -1310,6 +1323,7 @@ export default function StaffManagementPage() {
   const [toast, setToast] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const listRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
@@ -1321,26 +1335,55 @@ export default function StaffManagementPage() {
   const activeTab = requestedTab === "non-teaching" ? "non-teaching" : "teaching";
   const activeStaffType = activeTab === "teaching" ? "Teaching Staff" : "Non-Teaching Staff";
   const handleSearchChange = useCallback((value) => {
-    setSearchTerm(value);
-    setPageNumber(1);
+    setSearchInput(value);
   }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchTerm(searchInput);
+      setPageNumber(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
   const load = useCallback(async () => {
     const requestId = ++listRequestRef.current;
     setLoading(true);
     try {
-      const response = await apiClient.get(STAFF_API.list, {
-        params: {
-          PageNumber: pageNumber,
-          PageSize: STAFF_PAGE_SIZE,
-          StaffType: API_STAFF_TYPES[activeTab],
-          ...(searchTerm.trim() ? { SearchTerm: searchTerm.trim() } : {}),
-          ...(departmentFilter ? { Department: departmentFilter } : {}),
-          ...(statusFilter ? { Status: statusFilter } : {}),
-        },
-      });
+      const [staffResult, boardsResult] = await Promise.allSettled([
+        apiClient.get(STAFF_API.list, {
+          params: {
+            PageNumber: pageNumber,
+            PageSize: STAFF_PAGE_SIZE,
+            StaffType: API_STAFF_TYPES[activeTab],
+            ...(searchTerm.trim() ? { SearchTerm: searchTerm.trim() } : {}),
+            ...(departmentFilter ? { Department: departmentFilter } : {}),
+            ...(statusFilter ? { Status: statusFilter } : {}),
+          },
+        }),
+        apiClient.get(apiEndpoints.boards.getAll, {
+          params: { PageNumber: 1, PageSize: 100 },
+          skipGlobalLoader: true,
+        }),
+      ]);
+      if (staffResult.status === "rejected") throw staffResult.reason;
       if (requestId !== listRequestRef.current) return;
-      const page = normalizeStaffPage(response.data);
-      setRows(page.items.map((item) => rowFor(withStoredStaffBoard(item))));
+      const page = normalizeStaffPage(staffResult.value.data);
+      const boardLookup = new Map(
+        (boardsResult.status === "fulfilled" ? boardOptionsFrom(boardsResult.value.data) : [])
+          .map((board) => [String(board.id), board.name]),
+      );
+      const listRows = page.items.map((item) => rowFor(item, boardLookup));
+      const enrichedRows = await Promise.all(listRows.map(async (row) => {
+        if (row.boardName !== "â€”" || !getCrudId(row)) return row;
+        try {
+          const detailResponse = await apiClient.get(STAFF_API.getById(getCrudId(row)), { skipGlobalLoader: true });
+          const detail = extractRecord(detailResponse.data) || {};
+          return rowFor({ ...row, ...detail }, boardLookup);
+        } catch {
+          return row;
+        }
+      }));
+      if (requestId !== listRequestRef.current) return;
+      setRows(enrichedRows);
       setPagination(page);
       if (pageNumber > page.totalPages) setPageNumber(page.totalPages);
     } catch (e) {
@@ -1383,28 +1426,28 @@ export default function StaffManagementPage() {
       const response = await apiClient.get(STAFF_API.getById(getCrudId(row)));
       const record = extractRecord(response.data) || {};
       if (requestId !== detailRequestRef.current) return;
-      const normalized = rowFor(withStoredStaffBoard({ ...row, ...record }));
+      const normalized = rowFor({ ...row, ...record });
       setViewing(normalized);
-      const detailsStaffId = getAllocationStaffId(normalized);
+      const detailsStaffId = getStaffId(normalized);
       const allocationsPromise = activeTab === "teaching" && detailsStaffId
-        ? apiClient.get(STAFF_SUBJECT_ALLOCATION_API.list(detailsStaffId), { skipGlobalLoader: true })
+        ? apiClient.get(STAFF_API.subjectAllocations(detailsStaffId), { skipGlobalLoader: true })
         : Promise.resolve(null);
-      const boardsPromise = apiClient.get(apiEndpoints.boards.getAll, { skipGlobalLoader: true });
+      const boardsPromise = normalized.boardName === "—" && normalized.boardId
+        ? apiClient.get(apiEndpoints.boards.getAll, {
+          params: { PageNumber: 1, PageSize: 100 },
+          skipGlobalLoader: true,
+        })
+        : Promise.resolve(null);
       const [, allocationsResult, boardsResult] = await Promise.allSettled([loadPhoto(normalized), allocationsPromise, boardsPromise]);
       if (requestId !== detailRequestRef.current) return;
       const assignedSubjects = allocationsResult.status === "fulfilled" && allocationsResult.value
         ? assignedSubjectNames(allocationsResult.value.data)
         : [];
-      const allocationBoard = allocationsResult.status === "fulfilled" && allocationsResult.value
-        ? assignedBoard(allocationsResult.value.data)
+      const matchingBoard = boardsResult.status === "fulfilled" && boardsResult.value
+        ? boardOptionsFrom(boardsResult.value.data).find((board) => String(board.id) === String(normalized.boardId))
         : null;
-      const configuredBoards = boardsResult.status === "fulfilled" ? boardOptionsFrom(boardsResult.value.data) : [];
-      const resolvedBoard = allocationBoard
-        || (normalized.boardName && normalized.boardName !== "—" ? { boardId: normalized.boardId, boardName: normalized.boardName } : null)
-        || (configuredBoards.length === 1 ? { boardId: configuredBoards[0].id, boardName: configuredBoards[0].name } : null);
-      if (resolvedBoard) storeStaffBoard(normalized, resolvedBoard);
       setViewing((current) => current && getCrudId(current) === getCrudId(normalized)
-        ? { ...current, ...(resolvedBoard || {}), assignedSubjects }
+        ? { ...current, ...(matchingBoard ? { boardName: matchingBoard.name } : {}), assignedSubjects }
         : current);
       if (allocationsResult.status === "rejected") setToast("Staff details loaded, but assigned subjects could not be retrieved.");
     } catch (e) {
@@ -1433,12 +1476,12 @@ export default function StaffManagementPage() {
     try {
       const detailsResponse = await apiClient.get(STAFF_API.getById(recordId), { skipGlobalLoader: true });
       const details = extractRecord(detailsResponse.data) || {};
-      const normalized = rowFor(withStoredStaffBoard({ ...row, ...details }));
-      const printStaffId = getAllocationStaffId(normalized);
+      const normalized = rowFor({ ...row, ...details });
+      const printStaffId = getStaffId(normalized);
       const [photoResult, allocationsResult] = await Promise.allSettled([
         requestStaffPhoto(recordId),
         activeTab === "teaching" && printStaffId
-          ? apiClient.get(STAFF_SUBJECT_ALLOCATION_API.list(printStaffId), { skipGlobalLoader: true })
+          ? apiClient.get(STAFF_API.subjectAllocations(printStaffId), { skipGlobalLoader: true })
           : Promise.resolve(null),
       ]);
       const printableRecord = {
@@ -1494,6 +1537,7 @@ export default function StaffManagementPage() {
   const switchTab = (tab) => {
     setDepartmentFilter("");
     setStatusFilter("");
+    setSearchInput("");
     setSearchTerm("");
     setPageNumber(1);
     setRows([]);

@@ -166,7 +166,13 @@ function optionRows(payload, kind) {
     const isCurrent = read(item, "isCurrent", "IsCurrent") === true;
     const isDefault = read(item, "isDefault", "IsDefault") === true;
     const activeValue = read(item, "isActive", "IsActive", "status", "Status");
-    const isActive = activeValue === true || ["true", "active", "current", "default"].includes(String(activeValue).toLowerCase());
+    const normalizedStatus = String(activeValue).trim().toLowerCase();
+    const explicitlyInactive = activeValue === false
+      || activeValue === 0
+      || ["false", "inactive", "disabled", "deactivated"].includes(normalizedStatus);
+    if (explicitlyInactive) return;
+    const isActive = activeValue === true || ["true", "active", "current", "default"].includes(normalizedStatus);
+    if (kind === "year" && !isActive) return;
     const option = { value: String(id), label, priority: isCurrent ? 3 : isDefault ? 2 : isActive ? 1 : 0 };
     const dedupeKey = label.toLowerCase();
     const existing = optionsByLabel.get(dedupeKey);

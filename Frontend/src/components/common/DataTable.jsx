@@ -166,46 +166,15 @@ export default function DataTable({
                       <FileText size={15} /> Export PDF
                     </button>
                   ) : null}
-                  <button type="button" role="menuitem" onClick={printRows}>
-                    <Printer size={15} /> Print table
-                  </button>
+                  {enableTablePrint ? (
+                    <button type="button" role="menuitem" onClick={printRows}>
+                      <Printer size={15} /> Print table
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
           ) : null}
-          <div
-            className="cms-export-control"
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false);
-            }}
-          >
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              aria-haspopup="menu"
-              aria-expanded={exportOpen}
-              onClick={() => setExportOpen((open) => !open)}
-            >
-              <Download size={15} /> Export <ChevronDown size={14} />
-            </button>
-            {exportOpen ? (
-              <div className="cms-export-menu" role="menu">
-                <button type="button" role="menuitem" onClick={exportExcel}>
-                  <FileSpreadsheet size={15} /> Export Excel
-                </button>
-                {enablePdfExport ? (
-                  <button type="button" role="menuitem" onClick={exportPdf}>
-                    <FileText size={15} /> Export PDF
-                  </button>
-                ) : null}
-                {enableTablePrint ? (
-                  <button type="button" role="menuitem" onClick={printRows}>
-                    <Printer size={15} /> Print table
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
           {onAdd ? (
             <button className="cms-btn cms-btn-primary" onClick={onAdd}>
               <Plus size={16} /> {addLabel}
@@ -215,63 +184,63 @@ export default function DataTable({
       </div>
 
       <div className="cms-table-wrap">
-          <table className="cms-table">
-            <thead>
+        <table className="cms-table">
+          <thead>
+            <tr>
+              {columns.map((c) => (
+                <th key={c.key}>{c.label}</th>
+              ))}
+              <th className="cms-actions-heading">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
               <tr>
-                {columns.map((c) => (
-                  <th key={c.key}>{c.label}</th>
-                ))}
-                <th className="cms-actions-heading">Actions</th>
+                <td colSpan={columns.length + 1}><Loader /></td>
               </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={columns.length + 1}><Loader /></td>
-                </tr>
-              ) : pageRows.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length + 1}>
-                    <div className="cms-empty">{emptyMessage || "No records found for your search."}</div>
+            ) : pageRows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length + 1}>
+                  <div className="cms-empty">{emptyMessage || "No records found for your search."}</div>
+                </td>
+              </tr>
+            ) : (
+              pageRows.map((row) => (
+                <tr key={row.id}>
+                  {columns.map((c) => (
+                    <td key={c.key} className={c.strong ? "cms-strong" : ""}>
+                      {c.badge ? <StatusBadge value={row[c.key]} /> : c.render ? c.render(row) : row[c.key]}
+                    </td>
+                  ))}
+                  <td>
+                    <div className="cms-actions">
+                      {onView ? (
+                        <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
+                          <Eye size={15} />
+                        </button>
+                      ) : null}
+                      {onPrint ? (
+                        <button className="cms-action-btn print" title="Print" aria-label="Print record" onClick={() => onPrint(row)}>
+                          <Printer size={15} />
+                        </button>
+                      ) : null}
+                      {onEdit ? (
+                        <button className="cms-action-btn edit" title="Edit" aria-label="Edit record" onClick={() => onEdit(row)}>
+                          <Pencil size={15} />
+                        </button>
+                      ) : null}
+                      {onDelete ? (
+                        <button className="cms-action-btn danger" title="Delete" aria-label="Delete record" onClick={() => onDelete(row)}>
+                          <Trash2 size={15} />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                pageRows.map((row) => (
-                  <tr key={row.id}>
-                    {columns.map((c) => (
-                      <td key={c.key} className={c.strong ? "cms-strong" : ""}>
-                        {c.badge ? <StatusBadge value={row[c.key]} /> : c.render ? c.render(row) : row[c.key]}
-                      </td>
-                    ))}
-                    <td>
-                      <div className="cms-actions">
-                        {onView ? (
-                          <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
-                            <Eye size={15} />
-                          </button>
-                        ) : null}
-                        {onPrint ? (
-                          <button className="cms-action-btn print" title="Print" aria-label="Print record" onClick={() => onPrint(row)}>
-                            <Printer size={15} />
-                          </button>
-                        ) : null}
-                        {onEdit ? (
-                          <button className="cms-action-btn edit" title="Edit" aria-label="Edit record" onClick={() => onEdit(row)}>
-                            <Pencil size={15} />
-                          </button>
-                        ) : null}
-                        {onDelete ? (
-                          <button className="cms-action-btn danger" title="Delete" aria-label="Delete record" onClick={() => onDelete(row)}>
-                            <Trash2 size={15} />
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       <div className="cms-pagination">

@@ -11,15 +11,36 @@
 }
 .attendance-module {
   display: grid;
-  gap: 16px;
+  gap: 20px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   overflow-x: hidden;
   color: var(--cms-text);
 }
+
+/* Keep the Attendance title, tabs, filters, and table on one page grid below
+   the dashboard header without changing the shared sidebar or topbar size. */
+.cms-content:has(> .attendance-module) {
+  padding: clamp(20px, 1.75vw, 24px);
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.cms-content:has(> .attendance-module) .cms-breadcrumb {
+  margin-bottom: 12px;
+}
+
+.cms-content:has(> .attendance-module) .cms-page-head {
+  margin-bottom: 20px;
+}
 .att-card {
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
   background: var(--cms-surface, #fff);
   border: 1px solid var(--cms-border, #e5e7eb);
   border-radius: 12px;
@@ -48,6 +69,9 @@
 .att-nav {
   display: flex;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--cms-border, #e5e7eb);
   padding-bottom: 12px;
 }
@@ -93,21 +117,28 @@
   color: #fff;
 }
 .att-staff-details {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-items: end;
-  gap: 12px;
+  gap: 16px;
 }
 .att-staff-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 180px));
-  justify-content: start;
-  flex: 1;
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
 }
 .att-detail-actions {
   display: flex;
   gap: 8px;
-  flex: 0 0 auto;
+  width: 100%;
+  justify-content: flex-end;
+  align-items: end;
+}
+.att-detail-actions .cms-btn,
+.att-detail-actions .att-export-menu > .cms-btn {
+  min-height: 41px;
 }
 .att-compact:not(.att-staff-designation) th:nth-child(1),
 .att-compact:not(.att-staff-designation) td:nth-child(1) {
@@ -507,14 +538,12 @@
 }
 @media (max-width: 1000px) {
   .att-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .att-staff-fields {
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
   .att-context-fields {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
-
-  .att-staff-details {
-    display: grid;
-  }
-
 }
 @media (max-width: 760px) {
   .att-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -25,7 +25,7 @@ const sectionNameOf = (section) => valueOf(section, "sectionName", "SectionName"
 
 const changeStudentAllocation = async ({ admissionId, studentId, currentProgramId, programId, sectionId }) => {
   if (String(programId) !== String(currentProgramId)) {
-    throw new Error("Changing programme is not supported by the current backend API contract.");
+    throw new Error("Changing program is not supported by the current backend API contract.");
   }
   const response = await apiClient.put(apiEndpoints.students.updateSection(studentId), { sectionId });
   await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
@@ -67,7 +67,8 @@ export default function SectionAllocationPage() {
     [message, setMessage] = useState(""),
     [messageType, setMessageType] = useState("success"),
     [changingStudent, setChangingStudent] = useState(null),
-    [busy, setBusy] = useState("");
+    [busy, setBusy] = useState(""),
+    [page, setPage] = useState(1);
   useEffect(() => {
     Promise.all([
       apiClient.get(apiEndpoints.boards.list),
@@ -292,6 +293,11 @@ export default function SectionAllocationPage() {
       ).sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" })),
     [students, ctx],
   );
+  const pageSize = 5;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  useEffect(() => setPage(1), [ctx, rows.length]);
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
     years.filter((year) => {
       const boardId = year.boardId ?? year.BoardId;
@@ -425,7 +431,7 @@ export default function SectionAllocationPage() {
     setStudents((current) => current.map((item) => item.id === student.id ? { ...item, ...updated } : item));
     setChangingStudent(null);
     setMessageType("success");
-    setMessage("Programme/Section changed successfully.");
+    setMessage("Program/Section changed successfully.");
   };
   return (
     <DashboardLayout
@@ -446,7 +452,7 @@ export default function SectionAllocationPage() {
             ["Academic Year", "year", academicYearOptions, "academicYearId", "academicYearName"],
             ["Academic Level", "level", levels, "academicLevelId", "levelName"],
             ["Group", "group", groups, "groupId", "groupName"],
-            ["Programme", "program", programs, "programId", "programName"],
+            ["Program", "program", programs, "programId", "programName"],
             ["Section", "section", sections, "sectionId", "sectionName"],
           ].map(([l, k, a, i, n]) => (
             <label className="cms-field" key={k}>
@@ -474,7 +480,7 @@ export default function SectionAllocationPage() {
               <tr>
                 <th>Student Name</th>
                 <th>Admission No.</th>
-                <th>Programme</th>
+                <th>Program</th>
                 <th>Section</th>
                 <th>Roll No.</th>
                 <th>Status</th>
@@ -488,8 +494,8 @@ export default function SectionAllocationPage() {
                     <div className="cms-empty">Loading admitted students...</div>
                   </td>
                 </tr>
-              ) : rows.length ? (
-                rows.map((s) => (
+              ) : pageRows.length ? (
+                pageRows.map((s) => (
                   <tr key={s.id}>
                     <td>{s.name}</td>
                     <td>{s.admissionNo}</td>
@@ -499,7 +505,7 @@ export default function SectionAllocationPage() {
                     <td>
                       <StatusBadge value={s.status} />
                     </td>
-                    <td><button type="button" className="cms-action-btn" aria-label={`Edit allocation for ${s.name}`} title="Edit programme or section" disabled={!Number(s.studentId) || !Number(s.groupId)} onClick={() => setChangingStudent(s)}><Pencil size={16} aria-hidden="true" /></button></td>
+                    <td><button type="button" className="cms-action-btn" aria-label={`Edit allocation for ${s.name}`} title="Edit program or section" disabled={!Number(s.studentId) || !Number(s.groupId)} onClick={() => setChangingStudent(s)}><Pencil size={16} aria-hidden="true" /></button></td>
                   </tr>
                 ))
               ) : (
@@ -512,6 +518,16 @@ export default function SectionAllocationPage() {
             </tbody>
           </table>
         </div>
+        {!studentsLoading && <footer className="section-allocation-pagination">
+          <span>
+            Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} students
+          </span>
+          <div className="section-allocation-pagination-actions">
+            <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+          </div>
+        </footer>}
       </section>
       {changingStudent ? <ChangeAllocationModal student={changingStudent} onClose={() => setChangingStudent(null)} onChanged={allocationChanged} /> : null}
       <Toast message={message} type={messageType} onClose={() => setMessage("")} />
@@ -592,9 +608,9 @@ function ChangeAllocationModal({ student, onClose, onChanged }) {
     const nextProgramId = Number(programId);
     const nextSectionId = Number(sectionId);
     if (!studentId) return setError("This student does not contain a valid Student ID.");
-    if (!nextProgramId || !nextSectionId) return setError("New Programme and New Section are required.");
-    if (!selectedSection) return setError("The selected section does not belong to the selected programme.");
-    if (unchanged) return setError("Please select a different programme or section.");
+    if (!nextProgramId || !nextSectionId) return setError("New Program and New Section are required.");
+    if (!selectedSection) return setError("The selected section does not belong to the selected program.");
+    if (unchanged) return setError("Please select a different program or section.");
     setSaving(true); setError("");
     try {
       const response = await changeStudentAllocation({ admissionId: admissionId || undefined, studentId, currentProgramId: Number(currentProgramId), programId: nextProgramId, sectionId: nextSectionId });
@@ -610,13 +626,13 @@ function ChangeAllocationModal({ student, onClose, onChanged }) {
     finally { setSaving(false); }
   };
 
-  return <Modal title="Change Programme / Section" size="sm" className="section-allocation-change-modal" onClose={saving ? () => {} : onClose} footer={<><button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="cms-btn cms-btn-primary" onClick={confirm} disabled={loading || sectionsLoading || saving || !programId || !sectionId}>{saving ? "Changing..." : "Confirm Change"}</button></>}>
+  return <Modal title="Change Program / Section" size="sm" className="section-allocation-change-modal" onClose={saving ? () => {} : onClose} footer={<><button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="cms-btn cms-btn-primary" onClick={confirm} disabled={loading || sectionsLoading || saving || !programId || !sectionId}>{saving ? "Changing..." : "Confirm Change"}</button></>}>
     <div className="section-allocation-change-content">
       <div className="section-allocation-student"><strong>{student.name}</strong><span>· {student.admissionNo}</span></div>
       <p>Current: {currentProgramName} · Section {currentSectionName} · Roll No {currentRoll}</p>
       {error ? <div className="section-allocation-change-error" role="alert">{error}</div> : null}
       <div className="section-allocation-change-fields">
-        <label className="cms-field"><span>New Programme <span className="req">*</span></span><select value={programId} disabled={loading || saving} onChange={(event) => { setProgramId(event.target.value); setSectionId(""); setError(""); }}><option value="">Select New Programme</option>{programs.map((program) => <option key={String(programIdOf(program))} value={programIdOf(program)}>{programNameOf(program)}</option>)}</select></label>
+        <label className="cms-field"><span>New Program <span className="req">*</span></span><select value={programId} disabled={loading || saving} onChange={(event) => { setProgramId(event.target.value); setSectionId(""); setError(""); }}><option value="">Select New Program</option>{programs.map((program) => <option key={String(programIdOf(program))} value={programIdOf(program)}>{programNameOf(program)}</option>)}</select></label>
         <label className="cms-field"><span>New Section <span className="req">*</span></span><select value={sectionId} disabled={!programId || sectionsLoading || saving} onChange={(event) => { setSectionId(event.target.value); setError(""); }}><option value="">{sectionsLoading ? "Loading sections..." : "Select New Section"}</option>{sections.map((section) => <option key={String(sectionIdOf(section))} value={sectionIdOf(section)}>{sectionNameOf(section)}</option>)}</select></label>
       </div>
     </div>

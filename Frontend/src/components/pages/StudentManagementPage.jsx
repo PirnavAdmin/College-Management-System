@@ -193,24 +193,6 @@ export default function StudentManagementPage() {
         </Link>
       }
     >
-      <section className="student-summary">
-        <div>
-          <span>Total Students</span>
-          <strong>{students.length}</strong>
-        </div>
-        <div>
-          <span>Section Allocated</span>
-          <strong>{students.filter((s) => s.section).length}</strong>
-        </div>
-        <div>
-          <span>Roll Number Allocated</span>
-          <strong>{students.filter((s) => s.roll).length}</strong>
-        </div>
-        <div>
-          <span>Pending Allocation</span>
-          <strong>{students.filter((s) => !s.section || !s.roll).length}</strong>
-        </div>
-      </section>
       <section className="cms-card">
         <div className="cms-card-body student-management-toolbar">
           <label className="student-management-search">

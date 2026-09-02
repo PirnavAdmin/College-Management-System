@@ -1034,7 +1034,7 @@ html, body { max-width: 100%; overflow-x: hidden; }
 }
 .cms-nav-caret:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .cms-nav-caret.is-open { transform: rotate(180deg); }
-.cms-nav-sub { margin-left: 18px; font-size: 13px; opacity: 0.92; }
+.cms-nav-sub { margin-left: 0; padding-left: 32px; font-size: 13px; opacity: 0.92; }
 .cms-shell.nav-closed .cms-sidebar { transform: translateX(-100%); }
 .cms-shell.nav-closed .cms-main { margin-left: 0; }
 .cms-main { transition: margin-left 0.25s ease; }

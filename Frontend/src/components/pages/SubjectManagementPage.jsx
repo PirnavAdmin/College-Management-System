@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { Check, Plus, Save, Search, Trash2 } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ArrowLeft, Check, Plus, Save, Search, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
@@ -9,6 +9,10 @@ import "./SubjectManagementPage.css";
 
 const MASTER = [];
 const TYPES = ["Theory", "Practical", "Language"];
+const isActiveRecord = (record) => {
+  const status = record?.isActive ?? record?.IsActive ?? record?.active ?? record?.Active ?? record?.status ?? record?.Status;
+  return status === true || status === 1 || /^(active|true|1)$/i.test(String(status ?? ""));
+};
 const SUBJECT_CONTEXT = {
   board: "",
   boardId: "",
@@ -171,6 +175,7 @@ export default function SubjectManagementPage({ screen = "list" }) {
     [apiAvailable, setApiAvailable] = useState(false),
     [loading, setLoading] = useState(false);
   const subjectRequestId = useRef(0);
+  const routeSubjectContext = location.state?.subjectContext;
   const loadSubjects = useCallback(async (subjectContext) => {
     const requestId = ++subjectRequestId.current;
     // Clear before loading so a previous academic context can never remain
@@ -210,9 +215,9 @@ export default function SubjectManagementPage({ screen = "list" }) {
   }, []);
   useEffect(() => {
     if (screen === "assign") {
-      loadSubjects({ ...SUBJECT_CONTEXT, ...(location.state?.subjectContext || {}) });
+      loadSubjects({ ...SUBJECT_CONTEXT, ...(routeSubjectContext || {}) });
     }
-  }, [screen, loadSubjects]);
+  }, [screen, loadSubjects, routeSubjectContext]);
   const save = async (next, msg) => {
     const normalizedRecords = normalize(next);
     if (!apiAvailable) {
@@ -336,15 +341,15 @@ function List({ records, context, assign, loading, loadSubjects, onError }) {
   useEffect(() => {
     let active = true;
     Promise.all([
-      apiClient.get(apiEndpoints.boards.getAll),
-      apiClient.get(apiEndpoints.academicYears.getAll),
+      apiClient.get(apiEndpoints.boards.getAll, { params: { Status: true } }),
+      apiClient.get(apiEndpoints.academicYears.getAll, { params: { Status: true } }),
       apiClient.get(apiEndpoints.groups.getAll),
     ]).then(([boardResponse, yearResponse, groupResponse]) => {
       if (!active) return;
-      const nextBoards = itemsFromResponse(boardResponse.data);
+      const nextBoards = itemsFromResponse(boardResponse.data).filter(isActiveRecord);
       const nextGroups = itemsFromResponse(groupResponse.data);
       setBoards(nextBoards);
-      setAcademicYears(itemsFromResponse(yearResponse.data));
+      setAcademicYears(itemsFromResponse(yearResponse.data).filter(isActiveRecord));
       setGroups(nextGroups);
     }).catch((error) => onError(getApiErrorMessage(error) || "Unable to load boards and groups."));
     return () => { active = false; };
@@ -399,7 +404,7 @@ function List({ records, context, assign, loading, loadSubjects, onError }) {
           query={q}
           setQuery={setQ}
           openingAssign={openingAssign}
-          assignDisabled={loading || openingAssign || !selectedContext.groupId || !selectedContext.academicLevelId}
+          assignDisabled={loading || openingAssign}
           onAssign={() => {
             setOpeningAssign(true);
             window.setTimeout(() => assign(selectedContext), 120);
@@ -424,13 +429,13 @@ function Assign({ records, context, loadSubjects, cancel, save }) {
   useEffect(() => {
     let active = true;
     Promise.all([
-      apiClient.get(apiEndpoints.boards.getAll),
-      apiClient.get(apiEndpoints.academicYears.getAll),
+      apiClient.get(apiEndpoints.boards.getAll, { params: { Status: true } }),
+      apiClient.get(apiEndpoints.academicYears.getAll, { params: { Status: true } }),
       apiClient.get(apiEndpoints.groups.getAll),
     ]).then(([boardResponse, yearResponse, groupResponse]) => {
       if (!active) return;
-      setBoards(itemsFromResponse(boardResponse.data));
-      setAcademicYears(itemsFromResponse(yearResponse.data));
+      setBoards(itemsFromResponse(boardResponse.data).filter(isActiveRecord));
+      setAcademicYears(itemsFromResponse(yearResponse.data).filter(isActiveRecord));
       setGroups(itemsFromResponse(groupResponse.data));
     }).catch((error) => setTypeMessage(getApiErrorMessage(error) || "Unable to load subject context."));
     return () => { active = false; };
@@ -440,8 +445,12 @@ function Assign({ records, context, loadSubjects, cancel, save }) {
   ), [boards, selectedContext.boardId]);
   useEffect(() => {
     setRows([]);
-    loadSubjects(selectedContext);
-  }, [loadSubjects, selectedContext.boardId, selectedContext.academicYearId, selectedContext.groupId, selectedContext.academicLevelId]);
+    loadSubjects({
+      boardId: selectedContext.boardId,
+      groupId: selectedContext.groupId,
+      academicLevelId: selectedContext.academicLevelId,
+    });
+  }, [loadSubjects, selectedContext.boardId, selectedContext.groupId, selectedContext.academicLevelId]);
   const blankRow = () => ({
     id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     subjectId: "",
@@ -545,6 +554,7 @@ function Assign({ records, context, loadSubjects, cancel, save }) {
       breadcrumb={["Academics", "Subject Management", "Assign Subjects"]}
     >
       <div className="subject-screen">
+        <Link to="/dashboard/subjects" className="cms-back-link"><ArrowLeft size={15} /> Back to Subject Management</Link>
         <section className="subject-table-card assign-card">
           <div className="subject-table-head">
             <div className="assign-table-context">
@@ -849,6 +859,7 @@ function Table({ rows, context, setContext, boards, academicYears, groups, acade
     // intentionally a manual filter on this screen.
     setContext((current) => ({ ...groupContext(group), academicYearId: current.academicYearId, academicYear: current.academicYear, academicLevelId: "", academicLevel: "" }));
   };
+  const boardYears = academicYears.filter((year) => String(year.boardId ?? year.BoardId) === String(context.boardId));
   return (
     <section className="subject-table-card">
       <div className="subject-table-toolbar">
@@ -883,7 +894,7 @@ function Table({ rows, context, setContext, boards, academicYears, groups, acade
           <ContextSelect
             label="Academic Year"
             value={context.academicYearId}
-            options={academicYears.map((year) => ({
+            options={boardYears.map((year) => ({
               value: year.academicYearId ?? year.AcademicYearId ?? year.yearId ?? year.YearId ?? year.id ?? year.Id,
               label: year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName ?? year.name ?? year.Name,
             }))}
@@ -930,10 +941,6 @@ function Table({ rows, context, setContext, boards, academicYears, groups, acade
             {openingAssign ? <><span className="subject-btn-spinner" /> Opening Assign Subjects...</> : <><Plus size={16} /> Assign Subjects</>}
           </button>
         </div>
-      </div>
-      <div className="subject-table-head subject-table-title-row">
-        <h2>Assigned Subjects</h2>
-        <span>{rows.length} subjects</span>
       </div>
       <div className="subject-table-scroll">
         {loading ? <Loader label="Loading subjects..." /> : <table className="subject-table">
@@ -983,17 +990,9 @@ function Table({ rows, context, setContext, boards, academicYears, groups, acade
         <span>
           Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} subjects
         </span>
-        <div>
-          <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Prev</button>
-          {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => (
-            <button
-              key={number}
-              className={number === currentPage ? "is-active" : ""}
-              onClick={() => setPage(number)}
-            >
-              {number}
-            </button>
-          ))}
+        <div className="subject-table-pagination-actions">
+          <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+          <span>Page {currentPage} of {totalPages}</span>
           <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
         </div>
       </footer>}
@@ -1005,7 +1004,9 @@ function AssignContextControls({ context, boards, academicYears, groups, academi
     value: board.boardId ?? board.BoardId ?? board.id ?? board.Id,
     label: board.boardName ?? board.BoardName ?? board.name ?? board.Name,
   }));
-  const yearOptions = academicYears.map((year) => ({
+  const yearOptions = academicYears
+    .filter((year) => String(year.boardId ?? year.BoardId) === String(context.boardId))
+    .map((year) => ({
     value: year.academicYearId ?? year.AcademicYearId ?? year.yearId ?? year.YearId ?? year.id ?? year.Id,
     label: year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName ?? year.name ?? year.Name,
   }));

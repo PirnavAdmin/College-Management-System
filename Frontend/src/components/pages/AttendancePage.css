@@ -99,7 +99,8 @@
 }
 .att-staff-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 180px));
+  justify-content: start;
   flex: 1;
   gap: 10px;
 }
@@ -184,7 +185,8 @@
 }
 .att-context-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 180px));
+  justify-content: start;
   gap: 8px;
 }
 .att-filter-card > .cms-btn {
@@ -199,7 +201,8 @@
 
 .att-student-report-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 210px));
+  justify-content: start;
   gap: 10px;
 }
 

@@ -163,6 +163,7 @@ export default function PromotionPage({ screen = "promotion" }) {
       const levels = unwrap(levelsData, ["academicLevels", "AcademicLevels"]).map((item) => ({
         ...option(typeof item === "string" ? item : read(item, "academicLevelId", "AcademicLevelId", "id", "Id", "academicLevelName", "AcademicLevelName", "levelName", "LevelName"), typeof item === "string" ? item : read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "name", "Name")),
         board: asString(read(item, "boardId", "BoardId")),
+        year: asString(read(item, "academicYearId", "AcademicYearId")),
       })).filter((item) => item.value);
       const groups = groupItems.map((item) => ({ ...option(read(item, "groupId", "GroupId", "id", "Id"), read(item, "groupName", "GroupName", "name", "Name")), board: asString(read(item, "boardId", "BoardId")), level: asString(read(item, "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName")), levelId: asString(read(item, "academicLevelId", "AcademicLevelId")), year: asString(read(item, "academicYearId", "AcademicYearId")), programs: unwrap(item, ["programs", "Programs"]).map((program) => option(read(program, "programId", "ProgramId", "id", "Id"), read(program, "programName", "ProgramName", "name", "Name"))).filter((program) => numericId(program.value)) })).filter((item) => numericId(item.value));
       const sections = sectionItems.map((item) => ({
@@ -181,8 +182,9 @@ export default function PromotionPage({ screen = "promotion" }) {
           ...option(read(item, "boardId", "BoardId", "id", "Id"), read(item, "boardName", "BoardName", "name", "Name")),
           academicLevelIds: Array.isArray(ids) ? ids.map(asString) : [],
           academicLevelNames: Array.isArray(names) ? names.map((level) => asString(typeof level === "object" ? read(level, "levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name") : level)) : [],
+          active: read(item, "isActive", "IsActive", "active", "Active") === true || /^active$/i.test(asString(read(item, "status", "Status"))),
         };
-      }).filter((item) => numericId(item.value));
+      }).filter((item) => numericId(item.value) && item.active);
       setMasters({
         years: unwrap(yearsData).map((item) => ({
           ...option(read(item, "academicYearId", "AcademicYearId", "id", "Id"), read(item, "academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "name", "Name")),
@@ -219,18 +221,60 @@ export default function PromotionPage({ screen = "promotion" }) {
     return () => { active = false; };
   }, [setup.board, setup.toBoard]);
   useEffect(() => () => eligibleController.current?.abort(), []);
+  useEffect(() => {
+    const groupIds = unique([setup.group, historyFilters.groupId]);
+    if (!groupIds.length) return undefined;
+    let active = true;
+    setMasters((current) => ({
+      ...current,
+      groups: current.groups.map((group) => groupIds.includes(group.value) ? { ...group, programs: [] } : group),
+    }));
+    Promise.allSettled(groupIds.map((groupId) => apiClient.get(apiEndpoints.groups.programs(groupId))))
+      .then((results) => {
+        if (!active) return;
+        setMasters((current) => ({
+          ...current,
+          groups: current.groups.map((group) => {
+            const index = groupIds.indexOf(group.value);
+            const result = results[index];
+            if (index < 0 || result?.status !== "fulfilled") return group;
+            const programs = unwrap(result.value.data)
+              .map((program) => option(
+                read(program, "programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"),
+                read(program, "programName", "ProgramName", "programme", "Programme", "program", "Program", "name", "Name"),
+              ))
+              .filter((program) => numericId(program.value));
+            return { ...group, programs };
+          }),
+        }));
+      });
+    return () => { active = false; };
+  }, [historyFilters.groupId, setup.group]);
+
+  const yearsFor = useCallback((prefix) => {
+    const boardValue = setup[prefix === "from" ? "board" : "toBoard"];
+    if (!boardValue) return [];
+    return uniqueAcademicYearsByName(masters.years.filter((year) => year.board === asString(boardValue)), (year) => year.label);
+  }, [masters.years, setup.board, setup.toBoard]);
 
   const groupsFor = useCallback((prefix) => masters.groups.filter((group) => {
     const boardValue = setup[prefix === "from" ? "board" : "toBoard"];
     const levelValue = setup[prefix === "from" ? "fromLevel" : "toLevel"];
     const yearValue = setup[prefix === "from" ? "fromYear" : "toYear"];
-    return (!group.board || group.board === boardValue || group.board === masters.boards.find((item) => item.value === boardValue)?.label)
-      && (!group.level || group.level === levelValue || group.levelId === asString(levelValue)) && (!group.year || group.year === yearValue);
-  }), [masters.boards, masters.groups, setup]);
+    if (!boardValue || !yearValue || !levelValue) return false;
+    const levelLabel = masters.levels.find((level) => level.value === asString(levelValue))?.label;
+    return group.board === asString(boardValue)
+      && group.year === asString(yearValue)
+      && (group.levelId === asString(levelValue) || group.level === asString(levelLabel));
+  }), [masters.groups, masters.levels, setup]);
 
   const levelsFor = useCallback((prefix) => {
-    return masters.levels;
-  }, [masters.levels]);
+    const boardValue = setup[prefix === "from" ? "board" : "toBoard"];
+    const yearValue = setup[prefix === "from" ? "fromYear" : "toYear"];
+    if (!boardValue || !yearValue) return [];
+    const contextGroups = masters.groups.filter((group) => group.board === asString(boardValue) && group.year === asString(yearValue));
+    return masters.levels.filter((level) => contextGroups.some((group) => group.levelId === level.value || group.level === level.label));
+  }, [masters.groups, masters.levels, setup.board, setup.fromYear, setup.toBoard, setup.toYear]);
 
   const programsFor = useCallback((prefix) => {
     const groupValue = setup[prefix === "from" ? "group" : "toGroup"];
@@ -254,12 +298,12 @@ export default function PromotionPage({ screen = "promotion" }) {
 
   const sourceFields = useMemo(() => [
     { name: "board", label: "Board", type: "select", options: masters.boards, required: true },
-    { name: "fromYear", label: "From Academic Year", type: "select", options: uniqueAcademicYearsByName(masters.years, (year) => year.label), required: true },
-    { name: "fromLevel", label: "From Academic Level", type: "select", options: levelsFor("from"), required: true, disabled: !setup.board },
-    { name: "group", label: "Group", type: "select", options: groupsFor("from"), required: true },
+    { name: "fromYear", label: "From Academic Year", type: "select", options: yearsFor("from"), required: true, disabled: !setup.board },
+    { name: "fromLevel", label: "From Academic Level", type: "select", options: levelsFor("from"), required: true, disabled: !setup.fromYear },
+    { name: "group", label: "Group", type: "select", options: groupsFor("from"), required: true, disabled: !setup.fromLevel },
     { name: "program", label: "Program", type: "select", options: programsFor("from"), required: true, disabled: !setup.group },
     { name: "fromSection", label: "From Section", type: "select", options: sectionsFor("from"), required: true },
-  ], [groupsFor, levelsFor, masters, programsFor, sectionsFor, setup.board, setup.group]);
+  ], [groupsFor, levelsFor, masters.boards, programsFor, sectionsFor, setup.board, setup.fromLevel, setup.fromYear, setup.group, yearsFor]);
 
   // Master data uses labels such as "Intermediate 2nd Year", so match the year
   // portion instead of relying on one exact label.
@@ -270,12 +314,12 @@ export default function PromotionPage({ screen = "promotion" }) {
   const lockedTargetPrograms = useMemo(() => programsFor("from").filter((program) => program.value === asString(setup.program)), [programsFor, setup.program]);
   const targetFields = useMemo(() => [
     { name: "toBoard", label: "Board", type: "select", options: masters.boards, required: true },
-    { name: "toYear", label: "To Academic Year", type: "select", options: uniqueAcademicYearsByName(masters.years, (year) => year.label), required: true },
-    { name: "toLevel", label: "To Academic Level", type: "select", options: destinationLevels, required: true, disabled: !setup.toBoard },
+    { name: "toYear", label: "To Academic Year", type: "select", options: yearsFor("to"), required: true, disabled: !setup.toBoard },
+    { name: "toLevel", label: "To Academic Level", type: "select", options: destinationLevels, required: true, disabled: !setup.toYear },
     { name: "toGroup", label: "Group", type: "select", options: lockedTargetGroups, required: true, disabled: true },
     { name: "toProgram", label: "Program", type: "select", options: lockedTargetPrograms, required: true, disabled: true },
     { name: "toSection", label: "To Section", type: "select", options: sectionsFor("to"), required: true },
-  ], [destinationLevels, lockedTargetGroups, lockedTargetPrograms, masters, sectionsFor, setup.toBoard]);
+  ], [destinationLevels, lockedTargetGroups, lockedTargetPrograms, masters.boards, sectionsFor, setup.toBoard, setup.toYear, yearsFor]);
 
   const selectedYearLabel = useCallback((yearId) => masters.years.find((year) => year.value === asString(yearId))?.label, [masters.years]);
   const hasInvalidTargetYear = !isFinalYear && Boolean(setup.fromYear && setup.toYear)
@@ -283,9 +327,9 @@ export default function PromotionPage({ screen = "promotion" }) {
 
   const updateSetup = (name, value) => {
     const resets = {
-      fromYear: ["fromLevel", "group", "program", "fromSection", "toGroup", "toProgram", "toSection"], board: ["fromLevel", "group", "program", "fromSection", "toGroup", "toProgram", "toSection"],
+      fromYear: ["fromLevel", "group", "program", "fromSection", "toGroup", "toProgram", "toSection"], board: ["fromYear", "fromLevel", "group", "program", "fromSection", "toGroup", "toProgram", "toSection"],
       fromLevel: ["group", "program", "fromSection", "toGroup", "toProgram", "toSection"], group: ["program", "fromSection", "toProgram", "toSection"], program: ["fromSection", "toSection"],
-      toYear: ["toLevel", "toSection"], toBoard: ["toLevel", "toSection"],
+      toYear: ["toLevel", "toSection"], toBoard: ["toYear", "toLevel", "toSection"],
       toLevel: ["toSection"], toGroup: ["toSection"], toProgram: ["toSection"],
     };
     const sourceYear = name === "fromYear" ? value : setup.fromYear;

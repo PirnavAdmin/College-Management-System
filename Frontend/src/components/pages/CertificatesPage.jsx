@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaMagnifyingGlass, FaPaperPlane, FaPlus, FaPrint, FaRotateLeft, FaTrash, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaMagnifyingGlass, FaPaperPlane, FaPlus, FaPrint, FaRotateLeft, FaTrash, FaUsers, FaXmark } from "react-icons/fa6";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./CertificatesPage.css";
 
 export const pageConfig = {
@@ -21,27 +20,26 @@ const statusChoices = ["All", "Generated", "Reviewed", "Approved", "Issued", "Ca
 const CERTIFICATE_TYPES = ["Bonafide Certificate", "Study Certificate", "Conduct Certificate", "Transfer Certificate", "Others"];
 const CERTIFICATE_BASE = "/api/v1/certificates";
 const CERTIFICATE_API = {
-  ...apiEndpoints.certificates,
   list: CERTIFICATE_BASE,
-  studentsDropdown: `${CERTIFICATE_BASE}/students-dropdown`,
-  generate: `${CERTIFICATE_BASE}/generate`,
   workflowStats: `${CERTIFICATE_BASE}/workflow-stats`,
+  studentsDropdown: `${CERTIFICATE_BASE}/students-dropdown`,
   getById: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}`,
   delete: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}`,
-  bonafide: `${CERTIFICATE_BASE}/bonafide`,
-  study: `${CERTIFICATE_BASE}/study`,
-  conduct: `${CERTIFICATE_BASE}/conduct`,
-  tc: `${CERTIFICATE_BASE}/tc`,
-  other: `${CERTIFICATE_BASE}/other`,
+  generate: `${CERTIFICATE_BASE}/generate`,
   review: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}/review`,
   approve: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}/approve`,
   issue: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}/issue`,
+  bulkReview: `${CERTIFICATE_BASE}/bulk-review`,
   bulkApprove: `${CERTIFICATE_BASE}/bulk-approve`,
   bulkIssue: `${CERTIFICATE_BASE}/bulk-issue`,
+  bulkGenerate: `${CERTIFICATE_BASE}/bulk-generate`,
+  bulkEligibleStudents: `${CERTIFICATE_BASE}/bulk-eligible-students`,
   cancel: (id) => `${CERTIFICATE_BASE}/${encodeURIComponent(id)}/cancel`,
   reissue: `${CERTIFICATE_BASE}/reissue`,
-  verify: (number) => `${CERTIFICATE_BASE}/verify/${encodeURIComponent(number)}`,
+  verify: (certificateNo) => `${CERTIFICATE_BASE}/verify/${encodeURIComponent(certificateNo)}`,
   download: (id) => `${CERTIFICATE_BASE}/download/${encodeURIComponent(id)}`,
+  exportExcel: `${CERTIFICATE_BASE}/export/excel`,
+  exportPdf: `${CERTIFICATE_BASE}/export/pdf`,
 };
 
 const getIssuedBy = () => {
@@ -291,7 +289,7 @@ const resolveSignatureSource = (signature) => {
 };
 
 const getCertificateBackendId = (raw) => {
-  const value = pick(raw, ["id", "Id", "certificateId", "CertificateId", "certificateID"]);
+  const value = pick(raw, ["certificateId", "CertificateId", "certificateID"]);
   if (value === undefined || value === null || String(value).trim() === "") return null;
   return String(value);
 };
@@ -344,72 +342,22 @@ const getReferenceLabel = (value, keys) => {
 };
 
 const normalizeStudentRecord = (raw) => {
-  const nested = pick(raw, ["student", "Student", "admission", "Admission"]);
-  const source = nested && typeof nested === "object" ? { ...raw, ...nested } : raw;
-  const fullName = pick(source, ["fullName", "FullName", "studentName", "StudentName", "name", "Name"])
-    || [pick(source, ["firstName", "FirstName"]), pick(source, ["lastName", "LastName"])].filter(Boolean).join(" ");
-  const sectionReference = pick(source, [
-    "sectionName", "SectionName",
-    "allocatedSectionName", "AllocatedSectionName",
-    "assignedSectionName", "AssignedSectionName",
-    "section", "Section",
-    "allocatedSection", "AllocatedSection",
-    "assignedSection", "AssignedSection",
-  ]);
-  const section = getReferenceLabel(
-    sectionReference,
-    ["sectionName", "SectionName", "name", "Name", "label", "Label", "code", "Code"],
-  );
+  const studentId = Number(pick(raw, ["studentId", "StudentId"]));
   return {
-    id: Number(pick(source, ["studentId", "StudentId", "studentID", "id", "Id", "admissionId", "AdmissionId"])) || null,
-    admissionNo: String(pick(source, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no", "studentAdmissionNo", "StudentAdmissionNo", "enrollmentNo", "EnrollmentNo"]) || "").trim(),
-    name: fullName,
-    rollNo: String(pick(source, ["rollNo", "RollNo", "rollNumber", "RollNumber"]) || "").trim(),
-    group: pick(source, ["groupName", "GroupName", "groupCode", "GroupCode", "group", "Group", "courseGroup", "CourseGroup"]) || "",
-    level: getReferenceLabel(
-      pick(source, [
-        "academicLevelName", "AcademicLevelName", "academicLevel", "AcademicLevel",
-        "levelName", "LevelName", "level", "Level", "studyYear", "StudyYear",
-        "currentYear", "CurrentYear", "classYear", "ClassYear", "yearOfStudy",
-        "YearOfStudy", "year", "Year",
-      ]),
-      ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name", "title", "Title", "value", "Value"],
-    ) || "",
-    academicYear: getReferenceLabel(
-      pick(source, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "currentAcademicYear", "CurrentAcademicYear", "yearName", "YearName", "academicYearId", "AcademicYearId"]),
-      ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "title", "Title", "value", "Value"],
-    ),
-    academicYearId: Number(pick(source, ["academicYearId", "AcademicYearId"])) || null,
-    academicLevelId: Number(pick(source, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"])) || null,
-    groupId: Number(pick(source, ["groupId", "GroupId"])) || null,
-    sectionId: Number(
-      pick(source, [
-        "sectionId", "SectionId",
-        "allocatedSectionId", "AllocatedSectionId",
-        "assignedSectionId", "AssignedSectionId",
-      ]) || pick(sectionReference, ["sectionId", "SectionId", "id", "Id"]),
-    ) || null,
-    section: String(section || "").trim(),
+    id: studentId || null,
+    studentId: studentId || null,
+    admissionNo: String(pick(raw, ["admissionNo", "AdmissionNo"]) || "").trim(),
+    rollNo: String(pick(raw, ["rollNo", "RollNo"]) || "").trim(),
+    name: String(pick(raw, ["studentName", "StudentName"]) || "").trim(),
+    group: String(pick(raw, ["groupName", "GroupName"]) || "").trim(),
+    academicYear: String(pick(raw, ["academicYear", "AcademicYear"]) || "").trim(),
+    level: String(pick(raw, ["academicLevel", "AcademicLevel"]) || "").trim(),
+    section: String(pick(raw, ["section", "Section", "sectionName", "SectionName"]) || "").trim(),
+    board: String(pick(raw, ["boardName", "BoardName"]) || "").trim(),
   };
 };
 
-const mergeCertificateStudents = (...collections) => {
-  const studentsByAdmission = new Map();
-  collections.flat().forEach((raw) => {
-    const student = normalizeStudentRecord(raw);
-    if (!student.admissionNo) return;
-    const key = student.admissionNo.toLowerCase();
-    const current = studentsByAdmission.get(key) || {};
-    studentsByAdmission.set(key, Object.fromEntries(
-      Object.keys(student).map((field) => [field, student[field] || current[field] || ""]),
-    ));
-  });
-  return Array.from(studentsByAdmission.values()).sort((left, right) => (
-    left.admissionNo.localeCompare(right.admissionNo, undefined, { numeric: true, sensitivity: "base" })
-  ));
-};
-
-const normalizeCertificate = (raw, studentLookup = []) => {
+const normalizeCertificate = (raw) => {
   const backendId = getCertificateBackendId(raw);
   const studentId = Number(pick(raw, ["studentId", "StudentId", "studentID", "student_id"])) || null;
   const admissionNo = String(pick(raw, ["admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber", "admission_no"]) || "").trim();
@@ -417,9 +365,6 @@ const normalizeCertificate = (raw, studentLookup = []) => {
   const studentName = typeof studentValue === "object"
     ? pick(studentValue, ["name", "Name", "fullName", "FullName", "studentName", "StudentName"])
     : (pick(raw, ["studentName", "StudentName", "student", "Student", "name", "Name"]));
-  const matchedStudent = studentId
-    ? studentLookup.find((student) => Number(student.id) === Number(studentId))
-    : studentLookup.find((student) => student.admissionNo === admissionNo || student.name === studentName);
   const requestDate = maybeIsoDate(
     pick(raw, ["requestDate", "RequestDate", "requestedDate", "RequestedDate", "requestedOn", "RequestedOn", "appliedDate", "AppliedDate", "createdAt", "CreatedAt", "generatedAt", "GeneratedAt", "requestOn", "RequestOn"]),
   );
@@ -432,18 +377,17 @@ const normalizeCertificate = (raw, studentLookup = []) => {
   return {
     id: rowId,
     backendId,
-    studentId: studentId || matchedStudent?.id || null,
+    studentId,
     number: pick(raw, ["certificateNo", "CertificateNo", "certificateNumber", "CertificateNumber", "number", "Number"]) || "-",
-    student: studentName || matchedStudent?.name || "-",
-    admissionNo: admissionNo || matchedStudent?.admissionNo || "-",
-    group: pick(raw, ["group", "Group", "groupName", "GroupName"]) || matchedStudent?.group || "-",
-    level: pick(raw, ["level", "Level", "year", "Year", "academicLevel", "AcademicLevel", "academicLevelName", "AcademicLevelName"]) || matchedStudent?.level || "-",
+    student: studentName || "-",
+    admissionNo: admissionNo || "-",
+    group: pick(raw, ["groupName", "GroupName"]) || "-",
+    level: pick(raw, ["academicLevel", "AcademicLevel"]) || "-",
     academicYear:
       getReferenceLabel(
         pick(raw, ["academicYear", "AcademicYear", "academicYearName", "AcademicYearName", "yearName", "YearName", "academicYearId", "AcademicYearId"]),
         ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "title", "Title", "value", "Value"],
       ) ||
-      matchedStudent?.academicYear ||
       "-",
     type: certificatePresentation?.type || backendCertificateType || "-",
     purpose: pick(raw, ["purpose", "Purpose"]) || "",
@@ -629,10 +573,10 @@ function withOptionalRemarks(payload, remarksValue) {
 const CERTIFICATE_ORIENTATION_STORAGE_KEY = "pjc-certificate-orientations";
 
 const CERTIFICATE_TYPE_DEFINITIONS = Object.freeze({
-  "Bonafide Certificate": Object.freeze({ endpoint: CERTIFICATE_API.bonafide, template: "bonafide", orientation: "portrait", aliases: ["bonafide", "bonafide certificate"] }),
-  "Study Certificate": Object.freeze({ endpoint: CERTIFICATE_API.study, template: "study", orientation: "portrait", aliases: ["study", "study certificate"] }),
-  "Conduct Certificate": Object.freeze({ endpoint: CERTIFICATE_API.conduct, template: "conduct", orientation: "portrait", aliases: ["conduct", "conduct certificate"] }),
-  "Transfer Certificate": Object.freeze({ endpoint: CERTIFICATE_API.tc, template: "transfer", orientation: "landscape", aliases: ["tc", "transfer", "transfer certificate"] }),
+  "Bonafide Certificate": Object.freeze({ template: "bonafide", orientation: "portrait", aliases: ["bonafide", "bonafide certificate"] }),
+  "Study Certificate": Object.freeze({ template: "study", orientation: "portrait", aliases: ["study", "study certificate"] }),
+  "Conduct Certificate": Object.freeze({ template: "conduct", orientation: "portrait", aliases: ["conduct", "conduct certificate"] }),
+  "Transfer Certificate": Object.freeze({ template: "transfer", orientation: "landscape", aliases: ["tc", "transfer", "transfer certificate"] }),
 });
 
 function findKnownCertificateType(value) {
@@ -661,7 +605,6 @@ function resolveCertificateRequest(form) {
     if (!customType) return null;
     return {
       type: customType,
-      endpoint: CERTIFICATE_API.other,
       template: "other",
       orientation: getSavedCustomOrientation(customType, form?.orientation),
     };
@@ -683,7 +626,6 @@ function resolveCertificatePresentation(type, explicitOrientation = "") {
   if (!rawType || rawType === "-") return null;
   return {
     type: rawType,
-    endpoint: CERTIFICATE_API.other,
     template: "other",
     orientation: getSavedCustomOrientation(rawType, explicitOrientation),
   };
@@ -1056,14 +998,20 @@ export default function CertificatesPage() {
   const { confirm, confirmationDialog } = useConfirmDialog();
   const [rows, setRows] = useState([]);
   const [studentRows, setStudentRows] = useState([]);
+  const [bulkStudentRows, setBulkStudentRows] = useState([]);
   const [workflowStats, setWorkflowStats] = useState({ totalCount: 0, generatedCount: 0, reviewedCount: 0, approvedCount: 0, issuedCount: 0, cancelledCount: 0 });
   const [loadingStudents, setLoadingStudents] = useState(true);
+  const [loadingBulkStudents, setLoadingBulkStudents] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingStats, setLoadingStats] = useState(true);
   const [creating, setCreating] = useState(false);
   const [busyAction, setBusyAction] = useState({ id: null, type: "" });
   const [bulkAction, setBulkAction] = useState("");
   const [printingId, setPrintingId] = useState(null);
+  const [generationMode, setGenerationMode] = useState("single");
+  const [bulkStudentSearch, setBulkStudentSearch] = useState("");
+  const [selectedBulkStudents, setSelectedBulkStudents] = useState([]);
+  const [bulkStudentFilters, setBulkStudentFilters] = useState({ academicYear: "", board: "", group: "", section: "" });
 
   const [form, setForm] = useState({
     admissionNo: "",
@@ -1091,12 +1039,14 @@ export default function CertificatesPage() {
   const [activeTab, setActiveTab] = useState("generate");
   const [page, setPage] = useState(1);
   const [workflowStatusFilter, setWorkflowStatusFilter] = useState("All");
+  const [workflowQuery, setWorkflowQuery] = useState("");
   const [actionPage, setActionPage] = useState(1);
   const [printPreview, setPrintPreview] = useState(null);
   const [toast, setToast] = useState("");
   const admissionLookupRef = useRef(0);
   const listRequestRef = useRef(0);
   const studentRequestRef = useRef(0);
+  const bulkStudentRequestRef = useRef(0);
   const detailsRequestRef = useRef(0);
   const filtersReadyRef = useRef(false);
 
@@ -1119,7 +1069,7 @@ export default function CertificatesPage() {
     const response = await apiClient.get(CERTIFICATE_API.getById(certificateId), { skipGlobalLoader: true });
     const record = unwrapSinglePayload(response.data);
     if (!hasCertificateShape(record)) throw new Error("The updated certificate record could not be verified.");
-    const normalized = normalizeCertificate(record, studentRows);
+    const normalized = normalizeCertificate(record);
     if (!certificateTypesMatch(expectedType, normalized.type)) {
       throw new Error("The certificate type changed unexpectedly during processing.");
     }
@@ -1127,31 +1077,29 @@ export default function CertificatesPage() {
   };
 
   const hasServerCertificateId = (row) => {
-    const value = row?.backendId ?? row?.id;
+    const value = row?.backendId;
     return value !== undefined && value !== null && String(value).trim() !== "";
   };
 
   const resolveServerCertificateId = async (row) => {
     if (!row) return null;
     if (hasServerCertificateId(row)) {
-      return String(row.backendId ?? row.id);
+      return String(row.backendId);
     }
 
     return null;
   };
 
-  const loadCertificates = async ({ showLoader = true, studentLookup = studentRows } = {}) => {
+  const loadCertificates = async ({ showLoader = true } = {}) => {
     const requestId = ++listRequestRef.current;
     if (showLoader) setLoadingList(true);
     try {
-      const response = await apiClient.get(CERTIFICATE_API.list, {
-        params: {
-          search: query.trim() || undefined,
-          status: status !== "All" ? status : undefined,
-          certificateType: typeFilter !== "All" ? typeFilter : undefined,
-        },
-      });
-      const mapped = unwrapListPayload(response?.data).map((item) => normalizeCertificate(item, studentLookup));
+      const params = {};
+      if (query.trim()) params.search = query.trim();
+      if (status !== "All") params.status = status;
+      if (typeFilter !== "All") params.certificateType = typeFilter;
+      const response = await apiClient.get(CERTIFICATE_API.list, { params });
+      const mapped = unwrapListPayload(response?.data).map(normalizeCertificate);
       if (requestId !== listRequestRef.current) return false;
       setRows(mapped);
       return true;
@@ -1194,72 +1142,11 @@ export default function CertificatesPage() {
     const requestId = ++studentRequestRef.current;
     setLoadingStudents(true);
     try {
-      const [
-        studentManagementResult,
-        certificateDropdownResult,
-        admissionsResult,
-        academicYearsResult,
-        academicLevelsResult,
-        groupsResult,
-        sectionsResult,
-      ] = await Promise.allSettled([
-        apiClient.get(apiEndpoints.students.getAll),
-        apiClient.get(CERTIFICATE_API.studentsDropdown),
-        apiClient.get(apiEndpoints.admissions.getAll),
-        apiClient.get(apiEndpoints.academicYears.list),
-        apiClient.get(apiEndpoints.academicLevels.list),
-        apiClient.get(apiEndpoints.groups.list),
-        apiClient.get(apiEndpoints.sections.list),
-      ]);
-      if (studentManagementResult.status === "rejected" && certificateDropdownResult.status === "rejected") {
-        throw studentManagementResult.reason || certificateDropdownResult.reason;
-      }
-      const mapped = mergeCertificateStudents(
-        admissionsResult.status === "fulfilled"
-          ? unwrapStudentPayload(admissionsResult.value.data)
-          : [],
-        studentManagementResult.status === "fulfilled"
-          ? unwrapStudentPayload(studentManagementResult.value.data)
-          : [],
-        certificateDropdownResult.status === "fulfilled"
-          ? unwrapStudentPayload(certificateDropdownResult.value.data)
-          : [],
-      );
-      const makeReferenceMap = (result, idKeys, nameKeys) => new Map(
-        (result.status === "fulfilled" ? unwrapStudentPayload(result.value.data) : [])
-          .map((item) => [Number(pick(item, idKeys)), String(pick(item, nameKeys) || "").trim()])
-          .filter(([id, name]) => id && name),
-      );
-      const academicYearsById = makeReferenceMap(
-        academicYearsResult,
-        ["academicYearId", "AcademicYearId", "id", "Id"],
-        ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"],
-      );
-      const academicLevelsById = makeReferenceMap(
-        academicLevelsResult,
-        ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"],
-        ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"],
-      );
-      const groupsById = makeReferenceMap(
-        groupsResult,
-        ["groupId", "GroupId", "id", "Id"],
-        ["groupName", "GroupName", "groupCode", "GroupCode", "name", "Name"],
-      );
-      const sectionsById = makeReferenceMap(
-        sectionsResult,
-        ["sectionId", "SectionId", "id", "Id"],
-        ["sectionName", "SectionName", "name", "Name", "code", "Code"],
-      );
-      const enrichedStudents = mapped.map((student) => ({
-        ...student,
-        academicYear: academicYearsById.get(Number(student.academicYearId)) || student.academicYear || "",
-        level: academicLevelsById.get(Number(student.academicLevelId)) || student.level || "",
-        group: groupsById.get(Number(student.groupId)) || student.group || "",
-        section: sectionsById.get(Number(student.sectionId)) || student.section || "",
-      }));
+      const response = await apiClient.get(CERTIFICATE_API.studentsDropdown);
+      const mapped = unwrapStudentPayload(response.data).map(normalizeStudentRecord).filter((student) => student.admissionNo);
       if (requestId !== studentRequestRef.current) return [];
-      setStudentRows(enrichedStudents);
-      return enrichedStudents;
+      setStudentRows(mapped);
+      return mapped;
     } catch (error) {
       if (requestId !== studentRequestRef.current) return [];
       setStudentRows([]);
@@ -1270,10 +1157,27 @@ export default function CertificatesPage() {
     }
   };
 
+  const loadBulkEligibleStudents = async () => {
+    const requestId = ++bulkStudentRequestRef.current;
+    setLoadingBulkStudents(true);
+    try {
+      const response = await apiClient.get(CERTIFICATE_API.bulkEligibleStudents);
+      const mapped = unwrapStudentPayload(response.data).map(normalizeStudentRecord).filter((student) => student.admissionNo);
+      if (requestId === bulkStudentRequestRef.current) setBulkStudentRows(mapped);
+    } catch (error) {
+      if (requestId === bulkStudentRequestRef.current) {
+        setBulkStudentRows([]);
+        setToast(getFriendlyErrorMessage(error, "Failed to load bulk-eligible students."));
+      }
+    } finally {
+      if (requestId === bulkStudentRequestRef.current) setLoadingBulkStudents(false);
+    }
+  };
+
   useEffect(() => {
     (async () => {
-      const studentLookup = await loadStudents();
-      await Promise.allSettled([loadCertificates({ studentLookup }), loadWorkflowStats()]);
+      await loadStudents();
+      await Promise.allSettled([loadCertificates(), loadWorkflowStats()]);
       filtersReadyRef.current = true;
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1289,8 +1193,59 @@ export default function CertificatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, status, typeFilter]);
 
+  useEffect(() => {
+    if (generationMode !== "bulk") return undefined;
+    const timer = window.setTimeout(loadBulkEligibleStudents, 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generationMode]);
+
   const findStudentByAdmission = (admissionNo) =>
     studentRows.find((student) => String(student.admissionNo).trim().toLowerCase() === String(admissionNo).trim().toLowerCase()) || null;
+
+  const bulkStudentFilterOptions = useMemo(() => {
+    const uniqueValues = (key) => Array.from(new Set(bulkStudentRows
+      .map((student) => String(student[key] || "").trim())
+      .filter(Boolean)))
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
+    return {
+      academicYears: uniqueValues("academicYear"),
+      boards: uniqueValues("board"),
+      groups: uniqueValues("group"),
+      sections: uniqueValues("section"),
+    };
+  }, [bulkStudentRows]);
+
+  const visibleBulkStudents = useMemo(() => {
+    const normalized = (value) => String(value || "").trim().toLocaleLowerCase();
+    const search = normalized(bulkStudentSearch);
+    return bulkStudentRows.filter((student) => (
+      (!bulkStudentFilters.academicYear || normalized(student.academicYear) === normalized(bulkStudentFilters.academicYear))
+      && (!bulkStudentFilters.board || normalized(student.board) === normalized(bulkStudentFilters.board))
+      && (!bulkStudentFilters.group || normalized(student.group) === normalized(bulkStudentFilters.group))
+      && (!bulkStudentFilters.section || normalized(student.section) === normalized(bulkStudentFilters.section))
+      && (!search || [student.admissionNo, student.name, student.rollNo, student.group, student.section]
+        .some((value) => normalized(value).includes(search)))
+    ));
+  }, [bulkStudentFilters, bulkStudentRows, bulkStudentSearch]);
+
+  const selectedBulkAdmissionNumbers = useMemo(
+    () => new Set(selectedBulkStudents.map((value) => String(value).trim().toLocaleLowerCase())),
+    [selectedBulkStudents],
+  );
+
+  const selectedBulkStudentRows = useMemo(() => {
+    const studentsByAdmission = new Map(bulkStudentRows.map((student) => [String(student.admissionNo).trim().toLocaleLowerCase(), student]));
+    return selectedBulkStudents.map((admissionNo) => studentsByAdmission.get(String(admissionNo).trim().toLocaleLowerCase())).filter(Boolean);
+  }, [bulkStudentRows, selectedBulkStudents]);
+
+  const toggleBulkStudent = (admissionNo) => {
+    const key = String(admissionNo).trim();
+    setSelectedBulkStudents((current) => current.some((value) => String(value).trim().toLocaleLowerCase() === key.toLocaleLowerCase())
+      ? current.filter((value) => String(value).trim().toLocaleLowerCase() !== key.toLocaleLowerCase())
+      : [...current, key]);
+    setErrors((current) => ({ ...current, bulkStudents: undefined }));
+  };
 
   useEffect(() => {
     const lookupId = ++admissionLookupRef.current;
@@ -1301,7 +1256,7 @@ export default function CertificatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.admissionNo, studentRows]);
 
-  const validate = () => {
+  const validate = ({ bulk = false } = {}) => {
     const next = {};
     const admissionNo = String(form.admissionNo || "").trim();
     const selectedType = String(form.type || "").trim();
@@ -1311,12 +1266,13 @@ export default function CertificatesPage() {
     const remarks = normalizeText(form.remarks);
 
     formFields.forEach((field) => {
+      if (bulk && field.name === "admissionNo") return;
       const value = form[field.name];
       if (field.required && !String(value || "").trim()) next[field.name] = `${field.label} is required`;
     });
 
-    if (admissionNo && !findStudentByAdmission(admissionNo)) {
-      next.admissionNo = "Select a valid admission number";
+    if (!bulk && admissionNo && !findStudentByAdmission(admissionNo)) {
+      next.admissionNo = "Select a valid student.";
     }
 
     if (selectedType && selectedType !== "Others" && !CERTIFICATE_TYPES.includes(selectedType)) {
@@ -1327,7 +1283,7 @@ export default function CertificatesPage() {
       next.customType = "Enter the certificate type";
     }
 
-    if (purpose.length < 5) {
+    if (purpose && purpose.length < 5) {
       next.purpose = "Purpose should be at least 5 characters";
     } else if (purpose.length > MAX_PURPOSE_LENGTH) {
       next.purpose = `Purpose should not exceed ${MAX_PURPOSE_LENGTH} characters`;
@@ -1345,7 +1301,7 @@ export default function CertificatesPage() {
       next.remarks = `Remarks should not exceed ${MAX_REMARKS_LENGTH} characters`;
     }
 
-    const duplicate = rows.some(
+    const duplicate = !bulk && rows.some(
       (row) =>
         row.admissionNo === admissionNo &&
         row.type === type &&
@@ -1355,6 +1311,10 @@ export default function CertificatesPage() {
     if (duplicate) {
       next.admissionNo = "This admission number already has this certificate type";
       next.type = "Duplicate certificate type for this student";
+    }
+
+    if (bulk && !selectedBulkStudents.length) {
+      next.bulkStudents = "Select at least one student";
     }
 
     setErrors(next);
@@ -1377,6 +1337,9 @@ export default function CertificatesPage() {
       requestDate: todayIso(),
       remarks: "",
     });
+    setSelectedBulkStudents([]);
+    setBulkStudentSearch("");
+    setBulkStudentFilters({ academicYear: "", board: "", group: "", section: "" });
     setErrors({});
   };
 
@@ -1403,7 +1366,7 @@ export default function CertificatesPage() {
     }
     if (selectedType === "Others") rememberCertificateOrientation(certificateRequest.type, certificateRequest.orientation);
     if (!findStudentByAdmission(admissionNo)) {
-      setErrors((prev) => ({ ...prev, admissionNo: "Select a valid admission number" }));
+      setErrors((prev) => ({ ...prev, admissionNo: "Select a valid student." }));
       return;
     }
 
@@ -1414,18 +1377,19 @@ export default function CertificatesPage() {
         setErrors((prev) => ({ ...prev, requestDate: "Enter a valid request date" }));
         return;
       }
-      const specializedPayload = withOptionalRemarks({
+      const specializedPayload = {
         admissionNo,
         certificateType: certificateRequest.type,
         purpose,
         requestDate: normalizedRequestDate,
-      }, remarks);
-      const response = await apiClient.post(certificateRequest.endpoint, specializedPayload);
+        remarks,
+      };
+      const response = await apiClient.post(CERTIFICATE_API.generate, specializedPayload);
       const createdRecord = unwrapSinglePayload(response?.data);
       if (hasCertificateShape(createdRecord)) {
-        const createdCertificate = normalizeCertificate(createdRecord, studentRows);
+        const createdCertificate = normalizeCertificate(createdRecord);
         if (!certificateTypesMatch(certificateRequest.type, createdCertificate.type)) {
-          throw new Error("The generated certificate type does not match the requested certificate type.");
+          throw new Error("Generated certificate type does not match the requested certificate type.");
         }
         setRows((currentRows) => [
           createdCertificate,
@@ -1442,6 +1406,61 @@ export default function CertificatesPage() {
       setToast(`${certificateRequest.type} generated successfully.`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, "Failed to generate certificate. Please try again."));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const generateBulkCertificates = async () => {
+    if (!validate({ bulk: true }) || creating) return;
+
+    const certificateRequest = resolveCertificateRequest(form);
+    if (!certificateRequest) return setToast("Unsupported certificate type.");
+    const requestDate = toApiDateTime(form.requestDate);
+    if (!requestDate) {
+      setErrors((current) => ({ ...current, requestDate: "Enter a valid request date" }));
+      return;
+    }
+
+    const selectedAdmissionNos = selectedBulkStudents.map((admissionNo) => String(admissionNo).trim()).filter(Boolean);
+    const duplicates = selectedAdmissionNos.filter((admissionNo) => rows.some((row) =>
+      String(row.admissionNo).trim().toLowerCase() === admissionNo.toLowerCase()
+      && certificateTypesMatch(row.type, certificateRequest.type)
+      && row.status !== "Cancelled"));
+    if (duplicates.length) {
+      setErrors((current) => ({
+        ...current,
+        bulkStudents: `${duplicates.length} selected student${duplicates.length === 1 ? " already has" : "s already have"} this certificate type`,
+      }));
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: "Generate bulk certificates?",
+      message: `Generate ${certificateRequest.type} for ${selectedAdmissionNos.length} selected student${selectedAdmissionNos.length === 1 ? "" : "s"}?`,
+      confirmLabel: "Generate All",
+    });
+    if (!confirmed) return;
+
+    setCreating(true);
+    try {
+      const purpose = normalizeText(form.purpose);
+      const remarks = normalizeText(form.remarks);
+      await apiClient.post(CERTIFICATE_API.bulkGenerate, {
+        admissionNos: selectedAdmissionNos,
+        certificateType: certificateRequest.type,
+        purpose,
+        requestDate,
+        remarks,
+      });
+      const generatedCount = selectedAdmissionNos.length;
+      await refreshCertificateData({ showLoader: false });
+      setPage(1);
+      resetForm();
+      setActiveTab("certificates");
+      setToast(`${generatedCount} certificate${generatedCount === 1 ? "" : "s"} generated successfully.`);
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to generate bulk certificates. Please try again."));
     } finally {
       setCreating(false);
     }
@@ -1464,7 +1483,8 @@ export default function CertificatesPage() {
     setBusyAction({ id: row.id, type: action });
 
     try {
-      const requestConfig = action === "issue" ? { params: { issuedBy: getIssuedBy() || undefined } } : undefined;
+      const issuer = action === "issue" ? getIssuedBy() : "";
+      const requestConfig = issuer ? { params: { issuedBy: issuer } } : undefined;
       await apiClient.patch(selected.endpoint(actionId), null, requestConfig);
       await verifyPersistedCertificateType(actionId, row.type);
       await refreshCertificateData({ showLoader: false });
@@ -1485,6 +1505,7 @@ export default function CertificatesPage() {
     if (bulkAction || busyAction.id) return;
 
     const actionMap = {
+      review: { currentStatus: "Generated", endpoint: CERTIFICATE_API.bulkReview, label: "reviewed" },
       approve: { currentStatus: "Reviewed", endpoint: CERTIFICATE_API.bulkApprove, label: "approved" },
       issue: { currentStatus: "Approved", endpoint: CERTIFICATE_API.bulkIssue, label: "issued" },
     };
@@ -1506,13 +1527,12 @@ export default function CertificatesPage() {
 
     setBulkAction(action);
     try {
-      const requestConfig = action === "issue" ? { params: { issuedBy: getIssuedBy() || undefined } } : undefined;
+      const completedCount = eligibleRows.length;
+      const requestConfig = action === "issue" && getIssuedBy() ? { params: { issuedBy: getIssuedBy() } } : undefined;
       await apiClient.patch(selected.endpoint, null, requestConfig);
-      await Promise.all(eligibleRows.map((row) => (
-        verifyPersistedCertificateType(row.backendId || row.id, row.type)
-      )));
+
       await refreshCertificateData({ showLoader: false });
-      setToast(`${eligibleRows.length} eligible certificate${eligibleRows.length === 1 ? "" : "s"} ${selected.label}.`);
+      setToast(`${completedCount} eligible certificate${completedCount === 1 ? "" : "s"} ${selected.label}.`);
     } catch (error) {
       setToast(getFriendlyErrorMessage(error, `Failed to bulk ${action} certificates.`));
     } finally {
@@ -1563,7 +1583,7 @@ export default function CertificatesPage() {
       }, row.remarks));
       const reissuedRecord = unwrapSinglePayload(response?.data);
       if (hasCertificateShape(reissuedRecord)) {
-        const normalizedReissue = normalizeCertificate(reissuedRecord, studentRows);
+        const normalizedReissue = normalizeCertificate(reissuedRecord);
         if (!certificateTypesMatch(row.type, normalizedReissue.type)) {
           throw new Error("The reissued certificate type does not match the original certificate type.");
         }
@@ -1658,7 +1678,7 @@ export default function CertificatesPage() {
           const response = await apiClient.get(CERTIFICATE_API.getById(resolvedId));
           const details = unwrapSinglePayload(response.data);
           if (hasCertificateShape(details)) {
-            const normalizedDetails = normalizeCertificate(details, studentRows);
+            const normalizedDetails = normalizeCertificate(details);
             target = {
               ...record,
               ...normalizedDetails,
@@ -1726,7 +1746,7 @@ export default function CertificatesPage() {
         if (requestId !== detailsRequestRef.current) return;
         const details = unwrapSinglePayload(response.data);
         if (hasCertificateShape(details)) {
-          const normalizedDetails = normalizeCertificate(details, studentRows);
+          const normalizedDetails = normalizeCertificate(details);
           if (!resolveCertificatePresentation(normalizedDetails.type, normalizedDetails.orientation)) {
             setToast("Unsupported certificate type.");
             return;
@@ -1775,26 +1795,45 @@ export default function CertificatesPage() {
     setPage(1);
   };
 
-  const exportCertificateRecords = () => {
-    const headers = ["Certificate No.", "Admission No.", "Student", "Type", "Request Date", "Issue Date", "Status"];
-    const csvRows = filtered.map((row) => [row.number, row.admissionNo, row.student, row.type, formatDateDdMmYyyy(row.requestDate), formatDateDdMmYyyy(row.issue), row.status]);
-    const csv = [headers, ...csvRows]
-      .map((values) => values.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(","))
-      .join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `certificate-records-${todayIso()}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const exportCertificateRecords = async () => {
+    try {
+      const params = {};
+      if (query.trim()) params.search = query.trim();
+      if (status !== "All") params.status = status;
+      if (typeFilter !== "All") params.certificateType = typeFilter;
+      const response = await apiClient.get(CERTIFICATE_API.exportExcel, { params, responseType: "blob" });
+      const disposition = String(response.headers?.["content-disposition"] || "");
+      const encodedName = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+      const plainName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+      const fileName = encodedName ? decodeURIComponent(encodedName) : (plainName || `certificate-records-${todayIso()}.xlsx`);
+      const url = URL.createObjectURL(response.data instanceof Blob ? response.data : new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setToast(getFriendlyErrorMessage(error, "Failed to export certificate records."));
+    }
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const actionRows = rows.filter((row) =>
-    ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status)
-    && (workflowStatusFilter === "All" || row.status === workflowStatusFilter));
+  const normalizedWorkflowQuery = workflowQuery.trim().toLowerCase();
+  const actionRows = rows.filter((row) => {
+    const isWorkflowRecord = ["Generated", "Reviewed", "Approved", "Issued", "Cancelled"].includes(row.status);
+    const matchesStatus = workflowStatusFilter === "All" || row.status === workflowStatusFilter;
+    const matchesSearch = !normalizedWorkflowQuery || [
+      row.number,
+      row.admissionNo,
+      row.student,
+      row.type,
+      row.status,
+      formatDateDdMmYyyy(row.requestDate),
+    ].some((value) => String(value || "").toLowerCase().includes(normalizedWorkflowQuery));
+    return isWorkflowRecord && matchesStatus && matchesSearch;
+  });
   const actionTotalPages = Math.max(1, Math.ceil(actionRows.length / PAGE_SIZE));
   const currentActionPage = Math.min(actionPage, actionTotalPages);
   const actionPageRows = actionRows.slice((currentActionPage - 1) * PAGE_SIZE, currentActionPage * PAGE_SIZE);
@@ -1852,14 +1891,77 @@ export default function CertificatesPage() {
           <div className="cms-card cert-form-card">
             <div className="cms-card-head cert-section-head">
               <div>
-                <h2>Create Certificate</h2>
-                <p>Enter request details and generate a certificate request.</p>
+                <h2>{generationMode === "bulk" ? "Bulk Certificate Issue" : "Create Certificate"}</h2>
+                <p>{generationMode === "bulk" ? "Select multiple students and generate their certificate requests together." : "Enter request details and generate a certificate request."}</p>
+              </div>
+              <div className="cert-generation-mode" role="group" aria-label="Certificate generation mode">
+                <button type="button" className={generationMode === "single" ? "is-active" : ""} onClick={() => { setGenerationMode("single"); setSelectedBulkStudents([]); setErrors({}); }}>Single</button>
+                <button type="button" className={generationMode === "bulk" ? "is-active" : ""} onClick={() => { setGenerationMode("bulk"); setForm((current) => ({ ...current, admissionNo: "", student: "", group: "", level: "", academicYear: "", rollNo: "", section: "" })); setErrors({}); }}><FaUsers size={13} aria-hidden="true" /> Bulk Issue</button>
               </div>
             </div>
             <div className="cms-card-body">
+              {generationMode === "bulk" ? (
+                <section className={`cert-bulk-students ${errors.bulkStudents ? "has-error" : ""}`}>
+                  <div className="cert-bulk-students-head">
+                    <div><h3>Select Students</h3><span>{selectedBulkStudents.length} selected</span></div>
+                  </div>
+                  <div className="cert-bulk-filter-row">
+                    <label className="cert-bulk-search">
+                      <FaMagnifyingGlass size={14} aria-hidden="true" />
+                      <input type="search" value={bulkStudentSearch} onChange={(event) => setBulkStudentSearch(event.target.value)} placeholder="Search admission no., student, roll no., group or section" />
+                    </label>
+                    <select aria-label="Filter students by academic year" value={bulkStudentFilters.academicYear} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, academicYear: event.target.value }))}>
+                      <option value="">Select Academic Year</option>
+                      {bulkStudentFilterOptions.academicYears.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select aria-label="Filter students by board" value={bulkStudentFilters.board} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, board: event.target.value }))}>
+                      <option value="">Select Board</option>
+                      {bulkStudentFilterOptions.boards.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select aria-label="Filter students by group" value={bulkStudentFilters.group} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, group: event.target.value }))}>
+                      <option value="">Select Group</option>
+                      {bulkStudentFilterOptions.groups.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                    <select aria-label="Filter students by section" value={bulkStudentFilters.section} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, section: event.target.value }))}>
+                      <option value="">Select Section</option>
+                      {bulkStudentFilterOptions.sections.map((value) => <option key={value} value={value}>{value}</option>)}
+                    </select>
+                  </div>
+                  <div className="cert-bulk-select-actions">
+                    <button type="button" onClick={() => { setSelectedBulkStudents((current) => { const selected = new Map(current.map((value) => [String(value).trim().toLocaleLowerCase(), String(value).trim()])); visibleBulkStudents.forEach((student) => selected.set(String(student.admissionNo).trim().toLocaleLowerCase(), String(student.admissionNo).trim())); return Array.from(selected.values()); }); setErrors((current) => ({ ...current, bulkStudents: undefined })); }} disabled={loadingBulkStudents || !visibleBulkStudents.length}>Select All Results</button>
+                    <button type="button" onClick={() => setSelectedBulkStudents([])} disabled={!selectedBulkStudents.length}>Clear Selection</button>
+                  </div>
+                  {selectedBulkStudentRows.length ? (
+                    <div className="cert-bulk-selected-list" aria-label="Selected students">
+                      {selectedBulkStudentRows.map((student) => (
+                        <button key={student.admissionNo} type="button" onClick={() => toggleBulkStudent(student.admissionNo)} title={`Remove ${student.name || student.admissionNo}`}>
+                          <span>{student.name || "Student"}</span><small>{student.admissionNo}</small><FaXmark size={10} aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="cert-bulk-student-list">
+                    {loadingBulkStudents ? <Loader label="Loading students..." /> : visibleBulkStudents.length ? visibleBulkStudents.map((student) => {
+                      const admissionNo = String(student.admissionNo);
+                      const selectionKey = admissionNo.trim().toLocaleLowerCase();
+                      return (
+                        <label key={admissionNo} className={selectedBulkAdmissionNumbers.has(selectionKey) ? "is-selected" : ""}>
+                          <input type="checkbox" checked={selectedBulkAdmissionNumbers.has(selectionKey)} onChange={() => toggleBulkStudent(admissionNo)} />
+                          <span>
+                            <strong>{student.name || "Student"}</strong>
+                            <small>{[admissionNo, student.rollNo ? `Roll ${student.rollNo}` : "", student.group, student.section].filter(Boolean).join(" · ")}</small>
+                          </span>
+                        </label>
+                      );
+                    }) : <p>No matching students found.</p>}
+                  </div>
+                  {errors.bulkStudents ? <span className="cms-error">{errors.bulkStudents}</span> : null}
+                </section>
+              ) : null}
               <div className="cms-form-grid cols-3">
                 {formFields.map((field) => {
                   if (field.name === "admissionNo") {
+                    if (generationMode === "bulk") return null;
                     return (
                       <CertificateStudentSearch
                         key={field.name}
@@ -1886,24 +1988,27 @@ export default function CertificatesPage() {
                           {field.label} {field.required ? <span className="req">*</span> : null}
                         </label>
                         {field.name === "type" ? (
-                          <select
-                            id="certificate-type"
-                            className={form.type ? "" : "cert-field-placeholder"}
-                            value={form.type}
-                            onChange={(e) => {
-                              const nextType = e.target.value;
-                              setForm((prev) => ({
-                                ...prev,
-                                type: nextType,
-                                customType: "",
-                                orientation: nextType === "Transfer Certificate" ? "landscape" : "portrait",
-                              }));
-                              setErrors((prev) => ({ ...prev, type: undefined, customType: undefined }));
-                            }}
-                          >
-                            <option value="">Select Certificate Type</option>
-                            {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                          </select>
+                          <div className="cert-type-select-control">
+                            <select
+                              id="certificate-type"
+                              className={form.type ? "" : "cert-field-placeholder"}
+                              value={form.type}
+                              onChange={(e) => {
+                                const nextType = e.target.value;
+                                setForm((prev) => ({
+                                  ...prev,
+                                  type: nextType,
+                                  customType: "",
+                                  orientation: nextType === "Transfer Certificate" ? "landscape" : "portrait",
+                                }));
+                                setErrors((prev) => ({ ...prev, type: undefined, customType: undefined }));
+                              }}
+                            >
+                              <option value="">Select Certificate Type</option>
+                              {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                            <FaChevronDown size={13} aria-hidden="true" />
+                          </div>
                         ) : (
                           <input
                             id="certificate-requestDate"
@@ -1979,7 +2084,7 @@ export default function CertificatesPage() {
                 ) : null}
               </div>
 
-              <div className="cms-form-grid cert-student-fields cert-space-top-12">
+              {generationMode === "single" ? <div className="cms-form-grid cert-student-fields cert-space-top-12">
                 <div className="cms-field cert-readonly">
                   <label>Student Name</label>
                   <input type="text" value={form.student} readOnly placeholder="Auto-filled from admission number" />
@@ -2004,13 +2109,13 @@ export default function CertificatesPage() {
                   <label>Section</label>
                   <input type="text" value={form.section} readOnly placeholder="Auto-filled" />
                 </div>
-              </div>
+              </div> : null}
               <div className="cms-form-actions">
                 <button type="button" className="cms-btn cms-btn-ghost" onClick={resetForm} disabled={creating} title="Clear certificate form" aria-label="Clear certificate form">
                   <FaEraser size={14} aria-hidden="true" /> Clear
                 </button>
-                <button type="button" className="cms-btn cms-btn-primary" onClick={generateCertificate} disabled={creating || loadingStudents} title="Generate certificate draft" aria-label="Generate certificate draft">
-                  <FaFileCirclePlus size={14} aria-hidden="true" /> {form.type === "Others" ? "Create Draft" : "Generate"}
+                <button type="button" className="cms-btn cms-btn-primary" onClick={generationMode === "bulk" ? generateBulkCertificates : generateCertificate} disabled={creating || (generationMode === "bulk" ? loadingBulkStudents : loadingStudents)} title={generationMode === "bulk" ? "Generate certificates for selected students" : "Generate certificate draft"} aria-label={generationMode === "bulk" ? "Generate certificates for selected students" : "Generate certificate draft"}>
+                  {generationMode === "bulk" ? <FaUsers size={14} aria-hidden="true" /> : <FaFileCirclePlus size={14} aria-hidden="true" />} {creating ? "Generating..." : generationMode === "bulk" ? `Generate ${selectedBulkStudents.length || ""} Certificate${selectedBulkStudents.length === 1 ? "" : "s"}` : form.type === "Others" ? "Create Draft" : "Generate"}
                 </button>
               </div>
             </div>
@@ -2141,13 +2246,21 @@ export default function CertificatesPage() {
         </> : null}
 
         {activeTab === "actions" ? (
-          <section className="cert-records-card">
+          <section className="cert-records-card cert-workflow-card">
             <div className="cert-records-head">
               <div>
                 <h3>Certificate Workflow</h3>
                 <p>Process all eligible certificates at each workflow stage.</p>
               </div>
               <div className="cms-actions cert-action-buttons">
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => handleBulkWorkflow("review")}
+                  disabled={Boolean(bulkAction) || Boolean(busyAction.id) || !rows.some((row) => row.status === "Generated")}
+                >
+                  <FaClipboardCheck size={13} aria-hidden="true" /> {bulkAction === "review" ? "Reviewing..." : "Review All"}
+                </button>
                 <button
                   type="button"
                   className="cms-btn cms-btn-ghost"
@@ -2190,6 +2303,21 @@ export default function CertificatesPage() {
                 </button>
               ))}
             </div>
+            <div className="cert-workflow-toolbar">
+              <label className="cert-search-box" htmlFor="certificate-workflow-search">
+                <FaMagnifyingGlass size={15} aria-hidden="true" />
+                <input
+                  id="certificate-workflow-search"
+                  type="search"
+                  value={workflowQuery}
+                  onChange={(event) => {
+                    setWorkflowQuery(event.target.value);
+                    setActionPage(1);
+                  }}
+                  placeholder="Search certificate no., admission no., student, type, status or date"
+                />
+              </label>
+            </div>
             <div className="cms-table-wrap cert-table-wrap-modern">
               <table className="cms-table cert-table-fit cert-workflow-table">
                 <thead>
@@ -2207,7 +2335,7 @@ export default function CertificatesPage() {
                   {loadingList ? (
                     <tr><td colSpan={7}><Loader label="Loading certificates..." /></td></tr>
                   ) : !actionPageRows.length ? (
-                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No {workflowStatusFilter === "All" ? "workflow" : workflowStatusFilter.toLowerCase()} certificates found</h4><p>{workflowStatusFilter === "All" ? "Certificate requests will appear here as they move through the workflow." : `There are no certificates with ${workflowStatusFilter.toLowerCase()} status.`}</p></div></td></tr>
+                    <tr><td colSpan={7}><div className="cert-empty-state"><div className="cert-empty-icon"><FaAward size={24} aria-hidden="true" /></div><h4>No matching certificates found</h4><p>{workflowQuery.trim() ? "Try a different certificate number, admission number, student, type, status, or date." : workflowStatusFilter === "All" ? "Certificate requests will appear here as they move through the workflow." : `There are no certificates with ${workflowStatusFilter.toLowerCase()} status.`}</p></div></td></tr>
                   ) : actionPageRows.map((row) => (
                     <tr key={row.id}>
                       <td className="cms-strong" title={row.number}>{row.number}</td>

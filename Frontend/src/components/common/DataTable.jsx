@@ -41,6 +41,7 @@ export default function DataTable({
   paginationCurrentOnly = false,
   enableExport = true,
   enablePdfExport = false,
+  enableTablePrint = true,
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -172,6 +173,39 @@ export default function DataTable({
               ) : null}
             </div>
           ) : null}
+          <div
+            className="cms-export-control"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+              onClick={() => setExportOpen((open) => !open)}
+            >
+              <Download size={15} /> Export <ChevronDown size={14} />
+            </button>
+            {exportOpen ? (
+              <div className="cms-export-menu" role="menu">
+                <button type="button" role="menuitem" onClick={exportExcel}>
+                  <FileSpreadsheet size={15} /> Export Excel
+                </button>
+                {enablePdfExport ? (
+                  <button type="button" role="menuitem" onClick={exportPdf}>
+                    <FileText size={15} /> Export PDF
+                  </button>
+                ) : null}
+                {enableTablePrint ? (
+                  <button type="button" role="menuitem" onClick={printRows}>
+                    <Printer size={15} /> Print table
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
           {onAdd ? (
             <button className="cms-btn cms-btn-primary" onClick={onAdd}>
               <Plus size={16} /> {addLabel}

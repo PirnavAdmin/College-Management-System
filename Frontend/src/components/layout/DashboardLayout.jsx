@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Landmark, BookOpen, Library, Layers3, Users, UserPlus,
-  GraduationCap, CalendarClock, ClipboardCheck, FileSpreadsheet, PenLine,
-  Award, ArrowUpRight, Wallet, ScrollText, BarChart3, PanelLeft, Bell, Search, ChevronRight,
+  PanelLeft, Bell, Search, ChevronRight,
   ChevronDown, Settings, User, LogOut,
 } from "lucide-react";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
@@ -11,17 +9,35 @@ import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import { useSidebar } from "@/hooks/useSidebar.js";
 import pirnavCollegesLogo from "@/assets/pirnav-colleges-logo.png";
+import dashboardIcon from "@/assets/sidebar-3d/dashboard.png";
+import boardAcademicYearIcon from "@/assets/sidebar-3d/board-academic-year.png";
+import subjectsIcon from "@/assets/sidebar-3d/subjects.png";
+import timetableIcon from "@/assets/sidebar-3d/timetable.png";
+import marksEvaluationIcon from "@/assets/sidebar-3d/marks-evaluation.png";
+import resultsIcon from "@/assets/sidebar-3d/results.png";
+import promotionIcon from "@/assets/sidebar-3d/promotion.png";
+import feeManagementIcon from "@/assets/sidebar-3d/fee-management.png";
+import certificatesIcon from "@/assets/sidebar-3d/certificates.png";
+import reportsAnalyticsIcon from "@/assets/sidebar-3d/reports-analytics.png";
+import groupsIcon from "@/assets/dashboard-3d/total-groups.png";
+import sectionsIcon from "@/assets/dashboard-3d/total-sections.png";
+import staffIcon from "@/assets/dashboard-3d/teaching-staff.png";
+import addStudentIcon from "@/assets/dashboard-3d/add-student.png";
+import allocateSectionIcon from "@/assets/dashboard-3d/create-section.png";
+import studentsIcon from "@/assets/dashboard-3d/total-students.png";
+import attendanceIcon from "@/assets/dashboard-3d/mark-attendance.png";
+import examinationIcon from "@/assets/dashboard-3d/create-exam.png";
 import "./DashboardLayout.css";
 
 export const menu = [
-  { section: "Overview", items: [{ to: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  { section: "Overview", items: [{ to: "/dashboard", label: "Dashboard", icon: dashboardIcon }] },
   {
     section: "Academics",
     items: [
-      { to: "/dashboard/board-academic-year", label: "Board & Academic Year Management", icon: Landmark },
-      { to: "/dashboard/courses", label: "Group Management", icon: BookOpen },
-      { to: "/dashboard/subjects", label: "Subject Management", icon: Library },
-      { to: "/dashboard/sections", label: "Section Management", icon: Layers3 },
+      { to: "/dashboard/board-academic-year", label: "Board & Academic Year Management", icon: boardAcademicYearIcon },
+      { to: "/dashboard/courses", label: "Group Management", icon: groupsIcon },
+      { to: "/dashboard/subjects", label: "Subject Management", icon: subjectsIcon },
+      { to: "/dashboard/sections", label: "Section Management", icon: sectionsIcon },
     ],
   },
   {
@@ -30,38 +46,38 @@ export const menu = [
       {
         to: "/dashboard/faculty",
         label: "Staff Management",
-        icon: Users,
+        icon: staffIcon,
       },
-      { to: "/dashboard/admission", label: "Student Admission", icon: UserPlus },
-      { to: "/dashboard/section-allocation", label: "Section Allocation", icon: Layers3 },
-      { to: "/dashboard/students", label: "Student Management", icon: GraduationCap },
+      { to: "/dashboard/admission", label: "Student Admission", icon: addStudentIcon },
+      { to: "/dashboard/section-allocation", label: "Section Allocation", icon: allocateSectionIcon },
+      { to: "/dashboard/students", label: "Student Management", icon: studentsIcon },
     ],
   },
   {
     section: "Operations",
     items: [
-      { to: "/dashboard/timetable", label: "Timetable", icon: CalendarClock },
-      { to: "/dashboard/attendance", label: "Attendance", icon: ClipboardCheck, children: [
-        { to: "/dashboard/attendance/student", label: "Student", icon: ClipboardCheck },
-        { to: "/dashboard/attendance/staff", label: "Staff", icon: ClipboardCheck },
+      { to: "/dashboard/timetable", label: "Timetable", icon: timetableIcon },
+      { to: "/dashboard/attendance", label: "Attendance", icon: attendanceIcon, children: [
+        { to: "/dashboard/attendance/student", label: "Student", icon: studentsIcon },
+        { to: "/dashboard/attendance/staff", label: "Staff", icon: staffIcon },
       ] },
     ],
   },
   {
     section: "Examinations",
     items: [
-      { to: "/dashboard/examinations", label: "Examination", icon: FileSpreadsheet },
-      { to: "/dashboard/marks-entry", label: "Marks Evaluation", icon: PenLine },
-      { to: "/dashboard/results", label: "Results", icon: Award },
-      { to: "/dashboard/promotion", label: "Promotion", icon: ArrowUpRight },
+      { to: "/dashboard/examinations", label: "Examination", icon: examinationIcon },
+      { to: "/dashboard/marks-entry", label: "Marks Evaluation", icon: marksEvaluationIcon },
+      { to: "/dashboard/results", label: "Results", icon: resultsIcon },
+      { to: "/dashboard/promotion", label: "Promotion", icon: promotionIcon },
     ],
   },
   {
     section: "Administration",
     items: [
-      { to: "/dashboard/fee-structure", label: "Fee Management", icon: Wallet },
-      { to: "/dashboard/certificates", label: "Certificates", icon: ScrollText },
-      { to: "/dashboard/reports", label: "Reports & Analytics", icon: BarChart3 },
+      { to: "/dashboard/fee-structure", label: "Fee Management", icon: feeManagementIcon },
+      { to: "/dashboard/certificates", label: "Certificates", icon: certificatesIcon },
+      { to: "/dashboard/reports", label: "Reports & Analytics", icon: reportsAnalyticsIcon },
     ],
   },
 ];
@@ -298,7 +314,6 @@ export default function DashboardLayout({
             <div key={group.section}>
               <div className="cms-nav-group">{group.section}</div>
               {group.items.map((item) => {
-                const Icon = item.icon;
                 const active = isActive(item.to);
                 if (item.children) {
                   const isFacultyMenu = item.to === "/dashboard/faculty";
@@ -311,31 +326,32 @@ export default function DashboardLayout({
                       <div className="cms-nav-parent">
                         <Link
                           to={item.to}
-                          className={`cms-nav-link ${active && !item.children.some(childIsActive) ? "is-active" : ""}`}
+                          className={`cms-nav-link ${active || item.children.some(childIsActive) ? "is-active" : ""}`}
                           onClick={(event) => {
                             if (isAttendanceMenu) {
                               event.preventDefault();
                               setOpen((v) => !v);
+                            } else {
+                              setAttendanceOpen(false);
                             }
                             closeOnMobile();
                           }}
                         >
-                          <Icon size={17} /> {item.label}
+                          <img className="cms-nav-3d-icon" src={item.icon} alt="" aria-hidden="true" /> {item.label}
                         </Link>
-                        <button type="button" className={`cms-nav-caret ${isOpen ? "is-open" : ""}`} aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={isOpen} onClick={() => setOpen((v) => !v)}>
+                        <button type="button" className={`cms-nav-caret ${isOpen ? "is-open" : ""}`} aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={isOpen} onClick={() => { if (!isAttendanceMenu) setAttendanceOpen(false); setOpen((v) => !v); }}>
                           <ChevronDown size={15} />
                         </button>
                       </div>
                       {isOpen
                         ? item.children.map((child) => {
-                            const ChildIcon = child.icon;
-                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={() => { if (item.to === "/dashboard/attendance") setAttendanceOpen(false); closeOnMobile(); }}><ChildIcon size={15} /> {child.label}</Link>;
+                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={closeOnMobile}><img className="cms-nav-3d-icon cms-nav-3d-icon-sub" src={child.icon} alt="" aria-hidden="true" /> {child.label}</Link>;
                           })
                         : null}
                     </div>
                   );
                 }
-                return <Link key={item.to} to={item.to} className={`cms-nav-link ${active ? "is-active" : ""}`} onClick={closeOnMobile}><Icon size={17} /><span className="cms-nav-label">{item.to === "/dashboard/board-academic-year" ? <>Board &amp; Academic Year<br />Management</> : item.label}</span></Link>;
+                return <Link key={item.to} to={item.to} className={`cms-nav-link ${active ? "is-active" : ""}`} onClick={() => { setAttendanceOpen(false); closeOnMobile(); }}><img className="cms-nav-3d-icon" src={item.icon} alt="" aria-hidden="true" /><span className="cms-nav-label">{item.to === "/dashboard/board-academic-year" ? <>Board &amp; Academic Year<br />Management</> : item.label}</span></Link>;
               })}
             </div>
           ))}

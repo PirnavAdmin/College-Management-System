@@ -39,6 +39,11 @@ const pick = (x, ...keys) =>
   keys
     .map((key) => x?.[key])
     .find((value) => value !== undefined && value !== null && value !== "");
+const isActiveRecord = (record) => {
+  const status = pick(record, "isActive", "IsActive", "active", "Active", "status", "Status");
+  if (typeof status === "string") return status.toLowerCase() === "active" || status.toLowerCase() === "true";
+  return status !== false && status !== 0;
+};
 const timetableWorkflowStatus = (source) => {
   const entries = Array.isArray(source) ? source : [source];
   const statuses = entries.map((entry) => String(pick(entry, "status", "Status", "timetableStatus", "TimetableStatus") ?? "").toLowerCase());
@@ -134,10 +139,18 @@ const boardMappedOptions = (options, boards, boardId, idKeys, nameKeys) => {
   if (direct.length) return direct;
   const board = boards.find((option) => String(option.id) === String(boardId))?.raw;
   if (!board) return [];
-  const ids = new Set(idKeys.flatMap((key) => valuesOf(board[key])).map(String));
-  if (ids.size) return options.filter((option) => ids.has(String(option.id)));
-  const names = new Set(nameKeys.flatMap((key) => valuesOf(board[key])).map((name) => String(name).toLowerCase()));
-  return names.size ? options.filter((option) => names.has(option.name.toLowerCase())) : [];
+  const ids = idKeys.flatMap((key) => valuesOf(board[key])).map(String).filter(Boolean);
+  const names = nameKeys.flatMap((key) => valuesOf(board[key])).map(String).filter(Boolean);
+  if (ids.length) {
+    const optionsById = new Map(options.map((option) => [String(option.id), option]));
+    return ids.map((id, index) => optionsById.get(id) ?? {
+      id,
+      name: names[index] ?? "",
+      raw: board,
+    }).filter((option) => option.name);
+  }
+  const normalizedNames = new Set(names.map((name) => name.toLowerCase()));
+  return normalizedNames.size ? options.filter((option) => normalizedNames.has(option.name.toLowerCase())) : [];
 };
 const structureId = (x) => pick(x, "id", "Id", "periodStructureId");
 const timetableId = (x) => pick(x, "id", "Id", "timetableId");
@@ -258,6 +271,7 @@ function useLookups(initial = {}) {
     allLevels: [],
     groups: [],
     programs: [],
+    programsLoading: false,
     sections: [],
     sectionsLoading: false,
     sectionsError: false,
@@ -267,8 +281,8 @@ function useLookups(initial = {}) {
   });
   useEffect(() => {
     Promise.allSettled([
-      apiClient.get(apiEndpoints.boards.list),
-      apiClient.get(apiEndpoints.academicYears.list),
+      apiClient.get(apiEndpoints.boards.getAll, { params: { Status: true } }),
+      apiClient.get(apiEndpoints.academicYears.getAll, { params: { Status: true } }),
       apiClient.get(apiEndpoints.boards.academicLevels),
       apiClient.get(apiEndpoints.rooms.getAll),
     ]).then((r) =>
@@ -276,7 +290,7 @@ function useLookups(initial = {}) {
         ...current,
         boards:
           r[0].status === "fulfilled"
-            ? optionize(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"])
+            ? optionize(r[0].value.data, ["boardId", "id", "Id"], ["boardName", "name", "Name"]).filter((board) => isActiveRecord(board.raw))
             : [],
         years:
           r[1].status === "fulfilled"
@@ -284,7 +298,7 @@ function useLookups(initial = {}) {
                 r[1].value.data,
                 ["academicYearId", "id", "Id"],
                 ["academicYearName", "yearName", "name", "Name"],
-              )
+              ).filter((year) => isActiveRecord(year.raw))
             : [],
         allYears:
           r[1].status === "fulfilled"
@@ -292,7 +306,7 @@ function useLookups(initial = {}) {
                 r[1].value.data,
                 ["academicYearId", "id", "Id"],
                 ["academicYearName", "yearName", "name", "Name"],
-              )
+              ).filter((year) => isActiveRecord(year.raw))
             : [],
         levels:
           r[2].status === "fulfilled"
@@ -407,6 +421,8 @@ function useLookups(initial = {}) {
     const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
     setData((current) => ({
       ...current,
+      programs: [],
+      programsLoading: true,
       sections: value.programId ? current.sections : [],
       sectionsLoading: Boolean(value.programId),
       sectionsError: false,
@@ -447,6 +463,7 @@ function useLookups(initial = {}) {
             : [];
           return sameOptions(current.programs, nextPrograms) ? current.programs : nextPrograms;
         })(),
+        programsLoading: false,
         sections:
           r[1].status === "fulfilled"
             ? optionize(sectionsForProgramme(r[1].value.data, selectedProgram, value.groupId, value.academicLevelId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
@@ -459,7 +476,7 @@ function useLookups(initial = {}) {
                 r[2].value.data,
                 ["subjectId", "SubjectId", "subjectID", "SubjectID", "subjectDefinitionId", "SubjectDefinitionId", "id", "Id"],
                 ["subjectName", "SubjectName", "name", "Name"],
-              )
+              ).filter((year) => isActiveRecord(year.raw))
             : [],
         periods:
           r[3].status === "fulfilled"
@@ -519,10 +536,10 @@ function useLookups(initial = {}) {
 }
 function Context({ state, section = true, compact = false }) {
   const { value, data, change } = state;
-  const select = (label, key, values, disabled) => (
+  const select = (label, key, values, disabled, emptyLabel = `Select ${label}`) => (
     <Field label={label}>
       <select value={value[key]} onChange={change(key)} disabled={disabled}>
-        <option value="">Select {label}</option>
+        <option value="">{emptyLabel}</option>
         {values.map((entry) => (
           <option key={entry.id} value={entry.id}>
             {entry.name}
@@ -537,7 +554,13 @@ function Context({ state, section = true, compact = false }) {
       {select("Academic Year", "academicYearId", data.years, !value.boardId)}
       {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
       {select("Group", "groupId", data.groups, !value.academicLevelId)}
-      {select("Programme", "programId", data.programs, !value.groupId)}
+      {select(
+        "Program",
+        "programId",
+        data.programs,
+        !value.groupId || data.programsLoading,
+        data.programsLoading ? "Loading programs..." : value.groupId && !data.programs.length ? "No programs available for this group" : undefined,
+      )}
       {section && select("Section", "sectionId", data.sections, !value.programId)}
     </div>
   );
@@ -547,7 +570,7 @@ function ProgrammeSections({ data, onRetry }) {
     <section className="ttm-programme-sections" aria-live="polite">
       <header>
         <b>Sections for this Academic Level</b>
-        <span>Sections are automatically loaded for the selected group and programme.</span>
+        <span>Sections are automatically loaded for the selected group and program.</span>
       </header>
       {data.sectionsLoading ? <p>Loading sections...</p> : null}
       {data.sectionsError ? (
@@ -556,7 +579,7 @@ function ProgrammeSections({ data, onRetry }) {
           <Btn className="cms-btn cms-btn-ghost" onClick={onRetry}>Retry sections</Btn>
         </div>
       ) : null}
-      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for the selected group and programme.</p> : null}
+      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for the selected group and program.</p> : null}
       {!data.sectionsLoading && data.sections.length ? (
         <div className="ttm-section-chips">
           {data.sections.map((section) => <span key={section.id}>{section.name}</span>)}
@@ -617,10 +640,10 @@ function StructureForm({ item, close, saved }) {
           customName: breakItem.customName || null,
         })),
       };
-      structureId(item)
+      const response = structureId(item)
         ? await apiClient.put(apiEndpoints.periodStructures.update(structureId(item)), payload)
         : await apiClient.post(apiEndpoints.periodStructures.create, payload);
-      saved("Timetable slot saved.");
+      saved(response.data?.data ?? response.data ?? item);
     } catch (e) {
       setError(getApiErrorMessage(e));
     } finally {
@@ -802,8 +825,8 @@ function StructurePreview({ item, close, notify }) {
   );
 }
 
-function AssignStructureForm({ item, close, assigned, notify }) {
-  const state = useLookups();
+function AssignStructureForm({ item, close, assigned, notify, initial }) {
+  const state = useLookups(initial);
   const { value, data, change } = state;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -861,7 +884,7 @@ function AssignStructureForm({ item, close, assigned, notify }) {
     </Modal>
   );
 }
-function Structures({ notify }) {
+function Structures({ notify, initial }) {
   const [items, setItems] = useState([]);
   const [modal, setModal] = useState(null);
   const [item, setItem] = useState(null);
@@ -902,7 +925,7 @@ function Structures({ notify }) {
       action={
         <div className="ttm-page-actions">
           <Btn onClick={() => { setItem(null); setModal("form"); }}>+ Create Structure</Btn>
-          <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate">Next: Generate Timetable →</Link>
+          <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable" state={{ timetableContext: initial }}>Back to Timetable</Link>
         </div>
       }
     >
@@ -912,7 +935,7 @@ function Structures({ notify }) {
         ) : !items.length ? (
           <p className="ttm-empty">No period structures are available.</p>
         ) : (
-          <table className="cms-table ttm-table ttm-period-structures-table">
+          <table className="ttm-period-structures-table" aria-label="Period Structures">
             <colgroup>
               <col className="ttm-structure-name-column" />
               <col className="ttm-periods-column" />
@@ -920,30 +943,19 @@ function Structures({ notify }) {
               <col className="ttm-status-column" />
               <col className="ttm-actions-column" />
             </colgroup>
-            <thead>
-              <tr>
-                <th>Structure Name</th>
-                <th>Periods</th>
-                <th>Duration</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => (
-                <tr key={structureId(row)}>
-                  <td>
-                    <b>{pick(row, "name")}</b>
-                  </td>
-                  <td>{pick(row, "totalTeachingPeriods")}</td>
-                  <td>{pick(row, "periodDurationMinutes")} min</td>
-                  <td className="ttm-status-cell">
-                    <span className="ttm-badge">
-                      {pick(row, "isActive") ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="ttm-actions-cell">
-                    <div className="ttm-actions">
+            <thead><tr>
+              <th>Structure Name</th><th>Periods</th><th>Duration</th><th>Status</th><th>Actions</th>
+            </tr></thead>
+            <tbody>{items.map((row) => (
+              <tr key={structureId(row)}>
+                <td><b>{pick(row, "name")}</b></td>
+                <td>{pick(row, "totalTeachingPeriods")}</td>
+                <td>{pick(row, "periodDurationMinutes")} min</td>
+                <td className="ttm-status-cell">
+                  <span className="ttm-badge">{pick(row, "isActive") ? "Active" : "Inactive"}</span>
+                </td>
+                <td className="ttm-actions-cell">
+                  <div className="ttm-actions">
                     <button
                       className="ttm-action-edit"
                       aria-label="Edit"
@@ -995,10 +1007,9 @@ function Structures({ notify }) {
                       <Trash2 size={16} aria-hidden="true" />
                     </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+                </td>
+              </tr>
+            ))}</tbody>
           </table>
         )}
       </section>
@@ -1006,10 +1017,17 @@ function Structures({ notify }) {
         <StructureForm
           item={item}
           close={() => setModal(null)}
-          saved={() => {
+          saved={(savedStructure) => {
+            const isNewStructure = !structureId(item);
+            load();
+            if (isNewStructure && structureId(savedStructure)) {
+              setItem(savedStructure);
+              setModal("assign");
+              notify("Period structure saved. Assign it to continue.");
+              return;
+            }
             setModal(null);
             notify("Period structure saved.");
-            load();
           }}
         />
       )}
@@ -1019,10 +1037,13 @@ function Structures({ notify }) {
           item={item}
           close={() => setModal(null)}
           notify={notify}
+          initial={initial}
           assigned={(context) => {
             setModal(null);
             notify("Period structure assigned.");
-            navigate("/dashboard/timetable/generate", { state: { timetableContext: context } });
+            navigate("/dashboard/timetable/generate", {
+              state: { timetableContext: { ...context, periodStructureId: structureId(item) } },
+            });
           }}
         />
       )}
@@ -1048,7 +1069,6 @@ function Generate({ goDraft, notify, initial }) {
   );
   const [capacityError, setCapacityError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [exporting, setExporting] = useState(false);
   // The periods endpoint can include break slots. Capacity is based on actual
   // teaching periods, not every timeline entry returned by the API.
   const periodsPerDay = data.periods.filter((period) => !isBreakPeriod(period)).length;
@@ -1072,37 +1092,6 @@ function Generate({ goDraft, notify, initial }) {
     );
     setCapacityError("");
   };
-  const exportGroupTimetable = async () => {
-    if (exporting) return;
-    const ids = [value.boardId, value.academicYearId, value.academicLevelId, value.groupId];
-    if (!ids.every((id) => Number.isInteger(Number(id)) && Number(id) > 0)) {
-      notify("Please select Board, Academic Level, Academic Year and Group before exporting.");
-      return;
-    }
-    setExporting(true);
-    try {
-      const response = await apiClient.get(apiEndpoints.timetable.exportGroupExcel, {
-        params: {
-          boardId: Number(value.boardId),
-          academicLevelId: Number(value.academicLevelId),
-          academicYearId: Number(value.academicYearId),
-          groupId: Number(value.groupId),
-          "api-version": "1.0",
-        },
-        responseType: "blob",
-      });
-      const groupName = data.groups.find((item) => String(item.id) === String(value.groupId))?.name || "Group";
-      const academicYear = data.years.find((item) => String(item.id) === String(value.academicYearId))?.name || "Academic_Year";
-      downloadResponseFile(response, `Timetable_${filePart(groupName, "Group")}_${filePart(academicYear, "Academic_Year")}.xlsx`);
-      notify("Group timetable exported successfully.");
-    } catch (error) {
-      notify(error?.response?.status === 404
-        ? "No timetable found for the selected group."
-        : await exportErrorMessage(error));
-    } finally {
-      setExporting(false);
-    }
-  };
   const generate = async () => {
     if (busy) return;
     const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
@@ -1111,11 +1100,11 @@ function Generate({ goDraft, notify, initial }) {
       .map((section) => Number(pick(section.raw, "sectionId", "SectionId", "id", "Id", section.id)))
       .filter((sectionId) => Number.isInteger(sectionId) && sectionId > 0);
     if (!Number.isInteger(programId) || programId <= 0) {
-      notify("Please select a valid programme.");
+      notify("Please select a valid program.");
       return;
     }
     if (!sectionIds.length) {
-      notify("No sections found for the selected group and programme. Create sections in Section Management first.");
+      notify("No sections found for the selected group and program. Create sections in Section Management first.");
       return;
     }
     if (totalRequiredPeriods > weeklyCapacity) {
@@ -1180,7 +1169,7 @@ function Generate({ goDraft, notify, initial }) {
     <Page
       title="Generate Timetable"
       subtitle="Generate a conflict-free theory timetable in DRAFT state."
-      action={<Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup">← Back to Period Structures</Link>}
+      action={<div className="ttm-page-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup" state={{ timetableContext: value }}>Create Period Structure</Link></div>}
     >
       <section className="ttm-card">
         <Context state={state} section={false} />
@@ -1232,9 +1221,6 @@ function Generate({ goDraft, notify, initial }) {
           </div>
         ) : null}
         <footer className={`ttm-screen-actions${value.programId ? " ttm-generation-footer" : ""}`}>
-          <Btn className="cms-btn cms-btn-ghost" disabled={exporting} onClick={exportGroupTimetable} title="Export Excel">
-            <Download size={15} aria-hidden="true" /> {exporting ? "Exporting…" : "Export Excel"}
-          </Btn>
           <Btn disabled={!ready || busy} onClick={generate}>
             {busy ? "Generating…" : "Generate Timetable"}
           </Btn>
@@ -1263,7 +1249,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
       })
       .then((r) =>
         setFaculty(optionize(r.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])),
-      )
+              ).filter((year) => isActiveRecord(year.raw))
       .catch((e) => notify(getApiErrorMessage(e)));
   }, [context, form.subjectId, notify]);
   const set = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
@@ -1381,8 +1367,9 @@ function Draft({ initial, notify }) {
   const [validation, setValidation] = useState(null);
   const [validationOpen, setValidationOpen] = useState(false);
   const [studentChoices, setStudentChoices] = useState([]);
-  const [studentViewOpen, setStudentViewOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [staffChoices, setStaffChoices] = useState([]);
+  const [selectedStaffId, setSelectedStaffId] = useState("");
   const [publishedFilter, setPublishedFilter] = useState(
     initial?.isPublished === undefined ? "" : String(Boolean(initial.isPublished)),
   );
@@ -1454,6 +1441,41 @@ function Draft({ initial, notify }) {
   }, [value.sectionId]);
   const published = workflowStatus === "published";
   const approved = workflowStatus === "approved";
+  useEffect(() => {
+    if (!published || !value.sectionId) {
+      setStudentChoices([]);
+      setStaffChoices([]);
+      setSelectedStudentId("");
+      setSelectedStaffId("");
+      return undefined;
+    }
+    let cancelled = false;
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.faculty.getAll, {
+        params: { StaffType: "Teaching", Status: "Active", PageSize: 100 },
+      }),
+      apiClient.get(apiEndpoints.students.getBySection(value.sectionId)),
+    ]).then(([staffResult, studentsResult]) => {
+      if (cancelled) return;
+      setStaffChoices(staffResult.status === "fulfilled"
+        ? optionize(
+            staffResult.value.data,
+            ["facultyId", "FacultyId", "staffId", "StaffId", "id", "Id"],
+            ["facultyName", "FacultyName", "staffName", "StaffName", "fullName", "FullName", "name", "Name"],
+          ).filter((entry) => isActiveRecord(entry.raw))
+        : []);
+      setStudentChoices(studentsResult.status === "fulfilled"
+        ? optionize(
+            studentsResult.value.data,
+            ["studentId", "StudentId", "id", "Id"],
+            ["studentName", "StudentName", "fullName", "FullName", "name", "Name"],
+          )
+        : []);
+      setSelectedStudentId("");
+      setSelectedStaffId("");
+    });
+    return () => { cancelled = true; };
+  }, [published, value.sectionId]);
   const find = (day, periodId) =>
     slots.find(
       (slot) =>
@@ -1498,7 +1520,10 @@ function Draft({ initial, notify }) {
       // Publishing changes which server-side status collection owns the
       // slots. The successful publish handler switches the status filter,
       // and that filter change performs the correctly scoped reload.
-      if (actionName !== "publish") load();
+      // Approval is confirmed locally before the section endpoint has
+      // necessarily reflected its new status. Avoid replacing that confirmed
+      // state with a stale draft response, which would disable Publish again.
+      if (actionName !== "publish" && actionName !== "approve") load();
       return true;
     } catch (e) {
       notify(getApiErrorMessage(e));
@@ -1538,52 +1563,26 @@ function Draft({ initial, notify }) {
       setActiveAction("");
     }
   };
-  const viewPublished = async (kind, studentId = "") => {
-    if (actionBusy) return;
-    if (kind === "student" && !studentId) {
-      setActionBusy(true);
-      setActiveAction("student");
-      try {
-        const response = await apiClient.get(apiEndpoints.students.getBySection(value.sectionId));
-        const students = optionize(
-          response.data,
-          ["studentId", "StudentId", "id", "Id"],
-          ["studentName", "StudentName", "fullName", "FullName", "name", "Name"],
-        );
-        if (!students.length) {
-          notify("No students are available in the selected section.");
-          return;
-        }
-        setStudentChoices(students);
-        setSelectedStudentId(students[0].id);
-        setStudentViewOpen(true);
-      } catch (error) {
-        notify(getApiErrorMessage(error));
-      } finally {
-        setActionBusy(false);
-        setActiveAction("");
-      }
-      return;
-    }
-    const staffId = pick(slots[0], "facultyId", "FacultyId", "staffId", "StaffId")
-      ?? pick(JSON.parse(localStorage.getItem("user") || "{}"), "id", "userId");
-    if (kind === "faculty" && !staffId) {
-      notify("No faculty assignment is available for this timetable.");
-      return;
-    }
+  const viewPublished = async (kind, selectedId = "") => {
+    if (actionBusy || !selectedId) return;
     setActionBusy(true);
     setActiveAction(kind);
     try {
       const endpoint = kind === "student"
-        ? apiEndpoints.timetable.getByStudent(studentId)
-        : apiEndpoints.timetable.getByFaculty(staffId);
+        ? apiEndpoints.timetable.getByStudent(selectedId)
+        : apiEndpoints.timetable.getByFaculty(selectedId);
       const params = kind === "student"
         ? { academicYearId: value.academicYearId }
         : { academicYearId: value.academicYearId };
       const response = await apiClient.get(endpoint, { params });
       const viewed = list(response.data);
-      if (viewed.length) setSlots(viewed);
-      notify(`${kind === "student" ? "Student" : "Faculty"} timetable loaded.`);
+      if (viewed.length) {
+        setSlots(viewed);
+        notify(`${kind === "student" ? "Student" : "Faculty"} timetable loaded.`);
+      } else {
+        setSlots([]);
+        notify("No timetable periods found.");
+      }
     } catch (e) {
       notify(getApiErrorMessage(e));
     } finally {
@@ -1595,7 +1594,7 @@ function Draft({ initial, notify }) {
   const exportSectionPdf = async () => {
     if (exportBusy) return;
     if (![value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId, value.sectionId].every(validId)) {
-      notify("Please select Board, Academic Year, Academic Level, Group, Programme and Section before exporting.");
+      notify("Please select Board, Academic Year, Academic Level, Group, Program and Section before exporting.");
       return;
     }
     setExportBusy("section");
@@ -1654,8 +1653,8 @@ function Draft({ initial, notify }) {
       title="Generated Draft Grid"
       subtitle="Review, validate, approve and publish the section timetable."
       action={
-        <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/generate" state={{ timetableContext: value }}>
-          Back to Generate
+        <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable">
+          Back to Timetable
         </Link>
       }
     >
@@ -1693,23 +1692,23 @@ function Draft({ initial, notify }) {
                     </button>
                   </div> : null}
                 </div>
-                <Btn className="cms-btn cms-btn-ghost ttm-icon-action" disabled={activeAction === "copy"} onClick={() => setCopying(true)} title="Copy Timetable" aria-label="Copy Timetable">
+                {!published && <Btn className="cms-btn cms-btn-ghost ttm-icon-action" disabled={activeAction === "copy"} onClick={() => setCopying(true)} title="Copy Timetable" aria-label="Copy Timetable">
                   <Copy size={16} aria-hidden="true" />
-                </Btn>
-                <Btn
+                </Btn>}
+                {!published && <Btn
                   className="cms-btn cms-btn-ghost"
                   disabled={workflowStatus !== "draft" || activeAction === "validate"}
                   onClick={() => action(apiEndpoints.timetable.validateSection(value.sectionId))}
                 >
                   {activeAction === "validate" ? "Validating…" : "Validate"}
-                </Btn>
-                <Btn disabled={(workflowStatus !== "validated" && !validation?.isValid) || published || activeAction === "approve" || approved} onClick={async () => {
+                </Btn>}
+                {!published && <Btn disabled={(workflowStatus !== "validated" && !validation?.isValid) || activeAction === "approve" || approved} onClick={async () => {
                   const ok = await action(apiEndpoints.timetable.approveSection(value.sectionId));
                   if (ok) setWorkflowStatus("approved");
                 }}>
                   {activeAction === "approve" ? "Approving…" : "Approve"}
-                </Btn>
-                <Btn className={published ? "cms-btn ttm-published-action" : undefined} disabled={activeAction === "publish" || !approved || published}
+                </Btn>}
+                {!published && <Btn disabled={activeAction === "publish" || !approved}
                   onClick={async () => {
                     const ok = await action(apiEndpoints.timetable.publishSection(value.sectionId), "patch", { isPublished: true });
                     if (ok) {
@@ -1718,12 +1717,42 @@ function Draft({ initial, notify }) {
                     }
                   }}
                 >
-                  {activeAction === "publish" ? "Publishing…" : published ? "Published" : "Publish"}
-                </Btn>
+                  {activeAction === "publish" ? "Publishing…" : "Publish"}
+                </Btn>}
                 {published && (
                   <>
-                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "faculty"} onClick={() => viewPublished("faculty")}>Staff View</Btn>
-                    <Btn className="cms-btn cms-btn-ghost" disabled={activeAction === "student"} onClick={() => viewPublished("student")}>Student View</Btn>
+                    <label className="ttm-inline-filter ttm-staff-select">
+                      <select
+                        aria-label="Select staff"
+                        value={selectedStaffId}
+                        disabled={actionBusy || !staffChoices.length}
+                        onChange={(event) => {
+                          const staffId = event.target.value;
+                          setSelectedStaffId(staffId);
+                          if (staffId) viewPublished("faculty", staffId);
+                          else load();
+                        }}
+                      >
+                        <option value="">Select staff</option>
+                        {staffChoices.map((staff) => <option key={staff.id} value={staff.id}>{staff.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="ttm-inline-filter ttm-person-select">
+                      <select
+                        aria-label="Select student"
+                        value={selectedStudentId}
+                        disabled={actionBusy || !studentChoices.length}
+                        onChange={(event) => {
+                          const studentId = event.target.value;
+                          setSelectedStudentId(studentId);
+                          if (studentId) viewPublished("student", studentId);
+                          else load();
+                        }}
+                      >
+                        <option value="">Select student</option>
+                        {studentChoices.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
+                      </select>
+                    </label>
                   </>
                 )}
               </div>
@@ -1768,7 +1797,7 @@ function Draft({ initial, notify }) {
                           <td className="slot" key={period.id}>
                             <button
                               onClick={() => openSlotEditor(slot)}
-                              disabled={!slot || (actionBusy && activeAction === "slot")}
+                              disabled={!slot || published || (actionBusy && activeAction === "slot")}
                             >
                               {slot ? (
                                 <>
@@ -1825,27 +1854,6 @@ function Draft({ initial, notify }) {
           }}
         />
       )}
-      {studentViewOpen && (
-        <Modal title="Student View" onClose={() => setStudentViewOpen(false)}>
-          <div className="ttm-modal-body">
-            <Field label="Student">
-              <select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}>
-                {studentChoices.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
-              </select>
-            </Field>
-            <footer>
-              <Btn className="cms-btn cms-btn-ghost" onClick={() => setStudentViewOpen(false)}>Cancel</Btn>
-              <Btn disabled={!selectedStudentId || activeAction === "student"} onClick={async () => {
-                const studentId = selectedStudentId;
-                setStudentViewOpen(false);
-                await viewPublished("student", studentId);
-              }}>
-                View Timetable
-              </Btn>
-            </footer>
-          </div>
-        </Modal>
-      )}
       {copying && (
         <Modal title="Copy Timetable" onClose={() => setCopying(false)}>
           <div className="ttm-modal-body">
@@ -1876,6 +1884,59 @@ function Draft({ initial, notify }) {
     </Page>
   );
 }
+function MainTimetable({ notify }) {
+  const location = useLocation();
+  const state = useLookups(location.state?.timetableContext);
+  const { value } = state;
+  const navigate = useNavigate();
+  const [opening, setOpening] = useState(false);
+  const completeContext = [value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId, value.sectionId].every(Boolean);
+  const openGenerated = async () => {
+    if (!completeContext || opening) {
+      notify("Select Board, Academic Year, Academic Level, Group, Program and Section first.");
+      return;
+    }
+    setOpening(true);
+    try {
+      const response = await apiClient.get(apiEndpoints.timetable.getAll, { params: { pageNumber: 1, pageSize: 100 } });
+      const matches = list(response.data).filter((entry) =>
+        String(pick(entry, "boardId", "BoardId")) === String(value.boardId)
+        && String(pick(entry, "academicYearId", "AcademicYearId")) === String(value.academicYearId)
+        && String(pick(entry, "academicLevelId", "AcademicLevelId")) === String(value.academicLevelId)
+        && String(pick(entry, "groupId", "GroupId")) === String(value.groupId)
+        && String(pick(entry, "programId", "ProgramId", "programmeId", "ProgrammeId")) === String(value.programId)
+        && String(pick(entry, "sectionId", "SectionId")) === String(value.sectionId),
+      );
+      const latest = [...matches].sort((left, right) => {
+        const date = (entry) => Date.parse(pick(entry, "generatedAt", "GeneratedAt", "createdAt", "CreatedAt", "updatedAt", "UpdatedAt", "date", "Date") ?? "") || 0;
+        return date(right) - date(left) || Number(timetableId(right) ?? 0) - Number(timetableId(left) ?? 0);
+      })[0];
+      if (!latest) {
+        notify("No generated timetable was found for the selected context.");
+        return;
+      }
+      navigate("/dashboard/timetable/draft", { state: { timetableContext: { ...value, isPublished: pick(latest, "isPublished", "IsPublished"), workingDays: latest.workingDays ?? latest.WorkingDays } } });
+    } catch (error) {
+      notify(getApiErrorMessage(error));
+    } finally {
+      setOpening(false);
+    }
+  };
+  return (
+    <Page title="Timetable" subtitle="Choose a timetable context to create or view a generated timetable.">
+      <section className="ttm-card">
+        <div className="ttm-main-row">
+          <Context state={state} />
+          <footer className="ttm-screen-actions ttm-main-actions">
+            <Btn disabled={!completeContext} onClick={() => navigate("/dashboard/timetable/setup", { state: { timetableContext: value } })}>Create Timetable</Btn>
+            <Btn className="cms-btn cms-btn-ghost" disabled={!completeContext || opening} onClick={openGenerated}>{opening ? "Opening…" : "Generated Timetable"}</Btn>
+          </footer>
+        </div>
+      </section>
+    </Page>
+  );
+}
+
 function LatestDraft({ notify }) {
   const [state, setState] = useState({ loading: true, context: null });
   useEffect(() => {
@@ -1933,7 +1994,7 @@ export default function TimetablePage({ screen = "latest" }) {
   const [toast, setToast] = useState("");
   const view =
     screen === "latest" ? (
-      <LatestDraft notify={setToast} />
+      <MainTimetable notify={setToast} />
     ) : screen === "draft" ? (
       <Draft initial={location.state?.timetableContext} notify={setToast} />
     ) : screen === "generate" ? (
@@ -1945,7 +2006,7 @@ export default function TimetablePage({ screen = "latest" }) {
         }
       />
     ) : (
-      <Structures notify={setToast} />
+      <Structures notify={setToast} initial={location.state?.timetableContext} />
     );
   return (
     <div className="timetable-module">

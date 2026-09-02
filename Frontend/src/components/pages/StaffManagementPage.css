@@ -82,6 +82,11 @@
 .staff-search-control > svg { position: absolute; z-index: 2; left: 16px; width: 18px; height: 18px; color: var(--cms-muted); pointer-events: none; }
 .cms-field .staff-search-control input { width: 100%; min-height: 44px; padding: 0 48px 0 48px; border: 1px solid var(--cms-border); border-radius: 9px; background: var(--cms-surface); color: var(--cms-text); font: inherit; outline: none; }
 .staff-search-control input:focus { border-color: var(--cms-primary); box-shadow: 0 0 0 3px var(--cms-primary-soft); }
+.staff-dropdown-toggle { position: absolute; z-index: 3; right: 10px; display: grid; width: 32px; height: 32px; padding: 0; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--cms-text); cursor: pointer; }
+.staff-dropdown-toggle:hover { background: var(--cms-primary-soft); color: var(--cms-primary); }
+.staff-dropdown-toggle svg { transition: transform 160ms ease; }
+.staff-dropdown-toggle.is-open svg { transform: rotate(180deg); }
+.staff-dropdown-toggle:disabled { cursor: not-allowed; opacity: 0.55; }
 .staff-change-option { position: absolute; right: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: var(--cms-primary-soft); color: var(--cms-primary); font-weight: 700; cursor: pointer; }
 .staff-search-options { position: absolute; z-index: 20; top: 68px; right: 0; left: 0; display: grid; max-height: 210px; overflow-y: auto; border: 1px solid var(--cms-border); border-radius: 10px; background: #fff; color: #182238; box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16); }
 .staff-search-options button { padding: 10px 12px; border: 0; border-bottom: 1px solid var(--cms-border); background: transparent; color: var(--cms-text); font: inherit; text-align: left; cursor: pointer; }
@@ -218,6 +223,15 @@
 .faculty-subject-list.allocated .cms-btn { border-color: var(--cms-border); color: var(--cms-red); }
 .faculty-subject-list.available .cms-btn:hover { border-color: var(--cms-primary-border); background: var(--cms-primary-soft); }
 .faculty-subject-list.allocated .cms-btn:hover { border-color: #fecaca; background: #fef2f2; }
+.staff-workload-summary {
+  margin: -2px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--cms-subtle);
+  color: var(--cms-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
 
 /* The available-subject selector uses the same neutral form-control styling as the rest of the CMS. */
 .faculty-subject-list.available select {

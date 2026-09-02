@@ -1,22 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
-  ChevronDown,
-  Download,
   Edit3,
   Eye,
-  FileSpreadsheet,
-  FileText,
   Plus,
   Save,
   Search,
   Trash2,
   X,
 } from "lucide-react";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
@@ -32,8 +25,6 @@ const ACADEMIC_YEAR_API = {
   delete: (id) => `/api/v1/academic-years/${id}`,
   activate: (id) => `/api/v1/academic-years/${id}/activate`,
   deactivate: (id) => `/api/v1/academic-years/${id}/deactivate`,
-  exportCsv: "/api/v1/academic-years/export/csv",
-  exportExcel: "/api/v1/academic-years/export/excel",
 };
 const BOARD_API = {
   list: "/api/v1/boards",
@@ -41,9 +32,6 @@ const BOARD_API = {
   byId: (id) => `/api/v1/boards/${id}`,
   status: (id) => `/api/v1/boards/${id}/status`,
   summary: "/api/v1/boards/summary",
-  exportCsv: "/api/v1/boards/export/csv",
-  exportExcel: "/api/v1/boards/export/excel",
-  exportPdf: "/api/v1/boards/export/pdf",
   countries: "/api/v1/boards/countries",
   formData: "/api/v1/boards/form-data",
   states: (countryId) => `/api/v1/boards/states/${countryId}`,
@@ -423,182 +411,6 @@ const academicYearPayload = (draft) => {
   return payload;
 };
 
-function filenameFromDisposition(disposition, fallback) {
-  const utfMatch = disposition?.match(/filename\*=UTF-8''([^;]+)/i);
-  const plainMatch = disposition?.match(/filename="?([^";]+)"?/i);
-  const value = utfMatch?.[1] ?? plainMatch?.[1];
-  if (!value) return fallback;
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function createPdfReport({ title, columns, rows, filename, orientation = "landscape" }) {
-  const document = new jsPDF({ orientation, unit: "pt", format: "a4" });
-  document.setFont("helvetica", "bold");
-  document.setFontSize(16);
-  document.text("Pirnav College", 36, 36);
-  document.setFontSize(13);
-  document.text(title, 36, 57);
-  document.setFont("helvetica", "normal");
-  document.setFontSize(8.5);
-  document.setTextColor(90, 105, 130);
-  document.text(`Generated On: ${new Date().toLocaleString()}`, 36, 73);
-  autoTable(document, {
-    head: [columns],
-    body: rows,
-    startY: 86,
-    margin: { right: 28, bottom: 28, left: 28 },
-    styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak", valign: "middle" },
-    headStyles: { fillColor: [37, 86, 229], textColor: 255, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [247, 249, 252] },
-  });
-  document.save(filename);
-}
-
-function ExportDropdown({ onPdf, onExcel, disabled = false }) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ top: 0, left: 0 });
-  const wrapperRef = useRef(null);
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
-
-  const toggleMenu = () => {
-    setOpen((current) => {
-      if (!current) {
-        const rect = triggerRef.current?.getBoundingClientRect();
-        if (rect) {
-          setPosition({
-            top: rect.bottom + 6,
-            left: Math.max(8, Math.min(window.innerWidth - 178, rect.right - 170)),
-          });
-        }
-      }
-      return !current;
-    });
-  };
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const closeOnOutside = (event) => {
-      if (
-        !wrapperRef.current?.contains(event.target) &&
-        !menuRef.current?.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    };
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    const closeOnViewportChange = () => setOpen(false);
-    document.addEventListener("mousedown", closeOnOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("resize", closeOnViewportChange);
-    window.addEventListener("scroll", closeOnViewportChange, true);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("resize", closeOnViewportChange);
-      window.removeEventListener("scroll", closeOnViewportChange, true);
-    };
-  }, [open]);
-
-  const runExport = (callback) => {
-    setOpen(false);
-    callback();
-  };
-  const menuItemStyle = {
-    display: "flex",
-    alignItems: "center",
-    gap: 9,
-    width: "100%",
-    minHeight: 36,
-    padding: "8px 10px",
-    border: 0,
-    borderRadius: 7,
-    background: "transparent",
-    color: "var(--cms-text)",
-    font: "inherit",
-    fontSize: 13,
-    fontWeight: 600,
-    textAlign: "left",
-    cursor: "pointer",
-  };
-  return (
-    <div ref={wrapperRef} style={{ position: "relative" }}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="cms-btn cms-btn-ghost"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={toggleMenu}
-      >
-        <Download size={16} /> Export <ChevronDown size={14} />
-      </button>
-      {open ? createPortal(
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label="Export options"
-          style={{
-            position: "fixed",
-            zIndex: 1000,
-            top: position.top,
-            left: position.left,
-            width: 170,
-            padding: 5,
-            border: "1px solid var(--cms-border)",
-            borderRadius: 9,
-            background: "var(--cms-surface, #fff)",
-            boxShadow: "0 12px 28px rgba(15, 23, 42, 0.16)",
-          }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            style={menuItemStyle}
-            onMouseEnter={(event) => (event.currentTarget.style.background = "var(--cms-hover, #f1f5f9)")}
-            onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
-            onClick={() => runExport(onPdf)}
-          >
-            <FileText size={16} /> Export PDF
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            style={menuItemStyle}
-            onMouseEnter={(event) => (event.currentTarget.style.background = "var(--cms-hover, #f1f5f9)")}
-            onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
-            onClick={() => runExport(onExcel)}
-          >
-            <FileSpreadsheet size={16} /> Export Excel
-          </button>
-        </div>,
-        document.body,
-      ) : null}
-    </div>
-  );
-}
-
 function AcademicYearWorkspace() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -618,7 +430,6 @@ function AcademicYearWorkspace() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
-  const [exporting, setExporting] = useState(false);
   const requestSequence = useRef(0);
 
   useEffect(() => {
@@ -796,65 +607,6 @@ function AcademicYearWorkspace() {
       setDeletingId(null);
     }
   };
-  const academicYearColumns = [
-    "Academic Year",
-    "Board Name",
-    "Start Date",
-    "End Date",
-    "Admission Start Date",
-    "Admission End Date",
-    "Status",
-  ];
-  const academicYearExportRows = () =>
-    academicYears.map((row) => [
-      row.year || "",
-      row.boardName || "",
-      fmt(row.start),
-      fmt(row.end),
-      fmt(row.admissionStart),
-      fmt(row.admissionEnd),
-      row.status || "",
-    ]);
-  const exportAcademicYearsPdf = () => {
-    if (!academicYears.length) {
-      setToast("No Academic Year records available to export.");
-      return;
-    }
-    try {
-      createPdfReport({
-        title: `Academic Year Management Report (Page ${currentPage})`,
-        columns: academicYearColumns,
-        rows: academicYearExportRows(),
-        filename: "Academic-Year-Report.pdf",
-      });
-    } catch (error) {
-      console.error("Academic Year PDF export failed", error);
-      setToast("Unable to export PDF.");
-    }
-  };
-  const exportAcademicYearsExcel = async () => {
-    if (exporting) return;
-    setExporting(true);
-    try {
-      const response = await apiClient.get(ACADEMIC_YEAR_API.exportExcel, {
-        params: {
-          search: debouncedQuery || undefined,
-          "api-version": API_VERSION,
-        },
-        responseType: "blob",
-      });
-      const filename = filenameFromDisposition(
-        response.headers?.["content-disposition"],
-        "Academic-Year-Report.xlsx",
-      );
-      downloadBlob(response.data, filename);
-    } catch (error) {
-      console.error("Academic Year Excel export failed", error);
-      setToast("Unable to export Excel.");
-    } finally {
-      setExporting(false);
-    }
-  };
   return (
     <section
       className={`ay-workspace${formOpen ? " is-form-open" : ""}${detailsOpen ? " is-details-open" : ""}`}
@@ -873,11 +625,6 @@ function AcademicYearWorkspace() {
             />
           </label>
           <div className="bay-toolbar-actions">
-            <ExportDropdown
-              onPdf={exportAcademicYearsPdf}
-              onExcel={exportAcademicYearsExcel}
-              disabled={exporting || listLoading}
-            />
             <button
               className="cms-btn cms-btn-primary"
               disabled={listLoading}
@@ -1189,12 +936,12 @@ export default function BoardAcademicYearManagementPage() {
   const [boardDetailsLoading, setBoardDetailsLoading] = useState(false);
   const [boardFormDataLoading, setBoardFormDataLoading] = useState(false);
   const [boardSaving, setBoardSaving] = useState(false);
-  const [boardExporting, setBoardExporting] = useState(false);
   const [boardDeletingId, setBoardDeletingId] = useState(null);
   const [codeValidationMessage, setCodeValidationMessage] = useState("");
   const [customBoardEntry, setCustomBoardEntry] = useState(false);
   const [openExistingBoardPicker, setOpenExistingBoardPicker] = useState(false);
   const [choosingOtherCountry, setChoosingOtherCountry] = useState(false);
+  const [otherCountryName, setOtherCountryName] = useState("");
   const [formData, setFormData] = useState({
     countries: [],
     academicPatterns: [],
@@ -1356,13 +1103,25 @@ export default function BoardAcademicYearManagementPage() {
   const handleCountryChange = async (value, keepOtherPicker = false) => {
     if (value === OTHER_COUNTRY_VALUE) {
       setChoosingOtherCountry(true);
+      setOtherCountryName("");
       setForm((current) => ({ ...current, countryId: "", stateId: "" }));
       setStates([]);
       return;
     }
     setChoosingOtherCountry(keepOtherPicker);
+    if (!keepOtherPicker) setOtherCountryName("");
     setForm((current) => ({ ...current, countryId: value, stateId: "" }));
     await loadStates(value);
+  };
+  const handleOtherCountryNameChange = async (value) => {
+    setOtherCountryName(value);
+    const matchingCountry = otherCountries.find((item) =>
+      normalizeMasterName(optionValue(item, "countryName", "CountryName")) === normalizeMasterName(value),
+    );
+    const countryId = matchingCountry ? optionValue(matchingCountry, "countryId", "CountryId") : "";
+    setForm((current) => ({ ...current, countryId, stateId: "" }));
+    if (countryId) await loadStates(countryId);
+    else setStates([]);
   };
   const handleBoardNameChange = async (value) => {
     const requestId = ++boardSelectionRequestRef.current;
@@ -1384,6 +1143,7 @@ export default function BoardAcademicYearManagementPage() {
     setCustomBoardEntry(false);
     setOpenExistingBoardPicker(false);
     setChoosingOtherCountry(false);
+    setOtherCountryName("");
     const config = NORMALIZED_DEFAULT_BOARD_CONFIG[normalizeMasterName(value)];
     if (!config) {
       setForm((current) => ({ ...current, boardName: value }));
@@ -1423,6 +1183,7 @@ export default function BoardAcademicYearManagementPage() {
     setCustomBoardEntry(false);
     setOpenExistingBoardPicker(false);
     setChoosingOtherCountry(false);
+    setOtherCountryName("");
     setSelected(null);
     setStates([]);
     setCodeValidationMessage("");
@@ -1455,6 +1216,11 @@ export default function BoardAcademicYearManagementPage() {
       normalizeMasterName(optionValue(item, "countryName", "CountryName")) === "india",
     );
     setChoosingOtherCountry(Boolean(record.countryId && String(record.countryId) !== String(optionValue(editIndia, "countryId", "CountryId"))));
+    setOtherCountryName(
+      record.countryId && String(record.countryId) !== String(optionValue(editIndia, "countryId", "CountryId"))
+        ? record.country
+        : "",
+    );
     setForm({
       boardName: record.board,
       boardCode: record.code,
@@ -1505,7 +1271,7 @@ export default function BoardAcademicYearManagementPage() {
       [!boardName, "Board Name"],
       [!boardCode, "Board Code"],
       [!form.boardType, "Board Type"],
-      [!form.countryId, "Country"],
+      [!form.countryId, choosingOtherCountry ? "Valid Country Name" : "Country"],
       [!form.stateId, "State"],
       [!form.academicLevelIds.length, "Academic Levels"],
       [!form.gradingSystemId, "Grading System"],
@@ -1519,6 +1285,7 @@ export default function BoardAcademicYearManagementPage() {
     const payload = {
       boardName,
       boardCode,
+      boardType: form.boardType.trim(),
       description: form.description.trim() || null,
       countryId: Number(form.countryId),
       stateId: form.stateId === ALL_INDIA_STATE_ID ? null : (form.stateId ? Number(form.stateId) : null),
@@ -1538,7 +1305,8 @@ export default function BoardAcademicYearManagementPage() {
         const statusOnly = selected && Object.entries(payload).every(([key, value]) => {
           if (key === "status") return true;
           const comparable = {
-            boardName: selected.board, boardCode: selected.code, description: selected.description || null,
+            boardName: selected.board, boardCode: selected.code, boardType: selected.type,
+            description: selected.description || null,
             countryId: selected.countryId, stateId: selected.stateId, academicPatternId: selected.academicPatternId,
             academicLevelIds: selected.academicLevelIds, internalAssessment: selected.internalAssessment,
             practicalExams: selected.practicalExams, boardExams: selected.boardExams,
@@ -1568,6 +1336,8 @@ export default function BoardAcademicYearManagementPage() {
       setEditingId(null);
       setForm(emptyBoardForm);
       setCustomBoardEntry(false);
+      setChoosingOtherCountry(false);
+      setOtherCountryName("");
       setSearchParams({});
       await fetchBoards();
     } catch (error) {
@@ -1581,55 +1351,6 @@ export default function BoardAcademicYearManagementPage() {
       setBoardSaving(false);
     }
   };
-  const exportBoards = async (kind) => {
-    if (boardExporting) return;
-    setBoardExporting(true);
-    try {
-      const listResponse = await apiClient.get(BOARD_API.list);
-      const normalizedQuery = debouncedQuery.toLowerCase();
-      const matchingRows = asArray(listResponse.data)
-        .map(mapBoardListItem)
-        .filter((row) => !normalizedQuery || [row.board, row.code, row.type, row.country, row.state, row.level]
-          .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)));
-      if (!matchingRows.length) {
-        setToast("No Board records available to export.");
-        return;
-      }
-      const details = await Promise.all(
-        matchingRows.map(async (row) => {
-          const response = await apiClient.get(BOARD_API.byId(row.id));
-          return mapBoardDetails(unwrapPayload(response.data));
-        }),
-      );
-      if (kind === "pdf") {
-        createPdfReport({
-          title: "Board Management Details",
-          columns: ["Board", "Field", "Value"],
-          rows: details.flatMap((board) =>
-            boardDetailEntries(board).map(([field, value]) => [board.board || "—", field, String(value)]),
-          ),
-          filename: "Board-Management-Report.pdf",
-          orientation: "portrait",
-        });
-      } else {
-        const XLSX = await import("xlsx");
-        const records = details.map((board) => Object.fromEntries(boardDetailEntries(board)));
-        const workbook = XLSX.utils.book_new();
-        const worksheet = XLSX.utils.json_to_sheet(records);
-        worksheet["!cols"] = Object.keys(records[0]).map((heading) => ({
-          wch: Math.min(45, Math.max(14, heading.length + 2)),
-        }));
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Board Details");
-        XLSX.writeFile(workbook, "Board-Management-Report.xlsx");
-      }
-    } catch (error) {
-      setToast(getApiErrorMessage(error, `Unable to export Board ${kind.toUpperCase()}.`));
-    } finally {
-      setBoardExporting(false);
-    }
-  };
-  const exportBoardsPdf = () => exportBoards("pdf");
-  const exportBoardsExcel = () => exportBoards("excel");
   const deleteBoard = async (row) => {
     if (boardDeletingId || !window.confirm(`Delete ${row.board}? This action cannot be undone.`)) return;
     setBoardDeletingId(row.id);
@@ -1719,11 +1440,6 @@ export default function BoardAcademicYearManagementPage() {
                 />
               </label>
               <div className="bay-toolbar-actions">
-                <ExportDropdown
-                  onPdf={exportBoardsPdf}
-                  onExcel={exportBoardsExcel}
-                  disabled={boardExporting}
-                />
                 <button className="cms-btn cms-btn-primary" onClick={startAdd} disabled={boardFormDataLoading}>
                   <Plus size={16} /> Add Board
                 </button>
@@ -1933,37 +1649,41 @@ export default function BoardAcademicYearManagementPage() {
                     <span>
                       Country <b>*</b>
                     </span>
-                    <select
-                      value={choosingOtherCountry ? OTHER_COUNTRY_VALUE : form.countryId}
-                      disabled={boardFormDataLoading}
-                      onChange={(event) => handleCountryChange(event.target.value)}
-                    >
-                      <option value="">Select country</option>
-                      {indiaCountry ? (
-                        <option value={optionValue(indiaCountry, "countryId", "CountryId")}>
-                          {optionValue(indiaCountry, "countryName", "CountryName")}
-                        </option>
-                      ) : null}
-                      <option value={OTHER_COUNTRY_VALUE}>Other</option>
-                    </select>
-                    {choosingOtherCountry ? (
+                    <div className={`bay-country-controls${choosingOtherCountry ? " has-other-country" : ""}`}>
                       <select
-                        className="bay-other-country-select"
-                        aria-label="Select other country"
-                        value={form.countryId}
-                        onChange={(event) => handleCountryChange(event.target.value, true)}
+                        value={choosingOtherCountry ? OTHER_COUNTRY_VALUE : form.countryId}
+                        disabled={boardFormDataLoading}
+                        onChange={(event) => handleCountryChange(event.target.value)}
                       >
-                        <option value="">Select other country</option>
-                        {!otherCountries.length ? <option disabled>No other countries configured</option> : null}
+                        <option value="">Select country</option>
+                        {indiaCountry ? (
+                          <option value={optionValue(indiaCountry, "countryId", "CountryId")}>
+                            {optionValue(indiaCountry, "countryName", "CountryName")}
+                          </option>
+                        ) : null}
+                        <option value={OTHER_COUNTRY_VALUE}>Other</option>
+                      </select>
+                      {choosingOtherCountry ? (
+                        <input
+                          className="bay-other-country-select"
+                          aria-label="Select other country"
+                          list="bay-other-country-options"
+                          placeholder="Enter country name"
+                          autoComplete="off"
+                          value={otherCountryName}
+                          onChange={(event) => handleOtherCountryNameChange(event.target.value)}
+                        />
+                      ) : null}
+                    </div>
+                    {choosingOtherCountry ? (
+                      <datalist id="bay-other-country-options">
                         {otherCountries.map((item) => (
                           <option
                             key={optionValue(item, "countryId", "CountryId")}
-                            value={optionValue(item, "countryId", "CountryId")}
-                          >
-                            {optionValue(item, "countryName", "CountryName")}
-                          </option>
+                            value={optionValue(item, "countryName", "CountryName")}
+                          />
                         ))}
-                      </select>
+                      </datalist>
                     ) : null}
                   </label>
                   <label>
@@ -2048,6 +1768,8 @@ export default function BoardAcademicYearManagementPage() {
                         setForm(emptyBoardForm);
                         setCustomBoardEntry(false);
                         setOpenExistingBoardPicker(false);
+                        setChoosingOtherCountry(false);
+                        setOtherCountryName("");
                         setEditingId(selected?.id || null);
                         setSearchParams({});
                       }}

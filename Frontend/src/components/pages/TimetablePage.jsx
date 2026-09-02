@@ -53,6 +53,12 @@ const timetableWorkflowStatus = (source) => {
   return "draft";
 };
 const filePart = (value, fallback) => String(value || fallback).trim().replace(/[^a-z0-9_-]+/gi, "_").replace(/^_+|_+$/g, "") || fallback;
+const periodTimeRange = (period) => {
+  const source = period?.raw ?? period;
+  const start = pick(source, "startTime", "StartTime", "periodStartTime", "PeriodStartTime", "fromTime", "FromTime");
+  const end = pick(source, "endTime", "EndTime", "periodEndTime", "PeriodEndTime", "toTime", "ToTime");
+  return start && end ? `${String(start).slice(0, 5)} - ${String(end).slice(0, 5)}` : "";
+};
 const responseFilename = (response, fallback) => {
   const disposition = String(response?.headers?.["content-disposition"] || "");
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
@@ -89,8 +95,6 @@ const optionize = (x, ids, labels) =>
       raw,
     }))
     .filter((item) => item.id && item.name);
-const sameOptions = (left, right) =>
-  left.length === right.length && left.every((item, index) => item.id === right[index].id && item.name === right[index].name);
 const sectionsForProgramme = (payload, program, groupId, academicLevelId) => {
   if (!program) return [];
   const programId = String(pick(program.raw, "programId", "ProgramId", "id", "Id") ?? "");
@@ -417,18 +421,41 @@ function useLookups(initial = {}) {
     data.boards,
   ]);
   useEffect(() => {
+    if (!value.groupId) {
+      setData((current) => ({ ...current, programs: [], programsLoading: false }));
+      return undefined;
+    }
+    let cancelled = false;
+    setData((current) => ({ ...current, programs: [], programsLoading: true }));
+    apiClient
+      .get(apiEndpoints.groups.programs(value.groupId))
+      .then((response) => {
+        if (cancelled) return;
+        setData((current) => ({
+          ...current,
+          programs: optionize(
+            response.data,
+            ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"],
+            ["programName", "programme", "program", "name", "Name"],
+          ),
+          programsLoading: false,
+        }));
+      })
+      .catch(() => {
+        if (!cancelled) setData((current) => ({ ...current, programs: [], programsLoading: false }));
+      });
+    return () => { cancelled = true; };
+  }, [value.groupId]);
+  useEffect(() => {
     if (!value.groupId) return;
     const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
     setData((current) => ({
       ...current,
-      programs: [],
-      programsLoading: true,
       sections: value.programId ? current.sections : [],
       sectionsLoading: Boolean(value.programId),
       sectionsError: false,
     }));
     Promise.allSettled([
-      apiClient.get(apiEndpoints.groups.programs(value.groupId)),
       value.programId && selectedProgram
         ? apiClient.get(apiEndpoints.sections.search, {
             params: {
@@ -457,30 +484,23 @@ function useLookups(initial = {}) {
     ]).then((r) =>
       setData((current) => ({
         ...current,
-        programs: (() => {
-          const nextPrograms = r[0].status === "fulfilled"
-            ? optionize(r[0].value.data, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "programme", "program", "name", "Name"])
-            : [];
-          return sameOptions(current.programs, nextPrograms) ? current.programs : nextPrograms;
-        })(),
-        programsLoading: false,
         sections:
-          r[1].status === "fulfilled"
-            ? optionize(sectionsForProgramme(r[1].value.data, selectedProgram, value.groupId, value.academicLevelId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
+          r[0].status === "fulfilled"
+            ? optionize(sectionsForProgramme(r[0].value.data, selectedProgram, value.groupId, value.academicLevelId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
             : [],
         sectionsLoading: false,
-        sectionsError: Boolean(value.programId) && r[1].status === "rejected",
+        sectionsError: Boolean(value.programId) && r[0].status === "rejected",
         subjects:
-          r[2].status === "fulfilled"
+          r[1].status === "fulfilled"
             ? optionize(
-                r[2].value.data,
+                r[1].value.data,
                 ["subjectId", "SubjectId", "subjectID", "SubjectID", "subjectDefinitionId", "SubjectDefinitionId", "id", "Id"],
                 ["subjectName", "SubjectName", "name", "Name"],
               ).filter((year) => isActiveRecord(year.raw))
             : [],
         periods:
-          r[3].status === "fulfilled"
-            ? optionize(r[3].value.data, ["periodId", "id", "Id"], ["periodName", "name", "Name"])
+          r[2].status === "fulfilled"
+            ? optionize(r[2].value.data, ["periodId", "id", "Id"], ["periodName", "name", "Name"])
             : [],
       })),
     );
@@ -1352,6 +1372,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
 function Draft({ initial, notify }) {
   const state = useLookups(initial);
   const { value, data, setValue } = state;
+  const navigate = useNavigate();
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -1714,6 +1735,10 @@ function Draft({ initial, notify }) {
                     if (ok) {
                       setWorkflowStatus("published");
                       setPublishedFilter("true");
+                      navigate("/dashboard/timetable", {
+                        replace: true,
+                        state: { timetableContext: { ...value, isPublished: true } },
+                      });
                     }
                   }}
                 >
@@ -1757,24 +1782,15 @@ function Draft({ initial, notify }) {
                 )}
               </div>
             </div>
-            {validation && (
-              <div className={`ttm-validation-result${validation.isValid ? "" : " has-errors"}`}>
-                <b>{validation.isValid ? "Timetable is valid" : "Validation failed"}</b>
-                {[...(validation.errors ?? []), ...(validation.warnings ?? [])].map(
-                  (entry, index) => (
-                    <p key={index}>{entry.message}</p>
-                  ),
-                )}
-              </div>
-            )}
             <div className="ttm-grid-wrap">
               <table className="ttm-grid">
                 <thead>
                   <tr>
                     <th>Day</th>
-                    {data.periods.map((period) => (
-                      <th key={period.id}>{period.name}</th>
-                    ))}
+                    {data.periods.map((period) => {
+                      const timeRange = periodTimeRange(period);
+                      return <th key={period.id}>{period.name}{timeRange ? <small>{timeRange}</small> : null}</th>;
+                    })}
                   </tr>
                 </thead>
                 <tbody>

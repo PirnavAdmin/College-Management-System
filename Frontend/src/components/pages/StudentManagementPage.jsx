@@ -132,6 +132,12 @@ export default function StudentManagementPage() {
       ),
     [students, query, filters],
   );
+  const [page, setPage] = useState(1);
+  const pageSize = 5;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  useEffect(() => setPage(1), [query, filters.board, filters.academicYear, filters.level, filters.group, filters.programme, filters.section, filters.status]);
   const values = (key) => [...new Set(students.map((student) => student[key]).filter(Boolean))];
   const levelValues = filters.board
     ? [...new Set(students.filter((student) => student.board === filters.board).map((student) => student.level).filter(Boolean))]
@@ -270,8 +276,8 @@ export default function StudentManagementPage() {
             <tbody>
               {loading ? (
                 <tr><td colSpan="11"><div className="cms-empty">Loading approved students...</div></td></tr>
-              ) : rows.length ? (
-                rows.map((s) => (
+              ) : pageRows.length ? (
+                pageRows.map((s) => (
                   <tr key={s.id} onClick={() => setSelectedStudentId(String(s.id))}>
                     <td>{s.studentId}</td>
                     <td>{s.admissionNo}</td>
@@ -308,6 +314,16 @@ export default function StudentManagementPage() {
             </tbody>
           </table>
         </div>
+        {!loading && <footer className="student-management-pagination">
+          <span>
+            Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} students
+          </span>
+          <div className="student-management-pagination-actions">
+            <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+          </div>
+        </footer>}
       </section>
     </DashboardLayout>
   );

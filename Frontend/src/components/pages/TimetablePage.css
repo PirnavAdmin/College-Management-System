@@ -3,7 +3,7 @@
 .timetable-module .ttm-page { width: min(100%, 1280px); margin: 0 auto; padding: 4px 0 28px; }
 .timetable-module .ttm-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .timetable-module .ttm-card { width: 100%; max-width: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--cms-border); border-radius: var(--cms-radius); background: var(--cms-surface); box-shadow: var(--cms-shadow); }
-.timetable-module .ttm-context, .timetable-module .ttm-form-grid { display: grid; width: 100%; max-width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: start; gap: 18px 14px; padding: 20px 22px; }
+.timetable-module .ttm-context, .timetable-module .ttm-form-grid { display: grid; width: 100%; max-width: 100%; grid-template-columns: repeat(auto-fit, minmax(180px, 220px)); align-items: start; justify-content: start; gap: 18px 14px; padding: 20px 22px; }
 .timetable-module .ttm-form-grid { padding: 0; }
 .timetable-module .ttm-field { display: grid; min-width: 0; gap: 6px; color: var(--cms-text); font-size: 12px; font-weight: 650; }
 .timetable-module .ttm-context .ttm-field { grid-template-rows: 18px 40px; }
@@ -44,7 +44,7 @@
 .timetable-module .ttm-capacity { color: var(--cms-muted); font-weight: 600; white-space: nowrap; }
 .timetable-module .ttm-generation-help { margin: 0; color: var(--cms-muted); font-size: 13px; font-weight: 400; line-height: 1.45; }
 .timetable-module .ttm-subject-period-section { min-width: 0; }
-.timetable-module .ttm-subject-period-grid { display: grid; width: 100%; min-width: 0; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+.timetable-module .ttm-subject-period-grid { display: grid; width: 100%; min-width: 0; grid-template-columns: repeat(auto-fit, minmax(240px, 320px)); gap: 16px; }
 .timetable-module .ttm-subject-card { display: flex; flex-direction: column; min-width: 0; gap: 10px; }
 .timetable-module .ttm-subject-card .ttm-field { display: flex; flex-direction: column; width: 100%; min-width: 0; gap: 10px; }
 .timetable-module .ttm-subject-card .ttm-field > span { display: block; width: 100%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; font-size: 15px; font-weight: 600; line-height: 1.4; }
@@ -52,25 +52,28 @@
 .timetable-module .ttm-generation-footer { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--cms-border); }
 .timetable-module .ttm-capacity-error { margin: 0 22px; }
 .timetable-module .ttm-table { width: 100%; min-width: 760px; margin: 0; border-collapse: collapse; }
-.timetable-module .ttm-period-structures-table {
-  width: 100%;
-  min-width: 940px;
-  table-layout: fixed;
-}
-.timetable-module .ttm-period-structures-table .ttm-structure-name-column { width: 46%; }
-.timetable-module .ttm-period-structures-table .ttm-periods-column { width: 9%; }
-.timetable-module .ttm-period-structures-table .ttm-duration-column { width: 11%; }
-.timetable-module .ttm-period-structures-table .ttm-status-column { width: 11%; }
-.timetable-module .ttm-period-structures-table .ttm-actions-column { width: 23%; }
+.timetable-module .ttm-card:has(.ttm-period-structures-table) { width: 836px; max-width: 100%; overflow: hidden; }
+#root .cms-content table.ttm-period-structures-table { width: 836px !important; max-width: none !important; min-width: 0 !important; border-collapse: collapse; table-layout: fixed; }
+.timetable-module .ttm-period-structures-table .ttm-structure-name-column { width: 300px; }
+.timetable-module .ttm-period-structures-table .ttm-periods-column { width: 90px; }
+.timetable-module .ttm-period-structures-table .ttm-duration-column { width: 110px; }
+.timetable-module .ttm-period-structures-table .ttm-status-column { width: 110px; }
+.timetable-module .ttm-period-structures-table .ttm-actions-column { width: 226px; }
 .timetable-module .ttm-period-structures-table th,
-.timetable-module .ttm-period-structures-table td { min-width: 0; vertical-align: middle; }
-.timetable-module .ttm-period-structures-table tr > :nth-child(1) { text-align: left; }
+.timetable-module .ttm-period-structures-table td { padding: 11px 14px; border-bottom: 1px solid var(--cms-border); vertical-align: middle; }
+.timetable-module .ttm-period-structures-table th { background: var(--cms-subtle); color: var(--cms-muted); font-size: 11px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.timetable-module .ttm-period-structures-table td { color: var(--cms-text); font-size: 13px; }
+.timetable-module .ttm-period-structures-table tr > :first-child { text-align: left; }
 .timetable-module .ttm-period-structures-table tr > :nth-child(2),
 .timetable-module .ttm-period-structures-table tr > :nth-child(3),
 .timetable-module .ttm-period-structures-table tr > :nth-child(4) { text-align: center; }
-.timetable-module .ttm-period-structures-table tr > :nth-child(5) { text-align: center; }
-.timetable-module .ttm-card:has(.ttm-table) { overflow-x: auto; }
-.timetable-module .ttm-table th, .timetable-module .ttm-table td { padding: 12px 14px; border-bottom: 1px solid var(--cms-border); vertical-align: middle; text-align: left; }
+.timetable-module .ttm-period-structures-table tr > :last-child { text-align: right; }
+.timetable-module .ttm-period-structures-table tbody tr:last-child td { border-bottom: 0; }
+@media (max-width: 900px) {
+  .timetable-module .ttm-card:has(.ttm-period-structures-table) { overflow-x: auto; }
+  #root .cms-content table.ttm-period-structures-table { width: 836px !important; }
+}
+.timetable-module .ttm-table th, .timetable-module .ttm-table td { padding: 11px 14px; border-bottom: 1px solid var(--cms-border); vertical-align: middle; text-align: left; }
 .timetable-module .ttm-table th { background: var(--cms-subtle); color: var(--cms-muted); font-size: 11px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
 .timetable-module .ttm-table td { font-size: 13px; }
 .timetable-module .ttm-table th:last-child, .timetable-module .ttm-table td:last-child { text-align: right; }
@@ -78,8 +81,8 @@
 .timetable-module .ttm-status-cell { text-align: center; vertical-align: middle; }
 .timetable-module .ttm-status-cell .ttm-badge { vertical-align: middle; }
 .timetable-module .ttm-table th.ttm-actions-cell,
-.timetable-module .ttm-actions-cell { min-width: 210px; text-align: center; vertical-align: middle; }
-.timetable-module .ttm-actions { display: flex; flex-wrap: nowrap; align-items: center; justify-content: center; gap: 7px; width: max-content; min-width: 198px; margin-inline: auto; white-space: nowrap; }
+.timetable-module .ttm-actions-cell { min-width: 0; text-align: right; vertical-align: middle; }
+.timetable-module .ttm-actions { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 7px; width: max-content; min-width: 198px; margin-left: auto; white-space: nowrap; }
 .timetable-module .ttm-actions > button { display: inline-flex; flex: 0 0 34px; align-items: center; justify-content: center; width: 34px; min-width: 34px; height: 34px; min-height: 34px; margin: 0; padding: 0; border-radius: 10px; font-size: 12px; transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease, border-color .16s ease; }
 .timetable-module .ttm-actions > button svg { width: 16px; height: 16px; flex: 0 0 16px; }
 .timetable-module .ttm-actions > button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 3px 8px rgb(15 23 42 / 12%); }
@@ -100,7 +103,7 @@
 .timetable-module .ttm-badge.active, .timetable-module .ttm-badge.approved { background: var(--cms-green-soft); color: var(--cms-green); }
 .timetable-module .ttm-badge.inactive { background: var(--cms-secondary); color: var(--cms-muted); }
 .timetable-module .ttm-badge.draft { background: var(--cms-amber-soft); color: var(--cms-amber); }
-.timetable-module .ttm-period-list { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 20px 22px; }
+.timetable-module .ttm-period-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 220px)); justify-content: start; gap: 10px; padding: 20px 22px; }
 .timetable-module .ttm-period-list > div { display: grid; gap: 4px; min-height: 64px; padding: 12px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); }
 .timetable-module .ttm-period-list > div.break { background: var(--cms-amber-soft); border-color: var(--cms-border); color: var(--cms-amber); }
 .timetable-module .ttm-period-list span { color: var(--cms-muted); font-size: 12px; }
@@ -108,6 +111,8 @@
 .timetable-module .ttm-grid-head > div { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .timetable-module .ttm-inline-filter { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; color: var(--cms-text); font-size: 13px; font-weight: 650; }
 .timetable-module .ttm-inline-filter select { height: 38px; padding: 7px 28px 7px 9px; border: 1px solid var(--cms-border); border-radius: 8px; background: var(--cms-surface); color: var(--cms-text); font: inherit; }
+.timetable-module .ttm-person-select select { width: 180px; }
+.timetable-module .ttm-staff-select select { width: 180px; }
 .timetable-module .ttm-export-menu { position: relative; z-index: 5; }
 .timetable-module .ttm-export-menu.is-busy > .cms-btn { cursor: not-allowed; opacity: .65; }
 .timetable-module .ttm-published-action,
@@ -159,9 +164,17 @@
 .timetable-module .ttm-table th,.timetable-module .ttm-table td{padding:clamp(7px,.5vw,9px) clamp(6px,.6vw,9px);line-height:1.4}.timetable-module .ttm-table th{font-size:clamp(11px,.8vw,12.5px);line-height:1.3;letter-spacing:.6px}.timetable-module .ttm-table td{font-size:clamp(11.5px,.82vw,13px);overflow-wrap:anywhere}.timetable-module .ttm-grid-wrap{overflow:auto;-webkit-overflow-scrolling:touch}
 
 /* Generated Draft Grid: keep the complete timetable context compact on desktop. */
-.timetable-module .ttm-draft-context { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; padding: 18px 22px; }
+.timetable-module .ttm-draft-context { grid-template-columns: repeat(auto-fit, minmax(140px, 200px)); justify-content: start; gap: 12px; padding: 18px 22px; }
 .timetable-module .ttm-draft-context .ttm-field { gap: 5px; font-weight: 700; }
 .timetable-module .ttm-draft-context .ttm-field > select { height: 44px; padding: 7px 30px 7px 10px; color: var(--cms-muted); font-weight: 500; }
 .timetable-module .ttm-draft-context .ttm-field > select:focus { color: var(--cms-text); }
 @media (max-width: 1180px) { .timetable-module .ttm-draft-context { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .timetable-module .ttm-draft-context { grid-template-columns: 1fr; } }
+
+/* Timetable landing page: keep filters and actions in one compact desktop row. */
+.timetable-module .ttm-main-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: end; gap: 10px; padding: 14px 18px; }
+.timetable-module .ttm-main-row > .ttm-context { grid-template-columns: repeat(6, minmax(125px, 160px)); justify-content: start; gap: 8px; padding: 0; }
+.timetable-module .ttm-main-row .ttm-screen-actions { align-self: end; flex-wrap: nowrap; margin: 0; padding: 0; gap: 8px; }
+.timetable-module .ttm-main-row .ttm-screen-actions > .cms-btn { min-height: 40px; padding-inline: 11px; }
+@media (max-width: 1450px) { .timetable-module .ttm-main-row { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .timetable-module .ttm-main-row > .ttm-context { grid-template-columns: 1fr; } }

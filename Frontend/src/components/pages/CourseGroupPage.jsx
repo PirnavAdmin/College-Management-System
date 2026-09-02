@@ -27,14 +27,6 @@ const DEFAULT_PROGRAMS = [
   { programId: "clat", backendProgramId: 11, programName: "CLAT", programCode: "CLAT", status: "Active" },
 ];
 
-const DEFAULT_GROUP_PROGRAM_CODES = {
-  MPC: ["REG", "JEE", "JEEADV", "EAPCET"],
-  BIPC: ["REG", "NEET", "NEETADV", "EAPCET"],
-  BIPC_ALT: ["REG", "NEET", "NEETADV", "EAPCET"],
-  MEC: ["REG", "CAF", "CMAF", "CUET", "IPMAT"],
-  CEC: ["REG", "CLAT", "CUET", "IPMAT", "CAF"],
-};
-
 const getCollection = (payload) => {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.$values)) return payload.$values;
@@ -182,7 +174,7 @@ const normalizeGroup = (item, masters = {}) => {
     yearName: read(item, "academicYearName", "AcademicYearName", "yearName", "YearName") || masterLabel(masters.years, year) || "",
     levelId,
     level: read(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "academicLevel", "AcademicLevel", "level") || masterLabel(masters.levels, levelId) || "-",
-    programs: programNamesForGroup(id, code).join(", ") || "-",
+    programs: programNamesForGroup(id).join(", ") || "-",
     subjects: read(item, "subjects", "Subjects", "subjectCount", "SubjectCount", "totalSubjects", "TotalSubjects") ?? "-",
     status: normalizeStatus(item),
   };
@@ -208,9 +200,18 @@ const backendProgramIdFor = (programId) => {
   return Number.isInteger(mapped) && mapped > 0 ? mapped : null;
 };
 
-const programIdFromBackendId = (backendProgramId) => {
-  const program = getProgramMaster().find((item) => String(item.backendProgramId || item.programId) === String(backendProgramId));
-  return String(program?.programId || backendProgramId);
+const normalizeSelectedProgramIds = (programIds = [], programs = getProgramMaster()) => {
+  const availablePrograms = programs.length ? programs : getProgramMaster();
+  const selected = programIds
+    .map((programId) => {
+      const match = availablePrograms.find((program) => (
+        String(program.programId) === String(programId)
+        || String(program.backendProgramId || "") === String(programId)
+      ));
+      return match ? String(match.programId) : "";
+    })
+    .filter(Boolean);
+  return Array.from(new Set(selected));
 };
 
 const normalizeGroupForm = (item) => {
@@ -294,14 +295,6 @@ const groupCodeKey = (code) => {
   return normalized === "BIPC" || normalized === "BIPCALT" ? "BIPC" : normalized;
 };
 
-const defaultProgramIdsForCode = (code) => {
-  const master = getProgramMaster();
-  const idsByCode = new Map(master.map((program) => [program.programCode.toUpperCase(), program.programId]));
-  return (DEFAULT_GROUP_PROGRAM_CODES[groupCodeKey(code)] || ["REG"])
-    .map((programCode) => idsByCode.get(programCode))
-    .filter(Boolean);
-};
-
 const getProgramMappings = () => storageGet(PROGRAM_MAPPINGS_STORAGE_KEY, {});
 
 const saveProgramMapping = (groupId, groupCode, programIds) => {
@@ -325,22 +318,30 @@ const programsForIds = (programIds) => {
     }));
 };
 
-const programIdsForGroup = (groupId, groupCode) => {
+const programIdsForGroup = (groupId) => {
   const mapping = groupId ? getProgramMappings()[String(groupId)] : null;
-  return mapping?.programIds?.length ? mapping.programIds : defaultProgramIdsForCode(groupCode);
+  return mapping?.programIds?.length ? mapping.programIds : [];
 };
 
-const fetchProgramIdsForGroup = async (groupId, groupCode) => {
-  if (!groupId) return defaultProgramIdsForCode(groupCode);
+const fetchProgramIdsForGroup = async (groupId, availablePrograms = getProgramMaster()) => {
+  if (!groupId) return [];
   try {
-    const response = await apiClient.get(apiEndpoints.programs.byGroup(groupId));
-    const programIds = getCollection(response.data)
-      .map((program) => read(program, "programId", "ProgramId", "id", "Id"))
-      .filter((programId) => programId !== undefined && programId !== null && programId !== "")
-      .map(programIdFromBackendId);
-    return programIds.length ? programIds : programIdsForGroup(groupId, groupCode);
+    const response = await apiClient.get(apiEndpoints.programs.mappedByGroup(groupId));
+    const data = responseData(response);
+    const rows = getCollection(response.data).length
+      ? getCollection(response.data)
+      : getCollection(read(data, "programs", "Programs", "items", "Items"));
+    const programIds = rows
+      .map((program) => {
+        const nestedProgram = read(program, "program", "Program");
+        return read(program, "programId", "ProgramId")
+          ?? read(nestedProgram, "programId", "ProgramId", "id", "Id")
+          ?? read(program, "id", "Id");
+      })
+      .filter((programId) => programId !== undefined && programId !== null && programId !== "");
+    return normalizeSelectedProgramIds(programIds, availablePrograms);
   } catch {
-    return programIdsForGroup(groupId, groupCode);
+    return [];
   }
 };
 
@@ -357,9 +358,9 @@ const createProgramPayload = (values, groupId) => {
   return payload;
 };
 
-function programNamesForGroup(groupId, groupCode) {
+function programNamesForGroup(groupId) {
   const masterById = new Map(getProgramMaster().map((program) => [program.programId, program]));
-  return programIdsForGroup(groupId, groupCode)
+  return programIdsForGroup(groupId)
     .map((programId) => masterById.get(programId)?.programName)
     .filter(Boolean);
 }
@@ -538,7 +539,8 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
   const [adding, setAdding] = useState(false);
   const [loadingPrograms, setLoadingPrograms] = useState(false);
   const [savingProgram, setSavingProgram] = useState(false);
-  const selected = new Set(selectedProgramIds);
+  const normalizedSelectedProgramIds = useMemo(() => normalizeSelectedProgramIds(selectedProgramIds, programs), [programs, selectedProgramIds]);
+  const selected = useMemo(() => new Set(normalizedSelectedProgramIds), [normalizedSelectedProgramIds]);
   const headingName = String(groupCode || groupName || "this Group").trim();
 
   useEffect(() => {
@@ -558,9 +560,10 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
   }, [onError]);
 
   const toggleProgram = (programId, checked) => {
+    const id = String(programId);
     const next = checked
-      ? [...selectedProgramIds, programId]
-      : selectedProgramIds.filter((id) => id !== programId);
+      ? [...normalizedSelectedProgramIds, id]
+      : normalizedSelectedProgramIds.filter((selectedId) => selectedId !== id);
     onChange(Array.from(new Set(next)));
   };
 
@@ -571,7 +574,7 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
       program.programCode.toUpperCase() === code || program.programName.toLowerCase() === name.toLowerCase()
     ));
     if (existing) {
-      onChange(Array.from(new Set([...selectedProgramIds, existing.programId])));
+      onChange(Array.from(new Set([...normalizedSelectedProgramIds, String(existing.programId)])));
       setAdding(false);
       return;
     }
@@ -581,7 +584,7 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
       const program = normalizeProgram(responseData(response) || createProgramPayload(values, groupId));
       const nextPrograms = await loadProgramMaster().catch(() => [...programs, program]);
       setPrograms(nextPrograms);
-      onChange(Array.from(new Set([...selectedProgramIds, program.programId])));
+      onChange(Array.from(new Set([...normalizedSelectedProgramIds, String(program.programId)])));
       setAdding(false);
     } catch (error) {
       onError?.(getApiErrorMessage(error) || "Unable to add program.");
@@ -595,7 +598,7 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
       <div className="course-programs-head">
         <div>
           <h3>Programs for {headingName}</h3>
-          <p>Selected Programs: {selectedProgramIds.length}</p>
+          <p>Selected Programs: {normalizedSelectedProgramIds.length}</p>
         </div>
         <button type="button" className="cms-btn cms-btn-ghost course-add-program-btn" onClick={() => setAdding(true)}>
           <Plus size={14} /> Add Program
@@ -607,7 +610,7 @@ function ProgramsPanel({ groupId, groupCode, groupName, selectedProgramIds, onCh
           <label key={program.programId} className="course-program-option">
             <input
               type="checkbox"
-              checked={selected.has(program.programId)}
+              checked={selected.has(String(program.programId))}
               disabled={program.status === "Inactive"}
               onChange={(event) => toggleProgram(program.programId, event.target.checked)}
             />
@@ -671,7 +674,9 @@ function CourseGroupFormPage() {
         setContextOptions(masters);
         if (loadedGroup) {
           setValues(loadedGroup);
-          setSelectedProgramIds(await fetchProgramIdsForGroup(id, loadedGroup.code));
+          const availablePrograms = await loadProgramMaster().catch(() => getProgramMaster());
+          const mappedProgramIds = await fetchProgramIdsForGroup(id, availablePrograms);
+          if (!ignore) setSelectedProgramIds(mappedProgramIds);
         }
       } catch (error) {
         if (!ignore) {
@@ -687,9 +692,8 @@ function CourseGroupFormPage() {
   }, [id, setValues]);
 
   useEffect(() => {
-    if (id) return;
-    setSelectedProgramIds(defaultProgramIdsForCode(values.code));
-  }, [id, values.code]);
+    setSelectedProgramIds([]);
+  }, [id]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -704,7 +708,7 @@ function CourseGroupFormPage() {
         setErrors(validationErrors);
         return;
       }
-      await groupApi.saveRow(saveValues, id, selectedProgramIds);
+      await groupApi.saveRow(saveValues, id, normalizeSelectedProgramIds(selectedProgramIds));
       setToastType("success");
       setToast(`Group ${id ? "updated" : "created"} successfully`);
       navigate("/dashboard/courses");

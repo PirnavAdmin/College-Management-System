@@ -1528,13 +1528,13 @@ export default function SectionManagementPage() {
                           </td>
                           <td>
                             <div className="cms-sec-table-actions">
-                              <button
+                              {/* <button
                                 type="button"
                                 className="cms-sec-action-btn"
                                 onClick={() => openRow(section, true)}
                               >
                                 <Eye size={14} />
-                              </button>
+                              </button> */}
                               <button
                                 type="button"
                                 className="cms-sec-action-btn"

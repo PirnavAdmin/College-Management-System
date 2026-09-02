@@ -178,32 +178,36 @@ export default function SubjectManagementPage({ screen = "list" }) {
   const routeSubjectContext = location.state?.subjectContext;
   const loadSubjects = useCallback(async (subjectContext) => {
     const requestId = ++subjectRequestId.current;
-    // Clear before loading so a previous academic context can never remain
-    // visible while the current context is resolving.
+    const hasCompleteContext = Boolean(
+      subjectContext?.boardId && subjectContext?.groupId && subjectContext?.academicLevelId,
+    );
+    // Clear before loading so records from a previous request can never
+    // remain visible while the current list or academic context resolves.
     setRecords([]);
     setLoading(true);
-    if (!subjectContext?.boardId || !subjectContext?.groupId || !subjectContext?.academicLevelId) {
-      setApiAvailable(false);
-      setLoading(false);
-      return;
-    }
     try {
-      const response = await apiClient.get(apiEndpoints.subjects.context, {
-        params: {
-          boardId: subjectContext.boardId,
-          groupId: subjectContext.groupId,
-          academicLevelId: subjectContext.academicLevelId,
-        },
-      });
+      const response = hasCompleteContext
+        ? await apiClient.get(apiEndpoints.subjects.context, {
+          params: {
+            boardId: subjectContext.boardId,
+            groupId: subjectContext.groupId,
+            academicLevelId: subjectContext.academicLevelId,
+          },
+        })
+        : await apiClient.get(apiEndpoints.subjects.getAll);
       if (requestId !== subjectRequestId.current) return;
-      const responseRecords = itemsFromResponse(response.data).map((record) => ({
-        ...record,
-        boardId: subjectContext.boardId,
-        groupId: subjectContext.groupId,
-        academicLevelId: subjectContext.academicLevelId,
-      }));
+      const responseRecords = itemsFromResponse(response.data).map((record) => (
+        hasCompleteContext
+          ? {
+            ...record,
+            boardId: subjectContext.boardId,
+            groupId: subjectContext.groupId,
+            academicLevelId: subjectContext.academicLevelId,
+          }
+          : record
+      ));
       setRecords(normalize(responseRecords));
-      setApiAvailable(true);
+      setApiAvailable(hasCompleteContext);
     } catch (error) {
       if (requestId !== subjectRequestId.current) return;
       setRecords([]);
@@ -957,7 +961,7 @@ function Table({ rows, context, setContext, boards, academicYears, groups, acade
           </thead>
           <tbody>
             {pageRows.length === 0 ? (
-              <tr><td colSpan="7"><div className="cms-empty">No subjects are assigned to this context.</div></td></tr>
+              <tr><td colSpan="7"><div className="cms-empty">{context.boardId && context.groupId && context.academicLevelId ? "No subjects are assigned to this context." : "No subjects have been added yet."}</div></td></tr>
             ) : pageRows.map((x, i) => {
               const s = subjectDetails(x);
               return (

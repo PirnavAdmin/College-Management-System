@@ -76,6 +76,7 @@
     update: (programId) => `/api/v1/programs/${encodeURIComponent(programId)}`,
     status: (programId) => `/api/v1/programs/${encodeURIComponent(programId)}/status`,
     byGroup: (groupId) => `/api/v1/groups/${encodeURIComponent(groupId)}/programs`,
+    mappedByGroup: (groupId) => `/api/v1/programs/group/${encodeURIComponent(groupId)}`,
   },
   fee: {
     feeTypes: "/api/v1/fees/types",

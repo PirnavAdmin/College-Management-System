@@ -172,12 +172,23 @@ const employeeIdFromServerSequence = (payload, staffType) => {
   return `${employeeIdPrefix(staffType)}${sequence.padStart(4, "0")}`;
 };
 const employeeIdFromStaffItems = (payload, staffType) => {
+  const prefix = employeeIdPrefix(staffType);
   const highestSequence = extractItems(payload).reduce((highest, item) => {
     const employeeId = firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId");
-    const sequence = String(employeeId ?? "").trim().match(/(\d+)$/)?.[1];
+    const normalizedEmployeeId = String(employeeId ?? "").trim().toUpperCase();
+    const sequence = normalizedEmployeeId.startsWith(prefix) ? normalizedEmployeeId.match(/(\d+)$/)?.[1] : null;
     return sequence ? Math.max(highest, Number(sequence) || 0) : highest;
   }, 0);
-  return `${employeeIdPrefix(staffType)}${String(highestSequence + 1).padStart(4, "0")}`;
+  return `${prefix}${String(highestSequence + 1).padStart(4, "0")}`;
+};
+const safestEmployeeId = (staffType, ...candidates) => {
+  const prefix = employeeIdPrefix(staffType);
+  const highestSequence = candidates.reduce((highest, candidate) => {
+    const normalized = String(candidate || "").trim().toUpperCase();
+    if (!normalized.startsWith(prefix)) return highest;
+    return Math.max(highest, Number(normalized.match(/(\d+)$/)?.[1]) || 0);
+  }, 0);
+  return highestSequence ? `${prefix}${String(highestSequence).padStart(4, "0")}` : "";
 };
 const normalizeStaffPage = (payload) => {
   const source = payload?.data ?? payload?.Data ?? payload ?? {};
@@ -723,31 +734,38 @@ function Workflow({ existingId, staffTab = "teaching" }) {
     const apiStaffType = toApiStaffType(staffType);
     const loadEmployeeId = async () => {
       try {
-        const response = await apiClient.get(STAFF_API.nextEmployeeId, {
-          params: { staffType: apiStaffType },
-          skipGlobalLoader: true,
-        });
+        const [nextIdResult, dropdownResult, staffListResult] = await Promise.allSettled([
+          apiClient.get(STAFF_API.nextEmployeeId, {
+            params: { staffType: apiStaffType },
+            skipGlobalLoader: true,
+          }),
+          apiClient.get(STAFF_API.dropdown, {
+            params: { staffType: apiStaffType },
+            skipGlobalLoader: true,
+          }),
+          apiClient.get(STAFF_API.list, {
+            params: { PageNumber: 1, PageSize: 1000, StaffType: apiStaffType },
+            skipGlobalLoader: true,
+          }),
+        ]);
         if (requestId !== employeeIdRequestRef.current) return;
-        const employeeId = employeeIdFromServerSequence(response.data, staffType);
+        const serverCandidate = nextIdResult.status === "fulfilled"
+          ? employeeIdFromServerSequence(nextIdResult.value.data, staffType)
+          : "";
+        const dropdownCandidate = dropdownResult.status === "fulfilled"
+          ? employeeIdFromStaffItems(dropdownResult.value.data, staffType)
+          : "";
+        const listCandidate = staffListResult.status === "fulfilled"
+          ? employeeIdFromStaffItems(staffListResult.value.data, staffType)
+          : "";
+        const employeeId = safestEmployeeId(staffType, serverCandidate, dropdownCandidate, listCandidate);
         if (!employeeId) throw new Error("The Employee ID service returned an invalid value.");
         setValues((current) => ({ ...current, empId: employeeId }));
         setErrors((current) => ({ ...current, empId: undefined }));
       } catch {
         if (requestId !== employeeIdRequestRef.current) return;
-        try {
-          const fallbackResponse = await apiClient.get(STAFF_API.dropdown, {
-            params: { staffType: apiStaffType },
-            skipGlobalLoader: true,
-          });
-          if (requestId !== employeeIdRequestRef.current) return;
-          const employeeId = employeeIdFromStaffItems(fallbackResponse.data, staffType);
-          setValues((current) => ({ ...current, empId: employeeId }));
-          setErrors((current) => ({ ...current, empId: undefined }));
-        } catch {
-          if (requestId !== employeeIdRequestRef.current) return;
-          setValues((current) => ({ ...current, empId: "" }));
-          setToast("Unable to generate Employee ID.");
-        }
+        setValues((current) => ({ ...current, empId: "" }));
+        setToast("Unable to generate Employee ID.");
       } finally {
         if (requestId === employeeIdRequestRef.current) setGeneratingEmployeeId(false);
       }

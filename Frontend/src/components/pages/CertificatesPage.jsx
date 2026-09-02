@@ -451,7 +451,7 @@ function formatDateDdMmYyyy(value) {
 const baseFormFields = [
   { name: "admissionNo", label: "Admission No.", type: "text", placeholder: "Enter admission number", required: true },
   { name: "type", label: "Certificate Type", type: "select", required: true },
-  { name: "purpose", label: "Purpose" },
+  { name: "purpose", label: "Purpose", required: true },
   { name: "requestDate", label: "Request Date", type: "date", required: true },
   { name: "remarks", label: "Remarks" },
 ];

@@ -326,30 +326,32 @@ export default function DashboardLayout({
                       <div className="cms-nav-parent">
                         <Link
                           to={item.to}
-                          className={`cms-nav-link ${active && !item.children.some(childIsActive) ? "is-active" : ""}`}
+                          className={`cms-nav-link ${active || item.children.some(childIsActive) ? "is-active" : ""}`}
                           onClick={(event) => {
                             if (isAttendanceMenu) {
                               event.preventDefault();
                               setOpen((v) => !v);
+                            } else {
+                              setAttendanceOpen(false);
                             }
                             closeOnMobile();
                           }}
                         >
                           <img className="cms-nav-3d-icon" src={item.icon} alt="" aria-hidden="true" /> {item.label}
                         </Link>
-                        <button type="button" className={`cms-nav-caret ${isOpen ? "is-open" : ""}`} aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={isOpen} onClick={() => setOpen((v) => !v)}>
+                        <button type="button" className={`cms-nav-caret ${isOpen ? "is-open" : ""}`} aria-label={`${isOpen ? "Collapse" : "Expand"} ${item.label}`} aria-expanded={isOpen} onClick={() => { if (!isAttendanceMenu) setAttendanceOpen(false); setOpen((v) => !v); }}>
                           <ChevronDown size={15} />
                         </button>
                       </div>
                       {isOpen
                         ? item.children.map((child) => {
-                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={() => { if (item.to === "/dashboard/attendance") setAttendanceOpen(false); closeOnMobile(); }}><img className="cms-nav-3d-icon cms-nav-3d-icon-sub" src={child.icon} alt="" aria-hidden="true" /> {child.label}</Link>;
+                            return <Link key={child.to} to={child.to} className={`cms-nav-link cms-nav-sub ${childIsActive(child) ? "is-active" : ""}`} onClick={closeOnMobile}><img className="cms-nav-3d-icon cms-nav-3d-icon-sub" src={child.icon} alt="" aria-hidden="true" /> {child.label}</Link>;
                           })
                         : null}
                     </div>
                   );
                 }
-                return <Link key={item.to} to={item.to} className={`cms-nav-link ${active ? "is-active" : ""}`} onClick={closeOnMobile}><img className="cms-nav-3d-icon" src={item.icon} alt="" aria-hidden="true" /><span className="cms-nav-label">{item.to === "/dashboard/board-academic-year" ? <>Board &amp; Academic Year<br />Management</> : item.label}</span></Link>;
+                return <Link key={item.to} to={item.to} className={`cms-nav-link ${active ? "is-active" : ""}`} onClick={() => { setAttendanceOpen(false); closeOnMobile(); }}><img className="cms-nav-3d-icon" src={item.icon} alt="" aria-hidden="true" /><span className="cms-nav-label">{item.to === "/dashboard/board-academic-year" ? <>Board &amp; Academic Year<br />Management</> : item.label}</span></Link>;
               })}
             </div>
           ))}

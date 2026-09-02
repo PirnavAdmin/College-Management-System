@@ -206,6 +206,7 @@
 .cert-bulk-students > .cert-bulk-students-head,
 .cert-bulk-students > .cert-bulk-filter-row,
 .cert-bulk-students > .cert-bulk-select-actions,
+.cert-bulk-students > .cert-bulk-selected-list,
 .cert-bulk-students > .cert-bulk-student-list {
   grid-column: 1 / -1;
   width: 100%;
@@ -226,6 +227,11 @@
 .cert-bulk-select-actions { display: flex; align-items: center; justify-content: flex-start; gap: 8px; white-space: nowrap; }
 .cert-bulk-select-actions button { padding: 5px 9px; border: 1px solid var(--cms-border); border-radius: 7px; background: var(--cms-surface); color: var(--cms-primary); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
 .cert-bulk-select-actions button:disabled { cursor: not-allowed; opacity: .5; }
+.cert-bulk-selected-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cert-bulk-selected-list > button { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; padding: 5px 8px; border: 1px solid var(--cms-primary-border); border-radius: 999px; background: var(--cms-primary-soft); color: var(--cms-primary); font: inherit; cursor: pointer; }
+.cert-bulk-selected-list span { overflow: hidden; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.cert-bulk-selected-list small { color: var(--cms-muted); font-size: 10px; white-space: nowrap; }
+.cert-bulk-selected-list svg { flex: 0 0 auto; }
 .cert-bulk-student-list { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 7px; max-height: 240px; padding: 2px; overflow-y: auto; }
 .cert-bulk-student-list > label { display: flex !important; align-items: flex-start; gap: 9px; width: 100%; min-width: 0; min-height: 54px; padding: 9px; border: 1px solid var(--cms-border); border-radius: 9px; background: var(--cms-surface); cursor: pointer; box-sizing: border-box; }
 .cert-bulk-student-list > label.is-selected { border-color: var(--cms-primary); background: var(--cms-primary-soft); }

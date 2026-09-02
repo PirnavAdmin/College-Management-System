@@ -322,7 +322,7 @@ export default function DashboardLayout({
                   const setOpen = isFacultyMenu ? setFacultyOpen : setAttendanceOpen;
                   const childIsActive = (child) => isActive(child.to);
                   return (
-                    <div key={item.to}>
+                    <div key={item.to} className={isAttendanceMenu ? "cms-nav-branch cms-attendance-branch" : "cms-nav-branch"}>
                       <div className="cms-nav-parent">
                         <Link
                           to={item.to}

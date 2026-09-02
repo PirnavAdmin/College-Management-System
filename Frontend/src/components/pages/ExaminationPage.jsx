@@ -1173,8 +1173,8 @@ export default function ExaminationPage() {
                     shownExams.map((e) => (
                       <tr key={e.id}>
                         <td className="cms-strong">{e.code}</td>
-                        <td>
-                          <span className="exam-cell-two-lines" title={e.name}>
+                        <td className="exam-name-cell">
+                          <span className="exam-name-two-lines" title={e.name}>
                             {e.name}
                           </span>
                         </td>
@@ -1189,7 +1189,7 @@ export default function ExaminationPage() {
                             {e.academicYearName || nameOf(YEARS, e.yearId, "—")}
                           </span>
                         </td>
-                        <td>
+                        <td className="exam-level-cell">
                           <span
                             className="exam-level-two-lines"
                             title={e.academicLevelName || nameOf(LEVELS, e.levelId, "—")}

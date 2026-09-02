@@ -211,6 +211,39 @@
   box-shadow: inset 2px 0 0 var(--cms-primary);
 }
 
+/* Attendance keeps its child links visibly subordinate to the main item. */
+.cms-sidebar .cms-attendance-branch .cms-nav-parent + .cms-nav-sub {
+  margin-top: 10px;
+}
+
+.cms-sidebar .cms-attendance-branch .cms-nav-sub {
+  width: calc(100% - 24px);
+  min-height: 40px;
+  margin-left: 12px;
+  margin-right: 0;
+  padding: 6px 8px;
+  gap: 7px;
+  border-radius: 8px;
+  font-size: 10.75px;
+  font-weight: 600;
+}
+
+.cms-sidebar .cms-attendance-branch .cms-nav-sub + .cms-nav-sub {
+  margin-top: 5px;
+}
+
+.cms-sidebar .cms-attendance-branch .cms-nav-sub.is-active {
+  background: var(--cms-primary-soft);
+  color: var(--cms-primary-dark);
+  box-shadow: inset 2px 0 0 var(--cms-primary);
+}
+
+.cms-sidebar .cms-attendance-branch .cms-nav-sub .cms-nav-3d-icon-sub {
+  width: 16px;
+  height: 16px;
+  flex-basis: 16px;
+}
+
 .cms-nav-sub svg {
   width: 15px;
   height: 15px;
@@ -255,6 +288,7 @@
   height: 100dvh;
   margin-left: var(--cms-sidebar-w);
   min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -644,6 +678,7 @@
   min-width: 0;
   min-height: 0;
   max-width: 100%;
+  box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -653,6 +688,7 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   animation: cmsFadeIn 0.2s ease both;
 }
 

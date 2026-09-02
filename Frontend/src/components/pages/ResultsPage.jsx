@@ -3,8 +3,6 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { Eye } from "lucide-react";
 import "./ResultProcessingPage.css";
@@ -928,7 +926,7 @@ export default function ResultProcessingPage() {
   }, [rankPage, rankPages]);
 
   // Exports
-  const exportRows = (rows, includeStatus = true, includeExamination = false) =>
+  const exportRows = (rows, includeExamination = false) =>
     rows.map((item) => {
       const rowData = {
         Rank: item.rank ?? item.sectionRank ?? "—",
@@ -946,9 +944,6 @@ export default function ResultProcessingPage() {
         Grade: item.grade || "—",
         Result: item.result || "—",
       };
-      if (includeStatus) {
-        rowData.Status = item.status ?? item.resultStatus ?? "—";
-      }
       return rowData;
     });
 
@@ -957,28 +952,14 @@ export default function ResultProcessingPage() {
       .replace(/[\\/:*?"<>|]/g, "")
       .trim() || "Results";
 
-  const exportExcel = (rows, filename, includeStatus = true, includeExamination = false) => {
+  const exportExcel = (rows, filename, includeExamination = false) => {
     if (!rows.length) return showToast("No result records are available to export.", "error");
     const sheet = XLSX.utils.json_to_sheet(
-      exportRows(rows, includeStatus, includeExamination),
+      exportRows(rows, includeExamination),
     );
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Results");
     XLSX.writeFile(book, `${safeFileName(filename)}.xlsx`);
-  };
-
-  const exportPdf = (rows, filename, includeStatus = true) => {
-    if (!rows.length) return showToast("No result records are available to export.", "error");
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.text(filename, 14, 14);
-    const data = exportRows(rows, includeStatus);
-    const headers = Object.keys(data[0] || {});
-    autoTable(doc, {
-      head: [headers],
-      body: data.map((item) => headers.map((key) => item[key])),
-      startY: 20,
-    });
-    doc.save(`${safeFileName(filename)}.pdf`);
   };
 
   const renderSelectOptions = (items) =>
@@ -1147,12 +1128,6 @@ export default function ResultProcessingPage() {
                   `${currentExam?.name || "Results"}-${selectedSectionDetails.sectionName || "Section"}`,
                 )
               }
-              onPdf={() =>
-                exportPdf(
-                  rawStudents,
-                  `${currentExam?.name || "Results"}-${selectedSectionDetails.sectionName || "Section"}`,
-                )
-              }
             />
           ) : (
             <Sections
@@ -1168,12 +1143,6 @@ export default function ResultProcessingPage() {
               groupPublishReady={canPublishGroup(readiness, sectionSummaries)}
               onExcel={() =>
                 exportExcel(
-                  sectionSummaries.flatMap((s) => s.studentRows || []),
-                  `${currentExam?.name || "Results"}-Group`,
-                )
-              }
-              onPdf={() =>
-                exportPdf(
                   sectionSummaries.flatMap((s) => s.studentRows || []),
                   `${currentExam?.name || "Results"}-Group`,
                 )
@@ -1216,7 +1185,7 @@ export default function ResultProcessingPage() {
             rows={rankList}
             examName={currentExam?.name}
             onClose={() => setShowRankPreview(false)}
-            onDownload={() => exportExcel(rankList, "Rank-List", false, true)}
+            onDownload={() => exportExcel(rankList, "Rank-List", true)}
           />
         )}
 
@@ -1270,7 +1239,6 @@ function Sections({
   onGroup,
   groupPublishReady,
   onExcel,
-  onPdf,
 }) {
   return (
     <div className="cms-card">
@@ -1291,9 +1259,6 @@ function Sections({
           <div className="results-table-actions">
             <button className="cms-btn cms-btn-ghost" onClick={onExcel}>
               Export Excel
-            </button>
-            <button className="cms-btn cms-btn-ghost" onClick={onPdf}>
-              Export PDF
             </button>
             {summaries.length > 0 && (
               <button
@@ -1387,7 +1352,6 @@ function SectionView({
   onStudent,
   loadingStudentId,
   onExcel,
-  onPdf,
 }) {
   const subjects = details?.subjectDefinitions ?? [];
   return (
@@ -1417,9 +1381,6 @@ function SectionView({
             <button className="cms-btn cms-btn-ghost" onClick={onExcel}>
               Export Excel
             </button>
-            <button className="cms-btn cms-btn-ghost" onClick={onPdf}>
-              Export PDF
-            </button>
           </div>
         </div>
         <div className="cms-table-wrap results-section-table-wrap">
@@ -1436,8 +1397,8 @@ function SectionView({
                 <th>GRADE</th>
                 <th>RESULT</th>
                 <th>RANK</th>
-                <th>STATUS</th>
-                <th>ACTIONS</th>
+                <th className="results-status-column">STATUS</th>
+                <th className="results-actions-column">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -1464,10 +1425,10 @@ function SectionView({
                     <td className="cms-text-center">{item.grade || "—"}</td>
                     <td className="cms-text-center">{item.result || "—"}</td>
                     <td className="cms-text-center">#{item.sectionRank || item.rank || "—"}</td>
-                    <td className="cms-text-center">
+                    <td className="cms-text-center results-status-column">
                       <Badge value={item.status || details?.resultStatus} />
                     </td>
-                    <td className="cms-text-center">
+                    <td className="cms-text-center results-actions-column">
                       <div className="results-actions">
                         <button
                           className="results-action-btn"

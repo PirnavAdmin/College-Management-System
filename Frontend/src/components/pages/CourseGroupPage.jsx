@@ -834,6 +834,7 @@ function CourseGroupListPage() {
           searchPlaceholder="Search by group, code, board, academic year..."
           onSearchChange={handleSearch}
           onAdd={addGroup}
+          enableExport={false}
           onEdit={(row) => navigate(`/dashboard/courses/${row.id}/edit`)}
           onDelete={deleteGroup}
         />

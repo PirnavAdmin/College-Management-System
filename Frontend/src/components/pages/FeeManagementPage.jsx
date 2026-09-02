@@ -32,17 +32,13 @@ import {
   COLLEGE_NAME,
   PAYMENT_METHODS,
   PAYMENT_PLANS,
-  allTransactions,
   deriveAccount,
   feeScheduleLabel,
   feeStatusTone,
   formatCompactCurrency,
   formatCurrency,
   formatDate,
-  groupWiseTotals,
-  overviewTotals,
   todayISO,
-  upcomingInstallments,
 } from "@/data/feeManagementData.js";
 import "./FeeManagementPage.css";
 
@@ -102,6 +98,30 @@ const optionalNumberValue = (item, ...keys) => {
 };
 
 const normalizeKey = (value) => String(value || "").trim().toLowerCase();
+
+const optionLabel = (list, value) => list?.find((option) => String(option.value) === String(value))?.label || "";
+
+const cleanDateValue = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const datePart = raw.slice(0, 10);
+  if (/^0*1-0?1-0?1/.test(datePart) || datePart === "0001-01-01") return "";
+  const date = new Date(datePart);
+  if (Number.isNaN(date.getTime()) || date.getFullYear() <= 1) return "";
+  return raw;
+};
+
+const formatFeeDate = (value) => {
+  const cleaned = cleanDateValue(value);
+  return cleaned ? formatDate(cleaned) : "-";
+};
+
+const matchesContext = (selectedId, selectedLabel, itemId, itemLabel) => {
+  if (!selectedId && !selectedLabel) return true;
+  if (!itemId && !itemLabel) return true;
+  return String(itemId || "") === String(selectedId || "")
+    || Boolean(selectedLabel && itemLabel && normalizeKey(itemLabel) === normalizeKey(selectedLabel));
+};
 
 const admissionFullName = (item) => (
   textValue(item, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
@@ -191,7 +211,7 @@ const feeDetailPayloadRows = (detail) => getCollection(read(detail, "breakdown",
 
 const feeDetailScheduleRows = (detail) => getCollection(read(detail, "schedules", "Schedules", "installments", "Installments", "feeSchedules", "FeeSchedules"));
 
-const feeDetailPaymentRows = (detail) => getCollection(read(detail, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions"));
+const feeDetailPaymentRows = (detail) => getCollection(read(detail, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions", "history", "History"));
 
 const feePaymentRows = (item, detail) => {
   const sources = [
@@ -200,6 +220,8 @@ const feePaymentRows = (item, detail) => {
   ];
   return sources.find((rows) => rows.length) || [];
 };
+
+const mergeFeeDetailPayloads = (...payloads) => Object.assign({}, ...payloads.filter(Boolean).map(getObject));
 
 const toSelectOptions = (rows, idKeys, labelKeys) => rows
   .map((item) => {
@@ -218,9 +240,12 @@ const groupOption = (item) => {
   return option ? {
     ...option,
     code: textValue(item, "groupCode", "GroupCode", "code", "Code") || option.label,
-    boardId: textValue(item, "boardId", "BoardId") || textValue(board, "boardId", "BoardId", "id", "Id"),
-    academicYearId: textValue(item, "academicYearId", "AcademicYearId") || textValue(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
-    academicLevelId: textValue(item, "academicLevelId", "AcademicLevelId") || textValue(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
+    boardId: textValue(item, "boardId", "BoardId", "boardID") || textValue(board, "boardId", "BoardId", "id", "Id"),
+    boardName: textValue(item, "boardName", "BoardName") || textValue(board, "boardName", "BoardName", "name", "Name"),
+    academicYearId: textValue(item, "academicYearId", "AcademicYearId", "yearId", "YearId", "academicYearID") || textValue(academicYear, "academicYearId", "AcademicYearId", "yearId", "YearId", "id", "Id"),
+    academicYearName: textValue(item, "academicYearName", "AcademicYearName", "yearName", "YearName") || textValue(academicYear, "academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"),
+    academicLevelId: textValue(item, "academicLevelId", "AcademicLevelId", "levelId", "LevelId") || textValue(academicLevel, "academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"),
+    academicLevelName: textValue(item, "academicLevelName", "AcademicLevelName", "levelName", "LevelName") || textValue(academicLevel, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"),
   } : null;
 };
 
@@ -319,8 +344,6 @@ const normalizeFeeStructureRows = (rows) => {
     const itemProgram = read(item, "program", "Program");
     const itemAcademicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
     const itemBoard = read(item, "board", "Board");
-    const feeType = feeTypeOption(item);
-    const amount = numberValue(item, "amount", "Amount", "feeAmount", "FeeAmount");
     const groupId = textValue(item, "groupId", "GroupId") || textValue(itemGroup, "groupId", "GroupId", "id", "Id");
     const group = textValue(item, "groupName", "GroupName", "courseName", "CourseName") || textValue(itemGroup, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode") || groupId;
     const academicYearId = textValue(item, "academicYearId", "AcademicYearId") || textValue(itemAcademicYear, "academicYearId", "AcademicYearId", "id", "Id");
@@ -329,6 +352,7 @@ const normalizeFeeStructureRows = (rows) => {
     const program = textValue(item, "programName", "ProgramName") || textValue(itemProgram, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode") || programId || "Regular";
     const structureId = String(read(item, "feeStructureId", "FeeStructureId", "id", "Id") ?? `api-${index}`);
     const key = [academicYearId || academicYear, groupId || group, programId || program].join("|");
+    const explicitTotal = optionalNumberValue(item, "totalFee", "TotalFee", "feeTotal", "FeeTotal", "totalAmount", "TotalAmount", "totalActiveFees", "TotalActiveFees", "activeFeeTotal", "ActiveFeeTotal");
     const existing = grouped.get(key);
     const row = existing || {
       id: structureId,
@@ -341,45 +365,96 @@ const normalizeFeeStructureRows = (rows) => {
       programId,
       program,
       status: textValue(item, "status", "Status") || "Active",
+      totalFee: explicitTotal,
       feeItems: [],
     };
-    row.feeItems.push({
-      id: feeType.id || `type-${index}`,
-      feeTypeId: feeType.id,
-      structureItemId: textValue(item, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId"),
-      type: feeType.name,
-      originalAmount: amount,
-      payableAmount: amount,
-      selected: textValue(item, "status", "Status") !== "Inactive",
-      required: Boolean(read(item, "isMandatory", "IsMandatory", "required", "Required")),
-      structureId,
+    if (row.totalFee === undefined && explicitTotal !== undefined) row.totalFee = explicitTotal;
+    const nestedItems = getCollection(read(item, "feeItems", "FeeItems", "items", "Items", "feeStructureItems", "FeeStructureItems", "components", "Components", "feeComponents", "FeeComponents"));
+    const hasTopLevelFeeItem = read(item, "feeTypeId", "FeeTypeId", "typeId", "TypeId", "feeType", "FeeType", "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "amount", "Amount", "feeAmount", "FeeAmount") !== undefined;
+    const sourceItems = nestedItems.length ? nestedItems : hasTopLevelFeeItem ? [item] : [];
+    sourceItems.forEach((feeItem, feeIndex) => {
+      const feeType = feeTypeOption(feeItem);
+      const amount = numberValue(feeItem, "amount", "Amount", "feeAmount", "FeeAmount", "originalAmount", "OriginalAmount", "payableAmount", "PayableAmount", "totalAmount", "TotalAmount");
+      const status = read(feeItem, "isActive", "IsActive", "active", "Active", "status", "Status");
+      row.feeItems.push({
+        id: feeType.id || textValue(feeItem, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId", "id", "Id") || `type-${index}-${feeIndex}`,
+        feeTypeId: feeType.id,
+        structureItemId: textValue(feeItem, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId", "id", "Id"),
+        type: feeType.name,
+        originalAmount: amount,
+        payableAmount: amount,
+        selected: typeof status === "string" ? normalizeKey(status) !== "inactive" : status !== false,
+        required: normalizeKey(textValue(feeItem, "rule", "Rule")) === "mandatory" || Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
+        structureId,
+      });
     });
     grouped.set(key, row);
   });
-  return Array.from(grouped.values());
+  return Array.from(grouped.values()).map((row) => ({
+    ...row,
+    totalFee: row.totalFee ?? row.feeItems
+      .filter((feeItem) => feeItem.selected !== false)
+      .reduce((sum, feeItem) => sum + Number(feeItem.originalAmount || feeItem.payableAmount || 0), 0),
+  }));
 };
 
-const normalizeTransactionRows = (rows, account) => rows.map((item, index) => ({
-  id: String(read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id") ?? `${account.id}-TXN-${index + 1}`),
+const normalizeTransactionRows = (rows, account = {}) => rows.map((item, index) => ({
+  id: String(read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id") ?? `${account.id || "payment"}-TXN-${index + 1}`),
   feePaymentId: read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id"),
-  receiptNo: textValue(item, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber"),
-  studentName: account.studentName,
-  admissionNo: account.admissionNo,
-  group: account.group,
-  groupId: account.groupId,
-  section: account.section,
-  sectionId: account.sectionId,
-  academicYear: account.academicYear,
-  academicYearId: account.academicYearId,
-  type: textValue(item, "paymentType", "PaymentType", "feeType", "FeeType", "type", "Type") || "Fee Payment",
+  studentId: read(item, "studentId", "StudentId") ?? account.studentId,
+  studentFeeId: read(item, "studentFeeId", "StudentFeeId", "studentFeeAssignmentId", "StudentFeeAssignmentId") ?? account.studentFeeId ?? account.studentFeeAssignmentId,
+  receiptNo: textValue(item, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || account.receiptNo || "-",
+  studentName: textValue(item, "studentName", "StudentName", "name", "Name") || account.studentName || "Student",
+  admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || account.admissionNo || "-",
+  group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName") || account.group || "-",
+  groupId: textValue(item, "groupId", "GroupId") || account.groupId,
+  section: textValue(item, "sectionName", "SectionName", "section", "Section") || account.section || "-",
+  sectionId: textValue(item, "sectionId", "SectionId") || account.sectionId,
+  academicYear: textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || account.academicYear,
+  academicYearId: textValue(item, "academicYearId", "AcademicYearId") || account.academicYearId,
+  type: textValue(item, "paymentType", "PaymentType", "feeTypeName", "FeeTypeName", "feeType", "FeeType", "type", "Type") || "Fee Payment",
   amount: numberValue(item, "amount", "Amount", "paidAmount", "PaidAmount", "paymentAmount", "PaymentAmount"),
   baseAmount: numberValue(item, "baseAmount", "BaseAmount", "amount", "Amount"),
   discount: numberValue(item, "discount", "Discount", "discountAmount", "DiscountAmount"),
   fine: numberValue(item, "fine", "Fine", "fineAmount", "FineAmount"),
   method: textValue(item, "paymentMethod", "PaymentMethod", "paymentMode", "PaymentMode", "method", "Method") || "-",
   reference: textValue(item, "transactionNumber", "TransactionNumber", "reference", "Reference", "transactionReference", "TransactionReference"),
-  date: textValue(item, "paymentDate", "PaymentDate", "date", "Date", "createdAt", "CreatedAt") || todayISO(),
+  date: textValue(item, "paymentDate", "PaymentDate", "paidDate", "PaidDate", "date", "Date", "createdAt", "CreatedAt") || todayISO(),
+  status: textValue(item, "status", "Status", "paymentStatus", "PaymentStatus") || "Paid",
+  previousBalance: optionalNumberValue(item, "previousBalance", "PreviousBalance", "previousOutstanding", "PreviousOutstanding"),
+  balance: optionalNumberValue(item, "balance", "Balance", "remainingBalance", "RemainingBalance", "outstandingBalance", "OutstandingBalance"),
 }));
+
+const normalizeReceipt = (payload, fallback = {}) => {
+  const data = getObject(payload);
+  const [row] = normalizeTransactionRows([{ ...fallback, ...data }], fallback);
+  return row || fallback;
+};
+
+const accountMatchesPayment = (account, payment) => (
+  (payment.studentId && String(account.studentId) === String(payment.studentId))
+  || (payment.studentFeeId && String(account.studentFeeId || account.studentFeeAssignmentId || account.assignmentId) === String(payment.studentFeeId))
+  || (payment.admissionNo && payment.admissionNo !== "-" && normalizeKey(account.admissionNo) === normalizeKey(payment.admissionNo))
+  || (payment.studentName && payment.studentName !== "Student" && normalizeKey(account.studentName) === normalizeKey(payment.studentName))
+);
+
+const withPaymentContext = (payment, accounts = []) => {
+  const account = accounts.find((item) => accountMatchesPayment(item, payment));
+  if (!account) return payment;
+  return {
+    ...payment,
+    studentId: payment.studentId || account.studentId,
+    studentFeeId: payment.studentFeeId || account.studentFeeId || account.studentFeeAssignmentId || account.assignmentId,
+    studentName: payment.studentName && payment.studentName !== "Student" ? payment.studentName : account.studentName,
+    admissionNo: payment.admissionNo && payment.admissionNo !== "-" ? payment.admissionNo : account.admissionNo,
+    group: payment.group && payment.group !== "-" ? payment.group : account.group,
+    groupId: payment.groupId || account.groupId,
+    section: payment.section && payment.section !== "-" ? payment.section : account.section,
+    sectionId: payment.sectionId || account.sectionId,
+    academicYear: payment.academicYear || account.academicYear,
+    academicYearId: payment.academicYearId || account.academicYearId,
+  };
+};
 
 const normalizeInstallmentRows = (rows, account) => rows.map((item, index) => ({
   id: read(item, "feeInstallmentId", "FeeInstallmentId", "installmentId", "InstallmentId", "id", "Id"),
@@ -414,15 +489,21 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
     ?? read(studentFee, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
     ?? read(detail, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "id", "Id");
   const feeItems = feeDetailPayloadRows(detail).length ? feeDetailPayloadRows(detail) : getCollection(read(item, "feeItems", "FeeItems", "items", "Items", "breakdown", "Breakdown"));
-  const normalizedItems = feeItems.map((feeItem, feeIndex) => ({
-    id: String(read(feeItem, "feeTypeId", "FeeTypeId", "id", "Id") ?? `${index}-${feeIndex}`),
-    type: textValue(feeItem, "feeTypeName", "FeeTypeName", "feeType", "FeeType", "type", "Type", "name", "Name") || `Fee ${feeIndex + 1}`,
-    originalAmount: numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount"),
-    concessionAmount: numberValue(feeItem, "concessionAmount", "ConcessionAmount", "discount", "Discount"),
-    payableAmount: numberValue(feeItem, "payableAmount", "PayableAmount", "payable", "Payable", "amount", "Amount"),
-    selected: read(feeItem, "selected", "Selected") !== false,
-    required: Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
-  }));
+  const normalizedItems = feeItems.map((feeItem, feeIndex) => {
+    const originalAmount = numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount", "feeAmount", "FeeAmount", "baseAmount", "BaseAmount");
+    const concessionAmount = numberValue(feeItem, "concessionAmount", "ConcessionAmount", "discount", "Discount", "discountAmount", "DiscountAmount", "scholarshipAmount", "ScholarshipAmount");
+    const explicitPayable = optionalNumberValue(feeItem, "payableAmount", "PayableAmount", "payable", "Payable", "netAmount", "NetAmount", "finalAmount", "FinalAmount");
+    return {
+      id: String(read(feeItem, "feeTypeId", "FeeTypeId", "id", "Id") ?? `${index}-${feeIndex}`),
+      type: textValue(feeItem, "feeTypeName", "FeeTypeName", "feeType", "FeeType", "type", "Type", "name", "Name") || `Fee ${feeIndex + 1}`,
+      originalAmount,
+      concessionName: textValue(feeItem, "concessionName", "ConcessionName", "scholarshipName", "ScholarshipName", "schemeName", "SchemeName"),
+      concessionAmount,
+      payableAmount: explicitPayable ?? Math.max(originalAmount - concessionAmount, 0),
+      selected: read(feeItem, "selected", "Selected") !== false,
+      required: Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
+    };
+  });
   const detailTotal = normalizedItems.reduce((sum, feeItem) => sum + Number(feeItem.payableAmount || feeItem.originalAmount || 0), 0);
   const schedules = feeDetailScheduleRows(detail).length
     ? feeDetailScheduleRows(detail)
@@ -487,7 +568,7 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
   account.installments = normalizeInstallmentRows(schedules, account);
   const derived = deriveAccount(account);
   const nextDue = account.installments
-    .filter((row) => row.status !== "Paid" && row.balance > 0 && row.dueDate)
+    .filter((row) => normalizeKey(row.status) !== "paid" && row.balance > 0 && row.dueDate)
     .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0] || null;
   return {
     ...derived,
@@ -559,7 +640,7 @@ function TablePagination({ page, pageSize = PAGE_SIZE, totalItems, onPageChange 
       <span className="cms-fee-pagination-info">Showing {start}-{end} of {totalItems}</span>
       <div className="cms-fee-pagination-actions">
         <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))}>Previous</button>
-        <span>Page {page} of {totalPages}</span>
+        <button className="cms-btn cms-btn-primary cms-fee-mini-btn" type="button" aria-current="page">{page}</button>
         <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" disabled={page >= totalPages} onClick={() => onPageChange(Math.min(totalPages, page + 1))}>Next</button>
       </div>
     </div>
@@ -568,55 +649,79 @@ function TablePagination({ page, pageSize = PAGE_SIZE, totalItems, onPageChange 
 
 /* ------------------------------- Overview ------------------------------- */
 const normalizeDueRows = (rows) => rows
-  .map((item, index) => ({
-    key: String(read(item, "feeInstallmentId", "FeeInstallmentId", "studentFeeId", "StudentFeeId", "id", "Id") ?? `due-${index + 1}`),
-    studentName: textValue(item, "studentName", "StudentName", "name", "Name") || "Student",
-    admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "-",
-    group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName"),
-    section: textValue(item, "sectionName", "SectionName", "section", "Section", "programName", "ProgramName") || "-",
-    no: textValue(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "feeSchedule", "FeeSchedule") || index + 1,
-    dueDate: textValue(item, "dueDate", "DueDate", "nextDue", "NextDue"),
-    amount: numberValue(item, "balance", "Balance", "amount", "Amount", "dueAmount", "DueAmount"),
-    status: textValue(item, "status", "Status", "feeStatus", "FeeStatus") || "Due",
-  }))
-  .filter((item) => item.amount > 0);
+  .map((item, index) => {
+    const paymentPlan = textValue(item, "paymentPlan", "PaymentPlan", "plan", "Plan");
+    const scheduleNo = textValue(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "no", "No");
+    const scheduleText = textValue(item, "feeSchedule", "FeeSchedule", "schedule", "Schedule");
+    const isFullPayment = normalizeKey(paymentPlan).includes("full")
+      || normalizeKey(scheduleText).includes("full payment")
+      || normalizeKey(scheduleNo).includes("full payment");
+    const status = textValue(item, "status", "Status", "feeStatus", "FeeStatus") || "Due";
+    return {
+      key: String(read(item, "feeInstallmentId", "FeeInstallmentId", "studentFeeId", "StudentFeeId", "id", "Id") ?? `due-${index + 1}`),
+      studentName: textValue(item, "studentName", "StudentName", "name", "Name") || "Student",
+      admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "-",
+      group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName"),
+      section: textValue(item, "sectionName", "SectionName", "section", "Section", "programName", "ProgramName") || "-",
+      no: scheduleNo,
+      scheduleLabel: isFullPayment ? "Full Payment" : scheduleNo ? `Fee Schedule ${scheduleNo}` : scheduleText || "Fee Schedule",
+      dueDate: cleanDateValue(textValue(item, "dueDate", "DueDate", "nextDue", "NextDue")),
+      amount: numberValue(item, "balance", "Balance", "outstandingBalance", "OutstandingBalance", "pendingAmount", "PendingAmount", "amount", "Amount", "dueAmount", "DueAmount"),
+      status,
+    };
+  })
+  .filter((item) => item.amount > 0 && !["paid", "completed"].includes(normalizeKey(item.status)));
 
 const normalizeDashboard = (payload) => {
   const data = getObject(payload);
+  const chartRows = getCollection(read(data, "groupWiseCollection", "GroupWiseCollection", "groupWiseTotals", "GroupWiseTotals", "chartData", "ChartData"));
   return {
     totals: {
       totalStudents: optionalNumberValue(data, "totalStudents", "TotalStudents"),
-      totalCollected: optionalNumberValue(data, "totalCollected", "TotalCollected", "collected", "Collected"),
+      totalCollected: optionalNumberValue(data, "totalCollected", "TotalCollected", "collected", "Collected", "totalPaid", "TotalPaid"),
       pendingStudents: optionalNumberValue(data, "pendingStudents", "PendingStudents"),
       overdueStudents: optionalNumberValue(data, "overdueStudents", "OverdueStudents"),
       collectedPercent: optionalNumberValue(data, "collectionPercentage", "CollectionPercentage", "collectedPercent", "CollectedPercent"),
     },
-    chartData: getCollection(read(data, "groupWiseCollection", "GroupWiseCollection")).map((item) => ({
-      group: textValue(item, "groupName", "GroupName", "group", "Group") || "-",
-      expected: numberValue(item, "expected", "Expected", "totalExpected", "TotalExpected"),
-      collected: numberValue(item, "collected", "Collected", "totalCollected", "TotalCollected"),
-      outstanding: numberValue(item, "outstanding", "Outstanding", "totalOutstanding", "TotalOutstanding"),
+    chartData: chartRows.map((item) => ({
+      group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName") || "-",
+      expected: numberValue(item, "expected", "Expected", "totalExpected", "TotalExpected", "totalPayable", "TotalPayable"),
+      collected: numberValue(item, "collected", "Collected", "totalCollected", "TotalCollected", "totalPaid", "TotalPaid", "paidAmount", "PaidAmount"),
+      outstanding: numberValue(item, "outstanding", "Outstanding", "totalOutstanding", "TotalOutstanding", "balance", "Balance", "pendingAmount", "PendingAmount"),
     })),
     upcoming: normalizeDueRows(getCollection(read(data, "upcomingSchedules", "UpcomingSchedules", "dues", "Dues"))),
-    recent: getCollection(read(data, "recentPayments", "RecentPayments", "payments", "Payments")),
+    recent: normalizeTransactionRows(getCollection(read(data, "recentPayments", "RecentPayments", "payments", "Payments")), {}),
   };
 };
 
-function OverviewTab({ accounts, dashboard = null, dueRows = [] }) {
+function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded = false }) {
   const [overviewTab, setOverviewTab] = useState("upcoming");
+  const [upcomingPage, setUpcomingPage] = useState(1);
+  const [recentPage, setRecentPage] = useState(1);
   const dashboardData = dashboard ? normalizeDashboard(dashboard) : null;
   const fallbackTotals = accountOverviewTotals(accounts);
   const dashboardTotals = Object.fromEntries(Object.entries(dashboardData?.totals || {}).filter(([, value]) => value !== undefined));
   const hasAccountData = accounts.some(accountHasUsefulTotals);
-  const totals = hasAccountData ? fallbackTotals : { ...fallbackTotals, ...dashboardTotals };
+  const emptyTotals = { totalStudents: 0, totalCollected: 0, pendingStudents: 0, overdueStudents: 0, collectedPercent: 0 };
+  const totals = Object.keys(dashboardTotals).length ? { ...fallbackTotals, ...dashboardTotals } : dashboardLoaded ? fallbackTotals : emptyTotals;
   const dashboardChart = dashboardData?.chartData || [];
   const accountChart = accountGroupWiseTotals(accounts);
-  const chartData = hasUsefulChartData(accountChart) ? accountChart : hasUsefulChartData(dashboardChart) ? dashboardChart : groupWiseTotals(accounts);
-  const accountUpcoming = upcomingInstallments(accounts);
-  const upcoming = accountUpcoming.length ? accountUpcoming : dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
-  const accountTransactions = allTransactions(accounts);
-  const recent = accountTransactions.length ? accountTransactions.slice(0, 8) : dashboardData?.recent?.length ? dashboardData.recent : [];
+  const chartData = hasUsefulChartData(dashboardChart) ? dashboardChart : dashboardLoaded && hasAccountData && hasUsefulChartData(accountChart) ? accountChart : [];
+  const upcoming = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
+  const recent = dashboardData?.recent?.length ? dashboardData.recent : [];
   const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
+  const paginatedUpcoming = pageItems(upcoming, upcomingPage);
+  const paginatedRecent = pageItems(recent, recentPage);
+  const upcomingSignature = upcoming.map((row) => `${row.key}-${row.amount}-${row.status}-${row.dueDate}`).join("|");
+  const recentSignature = recent.map((row) => `${row.id}-${row.amount}-${row.date}-${row.receiptNo}`).join("|");
+
+  useEffect(() => {
+    setUpcomingPage(1);
+  }, [upcomingSignature]);
+
+  useEffect(() => {
+    setRecentPage(1);
+  }, [recentSignature]);
 
   return (
     <div className="cms-fee-stack">
@@ -675,19 +780,20 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [] }) {
                   <tbody>
                     {upcoming.length === 0 ? (
                       <tr><td colSpan={7} className="cms-fee-empty-row">No pending fee schedules.</td></tr>
-                    ) : upcoming.map((row) => (
+                    ) : paginatedUpcoming.map((row) => (
                       <tr key={row.key}>
                         <td><strong>{row.studentName}</strong></td>
                         <td>{row.admissionNo}</td>
                         <td>{row.group} / {row.section}</td>
-                        <td>Fee Schedule {row.no}</td>
-                        <td>{formatDate(row.dueDate)}</td>
+                        <td>{row.scheduleLabel}</td>
+                        <td>{formatFeeDate(row.dueDate)}</td>
                         <td className="num">{formatCurrency(row.amount)}</td>
                         <td><StatusBadge status={row.status} /></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                <TablePagination page={upcomingPage} totalItems={upcoming.length} onPageChange={setUpcomingPage} />
               </div>
             ) : null}
 
@@ -700,18 +806,19 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [] }) {
                   <tbody>
                     {recent.length === 0 ? (
                       <tr><td colSpan={6} className="cms-fee-empty-row">No recent payments.</td></tr>
-                    ) : recent.map((row) => (
+                    ) : paginatedRecent.map((row) => (
                       <tr key={row.id}>
                         <td><strong>{row.receiptNo}</strong></td>
                         <td>{row.studentName}</td>
                         <td>{feeScheduleLabel(row.type)}</td>
                         <td className="num">{formatCurrency(row.amount)}</td>
                         <td>{row.method}</td>
-                        <td>{formatDate(row.date)}</td>
+                        <td>{formatFeeDate(row.date)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                <TablePagination page={recentPage} totalItems={recent.length} onPageChange={setRecentPage} />
               </div>
             ) : null}
           </div>
@@ -723,7 +830,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [] }) {
 
 /* ---------------------------- Collect payment ---------------------------- */
 function CollectPaymentModal({ account, onClose, onSaved }) {
-  const pending = account.installments.filter((item) => item.status !== "Paid");
+  const pending = account.installments.filter((item) => normalizeKey(item.status) !== "paid" && Number(item.balance || 0) > 0);
   const [target, setTarget] = useState(pending.length ? String(pending[0].no) : "full");
   const [amount, setAmount] = useState(String(pending.length ? pending[0].balance : account.balance));
   const [date, setDate] = useState(todayISO());
@@ -785,6 +892,13 @@ function CollectPaymentModal({ account, onClose, onSaved }) {
       savingRef.current = false;
       return onSaved({
         amount: numberValue(saved, "amount", "Amount", "paidAmount", "PaidAmount") || value,
+        baseAmount: numberValue(saved, "baseAmount", "BaseAmount", "amount", "Amount") || value,
+        discount: numberValue(saved, "discount", "Discount", "discountAmount", "DiscountAmount"),
+        fine: numberValue(saved, "fine", "Fine", "fineAmount", "FineAmount"),
+        method: textValue(saved, "paymentMethod", "PaymentMethod", "paymentMode", "PaymentMode", "method", "Method") || method,
+        reference: textValue(saved, "transactionNumber", "TransactionNumber", "reference", "Reference", "transactionReference", "TransactionReference") || reference,
+        date: textValue(saved, "paymentDate", "PaymentDate", "paidDate", "PaidDate", "date", "Date", "createdAt", "CreatedAt") || date,
+        feePaymentId: read(saved, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id"),
         receiptNo: textValue(saved, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || "-",
       });
     } catch (err) {
@@ -910,7 +1024,29 @@ function ReceiptModal({ receipt, onClose }) {
 }
 
 /* --------------------------- Student fee details -------------------------- */
-function StudentFeeDrawer({ account, onClose, onCollect, onReceipt }) {
+function StudentFeeDrawer({ account, onClose, onCollect, onReceipt, allowCollect = false }) {
+  const viewReceipt = async (txn) => {
+    const receiptNo = txn.receiptNo && txn.receiptNo !== "-" ? txn.receiptNo : "";
+    const paymentId = txn.feePaymentId || txn.paymentId || txn.id;
+    try {
+      const response = receiptNo
+        ? await apiClient.get(apiEndpoints.fee.receiptByNumber(receiptNo))
+        : await apiClient.get(apiEndpoints.fee.paymentDetails(paymentId));
+      onReceipt(normalizeReceipt(response.data, { ...txn, studentName: account.studentName, admissionNo: account.admissionNo, group: account.group, section: account.section, academicYear: account.academicYear, balance: account.balance }));
+    } catch {
+      if (paymentId) {
+        try {
+          const response = await apiClient.get(apiEndpoints.fee.paymentDetails(paymentId));
+          onReceipt(normalizeReceipt(response.data, { ...txn, studentName: account.studentName, admissionNo: account.admissionNo, group: account.group, section: account.section, academicYear: account.academicYear, balance: account.balance }));
+          return;
+        } catch {
+          // Fall through to the row data so the action still opens gracefully.
+        }
+      }
+      onReceipt({ ...txn, studentName: account.studentName, admissionNo: account.admissionNo, group: account.group, section: account.section, academicYear: account.academicYear, balance: account.balance });
+    }
+  };
+
   return (
     <div className="cms-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <aside className="cms-fee-drawer" role="dialog" aria-modal="true" aria-label="Student fee details">
@@ -923,9 +1059,11 @@ function StudentFeeDrawer({ account, onClose, onCollect, onReceipt }) {
             <button className="cms-btn cms-btn-ghost" onClick={() => printFeeTarget("student")}>
               <Printer size={14} /> Print
             </button>
-            <button className="cms-btn cms-btn-primary" onClick={onCollect} disabled={account.balance === 0}>
-              <WalletCards size={14} /> Collect Payment
-            </button>
+            {allowCollect ? (
+              <button className="cms-btn cms-btn-primary" onClick={onCollect} disabled={account.balance === 0}>
+                <WalletCards size={14} /> Collect Payment
+              </button>
+            ) : null}
             <button className="cms-btn cms-btn-ghost" onClick={onClose}>Close</button>
           </div>
         </header>
@@ -962,7 +1100,14 @@ function StudentFeeDrawer({ account, onClose, onCollect, onReceipt }) {
           <section className="cms-fee-block">
             <h3>Applicable Fee Breakdown</h3>
             <div className="cms-table-wrap">
-              <table className="cms-table">
+              <table className="cms-table cms-fee-breakdown-table">
+                <colgroup>
+                  <col className="cms-fee-breakdown-type-col" />
+                  <col className="cms-fee-breakdown-money-col" />
+                  <col className="cms-fee-breakdown-concession-col" />
+                  <col className="cms-fee-breakdown-money-col" />
+                  <col className="cms-fee-breakdown-money-col" />
+                </colgroup>
                 <thead>
                   <tr><th>Fee Type</th><th className="num">Amount</th><th>Concession / Scheme</th><th className="num">Discount</th><th className="num">Payable</th></tr>
                 </thead>
@@ -1031,7 +1176,7 @@ function StudentFeeDrawer({ account, onClose, onCollect, onReceipt }) {
                       <td>{txn.method}</td>
                       <td>{formatDate(txn.date)}</td>
                       <td>
-                        <button className="cms-action-btn" title="View receipt" onClick={() => onReceipt({ ...txn, studentName: account.studentName, admissionNo: account.admissionNo, group: account.group, section: account.section, academicYear: account.academicYear, balance: account.balance })}>
+                        <button className="cms-action-btn" title="View receipt" onClick={() => viewReceipt(txn)}>
                           <Eye size={15} />
                         </button>
                       </td>
@@ -1232,15 +1377,13 @@ function FeeCollectionTab({ accounts, onCollect, loading = false, error = "" }) 
 
 /* ----------------------------- Fee structure ----------------------------- */
 function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTypes, masters, masterErrors = {}, masterLoading = false }) {
-  const firstGroup = masters.groups[0];
-  const initialGroup = initial?.groupId ? masters.groups.find((item) => item.value === String(initial.groupId)) : firstGroup;
   const initialProgram = initial?.programId || "";
   const initialValues = initial || {
-    boardId: masters.boards[0]?.value || "",
-    academicYear: masters.years[0]?.label || "",
-    academicYearId: masters.years[0]?.value || "",
-    group: firstGroup?.label || "",
-    groupId: firstGroup?.value || "",
+    boardId: "",
+    academicYear: "",
+    academicYearId: "",
+    group: "",
+    groupId: "",
     programId: "",
     program: "",
     admissionFee: 0,
@@ -1260,31 +1403,22 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
   const [programLoading, setProgramLoading] = useState(false);
   const [programError, setProgramError] = useState("");
   const programRequestRef = useRef(0);
+  const savingRef = useRef(false);
+  const selectedBoardLabel = optionLabel(masters.boards, values.boardId);
+  const selectedYearLabel = optionLabel(masters.years, values.academicYearId) || values.academicYear;
   const groupOptions = useMemo(() => (
     masters.groups.filter((item) => (
-      (!values.boardId || !item.boardId || item.boardId === String(values.boardId))
-      && (!values.academicYearId || !item.academicYearId || item.academicYearId === String(values.academicYearId))
+      matchesContext(values.boardId, selectedBoardLabel, item.boardId, item.boardName)
+      && matchesContext(values.academicYearId, selectedYearLabel, item.academicYearId, item.academicYearName)
     ))
-  ), [masters.groups, values.academicYearId, values.boardId]);
+  ), [masters.groups, selectedBoardLabel, selectedYearLabel, values.academicYearId, values.boardId]);
 
-  const resolveAcademicLevelId = async () => {
-    const selectedGroup = masters.groups.find((group) => String(group.value) === String(values.groupId));
-    const localLevelId = Number(selectedGroup?.academicLevelId || values.academicLevelId || 0);
-    if (localLevelId > 0) return localLevelId;
-    if (!values.groupId) return 0;
-    try {
-      const response = await apiClient.get(apiEndpoints.groups.getById(values.groupId));
-      const group = groupOption(getObject(response.data));
-      const fetchedLevelId = Number(group?.academicLevelId || 0);
-      if (fetchedLevelId > 0) {
-        setValues((current) => ({ ...current, academicLevelId: String(fetchedLevelId) }));
-        return fetchedLevelId;
-      }
-    } catch {
-      return 0;
-    }
-    return 0;
-  };
+  useEffect(() => {
+    if (initial || values.feeItems.length || !configuredFeeItems.length) return;
+    setValues((current) => (
+      current.feeItems.length ? current : { ...current, feeItems: configuredFeeItems }
+    ));
+  }, [configuredFeeItems, initial, values.feeItems.length]);
 
   useEffect(() => {
     const groupId = values.groupId;
@@ -1379,43 +1513,43 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     });
   };
 
-  const buildStructureItemPayload = (item) => {
+  const buildStructureItemPayload = (item, includeFeeType = true) => {
     const feeTypeId = Number(item.feeTypeId || item.id || 0);
     const amount = Number(item.originalAmount || 0);
     return {
-      feeTypeId,
+      ...(includeFeeType ? { feeTypeId } : {}),
+      rule: item.required ? "Mandatory" : "Optional",
       amount,
-      isMandatory: Boolean(item.required),
-      dueDate: new Date().toISOString(),
+      ...(!includeFeeType ? { isActive: item.selected !== false } : {}),
     };
   };
 
-  const buildStructurePayload = (items = [], resolvedAcademicLevelId = 0) => {
-    const selectedGroup = masters.groups.find((group) => String(group.value) === String(values.groupId));
-    const backendCompatibilitySectionId = Number(masters.sections.find((section) => section.groupId === values.groupId)?.value || masters.sections[0]?.value || 0);
-    const backendCompatibilityAcademicLevelId = Number(resolvedAcademicLevelId || selectedGroup?.academicLevelId || values.academicLevelId || 0);
+  const buildStructurePayload = (items = []) => {
     const programId = Number(values.programId || 0);
+    if (initial?.id) {
+      return {
+        ...(programId ? { programId } : {}),
+        isActive: values.status !== "Inactive",
+      };
+    }
     return {
       boardId: Number(values.boardId || values.board || 0),
       academicYearId: Number(values.academicYearId || values.academicYear || 0),
-      // TODO: Remove academicLevelId compatibility fallback when the backend supports year/group/program fee structures.
-      academicLevelId: backendCompatibilityAcademicLevelId,
       groupId: Number(values.groupId || values.group || 0),
       ...(programId ? { programId } : {}),
-      // TODO: Remove sectionId compatibility fallback when the backend supports section-independent fee structures.
-      sectionId: backendCompatibilitySectionId,
+      items: items.map((item) => buildStructureItemPayload(item, true)),
     };
   };
 
   const save = async () => {
+    if (savingRef.current) return null;
     const selectedItems = values.feeItems.filter((item) => item.required || Number(item.originalAmount || 0) > 0);
     if (!values.academicYear && !values.academicYearId) return setError("Academic Year is required");
     if (!values.group && !values.groupId) return setError("Group is required");
     if (!values.programId) return setError("Program is required");
     if (!selectedItems.length) return setError("Select at least one fee type for this structure");
     if (values.feeItems.some((item) => Number(item.originalAmount || 0) < 0)) return setError("Fee amount cannot be negative");
-    const academicLevelId = await resolveAcademicLevelId();
-    if (!academicLevelId) return setError("Academic Level is missing for the selected Group. Please update the Group with an Academic Level before creating a fee structure.");
+    if (selectedItems.some((item) => Number(item.originalAmount || 0) <= 0)) return setError("Fee amount must be greater than 0 for selected fee types.");
     const canUseFeeStructureApi = hasBackendFeeTypeIds(feeTypes);
     if (!canUseFeeStructureApi) return setError("Fee structures require saved backend fee types. Please save fee types successfully before creating a structure.");
     if (selectedItems.some((item) => !Number(item.feeTypeId || item.id))) return setError("Only saved backend fee types can be used for API fee structures.");
@@ -1427,29 +1561,28 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
       && String(row.programId || row.program || "regular") === String(values.programId || values.program || "regular")
     ));
     if (duplicate) return setError("A fee structure already exists for the selected Academic Year, Group and Program.");
+    savingRef.current = true;
     setSaving(true);
     try {
-      const structurePayload = buildStructurePayload(selectedItems, academicLevelId);
+      const structurePayload = buildStructurePayload(selectedItems);
       const structureResponse = initial?.id
         ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload)
         : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload);
       const feeStructureId = initial?.id || read(getObject(structureResponse.data), "feeStructureId", "FeeStructureId", "id", "Id");
       if (!feeStructureId) throw new Error("Fee structure saved, but the structure ID was not returned.");
-      const existingItemsResponse = await apiClient.get(apiEndpoints.fee.getStructureItems(feeStructureId)).catch(() => null);
-      const existingItems = existingItemsResponse ? getCollection(existingItemsResponse.data) : [];
-      if (initial?.id || !existingItems.length) {
-        await Promise.all(selectedItems.map((item) => {
-          const itemPayload = buildStructureItemPayload(item);
-          return item.structureItemId
-            ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), itemPayload)
-            : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), itemPayload);
-        }));
+      if (initial?.id) {
+        await Promise.all(selectedItems.map((item) => (
+          item.structureItemId
+            ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), buildStructureItemPayload(item, false))
+            : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), buildStructureItemPayload(item, true))
+        )));
       }
       onSaved(initial?.id ? "Fee structure updated" : "Fee structure added", true);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
       setSaving(false);
+      savingRef.current = false;
     }
     return null;
   };
@@ -1972,7 +2105,7 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
             ) : paginatedStructures.map((row) => {
               const feeItems = row.feeItems || [];
               const activeItems = feeItems.filter((item) => item.selected);
-              const activeTotal = activeItems.reduce((sum, item) => sum + Number(item.originalAmount || 0), 0);
+              const activeTotal = row.totalFee ?? activeItems.reduce((sum, item) => sum + Number(item.originalAmount || item.payableAmount || 0), 0);
               return (
                 <tr key={row.id}>
                   <td><strong>{row.academicYear}</strong></td>
@@ -2060,7 +2193,7 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
 }
 
 /* ---------------------------- Payment history ---------------------------- */
-function HistoryTab({ accounts, onReceipt, loading = false, error = "" }) {
+function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" }) {
   const [search, setSearch] = useState("");
   const [loadingReceiptId, setLoadingReceiptId] = useState("");
   const [page, setPage] = useState(1);
@@ -2068,14 +2201,13 @@ function HistoryTab({ accounts, onReceipt, loading = false, error = "" }) {
     setSearch(value);
     setPage(1);
   };
-  const transactions = useMemo(() => allTransactions(accounts), [accounts]);
 
   const rows = transactions.filter((row) => {
     const term = search.trim().toLowerCase();
     return !term
-      || row.studentName.toLowerCase().includes(term)
-      || row.admissionNo.toLowerCase().includes(term)
-      || row.receiptNo.toLowerCase().includes(term);
+      || String(row.studentName || "").toLowerCase().includes(term)
+      || String(row.admissionNo || "").toLowerCase().includes(term)
+      || String(row.receiptNo || "").toLowerCase().includes(term);
   });
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
@@ -2088,14 +2220,14 @@ function HistoryTab({ accounts, onReceipt, loading = false, error = "" }) {
     const paymentId = row.feePaymentId || row.paymentId || row.id;
     setLoadingReceiptId(row.id);
     try {
-      const response = row.receiptNo
+      const response = row.receiptNo && row.receiptNo !== "-"
         ? await apiClient.get(apiEndpoints.fee.receiptByNumber(row.receiptNo))
         : await apiClient.get(apiEndpoints.fee.paymentDetails(paymentId));
-      onReceipt({ ...row, ...getObject(response.data) });
+      onReceipt(normalizeReceipt(response.data, row));
     } catch {
       try {
         const response = await apiClient.get(apiEndpoints.fee.paymentDetails(paymentId));
-        onReceipt({ ...row, ...getObject(response.data) });
+        onReceipt(normalizeReceipt(response.data, row));
       } catch {
         onReceipt(row);
       }
@@ -2142,7 +2274,7 @@ function HistoryTab({ accounts, onReceipt, loading = false, error = "" }) {
                 <td className="num">{formatCurrency(row.amount)}</td>
                 <td>{row.method}</td>
                 <td>{row.reference || "-"}</td>
-                <td><StatusBadge status="Paid" /></td>
+                <td><StatusBadge status={row.status || "Paid"} /></td>
                 <td>
                   <button className="cms-action-btn" title="View receipt" aria-label="View receipt" disabled={loadingReceiptId === row.id} onClick={() => viewReceipt(row)}><ReceiptText size={15} /></button>
                 </td>
@@ -2161,6 +2293,7 @@ export default function FeeManagementPage() {
   const [tab, setTab] = useState(TABS[0]);
   const [setupTab, setSetupTab] = useState(FEE_SETUP_TABS[0]);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedSource, setSelectedSource] = useState("");
   const [collecting, setCollecting] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const [toast, setToast] = useState("");
@@ -2176,11 +2309,14 @@ export default function FeeManagementPage() {
   const [accountLoading, setAccountLoading] = useState({ ledger: false, collection: false });
   const [accountErrors, setAccountErrors] = useState({ ledger: "", collection: "" });
   const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoaded, setDashboardLoaded] = useState(false);
   const [dueRows, setDueRows] = useState([]);
   const [, setOverviewError] = useState("");
   const [selectedDetail, setSelectedDetail] = useState(null);
+  const [paymentHistoryExtras, setPaymentHistoryExtras] = useState([]);
   const accountRequestRef = useRef({ ledger: 0, collection: 0 });
   const overviewRequestRef = useRef(0);
+  const paymentHistoryRequestRef = useRef(0);
   const loadedTabsRef = useRef(new Set());
 
   const structures = apiStructures;
@@ -2188,6 +2324,24 @@ export default function FeeManagementPage() {
   const selectedBase = selectedId ? [...ledgerAccounts, ...collectionAccounts].find((item) => item.id === selectedId) : null;
   const selected = selectedDetail || selectedBase;
   const modalOpen = Boolean(selected || collecting || receipt);
+  const paymentHistoryRows = useMemo(() => {
+    const rows = [];
+    const accounts = [...ledgerAccounts, ...collectionAccounts];
+    accounts.forEach((account) => {
+      rows.push(...(account.transactions || []));
+    });
+    rows.push(...paymentHistoryExtras);
+    if (dashboardData) {
+      rows.push(...normalizeDashboard(dashboardData).recent.map((payment) => withPaymentContext(payment, accounts)));
+    }
+    const seen = new Set();
+    return rows.filter((row) => {
+      const key = row.feePaymentId || row.receiptNo || `${row.admissionNo}-${row.date}-${row.amount}-${row.reference}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [collectionAccounts, dashboardData, ledgerAccounts, paymentHistoryExtras]);
 
   const saveFeeTypes = (nextTypes) => {
     setFeeTypes(nextTypes);
@@ -2244,6 +2398,7 @@ export default function FeeManagementPage() {
   const loadOverviewData = useCallback(async () => {
     const requestId = overviewRequestRef.current + 1;
     overviewRequestRef.current = requestId;
+    setDashboardLoaded(false);
     setOverviewError("");
     const dashboardResult = await apiClient.get(apiEndpoints.fee.dashboard).then(
       (response) => ({ status: "fulfilled", response }),
@@ -2255,8 +2410,10 @@ export default function FeeManagementPage() {
     );
     if (overviewRequestRef.current !== requestId) return;
     if (dashboardResult.status === "fulfilled") {
-      setDashboardData(getObject(dashboardResult.response.data));
+      const nextDashboard = getObject(dashboardResult.response.data);
+      if (Object.keys(nextDashboard).length) setDashboardData(nextDashboard);
     }
+    setDashboardLoaded(true);
     if (dueResult.status === "fulfilled") {
       setDueRows(normalizeDueRows(getCollection(dueResult.response.data)));
     }
@@ -2264,6 +2421,26 @@ export default function FeeManagementPage() {
       .filter((result) => result.status === "rejected")
       .map((result) => getApiErrorMessage(result.error));
     if (messages.length) setOverviewError(messages.join(" "));
+  }, []);
+
+  const loadMissingPaymentHistories = useCallback(async (accounts) => {
+    const targets = accounts.filter((account) => (
+      account.studentId
+      && Number(account.totalPaid || 0) > 0
+      && !(account.transactions || []).length
+    ));
+    if (!targets.length) {
+      setPaymentHistoryExtras([]);
+      return;
+    }
+    const requestId = paymentHistoryRequestRef.current + 1;
+    paymentHistoryRequestRef.current = requestId;
+    const results = await Promise.allSettled(targets.map((account) => (
+      apiClient.get(apiEndpoints.fee.getHistory(account.studentId))
+        .then((response) => normalizeTransactionRows(getCollection(response.data), account))
+    )));
+    if (paymentHistoryRequestRef.current !== requestId) return;
+    setPaymentHistoryExtras(results.flatMap((result) => (result.status === "fulfilled" ? result.value : [])));
   }, []);
 
   const loadFeeApiData = useCallback(async () => {
@@ -2326,11 +2503,13 @@ export default function FeeManagementPage() {
 
   const openCollectPayment = (id) => {
     setSelectedId(id);
+    setSelectedSource("collection");
     setCollecting(true);
   };
 
   const printStudentStatement = (id) => {
     setSelectedId(id);
+    setSelectedSource("ledger");
     window.setTimeout(() => printFeeTarget("student"), 80);
   };
 
@@ -2338,20 +2517,43 @@ export default function FeeManagementPage() {
     let ignore = false;
     setSelectedDetail(null);
     if (!selectedId || !selectedBase?.studentId) return undefined;
-    apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId))
-      .then((response) => {
+    const loadSelectedDetail = async () => {
+      const [studentDetailResult, feeDetailResult] = await Promise.allSettled([
+        apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId)),
+        selectedBase.studentFeeId || selectedBase.studentFeeAssignmentId || selectedBase.assignmentId
+          ? apiClient.get(apiEndpoints.fee.studentFeeDetails(selectedBase.studentFeeId || selectedBase.studentFeeAssignmentId || selectedBase.assignmentId))
+          : Promise.resolve(null),
+      ]);
+      if (ignore) return;
+      const studentDetail = studentDetailResult.status === "fulfilled" ? getObject(studentDetailResult.value?.data) : {};
+      const feeDetail = feeDetailResult.status === "fulfilled" && feeDetailResult.value ? getObject(feeDetailResult.value.data) : {};
+      let detail = mergeFeeDetailPayloads(studentDetail, feeDetail);
+      const hasPayments = feeDetailPaymentRows(detail).length > 0;
+      if (!hasPayments && Number(selectedBase.totalPaid || 0) > 0) {
+        const historyResult = await apiClient.get(apiEndpoints.fee.getHistory(selectedBase.studentId)).then(
+          (response) => ({ status: "fulfilled", response }),
+          (error) => ({ status: "rejected", error }),
+        );
         if (ignore) return;
-        const detail = getObject(response.data);
+        if (historyResult.status === "fulfilled") {
+          detail = {
+            ...detail,
+            paymentHistory: getCollection(historyResult.response.data),
+          };
+        }
+      }
+      if (!ignore) {
         const [normalized] = normalizeFeeAccountRows([selectedBase], {
           feeDetailsByStudentId: new Map([[String(selectedBase.studentId), detail]]),
         });
         setSelectedDetail(normalized || selectedBase);
-      })
-      .catch((err) => {
-        if (!ignore) {
-          setAccountErrors((current) => ({ ...current, ledger: current.ledger || getApiErrorMessage(err) }));
-        }
-      });
+      }
+      const primaryError = studentDetailResult.status === "rejected" ? studentDetailResult.reason : null;
+      if (primaryError && feeDetailResult.status === "rejected") {
+        setAccountErrors((current) => ({ ...current, ledger: current.ledger || getApiErrorMessage(primaryError) }));
+      }
+    };
+    loadSelectedDetail();
     return () => {
       ignore = true;
     };
@@ -2368,9 +2570,8 @@ export default function FeeManagementPage() {
 
   useEffect(() => {
     loadOverviewData();
-    loadFeeAccounts("ledger");
     loadedTabsRef.current.add("Overview");
-  }, [loadFeeAccounts, loadOverviewData]);
+  }, [loadOverviewData]);
 
   useEffect(() => {
     if (loadedTabsRef.current.has(tab)) return;
@@ -2380,6 +2581,11 @@ export default function FeeManagementPage() {
     if (tab === "Fee Collection") loadFeeAccounts("collection");
     if (tab === "Student Fee Ledger" || tab === "Payment History") loadFeeAccounts("ledger");
   }, [loadFeeAccounts, loadFeeApiData, loadOverviewData, tab]);
+
+  useEffect(() => {
+    if (tab !== "Payment History") return;
+    loadMissingPaymentHistories(ledgerAccounts);
+  }, [ledgerAccounts, loadMissingPaymentHistories, tab]);
 
   return (
     <DashboardLayout
@@ -2402,8 +2608,8 @@ export default function FeeManagementPage() {
         ))}
       </div>
 
-      {tab === "Overview" ? <OverviewTab accounts={overviewAccounts} dashboard={dashboardData} dueRows={dueRows} /> : null}
-      {tab === "Student Fee Ledger" ? <LedgerTab accounts={ledgerAccounts} onView={setSelectedId} onPrint={printStudentStatement} masters={masters} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
+      {tab === "Overview" ? <OverviewTab accounts={overviewAccounts} dashboard={dashboardData} dueRows={dueRows} dashboardLoaded={dashboardLoaded} /> : null}
+      {tab === "Student Fee Ledger" ? <LedgerTab accounts={ledgerAccounts} onView={(id) => { setSelectedId(id); setSelectedSource("ledger"); }} onPrint={printStudentStatement} masters={masters} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
       {tab === "Fee Setup" ? (
         <FeeSetupTab
           setupTab={setupTab}
@@ -2422,14 +2628,15 @@ export default function FeeManagementPage() {
         />
       ) : null}
       {tab === "Fee Collection" ? <FeeCollectionTab accounts={collectionAccounts} onCollect={openCollectPayment} loading={accountLoading.collection} error={accountErrors.collection} /> : null}
-      {tab === "Payment History" ? <HistoryTab accounts={ledgerAccounts} onReceipt={setReceipt} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
+      {tab === "Payment History" ? <HistoryTab transactions={paymentHistoryRows} onReceipt={setReceipt} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
 
       {selected ? (
         <StudentFeeDrawer
           account={selected}
-          onClose={() => setSelectedId(null)}
+          onClose={() => { setSelectedId(null); setSelectedSource(""); }}
           onCollect={() => setCollecting(true)}
           onReceipt={setReceipt}
+          allowCollect={selectedSource === "collection"}
         />
       ) : null}
 

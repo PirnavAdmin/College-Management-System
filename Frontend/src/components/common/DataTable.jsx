@@ -39,6 +39,7 @@ export default function DataTable({
   toolbarExtra,
   emptyMessage,
   paginationCurrentOnly = false,
+  enableExport = true,
   enablePdfExport = false,
 }) {
   const [query, setQuery] = useState("");
@@ -138,37 +139,39 @@ export default function DataTable({
         </div>
         <div className="cms-toolbar-right">
           {toolbarExtra}
-          <div
-            className="cms-export-control"
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false);
-            }}
-          >
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              aria-haspopup="menu"
-              aria-expanded={exportOpen}
-              onClick={() => setExportOpen((open) => !open)}
+          {enableExport ? (
+            <div
+              className="cms-export-control"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false);
+              }}
             >
-              <Download size={15} /> Export <ChevronDown size={14} />
-            </button>
-            {exportOpen ? (
-              <div className="cms-export-menu" role="menu">
-                <button type="button" role="menuitem" onClick={exportExcel}>
-                  <FileSpreadsheet size={15} /> Export Excel
-                </button>
-                {enablePdfExport ? (
-                  <button type="button" role="menuitem" onClick={exportPdf}>
-                    <FileText size={15} /> Export PDF
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
+                onClick={() => setExportOpen((open) => !open)}
+              >
+                <Download size={15} /> Export <ChevronDown size={14} />
+              </button>
+              {exportOpen ? (
+                <div className="cms-export-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={exportExcel}>
+                    <FileSpreadsheet size={15} /> Export Excel
                   </button>
-                ) : null}
-                <button type="button" role="menuitem" onClick={printRows}>
-                  <Printer size={15} /> Print table
-                </button>
-              </div>
-            ) : null}
-          </div>
+                  {enablePdfExport ? (
+                    <button type="button" role="menuitem" onClick={exportPdf}>
+                      <FileText size={15} /> Export PDF
+                    </button>
+                  ) : null}
+                  <button type="button" role="menuitem" onClick={printRows}>
+                    <Printer size={15} /> Print table
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {onAdd ? (
             <button className="cms-btn cms-btn-primary" onClick={onAdd}>
               <Plus size={16} /> {addLabel}

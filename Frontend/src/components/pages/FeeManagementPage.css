@@ -569,6 +569,28 @@
 .cms-fee-kv span { display: block; color: var(--cms-muted); font-size: 11.5px; font-weight: 600; }
 .cms-fee-kv strong { display: block; margin-top: 3px; font-size: 13.5px; overflow-wrap: anywhere; }
 
+.cms-fee-breakdown-table {
+  width: 100%;
+  min-width: 760px;
+  table-layout: fixed;
+}
+.cms-fee-breakdown-table col.cms-fee-breakdown-type-col { width: 22%; }
+.cms-fee-breakdown-table col.cms-fee-breakdown-money-col { width: 16%; }
+.cms-fee-breakdown-table col.cms-fee-breakdown-concession-col { width: 30%; }
+.cms-fee-breakdown-table th,
+.cms-fee-breakdown-table td {
+  vertical-align: middle;
+}
+.cms-fee-breakdown-table th.num,
+.cms-fee-breakdown-table td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.cms-fee-breakdown-table th:nth-child(3),
+.cms-fee-breakdown-table td:nth-child(3) {
+  text-align: left;
+}
+
 .cms-fee-collect { display: grid; gap: 14px; }
 
 /* Receipt */

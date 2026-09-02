@@ -381,7 +381,7 @@ const COURSE_PAYMENT_PLAN_LABELS = {
   "Full Payment": "Full Course Payment",
   "Installment Payment": "Course Fee Schedule",
 };
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 6;
 const ADMISSION_EXPORT_COLUMNS = [
   "Admission No",
   "Student Name",
@@ -2955,6 +2955,17 @@ export default function AdmissionPage() {
 
           <div className="cms-table-wrap">
             <table className="cms-table cms-admission-table">
+              <colgroup>
+                <col className="cms-admission-col-no" />
+                <col className="cms-admission-col-name" />
+                <col className="cms-admission-col-date" />
+                <col className="cms-admission-col-year" />
+                <col className="cms-admission-col-board" />
+                <col className="cms-admission-col-group" />
+                <col className="cms-admission-col-program" />
+                <col className="cms-admission-col-status" />
+                <col className="cms-admission-col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Admission No</th>
@@ -3016,12 +3027,8 @@ export default function AdmissionPage() {
               Showing {displayedAdmissions.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}-
               {Math.min(currentPage * PAGE_SIZE, displayedAdmissions.length)} of {displayedAdmissions.length} admissions
             </span>
-            <button className="cms-page-btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Prev</button>
-            {Array.from({ length: totalPages }).map((_, index) => (
-              <button key={index} className={`cms-page-btn ${currentPage === index + 1 ? "is-active" : ""}`} onClick={() => setPage(index + 1)}>
-                {index + 1}
-              </button>
-            ))}
+            <button className="cms-page-btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+            <button className="cms-page-btn is-active" type="button" aria-current="page">{currentPage}</button>
             <button className="cms-page-btn" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
           </div>
         </div>

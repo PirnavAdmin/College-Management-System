@@ -23,26 +23,8 @@
 .group-management .cms-toolbar-right {
   flex: 1 1 auto;
   align-items: center;
-  margin-left: 0;
-}
-
-.group-management .cms-toolbar-right .cms-export-control {
+  justify-content: flex-end;
   margin-left: auto;
-}
-
-.group-management .cms-export-menu {
-  z-index: 1000;
-  background: #fff;
-  background-color: #fff;
-  opacity: 1;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-[data-theme="dark"] .group-management .cms-export-menu,
-:root[data-theme="dark"] .group-management .cms-export-menu {
-  background: #171A17;
-  background-color: #171A17;
 }
 
 .group-management .cms-toolbar-right .cms-btn {

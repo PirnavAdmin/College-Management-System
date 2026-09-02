@@ -406,13 +406,12 @@ function StudentMark({ say }) {
     });
   }, [f.subjectId, m.periods, m.sectionTimetable]);
   const programOptions = useMemo(() => {
-    if (m.programs.length) return toOptions(m.programs, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "ProgramName", "programme", "Programme", "name", "Name"]);
-    const group = m.groups.find((item) => item.id === String(f.groupId));
-    return toOptions(group?.raw?.programs ?? group?.raw?.Programs ?? [], ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name"]);
-  }, [f.groupId, m.groups, m.programs]);
+    return toOptions(m.programs, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "ProgramName", "programme", "Programme", "name", "Name"]);
+  }, [m.programs]);
   useEffect(() => {
     if (!f.groupId) { setM((current) => ({ ...current, programs: [] })); return; }
     let active = true;
+    setM((current) => ({ ...current, programs: [] }));
     apiClient.get(apiEndpoints.groups.programs(f.groupId))
       .then((response) => active && setM((current) => ({ ...current, programs: list(response.data) })))
       .catch((error) => { if (active) { setM((current) => ({ ...current, programs: [] })); say(getApiErrorMessage(error)); } });
@@ -1678,13 +1677,12 @@ function Reports({ staffMode, say }) {
     return () => { active = false; };
   }, [f.board, f.level, f.group, f.program, m.programs]);
   const programOptions = useMemo(() => {
-    if (m.programs.length) return toOptions(m.programs, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "ProgramName", "programme", "Programme", "name", "Name"]);
-    const group = m.groups.find((item) => item.id === String(f.group));
-    return toOptions(group?.raw?.programs ?? group?.raw?.Programs ?? [], ["programId", "ProgramId", "id", "Id"], ["programName", "ProgramName", "name", "Name"]);
-  }, [f.group, m.groups, m.programs]);
+    return toOptions(m.programs, ["programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"], ["programName", "ProgramName", "programme", "Programme", "name", "Name"]);
+  }, [m.programs]);
   useEffect(() => {
     if (!f.group) { setM((current) => ({ ...current, programs: [] })); return; }
     let active = true;
+    setM((current) => ({ ...current, programs: [] }));
     apiClient.get(apiEndpoints.groups.programs(f.group))
       .then((response) => active && setM((current) => ({ ...current, programs: list(response.data) })))
       .catch((error) => { if (active) { setM((current) => ({ ...current, programs: [] })); say(getApiErrorMessage(error)); } });

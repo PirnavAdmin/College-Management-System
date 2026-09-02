@@ -221,6 +221,35 @@ export default function PromotionPage({ screen = "promotion" }) {
     return () => { active = false; };
   }, [setup.board, setup.toBoard]);
   useEffect(() => () => eligibleController.current?.abort(), []);
+  useEffect(() => {
+    const groupIds = unique([setup.group, historyFilters.groupId]);
+    if (!groupIds.length) return undefined;
+    let active = true;
+    setMasters((current) => ({
+      ...current,
+      groups: current.groups.map((group) => groupIds.includes(group.value) ? { ...group, programs: [] } : group),
+    }));
+    Promise.allSettled(groupIds.map((groupId) => apiClient.get(apiEndpoints.groups.programs(groupId))))
+      .then((results) => {
+        if (!active) return;
+        setMasters((current) => ({
+          ...current,
+          groups: current.groups.map((group) => {
+            const index = groupIds.indexOf(group.value);
+            const result = results[index];
+            if (index < 0 || result?.status !== "fulfilled") return group;
+            const programs = unwrap(result.value.data)
+              .map((program) => option(
+                read(program, "programId", "ProgramId", "id", "Id", "groupProgramId", "GroupProgramId"),
+                read(program, "programName", "ProgramName", "programme", "Programme", "program", "Program", "name", "Name"),
+              ))
+              .filter((program) => numericId(program.value));
+            return { ...group, programs };
+          }),
+        }));
+      });
+    return () => { active = false; };
+  }, [historyFilters.groupId, setup.group]);
 
   const yearsFor = useCallback((prefix) => {
     const boardValue = setup[prefix === "from" ? "board" : "toBoard"];

@@ -271,6 +271,7 @@ function useLookups(initial = {}) {
     allLevels: [],
     groups: [],
     programs: [],
+    programsLoading: false,
     sections: [],
     sectionsLoading: false,
     sectionsError: false,
@@ -420,6 +421,8 @@ function useLookups(initial = {}) {
     const selectedProgram = data.programs.find((program) => String(program.id) === String(value.programId));
     setData((current) => ({
       ...current,
+      programs: [],
+      programsLoading: true,
       sections: value.programId ? current.sections : [],
       sectionsLoading: Boolean(value.programId),
       sectionsError: false,
@@ -460,6 +463,7 @@ function useLookups(initial = {}) {
             : [];
           return sameOptions(current.programs, nextPrograms) ? current.programs : nextPrograms;
         })(),
+        programsLoading: false,
         sections:
           r[1].status === "fulfilled"
             ? optionize(sectionsForProgramme(r[1].value.data, selectedProgram, value.groupId, value.academicLevelId), ["sectionId", "id", "Id"], ["sectionName", "name", "Name"])
@@ -532,10 +536,10 @@ function useLookups(initial = {}) {
 }
 function Context({ state, section = true, compact = false }) {
   const { value, data, change } = state;
-  const select = (label, key, values, disabled) => (
+  const select = (label, key, values, disabled, emptyLabel = `Select ${label}`) => (
     <Field label={label}>
       <select value={value[key]} onChange={change(key)} disabled={disabled}>
-        <option value="">Select {label}</option>
+        <option value="">{emptyLabel}</option>
         {values.map((entry) => (
           <option key={entry.id} value={entry.id}>
             {entry.name}
@@ -550,7 +554,13 @@ function Context({ state, section = true, compact = false }) {
       {select("Academic Year", "academicYearId", data.years, !value.boardId)}
       {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
       {select("Group", "groupId", data.groups, !value.academicLevelId)}
-      {select("Programme", "programId", data.programs, !value.groupId)}
+      {select(
+        "Program",
+        "programId",
+        data.programs,
+        !value.groupId || data.programsLoading,
+        data.programsLoading ? "Loading programs..." : value.groupId && !data.programs.length ? "No programs available for this group" : undefined,
+      )}
       {section && select("Section", "sectionId", data.sections, !value.programId)}
     </div>
   );
@@ -560,7 +570,7 @@ function ProgrammeSections({ data, onRetry }) {
     <section className="ttm-programme-sections" aria-live="polite">
       <header>
         <b>Sections for this Academic Level</b>
-        <span>Sections are automatically loaded for the selected group and programme.</span>
+        <span>Sections are automatically loaded for the selected group and program.</span>
       </header>
       {data.sectionsLoading ? <p>Loading sections...</p> : null}
       {data.sectionsError ? (
@@ -569,7 +579,7 @@ function ProgrammeSections({ data, onRetry }) {
           <Btn className="cms-btn cms-btn-ghost" onClick={onRetry}>Retry sections</Btn>
         </div>
       ) : null}
-      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for the selected group and programme.</p> : null}
+      {!data.sectionsLoading && !data.sectionsError && !data.sections.length ? <p>No sections found for the selected group and program.</p> : null}
       {!data.sectionsLoading && data.sections.length ? (
         <div className="ttm-section-chips">
           {data.sections.map((section) => <span key={section.id}>{section.name}</span>)}
@@ -1090,11 +1100,11 @@ function Generate({ goDraft, notify, initial }) {
       .map((section) => Number(pick(section.raw, "sectionId", "SectionId", "id", "Id", section.id)))
       .filter((sectionId) => Number.isInteger(sectionId) && sectionId > 0);
     if (!Number.isInteger(programId) || programId <= 0) {
-      notify("Please select a valid programme.");
+      notify("Please select a valid program.");
       return;
     }
     if (!sectionIds.length) {
-      notify("No sections found for the selected group and programme. Create sections in Section Management first.");
+      notify("No sections found for the selected group and program. Create sections in Section Management first.");
       return;
     }
     if (totalRequiredPeriods > weeklyCapacity) {
@@ -1584,7 +1594,7 @@ function Draft({ initial, notify }) {
   const exportSectionPdf = async () => {
     if (exportBusy) return;
     if (![value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId, value.sectionId].every(validId)) {
-      notify("Please select Board, Academic Year, Academic Level, Group, Programme and Section before exporting.");
+      notify("Please select Board, Academic Year, Academic Level, Group, Program and Section before exporting.");
       return;
     }
     setExportBusy("section");
@@ -1883,7 +1893,7 @@ function MainTimetable({ notify }) {
   const completeContext = [value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId, value.sectionId].every(Boolean);
   const openGenerated = async () => {
     if (!completeContext || opening) {
-      notify("Select Board, Academic Year, Academic Level, Group, Programme and Section first.");
+      notify("Select Board, Academic Year, Academic Level, Group, Program and Section first.");
       return;
     }
     setOpening(true);

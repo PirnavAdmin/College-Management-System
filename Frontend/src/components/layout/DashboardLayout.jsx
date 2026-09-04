@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   PanelLeft, Bell, Search, ChevronRight,
-  ChevronDown, Settings, User, LogOut,
+  ChevronDown, Settings, User, LogOut, Landmark, GraduationCap, CheckCircle2,
 } from "lucide-react";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
 import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import { useSidebar } from "@/hooks/useSidebar.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import pirnavCollegesLogo from "@/assets/pirnav-colleges-logo.png";
 import dashboardIcon from "@/assets/sidebar-3d/dashboard.png";
 import boardAcademicYearIcon from "@/assets/sidebar-3d/board-academic-year.png";
@@ -44,10 +45,12 @@ export const menu = [
     section: "People",
     items: [
       {
-        to: "/dashboard/faculty",
+        to: "/dashboard/staff",
         label: "Staff Management",
         icon: staffIcon,
       },
+      { to: "/dashboard/departments", label: "Department Management", icon: sectionsIcon },
+      { to: "/dashboard/staff-salary", label: "Staff Salary Management", icon: feeManagementIcon },
       { to: "/dashboard/admission", label: "Student Admission", icon: addStudentIcon },
       { to: "/dashboard/section-allocation", label: "Section Allocation", icon: allocateSectionIcon },
       { to: "/dashboard/students", label: "Student Management", icon: studentsIcon },
@@ -58,9 +61,10 @@ export const menu = [
     items: [
       { to: "/dashboard/timetable", label: "Timetable", icon: timetableIcon },
       { to: "/dashboard/attendance", label: "Attendance", icon: attendanceIcon, children: [
-        { to: "/dashboard/attendance/student", label: "Student", icon: studentsIcon },
-        { to: "/dashboard/attendance/staff", label: "Staff", icon: staffIcon },
+        { to: "/dashboard/attendance/student", label: "Student Attendance", icon: studentsIcon },
+        { to: "/dashboard/attendance/staff", label: "Staff Attendance", icon: staffIcon },
       ] },
+      { to: "/dashboard/leave-management", label: "Leave Management", icon: staffIcon },
     ],
   },
   {
@@ -78,6 +82,11 @@ export const menu = [
       { to: "/dashboard/fee-structure", label: "Fee Management", icon: feeManagementIcon },
       { to: "/dashboard/certificates", label: "Certificates", icon: certificatesIcon },
       { to: "/dashboard/reports", label: "Reports & Analytics", icon: reportsAnalyticsIcon },
+      {
+        to: "/dashboard/settings",
+        label: "Settings",
+        icon: boardAcademicYearIcon,
+      },
     ],
   },
 ];
@@ -85,8 +94,6 @@ export const menu = [
 const SIDEBAR_SCROLL_KEY = "cms_sidebar_scroll_top";
 const NOTIFICATION_REFRESH_INTERVAL = 60_000;
 const EMPTY_NOTIFICATION_SOURCES = [];
-// Notifications are loaded dynamically when available. Keep the dropdown
-// safe during initial render or when no notification source is configured.
 const MOCK_NOTIFICATIONS = [];
 const PENDING_STATUSES = new Set(["pending", "draft", "requested", "generated", "reviewed", "new", "created", "incomplete", "unpublished"]);
 
@@ -114,29 +121,14 @@ const notificationRows = (payload) => {
 const notificationStatus = (item = {}) => String(item.status ?? item.Status ?? item.workflowStatus ?? item.WorkflowStatus ?? "").trim().toLowerCase();
 const pendingRowCount = (payload, predicate = (item) => PENDING_STATUSES.has(notificationStatus(item))) => notificationRows(payload).filter(predicate).length;
 
-const pendingActionSources = [
-  {
-    id: "admissions",
-    endpoint: apiEndpoints.admissions.getAll,
-    to: "/dashboard/admission",
-    label: "admission",
-    count: (payload) => pendingRowCount(payload),
-  },
-  {
-    id: "fees",
-    endpoint: apiEndpoints.fee.getDue,
-    to: "/dashboard/fee-structure",
-    label: "fee account",
-    count: (payload) => pendingRowCount(payload, (item) => !["paid", "completed", "settled"].includes(notificationStatus(item))),
-  },
-];
-
 const searchIndex = menu.flatMap((g) =>
   g.items.flatMap((item) => [
     { to: item.to, label: item.label, section: g.section },
     ...(item.children || []).map((c) => ({ to: c.to, label: c.label, section: item.label })),
   ]),
 );
+const breadcrumbLinkForLabel = (label) =>
+  searchIndex.find((item) => item.label.toLowerCase() === String(label).toLowerCase())?.to;
 
 const normalizeBreadcrumbLabel = (value) => String(value ?? "").trim().replace(/\s+/g, " ");
 const breadcrumbKey = (value) => normalizeBreadcrumbLabel(value).toLowerCase();
@@ -195,13 +187,27 @@ export default function DashboardLayout({
   excludeNotificationSources = EMPTY_NOTIFICATION_SOURCES,
 }) {
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen } = useSidebar();
+  const {
+    boards,
+    academicYears,
+    selectedBoard,
+    selectedAcademicYear,
+    setSelectedBoard,
+    setSelectedAcademicYear,
+  } = useAcademicContext();
+
   const [attendanceOpen, setAttendanceOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [yearOpen, setYearOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const actionsRef = useRef(null);
   const searchRef = useRef(null);
+  const boardRef = useRef(null);
+  const yearRef = useRef(null);
   const sidebarNavRef = useRef(null);
   const savedScrollTopRef = useRef(0);
   const navigate = useNavigate();
@@ -248,6 +254,9 @@ export default function DashboardLayout({
   useEffect(() => {
     if (pathname.startsWith("/dashboard/attendance/")) setAttendanceOpen(true);
   }, [pathname]);
+  useEffect(() => {
+    if (pathname.startsWith("/dashboard/settings")) setSettingsOpen(true);
+  }, [pathname]);
 
   useEffect(() => {
     const onPointer = (e) => {
@@ -256,12 +265,16 @@ export default function DashboardLayout({
         setProfileOpen(false);
       }
       if (searchRef.current && !searchRef.current.contains(e.target)) setSearchOpen(false);
+      if (boardRef.current && !boardRef.current.contains(e.target)) setBoardOpen(false);
+      if (yearRef.current && !yearRef.current.contains(e.target)) setYearOpen(false);
     };
     const onKey = (e) => {
       if (e.key === "Escape") {
         setNotifOpen(false);
         setProfileOpen(false);
         setSearchOpen(false);
+        setBoardOpen(false);
+        setYearOpen(false);
       }
     };
     document.addEventListener("mousedown", onPointer);
@@ -318,11 +331,12 @@ export default function DashboardLayout({
                 if (item.children) {
                   const isFacultyMenu = item.to === "/dashboard/faculty";
                   const isAttendanceMenu = item.to === "/dashboard/attendance";
-                  const isOpen = isFacultyMenu ? facultyOpen : attendanceOpen;
-                  const setOpen = isFacultyMenu ? setFacultyOpen : setAttendanceOpen;
+                  const isSettingsMenu = item.to === "/dashboard/settings";
+                  const isOpen = isFacultyMenu ? facultyOpen : isAttendanceMenu ? attendanceOpen : isSettingsMenu ? settingsOpen : false;
+                  const setOpen = isFacultyMenu ? setFacultyOpen : isAttendanceMenu ? setAttendanceOpen : setSettingsOpen;
                   const childIsActive = (child) => isActive(child.to);
                   return (
-                    <div key={item.to} className={isAttendanceMenu ? "cms-nav-branch cms-attendance-branch" : "cms-nav-branch"}>
+                    <div key={item.to} className={isAttendanceMenu || isSettingsMenu ? "cms-nav-branch cms-attendance-branch" : "cms-nav-branch"}>
                       <div className="cms-nav-parent">
                         <Link
                           to={item.to}
@@ -378,6 +392,137 @@ export default function DashboardLayout({
               </div>
             ) : null}
           </div>
+
+          <div className="cms-academic-selectors">
+            {/* Board Selector */}
+            <div className="cms-academic-dropdown-wrap" ref={boardRef}>
+              <button
+                type="button"
+                className={`cms-academic-btn ${boardOpen ? "is-open" : ""}`}
+                onClick={() => {
+                  setBoardOpen((v) => !v);
+                  setYearOpen(false);
+                  setNotifOpen(false);
+                  setProfileOpen(false);
+                }}
+                aria-label="Select Board"
+                aria-expanded={boardOpen}
+              >
+                <div className="cms-academic-btn-icon">
+                  <Landmark size={18} />
+                </div>
+                <div className="cms-academic-btn-text">
+                  <span className="cms-academic-btn-label">Board</span>
+                  <span className="cms-academic-btn-value">{selectedBoard?.name || selectedBoard?.code || "BIEAP"}</span>
+                </div>
+                <ChevronDown size={14} className="cms-academic-btn-arrow" />
+              </button>
+
+              {boardOpen && (
+                <div className="cms-academic-dropdown-panel">
+                  <div className="cms-academic-panel-header">Select Board</div>
+                  <div className="cms-academic-panel-list">
+                    {boards.map((b) => {
+                      const isSelected =
+                        selectedBoard?.code === b.code || selectedBoard?.id === b.id || selectedBoard?.name === b.name;
+                      return (
+                        <button
+                          key={b.id || b.code}
+                          type="button"
+                          className={`cms-academic-panel-item ${isSelected ? "is-selected" : ""}`}
+                          onClick={() => {
+                            setSelectedBoard(b);
+                            setBoardOpen(false);
+                          }}
+                        >
+                          <span className="cms-academic-item-name">{b.name || b.code}</span>
+                          {isSelected && <CheckCircle2 size={16} className="cms-academic-check" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="cms-academic-panel-footer">
+                    <button
+                      type="button"
+                      className="cms-academic-manage-btn"
+                      onClick={() => {
+                        setBoardOpen(false);
+                        navigate("/dashboard/board-academic-year");
+                      }}
+                    >
+                      <Settings size={14} /> Manage Boards
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Academic Year Selector */}
+            <div className="cms-academic-dropdown-wrap" ref={yearRef}>
+              <button
+                type="button"
+                className={`cms-academic-btn ${yearOpen ? "is-open" : ""}`}
+                onClick={() => {
+                  setYearOpen((v) => !v);
+                  setBoardOpen(false);
+                  setNotifOpen(false);
+                  setProfileOpen(false);
+                }}
+                aria-label="Select Academic Year"
+                aria-expanded={yearOpen}
+              >
+                <div className="cms-academic-btn-icon">
+                  <GraduationCap size={18} />
+                </div>
+                <div className="cms-academic-btn-text">
+                  <span className="cms-academic-btn-label">Academic Year</span>
+                  <span className="cms-academic-btn-value">{selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "2025–2026"}</span>
+                </div>
+                <ChevronDown size={14} className="cms-academic-btn-arrow" />
+              </button>
+
+              {yearOpen && (
+                <div className="cms-academic-dropdown-panel">
+                  <div className="cms-academic-panel-header">Select Academic Year</div>
+                  <div className="cms-academic-panel-list">
+                    {academicYears.map((y) => {
+                      const normalize = (s) => String(s || "").trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
+                      const isSelected =
+                        normalize(selectedAcademicYear?.code) === normalize(y.code) ||
+                        normalize(selectedAcademicYear?.name) === normalize(y.name) ||
+                        normalize(selectedAcademicYear?.label) === normalize(y.label);
+                      return (
+                        <button
+                          key={y.id || y.code}
+                          type="button"
+                          className={`cms-academic-panel-item ${isSelected ? "is-selected" : ""}`}
+                          onClick={() => {
+                            setSelectedAcademicYear(y);
+                            setYearOpen(false);
+                          }}
+                        >
+                          <span className="cms-academic-item-name">{y.name || y.label || y.code}</span>
+                          {isSelected && <CheckCircle2 size={16} className="cms-academic-check" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="cms-academic-panel-footer">
+                    <button
+                      type="button"
+                      className="cms-academic-manage-btn"
+                      onClick={() => {
+                        setYearOpen(false);
+                        navigate("/dashboard/board-academic-year");
+                      }}
+                    >
+                      <Settings size={14} /> Manage Academic Years
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="cms-top-actions" ref={actionsRef}>
             <ThemeToggle />
             <button className="cms-icon-btn" aria-label={`${pendingActionCount} sample notifications`} aria-expanded={notifOpen} onClick={() => { setNotifOpen((open) => !open); setProfileOpen(false); }}>
@@ -406,8 +551,8 @@ export default function DashboardLayout({
             {profileOpen ? (
               <div className="cms-dropdown">
                 <div className="cms-dropdown-head"><strong>{profileName}</strong><div style={{ fontSize: 12, color: "var(--cms-muted)" }}>{profileEmail}</div><div style={{ fontSize: 12, color: "var(--cms-muted)", marginTop: 3 }}>{profileRole}</div></div>
-                <button className="cms-dropdown-item"><User size={15} /> My Profile</button>
-                <button className="cms-dropdown-item"><Settings size={15} /> Settings</button>
+                <button className="cms-dropdown-item" onClick={() => { setProfileOpen(false); navigate("/dashboard/settings"); }}><User size={15} /> My Profile</button>
+                <button className="cms-dropdown-item" onClick={() => { setProfileOpen(false); navigate("/dashboard/settings"); }}><Settings size={15} /> Settings</button>
                 <button type="button" className="cms-dropdown-item danger" onClick={logout}><LogOut size={15} /> Logout</button>
               </div>
             ) : null}
@@ -415,12 +560,6 @@ export default function DashboardLayout({
         </header>
 
         <main className="cms-content">
-          <nav className="cms-breadcrumb" aria-label="Breadcrumb">
-            <Link to="/dashboard">Home</Link>
-            {resolvedBreadcrumb.map((label) => <span key={label} className="cms-breadcrumb-step"><ChevronRight size={13} aria-hidden="true" /><span>{label}</span></span>)}
-            <ChevronRight size={13} aria-hidden="true" /><strong aria-current="page">{title}</strong>
-          </nav>
-
           <div className="cms-page-head">
             <div><h1>{title}</h1>{subtitle ? <p>{subtitle}</p> : null}</div>
             {actions ? <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>{actions}</div> : null}
@@ -432,5 +571,3 @@ export default function DashboardLayout({
     </div>
   );
 }
-
-

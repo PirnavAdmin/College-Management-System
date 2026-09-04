@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, RotateCcw, Users } from "lucide-react";
+import { Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, RotateCcw, Users, Info } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import totalStudentsIcon from "@/assets/dashboard-3d/total-students.png";
 import teachingStaffIcon from "@/assets/dashboard-3d/teaching-staff.png";
 import nonTeachingStaffIcon from "@/assets/dashboard-3d/non-teaching-staff.png";
@@ -335,9 +336,20 @@ function KpiCard({ label, value, icon, tone, loading }) {
 }
 
 export default function DashboardPage() {
+  const {
+    selectedBoard,
+    selectedAcademicYear,
+    setSelectedBoard,
+    setSelectedAcademicYear,
+  } = useAcademicContext();
+
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const [masterOptions, setMasterOptions] = useState({ years: [], boards: [] });
-  const [filters, setFilters] = useState({ year: "", board: "", date: localDateValue() });
+  const [filters, setFilters] = useState({
+    year: selectedAcademicYear?.id || selectedAcademicYear?.code || "",
+    board: selectedBoard?.id || selectedBoard?.code || "",
+    date: localDateValue(),
+  });
   const [widgets, setWidgets] = useState(EMPTY_WIDGETS);
   const [loadingFilters, setLoadingFilters] = useState(true);
   const [filtersReady, setFiltersReady] = useState(false);
@@ -346,6 +358,15 @@ export default function DashboardPage() {
   const filterRequestRef = useRef(0);
   const dateRequestRef = useRef(0);
   const scopeRequestRef = useRef(0);
+
+  // Synchronize global academic context changes to local filters
+  useEffect(() => {
+    setFilters((current) => ({
+      ...current,
+      board: selectedBoard?.id || selectedBoard?.code || current.board,
+      year: selectedAcademicYear?.id || selectedAcademicYear?.code || current.year,
+    }));
+  }, [selectedBoard, selectedAcademicYear]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -367,7 +388,10 @@ export default function DashboardPage() {
       const years = optionRows(response.data, "year");
       const boards = optionRows(response.data, "board");
       setMasterOptions({ years, boards });
-      setFilters({ year: preferredAcademicYearValue(years), board: "", date: localDateValue() });
+      setFilters((current) => ({
+        ...current,
+        year: current.year || preferredAcademicYearValue(years),
+      }));
       setErrors((current) => ({ ...current, filters: "" }));
       setFiltersReady(true);
     }).catch((error) => {
@@ -471,34 +495,23 @@ export default function DashboardPage() {
   const certificateTotal = metric(widgets.certificateRequests, ["totalRequests", "totalCertificateRequests", "requestCount"])
     ?? (certificateRows.length ? certificateRows.reduce((sum, item) => sum + item.value, 0) : undefined);
   const upcomingExaminations = useMemo(() => normalizeUpcomingExaminations(widgets.upcomingExaminations), [widgets.upcomingExaminations]);
-  const selectedBoardLabel = masterOptions.boards.find((item) => item.value === filters.board)?.label || "Select Board Name";
   const greeting = greetingForHour(currentHour);
   const dashboardTitle = (
-    <span className="dashboard-welcome-title">
-      <span className="dashboard-time-greeting">
-        {greeting.message}
-        <span className="dashboard-greeting-icon" role="img" aria-label={greeting.iconLabel}>{greeting.icon}</span>
-      </span>
-      <span className="dashboard-welcome-copy">Welcome back, Admin!</span>
-      <span className="dashboard-breadcrumb-copy">Dashboard</span>
+    <span className="dashboard-welcome-title" style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "21px", fontWeight: 800 }}>
+      <span>{greeting.icon}</span>
+      <span>{greeting.message}, Admin!</span>
     </span>
   );
-  const resetFilters = () => {
-    setFilters({
-      year: preferredAcademicYearValue(masterOptions.years),
-      board: "",
-      date: localDateValue(),
-    });
-  };
 
-  const filtersContent = <div className="dashboard-filters" aria-label="Dashboard filters">
-    <label htmlFor="dashboard-year"><span>Academic Year</span><select id="dashboard-year" aria-label="Academic Year" value={filters.year} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, year: event.target.value }))}><option value="">Select Academic Year</option>{masterOptions.years.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-    <label className="dashboard-board-filter" htmlFor="dashboard-board" style={{ "--board-select-width": `${Math.min(Math.max(selectedBoardLabel.length + 5, 20), 50)}ch` }}><span>Board</span><select id="dashboard-board" aria-label="Board" value={filters.board} disabled={loadingFilters} onChange={(event) => setFilters((current) => ({ ...current, board: event.target.value }))}><option value="">Select Board Name</option>{masterOptions.boards.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-    <button type="button" className="dashboard-reset-button" onClick={resetFilters} disabled={loadingFilters} aria-label="Reset dashboard filters"><RotateCcw size={16} aria-hidden="true" /> Reset</button>
-  </div>;
-
-  return <DashboardLayout title={dashboardTitle} subtitle="Here's the complete overview of your college." actions={filtersContent} breadcrumb={["Overview"]}>
-    <main className="dashboard-page">
+  return (
+    <DashboardLayout title={dashboardTitle} subtitle={null} actions={null} breadcrumb={["Overview"]}>
+      <main className="dashboard-page">
+        <div className="dashboard-viewing-banner">
+          <Info size={18} className="dashboard-banner-icon" />
+          <span>
+            You are viewing data for <strong>{selectedBoard?.name || selectedBoard?.code || "BIEAP"}</strong> • <strong>Academic Year {selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "2025–2026"}</strong>. Change Board or Academic Year to view corresponding records.
+          </span>
+        </div>
       {errors.filters ? <div className="dashboard-warning" role="alert">{errors.filters}</div> : null}
       <section className="dashboard-kpi-grid" aria-label="College totals">{kpis.map((item) => <KpiCard key={item.label} {...item} loading={loading.summary} />)}</section>
       <nav className="dashboard-quick-actions" aria-label="Quick Actions">
@@ -535,5 +548,6 @@ export default function DashboardPage() {
         <article className="dashboard-card"><CardHeader title={`Upcoming Examinations (${loading.upcomingExaminations ? "…" : upcomingExaminations.length})`} action={<Link to="/dashboard/examinations" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.upcomingExaminations ? <LoadingState label="Loading upcoming examinations..." /> : upcomingExaminations.length ? <div className="dashboard-info-list">{upcomingExaminations.slice(0, 6).map((item) => <div key={item.id}><span className="dashboard-activity-marker"><CalendarDays size={14} /></span><p><strong>{item.name}</strong><span>{item.context || item.status || "Examination details"}</span></p><div className="dashboard-info-metrics"><span>{formatDateLabel(item.date, { day: "2-digit", month: "short", year: "numeric" })}</span></div></div>)}</div> : <EmptyState message={errors.upcomingExaminations ? "Unable to load upcoming examinations." : "No upcoming examinations are available for the selected filters."} />}</article>
       </section>
     </main>
-  </DashboardLayout>;
+  </DashboardLayout>
+  );
 }

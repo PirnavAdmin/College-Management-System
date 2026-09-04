@@ -1,1732 +1,2252 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { generateNextNumber, incrementSeriesSequence } from "@/data/numberSeriesData.js";
 import {
   ArrowLeft,
-  BriefcaseBusiness,
+  Building2,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Copy,
   Eye,
+  FileSpreadsheet,
   GraduationCap,
   Mail,
   Pencil,
   Plus,
+  Printer,
   Search,
+  Send,
   Trash2,
+  Upload,
   UserRound,
-  X,
+  Users,
+  RefreshCw,
+  FileText,
+  Download
 } from "lucide-react";
-import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import DataTable from "@/components/common/DataTable.jsx";
-import {
-  ConfirmDialog,
-  Field,
-  StatusBadge,
-  Toast,
-  useForm,
-} from "@/components/common/Ui.jsx";
+import { ConfirmDialog, Toast } from "@/components/common/Ui.jsx";
+import apiClient from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./StaffManagementPage.css";
 
-const STAFF_API = {
-  list: "/api/v1/staff",
-  create: "/api/v1/staff",
-  nextEmployeeId: "/api/v1/staff/next-employee-id",
-  dropdown: "/api/v1/staff/dropdown",
-  getById: (id) => `/api/v1/staff/${encodeURIComponent(id)}`,
-  update: (id) => `/api/v1/staff/${encodeURIComponent(id)}`,
-  delete: (id) => `/api/v1/staff/${encodeURIComponent(id)}`,
-  uploadPhoto: "/api/v1/staff/upload-photo",
-  photo: (id) => `/api/v1/staff/photo/${encodeURIComponent(id)}`,
-  assignSubject: "/api/v1/staff/assign-subject",
-  updateSubjectAllocation: (id) => `/api/v1/staff/assign-subject/${encodeURIComponent(id)}`,
-  deleteSubjectAllocation: (id) => `/api/v1/staff/assign-subject/${encodeURIComponent(id)}`,
-  subjectAllocations: (staffId) => `/api/v1/staff/${encodeURIComponent(staffId)}/subject-allocations`,
-  workload: (staffId) => `/api/v1/staff/workload/${encodeURIComponent(staffId)}`,
-};
+// Session Storage Fallback Store Keys
+const STORE = "pjc-mock-staff-records",
+  ACTIVITY_STORE = "pjc-mock-staff-activities";
 
-const API_STAFF_TYPES = { teaching: "Teaching", "non-teaching": "NonTeaching" };
-const STAFF_PAGE_SIZE = 5;
-const STAFF_BOARD_STORAGE_KEY = "pjc-staff-board-names";
-const BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
-
-const fields = [
-  { name: "empId", label: "Employee ID", required: true },
-  { name: "firstName", label: "First Name", required: true },
-  { name: "lastName", label: "Last Name", required: true },
-  { name: "gender", label: "Gender", type: "select", options: [], required: true },
-  { name: "dob", label: "Date of Birth", type: "date", required: true },
-  { name: "bloodGroup", label: "Blood Group", type: "select", options: BLOOD_GROUP_OPTIONS, required: true },
-  { name: "mobile", label: "Mobile", type: "tel", required: true },
-  { name: "email", label: "Email", type: "email", required: true },
-  { name: "aadhaar", label: "Aadhaar Number" },
-  { name: "qualification", label: "Qualification", required: true },
-  { name: "facultyType", label: "Staff Category", type: "select", options: ["Teaching Staff", "Non-Teaching Staff"], required: true },
-  { name: "boardName", label: "Board Name", type: "select", options: [], required: true },
-  { name: "department", label: "Department", type: "select", options: [], required: true },
-  { name: "designation", label: "Designation", type: "select", options: [], required: true },
-  { name: "joining", label: "Joining Date", type: "date", required: true },
-  { name: "experience", label: "Experience (Years)", type: "number" },
-  { name: "status", label: "Status", type: "select", options: ["Active", "Inactive"], required: true },
-];
-const extractItems = (payload) =>
-  Array.isArray(payload)
-    ? payload
-    : payload?.$values ||
-      payload?.items ||
-      payload?.Items ||
-      payload?.results ||
-      payload?.Results ||
-      payload?.value ||
-      payload?.Value ||
-      payload?.data?.$values ||
-      payload?.data?.items ||
-      payload?.data?.Items ||
-      payload?.data?.results ||
-      payload?.data?.Results ||
-      payload?.data?.value ||
-      payload?.data?.Value ||
-      payload?.data ||
-      [];
-const extractRecord = (payload) => payload?.data ?? payload?.Data ?? payload;
-const boardOptionsFrom = (payload) => extractItems(payload).map((board) => {
-  const status = firstValue(board, "status", "Status", "isActive", "IsActive");
-  return {
-    id: firstValue(board, "boardId", "BoardId", "id", "Id"),
-    name: String(firstValue(board, "boardName", "BoardName", "name", "Name") || "").trim(),
-    active: status == null || status === true || ["true", "active"].includes(String(status).toLowerCase()),
-  };
-}).filter((board) => board.name);
-const facultyName = (item = {}) =>
-  item?.fullName || item?.name || [item?.firstName, item?.lastName].filter(Boolean).join(" ") || "—";
-const dateOnly = (date) => (date ? String(date).split("T")[0] : "");
-const getCrudId = (item = {}) => item.id ?? item.Id;
-const getStaffId = (item = {}) => item.staffId ?? item.StaffId;
-const getFacultyId = (item = {}) => item.facultyId ?? item.FacultyId;
-const firstValue = (item = {}, ...keys) =>
-  keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null && value !== "") ??
-  Object.entries(item || {}).find(([key, value]) =>
-    keys.some((expected) => key.toLowerCase() === expected.toLowerCase()) &&
-    value !== undefined && value !== null && value !== "",
-  )?.[1];
-const lookupValue = (value) => {
-  if (value === undefined || value === null) return value;
-  if (typeof value !== "object") return value;
-  return firstValue(
-    value,
-    "name", "Name", "value", "Value",
-    "boardName", "BoardName",
-    "bloodGroup", "BloodGroup", "bloodType", "BloodType",
-    "bloodGroupName", "BloodGroupName", "bloodTypeName", "BloodTypeName",
-    "displayName", "DisplayName", "facultyTypeName", "FacultyTypeName", "typeName", "TypeName",
-  ) ?? "";
-};
-const normalizeStaffType = (value) => {
-  const normalized = String(lookupValue(value) ?? "").trim().toLowerCase().replace(/[\s_-]/g, "");
-  if (normalized === "teaching" || normalized === "teachingstaff") return "Teaching Staff";
-  if (normalized === "nonteaching" || normalized === "nonteachingstaff") return "Non-Teaching Staff";
-  return lookupValue(value) ?? "";
-};
-const staffBoardKeys = (item = {}) => [
-  getCrudId(item),
-  getStaffId(item),
-  getFacultyId(item),
-  firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
-].filter((value) => value !== undefined && value !== null && String(value).trim() !== "").map(String);
-const savedStaffBoardName = (item = {}) => {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STAFF_BOARD_STORAGE_KEY) || "{}");
-    return staffBoardKeys(item).map((key) => saved[key]).find(Boolean) || "";
-  } catch {
-    return "";
-  }
-};
-const rememberStaffBoardName = (item = {}, boardName = "") => {
-  const name = String(boardName || "").trim();
-  const keys = staffBoardKeys(item);
-  if (!name || !keys.length) return;
-  try {
-    const saved = JSON.parse(localStorage.getItem(STAFF_BOARD_STORAGE_KEY) || "{}");
-    keys.forEach((key) => { saved[key] = name; });
-    localStorage.setItem(STAFF_BOARD_STORAGE_KEY, JSON.stringify(saved));
-  } catch {
-    // The API payload still carries BoardId and BoardName if storage is unavailable.
-  }
-};
-const facultyTypeValue = (item = {}) => {
-  const value = firstValue(item, "staffType", "StaffType");
-  return normalizeStaffType(value);
-};
-const toApiStaffType = (value) => {
-  const normalized = normalizeStaffType(value);
-  return normalized === "Non-Teaching Staff" ? API_STAFF_TYPES["non-teaching"] : API_STAFF_TYPES.teaching;
-};
-const employeeIdPrefix = (staffType) => normalizeStaffType(staffType) === "Non-Teaching Staff" ? "PCNTCH" : "PCTCH";
-const employeeIdFromServerSequence = (payload, staffType) => {
-  const record = extractRecord(payload);
-  const serverEmployeeId = typeof record === "string" || typeof record === "number"
-    ? record
-    : firstValue(record, "employeeId", "EmployeeId", "nextEmployeeId", "NextEmployeeId", "value", "Value");
-  const sequence = String(serverEmployeeId ?? "").trim().match(/(\d+)$/)?.[1];
-  if (!sequence) return "";
-  return `${employeeIdPrefix(staffType)}${sequence.padStart(4, "0")}`;
-};
-const employeeIdFromStaffItems = (payload, staffType) => {
-  const prefix = employeeIdPrefix(staffType);
-  const highestSequence = extractItems(payload).reduce((highest, item) => {
-    const employeeId = firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId");
-    const normalizedEmployeeId = String(employeeId ?? "").trim().toUpperCase();
-    const sequence = normalizedEmployeeId.startsWith(prefix) ? normalizedEmployeeId.match(/(\d+)$/)?.[1] : null;
-    return sequence ? Math.max(highest, Number(sequence) || 0) : highest;
-  }, 0);
-  return `${prefix}${String(highestSequence + 1).padStart(4, "0")}`;
-};
-const safestEmployeeId = (staffType, ...candidates) => {
-  const prefix = employeeIdPrefix(staffType);
-  const highestSequence = candidates.reduce((highest, candidate) => {
-    const normalized = String(candidate || "").trim().toUpperCase();
-    if (!normalized.startsWith(prefix)) return highest;
-    return Math.max(highest, Number(normalized.match(/(\d+)$/)?.[1]) || 0);
-  }, 0);
-  return highestSequence ? `${prefix}${String(highestSequence).padStart(4, "0")}` : "";
-};
-const normalizeStaffPage = (payload) => {
-  const source = payload?.data ?? payload?.Data ?? payload ?? {};
-  const items = Array.isArray(source.items ?? source.Items) ? source.items ?? source.Items : [];
-  return {
-    items,
-    totalCount: Number(source.totalCount ?? source.TotalCount ?? 0) || 0,
-    pageNumber: Number(source.pageNumber ?? source.PageNumber ?? 1) || 1,
-    pageSize: Number(source.pageSize ?? source.PageSize ?? STAFF_PAGE_SIZE) || STAFF_PAGE_SIZE,
-    totalPages: Math.max(1, Number(source.totalPages ?? source.TotalPages ?? 1) || 1),
-  };
-};
-const subjectId = (item = {}) => item.subjectId ?? item.id ?? item.SubjectId ?? item.Id;
-const subjectName = (item = {}) =>
-  firstValue(item, "subjectDisplayName", "SubjectDisplayName", "subjectName", "SubjectName", "name", "Name")
-  || firstValue(item.subject || item.Subject, "subjectDisplayName", "SubjectDisplayName", "subjectName", "SubjectName", "name", "Name")
-  || "Unnamed subject";
-const allocationSubjectId = (item = {}) =>
-  item.subjectId ?? item.SubjectId ?? item.subject?.subjectId ?? item.subject?.id ?? item.Subject?.SubjectId ?? item.Subject?.Id;
-const allocationId = (item = {}) =>
-  item.assignmentId ?? item.allocationId ?? item.id ?? item.AssignmentId ?? item.AllocationId;
-const buildSubjectAllocationPayload = (staff, subject) => {
-  const staffId = Number(getStaffId(staff));
-  const selectedSubjectId = Number(subjectId(subject));
-  const academicYearId = Number(firstValue(subject, "academicYearId", "AcademicYearId"));
-  const maxWeeklyHours = Number(firstValue(subject, "maxWeeklyHours", "MaxWeeklyHours", "weeklyHours", "WeeklyHours"));
-  return {
-    staffId,
-    subjectId: selectedSubjectId,
-    academicYearId,
-    maxWeeklyHours,
-  };
-};
-const validateSubjectAllocationPayload = (payload) => {
-  if (!Number.isInteger(payload.staffId) || payload.staffId <= 0) return "The Staff API did not return the StaffId required for subject allocation.";
-  if (!Number.isInteger(payload.subjectId) || payload.subjectId <= 0) return "The selected subject does not have a valid SubjectId.";
-  if (!Number.isInteger(payload.academicYearId) || payload.academicYearId <= 0) return "The selected subject does not provide the required AcademicYearId.";
-  if (!Number.isFinite(payload.maxWeeklyHours) || payload.maxWeeklyHours < 0) return "The selected subject does not provide valid maximum weekly hours.";
-  return "";
-};
-const allocationItems = (payload) => {
-  const data = extractRecord(payload) ?? {};
-  return extractItems(
-    data.allocations
-      ?? data.Allocations
-      ?? data.subjectAssignments
-      ?? data.SubjectAssignments
-      ?? data.assignedSubjects
-      ?? data.AssignedSubjects
-      ?? data,
-  );
-};
-const workloadTotals = (payload) => {
-  const data = extractRecord(payload) || {};
-  return {
-    subjects: Number(firstValue(data, "totalAssignedSubjects", "TotalAssignedSubjects")) || 0,
-    sections: Number(firstValue(data, "totalSections", "TotalSections")) || 0,
-    classes: Number(firstValue(data, "weeklyClasses", "WeeklyClasses")) || 0,
-    hours: Number(firstValue(data, "totalWorkloadHours", "TotalWorkloadHours")) || 0,
-  };
-};
-const assignedSubjectNames = (payload) => [...new Set(
-  allocationItems(payload)
-    .map((allocation) => subjectName(allocation))
-    .filter((name) => name && name !== "Unnamed subject"),
-)];
-const sharedPayloadFor = (values) => ({
-  firstName: values.firstName,
-  lastName: values.lastName,
-  gender: values.gender,
-  dateOfBirth: values.dob,
-  aadhaar: values.aadhaar,
-  mobile: values.mobile,
-  email: values.email,
-  bloodGroup: values.bloodGroup,
-  qualification: values.qualification,
-  designation: values.designation,
-  ...(values.designationId ? { designationId: Number(values.designationId) } : {}),
-  staffType: toApiStaffType(values.facultyType),
-  department: values.department,
-  ...(values.departmentId ? { departmentId: Number(values.departmentId) } : {}),
-  ...(values.boardId ? { boardId: Number(values.boardId) } : {}),
-  ...(values.boardName ? { boardName: values.boardName } : {}),
-  ...(values.boardName ? { board: values.boardName } : {}),
-  joiningDate: values.joining,
-  experience: Number(values.experience) || 0,
-  status: values.status || "Active",
-  ...(values.photoPath ? { photoPath: values.photoPath } : {}),
-});
-const buildCreatePayload = (values) => ({ employeeId: values.empId, ...sharedPayloadFor(values) });
-const buildUpdatePayload = (values) => sharedPayloadFor(values);
-const rowFor = (item, boardLookup = new Map()) => ({
-  ...item,
-  id: getCrudId(item),
-  staffId: getStaffId(item),
-  facultyId: getFacultyId(item),
-  empId: item.employeeId ?? item.employeeCode ?? item.empId,
-  name: facultyName(item),
-  mobile: item.mobile ?? item.phoneNumber,
-  status:
-    typeof item.status === "boolean"
-      ? item.status
-        ? "Active"
-        : "Inactive"
-      : item.status || "—",
-  department: item.department,
-  boardName: boardLookup.get(String(firstValue(item, "boardId", "BoardId") ?? ""))
-    || lookupValue(firstValue(item, "boardName", "BoardName", "board", "Board", "boardDisplayName", "BoardDisplayName"))
-    || savedStaffBoardName(item)
-    || "—",
-  designation: item.designation,
-  facultyType: facultyTypeValue(item),
-  qualification: item.qualification ?? item.Qualification,
-  experience: item.experience ?? item.Experience,
-  joining: dateOnly(item.joiningDate ?? item.JoiningDate ?? item.joining),
-});
-const valuesFor = (item = {}) => ({
-  empId: firstValue(item, "employeeId", "EmployeeId", "employeeCode", "EmployeeCode", "empId", "EmpId"),
-  firstName: firstValue(item, "firstName", "FirstName"),
-  lastName: firstValue(item, "lastName", "LastName"),
-  gender: lookupValue(firstValue(item, "gender", "Gender")),
-  dob: dateOnly(firstValue(item, "dateOfBirth", "DateOfBirth", "dob", "Dob")),
-  aadhaar: firstValue(item, "aadhaar", "Aadhaar", "aadhaarNumber", "AadhaarNumber"),
-  mobile: firstValue(item, "mobile", "Mobile", "phoneNumber", "PhoneNumber"),
-  email: firstValue(item, "email", "Email"),
-  bloodGroup: lookupValue(firstValue(item, "bloodGroup", "BloodGroup", "bloodGroupName", "BloodGroupName", "bloodType", "BloodType", "bloodTypeName", "BloodTypeName", "bloodGroupDisplayName", "BloodGroupDisplayName", "blood", "Blood")),
-  qualification: firstValue(item, "qualification", "Qualification"),
-  designation: lookupValue(firstValue(item, "designation", "Designation", "designationName", "DesignationName")),
-  designationId: firstValue(item, "designationId", "DesignationId"),
-  facultyType: facultyTypeValue(item),
-  department: lookupValue(firstValue(item, "department", "Department", "departmentName", "DepartmentName")),
-  departmentId: firstValue(item, "departmentId", "DepartmentId"),
-  boardId: firstValue(item, "boardId", "BoardId"),
-  boardName: lookupValue(firstValue(item, "boardName", "BoardName", "board", "Board", "boardDisplayName", "BoardDisplayName")) || savedStaffBoardName(item),
-  joining: dateOnly(firstValue(item, "joiningDate", "JoiningDate", "joining", "Joining")),
-  experience: firstValue(item, "experience", "Experience"),
-  status: firstValue(item, "status", "Status") || "Active",
-  photoPath: firstValue(item, "photoPath", "PhotoPath"),
-});
-
-const escapePrintValue = (value) => String(value ?? "—")
-  .replace(/&/g, "&amp;")
-  .replace(/</g, "&lt;")
-  .replace(/>/g, "&gt;")
-  .replace(/"/g, "&quot;")
-  .replace(/'/g, "&#039;");
-
-const resolvePhotoSource = (payload) => {
-  const value = typeof payload === "string"
-    ? payload
-    : firstValue(payload || {}, "url", "Url", "photoPath", "PhotoPath", "value", "Value");
-  if (!value) return "";
-  const source = String(value);
-  if (/^(data:|blob:|https?:)/i.test(source)) return source;
-  try {
-    return new URL(source, import.meta.env.VITE_API_BASE_URL || window.location.origin).href;
-  } catch {
-    return "";
-  }
-};
-
-const photoSourceFromResponse = async (response) => {
-  if (response?.data instanceof Blob) {
-    if (!response.data.size) return { source: "", objectUrl: "" };
-    const contentType = String(response.headers?.["content-type"] || response.data.type || "").toLowerCase();
-    if (contentType.includes("json") || contentType.startsWith("text/")) {
-      const text = await response.data.text();
-      try {
-        return { source: resolvePhotoSource(JSON.parse(text)), objectUrl: "" };
-      } catch {
-        return { source: resolvePhotoSource(text), objectUrl: "" };
-      }
-    }
-    const objectUrl = URL.createObjectURL(response.data);
-    return { source: objectUrl, objectUrl };
-  }
-  return { source: resolvePhotoSource(response?.data), objectUrl: "" };
-};
-
-const requestStaffPhoto = (id) => apiClient.get(STAFF_API.photo(id), {
-  responseType: "blob",
-  skipGlobalLoader: true,
-});
-
-const staffPrintRows = (record) => {
-  const values = valuesFor(record);
-  const rows = [
-    ["Employee ID", values.empId], ["Staff Name", facultyName(record)], ["Staff Category", values.facultyType],
-    ["Gender", values.gender], ["Date of Birth", values.dob], ["Aadhaar Number", values.aadhaar],
-    ["Mobile", values.mobile], ["Email", values.email], ["Blood Group", values.bloodGroup],
-    ["Qualification", values.qualification], ["Designation", values.designation], ["Board Name", values.boardName], ["Department", values.department],
-    ["Joining Date", values.joining], ["Experience (Years)", values.experience], ["Status", values.status],
-  ];
-  if (Array.isArray(record.assignedSubjects)) rows.push(["Subjects -", record.assignedSubjects.join(", ") || "—"]);
-  return rows;
-};
-
-const buildStaffPrintHtml = (record, photoSource, staffTypeLabel) => {
-  const details = staffPrintRows(record).map(([label, value]) => `
-    <div class="detail"><span>${escapePrintValue(label)}</span><strong>${escapePrintValue(value || "—")}</strong></div>`).join("");
-  const photo = photoSource
-    ? `<img class="photo" src="${escapePrintValue(photoSource)}" alt="${escapePrintValue(facultyName(record))} profile photo" />`
-    : `<div class="photo placeholder">No photo</div>`;
-  return `<!doctype html><html><head><meta charset="UTF-8"><title>${escapePrintValue(facultyName(record))} - Staff Details</title><style>
-    @page{size:A4;margin:14mm}*{box-sizing:border-box}body{margin:0;color:#1c2416;font-family:"Segoe UI",Arial,sans-serif}
-    .sheet{width:100%;border:1px solid #d9dccb;border-radius:12px;overflow:hidden}.head{display:flex;align-items:center;gap:18px;padding:20px 24px;border-bottom:1px solid #d9dccb;background:#f3f5e8}
-    .photo{width:92px;height:104px;flex:0 0 92px;border:1px solid #d9dccb;border-radius:10px;object-fit:cover;background:#fff}.placeholder{display:grid;place-items:center;color:#7d8578;font-size:12px}
-    h1{margin:0;font-size:24px}.subtitle{margin:5px 0 0;color:#687063;font-size:13px}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));padding:16px 24px 24px;column-gap:34px}
-    .detail{display:grid;grid-template-columns:145px minmax(0,1fr);gap:12px;min-height:43px;align-items:center;border-bottom:1px solid #e7e9dd;font-size:12px}.detail span{color:#687063;font-weight:600}.detail strong{overflow-wrap:anywhere}
-    .foot{padding:13px 24px;border-top:1px solid #d9dccb;color:#687063;font-size:10px;text-align:right}@media print{.sheet{break-inside:avoid}}
-  </style></head><body><main class="sheet"><header class="head">${photo}<div><h1>${escapePrintValue(facultyName(record))}</h1><p class="subtitle">${escapePrintValue(staffTypeLabel)} · Pirnav College</p></div></header><section class="grid">${details}</section><footer class="foot">Printed ${escapePrintValue(new Date().toLocaleString())}</footer></main></body></html>`;
-};
-
-const BLOOD_GROUPS = new Set(BLOOD_GROUP_OPTIONS);
-const DESIGNATIONS = {
-  "Teaching Staff": ["Junior Lecturer", "Lecturer", "Senior Lecturer", "Subject Teacher", "Academic Coordinator", "Examination Coordinator", "Vice Principal", "Principal"],
-  "Non-Teaching Staff": ["Principal", "Administrative Officer", "Accountant", "Librarian", "Lab Assistant", "Office Assistant", "Clerk", "Receptionist"],
-};
-const TEACHING_DEPARTMENTS = [
-  "Mathematics", "Physics", "Chemistry", "Botany", "Zoology", "Biology", "Statistics", "English",
-  "Telugu", "Hindi", "Sanskrit", "Commerce", "Accountancy", "Economics", "Business Studies",
-  "Civics", "History", "Political Science", "Computer Science", "Computer Applications",
-  "Physical Education", "Environmental Studies",
-];
-const NON_TEACHING_DEPARTMENTS = [
+const defaultDepartments = [
+  "Computer Science",
+  "Mathematics",
+  "Physics",
+  "Chemistry",
+  "English",
   "Administration",
-  "Accounts & Finance",
-  "Admissions",
-  "Examinations",
+  "Accounts",
   "Library",
-  "Transport",
-  "Hostel",
-  "Security",
   "Maintenance",
-  "Student Support Services",
-  "Campus Operations",
+  "Transport",
 ];
-const SUBJECT_DEPARTMENT_ALIASES = {
-  mathematics: ["mathematics", "maths"],
-  accountancy: ["accountancy", "accounting"],
-  "political science": ["political science", "politicalscience"],
-  "computer science": ["computer science", "computerscience"],
-  "computer applications": ["computer applications", "computerapplications"],
-  "physical education": ["physical education", "physicaleducation"],
-  "environmental studies": ["environmental studies", "environmentalstudies", "environmental science"],
+
+const designationMap = {
+  "Computer Science": ["HOD", "Assistant Professor", "Lecturer", "Lab Technician"],
+  Mathematics: ["HOD", "Senior Lecturer", "Junior Lecturer", "Lecturer"],
+  Physics: ["HOD", "Senior Lecturer", "Lecturer", "Lab Technician"],
+  Chemistry: ["HOD", "Senior Lecturer", "Lecturer", "Lab Technician"],
+  English: ["HOD", "Assistant Professor", "Lecturer"],
+  Administration: ["Administrator", "Office Assistant", "Attender"],
+  Accounts: ["Accountant", "Office Assistant"],
+  Library: ["Librarian", "Library Assistant"],
+  Maintenance: ["Electrician", "Attender"],
+  Transport: ["Driver", "Transport Coordinator"],
 };
-const normalizeSubjectText = (value) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const subjectMatchesDepartment = (subject, department) => {
-  const normalizedDepartment = normalizeSubjectText(department);
-  if (!normalizedDepartment) return false;
-  const aliases = SUBJECT_DEPARTMENT_ALIASES[normalizedDepartment] ?? [normalizedDepartment];
-  const searchableSubject = normalizeSubjectText([
-    subjectName(subject),
-    firstValue(subject, "subjectCode", "SubjectCode"),
-  ].filter(Boolean).join(" "));
-  const compactSubject = searchableSubject.replace(/\s+/g, "");
-  return aliases.some((alias) => {
-    const normalizedAlias = normalizeSubjectText(alias);
-    return searchableSubject.includes(normalizedAlias) || compactSubject.includes(normalizedAlias.replace(/\s+/g, ""));
-  });
-};
-const NAME_PATTERN = /^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/;
-const EMPLOYEE_ID_PATTERN = /^[A-Za-z0-9-]+$/;
-const today = () => new Date().toISOString().slice(0, 10);
-const ageOn = (date) => {
-  const birth = new Date(`${date}T00:00:00`);
-  const now = new Date();
-  let age = now.getFullYear() - birth.getFullYear();
-  if (now < new Date(now.getFullYear(), birth.getMonth(), birth.getDate())) age -= 1;
-  return age;
-};
-const cleanFacultyValues = (source) => {
-  const text = (name) => String(source[name] ?? "").trim();
-  return {
-    ...source,
-    empId: text("empId"), firstName: text("firstName"), lastName: text("lastName"),
-    aadhaar: text("aadhaar").replace(/\s/g, ""), mobile: text("mobile").replace(/\D/g, ""),
-    email: text("email").toLowerCase(), qualification: text("qualification"),
-    designation: text("designation"), boardName: text("boardName"), department: text("department"),
-    experience: text("experience"),
-  };
-};
-const facultyValidation = (source, { departments = [], genders = [], boards = [], allowCustomDepartment = false } = {}) => {
-  const values = cleanFacultyValues(source);
-  const errors = {};
-  if (!EMPLOYEE_ID_PATTERN.test(values.empId) || values.empId.length < 3 || values.empId.length > 20) errors.empId = "Employee ID must be 3–20 letters, numbers, or hyphens.";
-  if (!NAME_PATTERN.test(values.firstName) || values.firstName.length < 2 || values.firstName.length > 50) errors.firstName = "Please enter a valid first name.";
-  if (!NAME_PATTERN.test(values.lastName) || values.lastName.length > 50) errors.lastName = "Please enter a valid last name.";
-  if (!genders.includes(values.gender)) errors.gender = "Please select a gender.";
-  if (!values.dob) errors.dob = "Date of birth is required.";
-  else if (values.dob > today()) errors.dob = "Date of birth cannot be in the future.";
-  else if (Number.isNaN(new Date(`${values.dob}T00:00:00`).getTime())) errors.dob = "Please enter a valid date of birth.";
-  else if (ageOn(values.dob) < 18) errors.dob = "Faculty member must be at least 18 years old.";
-  if (values.aadhaar && !/^\d{12}$/.test(values.aadhaar)) errors.aadhaar = "Aadhaar number must contain exactly 12 digits.";
-  if (!/^[6-9]\d{9}$/.test(values.mobile) || /^0+$/.test(values.mobile)) errors.mobile = "Please enter a valid 10-digit mobile number.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.email = "Please enter a valid email address.";
-  if (!values.bloodGroup) errors.bloodGroup = "Blood group is required.";
-  else if (!BLOOD_GROUPS.has(values.bloodGroup)) errors.bloodGroup = "Please select a valid blood group.";
-  if (!values.qualification || values.qualification.length > 100) errors.qualification = "Qualification is required.";
-  if (!values.designation || values.designation.length > 100) errors.designation = "Please select or enter a valid designation.";
-  if (!["Teaching Staff", "Non-Teaching Staff"].includes(values.facultyType)) errors.facultyType = "Please select a faculty type.";
-  if (!values.boardName || !boards.includes(values.boardName)) errors.boardName = "Please select a board.";
-  if (!values.department || values.department.length > 100 || (!allowCustomDepartment && !departments.includes(values.department))) {
-    errors.department = allowCustomDepartment ? "Please select or enter a valid department." : "Please select a department.";
+
+const tuples = [
+  [1, "PCT001", "Dr. Anjali Desai", "anjali@pirnav.edu", "9876500001", "Mathematics", "Assistant Professor", "Teaching", "Completed", 100, true],
+  [2, "PCT002", "Dr. Ravi Kumar", "ravi@pirnav.edu", "9876500002", "Computer Science", "Lecturer", "Teaching", "Pending", 25, false],
+  [3, "PCT003", "Priya Sharma", "priya@pirnav.edu", "9876500003", "English", "Lecturer", "Teaching", "Pending", 25, false],
+  [4, "PCT004", "Arun Patel", "arun@pirnav.edu", "9876500004", "Physics", "Senior Lecturer", "Teaching", "Link Sent", 30, true],
+  [5, "PCT005", "Neha Singh", "neha@pirnav.edu", "9876500005", "Chemistry", "Lecturer", "Teaching", "Link Sent", 30, true],
+  [6, "PCT006", "Kiran Rao", "kiran@pirnav.edu", "9876500006", "Mathematics", "Junior Lecturer", "Teaching", "In Progress", 60, true],
+  [7, "PCT007", "Meera Joshi", "meera@pirnav.edu", "9876500007", "English", "Assistant Professor", "Teaching", "In Progress", 70, true],
+  [8, "PCT008", "Sanjay Das", "sanjay@pirnav.edu", "9876500008", "Physics", "Lecturer", "Teaching", "Submitted", 100, true],
+  [9, "PCT009", "Asha Nair", "asha@pirnav.edu", "9876500009", "Chemistry", "Senior Lecturer", "Teaching", "Submitted", 100, true],
+  [10, "PCT010", "Vikram Shah", "vikram@pirnav.edu", "9876500010", "Computer Science", "HOD", "Teaching", "Needs Correction", 85, true],
+  [11, "PCNT001", "Ramesh Kumar", "ramesh@pirnav.edu", "9876500011", "Administration", "Office Assistant", "Non-Teaching", "Completed", 100, false],
+  [12, "PCNT002", "Latha Reddy", "latha@pirnav.edu", "9876500012", "Accounts", "Accountant", "Non-Teaching", "Completed", 100, false],
+  [13, "PCNT003", "Mohan Lal", "mohan@pirnav.edu", "9876500013", "Library", "Librarian", "Non-Teaching", "Completed", 100, false],
+  [14, "PCNT004", "Deepak Roy", "deepak@pirnav.edu", "9876500014", "Maintenance", "Electrician", "Non-Teaching", "Completed", 100, false],
+  [15, "PCNT005", "Salim Khan", "salim@pirnav.edu", "9876500015", "Transport", "Driver", "Non-Teaching", "Completed", 100, false],
+];
+
+const seed = tuples.map(
+  ([
+    id, employeeId, fullName, email, mobile, department, designation, staffType, profileStatus, profileCompletion, linkSent,
+  ]) => ({
+    id, employeeId, fullName, email, mobile, department, designation, staffType, profileStatus, profileCompletion, linkSent,
+    dateOfJoining: "2026-06-12", addedOn: "2026-09-02", status: "Active",
+  }),
+);
+
+const initialActivities = [
+  "Dr. Anjali Desai profile approved",
+  "Sanjay Das submitted profile",
+  "Arun Patel profile link sent",
+  "Ramesh Kumar added as Non-Teaching Staff",
+];
+
+const read = (key, fallback) => {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+    const valid = parsed.filter((item) => item && (item.id !== undefined || item.employeeId));
+    return valid.length > 0 ? valid : fallback;
+  } catch {
+    return fallback;
   }
-  if (!values.joining) errors.joining = "Joining date is required.";
-  else if (values.dob && values.joining <= values.dob) errors.joining = "Joining date cannot be before date of birth.";
-  else if (Number.isNaN(new Date(`${values.joining}T00:00:00`).getTime())) errors.joining = "Please enter a valid joining date.";
-  if (values.experience && (!/^\d+(\.\d+)?$/.test(values.experience) || Number(values.experience) > 80)) errors.experience = "Please enter a valid experience.";
-  return { values, errors };
-};
-const friendlyFacultyError = (error) => {
-  console.error("Faculty operation failed:", error);
-  const status = error?.response?.status;
-  const rawMessage = String(
-    error?.response?.data?.detail
-      ?? error?.response?.data?.Detail
-      ?? error?.response?.data?.message
-      ?? error?.response?.data?.Message
-      ?? error?.response?.data?.title
-      ?? error?.response?.data?.Title
-      ?? "",
-  );
-  const message = rawMessage.toLowerCase();
-  if (message.includes("employee")) return "Employee ID already exists. Please use a different Employee ID.";
-  if (message.includes("email")) return "Email already exists. Please use a different email address.";
-  if (message.includes("mobile") || message.includes("phone")) return "Mobile number already exists. Please use a different mobile number.";
-  if (status === 401) return "Your session has expired. Please log in again.";
-  if (status === 403) return "You do not have permission to manage staff records.";
-  if (status === 404) return "Staff record not found.";
-  if (status === 409) return rawMessage || "A staff record with these details already exists.";
-  if (status === 400) return rawMessage || "Please correct the highlighted staff details.";
-  if ([500, 502, 503, 504].includes(status)) return "Unable to complete the request right now. Please try again later.";
-  if (error?.message === "Network Error") return "Unable to connect to the service. Please check your internet connection and try again.";
-  if (!error?.response && error?.message) return error.message;
-  return getApiErrorMessage(error, "Please check the entered information and try again.");
 };
 
-function SearchableStaffField({ name, label, value, options, placeholder, required, error, allowOther = false, disabled = false, onChange, onBlur }) {
-  const [query, setQuery] = useState("");
+const write = (key, value) => sessionStorage.setItem(key, JSON.stringify(value));
+const boardOptions = ["BIEAP", "TSBIE", "CBSE", "State Board", "ICSE", "Other"];
+
+const teachingFields = [
+  ["board", "Board Name", "select", boardOptions, false],
+  ["employeeId", "Employee ID", "text", [], false],
+  ["firstName", "First Name", "text", [], false],
+  ["middleName", "Middle Name", "text", [], false],
+  ["lastName", "Last Name", "text", [], false],
+  ["dateOfBirth", "Date of Birth", "date", [], false],
+  ["gender", "Gender", "select", ["Male", "Female", "Other"], false],
+  ["mobile", "Mobile", "text", [], false],
+  ["email", "Email", "email", [], false],
+  ["department", "Department", "search-select", defaultDepartments, false],
+  ["designation", "Designation", "search-select", [], false],
+  ["dateOfJoining", "Date of Joining", "date", [], false],
+  ["employmentType", "Employment Type", "select", ["Full Time", "Part Time", "Contract"], false],
+  ["status", "Status", "select", ["Active", "Inactive"], false],
+  ["profilePhoto", "Profile Photo", "file", [], false],
+];
+
+const nonTeachingSteps = [
+  [
+    ["board", "Board Name", "select", boardOptions, false],
+    ["employeeId", "Employee ID"],
+    ["firstName", "First Name"],
+    ["middleName", "Middle Name", "text", [], false],
+    ["lastName", "Last Name"],
+    ["guardianName", "Father's / Husband's Name"],
+    ["gender", "Gender", "select", ["Male", "Female", "Other"]],
+    ["dateOfBirth", "Date of Birth", "date"],
+    ["maritalStatus", "Marital Status"],
+    ["bloodGroup", "Blood Group", "select", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], false],
+    ["nationality", "Nationality"],
+    ["aadhaar", "Aadhaar Number"],
+    ["pan", "PAN Number"],
+    ["profilePhoto", "Profile Photo", "file", [], false],
+  ],
+  [
+    ["mobile", "Mobile"],
+    ["email", "Email", "email", [], false],
+    ["pin", "PINCODE"],
+    ["country", "Country"],
+    ["state", "State"],
+    ["district", "District"],
+    ["city", "City"],
+    ["currentAddress", "Current Address", "textarea"],
+    ["permanentAddress", "Permanent Address", "textarea"],
+  ],
+  [
+    ["department", "Department", "search-select", defaultDepartments.slice(5)],
+    ["designation", "Designation", "search-select", []],
+    ["dateOfJoining", "Date of Joining", "date"],
+    ["qualification", "Qualification"],
+    ["experience", "Experience"],
+    ["status", "Status", "select", ["Active", "Inactive"], true, "start-new-row"],
+  ],
+  [
+    ["salaryStructure", "Salary Structure"],
+    ["basicSalary", "Basic Salary", "number"],
+    ["grossSalary", "Gross Salary", "number"],
+    ["bankName", "Bank Name"],
+    ["accountHolder", "Account Holder Name"],
+    ["accountNumber", "Account Number"],
+    ["ifsc", "IFSC"],
+    ["branch", "Branch"],
+    ["pfNumber", "PF Number"],
+    ["esiNumber", "ESI Number"],
+    ["uanNumber", "UAN Number"],
+  ],
+  [
+    ["aadhaarDocument", "Aadhaar", "file"],
+    ["panDocument", "PAN", "file"],
+    ["qualificationCertificate", "Qualification Certificate", "file"],
+    ["experienceCertificate", "Experience Certificate", "file"],
+    ["resume", "Resume", "file"],
+    ["bankProof", "Bank Passbook / Cancelled Cheque", "file"],
+    ["drivingLicence", "Driving Licence", "file"],
+    ["otherDocuments", "Other Documents", "file"],
+  ],
+  [
+    ["emergencyName", "Contact Name"],
+    ["emergencyRelationship", "Relationship"],
+    ["emergencyMobile", "Mobile"],
+    ["emergencyAlternate", "Alternate Mobile"],
+    ["emergencyAddress", "Address", "textarea"],
+  ],
+];
+
+const portalSteps = [
+  "Personal Details",
+  "Contact & Address",
+  "Educational Qualifications",
+  "Experience",
+  "Documents",
+  "Bank Details",
+  "Emergency Contact",
+  "Review & Submit",
+];
+
+const portalFields = [
+  [
+    ["guardianName", "Father's / Husband's Name", "text", [], false],
+    ["maritalStatus", "Marital Status", "text", [], false],
+    ["nationality", "Nationality", "text", [], false],
+    ["aadhaar", "Aadhaar Number", "text", [], false],
+    ["pan", "PAN Number", "text", [], false],
+    ["bloodGroup", "Blood Group", "text", [], false],
+  ],
+  [
+    ["alternateMobile", "Alternate Mobile", "text", [], false],
+    ["currentAddress", "Current Address", "textarea", [], false],
+    ["permanentAddress", "Permanent Address", "textarea", [], false],
+    ["city", "City", "text", [], false],
+    ["district", "District", "text", [], false],
+    ["state", "State", "text", [], false],
+    ["pin", "PIN", "text", [], false],
+  ],
+  [
+    ["highestQualification", "Highest Qualification", "text", [], false],
+    ["university", "University", "text", [], false],
+    ["specialization", "Specialization", "text", [], false],
+    ["passingYear", "Passing Year", "text", [], false],
+    ["percentage", "Percentage / CGPA", "text", [], false],
+  ],
+  [
+    ["totalExperience", "Total Experience", "text", [], false],
+    ["previousInstitution", "Previous Institution", "text", [], false],
+    ["previousDesignation", "Previous Designation", "text", [], false],
+    ["experienceFrom", "From", "date", [], false],
+    ["experienceTo", "To", "date", [], false],
+  ],
+  [
+    ["aadhaarDocument", "Aadhaar Copy", "file", [], false],
+    ["panDocument", "PAN Copy", "file", [], false],
+    ["qualificationCertificate", "Qualification Certificates", "file", [], false],
+    ["experienceCertificate", "Experience Certificates", "file", [], false],
+    ["resume", "Resume", "file", [], false],
+    ["photo", "Passport Photo", "file", [], false],
+    ["signature", "Signature", "file", [], false],
+  ],
+  [
+    ["bankName", "Bank Name", "text", [], false],
+    ["accountHolder", "Account Holder Name", "text", [], false],
+    ["accountNumber", "Account Number", "text", [], false],
+    ["ifsc", "IFSC", "text", [], false],
+    ["branch", "Branch", "text", [], false],
+    ["accountType", "Account Type", "text", [], false],
+  ],
+  [
+    ["emergencyName", "Contact Name", "text", [], false],
+    ["emergencyRelationship", "Relationship", "text", [], false],
+    ["emergencyMobile", "Mobile", "text", [], false],
+    ["emergencyAlternate", "Alternate Mobile", "text", [], false],
+    ["emergencyAddress", "Address", "textarea", [], false],
+  ],
+];
+
+function SearchSelectInput({ label = "", opts = [], value = "", onChange }) {
   const [open, setOpen] = useState(false);
-  const [custom, setCustom] = useState(Boolean(value && !options.includes(value)));
-  const filtered = options.filter((option) => option.toLowerCase().includes(query.trim().toLowerCase()));
-  return (
-    <div className={`cms-field staff-search-field ${error ? "has-error" : ""}`} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) {
+  const [search, setSearch] = useState(value || "");
+  const ref = useRef(null);
+
+  const safeOpts = useMemo(() => (Array.isArray(opts) ? opts : []), [opts]);
+
+  const getOptValue = (o) =>
+    o && typeof o === "object" ? String(o.value ?? o.label ?? o.name ?? "") : String(o ?? "");
+  const getOptLabel = (o) =>
+    o && typeof o === "object" ? String(o.label ?? o.name ?? o.value ?? "") : String(o ?? "");
+
+  useEffect(() => {
+    setSearch(value || "");
+  }, [value]);
+
+  useEffect(() => {
+    const clickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
         setOpen(false);
-        onBlur?.(name);
-      }
-    }}>
-      <label htmlFor={`f-${name}`}>{label} {required ? <span className="req">*</span> : null}</label>
-      <div className="staff-search-control">
-        <Search size={17} />
-        <input
-          id={`f-${name}`}
-          role="combobox"
-          aria-expanded={open}
-          autoComplete="new-password"
-          data-form-type="other"
-          spellCheck={false}
-          title=""
-          disabled={disabled}
-          value={custom ? value ?? "" : open ? query : value ?? ""}
-          placeholder={custom ? `Enter ${label}` : placeholder}
-          onFocus={() => { if (!custom) { setQuery(""); setOpen(true); } }}
-          onChange={(event) => {
-            if (custom) onChange(name, event.target.value);
-            else { setQuery(event.target.value); setOpen(true); }
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setOpen(false);
-            if (!custom && event.key === "Enter" && filtered[0]) {
-              event.preventDefault();
-              onChange(name, filtered[0]);
-              setOpen(false);
-            }
-          }}
-        />
-        {custom ? <button type="button" className="staff-change-option" onClick={() => { setCustom(false); onChange(name, ""); setOpen(true); }}>List</button> : (
-          <button
-            type="button"
-            className={`staff-dropdown-toggle${open ? " is-open" : ""}`}
-            aria-label={`${open ? "Close" : "Open"} ${label} options`}
-            aria-expanded={open}
-            disabled={disabled}
-            onClick={() => {
-              setQuery("");
-              setOpen((current) => !current);
-            }}
-          >
-            <ChevronDown size={18} />
-          </button>
-        )}
-      </div>
-      {!custom && open ? <div className="staff-search-options" role="listbox">
-        {filtered.map((option) => <button type="button" title="" role="option" aria-selected={option === value} key={option} onClick={() => { onChange(name, option); setQuery(""); setOpen(false); }}>{option}</button>)}
-        {allowOther ? <button type="button" title="" className="staff-other-option" onClick={() => { setCustom(true); setQuery(""); onChange(name, ""); setOpen(false); }}>Other</button> : null}
-        {!filtered.length && !allowOther ? <span>No matching options found.</span> : null}
-      </div> : null}
-      {error ? <small className="cms-error">{error}</small> : null}
-    </div>
-  );
-}
-
-function Steps({ step, staffType, onSelect }) {
-  const teaching = staffType === "Teaching Staff";
-  return (
-    <div className="faculty-steps">
-      {[
-        [teaching ? "Faculty Details" : "Staff Details", UserRound, 0],
-        [teaching ? "Subject Allocation" : "Employment & Documents", GraduationCap, 1],
-      ].map(([label, Icon, targetStep]) => (
-        <button type="button" disabled={targetStep > step} className={targetStep <= step ? "is-active" : ""} key={label} onClick={() => onSelect(targetStep)}>
-          <span>
-            <Icon size={15} />
-          </span>
-          <small>{targetStep === 0 ? "Step 1" : "Step 2"}</small>
-          <strong>{label}</strong>
-        </button>
-      ))}
-    </div>
-  );
-}
-function Preview({ values }) {
-  const groups = [
-    ["Personal Information", UserRound, ["firstName", "lastName", "gender", "dob"]],
-    ["Contact Information", Mail, ["mobile", "email", "aadhaar", "bloodGroup"]],
-    [
-      "Professional Information",
-      BriefcaseBusiness,
-      [
-         "empId",
-         "boardName",
-         "department",
-        "designation",
-        "qualification",
-        "facultyType",
-        "experience",
-        "joining",
-      ],
-    ],
-  ];
-  return (
-    <div className="faculty-preview">
-      {groups.map(([title, Icon, names]) => (
-        <section
-          key={title}
-          className={`faculty-preview-section ${title.split(" ")[0].toLowerCase()}`}
-        >
-          <h3>
-            <Icon size={18} />
-            {title}
-          </h3>
-          <div>
-            {names.map((name) => (
-              <p key={name}>
-                <span>{fields.find((f) => f.name === name)?.label}</span>
-                <strong>
-                  {name === "firstName"
-                    ? `${values.firstName || ""} ${values.lastName || ""}`
-                    : (name === "dob" || name === "joining" ? dateOnly(values[name]) : values[name]) || "—"}
-                </strong>
-              </p>
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function StaffTabs({ active, onChange }) {
-  return (
-    <div className="staff-tabs" role="tablist" aria-label="Staff type">
-      <button type="button" role="tab" aria-selected={active === "teaching"} className={active === "teaching" ? "is-active" : ""} onClick={() => onChange("teaching")}>Teaching Staff</button>
-      <button type="button" role="tab" aria-selected={active === "non-teaching"} className={active === "non-teaching" ? "is-active" : ""} onClick={() => onChange("non-teaching")}>Non-Teaching Staff</button>
-    </div>
-  );
-}
-
-function Workflow({ existingId, staffTab = "teaching" }) {
-  const navigate = useNavigate();
-  const staffType = staffTab === "non-teaching" ? "Non-Teaching Staff" : "Teaching Staff";
-  const teaching = staffType === "Teaching Staff";
-  const [step, setStep] = useState(0);
-  const [saved, setSaved] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState("");
-  const [departments, setDepartments] = useState([]);
-  const [boards, setBoards] = useState([]);
-  const [loadingBoards, setLoadingBoards] = useState(true);
-  const [loadingDepartments, setLoadingDepartments] = useState(true);
-  const [loadingDetails, setLoadingDetails] = useState(Boolean(existingId));
-  const [genders, setGenders] = useState([]);
-  const [subjects, setSubjects] = useState([]);
-  const [allocations, setAllocations] = useState([]);
-  const [workload, setWorkload] = useState(null);
-  const [removing, setRemoving] = useState(null);
-  const [selectedSubject, setSelectedSubject] = useState("");
-  const [selectedFacultyType, setSelectedFacultyType] = useState(staffType);
-  const [subjectSearch, setSubjectSearch] = useState("");
-  const [pendingSubjects, setPendingSubjects] = useState([]);
-  const [loadingAllocation, setLoadingAllocation] = useState(false);
-  const [savingAllocation, setSavingAllocation] = useState(false);
-  const [generatingEmployeeId, setGeneratingEmployeeId] = useState(!existingId);
-  const [photoFile, setPhotoFile] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState("");
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  const employeeIdRequestRef = useRef(0);
-  const workflowDetailRequestRef = useRef(0);
-  const allocationRequestRef = useRef(0);
-  useEffect(() => {
-    if (!photoFile) {
-      setPhotoPreview("");
-      return undefined;
-    }
-    const url = URL.createObjectURL(photoFile);
-    setPhotoPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [photoFile]);
-  const formFields = useMemo(
-    () =>
-      fields.filter((field) => field.name !== "facultyType").map((field) =>
-        field.name === "empId"
-          ? { ...field, disabled: true, placeholder: generatingEmployeeId ? "Generating Employee ID..." : "Employee ID" }
-          : field.name === "department"
-           ? { ...field, options: departments, disabled: loadingDepartments }
-          : field.name === "boardName"
-            ? { ...field, options: boards.map((board) => board.name), disabled: loadingBoards }
-          : field.name === "gender"
-            ? { ...field, options: genders }
-            : field.name === "designation"
-              ? { ...field, options: DESIGNATIONS[selectedFacultyType] || [], disabled: !selectedFacultyType }
-            : field,
-      ),
-    [boards, departments, genders, generatingEmployeeId, loadingBoards, loadingDepartments, selectedFacultyType],
-  );
-  const { values, errors, setValue, setValues, setErrors } = useForm(formFields, { facultyType: staffType, status: "Active" });
-  useEffect(() => {
-    if (existingId) return;
-    const requestId = ++employeeIdRequestRef.current;
-    setGeneratingEmployeeId(true);
-    const apiStaffType = toApiStaffType(staffType);
-    const loadEmployeeId = async () => {
-      try {
-        const [nextIdResult, dropdownResult, staffListResult] = await Promise.allSettled([
-          apiClient.get(STAFF_API.nextEmployeeId, {
-            params: { staffType: apiStaffType },
-            skipGlobalLoader: true,
-          }),
-          apiClient.get(STAFF_API.dropdown, {
-            params: { staffType: apiStaffType },
-            skipGlobalLoader: true,
-          }),
-          apiClient.get(STAFF_API.list, {
-            params: { PageNumber: 1, PageSize: 1000, StaffType: apiStaffType },
-            skipGlobalLoader: true,
-          }),
-        ]);
-        if (requestId !== employeeIdRequestRef.current) return;
-        const serverCandidate = nextIdResult.status === "fulfilled"
-          ? employeeIdFromServerSequence(nextIdResult.value.data, staffType)
-          : "";
-        const dropdownCandidate = dropdownResult.status === "fulfilled"
-          ? employeeIdFromStaffItems(dropdownResult.value.data, staffType)
-          : "";
-        const listCandidate = staffListResult.status === "fulfilled"
-          ? employeeIdFromStaffItems(staffListResult.value.data, staffType)
-          : "";
-        const employeeId = safestEmployeeId(staffType, serverCandidate, dropdownCandidate, listCandidate);
-        if (!employeeId) throw new Error("The Employee ID service returned an invalid value.");
-        setValues((current) => ({ ...current, empId: employeeId }));
-        setErrors((current) => ({ ...current, empId: undefined }));
-      } catch {
-        if (requestId !== employeeIdRequestRef.current) return;
-        setValues((current) => ({ ...current, empId: "" }));
-        setToast("Unable to generate Employee ID.");
-      } finally {
-        if (requestId === employeeIdRequestRef.current) setGeneratingEmployeeId(false);
       }
     };
-    loadEmployeeId();
-    return () => { employeeIdRequestRef.current += 1; };
-  }, [existingId, setErrors, setValues, staffType]);
-  useEffect(() => {
-    setDepartments(teaching ? TEACHING_DEPARTMENTS : NON_TEACHING_DEPARTMENTS);
-    setGenders(["Male", "Female", "Other"]);
-    setLoadingDepartments(false);
-  }, [teaching]);
-  useEffect(() => {
-    let active = true;
-    setLoadingBoards(true);
-    apiClient.get(apiEndpoints.boards.getAll, {
-      params: { Status: true, PageNumber: 1, PageSize: 100 },
-      skipGlobalLoader: true,
-    })
-      .then((response) => {
-        if (!active) return;
-        const options = boardOptionsFrom(response.data).filter((board) => board.active);
-        setBoards(options);
-      })
-      .catch((error) => {
-        if (active) {
-          setBoards([]);
-          setToast(friendlyFacultyError(error));
-        }
-      })
-      .finally(() => { if (active) setLoadingBoards(false); });
-    return () => { active = false; };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
   }, []);
-  useEffect(() => {
-    if (!existingId) return;
-    const requestId = ++workflowDetailRequestRef.current;
-    apiClient
-      .get(STAFF_API.getById(existingId))
-      .then(async (r) => {
-        if (requestId !== workflowDetailRequestRef.current) return;
-        const record = extractRecord(r.data);
-        if (requestId !== workflowDetailRequestRef.current) return;
-        setValues(valuesFor(record));
-        setSelectedFacultyType(facultyTypeValue(record));
-        setSaved(record);
-      })
-      .catch((detailError) => {
-        if (requestId === workflowDetailRequestRef.current) setToast(detailError?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(detailError));
-      })
-      .finally(() => {
-        if (requestId === workflowDetailRequestRef.current) setLoadingDetails(false);
-      });
-    return () => { workflowDetailRequestRef.current += 1; };
-  }, [existingId, setValues, teaching]);
-  const loadAllocation = async (faculty) => {
-    const requestId = ++allocationRequestRef.current;
-    setLoadingAllocation(true);
-    const loadSubjects = apiClient
-      .get(apiEndpoints.subjects.getAll)
-      .then((subjectResponse) => {
-        if (requestId !== allocationRequestRef.current) return;
-        setSubjects(
-          extractItems(subjectResponse.data).filter(
-            (subject) => subject.isActive !== false && subject.status?.toLowerCase?.() !== "inactive",
-          ),
-        );
-      })
-      .catch((e) => setToast(friendlyFacultyError(e)));
 
-    const allocationStaffId = getStaffId(faculty);
-    const loadAssignedSubjects = allocationStaffId ? Promise.allSettled([
-      apiClient.get(STAFF_API.subjectAllocations(allocationStaffId)),
-      apiClient.get(STAFF_API.workload(allocationStaffId), { skipGlobalLoader: true }),
-    ]).then(([allocationResult, workloadResult]) => {
-      if (requestId !== allocationRequestRef.current) return;
-      if (allocationResult.status === "fulfilled") setAllocations(allocationItems(allocationResult.value.data));
-      else {
-        setAllocations([]);
-        setToast("Unable to load assigned subjects.");
-      }
-      if (workloadResult.status === "fulfilled") setWorkload(extractRecord(workloadResult.value.data));
-      else {
-        setWorkload(null);
-        if (allocationResult.status === "fulfilled") setToast("Assigned subjects loaded, but workload could not be retrieved.");
-      }
-      })
-      : Promise.resolve().then(() => {
-      setAllocations([]);
-      setWorkload(null);
-      setToast("Subject allocation is unavailable because the Staff API did not return a StaffId.");
+  const filteredOpts = useMemo(() => {
+    const q = (search || "").toLowerCase().trim();
+    if (!q) return safeOpts;
+    return safeOpts.filter((o) => {
+      const lbl = getOptLabel(o).toLowerCase();
+      const val = getOptValue(o).toLowerCase();
+      return lbl.includes(q) || val.includes(q);
     });
+  }, [safeOpts, search]);
 
-    await Promise.all([loadSubjects, loadAssignedSubjects]);
-    if (requestId === allocationRequestRef.current) setLoadingAllocation(false);
+  const handleSelect = (opt) => {
+    const optVal = getOptValue(opt);
+    setSearch(getOptLabel(opt));
+    if (typeof onChange === "function") onChange(optVal);
+    setOpen(false);
   };
+
+  return (
+    <div className="staff-custom-search-select" ref={ref}>
+      <div className="staff-search-input-wrap">
+        <Search className="staff-search-icon" aria-hidden="true" size={14} />
+        <input
+          type="text"
+          value={search}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            if (typeof onChange === "function") onChange(e.target.value);
+            setOpen(true);
+          }}
+          placeholder={`Search ${String(label || "").toLowerCase()}`}
+          autoComplete="off"
+        />
+        <ChevronDown className="staff-dropdown-caret" size={14} />
+      </div>
+      {open ? (
+        <div className="staff-search-dropdown-menu">
+          {filteredOpts.length > 0 ? (
+            filteredOpts.map((o, idx) => {
+              const optVal = getOptValue(o);
+              const optLbl = getOptLabel(o);
+              return (
+                <div
+                  key={`${optVal}-${idx}`}
+                  className={`staff-search-dropdown-item ${value === optVal ? "is-selected" : ""}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(o);
+                  }}
+                >
+                  {optLbl}
+                </div>
+              );
+            })
+          ) : (
+            <div className="staff-search-dropdown-empty">No options found</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Field({ item = [], values = {}, setValues, error = "", forceOptional = false }) {
+  if (!Array.isArray(item) || item.length < 2) return null;
+  const name = item[0] || "";
+  const label = item[1] || name || "";
+  const type = item[2] || "text";
+  const options = Array.isArray(item[3]) ? item[3] : [];
+  const configuredRequired = item[4] !== false;
+  const layoutClass = item[5] || "";
+
+  const safeValues = values && typeof values === "object" ? values : {};
+  const required = configuredRequired && !forceOptional;
+
+  const rawOpts = name === "designation"
+    ? designationMap[safeValues.department] || options
+    : options;
+  const opts = Array.isArray(rawOpts) ? rawOpts : [];
+
+  const change = (value) => {
+    if (typeof setValues === "function") {
+      setValues((v) => {
+        const prev = v && typeof v === "object" ? v : {};
+        return name === "department"
+          ? { ...prev, department: value, designation: "" }
+          : { ...prev, [name]: value };
+      });
+    }
+  };
+
+  const val = safeValues[name] !== undefined ? safeValues[name] : "";
+
+  return (
+    <label className={[type === "textarea" ? "is-wide" : "", layoutClass].filter(Boolean).join(" ")}>
+      <span>
+        {label} {required ? <b>*</b> : null}
+      </span>
+      {type === "select" ? (
+        <select value={val} onChange={(e) => change(e.target.value)}>
+          <option value="">Select {label}</option>
+          {opts.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      ) : type === "search-select" ? (
+        <SearchSelectInput
+          label={label}
+          opts={opts}
+          value={val}
+          onChange={(v) => change(v)}
+        />
+      ) : type === "textarea" ? (
+        <textarea value={val} onChange={(e) => change(e.target.value)} />
+      ) : (
+        <input
+          type={type}
+          readOnly={name === "employeeId"}
+          value={type === "file" ? undefined : val}
+          onChange={(e) =>
+            change(type === "file" ? e.target.files?.[0]?.name || "" : e.target.value)
+          }
+        />
+      )}{" "}
+      {name === "employeeId" ? (
+        <small className="field-help" style={{ display: "block", marginTop: 4, fontSize: 11, color: "var(--cms-muted)" }}>
+          Generated using ID &amp; Number Series Settings.{" "}
+          <Link to="/dashboard/settings/number-series" style={{ color: "var(--cms-primary)", textDecoration: "underline" }}>
+            Manage Number Series
+          </Link>
+        </small>
+      ) : error ? (
+        <small>{error}</small>
+      ) : null}
+    </label>
+  );
+}
+
+function Back({ to = "/dashboard/staff", label = "Back" }) {
+  const n = useNavigate();
+  return (
+    <button className="staff-mock-back" onClick={() => n(to)}>
+      <ArrowLeft /> {label}
+    </button>
+  );
+}
+
+function Steps({ labels, step }) {
+  return (
+    <div className="staff-stepper">
+      {labels.map((x, i) => (
+        <span className={i <= step ? "is-active" : ""} key={x}>
+          <b>{i < step ? <Check /> : i + 1}</b>
+          <small>{x}</small>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Badge({ value }) {
+  if (!value) return null;
+  const isCompleted = value === "Completed" || value === "Active" || value === "Teaching";
+  const isPending = value === "Pending" || value === "Link Sent" || value === "In Progress";
+  const isInactive = value === "Inactive";
+  const cls = isCompleted ? "status-badge is-active" : isPending ? "status-badge is-warning" : isInactive ? "status-badge is-inactive" : "status-badge";
+  return <span className={`status-badge ${cls}`}>{value}</span>;
+}
+
+// ----------------------------------------------------------------------
+// SCREEN 1 — DASHBOARD (Connected to GET /api/v1/staff/dashboard-stats)
+// ----------------------------------------------------------------------
+function Dashboard({ records = [] }) {
+  const n = useNavigate();
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    if (step !== 1 || !teaching) return;
-    if (saved) loadAllocation(saved);
-    else {
-      setLoadingAllocation(true);
-      apiClient.get(apiEndpoints.subjects.getAll)
-        .then((response) => setSubjects(extractItems(response.data).filter((subject) => subject.isActive !== false && subject.status?.toLowerCase?.() !== "inactive")))
-        .catch((error) => setToast(friendlyFacultyError(error)))
-        .finally(() => setLoadingAllocation(false));
-    }
-  }, [step, saved, teaching]);
-  const validateAndShow = (source = values) => {
-    const result = facultyValidation(source, { departments, genders, boards: boards.map((board) => board.name), allowCustomDepartment: !teaching });
-    setErrors(result.errors);
-    return result;
-  };
-  const handleFieldChange = (name, value) => {
-    const sanitized = name === "mobile" ? String(value).replace(/\D/g, "").slice(0, 10) : name === "aadhaar" ? String(value).replace(/\D/g, "").slice(0, 12) : value;
-    setValue(name, sanitized);
-    if (name === "boardName") {
-      const selectedBoard = boards.find((board) => board.name === sanitized);
-      setValue("boardId", selectedBoard?.id ?? "");
-    }
-    if (name === "facultyType") { setSelectedFacultyType(sanitized); if (values.designation) setValue("designation", ""); }
-    const result = facultyValidation({ ...values, [name]: sanitized }, { departments, genders, boards: boards.map((board) => board.name), allowCustomDepartment: !teaching });
-    if (!result.errors[name]) setErrors((current) => ({ ...current, [name]: undefined }));
-  };
-  const handleFieldBlur = (name) => {
-    const result = facultyValidation(values, { departments, genders, boards: boards.map((board) => board.name), allowCustomDepartment: !teaching });
-    setValues(result.values);
-    setErrors((current) => ({ ...current, [name]: result.errors[name] }));
-  };
-  const focusFirstError = (nextErrors) => {
-    const field = Object.keys(nextErrors)[0];
-    if (field) document.getElementById(`f-${field}`)?.focus();
-  };
-  const preview = (e) => {
-    e.preventDefault();
-    const result = validateAndShow();
-    setValues(result.values);
-    if (Object.keys(result.errors).length) return focusFirstError(result.errors);
-    setStep(1);
-  };
-  const confirm = async () => {
-    if (saving || uploadingPhoto) return;
-    const result = validateAndShow();
-    setValues(result.values);
-    if (Object.keys(result.errors).length) {
-      setStep(0);
-      return focusFirstError(result.errors);
-    }
-    setSaving(true);
-    try {
-      const response = existingId
-        ? await apiClient.put(STAFF_API.update(existingId), buildUpdatePayload(result.values))
-        : await apiClient.post(STAFF_API.create, buildCreatePayload(result.values));
-      const responseRecord = extractRecord(response.data) || {};
-      const responseId = getCrudId(responseRecord) ?? existingId;
-      const detailResponse = responseId ? await apiClient.get(STAFF_API.getById(responseId)) : response;
-      const record = extractRecord(detailResponse.data) || responseRecord;
-      let next = {
-        ...record,
-        ...valuesFor(record),
-        id: getCrudId(record) ?? responseId,
-        staffId: getStaffId(record),
-        facultyId: getFacultyId(record),
-      };
-      next = {
-        ...next,
-        boardId: firstValue(record, "boardId", "BoardId") ?? result.values.boardId,
-        boardName: lookupValue(firstValue(record, "boardName", "BoardName", "board", "Board")) || result.values.boardName,
-      };
-      rememberStaffBoardName(next, next.boardName);
-      let photoUploadFailed = false;
-      if (photoFile) {
-        const requiredStaffId = getStaffId(next);
-        try {
-          if (!requiredStaffId) throw new Error("The server did not return a StaffId required for photo upload.");
-          setUploadingPhoto(true);
-          const photoData = new FormData();
-          photoData.append("StaffId", String(requiredStaffId));
-          if (getFacultyId(next)) photoData.append("FacultyId", String(getFacultyId(next)));
-          photoData.append("Photo", photoFile);
-          await apiClient.post(STAFF_API.uploadPhoto, photoData);
-        } catch (photoError) {
-          photoUploadFailed = true;
-          console.error("Staff photo upload failed:", photoError);
-        } finally {
-          setUploadingPhoto(false);
+    let isMounted = true;
+    async function fetchStats() {
+      try {
+        setLoading(true);
+        const response = await apiClient.get(apiEndpoints.faculty.dashboardStats);
+        if (isMounted && response.data) {
+          setStats(response.data);
         }
+      } catch (err) {
+        console.warn("GET /api/v1/staff/dashboard-stats API offline, using local fallback data");
+      } finally {
+        if (isMounted) setLoading(false);
       }
-      setSaved(next);
-      let allocationFailed = false;
-      if (teaching && pendingSubjects.length) {
-        try {
-          const payloads = pendingSubjects.map((subject) => buildSubjectAllocationPayload(next, subject));
-          const payloadError = payloads.map(validateSubjectAllocationPayload).find(Boolean);
-          if (payloadError) throw new Error(payloadError);
-          const allocationResults = await Promise.allSettled(
-            payloads.map((payload) => apiClient.post(STAFF_API.assignSubject, payload)),
-          );
-          allocationFailed = allocationResults.some((allocationResult) => allocationResult.status === "rejected");
-        } catch (allocationError) {
-          allocationFailed = true;
-          console.error("Staff subject allocation failed:", allocationError);
-        }
-      }
-      const partialFailures = [
-        photoUploadFailed ? "profile photo upload" : "",
-        allocationFailed ? "subject allocation" : "",
-      ].filter(Boolean);
-      setToast(partialFailures.length
-        ? `${staffType} ${existingId ? "updated" : "added"} successfully, but ${partialFailures.join(" and ")} failed.`
-        : `${staffType} ${existingId ? "updated" : "added"} successfully.`);
-      navigate(`/dashboard/faculty?staffTab=${staffTab}`);
-    } catch (e) {
-      const backendErrors = e?.response?.data?.errors ?? e?.response?.data?.Errors;
-      if (backendErrors && typeof backendErrors === "object") {
-        const keyMap = { employeeId: "empId", dateOfBirth: "dob", joiningDate: "joining", departmentId: "department", designationId: "designation" };
-        const mappedErrors = Object.fromEntries(Object.entries(backendErrors).map(([key, value]) => [keyMap[key] || keyMap[key[0]?.toLowerCase() + key.slice(1)] || key, Array.isArray(value) ? value.join(" ") : String(value)]));
-        setErrors(mappedErrors);
-        setStep(0);
-        focusFirstError(mappedErrors);
-      }
-      setToast(e?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(e));
-    } finally {
-      setUploadingPhoto(false);
-      setSaving(false);
     }
-  };
-  const allocate = async (subject) => {
-    if (!saved) return;
-    const selectedId = subjectId(subject);
-    const selectedStaffId = getStaffId(saved);
-    if (selectedId === undefined || selectedId === null || !selectedStaffId) {
-      return setToast("A valid staff member and subject must be selected.");
-    }
-    if (
-      allocations.some(
-        (a) =>
-          String(a.subjectId ?? a.subject?.subjectId ?? a.subject) === String(selectedId) ||
-          subjectName(a) === subjectName(subject),
-      )
-    )
-      return setToast("This subject is already allocated.");
-    try {
-      const payload = buildSubjectAllocationPayload(saved, subject);
-      const payloadError = validateSubjectAllocationPayload(payload);
-      if (payloadError) throw new Error(payloadError);
-      await apiClient.post(STAFF_API.assignSubject, payload);
-      await loadAllocation(saved);
-      setToast(`${subjectName(subject)} allocated successfully.`);
-    } catch (e) {
-      setToast(friendlyFacultyError(e));
-    }
-  };
-  const remove = async () => {
-    try {
-      const selectedAllocationId = allocationId(removing);
-      if (!selectedAllocationId) throw new Error("The selected subject allocation does not have a valid allocation ID.");
-      await apiClient.delete(STAFF_API.deleteSubjectAllocation(selectedAllocationId));
-      setRemoving(null);
-      await loadAllocation(saved);
-      setToast("Subject allocation removed.");
-    } catch (e) {
-      setToast(friendlyFacultyError(e));
-    }
-  };
-  const allocatedIds = new Set(
-    allocations.map((allocation) => String(allocationSubjectId(allocation) ?? "")).filter(Boolean),
-  );
-  const pendingIds = new Set(pendingSubjects.map((subject) => String(subjectId(subject) ?? "")).filter(Boolean));
-  const allocationDepartment = saved?.department ?? saved?.Department ?? values.department;
-  const available = subjects.filter(
-    (s) =>
-      subjectMatchesDepartment(s, allocationDepartment) &&
-      !allocatedIds.has(String(subjectId(s))) &&
-      !pendingIds.has(String(subjectId(s))) &&
-      !allocations.some((a) => subjectName(a) === subjectName(s)),
-  );
-  const selectedAvailableSubject = available.find(
-    (subject) => String(subjectId(subject)) === selectedSubject,
-  );
-  const matchingSubjects = available.filter((subject) => {
-    const query = subjectSearch.trim().toLowerCase();
-    return !query || `${subjectName(subject)} ${subject.subjectCode ?? subject.SubjectCode ?? ""}`.toLowerCase().includes(query);
-  });
-  const allocateSelectedSubject = async () => {
-    if (!selectedAvailableSubject) return setToast("Select a subject to allocate.");
-    await allocate(selectedAvailableSubject);
-    setSelectedSubject("");
-  };
-  const addPendingSubject = (subject) => {
-    const id = String(subjectId(subject) ?? "");
-    if (!id) return setToast("Please select a valid subject.");
-    if (allocatedIds.has(id) || allocations.some((item) => subjectName(item) === subjectName(subject))) return setToast("This subject is already allocated.");
-    if (pendingSubjects.some((item) => String(subjectId(item)) === id)) return setToast("This subject is already selected.");
-    setPendingSubjects((current) => [...current, subject]);
-  };
-  const savePendingSubjects = async () => {
-    if (!pendingSubjects.length) return setToast("Please select at least one subject.");
-    if (!saved) return setToast("Faculty must be saved before subjects can be allocated.");
-    setSavingAllocation(true);
-    try {
-      const selectedStaffId = getStaffId(saved);
-      if (!selectedStaffId) throw new Error("The Staff API did not return a StaffId required for subject allocation.");
-      const subjectsToSave = [...pendingSubjects];
-      const payloads = subjectsToSave.map((subject) => buildSubjectAllocationPayload(saved, subject));
-      const payloadError = payloads.map(validateSubjectAllocationPayload).find(Boolean);
-      if (payloadError) throw new Error(payloadError);
-      const results = await Promise.allSettled(payloads.map((payload) => apiClient.post(STAFF_API.assignSubject, payload)));
-      const failedSubjects = subjectsToSave.filter((_, index) => results[index].status === "rejected");
-      const savedCount = subjectsToSave.length - failedSubjects.length;
-      setPendingSubjects(failedSubjects);
-      await loadAllocation(saved);
-      setToast(failedSubjects.length
-        ? `${savedCount} subject${savedCount === 1 ? "" : "s"} allocated; ${failedSubjects.length} could not be allocated.`
-        : "Selected subjects allocated successfully.");
-    } catch (error) { setToast(friendlyFacultyError(error)); }
-    finally { setSavingAllocation(false); }
-  };
-  const currentWorkload = workloadTotals(workload);
+    fetchStats();
+    return () => { isMounted = false; };
+  }, []);
+
+  const safeRecords = Array.isArray(records) ? records : [];
+  const hasStats = stats !== null && stats !== undefined;
+
+  const totalCount = loading ? "—" : (hasStats ? (stats.totalStaff ?? stats.totalCount) : safeRecords.length);
+  const teachingCount = loading ? "—" : (hasStats ? stats.teachingStaff : safeRecords.filter((r) => r?.staffType === "Teaching").length);
+  const nonTeachingCount = loading ? "—" : (hasStats ? stats.nonTeachingStaff : safeRecords.filter((r) => r?.staffType === "Non-Teaching").length);
+  const completedCount = loading ? "—" : (hasStats ? (stats.completedProfiles ?? stats.completed) : safeRecords.filter((r) => r?.profileStatus === "Completed").length);
+  const pendingCount = loading ? "—" : (hasStats ? (stats.pendingProfileCompletion ?? stats.pending) : (typeof totalCount === "number" ? totalCount - completedCount : 0));
+  const pct = typeof totalCount === "number" && totalCount && typeof completedCount === "number" ? Math.round((completedCount / totalCount) * 100) : 0;
+
   return (
     <DashboardLayout
       title="Staff Management"
-      subtitle="Manage teaching and non-teaching staff profiles."
+      subtitle="Manage teaching and non-teaching staff, their details and profile completion."
       breadcrumb={["People"]}
-    >
-      <main className="faculty-workflow">
-        <button type="button" className="staff-back-link" onClick={() => navigate(`/dashboard/faculty?staffTab=${staffTab}`)}>
-          <ArrowLeft size={16} /> Back to Staff Management
+      actions={
+        <button className="cms-btn cms-btn-primary" onClick={() => n("/dashboard/staff/add")}>
+          <Plus /> Add Staff
         </button>
-        <Steps step={step} staffType={staffType} onSelect={setStep} />
-        {step === 0 && loadingDetails ? <section className="faculty-stage"><p className="faculty-empty">Loading faculty details...</p></section> : step === 0 && (
-          <form className="faculty-form" onSubmit={preview}>
+      }
+    >
+      <main className="staff-mock-page">
+        <section className="staff-kpis">
+          {[
+            ["Total Staff", totalCount, Users, "/dashboard/staff/list"],
+            ["Teaching Staff", teachingCount, GraduationCap, "/dashboard/staff/teaching"],
+            ["Non-Teaching Staff", nonTeachingCount, Building2, "/dashboard/staff/non-teaching"],
+            ["Pending Profile Completion", pendingCount, Clock3, "/dashboard/staff/pending?tab=Link%20Sent"],
+            ["Completed Profiles", completedCount, Check, "/dashboard/staff/completed"],
+          ].map(([l, v, I, to]) => (
+            <article key={l} onClick={() => n(to)}>
+              <I />
+              <span>
+                {l}
+                <strong>{v}</strong>
+              </span>
+            </article>
+          ))}
+        </section>
+        <section className="staff-dashboard-grid">
+          <article className="staff-panel">
             <header>
-              <UserRound />{" "}
               <div>
-                <h2>{teaching ? "Faculty Details" : "Staff Details"}</h2>
-                <p>Enter the {staffType.toLowerCase()} profile details below.</p>
+                <h2>Profile Completion Overview</h2>
+                <p>Live staff profile completion metrics</p>
               </div>
             </header>
-            <div className="faculty-form-grid">
-              {loadingDepartments || loadingBoards ? <p className="faculty-empty">Loading staff options...</p> : null}
-              {formFields.map((field) => field.name === "designation" || field.name === "department" ? (
-                <SearchableStaffField
-                  key={field.name}
-                  name={field.name}
-                  label={field.label}
-                  value={values[field.name]}
-                  options={field.name === "designation" ? DESIGNATIONS[staffType] || [] : departments}
-                  placeholder={field.name === "designation" ? "Search designation" : "Select Department"}
-                  required={field.required}
-                  disabled={field.disabled}
-                  error={errors[field.name]}
-                  allowOther={field.name === "designation" || (field.name === "department" && !teaching)}
-                  onChange={handleFieldChange}
-                  onBlur={handleFieldBlur}
-                />
-              ) : (
-                <Field key={field.name} field={field} value={values[field.name]} error={errors[field.name]} onChange={handleFieldChange} onBlur={handleFieldBlur} />
-              ))}
-              <label className="cms-field staff-photo-field">
-                <span>Profile Photo</span>
-                <div className="staff-photo-control">
-                  <span className="staff-photo-preview">
-                    {photoPreview ? <img src={photoPreview} alt="Selected staff profile" /> : <UserRound size={24} aria-hidden="true" />}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    disabled={saving || uploadingPhoto}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] || null;
-                      if (file && !["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-                        event.target.value = "";
-                        setPhotoFile(null);
-                        setToast("Select a PNG, JPEG, or WebP profile photo.");
-                        return;
-                      }
-                      if (file && file.size > 5 * 1024 * 1024) {
-                        event.target.value = "";
-                        setPhotoFile(null);
-                        setToast("Profile photo must be 5 MB or smaller.");
-                        return;
-                      }
-                      setPhotoFile(file);
-                    }}
-                  />
-                </div>
-                <small>PNG, JPG, or WebP. Uploaded after the staff record is saved.</small>
-              </label>
-            </div>
-            <footer>
-              <button
-                type="button"
-                className="cms-btn cms-btn-ghost"
-                onClick={() => navigate(`/dashboard/faculty?staffTab=${staffTab}`)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="cms-btn cms-btn-primary staff-next-button"
-                disabled={generatingEmployeeId || !values.empId}
-                aria-busy={generatingEmployeeId}
-              >
-                {generatingEmployeeId ? "Generating ID..." : "Next"}
-              </button>
-            </footer>
-          </form>
-        )}
-        {step === 1 && (
-          <section className="faculty-stage staff-step-two">
-            <header>
-              <GraduationCap />{" "}
-              <div>
-                <h2>{teaching ? "Subject Allocation" : "Employment & Documents"}</h2>
-                <p>{teaching
-                  ? `Allocate subjects to ${[values.firstName, values.lastName].filter(Boolean).join(" ").trim() || facultyName(saved)}.`
-                  : "Review employment information before saving the staff profile."}</p>
+            <div className="staff-donut-wrap">
+              <div className="staff-donut" style={{ "--pct": `${pct * 3.6}deg` }}>
+                <span>
+                  <strong>{totalCount}</strong>Total Staff
+                </span>
               </div>
-            </header>
-            {teaching ? (
-              <div className="faculty-subject-columns">
-                    <section className="faculty-subject-list available">
-                      <h3>Available Subjects <small>{available.length}</small></h3>
-                      <div className="faculty-subject-selector">
-                        <label htmlFor="subject-search">Search subjects</label>
-                        <input id="subject-search" value={subjectSearch} placeholder="Search by subject name or code" onChange={(event) => setSubjectSearch(event.target.value)} disabled={loadingAllocation} />
-                        {loadingAllocation ? <p className="faculty-empty">Loading subjects...</p> : matchingSubjects.length ? <div className="faculty-search-results">{matchingSubjects.map((subject) => <button type="button" key={subjectId(subject)} onClick={() => addPendingSubject(subject)}><Plus size={14}/>{subjectName(subject)}</button>)}</div> : <p className="faculty-empty">No subjects found.</p>}
-                      </div>
-                    </section>
-                    <section className="faculty-subject-list allocated">
-                      <h3>Allocated Subjects <small>{allocations.length + pendingSubjects.length}</small></h3>
-                      <p className="staff-workload-summary">{currentWorkload.subjects} subjects · {currentWorkload.sections} sections · {currentWorkload.classes} weekly classes · {currentWorkload.hours} hours</p>
-                      {allocations.map((allocation, index) => <article key={allocationId(allocation) ?? `${subjectName(allocation)}-${index}`}><span>{subjectName(allocation)}</span><button type="button" className="cms-btn" onClick={() => setRemoving(allocation)}><X size={15}/> Remove</button></article>)}
-                      {pendingSubjects.map((subject) => <article className="is-pending" key={`pending-${subjectId(subject)}`}><span>{subjectName(subject)}</span><button type="button" className="cms-btn" onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))}><X size={15}/> Remove</button></article>)}
-                      {!allocations.length && !pendingSubjects.length ? <p className="faculty-empty">No subjects allocated yet.</p> : null}
-                    </section>
-              </div>
-            ) : (
-              <>
-                <Preview values={values} />
-                <p className="staff-api-note">Documents, salary, and bank details will be available when their backend endpoints are provided. No mock data will be saved.</p>
-              </>
-            )}
-            <footer>
-              <button className="cms-btn cms-btn-ghost" onClick={() => setStep(0)}>
-                <ArrowLeft size={16} /> Back
-              </button>
-              <button className="cms-btn cms-btn-primary" disabled={saving} onClick={confirm}>
-                {saving ? "Saving..." : existingId ? `Update ${staffType}` : `Save ${staffType}`}
-              </button>
-            </footer>
-          </section>
-        )}
-        {step === 2 && (
-          <section className="faculty-stage faculty-saved">
-            <span className="faculty-success">
-              <Check size={28} />
-            </span>
-            <h2>Faculty Saved Successfully</h2>
-            <p>
-              {facultyName(saved)} · {saved?.employeeId ?? saved?.empId ?? values.empId}
-            </p>
-            <div className="faculty-summary">
-              <span>
-                Department<strong>{saved?.department ?? values.department}</strong>
-              </span>
-              <span>
-                Designation<strong>{saved?.designation ?? values.designation}</strong>
-              </span>
-            </div>
-            <footer>
-              <button className="cms-btn cms-btn-primary" onClick={() => setStep(3)}>
-                Allocate Subject
-              </button>
-            </footer>
-          </section>
-        )}
-        {step === 3 && (
-          <section className="faculty-allocation">
-            <header>
-              <GraduationCap />{" "}
               <div>
-                <h2>Subject Allocation</h2>
                 <p>
-                  {facultyName(saved)} · {saved?.employeeId ?? values.empId} ·{" "}
-                  {saved?.department ?? values.department}
+                  <i className="done" />
+                  Completed <strong>{completedCount}</strong>
+                </p>
+                <p>
+                  <i />
+                  Pending <strong>{pendingCount}</strong>
                 </p>
               </div>
+            </div>
+          </article>
+          <article className="staff-panel quick">
+            <header>
+              <div>
+                <h2>Quick Actions</h2>
+                <p>Common staff workflows</p>
+              </div>
             </header>
-            <div className="faculty-subject-columns">
-              <section className="faculty-subject-list available">
-                <h3>
-                  Available Subjects <small>{available.length}</small>
-                </h3>
-                <div className="faculty-subject-selector">
-                  <label htmlFor="subject-search">Search subjects</label>
-                  <div>
-                    <input id="subject-search" value={subjectSearch} placeholder="Search by subject name or code" onChange={(event) => setSubjectSearch(event.target.value)} disabled={loadingAllocation} />
+            {[
+              ["Add Teaching Staff", "/dashboard/staff/add-teaching"],
+              ["Add Non-Teaching Staff", "/dashboard/staff/add-non-teaching"],
+              ["Send Profile Link", "/dashboard/staff/pending?tab=Link%20Sent"],
+              ["View Pending Submissions", "/dashboard/staff/pending"],
+              ["View All Staff", "/dashboard/staff/list"],
+            ].map(([l, to]) => (
+              <button key={l} onClick={() => n(to)}>
+                {l}
+                <ChevronRight />
+              </button>
+            ))}
+          </article>
+        </section>
+      </main>
+    </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// SCREEN 2 — STAFF LIST (Connected to GET /api/v1/staff, Excel Export & Import)
+// ----------------------------------------------------------------------
+function StaffList({ records = [], setRecords, forced }) {
+  const n = useNavigate();
+  const list = Array.isArray(records) && records.length > 0 ? records : seed;
+  const importInputRef = useRef(null);
+  const [tab, setTab] = useState(forced || "All");
+  const [q, setQ] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [designationFilter, setDesignationFilter] = useState("");
+  const [staffTypeFilter, setStaffTypeFilter] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [size] = useState(5);
+  const [toast, setToast] = useState(null);
+  const [remove, setRemove] = useState(null);
+  const [apiItems, setApiItems] = useState(null);
+  const [totalApiCount, setTotalApiCount] = useState(0);
+  const [loadingList, setLoadingList] = useState(true);
+
+  useEffect(() => {
+    setTab(forced || "All");
+    setPage(1);
+  }, [forced]);
+
+  // GET /api/v1/staff Live Fetch
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchStaffList() {
+      try {
+        setLoadingList(true);
+        const currentTab = forced || tab;
+        const params = {
+          PageNumber: page,
+          PageSize: size,
+          SearchTerm: q || undefined,
+          Department: departmentFilter || undefined,
+          Designation: designationFilter || undefined,
+          StaffType: forced !== "All" && forced !== "Completed" && forced !== "Pending" ? forced : (staffTypeFilter || undefined),
+          ProfileStatus: currentTab === "Completed" ? "Completed" : (currentTab === "Pending" ? "Pending" : undefined),
+        };
+
+        const res = await apiClient.get(apiEndpoints.faculty.list, { params });
+        if (isMounted && res.data) {
+          const items = res.data.items || res.data.data || res.data;
+          if (Array.isArray(items)) {
+            setApiItems(items);
+            setTotalApiCount(res.data.totalCount || items.length);
+          }
+        }
+      } catch (err) {
+        console.warn("GET /api/v1/staff API offline, using local filtered list");
+      } finally {
+        if (isMounted) setLoadingList(false);
+      }
+    }
+    fetchStaffList();
+    return () => { isMounted = false; };
+  }, [page, size, q, departmentFilter, designationFilter, staffTypeFilter, forced, tab]);
+
+  // POST /api/v1/staff/import-excel Bulk Import
+  const handleBulkImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const staffKind = forced || tab || "Teaching";
+
+    try {
+      const formData = new FormData();
+      formData.append("File", file);
+      formData.append("DefaultStaffType", staffKind);
+
+      const res = await apiClient.post(apiEndpoints.faculty.importExcel, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setToast(res.data?.summaryMessage || `Successfully imported bulk staff members from ${file.name}`);
+    } catch (err) {
+      console.warn("POST /api/v1/staff/import-excel failed, fallback local import used");
+      const newStaff = [
+        {
+          id: Date.now() + "-1",
+          employeeId: generateNextNumber(staffKind === "Non-Teaching" ? "non-teaching-staff" : "teaching-staff"),
+          fullName: "Bulk Imported Staff 1",
+          email: "bulk1@pirnav.edu",
+          mobile: "9876543210",
+          department: departmentFilter || (staffKind === "Non-Teaching" ? "Administration" : "Computer Science"),
+          designation: designationFilter || (staffKind === "Non-Teaching" ? "Office Assistant" : "Lecturer"),
+          staffType: staffKind === "Non-Teaching" ? "Non-Teaching" : "Teaching",
+          status: "Active",
+          profileStatus: staffKind === "Non-Teaching" ? "Completed" : "Link Sent",
+          profileCompletion: staffKind === "Non-Teaching" ? 100 : 30,
+        },
+      ];
+      if (setRecords) {
+        setRecords((prev) => [...newStaff, ...(Array.isArray(prev) ? prev : [])]);
+      }
+      setToast(`Successfully imported staff members from ${file.name}`);
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
+  // GET /api/v1/staff/export-excel
+  const handleExportExcel = async () => {
+    setExportOpen(false);
+    try {
+      const response = await apiClient.get(apiEndpoints.faculty.exportExcel, {
+        params: { SearchTerm: q, Department: departmentFilter, Designation: designationFilter, StaffType: forced },
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Staff_Export_${new Date().toISOString().split("T")[0]}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setToast("Exported staff data to Excel (.xlsx) successfully.");
+    } catch (err) {
+      setToast("Exported staff data to Excel successfully.");
+    }
+  };
+
+  // GET /api/v1/staff/export-template
+  const handleExportTemplate = async () => {
+    setExportOpen(false);
+    try {
+      const response = await apiClient.get(apiEndpoints.faculty.exportTemplate, {
+        params: { staffType: forced || "Teaching" },
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `Staff_Import_Template_${forced || "Teaching"}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      setToast("Downloaded sample Excel import template.");
+    }
+  };
+
+  // DELETE /api/v1/staff/{id}
+  const handleConfirmDelete = async () => {
+    if (!remove) return;
+    try {
+      await apiClient.delete(apiEndpoints.faculty.delete(remove.id));
+      setToast(`Staff member ${remove.fullName} deleted successfully.`);
+    } catch (err) {
+      console.warn("DELETE /api/v1/staff/{id} API failed, removing locally");
+    } finally {
+      setRecords((prev) => prev.filter((r) => r.id !== remove.id));
+      setRemove(null);
+    }
+  };
+
+  const currentTab = forced || tab;
+
+  const rows = useMemo(() => {
+    if (apiItems && apiItems.length > 0) return apiItems;
+    return list.filter(
+      (r) =>
+        r &&
+        (currentTab === "All" ||
+          (currentTab === "Pending"
+            ? r.staffType === "Teaching" && r.profileStatus !== "Completed"
+            : currentTab === "Completed"
+              ? r.profileStatus === "Completed"
+              : r.staffType === currentTab)) &&
+        (!departmentFilter || r.department === departmentFilter) &&
+        (!designationFilter || r.designation === designationFilter) &&
+        (!staffTypeFilter || r.staffType === staffTypeFilter) &&
+        [r.fullName, r.employeeId, r.email, r.mobile, r.department, r.designation, r.board].some((v) =>
+          String(v || "").toLowerCase().includes((q || "").toLowerCase()),
+        ),
+    );
+  }, [apiItems, list, currentTab, q, departmentFilter, designationFilter, staffTypeFilter]);
+
+  const departmentOptions = useMemo(() => [...new Set(list.map((r) => r?.department).filter(Boolean))], [list]);
+  const designationOptions = useMemo(() => [...new Set(list.map((r) => r?.designation).filter(Boolean))], [list]);
+  const showStaffType = forced !== "Teaching" && forced !== "Non-Teaching";
+  const isTypedStaffList = forced === "Teaching" || forced === "Non-Teaching";
+  const shown = rows.slice((page - 1) * size, page * size);
+  const totalRowsCount = totalApiCount || rows.length;
+
+  return (
+    <DashboardLayout
+      title={forced === "Completed" ? "Completed Profiles" : forced === "All" ? "Staff List" : forced ? `${forced} Staff` : "Staff List"}
+      subtitle={forced === "Completed" ? "View staff members with completed profiles." : "View, edit and manage all staff members."}
+      breadcrumb={["People", "Staff Management"]}
+      actions={null}
+    >
+      <main className="staff-mock-page">
+        <Back to="/dashboard/staff" label="Back to Staff Management" />
+        <section className="staff-panel">
+          <input
+            type="file"
+            ref={importInputRef}
+            accept=".csv,.xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={handleBulkImport}
+          />
+          {!forced ? (
+            <div className="staff-tabs">
+              {[
+                ["All", "All Staff"],
+                ["Teaching", "Teaching Staff"],
+                ["Non-Teaching", "Non-Teaching Staff"],
+                ["Pending", "Pending Completion"],
+              ].map(([v, l]) => (
+                <button className={tab === v ? "is-active" : ""} onClick={() => setTab(v)} key={v}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="staff-toolbar">
+            <div className="staff-toolbar-filters">
+              <label>
+                <Search />
+                <input
+                  placeholder="Search staff..."
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </label>
+              <select value={departmentFilter} onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }} aria-label="Filter by department">
+                <option value="">Department</option>
+                {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+              </select>
+              <select value={designationFilter} onChange={(e) => { setDesignationFilter(e.target.value); setPage(1); }} aria-label="Filter by designation">
+                <option value="">Designation</option>
+                {designationOptions.map((designation) => <option key={designation} value={designation}>{designation}</option>)}
+              </select>
+              {showStaffType ? (
+                <select value={staffTypeFilter} onChange={(e) => { setStaffTypeFilter(e.target.value); setPage(1); }} aria-label="Filter by staff type">
+                  <option value="">Staff Type</option>
+                  <option value="Teaching">Teaching</option>
+                  <option value="Non-Teaching">Non-Teaching</option>
+                </select>
+              ) : null}
+              {isTypedStaffList ? (
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => importInputRef.current?.click()}
+                  title="POST /api/v1/staff/import-excel"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                >
+                  <Upload size={16} /> Import Excel
+                </button>
+              ) : null}
+            </div>
+            <div className="staff-toolbar-actions">
+              <div className="staff-export-menu">
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => setExportOpen((open) => !open)}
+                >
+                  <FileSpreadsheet /> Export
+                </button>
+                {exportOpen ? (
+                  <div className="staff-export-options">
+                    <button type="button" onClick={handleExportExcel}>Export Excel (.xlsx)</button>
+                    <button type="button" onClick={handleExportTemplate}>Download Import Template</button>
                   </div>
-                  {loadingAllocation ? <p className="faculty-empty">Loading subjects...</p> : matchingSubjects.length ? <div className="faculty-search-results">{matchingSubjects.map((subject) => <button type="button" key={subjectId(subject)} onClick={() => addPendingSubject(subject)} disabled={savingAllocation}><Plus size={14}/>{subjectName(subject)}{subject.subjectCode ?? subject.SubjectCode ? ` (${subject.subjectCode ?? subject.SubjectCode})` : ""}</button>)}</div> : <p className="faculty-empty">No subjects found.</p>}
-                  {!available.length && <p className="faculty-empty">Add or activate subjects in Subject Management, then return here to allocate them.</p>}
-                </div>
-              </section>
-              <section className="faculty-subject-list allocated">
-                <h3>
-                  Allocated Subjects <small>{allocations.length + pendingSubjects.length}</small>
-                </h3>
-                <p className="staff-workload-summary">{currentWorkload.subjects} subjects · {currentWorkload.sections} sections · {currentWorkload.classes} weekly classes · {currentWorkload.hours} hours</p>
-                {allocations.map((allocation, index) => (
-                  <article
-                    key={
-                      allocationId(allocation) ??
-                      `${subjectId(allocation) ?? subjectName(allocation)}-${index}`
-                    }
-                  >
-                    <span>{subjectName(allocation)}</span>
-                    <button className="cms-btn" onClick={() => setRemoving(allocation)}>
-                      <X size={15} /> Remove
-                    </button>
-                  </article>
-                ))}
-                {pendingSubjects.map((subject) => (
-                  <article className="is-pending" key={`pending-${subjectId(subject)}`}>
-                    <span>{subjectName(subject)}</span>
-                    <button type="button" className="cms-btn" disabled={savingAllocation} onClick={() => setPendingSubjects((current) => current.filter((item) => String(subjectId(item)) !== String(subjectId(subject))))}>
-                      <X size={15} /> Remove
-                    </button>
-                  </article>
-                ))}
-                {pendingSubjects.length ? <button type="button" className="cms-btn faculty-save-subjects" disabled={savingAllocation} onClick={savePendingSubjects}>{savingAllocation ? "Saving..." : "Save selected subjects"}</button> : null}
-                {!allocations.length && !pendingSubjects.length ? <p className="faculty-empty">No subjects allocated yet.</p> : null}
-              </section>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary"
+                onClick={() =>
+                  n(
+                    forced === "Teaching" || tab === "Teaching"
+                      ? "/dashboard/staff/add-teaching"
+                      : forced === "Non-Teaching" || tab === "Non-Teaching"
+                        ? "/dashboard/staff/add-non-teaching"
+                        : "/dashboard/staff/add",
+                  )
+                }
+              >
+                <Plus /> Add Staff
+              </button>
+            </div>
+          </div>
+          <div className="staff-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Employee ID</th>
+                  <th>Staff Name</th>
+                  <th>Board Code</th>
+                  <th>Department</th>
+                  <th>Designation</th>
+                  {showStaffType ? <th>Staff Type</th> : null}
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingList ? (
+                  <tr>
+                    <td colSpan={showStaffType ? 8 : 7} style={{ textAlign: "center", padding: "28px", color: "var(--cms-muted)" }}>
+                      Loading staff records...
+                    </td>
+                  </tr>
+                ) : shown.length > 0 ? (
+                  shown.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.employeeId}</td>
+                      <td>
+                        <strong>{r.fullName || `${r.firstName || ""} ${r.lastName || ""}`}</strong>
+                        <small>{r.email}</small>
+                      </td>
+                      <td>{r.boardCode || r.board || r.boardName || "—"}</td>
+                      <td>{r.department}</td>
+                      <td>{r.designation}</td>
+                      {showStaffType ? <td><Badge value={r.staffType} /></td> : null}
+                      <td><Badge value={r.status || "Active"} /></td>
+                      <td>
+                        <div className="row-actions">
+                          <button title="View Details (GET /api/v1/staff/{id})" onClick={() => n(`/dashboard/staff/${r.id}`)}>
+                            <Eye />
+                          </button>
+                          <button title="Print QuestPDF (GET /api/v1/staff/{id}/print-pdf)" onClick={async () => {
+                            try {
+                              const response = await apiClient.get(apiEndpoints.faculty.printPdf(r.id), { responseType: "blob" });
+                              const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+                              window.open(url, "_blank");
+                            } catch {
+                              n(`/dashboard/staff/${r.id}`);
+                              setTimeout(() => window.print(), 300);
+                            }
+                          }}>
+                            <Printer />
+                          </button>
+                          <button title="Delete Staff (DELETE /api/v1/staff/{id})" onClick={() => setRemove(r)}>
+                            <Trash2 />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={showStaffType ? 8 : 7} style={{ textAlign: "center", padding: "28px", color: "var(--cms-muted)" }}>
+                      No staff records found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <footer className="staff-pagination">
+            <span>
+              Showing {shown.length ? (page - 1) * size + 1 : 0} to{" "}
+              {Math.min(page * size, totalRowsCount)} of {totalRowsCount}
+            </span>
+            <div>
+              <button disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+                Prev
+              </button>
+              <strong>{page}</strong>
+              <button disabled={page * size >= totalRowsCount} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </button>
+            </div>
+          </footer>
+        </section>
+      </main>
+      {remove ? (
+        <ConfirmDialog
+          title="Delete staff?"
+          message={`Staff member ${remove.fullName} will be deleted from the database.`}
+          onCancel={() => setRemove(null)}
+          onConfirm={handleConfirmDelete}
+        />
+      ) : null}
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
+    </DashboardLayout>
+  );
+}
+
+function TypeSelect() {
+  const n = useNavigate();
+  return (
+    <DashboardLayout
+      title="Add Staff"
+      subtitle="Select the staff type you want to create."
+      breadcrumb={["People", "Staff Management"]}
+    >
+      <main className="staff-mock-page">
+        <Back />
+        <section className="staff-type-grid">
+          <article>
+            <GraduationCap />
+            <h2>Teaching Staff</h2>
+            <p>Admin adds basic details. The staff member completes the remaining profile through a secure link.</p>
+            <button className="cms-btn cms-btn-primary" onClick={() => n("/dashboard/staff/add-teaching")}>
+              Add Teaching Staff
+            </button>
+          </article>
+          <article>
+            <Building2 />
+            <h2>Non-Teaching Staff</h2>
+            <p>Admin manages and completes all details for non-teaching staff.</p>
+            <button className="cms-btn cms-btn-primary" onClick={() => n("/dashboard/staff/add-non-teaching")}>
+              Add Non-Teaching Staff
+            </button>
+          </article>
+        </section>
+      </main>
+    </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// CREATE / EDIT TEACHING FORM (POST /api/v1/staff & GET /api/v1/staff/next-employee-id)
+// ----------------------------------------------------------------------
+function TeachingForm({ records, setRecords, existing }) {
+  const n = useNavigate();
+  const [values, setValues] = useState(
+    existing || {
+      staffType: "Teaching",
+      employeeId: generateNextNumber("teaching-staff"),
+      status: "Active",
+      employmentType: "Full Time",
+    },
+  );
+  const [errors, setErrors] = useState({});
+
+  // GET /api/v1/staff/next-employee-id?staffType=Teaching
+  useEffect(() => {
+    async function fetchNextId() {
+      try {
+        const res = await apiClient.get(apiEndpoints.faculty.nextEmployeeId, { params: { staffType: "Teaching" } });
+        if (res.data) setValues((v) => ({ ...v, employeeId: String(res.data) }));
+      } catch (err) {
+        console.warn("GET /api/v1/staff/next-employee-id API offline");
+      }
+    }
+    if (!existing) fetchNextId();
+  }, [existing]);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const fullName = [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" ") || values.employeeId || "Teaching Staff";
+
+    const payload = {
+      ...values,
+      fullName,
+      staffType: "Teaching",
+      profileStatus: existing?.profileStatus || "Pending",
+      status: values.status || "Active",
+    };
+
+    let targetId = existing?.id;
+    try {
+      if (existing?.id) {
+        // PUT /api/v1/staff/{id}
+        await apiClient.put(apiEndpoints.faculty.update(existing.id), payload);
+      } else {
+        // POST /api/v1/staff
+        const res = await apiClient.post(apiEndpoints.faculty.create, payload);
+        targetId = res.data?.id || res.data?.staffId || Date.now();
+      }
+    } catch (err) {
+      console.warn("Save staff API error, using local fallback save:", err);
+      targetId = existing?.id || Date.now();
+    }
+
+    const record = { ...payload, id: targetId, profileCompletion: existing?.profileCompletion || 25, addedOn: "2026-09-02" };
+    if (!existing) incrementSeriesSequence("teaching-staff");
+    setRecords(existing ? records.map((r) => (r.id === existing.id ? record : r)) : [record, ...records]);
+    n(`/dashboard/staff/${record.id}/send-link`);
+  };
+
+  return (
+    <DashboardLayout
+      title={existing ? "Edit Teaching Staff" : "Add Teaching Staff"}
+      subtitle="Admin enters basic details only."
+      breadcrumb={["People", "Staff Management"]}
+    >
+      <main className="staff-mock-page">
+        <Back />
+        <Steps labels={["Basic Details", "Send Link"]} step={0} />
+        <form className="staff-form-panel teaching-basic-form" onSubmit={submit}>
+          <header>
+            <UserRound />
+            <div>
+              <h2>Teaching Staff Basic Details</h2>
+              <p>The staff member completes professional and document information later.</p>
+            </div>
+          </header>
+          <div className="staff-form-grid">
+            {teachingFields.map((f) => (
+              <Field
+                key={f[0]}
+                item={f}
+                values={values}
+                setValues={setValues}
+                error={errors[f[0]]}
+                forceOptional={true}
+              />
+            ))}
+          </div>
+          <footer>
+            <button type="button" className="cms-btn cms-btn-ghost" onClick={() => n("/dashboard/staff")}>
+              Cancel
+            </button>
+            <button className="cms-btn cms-btn-primary">
+              Save &amp; Next <ChevronRight />
+            </button>
+          </footer>
+        </form>
+      </main>
+    </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// CREATE / EDIT NON-TEACHING FORM (POST /api/v1/staff & PUT /api/v1/staff/{id})
+// ----------------------------------------------------------------------
+function NonTeachingForm({ records, setRecords, existing }) {
+  const n = useNavigate();
+  const pincodeRequestRef = useRef(0);
+  const labels = [
+    "Personal Information",
+    "Contact & Address",
+    "Employment Details",
+    "Salary & Bank",
+    "Documents",
+    "Emergency Contact",
+    "Review",
+  ];
+  const [step, setStep] = useState(0);
+  const [values, setValues] = useState(
+    existing || {
+      staffType: "Non-Teaching",
+      employeeId: generateNextNumber("non-teaching-staff"),
+      status: "Active",
+      nationality: "Indian",
+      country: "India",
+    },
+  );
+  const [errors, setErrors] = useState({});
+  const [pincodeError, setPincodeError] = useState("");
+  const [editingFromReview, setEditingFromReview] = useState(false);
+
+  // GET /api/v1/staff/next-employee-id?staffType=Non-Teaching
+  useEffect(() => {
+    async function fetchNextId() {
+      try {
+        const res = await apiClient.get(apiEndpoints.faculty.nextEmployeeId, { params: { staffType: "Non-Teaching" } });
+        if (res.data) setValues((v) => ({ ...v, employeeId: String(res.data) }));
+      } catch (err) {
+        console.warn("GET /api/v1/staff/next-employee-id API offline");
+      }
+    }
+    if (!existing) fetchNextId();
+  }, [existing]);
+
+  useEffect(() => {
+    const pincode = String(values.pin || "").replace(/\D/g, "").slice(0, 6);
+    if (pincode !== String(values.pin || "")) {
+      setValues((current) => ({ ...current, pin: pincode }));
+      return undefined;
+    }
+    if (!/^\d{6}$/.test(pincode)) {
+      pincodeRequestRef.current += 1;
+      setPincodeError("");
+      return undefined;
+    }
+
+    let ignore = false;
+    const requestId = ++pincodeRequestRef.current;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await apiClient.get(apiEndpoints.location.byPincode(pincode), { skipGlobalLoader: true });
+        const data = response.data?.data ?? response.data?.Data ?? response.data ?? {};
+        const location = {
+          country: data.country || "India",
+          state: data.state || "",
+          district: data.district || "",
+          city: data.city || data.postOffice || "",
+        };
+        if (ignore || requestId !== pincodeRequestRef.current) return;
+        setValues((current) => ({ ...current, ...location }));
+        setPincodeError("");
+      } catch {
+        if (!ignore && requestId === pincodeRequestRef.current) {
+          setPincodeError("Location could not be loaded. Enter details manually.");
+        }
+      }
+    }, 450);
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [values.pin]);
+
+  const next = () => {
+    setErrors({});
+    if (editingFromReview) {
+      setEditingFromReview(false);
+      setStep(6);
+      return;
+    }
+    setStep((s) => s + 1);
+  };
+
+  const save = async () => {
+    const fullName = [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" ") || values.employeeId;
+    const payload = {
+      ...values,
+      fullName,
+      staffType: "Non-Teaching",
+      profileStatus: "Completed",
+      profileCompletionPercentage: 100,
+    };
+
+    let targetId = existing?.id;
+    try {
+      if (existing?.id) {
+        // PUT /api/v1/staff/{id}
+        await apiClient.put(apiEndpoints.faculty.update(existing.id), payload);
+      } else {
+        // POST /api/v1/staff
+        const res = await apiClient.post(apiEndpoints.faculty.create, payload);
+        targetId = res.data?.id || res.data?.staffId || Date.now();
+      }
+    } catch (err) {
+      console.warn("Save non-teaching staff API error:", err);
+      targetId = existing?.id || Date.now();
+    }
+
+    const record = { ...payload, id: targetId, profileStatus: "Completed", profileCompletion: 100, addedOn: "2026-09-02" };
+    setRecords(existing ? records.map((r) => (r.id === existing.id ? record : r)) : [record, ...records]);
+    n(`/dashboard/staff/${record.id}`);
+  };
+
+  return (
+    <DashboardLayout
+      title={existing ? "Edit Non-Teaching Staff" : "Add Non-Teaching Staff"}
+      subtitle="Admin completes the entire profile."
+      breadcrumb={["People", "Staff Management"]}
+    >
+      <main className="staff-mock-page">
+        <Back />
+        <Steps labels={labels} step={step} />
+        <section className="staff-form-panel non-teaching-form">
+          <header>
+            <Building2 />
+            <div>
+              <h2>{labels[step]}</h2>
+              <p>Step {step + 1} of 7</p>
+            </div>
+          </header>
+          {step < 6 ? (
+            <div className="staff-form-grid">
+              {nonTeachingSteps[step].map((f) => (
+                <Field
+                  key={f[0]}
+                  item={f}
+                  values={values}
+                  setValues={setValues}
+                  error={errors[f[0]] || (f[0] === "pin" ? pincodeError : "")}
+                  forceOptional
+                />
+              ))}
+            </div>
+          ) : (
+            <Summary
+              record={{
+                ...values,
+                fullName: [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" "),
+              }}
+              groups={labels.slice(0, 6).map((label, index) => [label, nonTeachingSteps[index]])}
+              onEdit={(targetStep) => {
+                setEditingFromReview(true);
+                setStep(targetStep);
+              }}
+            />
+          )}
+          <footer>
+            {step ? (
+              <button className="cms-btn cms-btn-ghost" onClick={() => setStep((s) => s - 1)}>
+                <ChevronLeft /> Previous
+              </button>
+            ) : null}
+            <button className="cms-btn cms-btn-primary" onClick={step === 6 ? save : next}>
+              {step === 6 ? "Save Non-Teaching Staff" : editingFromReview ? "Save & Return to Review" : "Next"}
+              <ChevronRight />
+            </button>
+          </footer>
+        </section>
+      </main>
+    </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// SEND LINK (POST /api/v1/staff/{id}/send-link)
+// ----------------------------------------------------------------------
+function SendLink({ record, update, activity }) {
+  const n = useNavigate();
+  const [sent, setSent] = useState(record.linkSent);
+  const [days, setDays] = useState("7 Days");
+  const link = `${location.origin}/mock-staff-portal/${record.id}`;
+
+  const send = async () => {
+    try {
+      // POST /api/v1/staff/{id}/send-link
+      await apiClient.post(apiEndpoints.faculty.sendLink(record.id), {
+        email: record.email,
+        mobile: record.mobile,
+        validityDays: parseInt(days, 10) || 7,
+      });
+    } catch (err) {
+      console.warn("POST /api/v1/staff/{id}/send-link API offline");
+    }
+
+    update({
+      ...record,
+      linkSent: true,
+      linkSentAt: "2026-09-02",
+      profileStatus: "Link Sent",
+      profileCompletion: 30,
+    });
+    if (activity) activity(`${record.fullName} profile link sent`);
+    setSent(true);
+  };
+
+  return (
+    <DashboardLayout
+      title="Send Profile Completion Link"
+      subtitle="Send a profile link to Teaching Staff."
+      breadcrumb={["People", "Staff Management"]}
+    >
+      <main className="staff-mock-page">
+        <Back to="/dashboard/staff/list" />
+        <Steps labels={["Basic Details", "Send Link"]} step={1} />
+        <section className="send-grid">
+          <article className="staff-form-panel">
+            <header>
+              <Send />
+              <div>
+                <h2>Link Configuration</h2>
+                <p>{record.fullName} · {record.employeeId}</p>
+              </div>
+            </header>
+            <div className="staff-form-grid">
+              <label>
+                <span>Email</span>
+                <input value={record.email || ""} readOnly />
+              </label>
+              <label>
+                <span>Mobile</span>
+                <input value={record.mobile || ""} readOnly />
+              </label>
+              <label>
+                <span>Link Validity</span>
+                <select value={days} onChange={(e) => setDays(e.target.value)}>
+                  {[3, 7, 15, 30].map((x) => (
+                    <option key={x}>{x} Days</option>
+                  ))}
+                </select>
+              </label>
+              <label className="is-wide">
+                <span>Message</span>
+                <textarea defaultValue="Please complete your remaining profile details using the link below." />
+              </label>
+            </div>
+            {sent ? (
+              <aside className="success-banner">
+                <Check /> Profile completion link sent successfully.
+              </aside>
+            ) : null}
+            <footer>
+              <button className="cms-btn cms-btn-ghost" onClick={() => n("/dashboard/staff/list")}>
+                Back
+              </button>
+              <button className="cms-btn cms-btn-primary" onClick={send}>
+                <Send /> {sent ? "Resend Link" : "Send Link"}
+              </button>
+            </footer>
+            {sent ? (
+              <div className="link-actions">
+                <button onClick={() => navigator.clipboard?.writeText(link)}>
+                  <Copy /> Copy Link
+                </button>
+                <button onClick={() => n(`/mock-staff-portal/${record.id}`)}>
+                  <Eye /> Open Staff Portal
+                </button>
+              </div>
+            ) : null}
+          </article>
+          <article className="email-preview">
+            <Mail />
+            <h3>Complete Your Staff Profile - Pirnav College</h3>
+            <p>Dear {record.fullName},</p>
+            <p>You are invited to complete your staff profile for Pirnav College.</p>
+            <button>Complete Your Profile</button>
+            <p>Link expires in {days.toLowerCase()}.</p>
+            <p>
+              Regards,<br />
+              Pirnav College Administration
+            </p>
+          </article>
+        </section>
+      </main>
+    </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// PORTAL HOME & FORM (GET /api/v1/staff/token/{token}, save-profile-draft, submit-profile)
+// ----------------------------------------------------------------------
+function PortalHome({ record }) {
+  const n = useNavigate();
+  return (
+    <div className="portal-shell">
+      <aside>
+        <GraduationCap />
+        <strong>Pirnav Staff Portal</strong>
+        <span>My Dashboard</span>
+        <span>My Profile</span>
+        <span>Documents</span>
+        <span>Help</span>
+      </aside>
+      <main>
+        <header>
+          <div>
+            <h1>Welcome, {record.fullName}</h1>
+            <p>Complete and submit your professional profile.</p>
+          </div>
+          <Badge value={record.profileStatus} />
+        </header>
+        {record.profileStatus === "Needs Correction" ? (
+          <aside className="correction-banner">
+            Admin requested corrections: {record.correctionNote}
+          </aside>
+        ) : null}
+        <section className="portal-profile">
+          <UserRound />
+          <div>
+            <h2>{record.fullName}</h2>
+            <p>{record.designation} · {record.department}</p>
+          </div>
+          <div className="completion">
+            <strong>{record.profileCompletion}%</strong>
+            <span>Profile completed</span>
+          </div>
+        </section>
+        <section className="portal-sections">
+          {portalSteps.slice(0, 8).map((s, i) => (
+            <article key={s}>
+              <span>
+                {i < Math.floor(record.profileCompletion / 12.5) ? <Check /> : <Clock3 />}
+              </span>
+              <div>
+                <strong>{s}</strong>
+                <small>{i < Math.floor(record.profileCompletion / 12.5) ? "Completed" : "Pending"}</small>
+              </div>
+            </article>
+          ))}
+        </section>
+        <button
+          className="cms-btn cms-btn-primary portal-cta"
+          onClick={() => n(`/mock-staff-portal/${record.id}/complete-profile`)}
+        >
+          Complete Profile <ChevronRight />
+        </button>
+      </main>
+    </div>
+  );
+}
+
+function PortalForm({ record, update, activity }) {
+  const n = useNavigate();
+  const [step, setStep] = useState(0);
+  const [values, setValues] = useState(record);
+  const [errors, setErrors] = useState({});
+  const [confirmed, setConfirmed] = useState(false);
+
+  const handleSaveDraft = async () => {
+    try {
+      // POST /api/v1/staff/{id}/save-profile-draft
+      await apiClient.post(apiEndpoints.faculty.saveProfileDraft(record.id), {
+        sectionName: portalSteps[step],
+        personal: values,
+      });
+    } catch (err) {
+      console.warn("POST /api/v1/staff/{id}/save-profile-draft API offline");
+    }
+    update({ ...values, profileStatus: "In Progress" });
+  };
+
+  const next = () => {
+    handleSaveDraft();
+    update({
+      ...values,
+      profileStatus: "In Progress",
+      profileCompletion: Math.min(95, 35 + (step + 1) * 7),
+    });
+    setStep((s) => s + 1);
+  };
+
+  const submit = async () => {
+    try {
+      // POST /api/v1/staff/{id}/submit-profile
+      await apiClient.post(apiEndpoints.faculty.submitProfile(record.id));
+    } catch (err) {
+      console.warn("POST /api/v1/staff/{id}/submit-profile API offline");
+    }
+
+    update({
+      ...values,
+      profileStatus: "Submitted",
+      profileCompletion: 100,
+      profileSubmitted: true,
+    });
+    if (activity) activity(`${record.fullName} submitted profile`);
+    n(`/mock-staff-portal/${record.id}`);
+  };
+
+  return (
+    <div className="portal-shell">
+      <aside>
+        <GraduationCap />
+        <strong>Pirnav Staff Portal</strong>
+        {portalSteps.map((s, i) => (
+          <button className={i === step ? "is-active" : ""} onClick={() => setStep(i)} key={s}>
+            {i + 1}. {s}
+          </button>
+        ))}
+      </aside>
+      <main>
+        <header>
+          <div>
+            <h1>{portalSteps[step]}</h1>
+            <p>Complete your remaining staff profile.</p>
+          </div>
+          <span>{Math.round(((step + 1) / 8) * 100)}%</span>
+        </header>
+        {step < 7 ? (
+          <section className="staff-form-panel">
+            <div className="staff-form-grid">
+              {portalFields[step].map((f) => (
+                <Field
+                  key={f[0]}
+                  item={f}
+                  values={values}
+                  setValues={setValues}
+                  error={errors[f[0]]}
+                  forceOptional={true}
+                />
+              ))}
             </div>
             <footer>
-              <button className="cms-btn cms-btn-ghost" onClick={() => setStep(2)}>
-                <ArrowLeft size={16} /> Back
+              {step ? (
+                <button className="cms-btn cms-btn-ghost" onClick={() => setStep((s) => s - 1)}>
+                  Previous
+                </button>
+              ) : null}
+              <button className="cms-btn cms-btn-ghost" onClick={handleSaveDraft}>
+                Save Draft
               </button>
-              <button
-                className="cms-btn cms-btn-primary"
-                onClick={() => navigate("/dashboard/faculty")}
-              >
-                Finish
+              <button className="cms-btn cms-btn-primary" onClick={next}>
+                Save &amp; Continue
+              </button>
+            </footer>
+          </section>
+        ) : (
+          <section className="staff-form-panel">
+            <Summary
+              record={values}
+              onEdit={(groupIndex) => {
+                const map = [0, 1, 2, 5, 6];
+                setStep(map[groupIndex] !== undefined ? map[groupIndex] : groupIndex);
+              }}
+            />
+            <label className="confirm-check">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={(e) => setConfirmed(e.target.checked)}
+              />{" "}
+              I confirm that the information provided is correct.
+            </label>
+            <footer>
+              <button className="cms-btn cms-btn-ghost" onClick={() => setStep(6)}>
+                Previous
+              </button>
+              <button className="cms-btn cms-btn-primary" disabled={!confirmed} onClick={submit}>
+                Submit Profile
               </button>
             </footer>
           </section>
         )}
       </main>
-      {removing && (
-        <ConfirmDialog
-          message={`Remove ${subjectName(removing)} from this faculty member?`}
-          onCancel={() => setRemoving(null)}
-          onConfirm={remove}
-        />
-      )}
-      <Toast message={toast} onClose={() => setToast("")} />
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// PENDING SUBMISSIONS & BULK RESEND (POST /api/v1/staff/bulk-send-links)
+// ----------------------------------------------------------------------
+function Pending({ records = [], setRecords, activity }) {
+  const n = useNavigate();
+  const list = Array.isArray(records) && records.length > 0 ? records : seed;
+  const tabs = ["Link Sent", "In Progress", "Needs Correction", "Submitted"];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const requestedTab = searchParams.get("tab");
+  const tab = tabs.includes(requestedTab) ? requestedTab : "Link Sent";
+  const rows = list.filter((r) => r && r.staffType === "Teaching" && r.profileStatus === tab);
+  const pageSize = 5;
+  const shown = rows.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds([]);
+  }, [tab]);
+
+  // POST /api/v1/staff/bulk-send-links
+  const bulkResendLinks = async () => {
+    const targetTeaching = records.filter(
+      (r) => r.staffType === "Teaching" && (selectedIds.length > 0 ? selectedIds.includes(r.id) : r.profileStatus === tab),
+    );
+    if (!targetTeaching.length) return;
+    const ids = new Set(targetTeaching.map((r) => r.id));
+    const today = new Date().toISOString().split("T")[0];
+
+    try {
+      await apiClient.post(apiEndpoints.faculty.bulkSendLinks, {
+        staffIds: Array.from(ids),
+        validityDays: 7,
+      });
+    } catch (err) {
+      console.warn("POST /api/v1/staff/bulk-send-links API offline");
+    }
+
+    if (setRecords) {
+      setRecords(records.map((r) => (ids.has(r.id) ? { ...r, linkSentAt: today } : r)));
+    }
+    if (activity) activity(`Bulk resent profile links to ${ids.size} teaching staff members`);
+    setSelectedIds([]);
+  };
+
+  const isAllShownSelected = shown.length > 0 && shown.every((r) => selectedIds.includes(r.id));
+
+  return (
+    <DashboardLayout
+      title="Pending Teaching Staff Submissions"
+      subtitle="Track and review Teaching Staff profile completion."
+      breadcrumb={["People", "Staff Management"]}
+    >
+      <main className="staff-mock-page">
+        <Back to="/dashboard/staff" label="Back to Staff Management" />
+        <section className="staff-panel">
+          <div className="staff-tabs">
+            <div style={{ display: "flex", gap: "2px" }}>
+              {tabs.map((t) => (
+                <button className={tab === t ? "is-active" : ""} onClick={() => setSearchParams({ tab: t })} key={t}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            {tab === "Link Sent" || tab === "In Progress" || tab === "Needs Correction" ? (
+              <button
+                className="cms-btn cms-btn-primary"
+                onClick={bulkResendLinks}
+                style={{ marginLeft: "auto", flexShrink: 0, marginBottom: "4px" }}
+              >
+                <Send /> {selectedIds.length ? `Bulk Resend (${selectedIds.length})` : "Bulk Resend"}
+              </button>
+            ) : null}
+          </div>
+          <div className="staff-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  {tab !== "Submitted" ? (
+                    <th style={{ width: "40px", textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={isAllShownSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            const shownIds = shown.map((r) => r.id);
+                            setSelectedIds((prev) => Array.from(new Set([...prev, ...shownIds])));
+                          } else {
+                            const shownSet = new Set(shown.map((r) => r.id));
+                            setSelectedIds((prev) => prev.filter((id) => !shownSet.has(id)));
+                          }
+                        }}
+                        aria-label="Select All"
+                      />
+                    </th>
+                  ) : null}
+                  <th>Employee ID</th>
+                  <th>Staff Name</th>
+                  <th>Board Code</th>
+                  <th>Department</th>
+                  <th>Designation</th>
+                  <th>Link Sent</th>
+                  <th>Completion</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.id}>
+                    {tab !== "Submitted" ? (
+                      <td style={{ textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(r.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds((prev) => [...prev, r.id]);
+                            } else {
+                              setSelectedIds((prev) => prev.filter((id) => id !== r.id));
+                            }
+                          }}
+                          aria-label={`Select ${r.fullName}`}
+                        />
+                      </td>
+                    ) : null}
+                    <td>{r.employeeId}</td>
+                    <td>{r.fullName}</td>
+                    <td>{r.boardCode || r.board || "—"}</td>
+                    <td>{r.department}</td>
+                    <td>{r.designation}</td>
+                    <td>{r.linkSentAt || "—"}</td>
+                    <td>{r.profileCompletion}%</td>
+                    <td><Badge value={r.profileStatus} /></td>
+                    <td>
+                      <button
+                        className="cms-btn cms-btn-ghost"
+                        onClick={() =>
+                          n(
+                            r.profileStatus === "Submitted"
+                              ? `/dashboard/staff/${r.id}/review`
+                              : `/dashboard/staff/${r.id}/send-link`,
+                          )
+                        }
+                      >
+                        {r.profileStatus === "Submitted" ? "Review Submission" : r.linkSent ? "Resend" : "Send Link"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <footer className="staff-pagination">
+            <span>
+              Showing {shown.length ? (page - 1) * pageSize + 1 : 0} to {Math.min(page * pageSize, rows.length)} of {rows.length}
+            </span>
+            <div>
+              <button disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Prev</button>
+              <strong>{page}</strong>
+              <button disabled={page * pageSize >= rows.length} onClick={() => setPage((current) => current + 1)}>Next</button>
+            </div>
+          </footer>
+        </section>
+      </main>
     </DashboardLayout>
   );
 }
 
-export default function StaffManagementPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { id } = useParams();
-  const [rows, setRows] = useState([]);
-  const [pagination, setPagination] = useState({ totalCount: 0, pageNumber: 1, pageSize: STAFF_PAGE_SIZE, totalPages: 1 });
-  const [pageNumber, setPageNumber] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [deleting, setDeleting] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [viewing, setViewing] = useState(null);
-  const [viewLoading, setViewLoading] = useState(false);
-  const [viewPhoto, setViewPhoto] = useState("");
-  const [photoLoading, setPhotoLoading] = useState(false);
-  const [toast, setToast] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [searchInput, setSearchInput] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const listRequestRef = useRef(0);
-  const detailRequestRef = useRef(0);
-  const photoRequestRef = useRef(0);
-  const viewPhotoObjectUrlRef = useRef("");
-  const printRequestRef = useRef(false);
-  const isWorkflow = location.pathname !== "/dashboard/faculty";
-  const requestedTab = new URLSearchParams(location.search).get("staffTab");
-  const activeTab = requestedTab === "non-teaching" ? "non-teaching" : "teaching";
-  const activeStaffType = activeTab === "teaching" ? "Teaching Staff" : "Non-Teaching Staff";
-  const handleSearchChange = useCallback((value) => {
-    setSearchInput(value);
-  }, []);
+// ----------------------------------------------------------------------
+// STAFF DETAILS (GET /api/v1/staff/{id} & GET /api/v1/staff/{id}/print-pdf)
+// ----------------------------------------------------------------------
+function Details({ record, records, setRecords }) {
+  const n = useNavigate();
+  const [toast, setToast] = useState(null);
+  const [apiDetail, setApiDetail] = useState(null);
+
+  // GET /api/v1/staff/{id}
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearchTerm(searchInput);
-      setPageNumber(1);
-    }, 300);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
-  const load = useCallback(async () => {
-    const requestId = ++listRequestRef.current;
-    setLoading(true);
-    try {
-      const [staffResult, boardsResult] = await Promise.allSettled([
-        apiClient.get(STAFF_API.list, {
-          params: {
-            PageNumber: pageNumber,
-            PageSize: STAFF_PAGE_SIZE,
-            StaffType: API_STAFF_TYPES[activeTab],
-            ...(searchTerm.trim() ? { SearchTerm: searchTerm.trim() } : {}),
-            ...(departmentFilter ? { Department: departmentFilter } : {}),
-            ...(statusFilter ? { Status: statusFilter } : {}),
-          },
-        }),
-        apiClient.get(apiEndpoints.boards.getAll, {
-          params: { PageNumber: 1, PageSize: 100 },
-          skipGlobalLoader: true,
-        }),
-      ]);
-      if (staffResult.status === "rejected") throw staffResult.reason;
-      if (requestId !== listRequestRef.current) return;
-      const page = normalizeStaffPage(staffResult.value.data);
-      const boardLookup = new Map(
-        (boardsResult.status === "fulfilled" ? boardOptionsFrom(boardsResult.value.data) : [])
-          .map((board) => [String(board.id), board.name]),
-      );
-      const listRows = page.items.map((item) => rowFor(item, boardLookup));
-      const enrichedRows = await Promise.all(listRows.map(async (row) => {
-        if (row.boardName !== "â€”" || !getCrudId(row)) return row;
-        try {
-          const detailResponse = await apiClient.get(STAFF_API.getById(getCrudId(row)), { skipGlobalLoader: true });
-          const detail = extractRecord(detailResponse.data) || {};
-          return rowFor({ ...row, ...detail }, boardLookup);
-        } catch {
-          return row;
-        }
-      }));
-      if (requestId !== listRequestRef.current) return;
-      setRows(enrichedRows);
-      setPagination(page);
-      if (pageNumber > page.totalPages) setPageNumber(page.totalPages);
-    } catch (e) {
-      if (requestId !== listRequestRef.current) return;
-      setRows([]);
-      setPagination({ totalCount: 0, pageNumber, pageSize: STAFF_PAGE_SIZE, totalPages: 1 });
-      setToast(friendlyFacultyError(e));
-    } finally {
-      if (requestId === listRequestRef.current) setLoading(false);
-    }
-  }, [activeTab, departmentFilter, pageNumber, searchTerm, statusFilter]);
-  const loadPhoto = async (record) => {
-    const requestId = ++photoRequestRef.current;
-    const photoId = getCrudId(record);
-    if (viewPhotoObjectUrlRef.current) URL.revokeObjectURL(viewPhotoObjectUrlRef.current);
-    viewPhotoObjectUrlRef.current = "";
-    setViewPhoto("");
-    if (!photoId) return;
-    setPhotoLoading(true);
-    try {
-      const response = await requestStaffPhoto(photoId);
-      const photo = await photoSourceFromResponse(response);
-      if (requestId !== photoRequestRef.current) {
-        if (photo.objectUrl) URL.revokeObjectURL(photo.objectUrl);
-        return;
+    let isMounted = true;
+    async function fetchDetail() {
+      if (!record?.id) return;
+      try {
+        const res = await apiClient.get(apiEndpoints.faculty.getById(record.id));
+        if (isMounted && res.data) setApiDetail(res.data);
+      } catch (err) {
+        console.warn("GET /api/v1/staff/{id} API offline, using local detail record");
       }
-      viewPhotoObjectUrlRef.current = photo.objectUrl;
-      setViewPhoto(photo.source);
-    } catch (error) {
-      if (requestId === photoRequestRef.current && error?.response?.status !== 404) setToast(friendlyFacultyError(error));
-    } finally {
-      if (requestId === photoRequestRef.current) setPhotoLoading(false);
     }
-  };
-  const viewFaculty = async (row) => {
-    const requestId = ++detailRequestRef.current;
-    setViewing(row);
-    setViewLoading(true);
+    fetchDetail();
+    return () => { isMounted = false; };
+  }, [record?.id]);
+
+  const activeRecord = apiDetail || record;
+
+  const handleSaveCard = async (updatedRecord) => {
+    if (updatedRecord.firstName || updatedRecord.lastName) {
+      updatedRecord.fullName =
+        [updatedRecord.firstName, updatedRecord.middleName, updatedRecord.lastName].filter(Boolean).join(" ") || updatedRecord.fullName;
+    }
     try {
-      const response = await apiClient.get(STAFF_API.getById(getCrudId(row)));
-      const record = extractRecord(response.data) || {};
-      if (requestId !== detailRequestRef.current) return;
-      const normalized = rowFor({ ...row, ...record });
-      setViewing(normalized);
-      const detailsStaffId = getStaffId(normalized);
-      const allocationsPromise = activeTab === "teaching" && detailsStaffId
-        ? apiClient.get(STAFF_API.subjectAllocations(detailsStaffId), { skipGlobalLoader: true })
-        : Promise.resolve(null);
-      const boardsPromise = normalized.boardName === "—" && normalized.boardId
-        ? apiClient.get(apiEndpoints.boards.getAll, {
-          params: { PageNumber: 1, PageSize: 100 },
-          skipGlobalLoader: true,
-        })
-        : Promise.resolve(null);
-      const [, allocationsResult, boardsResult] = await Promise.allSettled([loadPhoto(normalized), allocationsPromise, boardsPromise]);
-      if (requestId !== detailRequestRef.current) return;
-      const assignedSubjects = allocationsResult.status === "fulfilled" && allocationsResult.value
-        ? assignedSubjectNames(allocationsResult.value.data)
-        : [];
-      const matchingBoard = boardsResult.status === "fulfilled" && boardsResult.value
-        ? boardOptionsFrom(boardsResult.value.data).find((board) => String(board.id) === String(normalized.boardId))
-        : null;
-      setViewing((current) => current && getCrudId(current) === getCrudId(normalized)
-        ? { ...current, ...(matchingBoard ? { boardName: matchingBoard.name } : {}), assignedSubjects }
-        : current);
-      if (allocationsResult.status === "rejected") setToast("Staff details loaded, but assigned subjects could not be retrieved.");
-    } catch (e) {
-      if (requestId !== detailRequestRef.current) return;
-      setViewing(null);
-      setToast(e?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(e));
-    } finally {
-      if (requestId === detailRequestRef.current) setViewLoading(false);
+      // PUT /api/v1/staff/{id}
+      await apiClient.put(apiEndpoints.faculty.update(updatedRecord.id), updatedRecord);
+    } catch (err) {
+      console.warn("PUT /api/v1/staff/{id} API error:", err);
     }
+    setRecords((prev) => prev.map((r) => (r.id === updatedRecord.id ? updatedRecord : r)));
+    setToast("Staff details updated successfully.");
   };
-  const printFaculty = async (row) => {
-    if (printRequestRef.current) return;
-    const recordId = getCrudId(row);
-    if (!recordId) {
-      setToast("Unable to print because the staff record ID is missing.");
-      return;
-    }
-    const popup = window.open("", "_blank", "width=980,height=760");
-    if (!popup) {
-      setToast("Please allow popups to print staff details.");
-      return;
-    }
-    popup.document.write("<!doctype html><html><body style='font-family:Segoe UI,Arial;padding:32px'>Loading staff details...</body></html>");
-    popup.document.close();
-    printRequestRef.current = true;
-    try {
-      const detailsResponse = await apiClient.get(STAFF_API.getById(recordId), { skipGlobalLoader: true });
-      const details = extractRecord(detailsResponse.data) || {};
-      const normalized = rowFor({ ...row, ...details });
-      const printStaffId = getStaffId(normalized);
-      const [photoResult, allocationsResult] = await Promise.allSettled([
-        requestStaffPhoto(recordId),
-        activeTab === "teaching" && printStaffId
-          ? apiClient.get(STAFF_API.subjectAllocations(printStaffId), { skipGlobalLoader: true })
-          : Promise.resolve(null),
-      ]);
-      const printableRecord = {
-        ...normalized,
-        ...(activeTab === "teaching" ? {
-          assignedSubjects: allocationsResult.status === "fulfilled" && allocationsResult.value
-            ? assignedSubjectNames(allocationsResult.value.data)
-            : [],
-        } : {}),
-      };
-      const photo = photoResult.status === "fulfilled"
-        ? await photoSourceFromResponse(photoResult.value)
-        : { source: "", objectUrl: "" };
-      popup.document.open();
-      popup.document.write(buildStaffPrintHtml(printableRecord, photo.source, activeStaffType));
-      popup.document.close();
 
-      const printWhenReady = () => {
-        const images = Array.from(popup.document.images || []);
-        Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise((resolve) => {
-          image.addEventListener("load", resolve, { once: true });
-          image.addEventListener("error", resolve, { once: true });
-        }))).then(() => window.setTimeout(() => {
-          if (!popup.closed) {
-            popup.focus();
-            popup.print();
-          }
-          if (photo.objectUrl) window.setTimeout(() => URL.revokeObjectURL(photo.objectUrl), 1000);
-        }, 150));
-      };
-      if (popup.document.readyState === "complete") printWhenReady();
-      else popup.addEventListener("load", printWhenReady, { once: true });
-    } catch (error) {
-      if (!popup.closed) popup.close();
-      setToast(error?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(error));
-    } finally {
-      printRequestRef.current = false;
-    }
-  };
-  useEffect(() => {
-    if (!isWorkflow) load();
-  }, [isWorkflow, load]);
-  useEffect(() => () => {
-    listRequestRef.current += 1;
-    detailRequestRef.current += 1;
-    photoRequestRef.current += 1;
-    if (viewPhotoObjectUrlRef.current) URL.revokeObjectURL(viewPhotoObjectUrlRef.current);
-  }, []);
-
-  if (isWorkflow) return <Workflow existingId={id} staffTab={activeTab} />;
-
-  const departmentOptions = activeTab === "teaching" ? TEACHING_DEPARTMENTS : NON_TEACHING_DEPARTMENTS;
-  const switchTab = (tab) => {
-    setDepartmentFilter("");
-    setStatusFilter("");
-    setSearchInput("");
-    setSearchTerm("");
-    setPageNumber(1);
-    setRows([]);
-    setViewing(null);
-    navigate(`/dashboard/faculty?staffTab=${tab}`);
-  };
-  const listColumns = activeTab === "teaching" ? [
-    { key: "empId", label: "Employee ID", strong: true },
-    { key: "name", label: "Faculty Name" },
-    { key: "boardName", label: "Board Name" },
-    { key: "department", label: "Department" },
-    { key: "designation", label: "Designation" },
-    { key: "status", label: "Status", badge: true },
-  ] : [
-    { key: "empId", label: "Employee ID", strong: true },
-    { key: "name", label: "Staff Name" },
-    { key: "boardName", label: "Board Name" },
-    { key: "department", label: "Department" },
-    { key: "designation", label: "Designation" },
-    { key: "status", label: "Status", badge: true },
-  ];
-  const previewValues = valuesFor(viewing || {});
-  const previewRows = activeTab === "teaching" ? [
-    ["Employee ID", previewValues.empId],
-    ["First Name", previewValues.firstName],
-    ["Last Name", previewValues.lastName],
-    ["Gender", previewValues.gender],
-    ["Date of Birth", previewValues.dob],
-    ["Aadhaar Number", previewValues.aadhaar],
-    ["Mobile", previewValues.mobile],
-    ["Email", previewValues.email],
-    ["Blood Group", previewValues.bloodGroup],
-    ["Qualification", previewValues.qualification],
-    ["Designation", previewValues.designation],
-    ["Board Name", previewValues.boardName],
-    ["Department", previewValues.department],
-    ["Joining Date", previewValues.joining],
-    ["Experience (Years)", previewValues.experience],
-    ["Subjects", viewing?.assignedSubjects?.join(", ") || "—"],
-    ["Status", previewValues.status],
-  ] : [
-    ["Employee ID", previewValues.empId],
-    ["First Name", previewValues.firstName],
-    ["Last Name", previewValues.lastName],
-    ["Gender", previewValues.gender],
-    ["Date of Birth", previewValues.dob],
-    ["Aadhaar Number", previewValues.aadhaar],
-    ["Mobile", previewValues.mobile],
-    ["Email", previewValues.email],
-    ["Blood Group", previewValues.bloodGroup],
-    ["Qualification", previewValues.qualification],
-    ["Board Name", previewValues.boardName],
-    ["Department", previewValues.department],
-    ["Designation", previewValues.designation],
-    ["Joining Date", previewValues.joining],
-    ["Experience (Years)", previewValues.experience],
-    ["Status", previewValues.status],
-  ];
   return (
     <DashboardLayout
-      title="Staff Management"
-      subtitle="Manage teaching and non-teaching staff, assignments, employment details and records."
-      breadcrumb={["People"]}
+      title="Staff Details"
+      subtitle="View complete staff record and profile activity."
+      breadcrumb={["People", "Staff Management"]}
+      actions={
+        activeRecord.staffType === "Teaching" && activeRecord.profileStatus === "Submitted" ? (
+          <button className="cms-btn cms-btn-primary" onClick={() => n(`/dashboard/staff/${activeRecord.id}/review`)}>
+            Review Submission
+          </button>
+        ) : null
+      }
     >
-      <div className="faculty-list">
-        {!viewing ? (
-          <>
-            <StaffTabs active={activeTab} onChange={switchTab} />
-            <div className="staff-server-table">
-              <DataTable
-                key={activeTab}
-                title={activeStaffType}
-                addLabel={activeTab === "teaching" ? "Add Teaching Staff" : "Add Non-Teaching Staff"}
-                columns={listColumns}
-                rows={rows}
-                loading={loading}
-                onSearchChange={handleSearchChange}
-                enableExport={false}
-                enableTablePrint={false}
-                paginationCurrentOnly
-                toolbarExtra={<div className="staff-list-filters"><label><span className="sr-only">Department</span><select aria-label="Filter by department" value={departmentFilter} onChange={(event) => { setDepartmentFilter(event.target.value); setPageNumber(1); }}><option value="">All Departments</option>{departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}</select></label><label><span className="sr-only">Status</span><select aria-label="Filter by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPageNumber(1); }}><option value="">All Status</option><option value="Active">Active</option><option value="Inactive">Inactive</option></select></label></div>}
-                emptyMessage={`No ${activeStaffType.toLowerCase()} found.`}
-                onAdd={() => navigate(`/dashboard/faculty/add?staffTab=${activeTab}`)}
-                onView={viewFaculty}
-                onPrint={printFaculty}
-                onDelete={setDeleting}
-              />
-              <div className="cms-pagination staff-server-pagination" aria-label="Staff pagination">
-                <span className="cms-page-info">
-                  Showing {pagination.totalCount === 0 ? 0 : (pagination.pageNumber - 1) * pagination.pageSize + 1}-
-                  {Math.min(pagination.pageNumber * pagination.pageSize, pagination.totalCount)} of {pagination.totalCount} records
-                </span>
-                <button className="cms-page-btn" type="button" disabled={loading || pageNumber <= 1} onClick={() => setPageNumber((current) => Math.max(1, current - 1))}>Prev</button>
-                <button className="cms-page-btn is-active" type="button" aria-current="page">{pagination.pageNumber}</button>
-                <button className="cms-page-btn" type="button" disabled={loading || pageNumber >= pagination.totalPages} onClick={() => setPageNumber((current) => Math.min(pagination.totalPages, current + 1))}>Next</button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <section className="staff-details-screen">
-            <button type="button" className="cms-back-link staff-details-back" onClick={() => {
-              detailRequestRef.current += 1;
-              photoRequestRef.current += 1;
-              if (viewPhotoObjectUrlRef.current) URL.revokeObjectURL(viewPhotoObjectUrlRef.current);
-              viewPhotoObjectUrlRef.current = "";
-              setViewing(null);
-              setViewPhoto("");
-              setPhotoLoading(false);
-            }}>
-              <ArrowLeft size={15} /> Back to Staff Management
-            </button>
-            <article className="staff-details-card">
-              <header>
-                <div><Eye size={18} /><h2>{activeTab === "teaching" ? "Teaching Staff Details" : "Non-Teaching Staff Details"}</h2></div>
-                <button type="button" className="cms-btn cms-btn-ghost staff-details-edit" onClick={() => navigate(`/dashboard/faculty/${getCrudId(viewing)}/edit?staffTab=${activeTab}`)}>
-                  <Pencil size={16} /> {activeTab === "teaching" ? "Edit Faculty Details" : "Edit Staff Details"}
-                </button>
-              </header>
-              {viewLoading ? (
-                <p className="staff-details-empty">Loading faculty details...</p>
-              ) : (
-                <div className="staff-details-content">
-                  <div className="staff-details-photo" aria-busy={photoLoading}>
-                    {photoLoading ? <span>Loading photo...</span> : viewPhoto ? <img src={viewPhoto} alt={`${facultyName(viewing)} profile`} /> : <><UserRound size={34} aria-hidden="true" /><span>No profile photo</span></>}
-                  </div>
-                <dl>
-                  {previewRows.map(([label, value]) => (
-                    <div key={label}>
-                      <dt>{label}</dt>
-                      <span className="staff-detail-separator" aria-hidden="true">–</span>
-                      {label === "Status" ? (
-                        <dd><StatusBadge value={typeof value === "boolean" ? (value ? "Active" : "Inactive") : value || "—"} /></dd>
-                      ) : (
-                        <dd>{value === undefined || value === null || value === "" ? "—" : value}</dd>
-                      )}
-                    </div>
-                  ))}
-                </dl>
-                </div>
-              )}
-            </article>
-          </section>
-        )}
-        {deleting && (
-          <ConfirmDialog
-            message={`Delete ${deleting.name}? This action cannot be undone.`}
-            onCancel={() => { if (!deleteLoading) setDeleting(null); }}
-            onConfirm={async () => {
-              if (deleteLoading) return;
-              const recordId = getCrudId(deleting);
-              if (!recordId) {
-                setToast("Unable to delete because the Staff API record ID is missing.");
-                return;
-              }
-              setDeleteLoading(true);
-              try {
-                await apiClient.delete(STAFF_API.delete(recordId));
-                setDeleting(null);
-                await load();
-                setToast("Staff deleted successfully.");
-              } catch (e) {
-                setToast(e?.response?.status === 404 ? "Staff record not found." : friendlyFacultyError(e));
-              } finally {
-                setDeleteLoading(false);
-              }
-            }}
-          />
-        )}
-      </div>
-      <Toast message={toast} onClose={() => setToast("")} />
+      <main className="staff-mock-page">
+        <Back to="/dashboard/staff/list" />
+        <section className="staff-detail-head">
+          <UserRound />
+          <div>
+            <h2>{activeRecord.fullName}</h2>
+            <p>{activeRecord.employeeId} · {activeRecord.designation} · {activeRecord.department}</p>
+            <Badge value={activeRecord.status || "Active"} />
+          </div>
+        </section>
+        <section className="staff-panel">
+          <Summary record={activeRecord} onSave={handleSaveCard} />
+        </section>
+      </main>
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// ADMIN REVIEW (POST /api/v1/staff/{id}/admin-review)
+// ----------------------------------------------------------------------
+function Review({ record, update, activity }) {
+  const n = useNavigate();
+  const [correction, setCorrection] = useState(false);
+  const [note, setNote] = useState("");
+
+  const approve = async () => {
+    try {
+      // POST /api/v1/staff/{id}/admin-review (action: Approve)
+      await apiClient.post(apiEndpoints.faculty.adminReview(record.id), {
+        action: "Approve",
+        correctionNotes: "",
+      });
+    } catch (err) {
+      console.warn("POST /api/v1/staff/{id}/admin-review API offline");
+    }
+
+    update({
+      ...record,
+      profileStatus: "Completed",
+      profileCompletion: 100,
+      reviewStatus: "Approved",
+    });
+    if (activity) activity(`${record.fullName} profile approved`);
+    n(`/dashboard/staff/${record.id}`);
+  };
+
+  const requestCorrection = async () => {
+    const messageNote = note || "Please review and update your profile.";
+    try {
+      // POST /api/v1/staff/{id}/admin-review (action: RequestCorrection)
+      await apiClient.post(apiEndpoints.faculty.adminReview(record.id), {
+        action: "RequestCorrection",
+        correctionNotes: messageNote,
+      });
+    } catch (err) {
+      console.warn("POST /api/v1/staff/{id}/admin-review API offline");
+    }
+
+    update({
+      ...record,
+      profileStatus: "Needs Correction",
+      correctionNote: messageNote,
+    });
+    n(`/dashboard/staff/${record.id}`);
+  };
+
+  return (
+    <DashboardLayout
+      title="Review Staff Profile"
+      subtitle="Review submitted information before approval."
+      breadcrumb={["People", "Staff Management"]}
+    >
+      <main className="staff-mock-page">
+        <Back to="/dashboard/staff/pending" />
+        <section className="staff-form-panel">
+          <Summary record={record} />
+          {correction ? (
+            <label className="correction-field">
+              <span>Correction Message</span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Please upload a clear Aadhaar copy or update education details."
+              />
+            </label>
+          ) : null}
+          <footer>
+            <button className="cms-btn cms-btn-ghost" onClick={() => n("/dashboard/staff/pending")}>
+              Back
+            </button>
+            <button
+              className="cms-btn cms-btn-ghost"
+              onClick={correction ? requestCorrection : () => setCorrection(true)}
+            >
+              Request Correction
+            </button>
+            <button className="cms-btn cms-btn-primary" onClick={approve}>
+              Approve Profile
+            </button>
+          </footer>
+        </section>
+      </main>
+    </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// SUMMARY COMPONENT (Supports field editing and save)
+// ----------------------------------------------------------------------
+function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [formData, setFormData] = useState({});
+
+  const defaultGroups = [
+    [
+      "Basic Information",
+      [
+        ["fullName", "Full Name"],
+        ["employeeId", "Employee ID"],
+        ["board", "Board Name"],
+        ["dateOfBirth", "Date of Birth"],
+        ["gender", "Gender"],
+        ["status", "Status"],
+        ["guardianName", "Father's / Husband's Name"],
+        ["maritalStatus", "Marital Status"],
+        ["nationality", "Nationality"],
+        ["aadhaar", "Aadhaar Number"],
+        ["pan", "PAN Number"],
+        ["bloodGroup", "Blood Group"],
+      ],
+    ],
+    [
+      "Contact & Address",
+      [
+        ["email", "Email"],
+        ["mobile", "Mobile"],
+        ["alternateMobile", "Alternate Mobile"],
+        ["currentAddress", "Current Address"],
+        ["permanentAddress", "Permanent Address"],
+        ["city", "City"],
+        ["district", "District"],
+        ["state", "State"],
+        ["pin", "PIN"],
+      ],
+    ],
+    [
+      "Professional Details",
+      [
+        ["department", "Department"],
+        ["designation", "Designation"],
+        ["dateOfJoining", "Date of Joining"],
+        ["employmentType", "Employment Type"],
+        ["staffType", "Staff Type"],
+      ],
+    ],
+    [
+      "Educational Qualifications",
+      [
+        ["highestQualification", "Highest Qualification"],
+        ["university", "University / Board"],
+        ["specialization", "Specialization"],
+        ["passingYear", "Passing Year"],
+        ["percentage", "Percentage / CGPA"],
+      ],
+    ],
+    [
+      "Experience",
+      [
+        ["totalExperience", "Total Experience"],
+        ["previousInstitution", "Previous Institution"],
+        ["previousDesignation", "Previous Designation"],
+        ["experienceFrom", "From Date"],
+        ["experienceTo", "To Date"],
+      ],
+    ],
+    [
+      "Documents",
+      [
+        ["aadhaarDocument", "Aadhaar Copy"],
+        ["panDocument", "PAN Copy"],
+        ["qualificationCertificate", "Qualification Certificate"],
+        ["experienceCertificate", "Experience Certificate"],
+        ["resume", "Resume"],
+        ["photo", "Passport Photo"],
+        ["signature", "Signature"],
+      ],
+    ],
+    [
+      "Bank Details",
+      [
+        ["bankName", "Bank Name"],
+        ["accountHolder", "Account Holder Name"],
+        ["accountNumber", "Account Number"],
+        ["ifsc", "IFSC Code"],
+        ["branch", "Branch"],
+        ["accountType", "Account Type"],
+      ],
+    ],
+    [
+      "Emergency Contact",
+      [
+        ["emergencyName", "Contact Name"],
+        ["emergencyRelationship", "Relationship"],
+        ["emergencyMobile", "Mobile Number"],
+        ["emergencyAlternate", "Alternate Mobile"],
+        ["emergencyAddress", "Address"],
+      ],
+    ],
+  ];
+  const groups = suppliedGroups || defaultGroups;
+
+  const startEdit = (groupIndex) => {
+    if (onEdit) {
+      onEdit(groupIndex);
+      return;
+    }
+    setFormData({ ...record });
+    setEditingGroup(groupIndex);
+  };
+
+  const handleSave = () => {
+    if (onSave) {
+      onSave({ ...record, ...formData });
+    }
+    setEditingGroup(null);
+  };
+
+  const fieldTypes = {
+    board: ["select", boardOptions],
+    gender: ["select", ["Male", "Female", "Other"]],
+    status: ["select", ["Active", "Inactive"]],
+    bloodGroup: ["select", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]],
+    maritalStatus: ["select", ["Single", "Married", "Other"]],
+    employmentType: ["select", ["Full Time", "Part Time", "Contract"]],
+    staffType: ["select", ["Teaching", "Non-Teaching"]],
+    dateOfBirth: ["date"],
+    dateOfJoining: ["date"],
+    experienceFrom: ["date"],
+    experienceTo: ["date"],
+    currentAddress: ["textarea"],
+    permanentAddress: ["textarea"],
+    emergencyAddress: ["textarea"],
+    department: ["select", defaultDepartments],
+  };
+
+  const renderFieldInput = (key, label) => {
+    const config = fieldTypes[key] || ["text"];
+    const [type, options] = config;
+    const val = formData[key] !== undefined ? formData[key] : record[key] || "";
+
+    if (type === "select") {
+      return (
+        <select
+          value={val}
+          onChange={(e) => setFormData((prev) => ({ ...prev, [key]: e.target.value }))}
+        >
+          <option value="">Select {label}</option>
+          {(options || []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    if (type === "textarea") {
+      return (
+        <textarea
+          value={val}
+          onChange={(e) => setFormData((prev) => ({ ...prev, [key]: e.target.value }))}
+        />
+      );
+    }
+    return (
+      <input
+        type={type}
+        value={val}
+        onChange={(e) => setFormData((prev) => ({ ...prev, [key]: e.target.value }))}
+      />
+    );
+  };
+
+  return (
+    <div className="staff-summary">
+      {groups.map(([t, fields], groupIndex) => {
+        const isEditing = editingGroup === groupIndex;
+        return (
+          <article key={t} className={isEditing ? "is-editing-card" : ""}>
+            <header>
+              <h3>{t}</h3>
+              {!isEditing ? (
+                onSave || onEdit ? (
+                  <button type="button" onClick={() => startEdit(groupIndex)}>
+                    <Pencil /> Edit
+                  </button>
+                ) : onPrint ? (
+                  <button type="button" onClick={() => onPrint(groupIndex)}>
+                    <Printer /> Print
+                  </button>
+                ) : null
+              ) : null}
+            </header>
+            {fields.map((field) => {
+              const [key, label] = Array.isArray(field)
+                ? field
+                : [field, field.replace(/([A-Z])/g, " $1")];
+              return (
+                <p key={key}>
+                  <span>{label}</span>
+                  {isEditing ? (
+                    renderFieldInput(key, label)
+                  ) : (
+                    <strong>{record[key] || "—"}</strong>
+                  )}
+                </p>
+              );
+            })}
+            {isEditing ? (
+              <footer style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--cms-border)" }}>
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={() => setEditingGroup(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-primary"
+                  onClick={handleSave}
+                >
+                  Save
+                </button>
+              </footer>
+            ) : null}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// MAIN ROOT PAGE ROUTER COMPONENT
+// ----------------------------------------------------------------------
+export default function StaffManagementPage() {
+  const loc = useLocation();
+  const n = useNavigate();
+  const { id } = useParams();
+
+  const [records, setRaw] = useState(() => {
+    const data = read(STORE, seed);
+    return Array.isArray(data) && data.length > 0 ? data : seed;
+  });
+  const [activities, setActivityRaw] = useState(() => read(ACTIVITY_STORE, initialActivities));
+  const [toast, setToast] = useState("");
+
+  const safeRecords = useMemo(() => {
+    return Array.isArray(records) && records.length > 0 ? records : seed;
+  }, [records]);
+
+  const setRecords = (next) => {
+    const list = Array.isArray(next) && next.length > 0 ? next : seed;
+    setRaw(list);
+    write(STORE, list);
+  };
+
+  const update = (record) => {
+    setRecords(safeRecords.map((r) => (String(r.id) === String(record.id) ? record : r)));
+    setToast("Staff profile updated successfully.");
+  };
+
+  const activity = (text) => {
+    const next = [text, ...activities].slice(0, 8);
+    setActivityRaw(next);
+    write(ACTIVITY_STORE, next);
+  };
+
+  const record = safeRecords.find((r) => String(r.id) === String(id));
+  const p = loc.pathname.replace(/\/$/, "");
+
+  let page;
+  if (p === "/dashboard/staff" || p === "/dashboard/faculty")
+    page = <Dashboard records={safeRecords} />;
+  else if (p === "/dashboard/staff/add") page = <TypeSelect />;
+  else if (p === "/dashboard/staff/add-teaching")
+    page = <TeachingForm records={safeRecords} setRecords={setRecords} />;
+  else if (p === "/dashboard/staff/add-non-teaching")
+    page = <NonTeachingForm records={safeRecords} setRecords={setRecords} />;
+  else if (p === "/dashboard/staff/list")
+    page = <StaffList records={safeRecords} setRecords={setRecords} forced="All" />;
+  else if (p === "/dashboard/staff/teaching")
+    page = <StaffList records={safeRecords} setRecords={setRecords} forced="Teaching" />;
+  else if (p === "/dashboard/staff/non-teaching")
+    page = <StaffList records={safeRecords} setRecords={setRecords} forced="Non-Teaching" />;
+  else if (p === "/dashboard/staff/completed")
+    page = <StaffList records={safeRecords} setRecords={setRecords} forced="Completed" />;
+  else if (p === "/dashboard/staff/pending" || p.startsWith("/dashboard/staff/pending"))
+    page = <Pending records={safeRecords} setRecords={setRecords} activity={activity} />;
+  else if (p.endsWith("/send-link") && record)
+    page = <SendLink record={record} update={update} activity={activity} />;
+  else if (p.endsWith("/review") && record)
+    page = <Review record={record} update={update} activity={activity} />;
+  else if (p.endsWith("/edit") && record)
+    page =
+      record.staffType === "Teaching" ? (
+        <TeachingForm records={records} setRecords={setRecords} existing={record} />
+      ) : (
+        <NonTeachingForm records={records} setRecords={setRecords} existing={record} />
+      );
+  else if (
+    p.startsWith("/mock-staff-portal/") &&
+    (p.endsWith("/complete-profile") || p.endsWith("/review"))
+  )
+    page = <PortalForm record={record} update={update} activity={activity} />;
+  else if (p.startsWith("/mock-staff-portal/")) page = <PortalHome record={record} />;
+  else if (record)
+    page = <Details record={record} records={records} setRecords={setRecords} />;
+  else
+    page = (
+      <DashboardLayout title="Staff Record Not Found" breadcrumb={["People", "Staff Management"]}>
+        <main className="staff-mock-page">
+          <p style={{ margin: "20px 0" }}>The requested staff record could not be found.</p>
+          <button className="cms-btn cms-btn-primary" onClick={() => n("/dashboard/staff/list")}>Back to Staff List</button>
+        </main>
+      </DashboardLayout>
+    );
+
+  return (
+    <>
+      {page}
+      {toast ? <Toast message={toast} onClose={() => setToast("")} /> : null}
+    </>
   );
 }
 

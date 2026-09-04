@@ -19,7 +19,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 
@@ -74,7 +74,7 @@ const REPORTS_API = {
 };
 
 const REPORT_REQUESTS = [
-  { key: "admissions", endpoint: REPORTS_API.details.admissions },
+  { key: "admissions", endpoint: apiEndpoints.admissions.getAll, clientFilter: admissionReportRows },
   { key: "attendance", endpoint: REPORTS_API.details.attendance },
   { key: "facultyAttendance", endpoint: REPORTS_API.details.staffAttendance },
   { key: "feeCollection", endpoint: REPORTS_API.details.feeCollection },
@@ -86,6 +86,19 @@ const REPORT_REQUESTS = [
   { key: "passPercentage", endpoint: REPORTS_API.details.passPercentage },
   { key: "toppers", endpoint: REPORTS_API.details.toppers },
 ];
+
+const REPORT_DETAIL_BY_TYPE = Object.freeze({
+  admissions: REPORTS_API.details.admissions,
+  attendance: REPORTS_API.details.attendance,
+  "fee-collection": REPORTS_API.details.feeCollection,
+  "due-fees": REPORTS_API.details.dueFees,
+  examinations: REPORTS_API.details.examinations,
+  results: REPORTS_API.details.results,
+  "faculty-workload": REPORTS_API.details.staffWorkload,
+  "student-strength": REPORTS_API.details.studentStrength,
+  "pass-percentage": REPORTS_API.details.passPercentage,
+  toppers: REPORTS_API.details.toppers,
+});
 
 const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
 const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
@@ -539,6 +552,82 @@ function exportColumns(reportRows) {
   return [...new Set(reportRows.flatMap((row) => Object.keys(row)))];
 }
 
+function flattenReportRecord(record, prefix = "", target = {}) {
+  Object.entries(record || {}).forEach(([key, value]) => {
+    const label = prefix ? `${prefix} ${readableLabel(key)}` : readableLabel(key);
+    if (Array.isArray(value)) {
+      if (value.every((item) => item === null || typeof item !== "object")) target[label] = value.join(", ");
+    } else if (value && typeof value === "object") {
+      flattenReportRecord(value, label, target);
+    } else {
+      target[label] = value ?? "—";
+    }
+  });
+  return target;
+}
+
+function detailedReportRows(payload) {
+  const candidates = [];
+  const queue = [{ value: dataNode(payload), path: "" }];
+  const visited = new Set();
+  while (queue.length) {
+    const { value, path } = queue.shift();
+    if (!value || typeof value !== "object" || visited.has(value)) continue;
+    visited.add(value);
+    if (Array.isArray(value)) {
+      const objectRows = value.filter((item) => item && typeof item === "object" && !Array.isArray(item));
+      if (objectRows.length) {
+        const preferred = /student|attendance|admission|detail|record|result|faculty|fee|exam|topper/i.test(path) ? 100000 : 0;
+        candidates.push({ score: preferred + objectRows.length, rows: objectRows });
+      }
+      value.forEach((item, index) => queue.push({ value: item, path: `${path}.${index}` }));
+    } else {
+      Object.entries(value).forEach(([key, child]) => queue.push({ value: child, path: path ? `${path}.${key}` : key }));
+    }
+  }
+  const selected = candidates.sort((left, right) => right.score - left.score)[0]?.rows;
+  if (selected?.length) return selected.map((row) => flattenReportRecord(row));
+  const node = dataNode(payload);
+  return node && typeof node === "object" && !Array.isArray(node) ? [flattenReportRecord(node)] : [];
+}
+
+function admissionReportRows(payload, filters = {}) {
+  const matchesId = (actual, expected) => !expected || actual === undefined || actual === null || actual === "" || String(actual) === String(expected);
+  return collection(payload, ["admissions", "Admissions", "students", "Students"]).filter((item) => {
+    const admissionDate = String(read(item, "admissionDate", "AdmissionDate", "createdAt", "CreatedAt") || "").slice(0, 10);
+    return matchesId(read(item, "boardId", "BoardId"), filters.board)
+      && matchesId(read(item, "academicYearId", "AcademicYearId"), filters.year)
+      && matchesId(read(item, "academicLevelId", "AcademicLevelId"), filters.level)
+      && matchesId(read(item, "groupId", "GroupId"), filters.group)
+      && matchesId(read(item, "sectionId", "SectionId"), filters.section)
+      && (!filters.from || !admissionDate || admissionDate >= filters.from)
+      && (!filters.to || !admissionDate || admissionDate <= filters.to);
+  }).map((item) => {
+    const student = read(item, "student", "Student") || {};
+    const firstName = read(item, "firstName", "FirstName") || read(student, "firstName", "FirstName") || "";
+    const lastName = read(item, "lastName", "LastName") || read(student, "lastName", "LastName") || "";
+    const fullName = read(item, "studentName", "StudentName", "fullName", "FullName", "name", "Name")
+      || read(student, "studentName", "StudentName", "fullName", "FullName", "name", "Name")
+      || [firstName, lastName].filter(Boolean).join(" ");
+    return {
+      "Admission Number": read(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "—",
+      "Student Name": fullName || "—",
+      "First Name": firstName || "—",
+      "Last Name": lastName || "—",
+      "Admission Date": String(read(item, "admissionDate", "AdmissionDate") || "—").slice(0, 10),
+      Status: read(item, "status", "Status", "admissionStatus", "AdmissionStatus") || "—",
+      Board: read(item, "boardName", "BoardName") || read(read(item, "board", "Board") || {}, "boardName", "BoardName", "name", "Name") || "—",
+      "Academic Year": read(item, "academicYearName", "AcademicYearName") || read(read(item, "academicYear", "AcademicYear") || {}, "academicYearName", "AcademicYearName", "name", "Name") || "—",
+      "Academic Level": read(item, "academicLevelName", "AcademicLevelName") || read(read(item, "academicLevel", "AcademicLevel") || {}, "academicLevelName", "AcademicLevelName", "name", "Name") || "—",
+      Group: read(item, "groupName", "GroupName") || read(read(item, "group", "Group") || {}, "groupName", "GroupName", "name", "Name") || "—",
+      Section: read(item, "sectionName", "SectionName") || read(read(item, "section", "Section") || {}, "sectionName", "SectionName", "name", "Name") || "—",
+      "Roll Number": read(item, "rollNo", "RollNo", "rollNumber", "RollNumber") || "—",
+      Mobile: read(item, "mobileNumber", "MobileNumber", "mobile", "Mobile") || read(student, "mobileNumber", "MobileNumber", "mobile", "Mobile") || "—",
+      Email: read(item, "email", "Email") || read(student, "email", "Email") || "—",
+    };
+  });
+}
+
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState("reports");
   const [filters, setFilters] = useState({});
@@ -644,7 +733,12 @@ export default function ReportsPage() {
     setReportErrors({});
     const [dashboardResult, ...results] = await Promise.allSettled([
       apiClient.get(REPORTS_API.dashboard, { params, signal: controller.signal }),
-      ...REPORT_REQUESTS.map((request) => apiClient.get(request.endpoint, { params, signal: controller.signal })),
+      ...REPORT_REQUESTS.map((request) => apiClient.get(request.endpoint, {
+        params: request.key === "admissions"
+          ? { PageNumber: 1, PageSize: 10000 }
+          : { ...params, PageNumber: 1, PageSize: 10000 },
+        signal: controller.signal,
+      })),
     ]);
     if (!mountedRef.current || controller.signal.aborted || requestId !== reportRequestRef.current) return;
     const nextReports = { ...EMPTY_REPORTS };
@@ -658,7 +752,11 @@ export default function ReportsPage() {
     if (dashboardResult.status === "fulfilled") nextReports.overview = dashboardResult.value.data;
     results.forEach((result, index) => {
       const { key } = REPORT_REQUESTS[index];
-      if (result.status === "fulfilled") nextReports[key] = result.value.data;
+      if (result.status === "fulfilled") {
+        nextReports[key] = REPORT_REQUESTS[index].clientFilter
+          ? REPORT_REQUESTS[index].clientFilter(result.value.data, selectedFilters)
+          : result.value.data;
+      }
       else {
         failures.push({ key, reason: result.reason });
         nextErrors[key] = getApiErrorMessage(result.reason);
@@ -871,8 +969,8 @@ export default function ReportsPage() {
     const examinationCount = responseRecordCount(reports.examinations);
     const resultCount = responseRecordCount(reports.results);
     return {
-      admissions: metric(reports.admissions, ["totalAdmissions", "admissions", "admissionsCount", "total", "count"])
-        ?? admissionCount
+      admissions: admissionCount
+        ?? metric(reports.admissions, ["totalAdmissions", "admissions", "admissionsCount", "total", "count"])
         ?? metricFromSources([reports.overview, reports.dashboard], ["totalAdmissions", "admissionsCount"]),
       attendance: metric(reports.attendance, ["attendancePercentage", "averageAttendance", "attendanceRate", "percentage"])
         ?? metricFromSources([reports.overview, reports.dashboard], ["attendancePercentage", "averageAttendance", "attendanceRate"]),
@@ -882,11 +980,11 @@ export default function ReportsPage() {
         ?? metricFromSources([reports.overview, reports.dashboard], ["totalCollected", "collectedAmount", "feeCollected", "totalFeeCollected"]),
       dueFees: metric(reports.feeOutstanding, ["totalOutstanding", "outstandingAmount", "dueFees", "outstandingFees", "dueAmount", "amount"])
         ?? metricFromSources([reports.overview, reports.dashboard], ["totalOutstanding", "outstandingAmount", "dueFees", "outstandingFees", "dueAmount"]),
-      examinations: metric(reports.examinations, ["totalExaminations", "examinationCount", "total", "count"])
-        ?? examinationCount
+      examinations: examinationCount
+        ?? metric(reports.examinations, ["totalExaminations", "examinationCount", "total", "count"])
         ?? metricFromSources([reports.overview, reports.dashboard], ["totalExaminations", "examinationCount"]),
-      results: metric(reports.results, ["published", "resultsPublished", "publishedResults", "resultCount", "total", "count"])
-        ?? resultCount
+      results: resultCount
+        ?? metric(reports.results, ["published", "resultsPublished", "publishedResults", "resultCount", "total", "count"])
         ?? metricFromSources([reports.overview, reports.dashboard], ["resultsPublished", "publishedResults", "resultCount"]),
       staffWorkload: metricFromSources([reports.staffWorkload], ["averageStaffWorkload", "averageWorkload", "staffWorkload", "weeklyHours", "hoursPerWeek", "totalWorkHours"]),
       facultyWorkload: metricFromSources([reports.facultyWorkload], ["averageFacultyWorkload", "averageWorkload", "facultyWorkload", "weeklyHours", "hoursPerWeek", "totalTeachingHours"]) ?? (workloadData.length ? workloadData.reduce((sum, item) => sum + item.hours, 0) : undefined),
@@ -1048,6 +1146,54 @@ export default function ReportsPage() {
     return file;
   };
 
+  const requestDetailedCardFile = async (card, format) => {
+    const isAdmissionsReport = card.reportType === "admissions";
+    const endpoint = isAdmissionsReport ? apiEndpoints.admissions.getAll : REPORT_DETAIL_BY_TYPE[card.reportType];
+    if (!endpoint) throw new Error(`Detailed ${card.label} report is unavailable.`);
+    const response = await apiClient.get(endpoint, {
+      params: isAdmissionsReport
+        ? { PageNumber: 1, PageSize: 10000 }
+        : { ...buildReportQuery(filters), PageNumber: 1, PageSize: 10000 },
+    });
+    const rows = isAdmissionsReport ? admissionReportRows(response.data, filters) : detailedReportRows(response.data);
+    if (!rows.length) throw new Error(`No detailed ${card.label.toLowerCase()} records were returned for the selected filters.`);
+    const columns = exportColumns(rows);
+    const exportDate = new Date().toISOString().slice(0, 10);
+    const filenameBase = `${card.reportType}-detailed-${exportDate}`;
+
+    if (format === "excel") {
+      const XLSX = await import("xlsx");
+      const worksheet = XLSX.utils.json_to_sheet(rows.map((row) => Object.fromEntries(
+        columns.map((column) => [column, exportCell(row[column])]),
+      )));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, card.label.slice(0, 31));
+      const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      return { blob: new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `${filenameBase}.xlsx` };
+    }
+
+    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const document = new jsPDF({ orientation: columns.length > 5 ? "landscape" : "portrait", unit: "pt", format: "a4" });
+    document.setFontSize(16);
+    document.text(`${card.label} Detailed Report`, 30, 34);
+    document.setFontSize(8);
+    document.setTextColor(88, 97, 84);
+    document.text(`${rows.length} record${rows.length === 1 ? "" : "s"} · Generated ${new Date().toLocaleString("en-IN")}`, 30, 49);
+    autoTable(document, {
+      startY: 60,
+      head: [columns.map(readableLabel)],
+      body: rows.map((row) => columns.map((column) => exportCell(row[column]))),
+      styles: { fontSize: columns.length > 8 ? 6 : 8, cellPadding: 3, overflow: "linebreak" },
+      headStyles: { fillColor: [111, 132, 0], textColor: [255, 255, 255] },
+      alternateRowStyles: { fillColor: [247, 248, 239] },
+      margin: { left: 20, right: 20 },
+    });
+    return { blob: document.output("blob"), filename: `${filenameBase}.pdf` };
+  };
+
   const previewReport = async (format) => {
     const requestId = ++previewRequestRef.current;
     const controller = beginRequest("preview");
@@ -1072,7 +1218,7 @@ export default function ReportsPage() {
     if (exportingCards[requestKey]) return;
     setExportingCards((current) => ({ ...current, [requestKey]: true }));
     try {
-      const file = await requestReportFile(format, card.reportType, card.label);
+      const file = await requestDetailedCardFile(card, format);
       downloadBlob(file.blob, file.filename);
       if (mountedRef.current) setToast(`${card.label} ${format === "pdf" ? "PDF" : "Excel"} exported successfully.`);
     } catch (exportError) {

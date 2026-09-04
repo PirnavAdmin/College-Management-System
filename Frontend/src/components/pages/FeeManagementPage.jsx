@@ -15,14 +15,12 @@ import {
   WalletCards,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
+  Cell,
   Legend,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
-  XAxis,
-  YAxis,
 } from "recharts";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
@@ -42,14 +40,17 @@ import {
 } from "@/data/feeManagementData.js";
 import "./FeeManagementPage.css";
 
-const TABS = ["Overview", "Student Fee Ledger", "Fee Setup", "Fee Collection", "Payment History"];
+const TABS = ["Overview", "Fee Setup", "Student Fee Ledger"];
 const FEE_SETUP_TABS = ["Fee Types", "Fee Structure", "Scholarships"];
+const LEDGER_TABS = ["Student Fee Ledger", "Fee Collection", "Payment History"];
 const FEE_TYPE_CATEGORIES = ["Admission", "Academic", "Examination", "Facility", "Activity", "Other"];
 const PAGE_SIZE = 5;
 const OVERVIEW_TABS = [
+  { id: "overdue", label: "Overdue Fees", icon: AlertCircle },
   { id: "upcoming", label: "Upcoming Fee Schedules", icon: CalendarClock },
   { id: "recent", label: "Recent Payments", icon: ReceiptText },
 ];
+const CHART_COLORS = ["var(--cms-primary)", "var(--cms-green)", "var(--cms-amber)"];
 
 const getCollection = (payload) => {
   const data = payload?.data ?? payload?.Data ?? payload;
@@ -398,32 +399,54 @@ const normalizeFeeStructureRows = (rows) => {
   }));
 };
 
-const normalizeTransactionRows = (rows, account = {}) => rows.map((item, index) => ({
-  id: String(read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id") ?? `${account.id || "payment"}-TXN-${index + 1}`),
-  feePaymentId: read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id"),
-  studentId: read(item, "studentId", "StudentId") ?? account.studentId,
-  studentFeeId: read(item, "studentFeeId", "StudentFeeId", "studentFeeAssignmentId", "StudentFeeAssignmentId") ?? account.studentFeeId ?? account.studentFeeAssignmentId,
-  receiptNo: textValue(item, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || account.receiptNo || "-",
-  studentName: textValue(item, "studentName", "StudentName", "name", "Name") || account.studentName || "Student",
-  admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || account.admissionNo || "-",
-  group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName") || account.group || "-",
-  groupId: textValue(item, "groupId", "GroupId") || account.groupId,
-  section: textValue(item, "sectionName", "SectionName", "section", "Section") || account.section || "-",
-  sectionId: textValue(item, "sectionId", "SectionId") || account.sectionId,
-  academicYear: textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || account.academicYear,
-  academicYearId: textValue(item, "academicYearId", "AcademicYearId") || account.academicYearId,
-  type: textValue(item, "paymentType", "PaymentType", "feeTypeName", "FeeTypeName", "feeType", "FeeType", "type", "Type") || "Fee Payment",
-  amount: numberValue(item, "amount", "Amount", "paidAmount", "PaidAmount", "paymentAmount", "PaymentAmount"),
-  baseAmount: numberValue(item, "baseAmount", "BaseAmount", "amount", "Amount"),
-  discount: numberValue(item, "discount", "Discount", "discountAmount", "DiscountAmount"),
-  fine: numberValue(item, "fine", "Fine", "fineAmount", "FineAmount"),
-  method: textValue(item, "paymentMethod", "PaymentMethod", "paymentMode", "PaymentMode", "method", "Method") || "-",
-  reference: textValue(item, "transactionNumber", "TransactionNumber", "reference", "Reference", "transactionReference", "TransactionReference"),
-  date: textValue(item, "paymentDate", "PaymentDate", "paidDate", "PaidDate", "date", "Date", "createdAt", "CreatedAt") || todayISO(),
-  status: textValue(item, "status", "Status", "paymentStatus", "PaymentStatus") || "Paid",
-  previousBalance: optionalNumberValue(item, "previousBalance", "PreviousBalance", "previousOutstanding", "PreviousOutstanding"),
-  balance: optionalNumberValue(item, "balance", "Balance", "remainingBalance", "RemainingBalance", "outstandingBalance", "OutstandingBalance"),
-}));
+const normalizeTransactionRows = (rows, account = {}) => rows.map((item, index) => {
+  const student = read(item, "student", "Student");
+  const admission = read(item, "admission", "Admission", "studentAdmission", "StudentAdmission");
+  const group = read(item, "group", "Group");
+  const section = read(item, "section", "Section");
+  return {
+    id: String(read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id") ?? `${account.id || "payment"}-TXN-${index + 1}`),
+    feePaymentId: read(item, "feePaymentId", "FeePaymentId", "paymentId", "PaymentId", "id", "Id"),
+    studentId: read(item, "studentId", "StudentId") ?? read(student, "studentId", "StudentId", "id", "Id") ?? account.studentId,
+    studentFeeId: read(item, "studentFeeId", "StudentFeeId", "studentFeeAssignmentId", "StudentFeeAssignmentId") ?? account.studentFeeId ?? account.studentFeeAssignmentId,
+    receiptNo: textValue(item, "receiptNo", "ReceiptNo", "receiptNumber", "ReceiptNumber") || account.receiptNo || "-",
+    studentName: textValue(item, "studentName", "StudentName", "name", "Name")
+      || textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+      || admissionFullName(admission)
+      || account.studentName
+      || "Student",
+    admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || textValue(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+      || account.admissionNo
+      || "-",
+    group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName")
+      || textValue(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")
+      || textValue(admission, "groupName", "GroupName")
+      || account.group
+      || "-",
+    groupId: textValue(item, "groupId", "GroupId") || textValue(group, "groupId", "GroupId", "id", "Id") || textValue(admission, "groupId", "GroupId") || account.groupId,
+    section: textValue(item, "sectionName", "SectionName", "section", "Section")
+      || textValue(section, "sectionName", "SectionName", "name", "Name")
+      || textValue(admission, "sectionName", "SectionName", "programName", "ProgramName")
+      || account.section
+      || "-",
+    sectionId: textValue(item, "sectionId", "SectionId") || textValue(section, "sectionId", "SectionId", "id", "Id") || textValue(admission, "sectionId", "SectionId") || account.sectionId,
+    academicYear: textValue(item, "academicYearName", "AcademicYearName", "academicYear", "AcademicYear") || textValue(admission, "academicYearName", "AcademicYearName") || account.academicYear,
+    academicYearId: textValue(item, "academicYearId", "AcademicYearId") || textValue(admission, "academicYearId", "AcademicYearId") || account.academicYearId,
+    type: textValue(item, "paymentType", "PaymentType", "feeTypeName", "FeeTypeName", "feeType", "FeeType", "type", "Type") || "Fee Payment",
+    amount: numberValue(item, "amount", "Amount", "paidAmount", "PaidAmount", "paymentAmount", "PaymentAmount"),
+    baseAmount: numberValue(item, "baseAmount", "BaseAmount", "amount", "Amount"),
+    discount: numberValue(item, "discount", "Discount", "discountAmount", "DiscountAmount"),
+    fine: numberValue(item, "fine", "Fine", "fineAmount", "FineAmount"),
+    method: textValue(item, "paymentMethod", "PaymentMethod", "paymentMode", "PaymentMode", "method", "Method") || "-",
+    reference: textValue(item, "transactionNumber", "TransactionNumber", "reference", "Reference", "transactionReference", "TransactionReference"),
+    date: textValue(item, "paymentDate", "PaymentDate", "paidDate", "PaidDate", "date", "Date", "createdAt", "CreatedAt") || todayISO(),
+    status: textValue(item, "status", "Status", "paymentStatus", "PaymentStatus") || "Paid",
+    previousBalance: optionalNumberValue(item, "previousBalance", "PreviousBalance", "previousOutstanding", "PreviousOutstanding"),
+    balance: optionalNumberValue(item, "balance", "Balance", "remainingBalance", "RemainingBalance", "outstandingBalance", "OutstandingBalance"),
+  };
+});
 
 const normalizeReceipt = (payload, fallback = {}) => {
   const data = getObject(payload);
@@ -595,20 +618,67 @@ const printFeeTarget = (target) => {
   }, 50);
 };
 
+const escapePrintValue = (value) => String(value ?? "-")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;");
+
+const printFeeList = (title, columns, rows) => {
+  const printableRows = rows.length ? rows : [];
+  const html = `
+    <html>
+      <head>
+        <title>${escapePrintValue(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #111827; margin: 24px; }
+          h1 { margin: 0; font-size: 20px; }
+          .meta { margin: 6px 0 18px; color: #6b7280; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; vertical-align: top; }
+          th { background: #eff6ff; color: #1e3a8a; }
+          td.num, th.num { text-align: right; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapePrintValue(COLLEGE_NAME)}</h1>
+        <div class="meta">${escapePrintValue(title)} &middot; ${printableRows.length} records &middot; ${formatDate(todayISO())}</div>
+        <table>
+          <thead><tr>${columns.map((column) => `<th class="${column.num ? "num" : ""}">${escapePrintValue(column.label)}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${printableRows.length ? printableRows.map((row) => `<tr>${columns.map((column) => `<td class="${column.num ? "num" : ""}">${escapePrintValue(column.value(row))}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${columns.length}">No records available.</td></tr>`}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+  const popup = window.open("", "_blank", "width=960,height=720");
+  if (!popup) return;
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => {
+    popup.print();
+    popup.close();
+  }, 150);
+};
+
 function StatusBadge({ status }) {
   return <span className={`cms-badge ${feeStatusTone(status)}`}>{status}</span>;
 }
 
-function SummaryCard({ icon: Icon, label, value, hint, tone }) {
+function SummaryCard({ icon: Icon, label, value, hint, tone, onClick }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className={`cms-fee-stat tone-${tone}`}>
+    <Tag className={`cms-fee-stat tone-${tone} ${onClick ? "is-clickable" : ""}`} type={onClick ? "button" : undefined} onClick={onClick}>
       <span className="cms-fee-stat-icon"><Icon size={18} /></span>
       <div>
         <span className="cms-fee-stat-label">{label}</span>
         <strong className="cms-fee-stat-value">{value}</strong>
         {hint ? <small>{hint}</small> : null}
       </div>
-    </div>
+    </Tag>
   );
 }
 
@@ -650,6 +720,10 @@ function TablePagination({ page, pageSize = PAGE_SIZE, totalItems, onPageChange 
 /* ------------------------------- Overview ------------------------------- */
 const normalizeDueRows = (rows) => rows
   .map((item, index) => {
+    const student = read(item, "student", "Student");
+    const admission = read(item, "admission", "Admission", "studentAdmission", "StudentAdmission");
+    const group = read(item, "group", "Group");
+    const section = read(item, "section", "Section");
     const paymentPlan = textValue(item, "paymentPlan", "PaymentPlan", "plan", "Plan");
     const scheduleNo = textValue(item, "installmentNo", "InstallmentNo", "scheduleNo", "ScheduleNo", "no", "No");
     const scheduleText = textValue(item, "feeSchedule", "FeeSchedule", "schedule", "Schedule");
@@ -659,10 +733,22 @@ const normalizeDueRows = (rows) => rows
     const status = textValue(item, "status", "Status", "feeStatus", "FeeStatus") || "Due";
     return {
       key: String(read(item, "feeInstallmentId", "FeeInstallmentId", "studentFeeId", "StudentFeeId", "id", "Id") ?? `due-${index + 1}`),
-      studentName: textValue(item, "studentName", "StudentName", "name", "Name") || "Student",
-      admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") || "-",
-      group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName"),
-      section: textValue(item, "sectionName", "SectionName", "section", "Section", "programName", "ProgramName") || "-",
+      studentName: textValue(item, "studentName", "StudentName", "name", "Name")
+        || textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
+        || admissionFullName(admission)
+        || "Student",
+      admissionNo: textValue(item, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+        || textValue(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+        || textValue(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+        || "-",
+      group: textValue(item, "groupName", "GroupName", "group", "Group", "programName", "ProgramName")
+        || textValue(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")
+        || textValue(admission, "groupName", "GroupName")
+        || "-",
+      section: textValue(item, "sectionName", "SectionName", "section", "Section", "programName", "ProgramName")
+        || textValue(section, "sectionName", "SectionName", "name", "Name")
+        || textValue(admission, "sectionName", "SectionName", "programName", "ProgramName")
+        || "-",
       no: scheduleNo,
       scheduleLabel: isFullPayment ? "Full Payment" : scheduleNo ? `Fee Schedule ${scheduleNo}` : scheduleText || "Fee Schedule",
       dueDate: cleanDateValue(textValue(item, "dueDate", "DueDate", "nextDue", "NextDue")),
@@ -671,6 +757,23 @@ const normalizeDueRows = (rows) => rows
     };
   })
   .filter((item) => item.amount > 0 && !["paid", "completed"].includes(normalizeKey(item.status)));
+
+const dueDateKey = (value) => cleanDateValue(value).slice(0, 10);
+
+const splitDueRows = (rows = []) => {
+  const today = todayISO();
+  const unique = new Map();
+  rows.forEach((row) => {
+    if (Number(row.amount || 0) <= 0 || ["paid", "completed"].includes(normalizeKey(row.status))) return;
+    const key = row.key || `${row.admissionNo}-${row.scheduleLabel}-${row.dueDate}-${row.amount}`;
+    if (!unique.has(key)) unique.set(key, row);
+  });
+  const all = Array.from(unique.values());
+  return {
+    overdue: all.filter((row) => dueDateKey(row.dueDate) && dueDateKey(row.dueDate) < today),
+    upcoming: all.filter((row) => !dueDateKey(row.dueDate) || dueDateKey(row.dueDate) >= today),
+  };
+};
 
 const normalizeDashboard = (payload) => {
   const data = getObject(payload);
@@ -695,9 +798,12 @@ const normalizeDashboard = (payload) => {
 };
 
 function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded = false }) {
-  const [overviewTab, setOverviewTab] = useState("upcoming");
+  const [overviewTab, setOverviewTab] = useState("overdue");
+  const [overduePage, setOverduePage] = useState(1);
   const [upcomingPage, setUpcomingPage] = useState(1);
   const [recentPage, setRecentPage] = useState(1);
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const overviewRef = useRef(null);
   const dashboardData = dashboard ? normalizeDashboard(dashboard) : null;
   const fallbackTotals = accountOverviewTotals(accounts);
   const dashboardTotals = Object.fromEntries(Object.entries(dashboardData?.totals || {}).filter(([, value]) => value !== undefined));
@@ -707,13 +813,53 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
   const dashboardChart = dashboardData?.chartData || [];
   const accountChart = accountGroupWiseTotals(accounts);
   const chartData = hasUsefulChartData(dashboardChart) ? dashboardChart : dashboardLoaded && hasAccountData && hasUsefulChartData(accountChart) ? accountChart : [];
-  const upcoming = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
+  const sourceDueRows = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
+  const { overdue, upcoming } = splitDueRows(sourceDueRows);
   const recent = dashboardData?.recent?.length ? dashboardData.recent : [];
   const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
+  const groupOptions = chartData.map((row) => row.group).filter(Boolean);
+  const selectedChartRows = selectedGroup ? chartData.filter((row) => row.group === selectedGroup) : chartData;
+  const selectedChartTotals = selectedChartRows.reduce((sum, row) => ({
+    expected: sum.expected + Number(row.expected || 0),
+    collected: sum.collected + Number(row.collected || 0),
+    outstanding: sum.outstanding + Number(row.outstanding || 0),
+  }), { expected: 0, collected: 0, outstanding: 0 });
+  const circularData = [
+    { name: "Expected", value: selectedChartTotals.expected },
+    { name: "Collected", value: selectedChartTotals.collected },
+    { name: "Outstanding", value: selectedChartTotals.outstanding },
+  ].filter((item) => item.value > 0);
+  const paginatedOverdue = pageItems(overdue, overduePage);
   const paginatedUpcoming = pageItems(upcoming, upcomingPage);
   const paginatedRecent = pageItems(recent, recentPage);
+  const overdueSignature = overdue.map((row) => `${row.key}-${row.amount}-${row.status}-${row.dueDate}`).join("|");
   const upcomingSignature = upcoming.map((row) => `${row.key}-${row.amount}-${row.status}-${row.dueDate}`).join("|");
   const recentSignature = recent.map((row) => `${row.id}-${row.amount}-${row.date}-${row.receiptNo}`).join("|");
+  const dueColumns = [
+    { label: "Student", value: (row) => row.studentName },
+    { label: "Admission No", value: (row) => row.admissionNo },
+    { label: "Group / Section", value: (row) => `${row.group} / ${row.section}` },
+    { label: "Fee Schedule", value: (row) => row.scheduleLabel },
+    { label: "Due Date", value: (row) => formatFeeDate(row.dueDate) },
+    { label: "Amount", value: (row) => formatCurrency(row.amount), num: true },
+    { label: "Status", value: (row) => row.status },
+  ];
+  const recentColumns = [
+    { label: "Receipt No", value: (row) => row.receiptNo },
+    { label: "Student", value: (row) => row.studentName },
+    { label: "Payment Type", value: (row) => feeScheduleLabel(row.type) },
+    { label: "Amount", value: (row) => formatCurrency(row.amount), num: true },
+    { label: "Payment Method", value: (row) => row.method },
+    { label: "Date", value: (row) => formatFeeDate(row.date) },
+  ];
+  const openOverviewTab = (tabId) => {
+    setOverviewTab(tabId);
+    window.requestAnimationFrame(() => overviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  useEffect(() => {
+    setOverduePage(1);
+  }, [overdueSignature]);
 
   useEffect(() => {
     setUpcomingPage(1);
@@ -727,32 +873,52 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
     <div className="cms-fee-stack">
       <div className="cms-fee-stat-grid">
         <SummaryCard icon={Users} tone="blue" label="Total Students" value={`${totals.totalStudents} Students`} hint="With active fee accounts" />
-        <SummaryCard icon={WalletCards} tone="green" label="Total Collected" value={formatCompactCurrency(totals.totalCollected)} hint={`${collectedPercent.toFixed(1)}% of expected`} />
-        <SummaryCard icon={AlertCircle} tone="red" label="Pending / Overdue" value={`${totals.pendingStudents} Students`} hint={`${totals.overdueStudents} overdue`} />
+        <SummaryCard icon={WalletCards} tone="green" label="Total Collected" value={formatCompactCurrency(totals.totalCollected)} hint={`${collectedPercent.toFixed(1)}% of expected`} onClick={() => openOverviewTab("recent")} />
+        <SummaryCard icon={AlertCircle} tone="red" label="Pending / Overdue" value={`${totals.pendingStudents} Students`} hint={`${overdue.length || totals.overdueStudents} overdue`} onClick={() => openOverviewTab("overdue")} />
+        <SummaryCard icon={CalendarClock} tone="amber" label="Upcoming Fees" value={`${upcoming.length} Schedules`} hint="Unpaid schedules due today or later" onClick={() => openOverviewTab("upcoming")} />
       </div>
 
       <div className="cms-card">
-        <div className="cms-card-head"><h2>Group-wise Collection</h2></div>
+        <div className="cms-card-head">
+          <h2>Group-wise Collection</h2>
+          <label className="cms-fee-chart-filter">
+            <span>Group</span>
+            <select value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)}>
+              <option value="">All Groups</option>
+              {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="cms-card-body">
-          <div className="cms-fee-chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="var(--cms-border)" vertical={false} />
-                <XAxis dataKey="group" tick={{ fontSize: 12, fill: "var(--cms-muted)" }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(value) => formatCompactCurrency(value)} tick={{ fontSize: 11, fill: "var(--cms-muted)" }} axisLine={false} tickLine={false} width={62} />
-                <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={{ borderRadius: 10, border: "1px solid var(--cms-border)", background: "var(--cms-surface)", color: "var(--cms-text)", fontSize: 12 }} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="expected" name="Expected" fill="var(--cms-primary)" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                <Bar dataKey="collected" name="Collected" fill="var(--cms-green)" radius={[4, 4, 0, 0]} maxBarSize={26} />
-                <Bar dataKey="outstanding" name="Outstanding" fill="var(--cms-amber)" radius={[4, 4, 0, 0]} maxBarSize={26} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="cms-fee-chart cms-fee-donut">
+            {circularData.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={circularData} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2}>
+                    {circularData.map((entry, index) => <Cell key={entry.name} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(value) => formatCurrency(value)} contentStyle={{ borderRadius: 10, border: "1px solid var(--cms-border)", background: "var(--cms-surface)", color: "var(--cms-text)", fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="cms-fee-empty-row">No collection chart data available.</div>
+            )}
+            <div className="cms-fee-chart-summary">
+              <span>Expected <strong>{formatCurrency(selectedChartTotals.expected)}</strong></span>
+              <span>Collected <strong>{formatCurrency(selectedChartTotals.collected)}</strong></span>
+              <span>Outstanding <strong>{formatCurrency(selectedChartTotals.outstanding)}</strong></span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="cms-card cms-fee-overview-card">
-        <div className="cms-card-head"><h2>Fee Management Overview</h2></div>
+      <div className="cms-card cms-fee-overview-card" ref={overviewRef}>
+        <div className="cms-card-head">
+          <h2>Fee Management Overview</h2>
+          {overviewTab === "overdue" ? <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Overdue Fees", dueColumns, overdue)}><Printer size={14} /> Print List</button> : null}
+          {overviewTab === "upcoming" ? <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Upcoming Fee Schedules", dueColumns, upcoming)}><Printer size={14} /> Print List</button> : null}
+        </div>
         <div className="cms-card-body cms-fee-overview-shell">
           <div className="cms-fee-overview-tabs" role="tablist" aria-label="Fee Management Overview">
             {OVERVIEW_TABS.map(({ id, label, icon: Icon }) => (
@@ -771,6 +937,32 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
           </div>
 
           <div className="cms-fee-overview-content">
+            {overviewTab === "overdue" ? (
+              <div className="cms-table-wrap">
+                <table className="cms-table">
+                  <thead>
+                    <tr><th>Student</th><th>Admission No</th><th>Group / Section</th><th>Fee Schedule</th><th>Due Date</th><th className="num">Amount</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {overdue.length === 0 ? (
+                      <tr><td colSpan={7} className="cms-fee-empty-row">No overdue fee schedules.</td></tr>
+                    ) : paginatedOverdue.map((row) => (
+                      <tr key={row.key}>
+                        <td><strong>{row.studentName}</strong></td>
+                        <td>{row.admissionNo}</td>
+                        <td>{row.group} / {row.section}</td>
+                        <td>{row.scheduleLabel}</td>
+                        <td>{formatFeeDate(row.dueDate)}</td>
+                        <td className="num">{formatCurrency(row.amount)}</td>
+                        <td><StatusBadge status={row.status || "Overdue"} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <TablePagination page={overduePage} totalItems={overdue.length} onPageChange={setOverduePage} />
+              </div>
+            ) : null}
+
             {overviewTab === "upcoming" ? (
               <div className="cms-table-wrap">
                 <table className="cms-table">
@@ -818,6 +1010,9 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
                     ))}
                   </tbody>
                 </table>
+                <div className="cms-fee-print-row">
+                  <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Recent Payments", recentColumns, recent)}><Printer size={14} /> Print List</button>
+                </div>
                 <TablePagination page={recentPage} totalItems={recent.length} onPageChange={setRecentPage} />
               </div>
             ) : null}
@@ -1231,7 +1426,6 @@ function LedgerTab({ accounts, onView, onPrint, masters, loading = false, error 
   });
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
-
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
@@ -1520,7 +1714,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
       ...(includeFeeType ? { feeTypeId } : {}),
       rule: item.required ? "Mandatory" : "Optional",
       amount,
-      ...(!includeFeeType ? { isActive: item.selected !== false } : {}),
+      isActive: item.selected !== false,
     };
   };
 
@@ -1543,16 +1737,17 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
 
   const save = async () => {
     if (savingRef.current) return null;
-    const selectedItems = values.feeItems.filter((item) => item.required || Number(item.originalAmount || 0) > 0);
+    const configuredItems = values.feeItems.filter((item) => item.structureItemId || item.required || Number(item.originalAmount || 0) > 0);
+    const activeItems = configuredItems.filter((item) => item.selected !== false);
     if (!values.academicYear && !values.academicYearId) return setError("Academic Year is required");
     if (!values.group && !values.groupId) return setError("Group is required");
     if (!values.programId) return setError("Program is required");
-    if (!selectedItems.length) return setError("Select at least one fee type for this structure");
+    if (!activeItems.length) return setError("Select at least one active fee type for this structure");
     if (values.feeItems.some((item) => Number(item.originalAmount || 0) < 0)) return setError("Fee amount cannot be negative");
-    if (selectedItems.some((item) => Number(item.originalAmount || 0) <= 0)) return setError("Fee amount must be greater than 0 for selected fee types.");
+    if (activeItems.some((item) => Number(item.originalAmount || 0) <= 0)) return setError("Fee amount must be greater than 0 for active fee types.");
     const canUseFeeStructureApi = hasBackendFeeTypeIds(feeTypes);
     if (!canUseFeeStructureApi) return setError("Fee structures require saved backend fee types. Please save fee types successfully before creating a structure.");
-    if (selectedItems.some((item) => !Number(item.feeTypeId || item.id))) return setError("Only saved backend fee types can be used for API fee structures.");
+    if (configuredItems.some((item) => !Number(item.feeTypeId || item.id))) return setError("Only saved backend fee types can be used for API fee structures.");
     const duplicate = structures.some((row) => (
       row.id !== initial?.id
       && row.status === "Active"
@@ -1564,14 +1759,14 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     savingRef.current = true;
     setSaving(true);
     try {
-      const structurePayload = buildStructurePayload(selectedItems);
+      const structurePayload = buildStructurePayload(configuredItems);
       const structureResponse = initial?.id
         ? await apiClient.put(apiEndpoints.fee.updateStructure(initial.id), structurePayload)
         : await apiClient.post(apiEndpoints.fee.createStructure, structurePayload);
       const feeStructureId = initial?.id || read(getObject(structureResponse.data), "feeStructureId", "FeeStructureId", "id", "Id");
       if (!feeStructureId) throw new Error("Fee structure saved, but the structure ID was not returned.");
       if (initial?.id) {
-        await Promise.all(selectedItems.map((item) => (
+        await Promise.all(configuredItems.map((item) => (
           item.structureItemId
             ? apiClient.put(apiEndpoints.fee.updateStructureItem(item.structureItemId), buildStructureItemPayload(item, false))
             : apiClient.post(apiEndpoints.fee.addStructureItem(feeStructureId), buildStructureItemPayload(item, true))
@@ -1639,12 +1834,13 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
         <div className="cms-table-wrap cms-fee-config-wrap">
           <table className="cms-table cms-fee-config-table cms-fee-setup-table cms-fee-types-table">
             <colgroup>
-              <col style={{ width: "40%" }} />
-              <col style={{ width: "30%" }} />
-              <col style={{ width: "30%" }} />
+              <col style={{ width: "34%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "24%" }} />
             </colgroup>
             <thead>
-              <tr><th>Fee Type</th><th>Rule</th><th className="num">Amount</th></tr>
+              <tr><th>Fee Type</th><th>Rule</th><th>Status</th><th className="num">Amount</th></tr>
             </thead>
             <tbody>
               {values.feeItems.map((item) => (
@@ -1658,6 +1854,16 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
                     >
                       <option value="Mandatory">Mandatory</option>
                       <option value="Optional">Optional</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      className="cms-mini-input"
+                      value={item.selected === false ? "Inactive" : "Active"}
+                      onChange={(event) => updateFeeItem(item.id, { selected: event.target.value === "Active" })}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
                     </select>
                   </td>
                   <td className="num">
@@ -2192,6 +2398,30 @@ function FeeSetupTab({ setupTab, onSetupTabChange, feeTypes, onFeeTypesChange, s
   );
 }
 
+function StudentFeeLedgerSection({ ledgerTab, onLedgerTabChange, ledgerAccounts, collectionAccounts, paymentHistoryRows, onView, onPrint, onCollect, onReceipt, masters, loading, errors }) {
+  return (
+    <div className="cms-fee-stack">
+      <div className="cms-fee-tabs" role="tablist" aria-label="Student fee ledger">
+        {LEDGER_TABS.map((item) => (
+          <button
+            key={item}
+            type="button"
+            role="tab"
+            aria-selected={ledgerTab === item}
+            className={`cms-fee-tab ${ledgerTab === item ? "is-active" : ""}`}
+            onClick={() => onLedgerTabChange(item)}
+          >
+            {item}
+          </button>
+        ))}
+      </div>
+      {ledgerTab === "Student Fee Ledger" ? <LedgerTab accounts={ledgerAccounts} onView={onView} onPrint={onPrint} masters={masters} loading={loading.ledger} error={errors.ledger} /> : null}
+      {ledgerTab === "Fee Collection" ? <FeeCollectionTab accounts={collectionAccounts} onCollect={onCollect} loading={loading.collection} error={errors.collection} /> : null}
+      {ledgerTab === "Payment History" ? <HistoryTab transactions={paymentHistoryRows} onReceipt={onReceipt} loading={loading.ledger} error={errors.ledger} /> : null}
+    </div>
+  );
+}
+
 /* ---------------------------- Payment history ---------------------------- */
 function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" }) {
   const [search, setSearch] = useState("");
@@ -2211,6 +2441,18 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
   });
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
+  const historyColumns = [
+    { label: "Receipt Number", value: (row) => row.receiptNo },
+    { label: "Date", value: (row) => formatFeeDate(row.date) },
+    { label: "Admission No", value: (row) => row.admissionNo },
+    { label: "Student Name", value: (row) => row.studentName },
+    { label: "Group / Section", value: (row) => `${row.group} / ${row.section}` },
+    { label: "Payment Type", value: (row) => feeScheduleLabel(row.type) },
+    { label: "Amount", value: (row) => formatCurrency(row.amount), num: true },
+    { label: "Payment Method", value: (row) => row.method },
+    { label: "Transaction Reference", value: (row) => row.reference || "-" },
+    { label: "Status", value: (row) => row.status || "Paid" },
+  ];
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -2240,7 +2482,12 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
     <div className="cms-card">
       <div className="cms-card-head">
         <h2>Payment History</h2>
-        <span className="cms-badge cms-badge-info">{rows.length} transactions</span>
+        <div className="cms-fee-head-actions">
+          <span className="cms-badge cms-badge-info">{rows.length} transactions</span>
+          <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Payment History", historyColumns, rows)}>
+            <Printer size={14} /> Print
+          </button>
+        </div>
       </div>
       <div className="cms-card-body cms-fee-toolbar cms-fee-controls cms-fee-search-only">
         <div className="cms-fee-search">
@@ -2292,6 +2539,7 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
 export default function FeeManagementPage() {
   const [tab, setTab] = useState(TABS[0]);
   const [setupTab, setSetupTab] = useState(FEE_SETUP_TABS[0]);
+  const [ledgerTab, setLedgerTab] = useState(LEDGER_TABS[0]);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedSource, setSelectedSource] = useState("");
   const [collecting, setCollecting] = useState(false);
@@ -2504,7 +2752,7 @@ export default function FeeManagementPage() {
   const openCollectPayment = (id) => {
     setSelectedId(id);
     setSelectedSource("collection");
-    setCollecting(true);
+    setCollecting(false);
   };
 
   const printStudentStatement = (id) => {
@@ -2574,18 +2822,19 @@ export default function FeeManagementPage() {
   }, [loadOverviewData]);
 
   useEffect(() => {
-    if (loadedTabsRef.current.has(tab)) return;
-    loadedTabsRef.current.add(tab);
+    const loadKey = tab === "Student Fee Ledger" ? `${tab}:${ledgerTab}` : tab;
+    if (loadedTabsRef.current.has(loadKey)) return;
+    loadedTabsRef.current.add(loadKey);
     if (tab === "Overview") loadOverviewData();
     if (tab === "Fee Setup") loadFeeApiData();
-    if (tab === "Fee Collection") loadFeeAccounts("collection");
-    if (tab === "Student Fee Ledger" || tab === "Payment History") loadFeeAccounts("ledger");
-  }, [loadFeeAccounts, loadFeeApiData, loadOverviewData, tab]);
+    if (tab === "Student Fee Ledger" && ledgerTab === "Fee Collection") loadFeeAccounts("collection");
+    if (tab === "Student Fee Ledger" && ledgerTab !== "Fee Collection") loadFeeAccounts("ledger");
+  }, [ledgerTab, loadFeeAccounts, loadFeeApiData, loadOverviewData, tab]);
 
   useEffect(() => {
-    if (tab !== "Payment History") return;
+    if (tab !== "Student Fee Ledger" || ledgerTab !== "Payment History") return;
     loadMissingPaymentHistories(ledgerAccounts);
-  }, [ledgerAccounts, loadMissingPaymentHistories, tab]);
+  }, [ledgerAccounts, ledgerTab, loadMissingPaymentHistories, tab]);
 
   return (
     <DashboardLayout
@@ -2609,7 +2858,6 @@ export default function FeeManagementPage() {
       </div>
 
       {tab === "Overview" ? <OverviewTab accounts={overviewAccounts} dashboard={dashboardData} dueRows={dueRows} dashboardLoaded={dashboardLoaded} /> : null}
-      {tab === "Student Fee Ledger" ? <LedgerTab accounts={ledgerAccounts} onView={(id) => { setSelectedId(id); setSelectedSource("ledger"); }} onPrint={printStudentStatement} masters={masters} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
       {tab === "Fee Setup" ? (
         <FeeSetupTab
           setupTab={setupTab}
@@ -2627,13 +2875,27 @@ export default function FeeManagementPage() {
           masterErrors={masterErrors}
         />
       ) : null}
-      {tab === "Fee Collection" ? <FeeCollectionTab accounts={collectionAccounts} onCollect={openCollectPayment} loading={accountLoading.collection} error={accountErrors.collection} /> : null}
-      {tab === "Payment History" ? <HistoryTab transactions={paymentHistoryRows} onReceipt={setReceipt} loading={accountLoading.ledger} error={accountErrors.ledger} /> : null}
+      {tab === "Student Fee Ledger" ? (
+        <StudentFeeLedgerSection
+          ledgerTab={ledgerTab}
+          onLedgerTabChange={setLedgerTab}
+          ledgerAccounts={ledgerAccounts}
+          collectionAccounts={collectionAccounts}
+          paymentHistoryRows={paymentHistoryRows}
+          onView={(id) => { setSelectedId(id); setSelectedSource("ledger"); }}
+          onPrint={printStudentStatement}
+          onCollect={openCollectPayment}
+          onReceipt={setReceipt}
+          masters={masters}
+          loading={accountLoading}
+          errors={accountErrors}
+        />
+      ) : null}
 
       {selected ? (
         <StudentFeeDrawer
           account={selected}
-          onClose={() => { setSelectedId(null); setSelectedSource(""); }}
+          onClose={() => { setSelectedId(null); setSelectedSource(""); setCollecting(false); }}
           onCollect={() => setCollecting(true)}
           onReceipt={setReceipt}
           allowCollect={selectedSource === "collection"}
@@ -2647,6 +2909,7 @@ export default function FeeManagementPage() {
           onSaved={(saved) => {
             setCollecting(false);
             setToast(`Payment of ${formatCurrency(saved.amount)} recorded - receipt ${saved.receiptNo}`);
+            setPaymentHistoryExtras((current) => [withPaymentContext(saved, [selected]), ...current]);
             Promise.allSettled([
               loadFeeAccounts("ledger"),
               loadFeeAccounts("collection"),

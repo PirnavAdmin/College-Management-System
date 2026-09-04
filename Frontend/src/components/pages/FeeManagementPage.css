@@ -34,7 +34,7 @@
 
 .cms-fee-stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 .cms-fee-stat {
@@ -46,6 +46,15 @@
   border-radius: 12px;
   background: var(--cms-surface);
   box-shadow: var(--cms-shadow);
+}
+.cms-fee-stat.is-clickable {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.cms-fee-stat.is-clickable:hover {
+  border-color: var(--cms-primary);
+  transform: translateY(-1px);
 }
 .cms-fee-stat-icon {
   display: grid;
@@ -90,6 +99,63 @@
 }
 
 .cms-fee-chart { height: 280px; width: 100%; }
+.cms-fee-donut {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px);
+  align-items: center;
+  gap: 14px;
+}
+.cms-fee-chart-summary {
+  display: grid;
+  gap: 9px;
+}
+.cms-fee-chart-summary span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  background: var(--cms-subtle);
+  color: var(--cms-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.cms-fee-chart-summary strong {
+  color: var(--cms-text);
+  font-size: 13px;
+}
+.cms-fee-chart-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cms-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.cms-fee-chart-filter select {
+  min-height: 32px;
+  min-width: 150px;
+  padding: 5px 9px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  background: var(--cms-surface);
+  color: var(--cms-text);
+  font-size: 13px;
+}
+.cms-fee-head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cms-fee-print-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 12px 0;
+}
 
 .cms-fee-overview-card {
   overflow: hidden;
@@ -636,12 +702,25 @@
 }
 
 @media (max-width: 1200px) {
-  .cms-fee-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cms-fee-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cms-fee-kv { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
   .cms-fee-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-fee-donut {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 360px;
+  }
+  .cms-fee-chart-filter {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .cms-fee-chart-filter select {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
   .cms-fee-kv { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cms-card-body.cms-fee-controls { grid-template-columns: 1fr; align-items: stretch; }
   .cms-fee-search { max-width: none; }

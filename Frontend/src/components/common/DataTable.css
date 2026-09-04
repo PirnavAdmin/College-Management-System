@@ -6,6 +6,7 @@
   padding: clamp(9px, .9vw, 12px) clamp(10px, 1.15vw, 16px);
   border-bottom: 1px solid var(--cms-border);
   min-width: 0;
+  overflow: visible;
 }
 .cms-toolbar-right,
 .cms-pagination,

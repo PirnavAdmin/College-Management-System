@@ -922,3 +922,206 @@
 [data-theme="light"] .cms-nav-link.is-active:not(.cms-nav-sub):hover {
   color: #ffffff !important;
 }
+
+/* ==========================================================================
+   Academic Selectors (Board & Academic Year) in Top Navbar Header
+   ========================================================================== */
+.cms-academic-selectors {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 10px;
+}
+
+.cms-academic-dropdown-wrap {
+  position: relative;
+}
+
+.cms-academic-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--cms-surface, #ffffff);
+  border: 1.5px solid color-mix(in srgb, var(--cms-primary, #355e3b) 35%, var(--cms-border, #d1d5db));
+  border-radius: 14px;
+  padding: 5px 14px;
+  cursor: pointer;
+  height: 42px;
+  min-width: 170px;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.cms-academic-btn:hover,
+.cms-academic-btn.is-open {
+  border-color: var(--cms-primary, #355e3b);
+  background: color-mix(in srgb, var(--cms-primary, #355e3b) 10%, var(--cms-surface, #ffffff));
+  box-shadow: 0 3px 10px rgba(53, 94, 59, 0.18);
+}
+
+.cms-academic-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--cms-primary, #355e3b) 14%, transparent);
+  color: var(--cms-primary, #355e3b);
+  flex-shrink: 0;
+}
+
+.cms-academic-btn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+.cms-academic-btn-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--cms-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.cms-academic-btn-value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--cms-text, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cms-academic-btn-arrow {
+  color: var(--cms-muted, #64748b);
+  transition: transform 0.2s ease;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.cms-academic-btn.is-open .cms-academic-btn-arrow {
+  transform: rotate(180deg);
+}
+
+/* Academic Dropdown Panel Overlay */
+.cms-academic-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 280px;
+  max-width: 380px;
+  width: max-content;
+  background: var(--cms-surface, #ffffff);
+  border: 1.5px solid color-mix(in srgb, var(--cms-primary, #355e3b) 25%, var(--cms-border, #e2e8f0));
+  border-radius: 14px;
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.18), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  z-index: 100;
+  padding: 10px;
+  animation: cmsFadeDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cmsFadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cms-academic-panel-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--cms-muted, #64748b);
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cms-border, #e2e8f0) 80%, transparent);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.cms-academic-panel-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cms-academic-panel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cms-text, #334155);
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.cms-academic-panel-item:hover {
+  background: color-mix(in srgb, var(--cms-primary, #355e3b) 8%, var(--cms-surface, #ffffff));
+  color: var(--cms-primary, #355e3b);
+}
+
+.cms-academic-panel-item.is-selected {
+  background: color-mix(in srgb, var(--cms-primary, #355e3b) 12%, var(--cms-surface, #ffffff));
+  color: var(--cms-primary, #355e3b);
+  font-weight: 700;
+}
+
+.cms-academic-check {
+  color: #16a34a;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.cms-academic-panel-footer {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--cms-border, #e2e8f0) 80%, transparent);
+}
+
+.cms-academic-manage-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--cms-border, #e2e8f0) 80%, var(--cms-primary, #355e3b));
+  background: color-mix(in srgb, var(--cms-bg, #f8fafc) 80%, var(--cms-surface, #ffffff));
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cms-muted, #64748b);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cms-academic-manage-btn:hover {
+  background: color-mix(in srgb, var(--cms-primary, #355e3b) 12%, var(--cms-surface, #ffffff));
+  color: var(--cms-primary, #355e3b);
+  border-style: solid;
+}
+
+@media (max-width: 768px) {
+  .cms-academic-selectors {
+    display: none;
+  }
+}
+

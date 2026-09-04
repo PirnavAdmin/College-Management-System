@@ -75,6 +75,56 @@
   border-bottom: 1px solid var(--cms-border, #e5e7eb);
   padding-bottom: 12px;
 }
+
+/* Dropdown-driven attendance and leave screens use the same compact grid. */
+.att-filter-card { display: grid; gap: 16px; }
+.att-filter-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(180px, 1fr)); }
+.att-filter-action { display: flex; justify-content: flex-end; gap: 10px; }
+.att-filter-action .cms-btn { min-height: 42px; }
+.att-student-filter-grid .att-field:nth-child(9),
+.att-staff-filter-grid .att-field:nth-child(7) { grid-column: span 1; }
+.att-leave-filter-grid { grid-template-columns: repeat(4, minmax(180px, 1fr)); }
+.att-table-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.att-search { width: min(100%, 280px); min-height: 38px; }
+.att-table-search { display: grid; gap: 4px; color: var(--cms-muted); font-size: 12px; font-weight: 700; }
+.att-table-search .att-search { width: min(100%, 360px); }
+.att-status { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--cms-primary, #6f8f00) 12%, transparent); font-size: 12px; font-weight: 650; }
+.att-history-row td { padding-top: 0; }
+.att-history-toggle { border: 0; background: transparent; color: var(--cms-primary, #6f8f00); font: inherit; font-weight: 650; padding: 4px 0; cursor: pointer; }
+.att-history-row div { color: var(--cms-muted); font-size: 12px; padding: 4px 0; }
+.att-action-buttons { display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 72px; }
+.att-action-buttons .cms-action-btn { width: 34px; height: 34px; padding: 0; }
+.att-detail-history { display: grid; gap: 5px; padding-top: 10px; border-top: 1px solid var(--cms-border, #e5e7eb); }
+.att-detail-history p { font-size: 12px; color: var(--cms-muted); }
+.att-student-search { display: flex; justify-content: flex-end; }
+.att-student-search input { width: min(100%, 360px); min-height: 40px; }
+.att-student-attendance-table th:nth-child(1), .att-student-attendance-table td:nth-child(1) { width: 22%; }
+.att-student-attendance-table th:nth-child(2), .att-student-attendance-table td:nth-child(2) { width: 9%; }
+.att-student-attendance-table th:nth-child(3), .att-student-attendance-table td:nth-child(3) { width: 16%; }
+.att-student-attendance-table th:nth-child(4), .att-student-attendance-table td:nth-child(4), .att-student-attendance-table th:nth-child(5), .att-student-attendance-table td:nth-child(5) { width: 10%; }
+.att-student-attendance-table th:nth-child(6), .att-student-attendance-table td:nth-child(6), .att-student-attendance-table th:nth-child(7), .att-student-attendance-table td:nth-child(7) { width: 11%; text-align: center; }
+.att-student-attendance-table th:nth-child(8), .att-student-attendance-table td:nth-child(8) { width: 11%; text-align: center; }
+.att-table td:has(.att-status), .att-table th:has(+ th) { vertical-align: middle; }
+.att-period-legend { padding: 0 0 12px; color: var(--cms-muted); font-size: 12px; }
+.att-period-status { min-width: 28px; justify-content: center; }
+.att-period-edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.att-student-attendance-modal { max-height: 62vh; overflow-y: auto; padding-right: 4px; }
+@media (max-width: 620px) { .att-student-search { justify-content: stretch; } .att-student-search input { width: 100%; } .att-period-edit { grid-template-columns: 1fr; } }
+.att-modal-fields { display: grid; gap: 12px; }
+.att-modal-fields p { margin: 0; }
+.att-modal-fields textarea { min-height: 82px; resize: vertical; }
+.att-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.att-person-filter { display: grid; grid-template-columns: minmax(220px, 340px); }
+.att-admission-search { position: relative; width: min(100%, 480px); }
+.att-admission-search .att-field { width: 100%; }
+.att-admission-results { position: absolute; z-index: 8; top: calc(100% + 5px); left: 0; width: 100%; max-height: 250px; overflow-y: auto; border: 1px solid var(--cms-border, #e5e7eb); border-radius: 10px; background: var(--cms-surface, #fff); box-shadow: 0 10px 24px rgb(15 23 42 / 12%); }
+.att-admission-results button { display: grid; width: 100%; gap: 2px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--cms-border, #e5e7eb); background: transparent; color: var(--cms-text); text-align: left; cursor: pointer; }
+.att-admission-results button:hover { background: var(--cms-surface-alt, #f7f8ee); }
+.att-admission-results span, .att-admission-empty { color: var(--cms-muted); font-size: 12px; }
+.att-admission-empty { padding: 12px; }
+.att-leave-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1000px) { .att-filter-grid, .att-leave-filter-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+@media (max-width: 620px) { .att-filter-grid, .att-leave-filter-grid, .att-time-fields, .att-person-filter { grid-template-columns: 1fr; } .att-filter-action { justify-content: stretch; } .att-filter-action .cms-btn { flex: 1; } .att-table-top { align-items: stretch; flex-direction: column; } .att-search, .att-table-search, .att-table-search .att-search { width: 100%; } .att-summary, .att-leave-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .att-nav button {
   display: inline-flex;
   align-items: center;
@@ -200,6 +250,32 @@
   border-color: var(--cms-primary);
   outline: 3px solid var(--cms-primary-soft);
   outline-offset: 0;
+}
+.att-month-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 41px;
+  padding: 0 8px;
+  border: 1px solid var(--cms-border, #dce3ec);
+  border-radius: 8px;
+  background: var(--cms-surface, #fff);
+  color: var(--cms-text);
+  font: inherit;
+}
+.att-month-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.att-month-picker:focus-within {
+  border-color: var(--cms-primary);
+  outline: 3px solid var(--cms-primary-soft);
 }
 .att-filter-card {
   display: grid;
@@ -639,3 +715,33 @@
 /* Monthly attendance is a genuine calendar grid and retains controlled scrolling. */
 .att-month-table th,
 .att-month-table td { padding: 7px 8px !important; white-space: nowrap; }
+
+/* Student monthly report: only this matrix owns horizontal scrolling. */
+.att-month-card { padding: 0; overflow: hidden; }
+.att-month-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--cms-border, #e5e7eb); }
+.att-month-header h3, .att-month-header p { margin: 0; }
+.att-month-header h3 { font-size: 16px; }
+.att-month-header p { color: var(--cms-muted); font-size: 12px; margin-top: 3px; }
+.att-month-legend { display: flex; flex-wrap: wrap; gap: 10px; color: var(--cms-muted); font-size: 12px; }
+.att-month-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.att-month-legend i, .att-month-status { display: inline-flex; align-items: center; justify-content: center; min-width: 25px; height: 22px; border-radius: 5px; font-size: 10px; font-style: normal; font-weight: 750; }
+.att-month-scroll { width: 100%; max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+.att-month-table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.att-month-table th, .att-month-table td { min-width: 43px; text-align: center; }
+.att-month-table th { position: relative; z-index: 1; }
+.att-month-table th b, .att-month-table th small { display: block; }
+.att-month-table th small { margin-top: 2px; color: var(--cms-muted); font-size: 9px; letter-spacing: 0; }
+.att-month-table .att-sticky-roll, .att-month-table .att-sticky-name { position: sticky; z-index: 3; background: var(--cms-surface, #fff); text-align: left; }
+.att-month-table th.att-sticky-roll, .att-month-table th.att-sticky-name { z-index: 5; background: var(--cms-surface-alt, #f7f8ee); }
+.att-month-table .att-sticky-roll { left: 0; min-width: 70px; }
+.att-month-table .att-sticky-name { left: 70px; min-width: 165px; box-shadow: 4px 0 6px rgb(15 23 42 / 5%); }
+.att-month-status { min-width: 24px; }
+.att-month-p, .is-present { background: #dff4e5; color: #167238; }
+.att-month-a, .is-absent { background: #fde4e4; color: #b42318; }
+.att-month-lv, .is-leave { background: #fff1d6; color: #9a6700; }
+.att-month-l, .is-late { background: #e9e7ff; color: #5146b8; }
+.att-month-off, .is-off { background: #f0f1ee; color: #7a8175; }
+.att-month-table .is-sunday { background: color-mix(in srgb, var(--cms-surface-alt, #f7f8ee) 88%, #d5d9d0); }
+.att-person-profile { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.att-person-profile span { color: var(--cms-muted); font-size: 13px; }
+@media (max-width: 700px) { .att-month-header { align-items: flex-start; flex-direction: column; } }

@@ -10,6 +10,7 @@ import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig 
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
 import StaffManagementPage from "@/components/pages/StaffManagementPage.jsx";
+import DepartmentManagementPage, { DepartmentDetailsPage, DesignationDetailsPage, MasterFormPage, MasterImportPage } from "@/components/pages/DepartmentManagementPage.jsx";
 import StudentAdmissionPage from "@/components/pages/StudentAdmissionPage.jsx";
 import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/components/pages/StudentManagementPage.jsx";
 import SectionAllocationPage from "@/components/pages/SectionAllocationPage.jsx";
@@ -25,12 +26,16 @@ import CertificatesPage, { pageConfig as certificatesConfig } from "@/components
 import ReportsAnalyticsPage from "@/components/pages/ReportsAnalyticsPage.jsx";
 import StudentProfilePage from "@/components/pages/StudentProfilePage.jsx";
 import StudentEnrollmentPage from "@/components/pages/StudentEnrollmentPage.jsx";
+import SettingsPage from "@/components/pages/SettingsPage.jsx";
+import NumberSeriesPage from "@/components/pages/NumberSeriesPage.jsx";
+import SalaryManagementPage from "@/components/pages/SalaryManagementPage.jsx";
 import Login from "@/features/auth/pages/Login.jsx";
 import Register from "@/features/auth/pages/Register.jsx";
 import ForgotPassword from "@/features/auth/pages/ForgotPassword.jsx";
 import VerifyOTP from "@/features/auth/pages/VerifyOTP.jsx";
 import ResetPassword from "@/features/auth/pages/ResetPassword.jsx";
 import StudentDashboard from "@/Dashboard/StudentDashboard/StudentDashboard.jsx";
+import FacultyDashboard from "@/Dashboard/Facultydashboard.jsx";
 import ProtectedRoute, { PublicOnlyRoute } from "./ProtectedRoute.jsx";
 
 const moduleConfigs = {
@@ -94,9 +99,31 @@ export default function AppRoutes() {
         <Route path="/dashboard/subjects/add" element={<SubjectManagementPage screen="assign" />} />
         <Route path="/dashboard/subjects/assign" element={<SubjectManagementPage screen="assign" />} />
         <Route path="/dashboard/sections" element={<SectionManagementPage />} />
-        <Route path="/dashboard/faculty" element={<StaffManagementPage />} />
-        <Route path="/dashboard/faculty/add" element={<StaffManagementPage />} />
-        <Route path="/dashboard/faculty/:id/edit" element={<StaffManagementPage />} />
+        <Route path="/dashboard/faculty" element={<Navigate to="/dashboard/staff" replace />} />
+        <Route path="/dashboard/faculty/add" element={<Navigate to="/dashboard/staff/add" replace />} />
+        <Route path="/dashboard/faculty/:id/edit" element={<Navigate to="/dashboard/staff" replace />} />
+        <Route path="/dashboard/staff" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/list" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/teaching" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/non-teaching" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/pending" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/completed" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/add" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/add-teaching" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/add-non-teaching" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/:id/send-link" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/:id/edit" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/:id/review" element={<StaffManagementPage />} />
+        <Route path="/dashboard/staff/:id" element={<StaffManagementPage />} />
+        <Route path="/dashboard/departments" element={<DepartmentManagementPage />} />
+        <Route path="/dashboard/departments/add" element={<MasterFormPage kind="department" />} />
+        <Route path="/dashboard/departments/:id/edit" element={<MasterFormPage kind="department" />} />
+        <Route path="/dashboard/departments/:id/view" element={<DepartmentDetailsPage />} />
+        <Route path="/dashboard/departments/import" element={<MasterImportPage kind="department" />} />
+        <Route path="/dashboard/designations/add" element={<MasterFormPage kind="designation" />} />
+        <Route path="/dashboard/designations/:id/edit" element={<MasterFormPage kind="designation" />} />
+        <Route path="/dashboard/designations/:id/view" element={<DesignationDetailsPage />} />
+        <Route path="/dashboard/designations/import" element={<MasterImportPage kind="designation" />} />
         <Route path="/dashboard/faculty-allocation" element={<Navigate to="/dashboard/faculty" replace />} />
         <Route path="/dashboard/admission" element={<StudentAdmissionPage />} />
         <Route path="/dashboard/section-allocation" element={<SectionAllocationPage />} />
@@ -123,6 +150,45 @@ export default function AppRoutes() {
         <Route path="/dashboard/fee-structure" element={<FeeManagementPage />} />
         <Route path="/dashboard/certificates" element={<CertificatesPage />} />
         <Route path="/dashboard/reports" element={<ReportsAnalyticsPage />} />
+        <Route path="/dashboard/settings" element={<SettingsPage />} />
+        <Route path="/dashboard/settings/general" element={<SettingsPage />} />
+        <Route path="/dashboard/settings/number-series" element={<NumberSeriesPage mode="dashboard" />} />
+        <Route path="/dashboard/settings/number-series/add" element={<NumberSeriesPage mode="add" />} />
+        <Route path="/dashboard/settings/number-series/preview" element={<NumberSeriesPage mode="preview" />} />
+        <Route path="/dashboard/settings/number-series/:id/edit" element={<NumberSeriesPage mode="edit" />} />
+        <Route path="/dashboard/settings/number-series/:id/reset" element={<NumberSeriesPage mode="reset" />} />
+        <Route path="/dashboard/settings/number-series/:id" element={<NumberSeriesPage mode="view" />} />
+
+        {/* Staff Salary Management Module Routes */}
+        <Route path="/dashboard/staff-salary" element={<SalaryManagementPage mode="dashboard" />} />
+        <Route path="/dashboard/staff-salary/structures" element={<SalaryManagementPage mode="structures-list" />} />
+        <Route path="/dashboard/staff-salary/structures/add" element={<SalaryManagementPage mode="structures-add" />} />
+        <Route path="/dashboard/staff-salary/structures/:id" element={<SalaryManagementPage mode="structures-view" />} />
+        <Route path="/dashboard/staff-salary/structures/:id/edit" element={<SalaryManagementPage mode="structures-edit" />} />
+        <Route path="/dashboard/staff-salary/assignments" element={<SalaryManagementPage mode="assignments-list" />} />
+        <Route path="/dashboard/staff-salary/assign/teaching" element={<SalaryManagementPage mode="assign-teaching" />} />
+        <Route path="/dashboard/staff-salary/assign/non-teaching" element={<SalaryManagementPage mode="assign-non-teaching" />} />
+        <Route path="/dashboard/staff-salary/assignments/:id" element={<SalaryManagementPage mode="assignments-view" />} />
+        <Route path="/dashboard/staff-salary/assignments/:id/edit" element={<SalaryManagementPage mode="assignments-edit" />} />
+        <Route path="/dashboard/staff-salary/payroll" element={<SalaryManagementPage mode="payroll-list" />} />
+        <Route path="/dashboard/staff-salary/payroll/:month" element={<SalaryManagementPage mode="payroll-month-view" />} />
+        <Route path="/dashboard/staff-salary/payroll/:month/:staffId" element={<SalaryManagementPage mode="payroll-indiv-view" />} />
+        <Route path="/dashboard/staff-salary/payslips" element={<SalaryManagementPage mode="payslips-list" />} />
+        <Route path="/dashboard/staff-salary/payslips/:staffId/:month" element={<SalaryManagementPage mode="payslip-preview" />} />
+        <Route path="/dashboard/staff-salary/revisions" element={<SalaryManagementPage mode="revisions-list" />} />
+        <Route path="/dashboard/staff-salary/revisions/add" element={<SalaryManagementPage mode="revisions-add" />} />
+        <Route path="/dashboard/staff-salary/attendance-impact" element={<SalaryManagementPage mode="attendance-impact" />} />
+        <Route path="/dashboard/staff-salary/bonus" element={<SalaryManagementPage mode="bonus-list" />} />
+        <Route path="/dashboard/staff-salary/bonus/add" element={<SalaryManagementPage mode="bonus-add" />} />
+        <Route path="/dashboard/staff-salary/overtime" element={<SalaryManagementPage mode="overtime-list" />} />
+        <Route path="/dashboard/staff-salary/advances" element={<SalaryManagementPage mode="advances-list" />} />
+        <Route path="/dashboard/staff-salary/advances/add" element={<SalaryManagementPage mode="advances-add" />} />
+        <Route path="/dashboard/staff-salary/reimbursements" element={<SalaryManagementPage mode="reimbursements-list" />} />
+        <Route path="/dashboard/staff-salary/reimbursements/add" element={<SalaryManagementPage mode="reimbursements-add" />} />
+        <Route path="/dashboard/staff-salary/approvals" element={<SalaryManagementPage mode="approvals-list" />} />
+        <Route path="/dashboard/staff-salary/reports" element={<SalaryManagementPage mode="reports" />} />
+        <Route path="/dashboard/staff-salary/settings" element={<SalaryManagementPage mode="settings" />} />
+        <Route path="/dashboard/staff-salary/import" element={<SalaryManagementPage mode="import" />} />
         {listSlugs.filter((slug) => !["faculty", "courses", "subjects"].includes(slug)).map((slug) => <Route key={`${slug}-add`} path={`/dashboard/${slug}/add`} element={<ModuleFormRoute slug={slug} />} />)}
         {listSlugs.filter((slug) => !["faculty", "courses", "subjects"].includes(slug)).map((slug) => <Route key={`${slug}-edit`} path={`/dashboard/${slug}/:id/edit`} element={<ModuleFormRoute slug={slug} />} />)}
         <Route path="/dashboard/students/:id" element={<StudentProfileRoute />} />
@@ -131,6 +197,10 @@ export default function AppRoutes() {
       <Route element={<ProtectedRoute requireStudent />}>
         <Route path="/student-dashboard" element={<StudentDashboard />} />
       </Route>
+      <Route path="/faculty-dashboard" element={<FacultyDashboard />} />
+      <Route path="/mock-staff-portal/:id" element={<StaffManagementPage />} />
+      <Route path="/mock-staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
+      <Route path="/mock-staff-portal/:id/review" element={<StaffManagementPage />} />
 
       {listSlugs.map((slug) => <Route key={`${slug}-redirect`} path={`/${slug}`} element={<Navigate to={`/dashboard/${slug}`} replace />} />)}
       {listSlugs.map((slug) => <Route key={`${slug}-add-redirect`} path={`/${slug}/add`} element={<Navigate to={`/dashboard/${slug}/add`} replace />} />)}
@@ -142,6 +212,7 @@ export default function AppRoutes() {
       <Route path="/results" element={<Navigate to="/dashboard/results" replace />} />
       <Route path="/promotion" element={<Navigate to="/dashboard/promotion" replace />} />
       <Route path="/reports" element={<Navigate to="/dashboard/reports" replace />} />
+      <Route path="/settings" element={<Navigate to="/dashboard/settings" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

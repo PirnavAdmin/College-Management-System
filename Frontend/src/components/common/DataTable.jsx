@@ -24,8 +24,9 @@ const safeFileName = (value) => String(value || "records")
   .replace(/^-|-$/g, "") || "records";
 
 export default function DataTable({
-  columns,
+  columns = [],
   rows,
+  data,
   loading,
   onAdd,
   onEdit,
@@ -47,6 +48,16 @@ export default function DataTable({
   const [page, setPage] = useState(1);
   const [exportOpen, setExportOpen] = useState(false);
 
+  const safeColumns = useMemo(() => (Array.isArray(columns) ? columns : []), [columns]);
+  const hasActions = useMemo(() => Boolean(onView || onPrint || onEdit || onDelete), [onView, onPrint, onEdit, onDelete]);
+  const colCount = useMemo(() => safeColumns.length + (hasActions ? 1 : 0), [safeColumns.length, hasActions]);
+
+  const effectiveRows = useMemo(() => {
+    if (Array.isArray(rows)) return rows;
+    if (Array.isArray(data)) return data;
+    return [];
+  }, [rows, data]);
+
   useEffect(() => {
     if (!onSearchChange) return undefined;
     const timer = setTimeout(() => onSearchChange(query), 300);
@@ -55,23 +66,23 @@ export default function DataTable({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (onSearchChange || !q) return rows;
-    return rows.filter((r) =>
-      Object.values(r).some((v) => String(v).toLowerCase().includes(q)),
+    if (onSearchChange || !q) return effectiveRows;
+    return effectiveRows.filter((r) =>
+      r && typeof r === "object" && Object.values(r).some((v) => String(v ?? "").toLowerCase().includes(q)),
     );
-  }, [rows, query, onSearchChange]);
+  }, [effectiveRows, query, onSearchChange]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const current = Math.min(page, totalPages);
   const pageRows = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
 
   const exportExcel = async () => {
-    const exportColumns = columns.filter((column) => column.exportable !== false);
-    const data = filtered.map((row) => Object.fromEntries(
+    const exportColumns = safeColumns.filter((column) => column.exportable !== false);
+    const exportData = filtered.map((row) => Object.fromEntries(
       exportColumns.map((column) => [column.label, textValue(row[column.key])]),
     ));
     const XLSX = await import("xlsx");
-    const worksheet = XLSX.utils.json_to_sheet(data);
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Records");
     XLSX.writeFile(workbook, `${safeFileName(title)}.xlsx`);
@@ -80,7 +91,7 @@ export default function DataTable({
 
   const printRows = () => {
     setExportOpen(false);
-    const printableColumns = columns.filter((column) => column.printable !== false);
+    const printableColumns = safeColumns.filter((column) => column.printable !== false);
     const popup = window.open("", "_blank", "width=1100,height=760");
     if (!popup) return;
     popup.document.open();
@@ -95,7 +106,7 @@ export default function DataTable({
   };
 
   const exportPdf = async () => {
-    const exportColumns = columns.filter((column) => column.exportable !== false);
+    const exportColumns = safeColumns.filter((column) => column.exportable !== false);
     const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
       import("jspdf"),
       import("jspdf-autotable"),
@@ -187,55 +198,70 @@ export default function DataTable({
         <table className="cms-table">
           <thead>
             <tr>
-              {columns.map((c) => (
-                <th key={c.key}>{c.label}</th>
+              {safeColumns.map((c, i) => (
+                <th key={c.key || c.label || i}>{c.label}</th>
               ))}
-              <th className="cms-actions-heading">Actions</th>
+              {hasActions ? <th className="cms-actions-heading">Actions</th> : null}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={columns.length + 1}><Loader /></td>
+                <td colSpan={colCount}><Loader /></td>
               </tr>
             ) : pageRows.length === 0 ? (
               <tr>
-                <td colSpan={columns.length + 1}>
+                <td colSpan={colCount}>
                   <div className="cms-empty">{emptyMessage || "No records found for your search."}</div>
                 </td>
               </tr>
             ) : (
-              pageRows.map((row) => (
-                <tr key={row.id}>
-                  {columns.map((c) => (
-                    <td key={c.key} className={c.strong ? "cms-strong" : ""}>
-                      {c.badge ? <StatusBadge value={row[c.key]} /> : c.render ? c.render(row) : row[c.key]}
+              pageRows.map((row, rIdx) => (
+                <tr key={row?.id || row?.key || `row-${rIdx}`}>
+                  {safeColumns.map((c, cIdx) => (
+                    <td key={c.key || c.label || cIdx} className={c.strong ? "cms-strong" : ""}>
+                      {c.badge ? (
+                        <StatusBadge value={row?.[c.key]} />
+                      ) : c.render ? (
+                        (() => {
+                          try {
+                            return c.render(row || {}, rIdx);
+                          } catch (err) {
+                            console.warn("DataTable cell render failed:", err);
+                            return String(row?.[c.key] ?? "—");
+                          }
+                        })()
+                      ) : (
+                        String(row?.[c.key] ?? "—")
+                      )}
                     </td>
                   ))}
-                  <td>
-                    <div className="cms-actions">
-                      {onView ? (
-                        <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
-                          <Eye size={15} />
-                        </button>
-                      ) : null}
-                      {onPrint ? (
-                        <button className="cms-action-btn print" title="Print" aria-label="Print record" onClick={() => onPrint(row)}>
-                          <Printer size={15} />
-                        </button>
-                      ) : null}
-                      {onEdit ? (
-                        <button className="cms-action-btn edit" title="Edit" aria-label="Edit record" onClick={() => onEdit(row)}>
-                          <Pencil size={15} />
-                        </button>
-                      ) : null}
-                      {onDelete ? (
-                        <button className="cms-action-btn danger" title="Delete" aria-label="Delete record" onClick={() => onDelete(row)}>
-                          <Trash2 size={15} />
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
+                  {hasActions ? (
+                    <td>
+                      <div className="cms-actions">
+                        {onView ? (
+                          <button className="cms-action-btn view" title="View" aria-label="View record" onClick={() => onView(row)}>
+                            <Eye size={15} />
+                          </button>
+                        ) : null}
+                        {onPrint ? (
+                          <button className="cms-action-btn print" title="Print" aria-label="Print record" onClick={() => onPrint(row)}>
+                            <Printer size={15} />
+                          </button>
+                        ) : null}
+                        {onEdit ? (
+                          <button className="cms-action-btn edit" title="Edit" aria-label="Edit record" onClick={() => onEdit(row)}>
+                            <Pencil size={15} />
+                          </button>
+                        ) : null}
+                        {onDelete ? (
+                          <button className="cms-action-btn danger" title="Delete" aria-label="Delete record" onClick={() => onDelete(row)}>
+                            <Trash2 size={15} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}
@@ -273,6 +299,3 @@ export default function DataTable({
     </div>
   );
 }
-
-
-

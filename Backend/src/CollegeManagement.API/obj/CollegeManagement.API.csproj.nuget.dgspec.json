@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\ADMIN\\Desktop\\CMS\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {}
+    "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {}
   },
   "projects": {
-    "C:\\Users\\ADMIN\\Desktop\\CMS\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {
+    "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\ADMIN\\Desktop\\CMS\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
+        "projectUniqueName": "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
         "projectName": "CollegeManagement.API",
-        "projectPath": "C:\\Users\\ADMIN\\Desktop\\CMS\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
+        "projectPath": "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
         "packagesPath": "C:\\Users\\ADMIN\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\ADMIN\\Desktop\\CMS\\College-Management-System\\Backend\\src\\CollegeManagement.API\\obj\\",
+        "outputPath": "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\ADMIN\\AppData\\Roaming\\NuGet\\NuGet.Config"

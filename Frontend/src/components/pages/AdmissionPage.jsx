@@ -485,6 +485,15 @@ const steps = [
 
 // The stepper adds a final read-only Preview step after all data steps.
 const allSteps = [...steps, { title: "Preview", fields: [] }];
+const ADMISSION_FORM_STEP_COUNT = 6;
+const FEE_STEP_INDEX = steps.findIndex((section) => section.custom === "fee");
+const PREVIEW_STEP_INDEX = allSteps.length - 1;
+const admissionMainTabs = [
+  { title: "Admission Form", step: 0, icon: ClipboardList },
+  { title: "Fee", step: FEE_STEP_INDEX, icon: IndianRupee },
+  { title: "Preview", step: PREVIEW_STEP_INDEX, icon: Eye },
+];
+const admissionStatusFilterOptions = ["Pending", "Verified", "Approved", "Rejected"];
 
 const stepIcons = {
   Admission: ClipboardList,
@@ -1056,6 +1065,38 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode }) {
   );
 }
 
+function AdmissionFormSections({ sections, values, errors, onChange, onFileChange, onFileRemove, inputRefs }) {
+  return (
+    <div className="cms-admission-form-sections">
+      {sections.map((section) => {
+        const SectionIcon = stepIcons[section.title] || BookOpen;
+        return (
+          <section key={section.title} className="cms-admission-form-section">
+            <div className="cms-admission-section-head">
+              <span className="cms-admission-section-icon"><SectionIcon size={16} /></span>
+              <h3>{section.title === "Admission" ? "Admission Details" : section.title}</h3>
+            </div>
+            <div className={`cms-form-grid ${section.title === "Address" ? "cms-admission-address-grid" : "cols-3"}`}>
+              {section.fields.map((field) => (
+                <AdmissionField
+                  key={field.name}
+                  field={field}
+                  value={values[field.name]}
+                  error={errors[field.name]}
+                  onChange={onChange}
+                  onFileChange={onFileChange}
+                  onFileRemove={onFileRemove}
+                  inputRef={(element) => { inputRefs.current[field.name] = element; }}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function AdmissionField({ field, value, error, onChange, onFileChange, onFileRemove, inputRef }) {
   if (field.type === "select" && field.selectPlaceholder) {
     const normalizedOptions = (field.options || []).map((option) => (
@@ -1483,7 +1524,7 @@ export default function AdmissionPage() {
   const [admissions, setAdmissions] = useState([]);
   const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
-  const [filters, setFilters] = useState({ year: "", group: "" });
+  const [filters, setFilters] = useState({ year: "", group: "", status: "" });
   const [exportOpen, setExportOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [approveTarget, setApproveTarget] = useState(null);
@@ -1518,8 +1559,10 @@ export default function AdmissionPage() {
   const autoLocationRef = useRef({ city: "", district: "", state: "" });
 
   const current = allSteps[step];
+  const isAdmissionFormStep = step < ADMISSION_FORM_STEP_COUNT;
   const isPreview = current.title === "Preview";
   const isFeeStep = current.custom === "fee";
+  const activeMainStep = isAdmissionFormStep ? 0 : isFeeStep ? FEE_STEP_INDEX : PREVIEW_STEP_INDEX;
   const previewAdmissionStatus = normalizeAdmissionStatus(values.status);
   const previewVerifyRecord = useMemo(() => ({
     id: editingAdmissionId,
@@ -1609,6 +1652,10 @@ export default function AdmissionPage() {
     return field;
   };
   const currentFields = current.fields.map(enhanceField);
+  const admissionFormSections = steps.slice(0, ADMISSION_FORM_STEP_COUNT).map((section) => ({
+    ...section,
+    fields: section.fields.map(enhanceField),
+  }));
   const previewSections = steps.map((section) => ({
     ...section,
     fields: section.fields.map(enhanceField),
@@ -1623,9 +1670,10 @@ export default function AdmissionPage() {
       const matchesGroup = !filters.group
         || String(row.values?.group || "") === String(filters.group)
         || String(row.group || "").trim().toLowerCase() === String(optionLabel(groupFilterOptions, filters.group) || filters.group).trim().toLowerCase();
-      return matchesSearch && matchesYear && matchesGroup;
+      const matchesStatus = !filters.status || normalizeAdmissionStatus(row.status) === filters.status;
+      return matchesSearch && matchesYear && matchesGroup && matchesStatus;
     });
-  }, [admissions, filters.group, filters.year, groupFilterOptions, search]);
+  }, [admissions, filters.group, filters.status, filters.year, groupFilterOptions, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -2487,7 +2535,9 @@ export default function AdmissionPage() {
   };
 
   const validateStep = (stepIndex = step) => {
-    const next = validateStepAt(stepIndex);
+    const next = stepIndex < ADMISSION_FORM_STEP_COUNT
+      ? steps.slice(0, ADMISSION_FORM_STEP_COUNT).reduce((all, section) => ({ ...all, ...validateFields(section.fields) }), {})
+      : validateStepAt(stepIndex);
     setErrors(next);
     if (Object.keys(next).length) focusFirstError(next);
     return Object.keys(next).length === 0;
@@ -2516,9 +2566,9 @@ export default function AdmissionPage() {
 
     if (firstInvalidStep !== -1) {
       setErrors(next);
-      setStep(firstInvalidStep);
+      setStep(firstInvalidStep < ADMISSION_FORM_STEP_COUNT ? 0 : firstInvalidStep);
       focusFirstError(next);
-      setToast(`Please complete ${steps[firstInvalidStep].title} before continuing`);
+      setToast(`Please complete ${firstInvalidStep < ADMISSION_FORM_STEP_COUNT ? "Admission Form" : steps[firstInvalidStep].title} before continuing`);
       return false;
     }
     return true;
@@ -2539,7 +2589,7 @@ export default function AdmissionPage() {
   const next = () => {
     if (!validateStep()) return;
     if (step < allSteps.length - 1) {
-      const nextStep = step + 1;
+      const nextStep = step < ADMISSION_FORM_STEP_COUNT ? FEE_STEP_INDEX : step + 1;
       persistAdmissionDraft({ currentStep: nextStep, formData: values, feeSelection });
       setStep(nextStep);
     }
@@ -2561,7 +2611,7 @@ export default function AdmissionPage() {
 
   const backOrCancel = () => {
     if (step !== 0) {
-      const previousStep = step - 1;
+      const previousStep = isPreview ? FEE_STEP_INDEX : 0;
       
       persistAdmissionDraft({ currentStep: previousStep, formData: values, feeSelection });
       setStep(previousStep);
@@ -2572,8 +2622,9 @@ export default function AdmissionPage() {
   };
 
   const editPreviewStep = (targetStep) => {
-    persistAdmissionDraft({ currentStep: targetStep, formData: values, feeSelection });
-    setStep(targetStep);
+    const nextStep = targetStep < ADMISSION_FORM_STEP_COUNT ? 0 : targetStep;
+    persistAdmissionDraft({ currentStep: nextStep, formData: values, feeSelection });
+    setStep(nextStep);
   };
 
   const openAdmissionForm = ({ formValues = {}, targetStep = 0, selection = [], admissionId = "" } = {}) => {
@@ -2924,6 +2975,7 @@ export default function AdmissionPage() {
             <div className="cms-admission-filters">
               <Field field={{ name: "year", label: "Academic Year", type: "select", options: academicYearFilterOptions }} value={filters.year} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
               <Field field={{ name: "group", label: "Group", type: "select", options: groupFilterOptions }} value={filters.group} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
+              <Field field={{ name: "status", label: "Status", type: "select", options: admissionStatusFilterOptions }} value={filters.status} onChange={(name, value) => { setFilters((current) => ({ ...current, [name]: value })); setPage(1); }} />
             </div>
             <div
               className="cms-admission-export-control"
@@ -3089,48 +3141,34 @@ export default function AdmissionPage() {
       subtitle="Multi-step admission form."
       breadcrumb={["People"]}
       actions={(
-        <button type="button" className="cms-btn cms-btn-ghost" onClick={returnToAdmissions}>
-          Back to Admissions
-        </button>
+        <div className="cms-admission-form-actions">
+          <div className="cms-admission-main-tabs" role="tablist" aria-label="Admission form steps">
+            {admissionMainTabs.map((tab) => {
+              const TabIcon = tab.icon;
+              return (
+                <button
+                  key={tab.title}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeMainStep === tab.step}
+                  className={`cms-admission-main-tab ${activeMainStep === tab.step ? "is-active" : ""} ${tab.step < activeMainStep ? "is-done" : ""}`}
+                  onClick={() => goToStep(tab.step)}
+                >
+                  <TabIcon size={14} />
+                  <span>{tab.title}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button type="button" className="cms-btn cms-btn-ghost" onClick={returnToAdmissions}>
+            Back to Admissions
+          </button>
+        </div>
       )}
     >
-      <div
-        ref={stepNavRef}
-        className="cms-steps"
-        style={{
-          display: "flex",
-          flexWrap: "nowrap",
-          overflowX: "auto",
-          overflowY: "hidden",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {allSteps.map((s, i) => {
-          const StepIcon = stepIcons[s.title] || BookOpen;
-          return (
-            <button
-              key={s.title}
-              ref={(element) => { stepButtonRefs.current[i] = element; }}
-              type="button"
-              className={`cms-step ${i === step ? "is-active" : ""} ${i < step ? "is-done" : ""}`}
-              onClick={() => goToStep(i)}
-              style={{ flex: "0 0 auto", whiteSpace: "nowrap" }}
-            >
-              <span
-                className="cms-step-num"
-                style={{ background: "#fff", color: "currentColor", boxShadow: "inset 0 0 0 1px currentColor" }}
-              >
-                <StepIcon size={13} strokeWidth={2.2} aria-hidden="true" />
-              </span>
-              <span className="cms-step-label">{s.title}</span>
-            </button>
-          );
-        })}
-      </div>
-
       <div className="cms-card">
         <div className="cms-card-head">
-          <h2>Step {step + 1} of {allSteps.length} - {current.title}</h2>
+          <h2>{isAdmissionFormStep ? "Admission Form" : current.title}</h2>
         </div>
         <div className="cms-card-body">
           {isPreview ? (
@@ -3154,6 +3192,16 @@ export default function AdmissionPage() {
               scholarships={scholarships}
               feeStructureLoading={feeStructureLoading}
               feeStructureError={feeStructureError}
+            />
+          ) : isAdmissionFormStep ? (
+            <AdmissionFormSections
+              sections={admissionFormSections}
+              values={values}
+              errors={errors}
+              onChange={setValue}
+              onFileChange={setFileValue}
+              onFileRemove={removeFileValue}
+              inputRefs={fileInputRefs}
             />
           ) : (
             <div className={`cms-form-grid ${current.title === "Address" ? "cms-admission-address-grid" : "cols-3"}`}>

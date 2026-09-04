@@ -180,8 +180,8 @@ namespace CollegeManagement.API.Repositories.Implementations
                     p_Department = faculty.Department,
                     p_JoiningDate = faculty.JoiningDate,
                     p_Experience = faculty.Experience,
-                    p_Username = faculty.Username,
-                    p_Password = faculty.Password,
+                    p_Username = faculty.Email,
+                    p_Password = "",
                     p_Status = faculty.Status,
                     p_PhotoPath = faculty.PhotoPath
                 },

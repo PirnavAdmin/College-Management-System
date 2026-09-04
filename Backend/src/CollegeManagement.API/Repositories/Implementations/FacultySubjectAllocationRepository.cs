@@ -77,12 +77,12 @@ namespace CollegeManagement.API.Repositories.Implementations
                 new
                 {
                     p_FacultyId = allocation.FacultyId,
-                    p_Board = allocation.Board,
-                    p_AcademicYear = allocation.AcademicYear,
-                    p_Group = allocation.Group,
-                    p_AcademicLevel = allocation.AcademicLevel,
-                    p_Section = allocation.Section,
-                    p_Subject = allocation.Subject
+                    p_Board = "", // allocation.Board,
+                    p_AcademicYear = "", // allocation.AcademicYear,
+                    p_Group = "", // allocation.Group,
+                    p_AcademicLevel = "", // allocation.AcademicLevel,
+                    p_Section = "", // allocation.Section,
+                    p_Subject = "", // allocation.Subject
                 },
                 commandType: CommandType.StoredProcedure);
 
@@ -97,12 +97,12 @@ namespace CollegeManagement.API.Repositories.Implementations
                 new
                 {
                     p_Id = allocation.Id,
-                    p_Board = allocation.Board,
-                    p_AcademicYear = allocation.AcademicYear,
-                    p_Group = allocation.Group,
-                    p_AcademicLevel = allocation.AcademicLevel,
-                    p_Section = allocation.Section,
-                    p_Subject = allocation.Subject
+                    p_Board = "", // allocation.Board,
+                    p_AcademicYear = "", // allocation.AcademicYear,
+                    p_Group = "", // allocation.Group,
+                    p_AcademicLevel = "", // allocation.AcademicLevel,
+                    p_Section = "", // allocation.Section,
+                    p_Subject = "", // allocation.Subject
                 },
                 commandType: CommandType.StoredProcedure);
         }

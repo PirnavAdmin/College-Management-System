@@ -22,7 +22,19 @@ namespace CollegeManagement.API.DTOs.Board.Responses
 
         public string AcademicPatternName { get; set; } = string.Empty;
 
+        public List<int> AcademicLevelIds { get; set; } = [];
+
+        public List<string> AcademicLevelNames { get; set; } = [];
+
+        public List<string> AcademicLevels { get; set; } = [];
+
+        public string AcademicLevelsText { get; set; } = string.Empty;
+
+        public string AcademicLevel { get; set; } = string.Empty;
+
         public bool Status { get; set; }
+
+        public uint RowVersion { get; set; }
 
         public DateTime CreatedDate { get; set; }
     }

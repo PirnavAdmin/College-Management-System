@@ -1,29 +1,36 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {}
+    "C:\\Users\\ADMIN\\Desktop\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {}
   },
   "projects": {
-    "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {
+    "C:\\Users\\ADMIN\\Desktop\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
+        "projectUniqueName": "C:\\Users\\ADMIN\\Desktop\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
         "projectName": "CollegeManagement.API",
-        "projectPath": "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
+        "projectPath": "C:\\Users\\ADMIN\\Desktop\\College-Management-System\\Backend\\src\\CollegeManagement.API\\CollegeManagement.API.csproj",
         "packagesPath": "C:\\Users\\ADMIN\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\ADMIN\\Documents\\GitHub\\College-Management-System\\Backend\\src\\CollegeManagement.API\\obj\\",
+        "outputPath": "C:\\Users\\ADMIN\\Desktop\\College-Management-System\\Backend\\src\\CollegeManagement.API\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
-          "C:\\Users\\ADMIN\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\ADMIN\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
           "net8.0": {
+            "framework": "net8.0",
             "targetAlias": "net8.0",
             "projectReferences": {}
           }
@@ -37,10 +44,12 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        }
+        },
+        "SdkAnalysisLevel": "10.0.400"
       },
       "frameworks": {
         "net8.0": {
+          "framework": "net8.0",
           "targetAlias": "net8.0",
           "dependencies": {
             "Asp.Versioning.Mvc.ApiExplorer": {
@@ -54,6 +63,10 @@
             "BCrypt.Net-Next": {
               "target": "Package",
               "version": "[4.2.0, )"
+            },
+            "ClosedXML": {
+              "target": "Package",
+              "version": "[0.105.0, )"
             },
             "Dapper": {
               "target": "Package",
@@ -91,6 +104,10 @@
               "target": "Package",
               "version": "[8.0.13, )"
             },
+            "MiniExcel": {
+              "target": "Package",
+              "version": "[1.45.0, )"
+            },
             "MySqlConnector": {
               "target": "Package",
               "version": "[2.6.1, )"
@@ -98,6 +115,10 @@
             "Pomelo.EntityFrameworkCore.MySql": {
               "target": "Package",
               "version": "[8.0.2, )"
+            },
+            "QuestPDF": {
+              "target": "Package",
+              "version": "[2025.7.4, )"
             },
             "Swashbuckle.AspNetCore": {
               "target": "Package",
@@ -123,7 +144,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.424/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.400/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

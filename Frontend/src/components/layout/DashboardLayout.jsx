@@ -58,9 +58,10 @@ export const menu = [
     items: [
       { to: "/dashboard/timetable", label: "Timetable", icon: timetableIcon },
       { to: "/dashboard/attendance", label: "Attendance", icon: attendanceIcon, children: [
-        { to: "/dashboard/attendance/student", label: "Student", icon: studentsIcon },
-        { to: "/dashboard/attendance/staff", label: "Staff", icon: staffIcon },
+        { to: "/dashboard/attendance/student", label: "Student Attendance", icon: studentsIcon },
+        { to: "/dashboard/attendance/staff", label: "Staff Attendance", icon: staffIcon },
       ] },
+      { to: "/dashboard/leave-management", label: "Leave Management", icon: staffIcon },
     ],
   },
   {

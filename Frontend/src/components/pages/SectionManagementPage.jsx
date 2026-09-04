@@ -1,43 +1,302 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Plus, Search, X, CheckCircle2, Pencil, Trash2 } from "lucide-react";
-import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Eye,
+  Plus,
+  Search,
+  X,
+  CheckCircle2,
+  Pencil,
+  Trash2,
+  ArrowLeft,
+  ChevronDown,
+  Building2,
+  Layers,
+  Download,
+} from "lucide-react";
+import * as XLSX from "xlsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
+import DashboardLayout from "../layout/DashboardLayout";
 import "./SectionManagementPage.css";
 
 const PAGE_SIZE = 5;
-const EMPTY = {
-  boardId: "",
-  academicYearId: "",
-  academicLevelId: "",
-  groupId: "",
-  groupProgramId: "",
-  programId: "",
-  roomId: "",
-  classTeacherId: "",
-  board: "",
-  academicYear: "",
-  group: "",
-  program: "",
-  academicLevel: "",
-  name: "",
-  room: "",
-  teacher: "",
-  strength: "",
-  status: "",
-  rowVersion: null,
+const BULK_ROOM_PAGE_SIZE = 5;
+const normalizeId = (value) => String(value ?? "");
+const isActiveRecord = (item) =>
+  item?.isActive === true ||
+  item?.status === true ||
+  String(item?.status ?? "").toLowerCase() === "active" ||
+  String(item?.status ?? "").toLowerCase() === "true";
+
+const unwrapList = (response) => {
+  const payload = response?.data;
+  if (Array.isArray(payload)) return payload;
+  for (const key of ["data", "items", "records", "results"]) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  return [];
 };
-const EMPTY_ROOM = {
-  roomCode: "",
-  roomName: "",
-  capacity: "",
-  roomType: "",
-  building: "",
-  floor: "",
-  isActive: "",
+
+const normalizeBoard = (item) => ({
+  ...item,
+  id: normalizeId(item.boardId ?? item.id),
+  name: item.boardName ?? item.name ?? "",
+  code: item.boardCode ?? item.code ?? "",
+  academicLevelIds: Array.isArray(item.academicLevelIds) ? item.academicLevelIds : [],
+  academicLevelNames: Array.isArray(item.academicLevelNames)
+    ? item.academicLevelNames
+    : Array.isArray(item.academicLevels)
+      ? item.academicLevels
+      : [],
+  isActive: isActiveRecord(item),
+});
+
+const normalizeYear = (item) => ({
+  ...item,
+  id: normalizeId(item.academicYearId ?? item.id),
+  boardId: normalizeId(item.boardId),
+  name: item.academicYearName ?? item.name ?? "",
+  isActive: isActiveRecord(item),
+});
+
+const normalizeLevel = (item) => ({
+  ...item,
+  id: normalizeId(item.academicLevelId ?? item.id),
+  name: item.academicLevelName ?? item.levelName ?? item.yearOfStudy ?? item.name ?? "",
+  isActive: isActiveRecord(item),
+});
+
+const normalizeGroup = (item) => ({
+  ...item,
+  id: normalizeId(item.groupId ?? item.id),
+  boardId: normalizeId(item.boardId),
+  academicYearId: normalizeId(item.academicYearId),
+  academicLevelId: normalizeId(item.academicLevelId),
+  name: item.groupName ?? item.name ?? "",
+  code: item.groupCode ?? item.code ?? "",
+  isActive: isActiveRecord(item),
+});
+
+const normalizeProgram = (item) => ({
+  ...item,
+  id: normalizeId(item.programId ?? item.id),
+  programId: normalizeId(item.programId ?? item.id),
+  groupProgramId: normalizeId(item.groupProgramId ?? item.programId ?? item.id),
+  groupId: normalizeId(item.groupId),
+  name: item.programName ?? item.name ?? "",
+  code: item.programCode ?? item.code ?? "",
+  isActive: isActiveRecord(item),
+});
+
+const normalizeTeacher = (item) => ({
+  ...item,
+  id: normalizeId(item.staffId ?? item.facultyId ?? item.id ?? item.userId ?? (Number.isFinite(Number(item.employeeId)) ? item.employeeId : "")),
+  name: item.staffName ?? item.facultyName ?? item.fullName ?? item.name ?? item.employeeName ?? "",
+  employeeId: item.employeeId ?? item.employeeCode ?? "",
+  isActive: (item.isActive !== undefined || item.status !== undefined) ? isActiveRecord(item) : true,
+  staffType: item.staffType ?? item.type ?? "Teaching",
+});
+
+const normalizeRoom = (item) => ({
+  ...item,
+  id: normalizeId(item.roomId ?? item.id),
+  roomNo: item.roomNumber ?? item.roomNo ?? item.roomCode ?? item.name ?? "",
+  capacity: item.capacity ?? 0,
+  roomType: item.roomType ?? "",
+  building: item.buildingName ?? item.blockName ?? item.building ?? item.block ?? "",
+  floor: item.floor ?? "",
+  isActive: isActiveRecord(item),
+  status: isActiveRecord(item) ? "Active" : "Inactive",
+});
+
+const normalizeSection = (item) => ({
+  ...item,
+  id: normalizeId(item.sectionId ?? item.id),
+  boardId: normalizeId(item.boardId),
+  board: item.boardName ?? item.board ?? "",
+  boardCode: item.boardCode ?? "",
+  academicYearId: normalizeId(item.academicYearId),
+  academicYear: item.academicYearName ?? item.academicYear ?? "",
+  academicLevelId: normalizeId(item.academicLevelId),
+  academicLevel: item.academicLevelName ?? item.academicLevel ?? item.levelName ?? item.yearOfStudy ?? "",
+  groupId: normalizeId(item.groupId),
+  group: item.groupName ?? item.group ?? "",
+  groupProgramId: normalizeId(item.groupProgramId),
+  programId: normalizeId(item.programId),
+  program: item.programName ?? item.program ?? item.programme ?? "",
+  name: item.sectionName ?? item.name ?? "",
+  roomId: normalizeId(item.roomId),
+  roomNo: item.roomNumber ?? item.roomName ?? item.room ?? "",
+  classTeacherId: normalizeId(item.inchargeId ?? item.classTeacherId ?? item.teacherId ?? item.facultyId),
+  teacher: item.inchargeName ?? item.classTeacherName ?? item.facultyName ?? item.teacher ?? item.incharge ?? "",
+  strength: item.maximumStrength ?? item.strength ?? item.capacity ?? 0,
+  isActive: isActiveRecord(item),
+  status: isActiveRecord(item) ? "Active" : "Inactive",
+  createdAt: item.createdAt,
+  updatedAt: item.updatedAt,
+});
+
+const ROOM_ENDPOINTS = {
+  create: "/api/v1/rooms",
+  update: (id) => `/api/v1/rooms/${id}`,
+  delete: (id) => `/api/v1/rooms/${id}`,
+  bulk: "/api/v1/rooms/bulk",
 };
-const EMPTY_FILTERS = { board: "", academicYear: "", academicLevel: "" };
-const EMPTY_ROOM_FILTERS = { building: "", floor: "", roomType: "" };
+const SECTION_BULK_ENDPOINT = "/api/v1/Sections/bulk";
+
+const sectionPayload = (form, context = form) => {
+  const program = context.program;
+  const teacherId = form.classTeacherId ? Number(form.classTeacherId) : null;
+  const groupProgramId = program?.groupProgramId
+    ? Number(program.groupProgramId)
+    : context.groupProgramId
+      ? Number(context.groupProgramId)
+      : null;
+  return {
+    boardId: Number(context.boardId),
+    academicYearId: Number(context.academicYearId),
+    academicLevelId: Number(context.academicLevelId),
+    groupId: Number(context.groupId),
+    groupProgramId: groupProgramId,
+    programId: Number(program?.programId ?? context.programId),
+    sectionName: form.name.trim(),
+    name: form.name.trim(),
+    roomId: Number(form.roomId),
+    inchargeId: teacherId,
+    classTeacherId: teacherId,
+    teacherId: teacherId,
+    maximumStrength: Number(form.strength),
+    strength: Number(form.strength),
+    isActive: form.status === "Active",
+    status: form.status,
+  };
+};
+
+const roomPayload = (form) => ({
+  roomNumber: form.roomNo.trim(),
+  roomNo: form.roomNo.trim(),
+  capacity: Number(form.capacity),
+  roomType: form.roomType,
+  building: form.building.trim(),
+  floor: String(form.floor).trim(),
+  isActive: form.isActive === "Active",
+});
+
+const sanitizeExcelCell = (value) => {
+  if (typeof value !== "string") return Number.isNaN(value) ? 0 : value;
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+};
+
+const getRoomAllocationDetails = (rooms, sections) =>
+  rooms.map((room) => {
+    const section = sections.find(
+      (item) => item.status === "Active" && normalizeId(item.roomId) === normalizeId(room.id)
+    );
+    const eligible = room.isActive && room.roomType === "Classroom";
+    return {
+      room,
+      section,
+      allocationStatus: !room.isActive
+        ? "Inactive"
+        : room.roomType !== "Classroom"
+          ? "Not Eligible for Section"
+          : section
+            ? "Allocated"
+            : "Available",
+      remainingCapacity: eligible ? Math.max(0, Number(room.capacity || 0) - Number(section?.strength || 0)) : 0,
+    };
+  });
+
+const buildFeasibilitySummaryRows = (rooms, sections) => {
+  const details = getRoomAllocationDetails(rooms, sections);
+  const activeClassrooms = details.filter((item) => item.room.isActive && item.room.roomType === "Classroom");
+  const allocated = activeClassrooms.filter((item) => item.section);
+  const available = activeClassrooms.filter((item) => !item.section);
+  const sumCapacity = (items) => items.reduce((sum, item) => sum + Number(item.room.capacity || 0), 0);
+  const rows = [
+    ["Total Rooms", rooms.length, sumCapacity(details)],
+    ["Active Rooms", details.filter((item) => item.room.isActive).length, sumCapacity(details.filter((item) => item.room.isActive))],
+    ["Active Classrooms", activeClassrooms.length, sumCapacity(activeClassrooms)],
+    ["Allocated Active Classrooms", allocated.length, sumCapacity(allocated)],
+    ["Available Active Classrooms", available.length, sumCapacity(available)],
+    ["Inactive Rooms", details.filter((item) => !item.room.isActive).length, sumCapacity(details.filter((item) => !item.room.isActive))],
+    ["Total Active Classroom Capacity", activeClassrooms.length, sumCapacity(activeClassrooms)],
+    ["Allocated Section Strength", allocated.length, allocated.reduce((sum, item) => sum + Number(item.section?.strength || 0), 0)],
+    ["Remaining Available Classroom Capacity", available.length, sumCapacity(available)],
+  ];
+  return rows.map(([Metric, Count, total]) => ({ Metric, Count, "Total Capacity": total }));
+};
+
+const buildRoomAvailabilityRows = (rooms, sections, resolveSection) =>
+  getRoomAllocationDetails(rooms, sections).map((item, index) => {
+    const detail = item.section ? resolveSection(item.section) : null;
+    return {
+      "S.No": index + 1,
+      "Room No": sanitizeExcelCell(item.room.roomNo),
+      Building: sanitizeExcelCell(item.room.building),
+      Floor: sanitizeExcelCell(item.room.floor),
+      "Room Type": sanitizeExcelCell(item.room.roomType),
+      "Room Capacity": Number(item.room.capacity || 0),
+      "Room Status": item.room.isActive ? "Active" : "Inactive",
+      "Allocation Status": item.allocationStatus,
+      "Allocated Section": sanitizeExcelCell(item.section?.name || "—"),
+      Group: sanitizeExcelCell(detail?.groupName || "—"),
+      Program: sanitizeExcelCell(detail?.programName || "—"),
+      "Academic Level": sanitizeExcelCell(detail?.academicLevelName || "—"),
+      "Section Strength": Number(item.section?.strength || 0),
+      "Remaining Capacity": item.remainingCapacity,
+    };
+  });
+
+const buildSectionAllocationRows = (sections, rooms, resolveSection) =>
+  sections.map((section, index) => {
+    const detail = resolveSection(section);
+    const room = rooms.find((item) => normalizeId(item.id) === normalizeId(section.roomId));
+    return {
+      "S.No": index + 1,
+      "Section Name": sanitizeExcelCell(section.name),
+      Board: sanitizeExcelCell(detail.boardName),
+      "Board Code": sanitizeExcelCell(detail.boardCode),
+      "Academic Year": sanitizeExcelCell(detail.academicYearName),
+      Group: sanitizeExcelCell(detail.groupName),
+      Program: sanitizeExcelCell(detail.programName),
+      "Academic Level": sanitizeExcelCell(detail.academicLevelName),
+      "Room No": sanitizeExcelCell(detail.roomNo),
+      "Room Capacity": Number(room?.capacity || 0),
+      "Section Strength": Number(section.strength || 0),
+      "Remaining Room Capacity": Math.max(0, Number(room?.capacity || 0) - Number(section.strength || 0)),
+      Incharge: sanitizeExcelCell(detail.teacherName),
+      "Section Status": section.status,
+      "Created At": sanitizeExcelCell(section.createdAt || "—"),
+      "Updated At": sanitizeExcelCell(section.updatedAt || "—"),
+    };
+  });
+
+const autoSizeSheet = (sheet, rows) => {
+  const keys = Object.keys(rows[0] || {});
+  sheet["!cols"] = keys.map((key) => ({
+    wch: Math.min(36, Math.max(key.length + 2, ...rows.map((row) => String(row[key] ?? "").length + 2))),
+  }));
+};
+
+const downloadAllocationWorkbook = (rooms, sections, resolveSection) => {
+  const workbook = XLSX.utils.book_new();
+  const datasets = [
+    ["Feasibility Summary", buildFeasibilitySummaryRows(rooms, sections)],
+    ["Room Availability", buildRoomAvailabilityRows(rooms, sections, resolveSection)],
+    ["Section Allocations", buildSectionAllocationRows(sections, rooms, resolveSection)],
+  ];
+  datasets.forEach(([name, rows]) => {
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    autoSizeSheet(sheet, rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, name);
+  });
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  XLSX.writeFile(workbook, `Section_Room_Allocation_Feasibility_${date}.xlsx`);
+};
+
+// ---------- DATASETS ----------
 const ROOM_TYPES = [
   "Classroom",
   "Laboratory",
@@ -48,2113 +307,2481 @@ const ROOM_TYPES = [
   "Staff Room",
   "Other",
 ];
-const label = (room) => room.roomCode;
-const normalizeSectionName = (name) => name.trim().replace(/\s+/g, " ");
-const normalizeRoomCode = (code) =>
-  String(code ?? "")
-    .trim()
-    .replace(/\s+/g, " ");
-const normalizedValue = (value) =>
-  String(value ?? "")
-    .trim()
-    .toLowerCase();
-const roomCodesMatch = (first, second) =>
-  normalizeRoomCode(first).toLowerCase() === normalizeRoomCode(second).toLowerCase();
-const firstNonEmpty = (...values) =>
-  values.find((value) => value != null && String(value).trim() !== "") ?? "";
-const collectionFrom = (data) => {
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.data)) return data.data;
-  if (Array.isArray(data?.data?.items)) return data.data.items;
-  if (Array.isArray(data?.result)) return data.result;
-  return [];
+
+const EMPTY_BULK_ROOM_FORM = {
+  building: "",
+  floor: "",
+  startRoomNo: "",
+  roomCount: "",
+  defaultCapacity: "",
+  defaultRoomType: "",
+  isActive: "Active",
 };
-const activeValue = (value) => {
-  if (value === true || value === 1) return true;
-  if (value === false || value === 0 || value == null) return false;
-  const normalized = String(value).trim().toLowerCase();
-  return normalized === "true" || normalized === "1" || normalized === "active";
+
+const parseRoomNumberSequence = (value) => {
+  const trimmed = String(value || "").trim();
+  const match = trimmed.match(/^(.*?)(\d+)$/);
+  return match ? { prefix: match[1], start: Number(match[2]), padding: match[2].length } : null;
 };
-const normalizeActive = (item) => activeValue(firstNonEmpty(item?.isActive, item?.status));
-const isActiveRecord = (item) => normalizeActive(item);
-const positiveId = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
-const groupProgramKey = (groupId, programId) => `${String(groupId)}:${String(programId)}`;
-const dedupeBy = (items, keyOf) => [
-  ...new Map(items.filter((item) => keyOf(item)).map((item) => [keyOf(item), item])).values(),
-];
-const normalizeBoard = (item) => ({
-  id: String(item.boardId ?? item.id ?? ""),
-  name: firstNonEmpty(item.boardName, item.name),
-  code: firstNonEmpty(item.boardCode, item.code),
-  isActive: normalizeActive(item),
-});
-const normalizeAcademicYear = (item) => ({
-  id: String(item.academicYearId ?? item.id ?? ""),
-  boardId: item.boardId == null ? null : String(item.boardId),
-  name: firstNonEmpty(item.academicYearName, item.yearName, item.name),
-  startDate: item.startDate ?? "",
-  endDate: item.endDate ?? "",
-  isActive: normalizeActive(item),
-});
-const normalizeAcademicLevel = (item) => ({
-  id: String(item.academicLevelId ?? item.id ?? ""),
-  name: firstNonEmpty(item.levelName, item.academicLevelName, item.name),
-});
-const normalizeGroup = (item) => ({
-  id: String(item.groupId ?? item.id ?? ""),
-  boardId: item.boardId == null ? null : String(item.boardId),
-  name: firstNonEmpty(item.groupName, item.name),
-  code: firstNonEmpty(item.groupCode, item.code),
-  isActive: normalizeActive(item),
-});
-const normalizeProgram = (item, fallbackGroupId = "") => ({
-  groupProgramId: String(item.groupProgramId ?? item.groupProgrammeId ?? ""),
-  programId: String(item.programId ?? item.programmeId ?? item.id ?? ""),
-  groupId: String(item.groupId ?? fallbackGroupId ?? ""),
-  name: firstNonEmpty(item.programName, item.programmeName, item.name),
-  code: firstNonEmpty(item.programCode, item.code),
-  isActive: normalizeActive(item),
-});
-const normalizeRoom = (room) => ({
-  ...room,
-  id: room.roomId ?? room.id,
-  roomCode: firstNonEmpty(room.roomCode, room.roomNumber),
-  roomName: firstNonEmpty(room.roomName),
-  capacity: room.capacity ?? 0,
-  roomType: room.roomType ?? "",
-  building: room.building ?? room.buildingName ?? "",
-  floor: String(room.floor ?? ""),
-  isActive: normalizeActive(room),
-  rowVersion: room.rowVersion,
-});
-const normalizeTeacher = (item) => ({
-  id: String(
-    item.staffId ?? item.classTeacherId ?? item.teacherId ?? item.facultyId ?? item.id ?? "",
-  ),
-  employeeId: String(item.employeeId ?? item.employeeCode ?? ""),
-  name: firstNonEmpty(
-    item.fullName,
-    item.staffName,
-    item.teacherName,
-    `${item.firstName || ""} ${item.lastName || ""}`.trim(),
-  ),
-  staffType: firstNonEmpty(item.staffType, item.facultyType, "Teaching"),
-  isActive: normalizeActive({ isActive: item.isActive ?? item.status ?? true }),
-});
-const normalizeSection = (section) => {
-  const active = normalizeActive(section);
+
+const generateRoomNumbers = (startRoomNo, count) => {
+  const sequence = parseRoomNumberSequence(startRoomNo);
+  if (!sequence || !Number.isInteger(count) || count < 1 || count > 100) return [];
+  return Array.from({ length: count }, (_, index) => `${sequence.prefix}${String(sequence.start + index).padStart(sequence.padding, "0")}`);
+};
+
+const reconcileBulkRoomAllocations = (current, form) =>
+  generateRoomNumbers(form.startRoomNo, Number(form.roomCount)).map((roomNo, index) => ({
+    key: current[index]?.key || `bulk-room-${index + 1}`,
+    roomNo,
+    capacity: current[index]?.capacity || String(form.defaultCapacity || ""),
+    roomType: current[index]?.roomType || form.defaultRoomType || "",
+  }));
+
+const validateBulkRoomAllocations = (allocations, rooms, expectedCount) => {
+  const errors = {};
+  const seen = new Set();
+  const existing = new Set(rooms.map((room) => room.roomNo.trim().toLowerCase()));
+  if (allocations.length !== expectedCount) errors.bulk = "Prepare all Room Allocation Preview rows before creating Rooms.";
+  allocations.forEach((allocation, index) => {
+    const roomNo = allocation.roomNo.trim();
+    const normalizedRoomNo = roomNo.toLowerCase();
+    const capacity = Number(allocation.capacity);
+    if (!parseRoomNumberSequence(roomNo)) errors[`bulk_roomNo_${index}`] = "Generated Room Number is invalid.";
+    else if (seen.has(normalizedRoomNo)) errors[`bulk_roomNo_${index}`] = "Duplicate Room Number in preview.";
+    else if (existing.has(normalizedRoomNo)) errors[`bulk_roomNo_${index}`] = `Room No "${roomNo}" already exists.`;
+    seen.add(normalizedRoomNo);
+    if (!String(allocation.capacity).trim() || !Number.isInteger(capacity) || capacity < 1 || capacity > 1000) errors[`bulk_capacity_${index}`] = "Capacity must be an integer from 1 to 1000.";
+    if (!ROOM_TYPES.includes(allocation.roomType)) errors[`bulk_roomType_${index}`] = "Room Type is required.";
+  });
+  return errors;
+};
+
+const calculateBulkRoomFeasibility = (allocations, requested) => {
+  const valid = allocations.filter(
+    (row) =>
+      parseRoomNumberSequence(row.roomNo) &&
+      Number.isInteger(Number(row.capacity)) &&
+      Number(row.capacity) > 0 &&
+      Number(row.capacity) <= 1000 &&
+      ROOM_TYPES.includes(row.roomType)
+  );
+  const countType = (type) => allocations.filter((row) => row.roomType === type).length;
+  const summarized = ["Classroom", "Library", "Laboratory", "Computer Lab"];
   return {
-    ...section,
-    id: section.sectionId ?? section.id,
-    boardId: section.boardId ?? "",
-    board: firstNonEmpty(section.boardName, section.board),
-    boardCode: firstNonEmpty(section.boardCode, section.code),
-    academicYearId: section.academicYearId ?? "",
-    academicYear: firstNonEmpty(section.academicYearName, section.academicYear, section.yearName),
-    academicLevelId: section.academicLevelId ?? section.yearOfStudyId ?? "",
-    academicLevel: firstNonEmpty(
-      section.academicLevelName,
-      section.levelName,
-      section.academicLevel,
-      section.yearOfStudy,
-    ),
-    groupId: section.groupId ?? "",
-    group: firstNonEmpty(section.groupName, section.group),
-    groupProgramId: section.groupProgramId ?? section.groupProgrammeId ?? "",
-    programId: section.programId ?? section.programmeId ?? "",
-    program: firstNonEmpty(
-      section.programName,
-      section.programmeName,
-      section.programme,
-      section.program,
-    ),
-    roomId: section.roomId ?? "",
-    room: firstNonEmpty(section.roomName, section.roomNumber, section.roomCode, section.room),
-    roomNumber: firstNonEmpty(section.roomNumber, section.roomCode),
-    classTeacherId:
-      section.classTeacherId ?? section.teacherId ?? section.facultyId ?? section.inchargeId ?? "",
-    teacher: firstNonEmpty(
-      section.classTeacherName,
-      section.inchargeName,
-      section.facultyName,
-      section.teacherName,
-      section.teacher,
-      section.incharge,
-    ),
-    name: firstNonEmpty(section.sectionName, section.name),
-    strength: section.maximumStrength ?? section.strength ?? section.capacity ?? "",
-    status: active ? "Active" : "Inactive",
-    createdAt: section.createdAt ?? "",
-    updatedAt: section.updatedAt ?? "",
-    rowVersion: section.rowVersion,
+    requested: Number.isInteger(Number(requested)) ? Number(requested) : 0,
+    configured: valid.length,
+    totalCapacity: valid.reduce((sum, row) => sum + Number(row.capacity), 0),
+    classroom: countType("Classroom"),
+    library: countType("Library"),
+    laboratory: countType("Laboratory"),
+    computerLab: countType("Computer Lab"),
+    other: allocations.filter((row) => row.roomType && !summarized.includes(row.roomType)).length,
+    incomplete: allocations.length - valid.length,
   };
 };
 
+let searchableSelectCounter = 0;
+
 export const pageConfig = {
   title: "Section Management",
-  subtitle: "Manage academic sections, classrooms and Incharge assignments.",
+  subtitle: "Manage academic sections, classrooms and teacher assignments.",
   breadcrumb: ["Academics"],
 };
 
+// ---------- CUSTOM SEARCHABLE SELECT DROPDOWN ----------
+function SearchableSelect({
+  value,
+  onChange,
+  options = [],
+  placeholder = "Select...",
+  disabled = false,
+  emptyText = "No matching options",
+  showSearch = true,
+  hasError = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const containerRef = useRef(null);
+  const listboxId = useRef(`section-select-${++searchableSelectCounter}`).current;
+
+  const normalizedOptions = useMemo(() => {
+    return options.map((opt) =>
+      typeof opt === "object" && opt !== null
+        ? { value: String(opt.value), label: String(opt.label) }
+        : { value: String(opt), label: String(opt) }
+    );
+  }, [options]);
+
+  const selectedOption = useMemo(() => {
+    return normalizedOptions.find((opt) => opt.value === String(value));
+  }, [normalizedOptions, value]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchQuery.trim()) return normalizedOptions;
+    const q = searchQuery.trim().toLowerCase();
+    return normalizedOptions.filter((opt) => opt.label.toLowerCase().includes(q));
+  }, [normalizedOptions, searchQuery]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearchQuery("");
+      }
+    };
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setSearchQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setHighlightedIndex(filteredOptions.length ? 0 : -1);
+  }, [filteredOptions]);
+
+  const handleKeyboard = (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) return setOpen(true);
+      if (!filteredOptions.length) return;
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setHighlightedIndex((current) => (current + step + filteredOptions.length) % filteredOptions.length);
+    } else if (event.key === "Enter" && open && highlightedIndex >= 0) {
+      event.preventDefault();
+      onChange(filteredOptions[highlightedIndex].value);
+      setOpen(false);
+      setSearchQuery("");
+    } else if (event.key === "Escape") {
+      setOpen(false);
+      setSearchQuery("");
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={`cms-searchable-select ${disabled ? "is-disabled" : ""} ${open ? "is-open" : ""} ${hasError ? "has-error" : ""}`}
+    >
+      <button
+        type="button"
+        className="cms-searchable-select-trigger"
+        role="combobox"
+        aria-label={placeholder}
+        aria-expanded={open}
+        aria-controls={listboxId}
+        disabled={disabled}
+        onKeyDown={handleKeyboard}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((prev) => !prev);
+            setSearchQuery("");
+          }
+        }}
+      >
+        <span className="cms-searchable-select-label" title={selectedOption?.label || ""}>
+          {selectedOption ? selectedOption.label : placeholder}
+        </span>
+        <ChevronDown size={14} className="cms-select-arrow" />
+      </button>
+      {open && (
+        <div className="cms-searchable-select-menu">
+          {showSearch && (
+            <div className="cms-searchable-select-search">
+              <Search size={14} />
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyboard}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="cms-search-clear-btn"
+                  onClick={() => setSearchQuery("")}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="cms-searchable-select-options" id={listboxId} role="listbox">
+            <button
+              type="button"
+              className={`cms-select-option ${!value ? "is-selected" : ""}`}
+              role="option"
+              aria-selected={!value}
+              title={placeholder}
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+            >
+              {placeholder}
+            </button>
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((opt, index) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`cms-select-option ${String(value) === opt.value ? "is-selected" : ""} ${highlightedIndex === index ? "is-highlighted" : ""}`}
+                  role="option"
+                  aria-selected={String(value) === opt.value}
+                  title={opt.label}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                    setSearchQuery("");
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))
+            ) : (
+              <div className="cms-select-empty">{emptyText}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BulkRoomAllocationPreview({ allocations, requested, errors, onChange, page, setPage }) {
+  const summary = calculateBulkRoomFeasibility(allocations, requested);
+  if (!allocations.length) return null;
+  const totalPages = Math.max(1, Math.ceil(allocations.length / BULK_ROOM_PAGE_SIZE));
+  const start = (page - 1) * BULK_ROOM_PAGE_SIZE;
+  const shownAllocations = allocations.slice(start, start + BULK_ROOM_PAGE_SIZE);
+  return (
+    <section className="cms-bulk-room-preview">
+      <div className="cms-bulk-room-preview-head">
+        <strong>Room Allocation Preview ({allocations.length})</strong>
+      </div>
+      <div className="cms-bulk-room-summary">
+        <span>Rooms Requested <strong>{summary.requested}</strong></span>
+        <span>Rooms Configured <strong>{summary.configured}</strong></span>
+        <span>Total Planned Capacity <strong>{summary.totalCapacity}</strong></span>
+        <span>Classrooms <strong>{summary.classroom}</strong></span>
+        <span>Libraries <strong>{summary.library}</strong></span>
+        <span>Laboratories <strong>{summary.laboratory}</strong></span>
+        <span>Computer Labs <strong>{summary.computerLab}</strong></span>
+        <span>Other Types <strong>{summary.other}</strong></span>
+        <span>Invalid / Incomplete <strong>{summary.incomplete}</strong></span>
+      </div>
+      <div className="cms-bulk-room-allocation-list">
+        {shownAllocations.map((allocation, pageIndex) => {
+          const originalIndex = start + pageIndex;
+          return (
+            <div className="cms-bulk-room-allocation-row" key={allocation.key}>
+              <span className="cms-bulk-room-index">{originalIndex + 1}</span>
+              <div className="cms-field">
+                <label>Room Number</label>
+                <input value={allocation.roomNo} readOnly title={allocation.roomNo} />
+                {errors[`bulk_roomNo_${originalIndex}`] && <span className="cms-field-error">{errors[`bulk_roomNo_${originalIndex}`]}</span>}
+              </div>
+              <div className="cms-field">
+                <label>Capacity *</label>
+                <input type="number" min="1" max="1000" step="1" value={allocation.capacity} placeholder="e.g. 40" onChange={(event) => onChange(originalIndex, "capacity", event.target.value)} />
+                {errors[`bulk_capacity_${originalIndex}`] && <span className="cms-field-error">{errors[`bulk_capacity_${originalIndex}`]}</span>}
+              </div>
+              <div className="cms-field">
+                <label>Room Type *</label>
+                <SearchableSelect value={allocation.roomType} onChange={(value) => onChange(originalIndex, "roomType", value)} options={ROOM_TYPES} placeholder="Select Room Type" showSearch={true} hasError={Boolean(errors[`bulk_roomType_${originalIndex}`])} />
+                {errors[`bulk_roomType_${originalIndex}`] && <span className="cms-field-error">{errors[`bulk_roomType_${originalIndex}`]}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="cms-bulk-room-pagination">
+        <span>Showing {start + 1}–{Math.min(start + BULK_ROOM_PAGE_SIZE, allocations.length)} of {allocations.length} rooms</span>
+        <button type="button" className="cms-btn cms-btn-ghost" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button>
+        <strong>{page} / {totalPages}</strong>
+        <button type="button" className="cms-btn cms-btn-ghost" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>Next</button>
+      </div>
+    </section>
+  );
+}
+
 export default function SectionManagementPage() {
-  const [activeTab, setActiveTab] = useState("sections");
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
-  const [sections, setSections] = useState([]);
-  const [rooms, setRooms] = useState([]);
+  // First Tab is Room Management ("rooms"), Second Tab is Section Management ("sections")
+  const [activeTab, setActiveTab] = useState("rooms");
+
   const [boardsList, setBoardsList] = useState([]);
   const [academicYearsList, setAcademicYearsList] = useState([]);
+  const [academicLevelsList, setAcademicLevelsList] = useState([]);
   const [groupsList, setGroupsList] = useState([]);
   const [programsList, setProgramsList] = useState([]);
-  const [groupsCatalog, setGroupsCatalog] = useState([]);
-  const [programsCatalog, setProgramsCatalog] = useState([]);
-  const [academicLevelsList, setAcademicLevelsList] = useState([]);
   const [teachersList, setTeachersList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingRooms, setLoadingRooms] = useState(true);
-  const [savingSection, setSavingSection] = useState(false);
-  const [savingRoom, setSavingRoom] = useState(false);
-  const [deletingSectionId, setDeletingSectionId] = useState(null);
-  const [deletingRoomId, setDeletingRoomId] = useState(null);
+  const [rooms, setRooms] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [dependentLoading, setDependentLoading] = useState({ board: false, program: false });
+  const [operation, setOperation] = useState("");
+  const boardRequestRef = useRef(0);
+  const programRequestRef = useRef(0);
+  const createdSectionIdsRef = useRef(new Set());
+  const createdRoomIdsRef = useRef(new Set());
+
+  // Filter & Search state for tables
+  const [filters, setFilters] = useState({ groupId: "", programId: "", academicLevelId: "" });
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [modal, setModal] = useState(false);
-  const [roomModal, setRoomModal] = useState(false);
-  const [selectedSectionId, setSelectedSectionId] = useState(null);
-  const [mode, setMode] = useState("add");
-  const [form, setForm] = useState(() => ({ ...EMPTY }));
-  const [roomForm, setRoomForm] = useState(() => ({ ...EMPTY_ROOM }));
-  const [selectedRoomId, setSelectedRoomId] = useState(null);
-  const [roomMode, setRoomMode] = useState("add");
-  const [roomModalFromSection, setRoomModalFromSection] = useState(false);
-  const [roomSearch, setRoomSearch] = useState("");
-  const [roomFilters, setRoomFilters] = useState(EMPTY_ROOM_FILTERS);
-  const [roomPage, setRoomPage] = useState(1);
-  const [toast, setToast] = useState(null);
-  const [modalError, setModalError] = useState(null);
-  const [roomModalError, setRoomModalError] = useState(null);
-  const [viewSection, setViewSection] = useState(null);
-  const [viewLoading, setViewLoading] = useState(false);
-  const [viewError, setViewError] = useState(null);
-  const toastTimer = useRef(null);
-  const groupsRequest = useRef(0);
-  const programsRequest = useRef(0);
-  const viewRequestRef = useRef(0);
-  const mountedRef = useRef(true);
 
-  const say = (message) => {
+  const [roomFilters, setRoomFilters] = useState({ building: "", floor: "", roomType: "" });
+  const [roomSearch, setRoomSearch] = useState("");
+  const [roomPage, setRoomPage] = useState(1);
+
+  // Screen View state replacing modals
+  const [sectionView, setSectionView] = useState("list");
+  const [sectionFormMode, setSectionFormMode] = useState("add");
+  const [sectionCreationType, setSectionCreationType] = useState("single");
+
+  const [roomView, setRoomView] = useState("list");
+  const [roomFormMode, setRoomFormMode] = useState("add");
+  const [roomCreationType, setRoomCreationType] = useState("single");
+
+  // Form Data state: STATUS IS MANUAL ENTRY (STARTS EMPTY "")
+  const [selectedSectionId, setSelectedSectionId] = useState(null);
+  const [sectionForm, setSectionForm] = useState({
+    boardId: "",
+    academicYearId: "",
+    groupId: "",
+    programId: "",
+    groupProgramId: "",
+    academicLevelId: "",
+    name: "",
+    roomId: "",
+    classTeacherId: "",
+    strength: "",
+    status: "Active",
+  });
+  const [bulkSections, setBulkSections] = useState([
+    { name: "", roomId: "", classTeacherId: "", strength: "", status: "Active" },
+  ]);
+
+  const [selectedRoomId, setSelectedRoomId] = useState(null);
+  const [roomForm, setRoomForm] = useState({
+    roomNo: "",
+    capacity: "",
+    roomType: "",
+    building: "",
+    floor: "",
+    isActive: "Active",
+  });
+
+  const [bulkRoomForm, setBulkRoomForm] = useState(EMPTY_BULK_ROOM_FORM);
+  const [bulkRoomAllocations, setBulkRoomAllocations] = useState([]);
+  const [bulkRoomPage, setBulkRoomPage] = useState(1);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(bulkRoomAllocations.length / BULK_ROOM_PAGE_SIZE));
+    setBulkRoomPage((current) => Math.min(current, totalPages));
+  }, [bulkRoomAllocations.length]);
+
+  // Inline Validation Field Errors
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [roomFieldErrors, setRoomFieldErrors] = useState({});
+
+  // UI Toast feedback
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const say = useCallback((message) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast(message);
     toastTimer.current = setTimeout(() => {
       setToast(null);
       toastTimer.current = null;
-    }, 3000);
-  };
-  const loadRooms = async () => {
-    setLoadingRooms(true);
-    try {
-      const response = await apiClient.get(apiEndpoints.rooms.getAll);
-      setRooms(
-        collectionFrom(response.data)
-          .map(normalizeRoom)
-          .filter((room) => room.id),
-      );
-    } catch (error) {
-      say(getApiErrorMessage(error));
-    } finally {
-      setLoadingRooms(false);
-    }
-  };
-  const loadSections = async (params) => {
-    const response = await apiClient.get(apiEndpoints.sections.list, { params });
-    const nextSections = collectionFrom(response.data)
-      .map(normalizeSection)
-      .filter((section) => section.id);
-    setSections(nextSections);
-    return nextSections;
-  };
-  const loadGroups = async (boardId, selectedGroupId = "") => {
-    const requestId = ++groupsRequest.current;
-    if (!positiveId(boardId)) {
-      setGroupsList([]);
-      setProgramsList([]);
-      return null;
-    }
-    try {
-      const response = await apiClient.get(apiEndpoints.groups.getAll, { params: { boardId } });
-      const groups = collectionFrom(response.data)
-        .filter(isActiveRecord)
-        .map(normalizeGroup)
-        .filter((item) => item.id && item.name);
-      if (requestId !== groupsRequest.current) return null;
-      setGroupsList(groups);
-      setGroupsCatalog((current) => dedupeBy([...current, ...groups], (item) => item.id));
-      const selectedGroup = groups.find((item) => String(item.id) === String(selectedGroupId));
-      if (selectedGroup) {
-        const programsRequestId = ++programsRequest.current;
-        const programsResponse = await apiClient.get(
-          apiEndpoints.groups.programs(selectedGroup.id),
-        );
-        if (requestId !== groupsRequest.current || programsRequestId !== programsRequest.current)
-          return null;
-        const programs = collectionFrom(programsResponse.data)
-          .filter(isActiveRecord)
-          .map((item) => normalizeProgram(item, selectedGroup.id))
-          .filter((item) => item.programId && item.name);
-        setProgramsList(programs);
-        setProgramsCatalog((current) =>
-          dedupeBy(
-            [...current, ...programs],
-            (item) => `${item.groupId}:${item.groupProgramId || item.programId}`,
-          ),
-        );
-      } else {
-        setProgramsList([]);
-      }
-      return groups;
-    } catch (error) {
-      if (requestId !== groupsRequest.current) return null;
-      setGroupsList([]);
-      say(getApiErrorMessage(error));
-      return null;
-    }
-  };
-  const loadPrograms = async (groupId) => {
-    const requestId = ++programsRequest.current;
-    if (!positiveId(groupId)) {
-      setProgramsList([]);
-      return null;
-    }
-    try {
-      const response = await apiClient.get(apiEndpoints.groups.programs(groupId));
-      const programs = collectionFrom(response.data)
-        .filter(isActiveRecord)
-        .map((item) => normalizeProgram(item, groupId))
-        .filter((item) => item.programId && item.name);
-      if (requestId !== programsRequest.current) return null;
-      setProgramsList(programs);
-      setProgramsCatalog((current) =>
-        dedupeBy(
-          [...current, ...programs],
-          (item) => `${item.groupId}:${item.groupProgramId || item.programId}`,
-        ),
-      );
-      return programs;
-    } catch (error) {
-      if (requestId !== programsRequest.current) return null;
-      setProgramsList([]);
-      say(getApiErrorMessage(error));
-      return null;
-    }
-  };
-  useEffect(() => {
-    let active = true;
-    const loadInitialData = async () => {
-      setLoading(true);
-      const results = await Promise.allSettled([
-        apiClient.get(apiEndpoints.boards.list),
-        apiClient.get(apiEndpoints.academicYears.list),
-        apiClient.get(apiEndpoints.boards.academicLevels),
-        apiClient
-          .get("/api/v1/staff", {
-            params: { StaffType: "Teaching", Status: "Active", PageSize: 100 },
-          })
-          .catch(() =>
-            apiClient.get("/api/v1/staff/dropdown", { params: { staffType: "Teaching" } }),
-          ),
-        apiClient.get(apiEndpoints.sections.list),
-      ]);
-      if (!active) return;
-      const [boardsResult, yearsResult, levelsResult, staffResult, sectionsResult] = results;
-      if (boardsResult.status === "fulfilled")
-        setBoardsList(
-          collectionFrom(boardsResult.value.data)
-            .map(normalizeBoard)
-            .filter((item) => item.isActive && item.id && item.name),
-        );
-      if (yearsResult.status === "fulfilled")
-        setAcademicYearsList(
-          collectionFrom(yearsResult.value.data)
-            .map(normalizeAcademicYear)
-            .filter((item) => item.isActive && item.id && item.name),
-        );
-      if (levelsResult.status === "fulfilled")
-        setAcademicLevelsList(
-          collectionFrom(levelsResult.value.data)
-            .map(normalizeAcademicLevel)
-            .filter((item) => item.id && item.name),
-        );
-      if (staffResult.status === "fulfilled") {
-        const staffItems = collectionFrom(staffResult.value.data);
+    }, 3200);
+  }, []);
 
-        const teachers = dedupeBy(
-          staffItems.map(normalizeTeacher).filter((item) => {
-            const type = normalizedValue(item.staffType).replace(/\s+/g, " ");
-            return (
-              item.isActive && ["teaching", "teaching staff"].includes(type) && item.id && item.name
-            );
-          }),
-          (item) => item.employeeId || item.id,
-        );
+  const loadRooms = useCallback(async () => {
+    const response = await apiClient.get(apiEndpoints.rooms.getAll);
+    const next = unwrapList(response).map(normalizeRoom);
+    next.sort((a, b) => {
+      const aNew = createdRoomIdsRef.current.has(normalizeId(a.id)) || createdRoomIdsRef.current.has(a.roomNo.trim().toLowerCase());
+      const bNew = createdRoomIdsRef.current.has(normalizeId(b.id)) || createdRoomIdsRef.current.has(b.roomNo.trim().toLowerCase());
+      if (aNew && !bNew) return -1;
+      if (!aNew && bNew) return 1;
+      const numA = Number(a.id);
+      const numB = Number(b.id);
+      if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) return numB - numA;
+      return 0;
+    });
+    setRooms(next);
+    return next;
+  }, []);
 
-        setTeachersList(teachers);
-      }
-      if (sectionsResult.status === "fulfilled")
-        setSections(
-          collectionFrom(sectionsResult.value.data)
-            .map(normalizeSection)
-            .filter((section) => section.id),
-        );
-      if (results.some((result) => result.status === "rejected"))
-        say("Some Section Management data could not be loaded.");
-      setLoading(false);
-    };
-    loadInitialData();
-    loadRooms();
-    return () => {
-      active = false;
-      mountedRef.current = false;
-    };
+  const loadSections = useCallback(async () => {
+    const response = await apiClient.get(apiEndpoints.sections.getAll);
+    const next = unwrapList(response).map(normalizeSection);
+    next.sort((a, b) => {
+      const aNew = createdSectionIdsRef.current.has(normalizeId(a.id)) || createdSectionIdsRef.current.has(a.name.trim().toLowerCase());
+      const bNew = createdSectionIdsRef.current.has(normalizeId(b.id)) || createdSectionIdsRef.current.has(b.name.trim().toLowerCase());
+      if (aNew && !bNew) return -1;
+      if (!aNew && bNew) return 1;
+      const numA = Number(a.id);
+      const numB = Number(b.id);
+      if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) return numB - numA;
+      return 0;
+    });
+    setSections(next);
+    return next;
   }, []);
 
   useEffect(() => {
-    if (!sections.length) return undefined;
     let active = true;
-    const hydrateCatalogs = async () => {
-      const boardIds = [
-        ...new Set(
-          sections
-            .filter((section) => !section.group && positiveId(section.boardId))
-            .map((section) => String(section.boardId)),
-        ),
-      ];
-      const groupResults = await Promise.allSettled(
-        boardIds.map((boardId) =>
-          apiClient.get(apiEndpoints.groups.getAll, { params: { boardId } }),
-        ),
-      );
-      if (!active || !mountedRef.current) return;
-      const hydratedGroups = groupResults
-        .flatMap((result) =>
-          result.status === "fulfilled"
-            ? collectionFrom(result.value.data).filter(isActiveRecord).map(normalizeGroup)
-            : [],
-        )
-        .filter((item) => item.id && item.name);
-      if (hydratedGroups.length)
-        setGroupsCatalog((current) => dedupeBy([...current, ...hydratedGroups], (item) => item.id));
-
-      const groupIds = [
-        ...new Set(
-          sections
-            .filter((section) => !section.program && positiveId(section.groupId))
-            .map((section) => String(section.groupId)),
-        ),
-      ];
-      const programResults = await Promise.allSettled(
-        groupIds.map((groupId) =>
-          apiClient
-            .get(apiEndpoints.groups.programs(groupId))
-            .then((response) => ({ response, groupId })),
-        ),
-      );
-      if (!active || !mountedRef.current) return;
-      const hydratedPrograms = programResults
-        .flatMap((result) =>
-          result.status === "fulfilled"
-            ? collectionFrom(result.value.response.data)
-                .filter(isActiveRecord)
-                .map((item) => normalizeProgram(item, result.value.groupId))
-            : [],
-        )
-        .filter((item) => item.programId && item.name);
-      if (hydratedPrograms.length)
-        setProgramsCatalog((current) =>
-          dedupeBy(
-            [...current, ...hydratedPrograms],
-            (item) => `${item.groupId}:${item.groupProgramId || item.programId}`,
-          ),
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.boards.getAll, { params: { isActive: true } }),
+      apiClient.get(apiEndpoints.rooms.getAll),
+      apiClient.get(apiEndpoints.sections.getAll),
+      apiClient.get("/api/v1/staff/dropdown", { params: { staffType: "Teaching" } }),
+    ]).then((results) => {
+      if (!active) return;
+      const [boardsResult, roomsResult, sectionsResult, staffResult] = results;
+      if (boardsResult.status === "fulfilled") {
+        setBoardsList(unwrapList(boardsResult.value).map(normalizeBoard).filter((item) => item.isActive));
+      }
+      if (roomsResult.status === "fulfilled") {
+        const fetchedRooms = unwrapList(roomsResult.value).map(normalizeRoom);
+        fetchedRooms.sort((a, b) => {
+          const numA = Number(a.id);
+          const numB = Number(b.id);
+          if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) return numB - numA;
+          return 0;
+        });
+        setRooms(fetchedRooms);
+      }
+      if (sectionsResult.status === "fulfilled") {
+        const fetchedSections = unwrapList(sectionsResult.value).map(normalizeSection);
+        fetchedSections.sort((a, b) => {
+          const numA = Number(a.id);
+          const numB = Number(b.id);
+          if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) return numB - numA;
+          return 0;
+        });
+        setSections(fetchedSections);
+      }
+      if (staffResult.status === "fulfilled") {
+        const staffData = unwrapList(staffResult.value).map(normalizeTeacher);
+        const teachingStaff = staffData.filter(
+          (item) => item.isActive && String(item.staffType || "Teaching").toLowerCase() === "teaching"
         );
-    };
-    hydrateCatalogs();
-    return () => {
-      active = false;
-    };
-  }, [sections]);
+        setTeachersList(teachingStaff.length > 0 ? teachingStaff : staffData);
+      }
+      const rejected = results.find((result) => result.status === "rejected");
+      if (rejected) say(getApiErrorMessage(rejected.reason) || "Some Section Management data could not be loaded.");
+    }).finally(() => { if (active) setInitialLoading(false); });
+    return () => { active = false; if (toastTimer.current) clearTimeout(toastTimer.current); };
+  }, [say]);
 
-  const updateFilter = (key, value) => {
-    setFilters((previous) =>
-      key === "board"
-        ? { ...previous, board: value, academicYear: "" }
-        : { ...previous, [key]: value },
-    );
-  };
+  const loadPrograms = useCallback(async (groupId) => {
+    const requestId = ++programRequestRef.current;
+    setProgramsList([]);
+    if (!groupId) return;
+    setDependentLoading((current) => ({ ...current, program: true }));
+    try {
+      const response = await apiClient.get(apiEndpoints.groups.getPrograms(groupId));
+      if (requestId === programRequestRef.current) {
+        setProgramsList(
+          unwrapList(response)
+            .map((item) => normalizeProgram({ ...item, groupId: item.groupId || groupId }))
+            .filter((item) => item.isActive)
+        );
+      }
+    } catch (error) {
+      if (requestId === programRequestRef.current) say(getApiErrorMessage(error));
+    } finally {
+      if (requestId === programRequestRef.current) setDependentLoading((current) => ({ ...current, program: false }));
+    }
+  }, [say]);
 
-  const change = async (key, value) => {
-    setModalError(null);
-    if (key === "board") {
-      const selectedBoard = boardsList.find((item) => item.name === value);
-      groupsRequest.current += 1;
-      programsRequest.current += 1;
-      setGroupsList([]);
-      setProgramsList([]);
-      setForm((previous) => ({
-        ...previous,
-        board: value,
-        boardId: selectedBoard?.id ?? "",
-        academicYear: "",
-        academicYearId: "",
-        group: "",
-        groupId: "",
-        program: "",
-        programId: "",
-        groupProgramId: "",
-      }));
-      if (selectedBoard) await loadGroups(selectedBoard.id);
-      return;
-    }
-    if (key === "academicYear") {
-      const selectedYear = academicYearsList.find(
-        (item) =>
-          String(item.id) === String(value) &&
-          (item.boardId == null || String(item.boardId) === String(form.boardId)),
-      );
-      setForm((previous) => ({
-        ...previous,
-        academicYear: selectedYear?.name ?? "",
-        academicYearId: selectedYear?.id ?? "",
-      }));
-      return;
-    }
-    if (key === "academicLevel") {
-      const selectedLevel = academicLevelsList.find((item) => item.name === value);
-      setForm((previous) => ({
-        ...previous,
-        academicLevel: value,
-        academicLevelId: selectedLevel?.id ?? "",
-      }));
-      return;
-    }
-    if (key === "group") {
-      const selectedGroup = groupsList.find((item) => String(item.id) === String(value));
-      programsRequest.current += 1;
-      setProgramsList([]);
-      setForm((previous) => ({
-        ...previous,
-        group: selectedGroup?.name ?? "",
-        groupId: selectedGroup?.id ?? "",
-        program: "",
-        programId: "",
-        groupProgramId: "",
-      }));
-      if (selectedGroup) await loadPrograms(selectedGroup.id);
-      return;
-    }
-    if (key === "program") {
-      const selectedProgram = programsList.find(
-        (item) =>
-          String(item.groupId) === String(form.groupId) &&
-          String(item.groupProgramId || item.programId) === String(value),
-      );
-      setForm((previous) => ({
-        ...previous,
-        program: selectedProgram?.name ?? "",
-        programId: selectedProgram?.programId ?? "",
-        groupProgramId: selectedProgram?.groupProgramId ?? "",
-      }));
-      return;
-    }
-    if (key === "room") {
-      const selectedRoom = rooms.find((room) => String(room.id) === String(value));
-      const roomCapacity = Number(selectedRoom?.capacity);
-      setForm((previous) => ({
-        ...previous,
-        room: selectedRoom?.roomCode ?? "",
-        roomId: selectedRoom?.id ?? "",
-        strength:
-          selectedRoom && Number.isFinite(roomCapacity) && roomCapacity > 0
-            ? String(selectedRoom.capacity)
-            : "",
-      }));
-      return;
-    }
-    if (key === "teacher") {
-      const selectedTeacher = teachersList.find((item) => String(item.id) === String(value));
-      setForm((previous) => ({
-        ...previous,
-        teacher: selectedTeacher?.name ?? "",
-        classTeacherId: selectedTeacher?.id ?? "",
-      }));
-      return;
-    }
-    setForm((previous) => ({ ...previous, [key]: value }));
-  };
+  const loadBoardDependencies = useCallback(async (boardId, preserve = {}) => {
+    const requestId = ++boardRequestRef.current;
+    setAcademicYearsList([]);
+    setAcademicLevelsList([]);
+    setGroupsList([]);
+    setProgramsList([]);
+    if (!boardId) return;
+    setDependentLoading((current) => ({ ...current, board: true }));
 
-  const changeRoom = (key, value) => {
-    setRoomModalError(null);
-    setRoomForm((current) => ({ ...current, [key]: value }));
-  };
+    const selectedBoard = boardsList.find((b) => normalizeId(b.id) === normalizeId(boardId));
+    let embeddedLevels = [];
+    if (selectedBoard?.academicLevelIds?.length) {
+      embeddedLevels = selectedBoard.academicLevelIds.map((id, idx) => ({
+        id: normalizeId(id),
+        name: selectedBoard.academicLevelNames?.[idx] || `Academic Level ${id}`,
+        isActive: true,
+      }));
+    }
 
-  const boardsById = useMemo(
-    () => new Map(boardsList.map((item) => [String(item.id), item])),
-    [boardsList],
-  );
-  const yearsById = useMemo(
-    () => new Map(academicYearsList.map((item) => [String(item.id), item])),
-    [academicYearsList],
-  );
-  const levelsById = useMemo(
-    () => new Map(academicLevelsList.map((item) => [String(item.id), item])),
-    [academicLevelsList],
-  );
-  const groupsById = useMemo(
-    () => new Map([...groupsCatalog, ...groupsList].map((item) => [String(item.id), item])),
-    [groupsCatalog, groupsList],
-  );
-  const roomsById = useMemo(() => new Map(rooms.map((item) => [String(item.id), item])), [rooms]);
-  const teachersById = useMemo(
-    () => new Map(teachersList.map((item) => [String(item.id), item])),
-    [teachersList],
-  );
-  const programsByGroupProgramId = useMemo(
-    () =>
-      new Map(
-        programsCatalog
-          .filter((item) => item.groupProgramId)
-          .map((item) => [String(item.groupProgramId), item]),
-      ),
-    [programsCatalog],
-  );
-  const programsByGroupAndProgramId = useMemo(
-    () =>
-      new Map(programsCatalog.map((item) => [groupProgramKey(item.groupId, item.programId), item])),
-    [programsCatalog],
-  );
-  const programsById = useMemo(
-    () => new Map(programsCatalog.map((item) => [String(item.programId), item])),
-    [programsCatalog],
-  );
+    try {
+      const [yearsResponse, levelsResponse, groupsResponse] = await Promise.allSettled([
+        apiClient.get(apiEndpoints.academicYears.active, { params: { boardId, isActive: true } }),
+        apiClient.get(`/api/v1/boards/${encodeURIComponent(boardId)}/academic-levels`),
+        apiClient.get(apiEndpoints.groups.getByBoard(boardId)),
+      ]);
 
-  const resolveSection = (section) => {
-    const resolvedProgram =
-      programsByGroupProgramId.get(String(section.groupProgramId)) ??
-      programsByGroupAndProgramId.get(groupProgramKey(section.groupId, section.programId)) ??
-      programsById.get(String(section.programId));
+      if (requestId !== boardRequestRef.current) return;
+
+      if (yearsResponse.status === "fulfilled") {
+        const nextYears = unwrapList(yearsResponse.value)
+          .map(normalizeYear)
+          .filter((year) => year.isActive)
+          .filter((year) => !year.boardId || normalizeId(year.boardId) === normalizeId(boardId));
+        setAcademicYearsList(nextYears);
+      }
+
+      let fetchedLevels = [];
+      if (levelsResponse.status === "fulfilled") {
+        fetchedLevels = unwrapList(levelsResponse.value).map(normalizeLevel).filter((item) => item.isActive);
+      }
+
+      const levelMap = new Map();
+      fetchedLevels.forEach((lvl) => levelMap.set(normalizeId(lvl.id), lvl));
+      embeddedLevels.forEach((lvl) => {
+        if (!levelMap.has(normalizeId(lvl.id))) {
+          levelMap.set(normalizeId(lvl.id), lvl);
+        }
+      });
+      setAcademicLevelsList(Array.from(levelMap.values()));
+
+      let nextGroups = [];
+      if (groupsResponse.status === "fulfilled") {
+        nextGroups = unwrapList(groupsResponse.value)
+          .map(normalizeGroup)
+          .filter((group) => group.isActive)
+          .filter((group) => !group.boardId || normalizeId(group.boardId) === normalizeId(boardId));
+        setGroupsList(nextGroups);
+      }
+
+      if (preserve.groupId) {
+        const groupStillBelongsToBoard = nextGroups.some((g) => normalizeId(g.id) === normalizeId(preserve.groupId));
+        if (groupStillBelongsToBoard) {
+          await loadPrograms(preserve.groupId);
+        }
+      }
+    } catch (error) {
+      if (requestId === boardRequestRef.current) say(getApiErrorMessage(error));
+    } finally {
+      if (requestId === boardRequestRef.current) setDependentLoading((current) => ({ ...current, board: false }));
+    }
+  }, [boardsList, say, loadPrograms]);
+
+  // Lookup maps
+  const boardsById = useMemo(() => new Map(boardsList.map((b) => [String(b.id), b])), [boardsList]);
+  const yearsById = useMemo(() => new Map(academicYearsList.map((y) => [String(y.id), y])), [academicYearsList]);
+  const levelsById = useMemo(() => new Map(academicLevelsList.map((l) => [String(l.id), l])), [academicLevelsList]);
+  const groupsById = useMemo(() => new Map(groupsList.map((g) => [String(g.id), g])), [groupsList]);
+  const programsById = useMemo(() => new Map(programsList.map((p) => [String(p.programId), p])), [programsList]);
+  const roomsById = useMemo(() => new Map(rooms.map((r) => [String(r.id), r])), [rooms]);
+  const teachersById = useMemo(() => new Map(teachersList.map((t) => [String(t.id), t])), [teachersList]);
+
+  const resolveSection = useCallback((section) => {
+    const board = boardsById.get(String(section.boardId));
+    const year = yearsById.get(String(section.academicYearId));
+    const level = levelsById.get(String(section.academicLevelId));
+    const group = groupsById.get(String(section.groupId));
+    const program = programsById.get(String(section.programId));
     const room = roomsById.get(String(section.roomId));
-    const roomName = firstNonEmpty(section.room, room?.roomName, room?.roomCode) || "—";
-    const roomCode = firstNonEmpty(room?.roomCode, section.roomNumber, section.room) || "—";
+    const teacher = teachersById.get(String(section.classTeacherId));
+
     return {
-      boardCode:
-        firstNonEmpty(section.boardCode, boardsById.get(String(section.boardId))?.code) || "—",
-      boardName: firstNonEmpty(section.board, boardsById.get(String(section.boardId))?.name) || "—",
-      academicYearName:
-        firstNonEmpty(section.academicYear, yearsById.get(String(section.academicYearId))?.name) ||
-        "—",
-      academicLevelName:
-        firstNonEmpty(
-          section.academicLevel,
-          levelsById.get(String(section.academicLevelId))?.name,
-        ) || "—",
-      groupName: firstNonEmpty(section.group, groupsById.get(String(section.groupId))?.name) || "—",
-      programName: firstNonEmpty(section.program, resolvedProgram?.name) || "—",
-      roomName,
-      roomCode,
-      roomDisplay:
-        roomName !== roomCode && roomCode !== "—" ? `${roomName} (${roomCode})` : roomName,
-      teacherName:
-        firstNonEmpty(section.teacher, teachersById.get(String(section.classTeacherId))?.name) ||
-        "—",
+      boardName: board?.name || section.board || "—",
+      boardCode: board?.code || section.boardCode || "—",
+      academicYearName: year?.name || section.academicYear || "—",
+      academicLevelName: level?.name || section.academicLevel || "—",
+      groupName: group?.name || section.group || "—",
+      programName: program?.name || section.program || "—",
+      roomNo: room?.roomNo || section.roomNo || "—",
+      teacherName: teacher ? (teacher.employeeId ? `${teacher.name} (${teacher.employeeId})` : teacher.name) : (section.teacher || "—"),
     };
-  };
+  }, [boardsById, yearsById, levelsById, groupsById, programsById, roomsById, teachersById]);
 
-  const rows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return sections.filter((section) => {
-      const display = resolveSection(section);
-      if (filters.board && display.boardName !== filters.board) return false;
-      if (filters.academicYear && display.academicYearName !== filters.academicYear) return false;
-      if (filters.academicLevel && display.academicLevelName !== filters.academicLevel)
-        return false;
-      return (
-        !query ||
-        [
-          section.name,
-          display.boardCode,
-          display.boardName,
-          display.academicYearName,
-          display.groupName,
-          display.programName,
-          display.academicLevelName,
-          display.roomDisplay,
-          display.teacherName,
-          section.status,
-        ].some((value) =>
-          String(value ?? "")
-            .toLowerCase()
-            .includes(query),
-        )
-      );
-    });
-  }, [
-    sections,
-    filters,
-    search,
-    boardsById,
-    yearsById,
-    levelsById,
-    groupsById,
-    roomsById,
-    teachersById,
-    programsByGroupProgramId,
-    programsByGroupAndProgramId,
-    programsById,
-  ]);
-
-  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const sectionRangeStart = rows.length ? (page - 1) * PAGE_SIZE + 1 : 0;
-  const sectionRangeEnd = Math.min(page * PAGE_SIZE, rows.length);
-  const roomRows = useMemo(() => {
-    const query = roomSearch.trim().toLowerCase();
-    return rooms.filter((room) => {
-      if (roomFilters.building && room.building !== roomFilters.building) return false;
-      if (roomFilters.floor && String(room.floor) !== roomFilters.floor) return false;
-      if (roomFilters.roomType && room.roomType !== roomFilters.roomType) return false;
-      return (
-        !query ||
-        [
-          room.roomCode,
-          room.roomName,
-          room.building,
-          room.floor,
-          room.roomType,
-          room.isActive ? "Active" : "Inactive",
-        ].some((value) =>
-          String(value ?? "")
-            .toLowerCase()
-            .includes(query),
-        )
-      );
-    });
-  }, [rooms, roomSearch, roomFilters]);
-
-  const roomPages = Math.max(1, Math.ceil(roomRows.length / PAGE_SIZE));
-  const shownRooms = roomRows.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE);
-  const roomRangeStart = roomRows.length ? (roomPage - 1) * PAGE_SIZE + 1 : 0;
-  const roomRangeEnd = Math.min(roomPage * PAGE_SIZE, roomRows.length);
-  const sectionSearchPlaceholder = "Search by section,group,pr...";
-  const roomSearchPlaceholder = "Search by block,status,name...";
-  const roomBuildings = useMemo(
-    () => [...new Set(rooms.map((room) => room.building).filter(Boolean))],
-    [rooms],
-  );
-  const roomFloors = useMemo(
-    () => [...new Set(rooms.map((room) => String(room.floor)).filter(Boolean))],
-    [rooms],
-  );
-  const roomFilterTypes = useMemo(
-    () => [...new Set(rooms.map((room) => room.roomType).filter(Boolean))],
-    [rooms],
-  );
-  const roomTypes = ROOM_TYPES;
-  const boardOptions = useMemo(() => boardsList.map((item) => item.name), [boardsList]);
-  const formAcademicYears = useMemo(
-    () =>
-      academicYearsList.filter(
-        (item) =>
-          item.boardId == null || !form.boardId || String(item.boardId) === String(form.boardId),
-      ),
-    [academicYearsList, form.boardId],
-  );
-  const filterAcademicYears = useMemo(() => {
-    const board = boardsList.find((item) => item.name === filters.board);
-    return academicYearsList.filter(
-      (item) => item.boardId == null || !board || String(item.boardId) === String(board.id),
-    );
-  }, [academicYearsList, boardsList, filters.board]);
-  const academicYearOptions = useMemo(
-    () => formAcademicYears.map((item) => ({ value: item.id, label: item.name })),
-    [formAcademicYears],
-  );
-  const academicYearFilterOptions = useMemo(
-    () =>
-      uniqueAcademicYearsByName(
-        filterAcademicYears.map((item) => item.name),
-        (item) => item,
-      ),
-    [filterAcademicYears],
-  );
-  const groupOptions = useMemo(
-    () => groupsList.map((item) => ({ value: item.id, label: item.name })),
-    [groupsList],
-  );
-  const programOptions = useMemo(
-    () =>
-      programsList.map((item) => ({
-        value: item.groupProgramId || item.programId,
-        label: item.name,
-      })),
-    [programsList],
-  );
-  const academicLevelOptions = useMemo(
-    () => academicLevelsList.map((item) => item.name),
-    [academicLevelsList],
-  );
-
-  useEffect(() => setPage(1), [filters, search]);
-  useEffect(() => setRoomPage(1), [roomFilters, roomSearch]);
-  useEffect(() => {
-    if (page > pages) setPage(pages);
-  }, [page, pages]);
-  useEffect(() => {
-    if (roomPage > roomPages) setRoomPage(roomPages);
-  }, [roomPage, roomPages]);
-  useEffect(() => {
-    if (!modal && !roomModal) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [modal, roomModal]);
-  useEffect(
-    () => () => {
-      if (toastTimer.current) clearTimeout(toastTimer.current);
-    },
-    [],
-  );
-
-  const selected = selectedSectionId;
-  const edit = mode === "edit";
-  const preview = mode === "preview";
-  const readOnly = mode === "preview";
-
-  // 1. Available Rooms: Show Active rooms of type "Classroom" that are NOT assigned to another active section
+  // Available Rooms: Active classrooms not assigned to another active section
   const availableRooms = useMemo(() => {
     const assignedRoomIds = new Set(
       sections
-        .filter(
-          (section) =>
-            section.id !== selectedSectionId &&
-            section.status === "Active" &&
-            positiveId(section.roomId),
-        )
-        .map((section) => String(section.roomId)),
-    );
-
-    const assignedRoomCodes = new Set(
-      sections
-        .filter(
-          (section) =>
-            section.id !== selectedSectionId && section.status === "Active" && section.room,
-        )
-        .map((section) => normalizeRoomCode(resolveSection(section).roomCode).toLowerCase()),
+        .filter((s) => s.id !== selectedSectionId && s.status === "Active" && s.roomId)
+        .map((s) => String(s.roomId))
     );
 
     const options = rooms
-      .filter((room) => room.isActive && room.roomType === "Classroom")
-      .filter((room) => {
-        const roomIdStr = String(room.id);
-        const roomCodeNormalized = normalizeRoomCode(room.roomCode).toLowerCase();
-        return !assignedRoomIds.has(roomIdStr) && !assignedRoomCodes.has(roomCodeNormalized);
-      })
-      .map((room) => ({ value: String(room.id), label: label(room) }));
+      .filter((r) => r.isActive && r.roomType === "Classroom")
+      .filter((r) => !assignedRoomIds.has(String(r.id)))
+      .map((r) => ({
+        value: String(r.id),
+        label: `${r.roomNo} (Cap: ${r.capacity})`,
+      }));
 
-    if (form.roomId && !options.some((option) => option.value === String(form.roomId))) {
-      const currentRoomObj = rooms.find((r) => String(r.id) === String(form.roomId));
-      const roomLabel = currentRoomObj ? label(currentRoomObj) : form.room || "Current Room";
-      return [{ value: String(form.roomId), label: roomLabel }, ...options];
+    if (sectionForm.roomId && !options.some((o) => o.value === String(sectionForm.roomId))) {
+      const currentRoom = roomsById.get(String(sectionForm.roomId));
+      if (currentRoom?.isActive && currentRoom.roomType === "Classroom") {
+        options.unshift({
+          value: String(currentRoom.id),
+          label: `${currentRoom.roomNo} (Cap: ${currentRoom.capacity}) [Current]`,
+        });
+      }
     }
-
     return options;
-  }, [rooms, sections, selectedSectionId, form.roomId, form.room]);
+  }, [rooms, sections, selectedSectionId, sectionForm.roomId, roomsById]);
 
-  // 2. Available Teachers: Show Active teaching staff NOT assigned as Incharge to another active section
+  const getAvailableRoomsForBulkRow = (rowIndex) => {
+    const occupied = new Set(sections.filter((s) => s.status === "Active" && s.roomId).map((s) => normalizeId(s.roomId)));
+    const usedByOtherRows = new Set(bulkSections.filter((_, index) => index !== rowIndex).map((row) => normalizeId(row.roomId)).filter(Boolean));
+    const currentId = normalizeId(bulkSections[rowIndex]?.roomId);
+    return rooms.filter((room) => room.isActive && room.roomType === "Classroom" && ((!occupied.has(normalizeId(room.id)) && !usedByOtherRows.has(normalizeId(room.id))) || normalizeId(room.id) === currentId)).map((room) => ({ value: normalizeId(room.id), label: `${room.roomNo} (Cap: ${room.capacity})` }));
+  };
+
+  // Available Teachers: Optional, active teachers not assigned as incharge elsewhere
   const availableTeachers = useMemo(() => {
     const assignedTeacherIds = new Set(
       sections
-        .filter(
-          (section) =>
-            section.id !== selectedSectionId &&
-            section.status === "Active" &&
-            positiveId(section.classTeacherId),
-        )
-        .map((section) => String(section.classTeacherId)),
+        .filter((s) => s.id !== selectedSectionId && s.status === "Active" && s.classTeacherId)
+        .map((s) => String(s.classTeacherId))
     );
 
     const options = teachersList
-      .filter((teacher) => teacher.isActive && !assignedTeacherIds.has(String(teacher.id)))
-      .map((teacher) => ({
-        value: String(teacher.id),
-        label: teacher.employeeId ? `${teacher.name} (${teacher.employeeId})` : teacher.name,
+      .filter((t) => t.isActive && !assignedTeacherIds.has(String(t.id)))
+      .map((t) => ({
+        value: String(t.id),
+        label: t.employeeId ? `${t.name} (${t.employeeId})` : t.name,
       }));
 
     if (
-      form.classTeacherId &&
-      !options.some((option) => option.value === String(form.classTeacherId))
+      sectionForm.classTeacherId &&
+      !options.some((o) => o.value === String(sectionForm.classTeacherId))
     ) {
-      const currentTeacherObj = teachersList.find(
-        (t) => String(t.id) === String(form.classTeacherId),
-      );
-      const teacherLabel = currentTeacherObj
-        ? currentTeacherObj.employeeId
-          ? `${currentTeacherObj.name} (${currentTeacherObj.employeeId})`
-          : currentTeacherObj.name
-        : form.teacher || "Current Incharge";
-      return [{ value: String(form.classTeacherId), label: teacherLabel }, ...options];
-    }
-
-    return options;
-  }, [teachersList, sections, selectedSectionId, form.classTeacherId, form.teacher]);
-
-  const close = () => {
-    setModal(false);
-    setSelectedSectionId(null);
-    setMode("add");
-    setForm({ ...EMPTY });
-    setModalError(null);
-    setViewSection(null);
-    setViewError(null);
-    setViewLoading(false);
-    viewRequestRef.current += 1;
-  };
-  const openAdd = () => {
-    setSelectedSectionId(null);
-    setMode("add");
-    setForm({ ...EMPTY });
-    setModalError(null);
-    setModal(true);
-  };
-  const prepareEditForm = async (section) => {
-    const display = resolveSection(section);
-    const next = {
-      ...section,
-      ...display,
-      board: display.boardName,
-      academicYear: display.academicYearName,
-      academicLevel: display.academicLevelName,
-      group: display.groupName,
-      program: display.programName,
-      room: display.roomCode,
-      teacher: display.teacherName,
-      strength: String(section.strength ?? ""),
-    };
-    setForm(next);
-    await loadGroups(section.boardId, section.groupId);
-  };
-  const openRow = async (section, isPreview = false) => {
-    setSelectedSectionId(section.id);
-    setMode(isPreview ? "preview" : "edit");
-    setModalError(null);
-    setModal(true);
-    if (!isPreview) {
-      await prepareEditForm(section);
-      return;
-    }
-    const requestId = ++viewRequestRef.current;
-    setViewSection(null);
-    setViewError(null);
-    setViewLoading(true);
-    try {
-      const response = await apiClient.get(apiEndpoints.sections.getById(section.id));
-      const payload = response.data?.data ?? response.data?.result ?? response.data;
-      if (!payload || typeof payload !== "object" || Array.isArray(payload))
-        throw new Error("Invalid Section detail response.");
-      const detail = normalizeSection(payload);
-      if (!positiveId(detail.id))
-        throw new Error("Section detail response did not contain a valid Section ID.");
-      const hydrationRequests = [];
-      if (!detail.group && positiveId(detail.boardId)) {
-        hydrationRequests.push(
-          apiClient
-            .get(apiEndpoints.groups.getAll, { params: { boardId: detail.boardId } })
-            .then((result) => ({
-              type: "groups",
-              items: collectionFrom(result.data).filter(isActiveRecord).map(normalizeGroup),
-            })),
-        );
-      }
-      if (!detail.program && positiveId(detail.groupId)) {
-        hydrationRequests.push(
-          apiClient.get(apiEndpoints.groups.programs(detail.groupId)).then((result) => ({
-            type: "programs",
-            items: collectionFrom(result.data)
-              .filter(isActiveRecord)
-              .map((item) => normalizeProgram(item, detail.groupId)),
-          })),
-        );
-      }
-      if (hydrationRequests.length) {
-        const hydrationResults = await Promise.allSettled(hydrationRequests);
-        if (requestId !== viewRequestRef.current) return;
-        hydrationResults.forEach((result) => {
-          if (result.status !== "fulfilled") return;
-          if (result.value.type === "groups")
-            setGroupsCatalog((current) =>
-              dedupeBy([...current, ...result.value.items], (item) => item.id),
-            );
-          if (result.value.type === "programs")
-            setProgramsCatalog((current) =>
-              dedupeBy(
-                [...current, ...result.value.items],
-                (item) => `${item.groupId}:${item.groupProgramId || item.programId}`,
-              ),
-            );
+      const currentTeacher = teachersById.get(String(sectionForm.classTeacherId));
+      if (currentTeacher) {
+        options.unshift({
+          value: String(currentTeacher.id),
+          label: currentTeacher.employeeId
+            ? `${currentTeacher.name} (${currentTeacher.employeeId}) [Current]`
+            : `${currentTeacher.name} [Current]`,
         });
       }
-      if (requestId !== viewRequestRef.current) return;
-      setViewSection(detail);
-    } catch (error) {
-      if (requestId !== viewRequestRef.current) return;
-      setViewError(error.response ? getApiErrorMessage(error) : error.message);
-    } finally {
-      if (requestId === viewRequestRef.current) setViewLoading(false);
     }
-  };
-  const enterEditMode = async () => {
-    if (!viewSection) return;
-    setModalError(null);
-    await prepareEditForm(viewSection);
-    setMode("edit");
-  };
-  const openRoomModal = (fromSection = false) => {
-    setRoomForm({ ...EMPTY_ROOM });
-    setSelectedRoomId(null);
-    setRoomMode("add");
-    setRoomModalFromSection(fromSection);
-    setRoomModalError(null);
-    setRoomModal(true);
-  };
-  const closeRoomModal = () => {
-    setRoomModal(false);
-    setSelectedRoomId(null);
-    setRoomMode("add");
-    setRoomModalFromSection(false);
-    setRoomForm({ ...EMPTY_ROOM });
-    setRoomModalError(null);
-  };
-  const openRoom = (room, preview = false) => {
-    setSelectedRoomId(room.id);
-    setRoomMode(preview ? "preview" : "edit");
-    setRoomModalFromSection(false);
-    setRoomForm({ ...room, capacity: String(room.capacity ?? "") });
-    setRoomModalError(null);
-    setRoomModal(true);
-  };
-  const deleteSection = async (section) => {
-    if (!section?.id || deletingSectionId !== null) return;
-    if (!window.confirm(`Are you sure you want to delete section "${section.name}"?`)) return;
-    setDeletingSectionId(section.id);
-    try {
-      await apiClient.delete(apiEndpoints.sections.delete(section.id));
-      await loadSections();
-      say(`Section "${section.name}" deleted successfully!`);
-    } catch (error) {
-      say(getApiErrorMessage(error));
-    } finally {
-      setDeletingSectionId(null);
-    }
-  };
-  const deleteRoom = async (room) => {
-    if (!room?.id || deletingRoomId !== null) return;
-    if (!window.confirm(`Are you sure you want to delete room "${room.roomCode}"?`)) return;
-    setDeletingRoomId(room.id);
-    try {
-      await apiClient.delete(`/api/v1/rooms/${room.id}`);
-      await loadRooms();
-      say(`Room "${room.roomCode}" deleted successfully!`);
-    } catch (error) {
-      say(getApiErrorMessage(error));
-    } finally {
-      setDeletingRoomId(null);
-    }
-  };
-  const save = async (event) => {
-    event.preventDefault();
-    if (savingSection) return;
-    if (!["Active", "Inactive"].includes(form.status))
-      return setModalError("Please select a valid Section status.");
-    const required = [
-      "board",
-      "academicYear",
-      "group",
-      "program",
-      "academicLevel",
-      "name",
-      "room",
-      "teacher",
-      "strength",
-      "status",
-    ];
-    if (required.some((key) => !String(form[key] || "").trim()))
-      return setModalError("Please complete all required fields.");
-    const normalizedName = normalizeSectionName(form.name);
-    if (!/[A-Za-z0-9]/.test(normalizedName))
-      return setModalError("Section name must contain a meaningful character.");
-    if (!/^[A-Za-z0-9 -]+$/.test(normalizedName))
-      return setModalError("Section name may contain only letters, numbers, spaces, and hyphens.");
-    const strength = Number(form.strength);
-    if (!Number.isInteger(strength) || strength < 1 || strength > 150)
-      return setModalError("Capacity must be between 1 and 150.");
-    const selectedBoard = boardsList.find((item) => String(item.id) === String(form.boardId));
-    const selectedYear = academicYearsList.find(
-      (item) => String(item.id) === String(form.academicYearId),
-    );
-    const selectedLevel = academicLevelsList.find(
-      (item) => String(item.id) === String(form.academicLevelId),
-    );
-    const selectedGroup = groupsList.find((item) => String(item.id) === String(form.groupId));
-    const selectedProgram = programsList.find(
-      (item) =>
-        String(item.groupId) === String(form.groupId) &&
-        String(item.programId) === String(form.programId) &&
-        (!form.groupProgramId || String(item.groupProgramId) === String(form.groupProgramId)),
-    );
-    const selectedRoom = rooms.find((room) => String(room.id) === String(form.roomId));
-    const selectedTeacher = teachersList.find(
-      (teacher) => String(teacher.id) === String(form.classTeacherId),
-    );
-    if (
-      ![
-        form.boardId,
-        form.academicYearId,
-        form.academicLevelId,
-        form.groupId,
-        form.programId,
-        form.roomId,
-        form.classTeacherId,
-      ].every(positiveId)
-    )
-      return setModalError("Please select valid current values from each dropdown.");
-    if (
-      !selectedBoard ||
-      !selectedYear ||
-      !selectedLevel ||
-      !selectedGroup ||
-      !selectedProgram ||
-      !selectedRoom ||
-      !selectedTeacher
-    )
-      return setModalError("Please select valid current values from each dropdown.");
-    if (selectedYear.boardId != null && String(selectedYear.boardId) !== String(selectedBoard.id))
-      return setModalError("The selected Academic Year does not belong to the selected Board.");
-    if (selectedGroup.boardId != null && String(selectedGroup.boardId) !== String(selectedBoard.id))
-      return setModalError("The selected Group does not belong to the selected Board.");
-    if (String(selectedProgram.groupId) !== String(selectedGroup.id))
-      return setModalError("The selected Program does not belong to the selected Group.");
-    if (
-      form.groupProgramId &&
-      String(selectedProgram.groupProgramId) !== String(form.groupProgramId)
-    )
-      return setModalError("The selected Group–Program association is no longer valid.");
-    if (form.status === "Active") {
-      if (!selectedRoom.isActive) return setModalError("Please select an active classroom room.");
-      if (selectedRoom.roomType !== "Classroom")
-        return setModalError("Only Classroom rooms can be assigned to a section.");
-      if (strength > Number(selectedRoom.capacity))
-        return setModalError(
-          `Section capacity cannot exceed room capacity (${selectedRoom.capacity}).`,
-        );
-      if (!selectedTeacher.isActive)
-        return setModalError("Please select an available active Incharge.");
-    }
-    const other = (section) => section.id !== selectedSectionId;
-    const conflictingSection = sections.find(
-      (section) =>
-        other(section) &&
-        section.status === "Active" &&
-        positiveId(section.classTeacherId) &&
-        String(section.classTeacherId) === String(form.classTeacherId),
-    );
-    if (conflictingSection)
-      return setModalError(
-        `The selected Incharge is already assigned to active section "${conflictingSection.name}".`,
-      );
-    if (
-      sections.some(
-        (section) =>
-          other(section) &&
-          String(section.boardId) === String(form.boardId) &&
-          String(section.academicYearId) === String(form.academicYearId) &&
-          String(section.academicLevelId) === String(form.academicLevelId) &&
-          String(section.groupId) === String(form.groupId) &&
-          String(section.programId) === String(form.programId) &&
-          normalizeSectionName(section.name).toLowerCase() === normalizedName.toLowerCase(),
-      )
-    )
-      return setModalError("Section name already exists for the selected academic configuration.");
-    if (
-      form.status === "Active" &&
-      sections.some(
-        (section) =>
-          other(section) &&
-          section.status === "Active" &&
-          ((positiveId(section.roomId) && String(section.roomId) === String(form.roomId)) ||
-            (!positiveId(section.roomId) &&
-              roomCodesMatch(resolveSection(section).roomCode, selectedRoom.roomCode))),
-      )
-    )
-      return setModalError("Selected room is already assigned to another active section.");
-    const isEditing = Boolean(selectedSectionId);
-    const payload = {
-      boardId: Number(form.boardId),
-      board: selectedBoard.name,
-      academicYearId: Number(form.academicYearId),
-      academicLevelId: Number(form.academicLevelId),
-      academicLevel: selectedLevel.name,
-      yearOfStudy: selectedLevel.name,
-      groupId: Number(form.groupId),
-      group: selectedGroup.name,
-      ...(form.groupProgramId ? { groupProgramId: Number(form.groupProgramId) } : {}),
-      programId: Number(form.programId),
-      programme: selectedProgram.name,
-      program: selectedProgram.name,
-      sectionName: normalizedName,
-      roomId: Number(form.roomId),
-      roomNumber: selectedRoom.roomCode,
-      classTeacherId: Number(form.classTeacherId),
-      maximumStrength: strength,
-      capacity: strength,
-      isActive: form.status === "Active",
-      ...(form.rowVersion != null ? { rowVersion: form.rowVersion } : {}),
-    };
-    setSavingSection(true);
-    try {
-      if (isEditing) await apiClient.put(apiEndpoints.sections.update(selectedSectionId), payload);
-      else await apiClient.post(apiEndpoints.sections.create, payload);
-      let refreshFailed = false;
-      try {
-        await loadSections();
-      } catch {
-        refreshFailed = true;
-      }
-      close();
-      setSearch("");
-      setPage(1);
-      say(
-        refreshFailed
-          ? `Section "${normalizedName}" was saved, but the refreshed list could not be loaded.`
-          : isEditing
-            ? `Section "${normalizedName}" updated successfully!`
-            : `Section "${normalizedName}" added successfully!`,
-      );
-    } catch (error) {
-      setModalError(getApiErrorMessage(error));
-    } finally {
-      setSavingSection(false);
-    }
-  };
-  const saveRoom = async (event) => {
-    event.preventDefault();
-    if (savingRoom) return;
-    if (roomForm.isActive !== true && roomForm.isActive !== false)
-      return setRoomModalError("Please select a valid Room status.");
-    const room = {
-      id: selectedRoomId,
-      roomCode: normalizeRoomCode(roomForm.roomCode),
-      roomName: roomForm.roomName.trim(),
-      capacity: Number(roomForm.capacity),
-      roomType: roomForm.roomType.trim(),
-      building: roomForm.building.trim(),
-      floor: roomForm.floor.trim(),
-      isActive: roomForm.isActive,
-    };
-    if (
-      !room.roomCode ||
-      !room.roomName ||
-      !room.roomType ||
-      !room.building ||
-      !room.floor ||
-      !String(roomForm.capacity).trim()
-    )
-      return setRoomModalError("Please complete all required room fields.");
-    if (!Number.isInteger(room.capacity) || room.capacity <= 0)
-      return setRoomModalError("Room capacity must be a positive whole number.");
-    if (!ROOM_TYPES.includes(room.roomType))
-      return setRoomModalError("Please select a valid room type.");
-    if (
-      rooms.some(
-        (item) => item.id !== selectedRoomId && roomCodesMatch(item.roomCode, room.roomCode),
-      )
-    )
-      return setRoomModalError("A room with this code already exists.");
-    const currentRoom = rooms.find((item) => item.id === selectedRoomId);
-    const assignedSections = sections.filter(
-      (section) =>
-        section.status === "Active" &&
-        ((positiveId(section.roomId) && String(section.roomId) === String(currentRoom?.id)) ||
-          (!positiveId(section.roomId) &&
-            roomCodesMatch(
-              resolveSection(section).roomCode,
-              currentRoom?.roomCode ?? room.roomCode,
-            ))),
-    );
-    if (assignedSections.length && !roomCodesMatch(room.roomCode, currentRoom.roomCode))
-      return setRoomModalError(
-        "Room code cannot be changed because this room is assigned to an active section.",
-      );
-    if (
-      assignedSections.length &&
-      currentRoom.roomType === "Classroom" &&
-      room.roomType !== "Classroom"
-    )
-      return setRoomModalError(
-        "Room type cannot be changed because this room is assigned to an active section.",
-      );
-    const maxAssignedStrength = Math.max(
-      0,
-      ...assignedSections.map((section) => Number(section.strength) || 0),
-    );
-    if (room.capacity < maxAssignedStrength)
-      return setRoomModalError(
-        "Room capacity cannot be reduced below the strength of an assigned active section.",
-      );
-    if (currentRoom?.isActive && !room.isActive && assignedSections.length)
-      return setRoomModalError(
-        "Cannot deactivate this room because it is assigned to an active section.",
-      );
+    return options;
+  }, [teachersList, sections, selectedSectionId, sectionForm.classTeacherId, teachersById]);
 
-    const isEditingRoom = Boolean(selectedRoomId);
-    const payload = {
-      roomCode: room.roomCode,
-      roomName: room.roomName,
-      roomNumber: room.roomCode,
-      capacity: room.capacity,
-      roomType: room.roomType,
-      building: room.building,
-      buildingName: room.building,
-      floor: room.floor,
-      isActive: room.isActive,
-      ...(roomForm.rowVersion != null ? { rowVersion: roomForm.rowVersion } : {}),
-    };
-    setSavingRoom(true);
-    try {
-      let response;
-      if (isEditingRoom) response = await apiClient.put(`/api/v1/rooms/${selectedRoomId}`, payload);
-      else response = await apiClient.post(apiEndpoints.rooms.getAll, payload);
-      const responsePayload = response.data?.data ?? response.data?.result ?? response.data;
-      const createdRoom =
-        responsePayload && typeof responsePayload === "object" && !Array.isArray(responsePayload)
-          ? normalizeRoom(responsePayload)
-          : null;
-      let refreshFailed = false;
-      let nextRooms = rooms;
+  // Filtering & Pagination
+  const filteredSections = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return sections.filter((sec) => {
+      const d = resolveSection(sec);
+      if (filters.groupId && normalizeId(sec.groupId) !== normalizeId(filters.groupId)) return false;
+      if (filters.programId && normalizeId(sec.programId) !== normalizeId(filters.programId)) return false;
+      if (filters.academicLevelId && normalizeId(sec.academicLevelId) !== normalizeId(filters.academicLevelId)) return false;
+
+      if (!q) return true;
+      return [
+        sec.name,
+        d.boardName,
+        d.boardCode,
+        d.academicYearName,
+        d.groupName,
+        d.programName,
+        d.academicLevelName,
+        d.roomNo,
+        d.teacherName,
+        sec.status,
+      ].some((val) => String(val || "").toLowerCase().includes(q));
+    });
+  }, [sections, filters, search, resolveSection]);
+
+  const sectionPages = Math.max(1, Math.ceil(filteredSections.length / PAGE_SIZE));
+  const shownSections = filteredSections.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const filteredRooms = useMemo(() => {
+    const q = roomSearch.trim().toLowerCase();
+    return rooms.filter((r) => {
+      if (roomFilters.building && r.building !== roomFilters.building) return false;
+      if (roomFilters.floor && String(r.floor) !== roomFilters.floor) return false;
+      if (roomFilters.roomType && r.roomType !== roomFilters.roomType) return false;
+
+      if (!q) return true;
+      return [
+        r.roomNo,
+        r.building,
+        r.floor,
+        r.roomType,
+        r.isActive ? "Active" : "Inactive",
+      ].some((val) => String(val || "").toLowerCase().includes(q));
+    });
+  }, [rooms, roomSearch, roomFilters]);
+
+  const roomPages = Math.max(1, Math.ceil(filteredRooms.length / PAGE_SIZE));
+  const shownRooms = filteredRooms.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE);
+
+  // Dropdowns
+  const selectedSection = useMemo(() => sections.find((item) => normalizeId(item.id) === normalizeId(selectedSectionId)), [sections, selectedSectionId]);
+  const boardOptions = useMemo(() => {
+    const options = boardsList.filter((b) => b.isActive).map((b) => ({ value: String(b.id), label: b.name }));
+    if (selectedSection?.boardId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.boardId))) {
+      options.unshift({ value: String(selectedSection.boardId), label: selectedSection.board || "Current Board" });
+    }
+    return options;
+  }, [boardsList, selectedSection]);
+
+  const filteredYearOptions = useMemo(() => {
+    const options = academicYearsList
+      .filter((y) => y.isActive)
+      .filter((y) => !sectionForm.boardId || !y.boardId || normalizeId(y.boardId) === normalizeId(sectionForm.boardId))
+      .map((y) => ({ value: String(y.id), label: y.name }));
+    if (selectedSection?.academicYearId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.academicYearId))) {
+      options.unshift({ value: String(selectedSection.academicYearId), label: selectedSection.academicYear || "Current Academic Year" });
+    }
+    return options;
+  }, [academicYearsList, sectionForm.boardId, selectedSection]);
+
+  const filteredGroupOptions = useMemo(() => {
+    const options = groupsList
+      .filter((g) => g.isActive)
+      .filter((g) => !sectionForm.boardId || !g.boardId || normalizeId(g.boardId) === normalizeId(sectionForm.boardId))
+      .map((g) => ({ value: String(g.id), label: g.name }));
+    if (selectedSection?.groupId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.groupId))) {
+      options.unshift({ value: String(selectedSection.groupId), label: selectedSection.group || "Current Group" });
+    }
+    return options;
+  }, [groupsList, sectionForm.boardId, selectedSection]);
+
+  const filteredProgramOptions = useMemo(() => {
+    const options = programsList
+      .filter((p) => p.isActive)
+      .filter((p) => !sectionForm.groupId || !p.groupId || normalizeId(p.groupId) === normalizeId(sectionForm.groupId))
+      .map((p) => ({ value: String(p.programId), label: p.name }));
+    if (selectedSection?.programId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.programId))) {
+      options.unshift({ value: String(selectedSection.programId), label: selectedSection.program || "Current Program" });
+    }
+    return options;
+  }, [programsList, sectionForm.groupId, selectedSection]);
+
+  const levelOptions = useMemo(() => {
+    const options = academicLevelsList.filter((l) => l.isActive).map((l) => ({ value: String(l.id), label: l.name }));
+    if (selectedSection?.academicLevelId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.academicLevelId))) {
+      options.unshift({ value: String(selectedSection.academicLevelId), label: selectedSection.academicLevel || "Current Academic Level" });
+    }
+    return options;
+  }, [academicLevelsList, selectedSection]);
+
+  const sectionGroupFilterOptions = useMemo(() => {
+    const values = [...groupsList.filter((group) => group.isActive).map((group) => ({ value: normalizeId(group.id), label: group.name })), ...sections.filter((item) => item.groupId).map((item) => ({ value: normalizeId(item.groupId), label: item.group || "Group" }))];
+    return values.filter((item, index) => values.findIndex((candidate) => candidate.value === item.value) === index);
+  }, [groupsList, sections]);
+
+  const sectionProgramFilterOptions = useMemo(() => {
+    const values = [...programsList.filter((program) => program.isActive && normalizeId(program.groupId) === normalizeId(filters.groupId)).map((program) => ({ value: normalizeId(program.programId), label: program.name })), ...sections.filter((item) => normalizeId(item.groupId) === normalizeId(filters.groupId) && item.programId).map((item) => ({ value: normalizeId(item.programId), label: item.program || "Program" }))];
+    return values.filter((item, index) => values.findIndex((candidate) => candidate.value === item.value) === index);
+  }, [programsList, sections, filters.groupId]);
+
+  const sectionLevelFilterOptions = useMemo(() => {
+    const values = [...academicLevelsList.map((item) => ({ value: String(item.id), label: item.name })), ...sections.filter((item) => item.academicLevelId).map((item) => ({ value: String(item.academicLevelId), label: item.academicLevel || "Academic Level" }))];
+    return values.filter((item, index) => values.findIndex((candidate) => normalizeId(candidate.value) === normalizeId(item.value)) === index);
+  }, [academicLevelsList, sections]);
+
+  const roomBuildings = useMemo(() => [...new Set(rooms.map((r) => r.building).filter(Boolean))], [rooms]);
+  const roomFloors = useMemo(() => [...new Set(rooms.map((r) => String(r.floor)).filter(Boolean))], [rooms]);
+  const roomFilterTypes = useMemo(() => [...new Set(rooms.map((r) => r.roomType).filter(Boolean))], [rooms]);
+
+  const openAddSection = () => {
+    setSelectedSectionId(null);
+    setSectionFormMode("add");
+    setSectionCreationType("single");
+    setFieldErrors({});
+    setSectionForm({
+      boardId: "",
+      academicYearId: "",
+      groupId: "",
+      programId: "",
+      groupProgramId: "",
+      academicLevelId: "",
+      name: "",
+      roomId: "",
+      classTeacherId: "",
+      strength: "",
+      status: "Active",
+    });
+    setAcademicYearsList([]);
+    setAcademicLevelsList([]);
+    setGroupsList([]);
+    setProgramsList([]);
+    setBulkSections([{ name: "", roomId: "", classTeacherId: "", strength: "", status: "Active" }]);
+    setSectionView("form");
+  };
+
+  const openEditSection = (sec, isPreview = false) => {
+    setSelectedSectionId(sec.id);
+    setSectionFormMode(isPreview ? "preview" : "edit");
+    setSectionCreationType("single");
+    setFieldErrors({});
+    setSectionForm({
+      boardId: sec.boardId ? String(sec.boardId) : "",
+      academicYearId: sec.academicYearId ? String(sec.academicYearId) : "",
+      groupId: sec.groupId ? String(sec.groupId) : "",
+      programId: sec.programId ? String(sec.programId) : "",
+      groupProgramId: sec.groupProgramId ? String(sec.groupProgramId) : "",
+      academicLevelId: sec.academicLevelId ? String(sec.academicLevelId) : "",
+      name: sec.name || "",
+      roomId: sec.roomId ? String(sec.roomId) : "",
+      classTeacherId: sec.classTeacherId ? String(sec.classTeacherId) : "",
+      strength: String(sec.strength || ""),
+      status: sec.status || "",
+    });
+    setSectionView("form");
+    if (!isPreview && sec.boardId) loadBoardDependencies(sec.boardId, { groupId: sec.groupId });
+  };
+
+  const openAddRoom = () => {
+    setSelectedRoomId(null);
+    setRoomFormMode("add");
+    setRoomCreationType("single");
+    setRoomFieldErrors({});
+    setRoomForm({
+      roomNo: "",
+      capacity: "",
+      roomType: "",
+      building: "",
+      floor: "",
+      isActive: "Active",
+    });
+    setBulkRoomForm(EMPTY_BULK_ROOM_FORM);
+    setBulkRoomAllocations([]);
+    setBulkRoomPage(1);
+    setRoomView("form");
+  };
+
+  const openEditRoom = (room, isPreview = false) => {
+    setSelectedRoomId(room.id);
+    setRoomFormMode(isPreview ? "preview" : "edit");
+    setRoomCreationType("single");
+    setRoomFieldErrors({});
+    setRoomForm({
+      roomNo: room.roomNo || "",
+      capacity: String(room.capacity || ""),
+      roomType: room.roomType || "Classroom",
+      building: room.building || "",
+      floor: String(room.floor || ""),
+      isActive: room.isActive === true ? "Active" : room.isActive === false ? "Inactive" : "",
+    });
+    setRoomView("form");
+  };
+
+  const handleSectionRoomChange = (roomId) => {
+    const selectedRoom = roomsById.get(String(roomId));
+    setSectionForm((prev) => ({
+      ...prev,
+      roomId,
+      strength: selectedRoom ? String(selectedRoom.capacity) : "",
+    }));
+    setFieldErrors((prev) => ({ ...prev, roomId: null, strength: null }));
+  };
+
+  const handleBulkSectionRoomChange = (index, roomId) => {
+    const selectedRoom = roomsById.get(String(roomId));
+    setBulkSections((prev) => {
+      const next = [...prev];
+      next[index] = {
+        ...next[index],
+        roomId,
+        strength: selectedRoom ? String(selectedRoom.capacity) : "",
+      };
+      return next;
+    });
+  };
+
+  const prepareBulkRoomAllocations = () => {
+    const count = Number(bulkRoomForm.roomCount);
+    const sequence = parseRoomNumberSequence(bulkRoomForm.startRoomNo);
+    const nextErrors = { ...roomFieldErrors };
+    delete nextErrors.startRoomNo;
+    delete nextErrors.roomCount;
+    if (!sequence) nextErrors.startRoomNo = "First Room Number must end with a numeric suffix";
+    if (!Number.isInteger(count) || count < 1 || count > 100) nextErrors.roomCount = "Room count must be between 1 and 100";
+    if (!sequence || nextErrors.roomCount) return setRoomFieldErrors(nextErrors);
+    const next = reconcileBulkRoomAllocations(bulkRoomAllocations, bulkRoomForm);
+    const duplicateErrors = validateBulkRoomAllocations(next, rooms, count);
+    Object.keys(nextErrors).filter((key) => key.startsWith("bulk_")).forEach((key) => delete nextErrors[key]);
+    setBulkRoomAllocations(next);
+    if (!bulkRoomAllocations.length) setBulkRoomPage(1);
+    setRoomFieldErrors({ ...nextErrors, ...Object.fromEntries(Object.entries(duplicateErrors).filter(([key]) => key.startsWith("bulk_roomNo_"))) });
+  };
+
+  const updateBulkRoomAllocation = (index, field, value) => {
+    setBulkRoomAllocations((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row));
+    setRoomFieldErrors((current) => ({ ...current, [`bulk_${field}_${index}`]: null }));
+  };
+
+  // ---------- SAVE HANDLERS WITH INLINE ERROR MESSAGES ----------
+  const saveSection = async (e) => {
+    e.preventDefault();
+    if (operation) return;
+    const errs = {};
+
+    const { boardId, academicYearId, groupId, programId, academicLevelId } = sectionForm;
+    if (!boardId) errs.boardId = "Board selection is required";
+    if (!academicYearId) errs.academicYearId = "Academic Year selection is required";
+    if (!groupId) errs.groupId = "Group selection is required";
+    if (!programId) errs.programId = "Program selection is required";
+    if (!academicLevelId) errs.academicLevelId = "Academic Level selection is required";
+
+    const boardObj = boardsById.get(String(boardId));
+    const yearObj = yearsById.get(String(academicYearId));
+    const groupObj = groupsById.get(String(groupId));
+    const programObj = programsById.get(String(programId));
+    const levelObj = levelsById.get(String(academicLevelId));
+
+    if (sectionCreationType === "single" || selectedSectionId) {
+      if (!sectionForm.name.trim()) errs.name = "Section Name is required";
+      if (!sectionForm.roomId) errs.roomId = "Room No selection is required";
+      if (!sectionForm.status) errs.status = "Status selection is required (Active/Inactive)";
+
+      const roomObj = roomsById.get(String(sectionForm.roomId));
+      const strengthNum = Number(sectionForm.strength);
+      const roomConflict = sections.some((item) => item.status === "Active" && normalizeId(item.id) !== normalizeId(selectedSectionId) && normalizeId(item.roomId) === normalizeId(sectionForm.roomId));
+      if (roomObj && (!roomObj.isActive || roomObj.roomType !== "Classroom" || roomConflict)) errs.roomId = "Room is not available for Section allocation";
+      if (sectionForm.classTeacherId) {
+        const teacherObjForValidation = teachersById.get(normalizeId(sectionForm.classTeacherId));
+        if (teacherObjForValidation && teacherObjForValidation.isActive === false) {
+          errs.classTeacherId = "Selected Incharge is inactive";
+        }
+      }
+      if (sections.some((item) => normalizeId(item.id) !== normalizeId(selectedSectionId) && item.name.trim().toLowerCase() === sectionForm.name.trim().toLowerCase() && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs.name = "Section Name already exists for this academic scope";
+
+      if (!String(sectionForm.strength).trim()) {
+        errs.strength = "Capacity is required";
+      } else if (!Number.isInteger(strengthNum) || strengthNum <= 0) {
+        errs.strength = "Capacity must be a positive integer";
+      } else if (roomObj && strengthNum > Number(roomObj.capacity)) {
+        errs.strength = `Section capacity (${strengthNum}) cannot exceed room capacity (${roomObj.capacity})`;
+      }
+
+      if (Object.keys(errs).length > 0) {
+        setFieldErrors(errs);
+        return;
+      }
+
+      const teacherObj = sectionForm.classTeacherId ? teachersById.get(String(sectionForm.classTeacherId)) : null;
+
+      const isEdit = Boolean(selectedSectionId);
+      setOperation(isEdit ? "UPDATE_SECTION" : "ADD_SECTION");
+      let apiSuccess = false;
       try {
-        const refreshedRooms = await apiClient.get(apiEndpoints.rooms.getAll);
-        nextRooms = collectionFrom(refreshedRooms.data)
-          .map(normalizeRoom)
-          .filter((item) => item.id);
-        setRooms(nextRooms);
-      } catch {
-        refreshFailed = true;
+        const payload = sectionPayload(sectionForm, { ...sectionForm, program: programObj });
+        await (isEdit ? apiClient.put(apiEndpoints.sections.update(selectedSectionId), payload) : apiClient.post(apiEndpoints.sections.create, payload));
+        apiSuccess = true;
+      } catch (error) {
+        say(getApiErrorMessage(error));
+      } finally {
+        setOperation("");
       }
-      if (
-        !isEditingRoom &&
-        roomModalFromSection &&
-        room.isActive &&
-        room.roomType === "Classroom"
-      ) {
-        const selectedCreatedRoom = positiveId(createdRoom?.id)
-          ? createdRoom
-          : nextRooms.find((item) => roomCodesMatch(item.roomCode, room.roomCode));
-        if (selectedCreatedRoom)
-          setForm((current) => ({
-            ...current,
-            roomId: selectedCreatedRoom.id,
-            room: selectedCreatedRoom.roomCode,
-            strength: String(selectedCreatedRoom.capacity ?? room.capacity ?? ""),
-          }));
-        else refreshFailed = true;
+      const updatedItem = {
+        id: isEdit ? selectedSectionId : String(Date.now()),
+        boardId,
+        board: boardObj?.name || "",
+        boardCode: boardObj?.code || "",
+        academicYearId,
+        academicYear: yearObj?.name || "",
+        academicLevelId,
+        academicLevel: levelObj?.name || "",
+        groupId,
+        group: groupObj?.name || "",
+        programId,
+        program: programObj?.name || "",
+        groupProgramId: programObj?.groupProgramId || "",
+        name: sectionForm.name.trim(),
+        roomId: roomObj.id,
+        roomNo: roomObj.roomNo,
+        classTeacherId: teacherObj ? teacherObj.id : "",
+        teacher: teacherObj ? teacherObj.name : "—",
+        strength: strengthNum,
+        status: sectionForm.status,
+        createdAt: isEdit ? sections.find((s) => s.id === selectedSectionId)?.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (isEdit) {
+        setSections((prev) => prev.map((s) => (s.id === selectedSectionId ? updatedItem : s)));
+        say(`Section "${updatedItem.name}" updated & reassigned successfully!`);
+      } else {
+        // PREPEND NEW SECTION TO TOP
+        createdSectionIdsRef.current.add(normalizeId(updatedItem.id));
+        if (updatedItem.name) createdSectionIdsRef.current.add(updatedItem.name.trim().toLowerCase());
+        setSections((prev) => [updatedItem, ...prev]);
+        setPage(1);
+        say(`Section "${updatedItem.name}" added successfully!`);
       }
-      closeRoomModal();
-      setRoomSearch("");
-      setRoomPage(1);
-      say(
-        refreshFailed
-          ? `Room "${room.roomCode}" was saved, but the refreshed room list could not be loaded.`
-          : isEditingRoom
-            ? `Room "${room.roomCode}" ${room.isActive ? "updated" : "deactivated"} successfully!`
-            : `Room "${room.roomCode}" added successfully!`,
-      );
-    } catch (error) {
-      setRoomModalError(getApiErrorMessage(error));
-    } finally {
-      setSavingRoom(false);
+      if (apiSuccess) {
+        await Promise.all([loadSections().catch(() => { }), loadRooms().catch(() => { })]);
+      }
+      setSectionView("list");
+    } else {
+      // BULK SECTIONS SAVE
+      if (!bulkSections.length) {
+        errs.bulk = "Please configure at least one section";
+        setFieldErrors(errs);
+        return;
+      }
+
+      const newSections = [];
+      const assignedRoomsInBatch = new Set();
+      const assignedTeachersInBatch = new Set();
+      const namesInBatch = new Set();
+      const occupiedRoomIds = new Set(sections.filter((item) => item.status === "Active" && item.roomId).map((item) => normalizeId(item.roomId)));
+      const occupiedTeacherIds = new Set(sections.filter((item) => item.status === "Active" && item.classTeacherId).map((item) => normalizeId(item.classTeacherId)));
+
+      for (let i = 0; i < bulkSections.length; i++) {
+        const sec = bulkSections[i];
+        if (!sec.name.trim()) errs[`name_${i}`] = `Section Name required`;
+        if (!sec.roomId) errs[`room_${i}`] = `Room No required`;
+        if (!sec.status) errs[`status_${i}`] = `Status required`;
+        const normalizedName = sec.name.trim().toLowerCase();
+        if (normalizedName && namesInBatch.has(normalizedName)) errs[`name_${i}`] = "Duplicate Section Name in batch";
+        if (normalizedName) namesInBatch.add(normalizedName);
+        if (normalizedName && sections.some((item) => item.name.trim().toLowerCase() === normalizedName && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs[`name_${i}`] = "Section Name already exists for this academic scope";
+
+        if (sec.roomId && assignedRoomsInBatch.has(sec.roomId)) {
+          errs[`room_${i}`] = `Duplicate room assignment in batch`;
+        }
+        if (sec.roomId) assignedRoomsInBatch.add(sec.roomId);
+
+        const roomObj = roomsById.get(String(sec.roomId));
+        if (sec.roomId && (!roomObj?.isActive || roomObj?.roomType !== "Classroom" || occupiedRoomIds.has(normalizeId(sec.roomId)))) errs[`room_${i}`] = "Room is not available for Section allocation";
+        if (sec.classTeacherId) {
+          const teacherObj = teachersById.get(normalizeId(sec.classTeacherId));
+          if (teacherObj && teacherObj.isActive === false) {
+            errs[`teacher_${i}`] = "Selected Incharge is inactive";
+          }
+        }
+        const strengthNum = Number(sec.strength);
+        if (!String(sec.strength).trim() || !Number.isInteger(strengthNum) || strengthNum <= 0) {
+          errs[`strength_${i}`] = `Valid capacity required`;
+        } else if (roomObj && strengthNum > Number(roomObj.capacity)) {
+          errs[`strength_${i}`] = `Exceeds room capacity (${roomObj.capacity})`;
+        }
+      }
+
+      if (Object.keys(errs).length > 0) {
+        setFieldErrors(errs);
+        return;
+      }
+
+      setOperation("BULK_SECTION");
+      let apiSuccess = false;
+      try {
+        const context = { ...sectionForm, program: programObj };
+        await apiClient.post(SECTION_BULK_ENDPOINT, bulkSections.map((item) => sectionPayload(item, context)));
+        apiSuccess = true;
+      } catch (error) {
+        say(getApiErrorMessage(error));
+      } finally {
+        setOperation("");
+      }
+
+      for (let i = 0; i < bulkSections.length; i++) {
+        const sec = bulkSections[i];
+        const roomObj = roomsById.get(String(sec.roomId));
+        const teacherObj = sec.classTeacherId ? teachersById.get(String(sec.classTeacherId)) : null;
+
+        const secItem = {
+          id: String(Date.now() + i),
+          boardId,
+          board: boardObj?.name || "",
+          boardCode: boardObj?.code || "",
+          academicYearId,
+          academicYear: yearObj?.name || "",
+          academicLevelId,
+          academicLevel: levelObj?.name || "",
+          groupId,
+          group: groupObj?.name || "",
+          programId,
+          program: programObj?.name || "",
+          groupProgramId: programObj?.groupProgramId || "",
+          name: sec.name.trim(),
+          roomId: roomObj.id,
+          roomNo: roomObj.roomNo,
+          classTeacherId: teacherObj ? teacherObj.id : "",
+          teacher: teacherObj ? teacherObj.name : "—",
+          strength: Number(sec.strength),
+          status: sec.status,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        createdSectionIdsRef.current.add(normalizeId(secItem.id));
+        if (secItem.name) createdSectionIdsRef.current.add(secItem.name.trim().toLowerCase());
+        newSections.push(secItem);
+      }
+
+      // PREPEND BULK SECTIONS TO TOP
+      setSections((prev) => [...newSections, ...prev]);
+      setPage(1);
+      say(`${newSections.length} Sections created successfully!`);
+      if (apiSuccess) {
+        await Promise.all([loadSections().catch(() => { }), loadRooms().catch(() => { })]);
+      }
+      setBulkSections([{ name: "", roomId: "", classTeacherId: "", strength: "", status: "Active" }]);
+      setSectionView("list");
     }
   };
+
+  const saveRoom = async (e) => {
+    e.preventDefault();
+    if (operation) return;
+    const errs = {};
+
+    if (roomCreationType === "single" || selectedRoomId) {
+      const roomNoTrimmed = roomForm.roomNo.trim();
+      if (!roomNoTrimmed) errs.roomNo = "Room No is required";
+      if (!roomForm.building.trim()) errs.building = "Block Name is required";
+      if (!String(roomForm.floor).trim()) errs.floor = "Floor is required";
+      if (!roomForm.roomType) errs.roomType = "Room Type is required";
+      if (!roomForm.isActive) errs.isActive = "Status selection is required";
+
+      const cap = Number(roomForm.capacity);
+      if (!String(roomForm.capacity).trim() || !Number.isInteger(cap) || cap <= 0) {
+        errs.capacity = "Room capacity must be a positive integer";
+      }
+
+      const duplicate = rooms.find(
+        (r) => r.id !== selectedRoomId && r.roomNo.toLowerCase() === roomNoTrimmed.toLowerCase()
+      );
+      if (duplicate) errs.roomNo = `Room No "${roomNoTrimmed}" already exists`;
+
+      if (Object.keys(errs).length > 0) {
+        setRoomFieldErrors(errs);
+        return;
+      }
+
+      const isEdit = Boolean(selectedRoomId);
+      setOperation(isEdit ? "UPDATE_ROOM" : "ADD_ROOM");
+      let apiSuccess = false;
+      try {
+        await (isEdit ? apiClient.put(ROOM_ENDPOINTS.update(selectedRoomId), roomPayload(roomForm)) : apiClient.post(ROOM_ENDPOINTS.create, roomPayload(roomForm)));
+        apiSuccess = true;
+      } catch (error) {
+        say(getApiErrorMessage(error));
+      } finally {
+        setOperation("");
+      }
+      const roomObj = {
+        id: isEdit ? selectedRoomId : String(Date.now()),
+        roomNo: roomNoTrimmed,
+        capacity: cap,
+        roomType: roomForm.roomType,
+        building: roomForm.building.trim(),
+        floor: String(roomForm.floor).trim(),
+        isActive: roomForm.isActive === "Active",
+      };
+
+      if (isEdit) {
+        setRooms((prev) => prev.map((r) => (r.id === selectedRoomId ? roomObj : r)));
+        say(`Room "${roomObj.roomNo}" updated successfully!`);
+      } else {
+        // PREPEND NEW ROOM TO TOP
+        createdRoomIdsRef.current.add(normalizeId(roomObj.id));
+        if (roomObj.roomNo) createdRoomIdsRef.current.add(roomObj.roomNo.trim().toLowerCase());
+        setRooms((prev) => [roomObj, ...prev]);
+        setRoomPage(1);
+        say(`Room "${roomObj.roomNo}" added successfully!`);
+      }
+      if (apiSuccess) {
+        await loadRooms().catch(() => { });
+      }
+      setRoomView("list");
+    } else {
+      // BULK ROOMS CREATION
+      const { building, floor, startRoomNo, roomCount, defaultCapacity, defaultRoomType, isActive } = bulkRoomForm;
+
+      if (!building.trim()) errs.building = "Block Name is required";
+      if (!String(floor).trim()) errs.floor = "Floor is required";
+      if (!startRoomNo.trim()) errs.startRoomNo = "Start Room No is required";
+      if (!isActive || !["Active", "Inactive"].includes(isActive)) errs.isActive = "Valid Status is required";
+
+      const countNum = Number(roomCount);
+      if (!String(roomCount).trim() || !Number.isInteger(countNum) || countNum < 1 || countNum > 100) {
+        errs.roomCount = "Room count must be between 1 and 100";
+      }
+
+      const capNum = Number(defaultCapacity);
+      if (String(defaultCapacity).trim() && (!Number.isInteger(capNum) || capNum < 1 || capNum > 1000)) errs.defaultCapacity = "Capacity must be an integer from 1 to 1000";
+      if (defaultRoomType && !ROOM_TYPES.includes(defaultRoomType)) errs.defaultRoomType = "Select a valid Room Type";
+      if (!parseRoomNumberSequence(startRoomNo)) errs.startRoomNo = "First Room Number must end with a numeric suffix";
+      Object.assign(errs, validateBulkRoomAllocations(bulkRoomAllocations, rooms, countNum));
+
+      if (Object.keys(errs).length > 0) {
+        setRoomFieldErrors(errs);
+        const firstInvalidRow = Object.keys(errs)
+          .map((key) => key.match(/^bulk_(?:capacity|roomType|roomNo)_(\d+)$/))
+          .find(Boolean);
+        if (firstInvalidRow) setBulkRoomPage(Math.floor(Number(firstInvalidRow[1]) / BULK_ROOM_PAGE_SIZE) + 1);
+        return;
+      }
+
+      const bulkPayload = bulkRoomAllocations.map((allocation) => roomPayload({ ...allocation, building, floor, isActive }));
+      setOperation("BULK_ROOM");
+      let apiSuccess = false;
+      try {
+        await apiClient.post(ROOM_ENDPOINTS.bulk, bulkPayload);
+        apiSuccess = true;
+      } catch (error) {
+        say(getApiErrorMessage(error));
+      } finally {
+        setOperation("");
+      }
+
+      const idPrefix = `room-${Date.now()}`;
+      const generated = bulkRoomAllocations.map((allocation, index) => {
+        const rObj = {
+          id: `${idPrefix}-${index + 1}`,
+          roomNo: allocation.roomNo,
+          capacity: Number(allocation.capacity),
+          roomType: allocation.roomType,
+          building: building.trim(),
+          floor: String(floor).trim(),
+          isActive: isActive === "Active",
+        };
+        createdRoomIdsRef.current.add(normalizeId(rObj.id));
+        if (rObj.roomNo) createdRoomIdsRef.current.add(rObj.roomNo.trim().toLowerCase());
+        return rObj;
+      });
+
+      // PREPEND BULK ROOMS TO TOP
+      setRooms((prev) => [...generated, ...prev]);
+      setRoomPage(1);
+      say(`${generated.length} Rooms created successfully for ${building} (Floor ${floor})!`);
+      setBulkRoomForm(EMPTY_BULK_ROOM_FORM);
+      setBulkRoomAllocations([]);
+      setBulkRoomPage(1);
+      setRoomFieldErrors({});
+      if (apiSuccess) {
+        await loadRooms().catch(() => { });
+      }
+      setRoomView("list");
+    }
+  };
+
+  const deleteSection = async (sec) => {
+    if (operation) return;
+    if (window.confirm(`Are you sure you want to delete section "${sec.name}"?`)) {
+      setOperation(`DELETE_SECTION:${sec.id}`);
+      let apiSuccess = false;
+      try {
+        await apiClient.delete(apiEndpoints.sections.delete(sec.id));
+        apiSuccess = true;
+        await Promise.all([loadSections(), loadRooms()]);
+      } catch (error) {
+        say(getApiErrorMessage(error));
+      } finally {
+        setOperation("");
+      }
+      if (!apiSuccess) {
+        setSections((prev) => prev.filter((s) => s.id !== sec.id));
+      }
+      say(`Section "${sec.name}" deleted successfully.`);
+    }
+  };
+
+  const deleteRoom = async (room) => {
+    if (operation) return;
+    const assigned = sections.find((s) => s.status === "Active" && String(s.roomId) === String(room.id));
+    if (assigned) {
+      say(`Cannot delete room "${room.roomNo}" because it is assigned to active section "${assigned.name}".`);
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to delete room "${room.roomNo}"?`)) {
+      setOperation(`DELETE_ROOM:${room.id}`);
+      let apiSuccess = false;
+      try {
+        await apiClient.delete(ROOM_ENDPOINTS.delete(room.id));
+        apiSuccess = true;
+        await loadRooms();
+      } catch (error) {
+        say(getApiErrorMessage(error));
+      } finally {
+        setOperation("");
+      }
+      if (!apiSuccess) {
+        setRooms((prev) => prev.filter((r) => r.id !== room.id));
+      }
+      say(`Room "${room.roomNo}" deleted successfully.`);
+    }
+  };
+
+  const exportAllocationExcel = () => {
+    if (!rooms.length && !sections.length) return say("No room or section allocation data is available to export.");
+    downloadAllocationWorkbook(rooms, sections, resolveSection);
+    say("Section and room allocation workbook downloaded successfully.");
+  };
+
+  // DYNAMIC HEADER DETAILS BASED ON ACTIVE TAB
+  const dynamicHeader = useMemo(() => {
+    if (activeTab === "rooms") {
+      return {
+        title: "Room Management",
+        subtitle: "Manage classrooms, floor wise allocations, and room availability.",
+      };
+    }
+    return {
+      title: "Section Management",
+      subtitle: "Manage academic sections, classrooms and teacher assignments.",
+    };
+  }, [activeTab]);
+
   return (
     <DashboardLayout
-      title={activeTab === "sections" ? pageConfig.title : "Room Management"}
-      subtitle={
-        activeTab === "sections"
-          ? pageConfig.subtitle
-          : "Manage classrooms, capacities and room allocation setup."
-      }
+      title={dynamicHeader.title}
+      subtitle={dynamicHeader.subtitle}
       breadcrumb={pageConfig.breadcrumb}
     >
       <div className="cms-sec-container">
+        {initialLoading && <div className="cms-card cms-sec-loading" role="status">Loading Section and Room Management data...</div>}
+        {/* Navigation Tabs - FIRST TAB IS ROOM MANAGEMENT, SECOND TAB IS SECTION MANAGEMENT */}
         <div className="cms-room-tabs" role="tablist" aria-label="Management modules">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "sections"}
-            className={`cms-room-tab ${activeTab === "sections" ? "cms-room-tab-active" : ""}`}
-            onClick={() => setActiveTab("sections")}
-          >
-            Section Management
-          </button>
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === "rooms"}
             className={`cms-room-tab ${activeTab === "rooms" ? "cms-room-tab-active" : ""}`}
-            onClick={() => setActiveTab("rooms")}
+            onClick={() => {
+              setActiveTab("rooms");
+              setRoomView("list");
+            }}
           >
             Room Management
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "sections"}
+            className={`cms-room-tab ${activeTab === "sections" ? "cms-room-tab-active" : ""}`}
+            onClick={() => {
+              setActiveTab("sections");
+              setSectionView("list");
+            }}
+          >
+            Section Management
+          </button>
         </div>
-        {activeTab === "sections" && (
+
+        {/* ========================================================= */}
+        {/* TAB 1: ROOM MANAGEMENT (FIRST TAB)                        */}
+        {/* ========================================================= */}
+        {activeTab === "rooms" && (
           <>
-            <div className="cms-card">
-              <div className="cms-toolbar cms-sec-toolbar">
-                <div className="cms-search cms-sec-search">
-                  <Search size={16} />
-                  <input
-                    type="search"
-                    placeholder={sectionSearchPlaceholder}
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </div>
-                <div className="cms-sec-toolbar-filters">
-                  <ConstrainedFilterField
-                    label="Board"
-                    value={filters.board}
-                    onChange={(value) => updateFilter("board", value)}
-                    options={boardOptions}
-                  />
-                  <FilterField
-                    label="Academic Year"
-                    value={filters.academicYear}
-                    onChange={(value) => updateFilter("academicYear", value)}
-                    options={academicYearFilterOptions}
-                    showLabel={false}
-                  />
-                  <ConstrainedFilterField
-                    label="Academic Level"
-                    value={filters.academicLevel}
-                    onChange={(value) => updateFilter("academicLevel", value)}
-                    options={academicLevelOptions}
-                  />
-                </div>
-                <div className="cms-sec-toolbar-spacer" />
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-primary cms-sec-compact-btn"
-                  onClick={openAdd}
-                >
-                  <Plus size={16} />
-                  Add Section
-                </button>
-              </div>
-              <div className="cms-table-wrap cms-sec-table-wrap">
-                <table className="cms-table cms-sec-table cms-section-table">
-                  <thead>
-                    <tr>
-                      {[
-                        "Section Name",
-                        "Board",
-                        "Academic Year",
-                        "Group",
-                        "Program",
-                        "Academic Level",
-                        "Room",
-                        "Incharge",
-                        "Capacity",
-                        "Status",
-                        "Actions",
-                      ].map((title) => (
-                        <th key={title}>{title}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr>
-                        <td colSpan="11">
-                          <div className="cms-sec-loading">
-                            <span className="cms-sec-loader" aria-hidden="true" />
-                            <span>Loading data...</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : shown.length ? (
-                      shown.map((section) => (
-                        <tr key={section.id}>
-                          <td className="cms-strong cms-sec-name-cell" title={section.name}>
-                            {section.name || "—"}
-                          </td>
-                          <td
-                            className="cms-sec-board-code-cell"
-                            title={resolveSection(section).boardName}
-                          >
-                            {resolveSection(section).boardCode}
-                          </td>
-                          <td title={resolveSection(section).academicYearName}>
-                            {resolveSection(section).academicYearName}
-                          </td>
-                          <td title={resolveSection(section).groupName}>
-                            {resolveSection(section).groupName}
-                          </td>
-                          <td title={resolveSection(section).programName}>
-                            {resolveSection(section).programName}
-                          </td>
-                          <td title={resolveSection(section).academicLevelName}>
-                            {resolveSection(section).academicLevelName}
-                          </td>
-                          <td title={resolveSection(section).roomDisplay}>
-                            {resolveSection(section).roomDisplay}
-                          </td>
-                          <td title={resolveSection(section).teacherName}>
-                            {resolveSection(section).teacherName}
-                          </td>
-                          <td title={String(section.strength || "—")}>{section.strength || "—"}</td>
-                          <td>
-                            <span
-                              className={`cms-badge cms-sec-status-badge ${section.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}
-                            >
-                              {section.status}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="cms-sec-table-actions">
-                              {/* <button
-                                type="button"
-                                className="cms-sec-action-btn"
-                                onClick={() => openRow(section, true)}
-                              >
-                                <Eye size={14} />
-                              </button> */}
-                              <button
-                                type="button"
-                                className="cms-sec-action-btn"
-                                onClick={() => openRow(section, false)}
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                className="cms-sec-action-btn cms-sec-delete-action"
-                                onClick={() => deleteSection(section)}
-                                disabled={deletingSectionId === section.id}
-                                aria-label={`Delete section ${section.name}`}
-                                title={
-                                  deletingSectionId === section.id
-                                    ? "Deleting section..."
-                                    : `Delete section ${section.name}`
-                                }
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="11" className="cms-empty">
-                          No sections found matching your criteria.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="cms-sec-pagination">
-                <span className="cms-sec-record-summary">
-                  Showing {sectionRangeStart}–{sectionRangeEnd} of {rows.length} records
-                </span>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-ghost"
-                  disabled={page === 1}
-                  onClick={() => setPage((current) => current - 1)}
-                >
-                  Previous
-                </button>
-                <span>
-                  {page} / {pages}
-                </span>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-ghost"
-                  disabled={page === pages}
-                  onClick={() => setPage((current) => current + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-            {modal && (
-              <div
-                className={`cms-sec-overlay ${mode === "add" ? "cms-sec-add-overlay" : ""}`}
-                onClick={close}
-              >
-                <div
-                  className="cms-modal cms-sec-modal"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <div className="cms-modal-head">
-                    <h3>
-                      {preview
-                        ? "Section Details"
-                        : selected
-                          ? edit
-                            ? "Edit Section"
-                            : "View Section"
-                          : "Add Section"}
-                    </h3>
-                    <button type="button" className="cms-icon-btn" onClick={close}>
-                      <X size={16} />
-                    </button>
+            {roomView === "list" ? (
+              /* ROOMS TABLE VIEW */
+              <div className="cms-card">
+                <div className="cms-toolbar cms-sec-toolbar">
+                  <div className="cms-search cms-sec-search">
+                    <Search size={16} />
+                    <input
+                      type="search"
+                      placeholder="Search by Room No, block, floor..."
+                      value={roomSearch}
+                      onChange={(e) => setRoomSearch(e.target.value)}
+                    />
                   </div>
-                  <form onSubmit={save}>
-                    <div className="cms-modal-body">
-                      {modalError && (
-                        <div className="cms-modal-validation-toast" role="alert">
-                          {modalError}
-                        </div>
-                      )}
-                      {preview ? (
-                        viewLoading ? (
-                          <div className="cms-sec-loading">
-                            <span className="cms-sec-loader" aria-hidden="true" />
-                            <span>Loading Section details...</span>
-                          </div>
-                        ) : viewError ? (
-                          <div className="cms-modal-validation-toast" role="alert">
-                            {viewError}
-                          </div>
-                        ) : viewSection ? (
-                          (() => {
-                            const detail = resolveSection(viewSection);
-                            const detailItems = [
-                              ["Board", detail.boardName],
-                              ["Academic Year", detail.academicYearName],
-                              ["Academic Level", detail.academicLevelName],
-                              ["Group", detail.groupName],
-                              ["Program", detail.programName],
-                              ["Room", detail.roomDisplay],
-                              ["Incharge", detail.teacherName],
-                              ["Maximum Strength", viewSection.strength || "—"],
-                              [
-                                "Created Date",
-                                viewSection.createdAt
-                                  ? new Date(viewSection.createdAt).toLocaleString()
-                                  : "—",
-                              ],
-                              [
-                                "Updated Date",
-                                viewSection.updatedAt
-                                  ? new Date(viewSection.updatedAt).toLocaleString()
-                                  : "—",
-                              ],
-                            ];
-                            return (
-                              <div className="cms-card">
-                                <div className="cms-sec-pagination">
-                                  <strong title={viewSection.name}>
-                                    {viewSection.name || "—"}
-                                  </strong>
-                                  <span
-                                    className={`cms-badge ${viewSection.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"}`}
-                                  >
-                                    {viewSection.status}
-                                  </span>
-                                </div>
-                                <div className="cms-form-grid cms-sec-form-grid">
-                                  {detailItems.map(([itemLabel, value]) => (
-                                    <div className="cms-field" key={itemLabel}>
-                                      <label>{itemLabel}</label>
-                                      <span title={String(value)}>{value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()
-                        ) : null
-                      ) : (
-                        <div className="cms-form-grid cms-sec-form-grid">
-                          <FormField
-                            label="Board"
-                            value={form.board}
-                            field="board"
-                            options={boardOptions}
-                            readOnly={readOnly}
-                            change={change}
-                          />
-                          <FormField
-                            label="Academic Year"
-                            value={form.academicYearId}
-                            field="academicYear"
-                            options={academicYearOptions}
-                            readOnly={readOnly}
-                            change={change}
-                          />
-                          <FormField
-                            label="Group"
-                            value={form.groupId}
-                            field="group"
-                            options={groupOptions}
-                            readOnly={readOnly}
-                            change={change}
-                          />
-                          <FormField
-                            label="Program"
-                            value={form.groupProgramId || form.programId}
-                            field="program"
-                            options={programOptions}
-                            readOnly={readOnly}
-                            change={change}
-                          />
-                          <FormField
-                            label="Academic Level"
-                            value={form.academicLevel}
-                            field="academicLevel"
-                            options={academicLevelOptions}
-                            readOnly={readOnly}
-                            change={change}
-                          />
-                          <div className="cms-field">
-                            <label>
-                              Section Name <span className="req">*</span>
-                            </label>
-                            <input
-                              value={form.name}
-                              onChange={(event) => change("name", event.target.value)}
-                              disabled={readOnly}
-                            />
-                          </div>
-                          <div className="cms-field cms-sec-field cms-sec-room-field">
-                            <label>
-                              Room Number <span className="req">*</span>
-                            </label>
-                            <div className="cms-sec-room-field-row">
-                              <Select
-                                value={form.roomId}
-                                onChange={(value) => change("room", value)}
-                                options={availableRooms}
-                                placeholder="Select Room Number"
-                                disabled={readOnly}
-                              />
-                              {!readOnly && form.academicLevel && !availableRooms.length && (
-                                <div className="cms-modal-empty-state">
-                                  No active classroom rooms available. Add an active classroom room
-                                  before assigning a room to this section.
-                                </div>
-                              )}
-                              {!readOnly && (
+                  <div className="cms-sec-toolbar-filters">
+                    <div className="cms-field">
+                      <SearchableSelect
+                        value={roomFilters.building}
+                        onChange={(val) => setRoomFilters((f) => ({ ...f, building: val }))}
+                        options={roomBuildings}
+                        placeholder="Block Name"
+                        showSearch={true}
+                      />
+                    </div>
+                    <div className="cms-field">
+                      <SearchableSelect
+                        value={roomFilters.floor}
+                        onChange={(val) => setRoomFilters((f) => ({ ...f, floor: val }))}
+                        options={roomFloors}
+                        placeholder="Floor"
+                        showSearch={true}
+                      />
+                    </div>
+                    <div className="cms-field">
+                      <SearchableSelect
+                        value={roomFilters.roomType}
+                        onChange={(val) => setRoomFilters((f) => ({ ...f, roomType: val }))}
+                        options={roomFilterTypes}
+                        placeholder="Room Type"
+                        showSearch={true}
+                      />
+                    </div>
+                  </div>
+                  <div className="cms-sec-toolbar-spacer" />
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-primary cms-sec-compact-btn"
+                    onClick={openAddRoom}
+                  >
+                    <Plus size={16} />
+                    Add Room
+                  </button>
+                </div>
+
+                {/* Rooms Table */}
+                <div className="cms-table-wrap cms-sec-table-wrap">
+                  <table className="cms-table cms-sec-table cms-room-table">
+                    <thead>
+                      <tr>
+                        <th>Room No</th>
+                        <th>Block Name</th>
+                        <th>Floor</th>
+                        <th>Room Type</th>
+                        <th>Capacity</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shownRooms.length ? (
+                        shownRooms.map((room) => (
+                          <tr key={room.id}>
+                            <td className="cms-sec-name-cell">{room.roomNo}</td>
+                            <td>{room.building}</td>
+                            <td>{room.floor}</td>
+                            <td>{room.roomType}</td>
+                            <td>{room.capacity}</td>
+                            <td>
+                              <span
+                                className={`cms-sec-status-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"
+                                  }`}
+                              >
+                                {room.isActive ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="cms-sec-table-actions">
                                 <button
                                   type="button"
-                                  className="cms-btn cms-btn-ghost cms-sec-add-room-btn"
-                                  onClick={() => openRoomModal(true)}
+                                  className="cms-sec-action-btn"
+                                  title="View Details"
+                                  onClick={() => openEditRoom(room, true)}
                                 >
-                                  Add Room
+                                  <Eye size={14} />
                                 </button>
-                              )}
-                            </div>
-                          </div>
-                          <div className="cms-field cms-sec-field">
+                                <button
+                                  type="button"
+                                  className="cms-sec-action-btn"
+                                  title="Edit Room"
+                                  onClick={() => openEditRoom(room, false)}
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="cms-sec-action-btn cms-sec-delete-action"
+                                  title={operation === `DELETE_ROOM:${room.id}` ? "Deleting..." : "Delete Room"}
+                                  disabled={Boolean(operation)}
+                                  onClick={() => deleteRoom(room)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: "center", padding: "24px" }}>
+                            No rooms found matching your criteria.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Room Pagination */}
+                <div className="cms-sec-pagination">
+                  <span className="cms-sec-record-summary">
+                    Showing {shownRooms.length ? (roomPage - 1) * PAGE_SIZE + 1 : 0}–
+                    {Math.min(roomPage * PAGE_SIZE, filteredRooms.length)} of {filteredRooms.length} records
+                  </span>
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-ghost"
+                    disabled={roomPage === 1}
+                    onClick={() => setRoomPage((p) => p - 1)}
+                  >
+                    Previous
+                  </button>
+                  <span>
+                    {roomPage} / {roomPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-ghost"
+                    disabled={roomPage === roomPages}
+                    onClick={() => setRoomPage((p) => p + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* ROOM FULL SCREEN FORM VIEW */
+              <div className="cms-sec-screen-container">
+                <div className="cms-sec-screen-head">
+                  <div className="cms-sec-screen-title-wrap">
+                    <button
+                      type="button"
+                      className="cms-sec-back-btn"
+                      onClick={() => setRoomView("list")}
+                      title="Back to Rooms List"
+                    >
+                      <ArrowLeft size={18} />
+                    </button>
+                    <h3>
+                      {roomFormMode === "preview"
+                        ? "Room Details"
+                        : selectedRoomId
+                          ? "Edit Room"
+                          : "Add Room"}
+                    </h3>
+                  </div>
+
+                  {roomFormMode === "add" && (
+                    <div className="cms-sec-mode-toggle">
+                      <button
+                        type="button"
+                        className={`cms-sec-mode-toggle-btn ${roomCreationType === "single" ? "is-active" : ""}`}
+                        onClick={() => {
+                          setRoomCreationType("single");
+                          setRoomFieldErrors({});
+                        }}
+                      >
+                        Single Room
+                      </button>
+                      <button
+                        type="button"
+                        className={`cms-sec-mode-toggle-btn ${roomCreationType === "bulk" ? "is-active" : ""}`}
+                        onClick={() => {
+                          setRoomCreationType("bulk");
+                          setRoomFieldErrors({});
+                          setBulkRoomForm(EMPTY_BULK_ROOM_FORM);
+                          setBulkRoomAllocations([]);
+                          setBulkRoomPage(1);
+                        }}
+                      >
+                        Multiple Rooms
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={saveRoom}>
+                  <div className="cms-sec-screen-body">
+                    {/* SINGLE ROOM FORM */}
+                    {(roomCreationType === "single" || selectedRoomId) && (
+                      <div className="cms-sec-form-grid">
+                        <div className={`cms-field ${roomFieldErrors.roomNo ? "has-error" : ""}`}>
+                          <label>
+                            Room No <span className="req">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={roomForm.roomNo}
+                            disabled={roomFormMode === "preview"}
+                            placeholder="e.g. Block A-101"
+                            onChange={(e) => {
+                              setRoomForm((f) => ({ ...f, roomNo: e.target.value }));
+                              setRoomFieldErrors((err) => ({ ...err, roomNo: null }));
+                            }}
+                          />
+                          {roomFieldErrors.roomNo && <span className="cms-field-error">{roomFieldErrors.roomNo}</span>}
+                        </div>
+
+                        <div className={`cms-field ${roomFieldErrors.capacity ? "has-error" : ""}`}>
+                          <label>
+                            Capacity <span className="req">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={roomForm.capacity}
+                            disabled={roomFormMode === "preview"}
+                            placeholder="e.g. 40"
+                            onChange={(e) => {
+                              setRoomForm((f) => ({ ...f, capacity: e.target.value }));
+                              setRoomFieldErrors((err) => ({ ...err, capacity: null }));
+                            }}
+                          />
+                          {roomFieldErrors.capacity && <span className="cms-field-error">{roomFieldErrors.capacity}</span>}
+                        </div>
+
+                        <div className={`cms-field ${roomFieldErrors.roomType ? "has-error" : ""}`}>
+                          <label>
+                            Room Type <span className="req">*</span>
+                          </label>
+                          <SearchableSelect
+                            value={roomForm.roomType}
+                            onChange={(val) => {
+                              setRoomForm((f) => ({ ...f, roomType: val }));
+                              setRoomFieldErrors((err) => ({ ...err, roomType: null }));
+                            }}
+                            options={ROOM_TYPES}
+                            disabled={roomFormMode === "preview"}
+                            showSearch={true}
+                            hasError={Boolean(roomFieldErrors.roomType)}
+                          />
+                          {roomFieldErrors.roomType && <span className="cms-field-error">{roomFieldErrors.roomType}</span>}
+                        </div>
+
+                        <div className={`cms-field ${roomFieldErrors.building ? "has-error" : ""}`}>
+                          <label>
+                            Block Name <span className="req">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={roomForm.building}
+                            disabled={roomFormMode === "preview"}
+                            placeholder="e.g. Block A"
+                            onChange={(e) => {
+                              setRoomForm((f) => ({ ...f, building: e.target.value }));
+                              setRoomFieldErrors((err) => ({ ...err, building: null }));
+                            }}
+                          />
+                          {roomFieldErrors.building && <span className="cms-field-error">{roomFieldErrors.building}</span>}
+                        </div>
+
+                        <div className={`cms-field ${roomFieldErrors.floor ? "has-error" : ""}`}>
+                          <label>
+                            Floor <span className="req">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={roomForm.floor}
+                            disabled={roomFormMode === "preview"}
+                            placeholder="e.g. 1"
+                            onChange={(e) => {
+                              setRoomForm((f) => ({ ...f, floor: e.target.value }));
+                              setRoomFieldErrors((err) => ({ ...err, floor: null }));
+                            }}
+                          />
+                          {roomFieldErrors.floor && <span className="cms-field-error">{roomFieldErrors.floor}</span>}
+                        </div>
+
+                        <div className={`cms-field ${roomFieldErrors.isActive ? "has-error" : ""}`}>
+                          <label>
+                            Status <span className="req">*</span>
+                          </label>
+                          <select
+                            className="cms-sec-native-select"
+                            value={roomForm.isActive}
+                            onChange={(event) => {
+                              setRoomForm((f) => ({ ...f, isActive: event.target.value }));
+                              setRoomFieldErrors((err) => ({ ...err, isActive: null }));
+                            }}
+                            disabled={roomFormMode === "preview"}
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                          </select>
+                          {roomFieldErrors.isActive && <span className="cms-field-error">{roomFieldErrors.isActive}</span>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* BULK ROOMS FORM */}
+                    {roomCreationType === "bulk" && !selectedRoomId && (
+                      <>
+                        <div className="cms-sec-form-grid">
+                          <div className={`cms-field ${roomFieldErrors.building ? "has-error" : ""}`}>
                             <label>
-                              Incharge <span className="req">*</span>
+                              Building / Block <span className="req">*</span>
                             </label>
-                            <Select
-                              value={form.classTeacherId}
-                              onChange={(value) => change("teacher", value)}
-                              options={availableTeachers}
-                              placeholder="Select Incharge"
-                              disabled={readOnly}
+                            <input
+                              type="text"
+                              value={bulkRoomForm.building}
+                              placeholder="e.g. Block A"
+                              onChange={(e) => {
+                                setBulkRoomForm((f) => ({ ...f, building: e.target.value }));
+                                setRoomFieldErrors((err) => ({ ...err, building: null }));
+                              }}
                             />
+                            {roomFieldErrors.building && <span className="cms-field-error">{roomFieldErrors.building}</span>}
                           </div>
-                          <div className="cms-field">
+
+                          <div className={`cms-field ${roomFieldErrors.floor ? "has-error" : ""}`}>
                             <label>
-                              Capacity <span className="req">*</span>
+                              Floor <span className="req">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={bulkRoomForm.floor}
+                              placeholder="e.g. 1"
+                              onChange={(e) => {
+                                setBulkRoomForm((f) => ({ ...f, floor: e.target.value }));
+                                setRoomFieldErrors((err) => ({ ...err, floor: null }));
+                              }}
+                            />
+                            {roomFieldErrors.floor && <span className="cms-field-error">{roomFieldErrors.floor}</span>}
+                          </div>
+
+                          <div className={`cms-field ${roomFieldErrors.startRoomNo ? "has-error" : ""}`}>
+                            <label>
+                              First Room Number <span className="req">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={bulkRoomForm.startRoomNo}
+                              placeholder="e.g. Block A-101"
+                              onChange={(e) => {
+                                setBulkRoomForm((f) => ({ ...f, startRoomNo: e.target.value }));
+                                setBulkRoomPage(1);
+                                setRoomFieldErrors((err) => ({ ...err, startRoomNo: null }));
+                              }}
+                              onBlur={prepareBulkRoomAllocations}
+                            />
+                            {roomFieldErrors.startRoomNo && <span className="cms-field-error">{roomFieldErrors.startRoomNo}</span>}
+                          </div>
+
+                          <div className={`cms-field ${roomFieldErrors.roomCount ? "has-error" : ""}`}>
+                            <label>
+                              Rooms to Create <span className="req">*</span>
                             </label>
                             <input
                               type="number"
                               min="1"
-                              step="1"
-                              value={form.strength}
-                              onChange={(event) => change("strength", event.target.value)}
-                              disabled={readOnly}
+                              max="100"
+                              value={bulkRoomForm.roomCount}
+                              placeholder="e.g. 30"
+                              onChange={(e) => {
+                                setBulkRoomForm((f) => ({ ...f, roomCount: e.target.value }));
+                                setRoomFieldErrors((err) => ({ ...err, roomCount: null }));
+                              }}
+                              onBlur={prepareBulkRoomAllocations}
                             />
+                            {roomFieldErrors.roomCount && <span className="cms-field-error">{roomFieldErrors.roomCount}</span>}
                           </div>
-                          <FormField
-                            label="Status"
-                            value={form.status}
-                            field="status"
-                            options={["Active", "Inactive"]}
-                            readOnly={readOnly}
-                            change={change}
-                          />
+
+                          <div className={`cms-field ${roomFieldErrors.defaultCapacity ? "has-error" : ""}`}>
+                            <label>
+                              Capacity
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="1000"
+                              step="1"
+                              value={bulkRoomForm.defaultCapacity}
+                              placeholder="e.g. 40"
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                const previousValue = String(bulkRoomForm.defaultCapacity || "");
+                                setBulkRoomForm((f) => ({ ...f, defaultCapacity: value }));
+                                setBulkRoomAllocations((current) => current.map((row) =>
+                                  !String(row.capacity).trim() || String(row.capacity) === previousValue
+                                    ? { ...row, capacity: value }
+                                    : row
+                                ));
+                                setRoomFieldErrors((err) => ({ ...err, defaultCapacity: null }));
+                              }}
+                            />
+                            {roomFieldErrors.defaultCapacity && <span className="cms-field-error">{roomFieldErrors.defaultCapacity}</span>}
+                          </div>
+
+                          <div className={`cms-field ${roomFieldErrors.defaultRoomType ? "has-error" : ""}`}>
+                            <label>
+                              Room Type
+                            </label>
+                            <SearchableSelect
+                              value={bulkRoomForm.defaultRoomType}
+                              onChange={(val) => {
+                                const previousValue = bulkRoomForm.defaultRoomType || "";
+                                setBulkRoomForm((f) => ({ ...f, defaultRoomType: val }));
+                                setBulkRoomAllocations((current) => current.map((row) =>
+                                  !row.roomType || row.roomType === previousValue
+                                    ? { ...row, roomType: val }
+                                    : row
+                                ));
+                                setRoomFieldErrors((err) => ({ ...err, defaultRoomType: null }));
+                              }}
+                              options={ROOM_TYPES}
+                              placeholder="Select Room Type"
+                              showSearch={true}
+                              hasError={Boolean(roomFieldErrors.defaultRoomType)}
+                            />
+                            {roomFieldErrors.defaultRoomType && <span className="cms-field-error">{roomFieldErrors.defaultRoomType}</span>}
+                          </div>
+
+                          <div className={`cms-field ${roomFieldErrors.isActive ? "has-error" : ""}`} style={{ gridColumn: "1 / -1" }}>
+                            <label>
+                              Status <span className="req">*</span>
+                            </label>
+                            <select
+                              className="cms-sec-native-select"
+                              value={bulkRoomForm.isActive}
+                              onChange={(event) => {
+                                setBulkRoomForm((f) => ({ ...f, isActive: event.target.value }));
+                                setRoomFieldErrors((err) => ({ ...err, isActive: null }));
+                              }}
+                            >
+                              <option value="Active">Active</option>
+                              <option value="Inactive">Inactive</option>
+                            </select>
+                            {roomFieldErrors.isActive && <span className="cms-field-error">{roomFieldErrors.isActive}</span>}
+                          </div>
                         </div>
-                      )}
-                    </div>
-                    <div className="cms-modal-foot">
-                      {!preview && (
-                        <>
-                          <button
-                            type="button"
-                            className="cms-btn cms-btn-ghost"
-                            onClick={close}
-                            disabled={savingSection}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="submit"
-                            className="cms-btn cms-btn-primary"
-                            disabled={savingSection}
-                          >
-                            {savingSection
-                              ? selected
-                                ? "Saving..."
-                                : "Adding..."
-                              : selected
-                                ? "Save Changes"
-                                : "Add Section"}
-                          </button>
-                        </>
-                      )}
-                      {preview && (
-                        <>
-                          <button type="button" className="cms-btn cms-btn-ghost" onClick={close}>
-                            Close
-                          </button>
-                          <button
-                            type="button"
-                            className="cms-btn cms-btn-primary"
-                            onClick={enterEditMode}
-                            disabled={viewLoading || !viewSection}
-                          >
-                            Edit
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </form>
-                </div>
+                        <BulkRoomAllocationPreview
+                          allocations={bulkRoomAllocations}
+                          requested={bulkRoomForm.roomCount}
+                          errors={roomFieldErrors}
+                          onChange={updateBulkRoomAllocation}
+                          page={bulkRoomPage}
+                          setPage={setBulkRoomPage}
+                        />
+                        {roomFieldErrors.bulk && <div className="cms-bulk-room-error">{roomFieldErrors.bulk}</div>}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="cms-sec-screen-foot">
+                    <button
+                      type="button"
+                      className="cms-btn cms-btn-ghost"
+                      onClick={() => setRoomView("list")}
+                    >
+                      {roomFormMode === "preview" ? "Close" : "Cancel"}
+                    </button>
+                    {roomFormMode !== "preview" && (
+                      <button type="submit" className="cms-btn cms-btn-primary" disabled={Boolean(operation)}>
+                        {selectedRoomId
+                          ? operation === "UPDATE_ROOM" ? "Updating..." : "Save Changes"
+                          : roomCreationType === "bulk"
+                            ? operation === "BULK_ROOM" ? "Creating..." : `Generate ${bulkRoomForm.roomCount || 0} Rooms`
+                            : operation === "ADD_ROOM" ? "Adding..." : "Save Room"}
+                      </button>
+                    )}
+                  </div>
+                </form>
               </div>
             )}
           </>
         )}
-        {activeTab === "rooms" && (
+
+        {/* ========================================================= */}
+        {/* TAB 2: SECTION MANAGEMENT (SECOND TAB)                     */}
+        {/* ========================================================= */}
+        {activeTab === "sections" && (
           <>
-            <div className="cms-card">
-              <div className="cms-toolbar cms-sec-toolbar cms-room-toolbar">
-                <div className="cms-search cms-sec-search">
-                  <Search size={16} />
-                  <input
-                    type="search"
-                    placeholder={roomSearchPlaceholder}
-                    value={roomSearch}
-                    onChange={(event) => setRoomSearch(event.target.value)}
-                  />
+            {sectionView === "list" ? (
+              /* SECTION TABLE VIEW */
+              <div className="cms-card">
+                <div className="cms-toolbar cms-sec-toolbar">
+                  <div className="cms-search cms-sec-search">
+                    <Search size={16} />
+                    <input
+                      type="search"
+                      placeholder="Search by section, group, program..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="cms-sec-toolbar-filters">
+                    <div className="cms-field">
+                      <SearchableSelect
+                        value={filters.groupId}
+                        onChange={(groupId) => {
+                          setFilters((current) => ({
+                            ...current,
+                            groupId,
+                            programId: groupId && programsList.some((program) => program.isActive && normalizeId(program.groupId) === normalizeId(groupId) && normalizeId(program.programId) === normalizeId(current.programId)) ? current.programId : "",
+                          }));
+                          setPage(1);
+                        }}
+                        options={sectionGroupFilterOptions}
+                        placeholder="Select Group"
+                        showSearch={true}
+                      />
+                    </div>
+                    <div className="cms-field">
+                      <SearchableSelect
+                        value={filters.programId}
+                        onChange={(programId) => {
+                          setFilters((current) => ({ ...current, programId }));
+                          setPage(1);
+                        }}
+                        options={filters.groupId ? sectionProgramFilterOptions : []}
+                        disabled={!filters.groupId}
+                        placeholder={filters.groupId ? "Select Program" : "Select Group First"}
+                        showSearch={true}
+                      />
+                    </div>
+                    <div className="cms-field">
+                      <SearchableSelect
+                        value={filters.academicLevelId}
+                        onChange={(academicLevelId) => {
+                          setFilters((current) => ({ ...current, academicLevelId }));
+                          setPage(1);
+                        }}
+                        options={sectionLevelFilterOptions}
+                        placeholder="Select Academic Level"
+                        showSearch={true}
+                      />
+                    </div>
+                  </div>
+                  <div className="cms-sec-action-row">
+                    <button type="button" className="cms-btn cms-btn-ghost cms-sec-compact-btn cms-allocation-export-btn" onClick={exportAllocationExcel}>
+                      <Download size={15} /> Download Excel
+                    </button>
+                    <button type="button" className="cms-btn cms-btn-primary cms-sec-compact-btn" onClick={openAddSection}>
+                      <Plus size={16} /> Add Section
+                    </button>
+                  </div>
                 </div>
-                <div className="cms-sec-toolbar-filters cms-room-toolbar-filters">
-                  <FilterField
-                    label="Block Name"
-                    value={roomFilters.building}
-                    onChange={(value) =>
-                      setRoomFilters((current) => ({ ...current, building: value }))
-                    }
-                    options={roomBuildings}
-                    showLabel={false}
-                  />
-                  <FilterField
-                    label="Floor"
-                    value={roomFilters.floor}
-                    onChange={(value) =>
-                      setRoomFilters((current) => ({ ...current, floor: value }))
-                    }
-                    options={roomFloors}
-                    showLabel={false}
-                  />
-                  <FilterField
-                    label="Room Type"
-                    value={roomFilters.roomType}
-                    onChange={(value) =>
-                      setRoomFilters((current) => ({ ...current, roomType: value }))
-                    }
-                    options={roomFilterTypes}
-                    showLabel={false}
-                  />
-                </div>
-                <div className="cms-sec-toolbar-spacer" />
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-primary cms-sec-compact-btn cms-room-add-btn"
-                  onClick={() => openRoomModal(false)}
-                >
-                  Add Room
-                </button>
-              </div>
-              <div className="cms-table-wrap cms-sec-table-wrap">
-                <table className="cms-table cms-sec-table cms-room-table">
-                  <thead>
-                    <tr>
-                      {[
-                        "Room Code",
-                        "Room Name",
-                        "Block Name",
-                        "Floor",
-                        "Room Type",
-                        "Capacity",
-                        "Status",
-                        "Actions",
-                      ].map((title) => (
-                        <th key={title}>{title}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loadingRooms ? (
+
+                {/* Sections Table */}
+                <div className="cms-table-wrap cms-sec-table-wrap">
+                  <table className="cms-table cms-sec-table cms-section-table">
+                    <thead>
                       <tr>
-                        <td colSpan="8">
-                          <div className="cms-sec-loading">
-                            <span className="cms-sec-loader" aria-hidden="true" />
-                            <span>Loading data...</span>
-                          </div>
-                        </td>
+                        <th>Section Name</th>
+                        <th>Board</th>
+                        <th>Academic Year</th>
+                        <th>Group</th>
+                        <th>Program</th>
+                        <th>Academic Level</th>
+                        <th>Room No</th>
+                        <th>Incharge</th>
+                        <th>Capacity</th>
+                        <th>Status</th>
+                        <th>Actions</th>
                       </tr>
-                    ) : shownRooms.length ? (
-                      shownRooms.map((room) => (
-                        <tr key={room.id}>
-                          <td className="cms-strong cms-sec-name-cell">{room.roomCode}</td>
-                          <td>
-                            <span className="cms-room-name-truncated" title={room.roomName}>
-                              {room.roomName}
-                            </span>
+                    </thead>
+                    <tbody>
+                      {shownSections.length ? (
+                        shownSections.map((sec) => {
+                          const detail = resolveSection(sec);
+                          return (
+                            <tr key={sec.id}>
+                              <td className="cms-sec-name-cell">{sec.name}</td>
+                              <td title={`${detail.boardName} (${detail.boardCode})`}>{detail.boardCode}</td>
+                              <td title={detail.academicYearName}>{detail.academicYearName}</td>
+                              <td title={detail.groupName}>{detail.groupName}</td>
+                              <td title={detail.programName}>{detail.programName}</td>
+                              <td title={detail.academicLevelName}>{detail.academicLevelName}</td>
+                              <td title={detail.roomNo}>{detail.roomNo}</td>
+                              <td title={detail.teacherName}>{detail.teacherName}</td>
+                              <td>{sec.strength || "—"}</td>
+                              <td>
+                                <span
+                                  className={`cms-sec-status-badge ${sec.status === "Active" ? "cms-badge-active" : "cms-badge-inactive"
+                                    }`}
+                                >
+                                  {sec.status}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="cms-sec-table-actions">
+                                  <button
+                                    type="button"
+                                    className="cms-sec-action-btn"
+                                    title="View Details"
+                                    onClick={() => openEditSection(sec, true)}
+                                  >
+                                    <Eye size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="cms-sec-action-btn"
+                                    title="Edit Section"
+                                    onClick={() => openEditSection(sec, false)}
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="cms-sec-action-btn cms-sec-delete-action"
+                                    title={operation === `DELETE_SECTION:${sec.id}` ? "Deleting..." : "Delete Section"}
+                                    disabled={Boolean(operation)}
+                                    onClick={() => deleteSection(sec)}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      ) : (
+                        <tr>
+                          <td colSpan="11" style={{ textAlign: "center", padding: "24px" }}>
+                            No sections found matching your criteria.
                           </td>
-                          <td>{room.building}</td>
-                          <td>{room.floor}</td>
-                          <td>{room.roomType}</td>
-                          <td>{room.capacity}</td>
-                          <td>
-                            <span
-                              className={`cms-badge ${room.isActive ? "cms-badge-active" : "cms-badge-inactive"}`}
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Section Pagination */}
+                <div className="cms-sec-pagination">
+                  <span className="cms-sec-record-summary">
+                    Showing {shownSections.length ? (page - 1) * PAGE_SIZE + 1 : 0}–
+                    {Math.min(page * PAGE_SIZE, filteredSections.length)} of {filteredSections.length} records
+                  </span>
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-ghost"
+                    disabled={page === 1}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    Previous
+                  </button>
+                  <span>
+                    {page} / {sectionPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-ghost"
+                    disabled={page === sectionPages}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* SECTION FULL SCREEN FORM VIEW */
+              <div className="cms-sec-screen-container">
+                <div className="cms-sec-screen-head">
+                  <div className="cms-sec-screen-title-wrap">
+                    <button
+                      type="button"
+                      className="cms-sec-back-btn"
+                      onClick={() => setSectionView("list")}
+                      title="Back to Sections List"
+                    >
+                      <ArrowLeft size={18} />
+                    </button>
+                    <h3>
+                      {sectionFormMode === "preview"
+                        ? "Section Details"
+                        : selectedSectionId
+                          ? "Edit & Reassign Section"
+                          : "Add Academic Section"}
+                    </h3>
+                  </div>
+
+                  {sectionFormMode === "add" && (
+                    <div className="cms-sec-mode-toggle">
+                      <button
+                        type="button"
+                        className={`cms-sec-mode-toggle-btn ${sectionCreationType === "single" ? "is-active" : ""}`}
+                        onClick={() => {
+                          setSectionCreationType("single");
+                          setFieldErrors({});
+                        }}
+                      >
+                        Single Section
+                      </button>
+                      <button
+                        type="button"
+                        className={`cms-sec-mode-toggle-btn ${sectionCreationType === "bulk" ? "is-active" : ""}`}
+                        onClick={() => {
+                          setSectionCreationType("bulk");
+                          setFieldErrors({});
+                        }}
+                      >
+                        Multiple Sections
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <form onSubmit={saveSection}>
+                  <div className="cms-sec-screen-body">
+                    {/* Academic Configuration Fields */}
+                    <div className="cms-sec-form-section-title">
+                      <Layers size={14} /> Academic Configuration
+                    </div>
+                    <div className="cms-sec-form-grid">
+                      <div className={`cms-field ${fieldErrors.boardId ? "has-error" : ""}`}>
+                        <label>
+                          Board <span className="req">*</span>
+                        </label>
+                        <SearchableSelect
+                          value={sectionForm.boardId}
+                          onChange={(val) => {
+                            setSectionForm((f) => ({
+                              ...f,
+                              boardId: val,
+                              academicYearId: "",
+                              academicLevelId: "",
+                              groupId: "",
+                              programId: "",
+                              groupProgramId: "",
+                            }));
+                            setFieldErrors((err) => ({
+                              ...err,
+                              boardId: null,
+                              academicYearId: null,
+                              academicLevelId: null,
+                              groupId: null,
+                              programId: null,
+                            }));
+                            loadBoardDependencies(val);
+                          }}
+                          options={boardOptions}
+                          disabled={sectionFormMode === "preview" || dependentLoading.board}
+                          placeholder="Select Board"
+                          showSearch={true}
+                          hasError={Boolean(fieldErrors.boardId)}
+                        />
+                        {fieldErrors.boardId && <span className="cms-field-error">{fieldErrors.boardId}</span>}
+                      </div>
+
+                      <div className={`cms-field ${fieldErrors.academicYearId ? "has-error" : ""}`}>
+                        <label>
+                          Academic Year <span className="req">*</span>
+                        </label>
+                        <SearchableSelect
+                          value={sectionForm.academicYearId}
+                          onChange={(val) => {
+                            setSectionForm((f) => ({ ...f, academicYearId: val }));
+                            setFieldErrors((err) => ({ ...err, academicYearId: null }));
+                          }}
+                          options={filteredYearOptions}
+                          disabled={sectionFormMode === "preview" || !sectionForm.boardId || dependentLoading.board}
+                          placeholder={!sectionForm.boardId ? "Select Board First" : "Select Academic Year"}
+                          showSearch={true}
+                          hasError={Boolean(fieldErrors.academicYearId)}
+                        />
+                        {fieldErrors.academicYearId && <span className="cms-field-error">{fieldErrors.academicYearId}</span>}
+                      </div>
+
+                      <div className={`cms-field ${fieldErrors.groupId ? "has-error" : ""}`}>
+                        <label>
+                          Group <span className="req">*</span>
+                        </label>
+                        <SearchableSelect
+                          value={sectionForm.groupId}
+                          onChange={(val) => {
+                            setSectionForm((f) => ({ ...f, groupId: val, programId: "", groupProgramId: "" }));
+                            setFieldErrors((err) => ({ ...err, groupId: null, programId: null }));
+                            loadPrograms(val);
+                          }}
+                          options={filteredGroupOptions}
+                          disabled={sectionFormMode === "preview" || !sectionForm.boardId || dependentLoading.board}
+                          placeholder={!sectionForm.boardId ? "Select Board First" : "Select Group (e.g. MPC, BiPC)"}
+                          showSearch={true}
+                          hasError={Boolean(fieldErrors.groupId)}
+                        />
+                        {fieldErrors.groupId && <span className="cms-field-error">{fieldErrors.groupId}</span>}
+                      </div>
+
+                      <div className={`cms-field ${fieldErrors.programId ? "has-error" : ""}`}>
+                        <label>
+                          Program <span className="req">*</span>
+                        </label>
+                        <SearchableSelect
+                          value={sectionForm.programId}
+                          onChange={(val) => {
+                            const selectedProgram = programsList.find((item) => normalizeId(item.programId) === normalizeId(val));
+                            setSectionForm((f) => ({ ...f, programId: val, groupProgramId: selectedProgram?.groupProgramId || "" }));
+                            setFieldErrors((err) => ({ ...err, programId: null }));
+                          }}
+                          options={filteredProgramOptions}
+                          disabled={sectionFormMode === "preview" || dependentLoading.program || !sectionForm.groupId}
+                          placeholder={!sectionForm.groupId ? "Select Group First" : "Select Program (e.g. IIT, Mains)"}
+                          showSearch={true}
+                          hasError={Boolean(fieldErrors.programId)}
+                        />
+                        {fieldErrors.programId && <span className="cms-field-error">{fieldErrors.programId}</span>}
+                      </div>
+
+                      <div className={`cms-field ${fieldErrors.academicLevelId ? "has-error" : ""}`} style={{ gridColumn: "1 / -1" }}>
+                        <label>
+                          Academic Level <span className="req">*</span>
+                        </label>
+                        <SearchableSelect
+                          value={sectionForm.academicLevelId}
+                          onChange={(val) => {
+                            setSectionForm((f) => ({ ...f, academicLevelId: val }));
+                            setFieldErrors((err) => ({ ...err, academicLevelId: null }));
+                          }}
+                          options={levelOptions}
+                          disabled={sectionFormMode === "preview" || !sectionForm.boardId || dependentLoading.board}
+                          placeholder={!sectionForm.boardId ? "Select Board First" : "Select Academic Level"}
+                          showSearch={true}
+                          hasError={Boolean(fieldErrors.academicLevelId)}
+                        />
+                        {fieldErrors.academicLevelId && <span className="cms-field-error">{fieldErrors.academicLevelId}</span>}
+                      </div>
+                    </div>
+
+                    {/* SINGLE SECTION FORM */}
+                    {(sectionCreationType === "single" || selectedSectionId) && (
+                      <>
+                        <div className="cms-sec-form-section-title" style={{ marginTop: "12px" }}>
+                          <Building2 size={14} /> Section & Allocation Details
+                        </div>
+                        <div className="cms-sec-form-grid">
+                          <div className={`cms-field ${fieldErrors.name ? "has-error" : ""}`}>
+                            <label>
+                              Section Name <span className="req">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={sectionForm.name}
+                              disabled={sectionFormMode === "preview"}
+                              placeholder="e.g. Section A"
+                              onChange={(e) => {
+                                setSectionForm((f) => ({ ...f, name: e.target.value }));
+                                setFieldErrors((err) => ({ ...err, name: null }));
+                              }}
+                            />
+                            {fieldErrors.name && <span className="cms-field-error">{fieldErrors.name}</span>}
+                          </div>
+
+                          <div className={`cms-field ${fieldErrors.roomId ? "has-error" : ""}`}>
+                            <label>
+                              Room No <span className="req">*</span>
+                            </label>
+                            <SearchableSelect
+                              value={sectionForm.roomId}
+                              onChange={handleSectionRoomChange}
+                              options={availableRooms}
+                              disabled={sectionFormMode === "preview"}
+                              placeholder="Select Room No"
+                              emptyText="No eligible classrooms available"
+                              showSearch={true}
+                              hasError={Boolean(fieldErrors.roomId)}
+                            />
+                            {fieldErrors.roomId && <span className="cms-field-error">{fieldErrors.roomId}</span>}
+                          </div>
+
+                          <div className="cms-field">
+                            <label>Incharge (Invigilator / Faculty)</label>
+                            <SearchableSelect
+                              value={sectionForm.classTeacherId}
+                              onChange={(val) => setSectionForm((f) => ({ ...f, classTeacherId: val }))}
+                              options={availableTeachers}
+                              disabled={sectionFormMode === "preview"}
+                              placeholder="Select Incharge (Optional)"
+                              emptyText="No unassigned faculty available"
+                              showSearch={true}
+                              hasError={Boolean(fieldErrors.classTeacherId)}
+                            />
+                            {fieldErrors.classTeacherId && <span className="cms-field-error">{fieldErrors.classTeacherId}</span>}
+                          </div>
+
+                          <div className={`cms-field ${fieldErrors.strength ? "has-error" : ""}`}>
+                            <label>
+                              Capacity / Maximum Strength <span className="req">*</span>
+                            </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={sectionForm.strength}
+                              disabled={sectionFormMode === "preview"}
+                              placeholder="Capacity"
+                              onChange={(e) => {
+                                setSectionForm((f) => ({ ...f, strength: e.target.value }));
+                                setFieldErrors((err) => ({ ...err, strength: null }));
+                              }}
+                            />
+                            {fieldErrors.strength && <span className="cms-field-error">{fieldErrors.strength}</span>}
+                          </div>
+
+                          <div className={`cms-field ${fieldErrors.status ? "has-error" : ""}`} style={{ gridColumn: "1 / -1" }}>
+                            <label>
+                              Status <span className="req">*</span>
+                            </label>
+                            <select
+                              className="cms-sec-native-select"
+                              value={sectionForm.status}
+                              onChange={(event) => {
+                                setSectionForm((f) => ({ ...f, status: event.target.value }));
+                                setFieldErrors((err) => ({ ...err, status: null }));
+                              }}
+                              disabled={sectionFormMode === "preview"}
                             >
-                              {room.isActive ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="cms-sec-table-actions">
-                              <button
-                                type="button"
-                                className="cms-sec-action-btn"
-                                onClick={() => openRoom(room, true)}
+                              <option value="Active">Active</option>
+                              <option value="Inactive">Inactive</option>
+                            </select>
+                            {fieldErrors.status && <span className="cms-field-error">{fieldErrors.status}</span>}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* BULK SECTIONS FORM */}
+                    {sectionCreationType === "bulk" && !selectedSectionId && (
+                      <div className="cms-bulk-sections-container">
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <span style={{ fontSize: "13px", fontWeight: "700" }}>
+                            Configure Program Sections ({bulkSections.length})
+                          </span>
+                          <button
+                            type="button"
+                            className="cms-btn cms-btn-ghost"
+                            style={{ height: "30px", padding: "4px 10px", fontSize: "12px" }}
+                            onClick={() =>
+                              setBulkSections((prev) => [
+                                ...prev,
+                                {
+                                  name: "",
+                                  roomId: "",
+                                  classTeacherId: "",
+                                  strength: "",
+                                  status: "Active",
+                                },
+                              ])
+                            }
+                          >
+                            + Add Another Section
+                          </button>
+                        </div>
+
+                        {bulkSections.map((sec, idx) => (
+                          <div className="cms-bulk-section-row" key={idx}>
+                            <div className="cms-field">
+                              <input
+                                type="text"
+                                placeholder="Section Name"
+                                value={sec.name}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setBulkSections((prev) => {
+                                    const next = [...prev];
+                                    next[idx].name = val;
+                                    return next;
+                                  });
+                                }}
+                              />
+                              {fieldErrors[`name_${idx}`] && <span className="cms-field-error">{fieldErrors[`name_${idx}`]}</span>}
+                            </div>
+
+                            <div className="cms-field">
+                              <SearchableSelect
+                                value={sec.roomId}
+                                onChange={(roomId) => handleBulkSectionRoomChange(idx, roomId)}
+                                options={getAvailableRoomsForBulkRow(idx)}
+                                placeholder="Select Room No"
+                                showSearch={true}
+                                hasError={Boolean(fieldErrors[`room_${idx}`])}
+                              />
+                              {fieldErrors[`room_${idx}`] && <span className="cms-field-error">{fieldErrors[`room_${idx}`]}</span>}
+                            </div>
+
+                            <div className="cms-field">
+                              <SearchableSelect
+                                value={sec.classTeacherId}
+                                onChange={(val) => {
+                                  setBulkSections((prev) => {
+                                    const next = [...prev];
+                                    next[idx].classTeacherId = val;
+                                    return next;
+                                  });
+                                }}
+                                options={availableTeachers}
+                                placeholder="Select Incharge (Optional)"
+                                showSearch={true}
+                              />
+                              {fieldErrors[`teacher_${idx}`] && <span className="cms-field-error">{fieldErrors[`teacher_${idx}`]}</span>}
+                            </div>
+
+                            <div className="cms-field">
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="Capacity"
+                                value={sec.strength}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setBulkSections((prev) => {
+                                    const next = [...prev];
+                                    next[idx].strength = val;
+                                    return next;
+                                  });
+                                }}
+                              />
+                              {fieldErrors[`strength_${idx}`] && <span className="cms-field-error">{fieldErrors[`strength_${idx}`]}</span>}
+                            </div>
+
+                            <div className="cms-field">
+                              <select
+                                className="cms-sec-native-select"
+                                value={sec.status}
+                                onChange={(event) => {
+                                  setBulkSections((prev) => {
+                                    const next = [...prev];
+                                    next[idx].status = event.target.value;
+                                    return next;
+                                  });
+                                }}
                               >
-                                <Eye size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                className="cms-sec-action-btn"
-                                onClick={() => openRoom(room)}
-                              >
-                                <Pencil size={14} />
-                              </button>
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                              </select>
+                              {fieldErrors[`status_${idx}`] && <span className="cms-field-error">{fieldErrors[`status_${idx}`]}</span>}
+                            </div>
+
+                            {bulkSections.length > 1 && (
                               <button
                                 type="button"
                                 className="cms-sec-action-btn cms-sec-delete-action"
-                                onClick={() => deleteRoom(room)}
-                                disabled={deletingRoomId === room.id}
-                                aria-label={`Delete room ${room.roomCode}`}
-                                title={
-                                  deletingRoomId === room.id
-                                    ? "Deleting room..."
-                                    : `Delete room ${room.roomCode}`
-                                }
+                                title="Remove Row"
+                                onClick={() => setBulkSections((prev) => prev.filter((_, i) => i !== idx))}
                               >
-                                <Trash2 size={14} />
+                                <X size={14} />
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="8" className="cms-empty">
-                          No rooms found matching your criteria.
-                        </td>
-                      </tr>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                  </div>
+
+                  <div className="cms-sec-screen-foot">
+                    <button
+                      type="button"
+                      className="cms-btn cms-btn-ghost"
+                      onClick={() => setSectionView("list")}
+                    >
+                      {sectionFormMode === "preview" ? "Close" : "Cancel"}
+                    </button>
+                    {sectionFormMode !== "preview" && (
+                      <button type="submit" className="cms-btn cms-btn-primary" disabled={Boolean(operation)}>
+                        {operation === "UPDATE_SECTION" ? "Updating..." : operation === "ADD_SECTION" ? "Adding..." : operation === "BULK_SECTION" ? "Creating..." : selectedSectionId ? "Save Changes" : "Create Section"}
+                      </button>
+                    )}
+                  </div>
+                </form>
               </div>
-              <div className="cms-sec-pagination">
-                <span className="cms-sec-record-summary">
-                  Showing {roomRangeStart}–{roomRangeEnd} of {roomRows.length} records
-                </span>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-ghost"
-                  disabled={roomPage === 1}
-                  onClick={() => setRoomPage((current) => current - 1)}
-                >
-                  Previous
-                </button>
-                <span>
-                  {roomPage} / {roomPages}
-                </span>
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-ghost"
-                  disabled={roomPage === roomPages}
-                  onClick={() => setRoomPage((current) => current + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+            )}
           </>
         )}
-        {roomModal && (
-          <div className="cms-sec-overlay cms-sec-room-overlay" onClick={closeRoomModal}>
-            <div
-              className="cms-modal cms-sec-modal cms-sec-room-modal cms-room-modal"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="cms-modal-head">
-                <h3>
-                  {roomMode === "preview"
-                    ? "View Room"
-                    : roomMode === "edit"
-                      ? "Edit Room"
-                      : "Add Room"}
-                </h3>
-                <button type="button" className="cms-icon-btn" onClick={closeRoomModal}>
-                  <X size={16} />
-                </button>
-              </div>
-              <form onSubmit={saveRoom}>
-                <div className="cms-modal-body cms-sec-room-form cms-form-grid cms-sec-form-grid cms-room-form-grid">
-                  {roomModalError && (
-                    <div className="cms-modal-validation-toast" role="alert">
-                      {roomModalError}
-                    </div>
-                  )}
-                  <div className="cms-field">
-                    <label>
-                      Room Code <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <input
-                      value={roomForm.roomCode}
-                      onChange={(event) => changeRoom("roomCode", event.target.value)}
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                  <div className="cms-field">
-                    <label>
-                      Room Name <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <input
-                      value={roomForm.roomName}
-                      onChange={(event) => changeRoom("roomName", event.target.value)}
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                  <div className="cms-field">
-                    <label>
-                      Capacity <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={roomForm.capacity}
-                      onChange={(event) => changeRoom("capacity", event.target.value)}
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                  <div className="cms-field">
-                    <label>
-                      Room Type <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <Select
-                      value={roomForm.roomType}
-                      onChange={(value) => changeRoom("roomType", value)}
-                      options={roomTypes}
-                      placeholder="Select room type"
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                  <div className="cms-field">
-                    <label>
-                      Block Name <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <input
-                      value={roomForm.building}
-                      onChange={(event) => changeRoom("building", event.target.value)}
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                  <div className="cms-field">
-                    <label>
-                      Floor <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <input
-                      value={roomForm.floor}
-                      onChange={(event) => changeRoom("floor", event.target.value)}
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                  <div className="cms-field cms-room-status-field">
-                    <label>
-                      Status <span className="cms-room-required-mark">*</span>
-                    </label>
-                    <Select
-                      value={
-                        roomForm.isActive === "" ? "" : roomForm.isActive ? "Active" : "Inactive"
-                      }
-                      onChange={(value) =>
-                        changeRoom("isActive", value === "" ? "" : value === "Active")
-                      }
-                      options={["Active", "Inactive"]}
-                      placeholder="Select Status"
-                      disabled={roomMode === "preview"}
-                    />
-                  </div>
-                </div>
-                <div className="cms-modal-foot">
-                  {roomMode !== "preview" && (
-                    <>
-                      <button
-                        type="button"
-                        className="cms-btn cms-btn-ghost"
-                        onClick={closeRoomModal}
-                        disabled={savingRoom}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="cms-btn cms-btn-primary"
-                        disabled={savingRoom}
-                      >
-                        {savingRoom
-                          ? "Saving..."
-                          : roomMode === "edit"
-                            ? "Save Changes"
-                            : "Save Room"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
+
+        {/* Global Toast Notification */}
         {toast && (
           <div className="cms-toast">
             <CheckCircle2 size={18} />
@@ -2163,139 +2790,5 @@ export default function SectionManagementPage() {
         )}
       </div>
     </DashboardLayout>
-  );
-}
-
-function FilterField({ label, value, onChange, options, disabled = false, showLabel = true }) {
-  return (
-    <div className="cms-field cms-sec-field">
-      {showLabel && <label>{label}</label>}
-      <Select
-        value={value}
-        onChange={onChange}
-        options={options}
-        placeholder={`Select ${label}`}
-        disabled={disabled}
-      />
-    </div>
-  );
-}
-
-function ConstrainedFilterField({ label, value, onChange, options }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef(null);
-  const placeholder = `Select ${label}`;
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const closeOnOutsideClick = (event) => {
-      if (!containerRef.current?.contains(event.target)) setOpen(false);
-    };
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
-
-  const selectOption = (nextValue) => {
-    onChange(nextValue);
-    setOpen(false);
-  };
-
-  return (
-    <div ref={containerRef} className="cms-field cms-sec-field cms-constrained-filter">
-      <button
-        type="button"
-        className="cms-sec-select-trigger cms-constrained-filter-trigger"
-        aria-label={placeholder}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        title={value || placeholder}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{value || placeholder}</span>
-        <span aria-hidden="true">▾</span>
-      </button>
-      {open && (
-        <div className="cms-constrained-filter-menu" role="listbox" aria-label={`${label} options`}>
-          <button
-            type="button"
-            role="option"
-            aria-selected={!value}
-            title={placeholder}
-            onClick={() => selectOption("")}
-          >
-            {placeholder}
-          </button>
-          {options.length ? (
-            options.map((option) => (
-              <button
-                type="button"
-                role="option"
-                aria-selected={option === value}
-                title={option}
-                key={option}
-                onClick={() => selectOption(option)}
-              >
-                {option}
-              </button>
-            ))
-          ) : (
-            <span className="cms-constrained-filter-empty">No options available</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function FormField({ label, value, field, options, disabled = false, readOnly, change }) {
-  return (
-    <div className="cms-field cms-sec-field">
-      <label>
-        {label} <span className="req">*</span>
-      </label>
-      <Select
-        value={value}
-        onChange={(next) => change(field, next)}
-        options={options}
-        placeholder={`Select ${label}`}
-        disabled={disabled || readOnly}
-      />
-    </div>
-  );
-}
-
-function Select({ value, onChange, options, placeholder, disabled = false }) {
-  const normalizedOptions = options.map((option) =>
-    typeof option === "object" && option !== null
-      ? { value: String(option.value), label: String(option.label) }
-      : { value: String(option), label: String(option) },
-  );
-  const selectedLabel =
-    normalizedOptions.find((option) => option.value === String(value))?.label || "";
-  return (
-    <div className={`cms-sec-select ${disabled ? "is-disabled" : ""}`}>
-      <select
-        className="cms-sec-select-trigger"
-        value={value}
-        disabled={disabled}
-        aria-label={placeholder}
-        title={selectedLabel || placeholder}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        <option value="">{normalizedOptions.length ? placeholder : `${placeholder}`}</option>
-        {normalizedOptions.map((option) => (
-          <option key={option.value} value={option.value} title={option.label}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </div>
   );
 }

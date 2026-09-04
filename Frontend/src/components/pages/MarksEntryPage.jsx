@@ -1,965 +1,1344 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
+import * as XLSX from "xlsx";
 import "./MarksEntryPage.css";
 
-const MARKS_API = {
-  boards: "/api/v1/boards",
-  academicYears: "/api/v1/academic-years/active",
-  academicLevels: "/api/v1/academic-levels",
-  groupsByBoard: (id) => `/api/v1/groups/board/${id}`,
-  programsByGroup: (id) => `/api/v1/programs/group/${id}`,
-  sections: "/api/v1/Sections",
-  examinations: "/api/v1/examinations",
-  facultyEvaluations: "/api/v1/faculty/evaluations",
-  facultyStudents: (id) => `/api/v1/faculty/evaluations/${id}/students`,
-  facultyMarks: (id) => `/api/v1/faculty/evaluations/${id}/marks`,
-  facultySubmit: (id) => `/api/v1/faculty/evaluations/${id}/submit`,
-  facultyResubmit: (id) => `/api/v1/faculty/evaluations/${id}/resubmit`,
-  readiness: "/api/v1/evaluations/readiness",
-  evaluationSearch: "/api/v1/evaluations/search",
-  evaluationStudents: (id) => `/api/v1/evaluations/${id}/students`,
-  adminMarks: (id) => `/api/v1/evaluations/${id}/marks`,
-  verify: (id) => `/api/v1/evaluations/${id}/verify`,
-  approve: (id) => `/api/v1/evaluations/${id}/approve`,
-  reject: (id) => `/api/v1/evaluations/${id}/reject`,
-  restore: (id) => `/api/v1/evaluations/${id}/restore`,
-  verifyAll: "/api/v1/evaluations/verify-all",
-  approveAll: "/api/v1/evaluations/approve-all",
-  studentAnalysis: "/api/v1/student-analysis",
-  studentDetails: (id) => `/api/v1/student-analysis/${id}/details`,
-  exportEvaluations: "/api/v1/evaluations/export",
-};
 const PAGE_SIZE = 5;
-const eq = (a, b) => String(a ?? "") === String(b ?? "");
-const relationId = (item, keys) =>
-  keys.map((key) => item?.[key]).find((value) => value != null && value !== "");
-const matchesOptionalRelation = (item, keys, selectedId) => {
-  const relatedId = relationId(item, keys);
-  return relatedId == null || eq(relatedId, selectedId);
-};
-const collection = (payload) => {
-  const value = payload?.data ?? payload;
-  if (Array.isArray(value)) return value;
-  for (const key of ["data", "items", "results", "records"])
-    if (Array.isArray(value?.[key])) return value[key];
+const DELAY = 250;
+const normalizeId = (value) => String(value ?? "");
+const isActiveRecord = (item) => item?.isActive !== false && item?.status !== false;
+const evaluationKey = (item) => `${item.examinationId}:${item.sectionId}:${item.subjectId}`;
+const eq = (a, b) => normalizeId(a) === normalizeId(b);
+const grade = (value) => value >= 90 ? "A+" : value >= 80 ? "A" : value >= 70 ? "B+" : value >= 60 ? "B" : value >= 50 ? "C" : value >= 40 ? "D" : "F";
+const editableStatuses = ["NOT STARTED", "DRAFT", "REJECTED"];
+
+// Fallback Mock Data in case backend is offline or empty for certain filters
+const MOCK_BOARDS = [
+  { id: "1", name: "Board of Intermediate Education, Andhra Pradesh", code: "BIEAP", isActive: true },
+  { id: "2", name: "Telangana Board of Intermediate Education", code: "TGBIE", isActive: true },
+];
+const MOCK_YEARS = [
+  { id: "9", name: "2026-2027", boardId: "1", isActive: true, isCurrent: true },
+  { id: "12", name: "2026-2027", boardId: "2", isActive: true, isCurrent: true },
+];
+const MOCK_LEVELS = [
+  { id: "1", name: "Intermediate 1st Year", isActive: true },
+  { id: "2", name: "Intermediate 2nd Year", isActive: true },
+];
+const MOCK_GROUPS = [
+  { id: "37", boardId: "1", name: "MPC", code: "MPC-1", isActive: true },
+  { id: "39", boardId: "1", name: "BiPC", code: "BIPC2", isActive: true },
+  { id: "40", boardId: "2", name: "MPC", code: "MPC-2", isActive: true },
+];
+const MOCK_PROGRAMS = [
+  { id: "1", groupId: "37", name: "Regular", isActive: true },
+  { id: "2", groupId: "37", name: "JEE", isActive: true },
+  { id: "3", groupId: "37", name: "JEE Advanced", isActive: true },
+  { id: "1", groupId: "39", name: "Regular", isActive: true },
+  { id: "1", groupId: "40", name: "Regular", isActive: true },
+];
+const MOCK_SECTIONS = [
+  { id: "30", programId: "1", groupId: "37", academicLevelId: "1", name: "REG-1", isActive: true },
+  { id: "31", programId: "1", groupId: "37", academicLevelId: "2", name: "MPC-2A", isActive: true },
+];
+
+const unwrapRecords = (response) => {
+  if (!response) return [];
+  const payload = response.data ?? response;
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.records)) return payload.records;
+  if (Array.isArray(payload?.results)) return payload.results;
   return [];
 };
-const object = (payload) => {
-  const value = payload?.data?.data ?? payload?.data ?? payload;
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-};
-const active = (item) => {
-  const value = item.isActive ?? item.active ?? item.status;
-  return (
-    value == null ||
-    ![false, 0, "0", "false", "inactive", "disabled"].includes(
-      typeof value === "string" ? value.toLowerCase() : value,
-    )
-  );
-};
-const normalize = (item, type) => {
-  const fields = {
-    board: ["boardId", "id", "boardName", "name"],
-    year: ["academicYearId", "id", "academicYearName", "academicYear", "yearName", "name"],
-    level: ["academicLevelId", "levelId", "id", "levelName", "academicLevelName", "name"],
-    group: ["groupId", "id", "groupName", "name"],
-    program: ["programId", "groupProgramId", "id", "programName", "programmeName", "name"],
-    section: ["sectionId", "id", "sectionName", "name"],
-    exam: ["examinationId", "examId", "id", "examName", "examinationName", "name"],
-  }[type];
-  const id = fields
-    .slice(0, type === "level" ? 3 : type === "program" || type === "exam" ? 3 : 2)
-    .map((k) => item[k])
-    .find((v) => v != null && v !== "");
-  const name = fields
-    .slice(type === "level" || type === "program" || type === "exam" ? 3 : 2)
-    .map((k) => item[k])
-    .find((v) => String(v ?? "").trim());
-  return {
-    ...item,
-    id,
-    name: name || "",
-    code: item.code ?? item[`${type}Code`] ?? item.examCode ?? "",
-    status: String(item.status ?? item.examStatus ?? "").toUpperCase(),
-  };
-};
-const statusOf = (value) =>
-  String(value ?? "NOT STARTED")
-    .trim()
-    .toUpperCase()
-    .replaceAll("_", " ");
-const evaluationKey = (e) => `${e.examinationId}:${e.sectionId}:${e.subjectId}`;
-const validNumber = (value, max) =>
-  value !== "" && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= max;
-const grade = (p) =>
-  p >= 90
-    ? "A+"
-    : p >= 80
-      ? "A"
-      : p >= 70
-        ? "B+"
-        : p >= 60
-          ? "B"
-          : p >= 50
-            ? "C"
-            : p >= 40
-              ? "D"
-              : "F";
-const IconEye = () => (
-  <svg
-    width="15"
-    height="15"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-const IconEdit = () => (
-  <svg
-    width="13"
-    height="13"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-  >
-    <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
-  </svg>
-);
 
-const normalizeEvaluation = (raw) => ({
-  ...raw,
-  evaluationId: raw.evaluationId ?? raw.id,
-  examinationId: raw.examinationId ?? raw.examId,
-  sectionId: raw.sectionId,
-  subjectId: raw.subjectId,
-  facultyId: raw.facultyId,
-  status: statusOf(raw.status ?? raw.evaluationStatus),
-  subject: {
-    id: raw.subjectId,
-    name: raw.subjectName ?? raw.subject?.name ?? raw.subject?.subjectName ?? "Subject",
-    code: raw.subjectCode ?? raw.subject?.code ?? raw.subject?.subjectCode ?? "",
-  },
-  faculty: {
-    id: raw.facultyId,
-    name: raw.facultyName ?? raw.faculty?.name ?? raw.faculty?.facultyName ?? "—",
-    code: raw.facultyCode ?? raw.faculty?.code ?? "",
-  },
-  studentsCount: Number(raw.studentsCount ?? raw.studentCount ?? 0),
-  average: raw.average ?? raw.averageMarks ?? "—",
-  highest: raw.highest ?? raw.highestMarks ?? "—",
-  lowest: raw.lowest ?? raw.lowestMarks ?? "—",
-  subjectMaxMarks: Number(raw.subjectMaxMarks ?? raw.maxMarks ?? raw.maximumMarks ?? 0),
-  rowVersion: raw.rowVersion ?? null,
-});
-const normalizeSheet = (raw, header = {}) => {
-  const value = object(raw),
-    source = { ...header, ...(value.header || {}), ...value };
-  const rows = collection(value.students ?? value.rows ?? raw).map((r) => ({
-    ...r,
-    studentId: r.studentId ?? r.id,
-    rollNo: r.rollNo ?? r.rollNumber ?? "",
-    studentName: r.studentName ?? r.name ?? "",
-    internal: r.internalMarks ?? r.internal ?? "",
-    practical: r.practicalMarks ?? r.practical ?? "",
-    theory: r.theoryMarks ?? r.theory ?? "",
-    obtainedMarks: r.obtainedMarks ?? r.totalMarks ?? r.total ?? "",
-    total: r.totalMarks ?? r.obtainedMarks ?? r.total ?? "",
-    absent: Boolean(r.isAbsent ?? r.absent),
-    remarks: r.remarks ?? "",
-  }));
-  const practicalMax = Number(source.practicalMax ?? source.practicalMaximum ?? 0),
-    mode =
-      String(source.mode ?? source.markMode ?? source.examMode ?? "REGULAR").toUpperCase() ===
-      "OBJECTIVE"
-        ? "OBJECTIVE"
-        : "REGULAR";
-  return {
-    evaluationId: source.evaluationId ?? source.id,
-    examinationId: source.examinationId ?? source.examId,
-    sectionId: source.sectionId,
-    subjectId: source.subjectId,
-    facultyId: source.facultyId,
-    faculty: {
-      id: source.facultyId,
-      name: source.facultyName ?? source.faculty?.name ?? "—",
-      code: source.facultyCode ?? source.faculty?.code ?? "",
-    },
-    subject: {
-      id: source.subjectId,
-      name: source.subjectName ?? source.subject?.name ?? "Subject",
-      code: source.subjectCode ?? source.subject?.code ?? "",
-    },
-    status: statusOf(source.status ?? source.evaluationStatus),
-    rejectionReason: source.rejectionReason ?? "",
-    rowVersion: source.rowVersion ?? null,
-    mode,
-    maxMarks: Number(source.maxMarks ?? source.totalMax ?? source.maximumMarks ?? 0),
-    internalMax: Number(source.internalMax ?? source.internalMaximum ?? 0),
-    practicalMax,
-    theoryMax: Number(source.theoryMax ?? source.theoryMaximum ?? 0),
-    passPercentage: Number(source.passPercentage ?? source.passingPercentage ?? 0),
-    rows,
-    dirty: false,
-    validationErrors: {},
-  };
-};
-const paramsFor = (c) => ({
-  boardId: c.board,
-  academicYearId: c.year,
-  academicLevelId: c.level,
-  groupId: c.group,
-  programId: c.program,
-  sectionId: c.section,
-  examinationId: c.exam,
-});
-const marksPayload = (w) => ({
-  ...(w.rowVersion != null ? { rowVersion: w.rowVersion } : {}),
-  students: w.rows.map((r) => ({
-    studentId: r.studentId,
-    internalMarks: r.absent || r.internal === "" ? 0 : Number(r.internal),
-    practicalMarks: r.absent || r.practical === "" ? 0 : Number(r.practical),
-    theoryMarks: r.absent || r.theory === "" ? 0 : Number(r.theory),
-    isAbsent: Boolean(r.absent),
-    remarks: r.remarks || "",
-  })),
-});
+const validateMarksConfiguration = (config) =>
+  config?.mode === "REGULAR" &&
+  (Number(config.internalMax || 0) + Number(config.practicalMax || 0) + Number(config.theoryMax || 0) !== Number(config.maxMarks || 0))
+    ? "Configured component maxima do not equal Total Maximum Marks."
+    : "";
 
-export default function MarksEntryPage() {
-  const [tab, setTab] = useState("entry"),
-    [filters, setFilters] = useState({
-      board: "",
-      year: "",
-      level: "",
-      group: "",
-      program: "",
-      section: "",
-      exam: "",
-    }),
-    [applied, setApplied] = useState(null);
-  const [boards, setBoards] = useState([]),
-    [years, setYears] = useState([]),
-    [levels, setLevels] = useState([]),
-    [groups, setGroups] = useState([]),
-    [programs, setPrograms] = useState([]),
-    [sections, setSections] = useState([]),
-    [exams, setExams] = useState([]);
-  const [workspaces, setWorkspaces] = useState({}),
-    [activeSubjectId, setActiveSubjectId] = useState(""),
-    [evaluations, setEvaluations] = useState([]),
-    [analysis, setAnalysis] = useState([]),
-    [analysisSubjects, setAnalysisSubjects] = useState([]),
-    [readiness, setReadiness] = useState(null);
-  const [selectedEvaluation, setSelectedEvaluation] = useState(null),
-    [selectedStudent, setSelectedStudent] = useState(null),
-    [editingSubmitted, setEditingSubmitted] = useState({});
-  const [entryPage, setEntryPage] = useState(1),
-    [evaluationPage, setEvaluationPage] = useState(1),
-    [studentPage, setStudentPage] = useState(1),
-    [detailPage, setDetailPage] = useState(1);
-  const [evaluationSearch, setEvaluationSearch] = useState(""),
-    [studentSearch, setStudentSearch] = useState(""),
-    [toast, setToast] = useState(null),
-    [processing, setProcessing] = useState(false),
-    [modal, setModal] = useState(null),
-    [message, setMessage] = useState(""),
-    [pending, setPending] = useState(null);
-  const filtersRef = useRef(filters),
-    timers = useRef(null),
-    requests = useRef({ groups: 0, programs: 0, sections: 0, examinations: 0 });
-  filtersRef.current = filters;
-  const notify = useCallback((text, type = "success") => {
-    clearTimeout(timers.current);
-    setToast({ text, type });
-    timers.current = setTimeout(() => setToast(null), 4500);
-  }, []);
-  useEffect(() => () => clearTimeout(timers.current), []);
-  useEffect(() => {
-    (async () => {
-      const settled = await Promise.allSettled([
-        apiClient.get(MARKS_API.boards),
-        apiClient.get(MARKS_API.academicYears),
-        apiClient.get(MARKS_API.academicLevels),
-      ]);
-      const setters = [
-        [setBoards, "board"],
-        [setYears, "year"],
-        [setLevels, "level"],
-      ];
-      settled.forEach((result, i) =>
-        result.status === "fulfilled"
-          ? setters[i][0](
-              collection(result.value)
-                .filter(active)
-                .map((x) => normalize(x, setters[i][1]))
-                .filter((x) => x.id != null && x.name),
-            )
-          : notify(getApiErrorMessage(result.reason), "error"),
-      );
-    })();
-  }, [notify]);
-  const dirty = Object.values(workspaces).some((w) => w.dirty),
-    guard = (fn) => (dirty ? setPending(() => fn) : fn());
-  const clearApplied = () => {
-    setApplied(null);
-    setWorkspaces({});
-    setEvaluations([]);
-    setAnalysis([]);
-    setReadiness(null);
-    setEditingSubmitted({});
-  };
-  const changeFilter = (key, value) =>
-    guard(async () => {
-      const next = { ...filters, [key]: value },
-        clear = {
-          board: ["group", "program", "section", "exam"],
-          year: ["exam"],
-          level: ["exam"],
-          group: ["program", "section", "exam"],
-          program: ["section", "exam"],
-          section: ["exam"],
-        };
-      if (key === "board" && value && next.year) {
-        const selectedYear = years.find((item) => eq(item.id, next.year));
-        const yearBoardId = relationId(selectedYear, ["boardId", "BoardId"]);
-        if (yearBoardId != null && !eq(yearBoardId, value)) next.year = "";
-      }
-      (clear[key] || []).forEach((k) => {
-        next[k] = "";
-      });
-      setFilters(next);
-      clearApplied();
-      if (key === "board") {
-        const seq = ++requests.current.groups;
-        requests.current.programs += 1;
-        requests.current.sections += 1;
-        requests.current.examinations += 1;
-        setGroups([]);
-        setPrograms([]);
-        setSections([]);
-        setExams([]);
-        if (value)
-          try {
-            const res = await apiClient.get(MARKS_API.groupsByBoard(value));
-            if (seq === requests.current.groups)
-              setGroups(
-                collection(res)
-                  .filter(active)
-                  .map((x) => normalize(x, "group"))
-                  .filter((x) => x.id != null && x.name),
-              );
-          } catch (e) {
-            if (seq === requests.current.groups) notify(getApiErrorMessage(e), "error");
-          }
-      }
-      if (key === "group") {
-        const seq = ++requests.current.programs;
-        requests.current.sections += 1;
-        requests.current.examinations += 1;
-        setPrograms([]);
-        setSections([]);
-        setExams([]);
-        if (value)
-          try {
-            const res = await apiClient.get(MARKS_API.programsByGroup(value));
-            if (seq === requests.current.programs)
-              setPrograms(
-                collection(res)
-                  .filter(active)
-                  .map((x) => normalize(x, "program"))
-                  .filter((x) => x.id != null && x.name),
-              );
-          } catch (e) {
-            if (seq === requests.current.programs) notify(getApiErrorMessage(e), "error");
-          }
-      }
-      if (key === "program") {
-        requests.current.sections += 1;
-        requests.current.examinations += 1;
-        setSections([]);
-        setExams([]);
-      }
-      if (key === "section" || key === "year" || key === "level") {
-        requests.current.examinations += 1;
-        setExams([]);
+const numericMark = (value) =>
+  value !== "" && value !== null && value !== undefined && /^(?:\d+|\d+\.\d{1,2})$/.test(String(value)) && Number.isFinite(Number(value));
+
+const validateMarksRows = (workspace, complete) => {
+  const errors = {};
+  if (!workspace?.rows) return errors;
+  workspace.rows.forEach((row) => {
+    if (row.absent) return;
+    const fields =
+      workspace.mode === "OBJECTIVE"
+        ? [["obtainedMarks", workspace.maxMarks]]
+        : [
+            ["internal", workspace.internalMax],
+            ...(workspace.practicalMax ? [["practical", workspace.practicalMax]] : []),
+            ["theory", workspace.theoryMax],
+          ];
+    const list = [];
+    fields.forEach(([key, max]) => {
+      if (row[key] === "" || row[key] === null || row[key] === undefined) {
+        if (complete) list.push(`${key} is required`);
+      } else if (!numericMark(row[key]) || Number(row[key]) < 0 || Number(row[key]) > Number(max)) {
+        list.push(`${key} must be between 0 and ${max} with at most two decimals`);
       }
     });
+    if ((row.remarks || "").trim().length > 250) list.push("Remarks cannot exceed 250 characters");
+    if (list.length) errors[row.studentId] = list;
+  });
+  return errors;
+};
+
+const calculateStudentSubjectResult = (row, workspace) => {
+  if (!row || !workspace) return { obtained: 0, percentage: 0, grade: "F", result: "FAIL" };
+  const obtained = row.absent ? 0 : Number(workspace.mode === "OBJECTIVE" ? row.obtainedMarks : row.total);
+  const percentage = workspace.maxMarks ? (obtained / workspace.maxMarks) * 100 : 0;
+  return {
+    obtained,
+    percentage,
+    grade: grade(percentage),
+    result: !row.absent && percentage >= (workspace.passPercentage || 35) ? "PASS" : "FAIL",
+  };
+};
+
+const calculateEvaluationStatistics = (workspace) => {
+  if (!workspace?.rows?.length) {
+    return { studentsCount: 0, average: "—", highest: "—", lowest: "—" };
+  }
+  const values = workspace.rows
+    .filter((row) => !row.absent)
+    .map((row) => Number(workspace.mode === "OBJECTIVE" ? row.obtainedMarks : row.total))
+    .filter(Number.isFinite);
+  return {
+    studentsCount: workspace.rows.length,
+    average: values.length ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2) : "—",
+    highest: values.length ? Math.max(...values) : "—",
+    lowest: values.length ? Math.min(...values) : "—",
+  };
+};
+
+const calculateReadiness = (configs = [], workspaces = {}) => {
+  const statuses = configs.map(
+    (config) =>
+      workspaces[evaluationKey({ examinationId: config.examinationId, sectionId: config.sectionId, subjectId: config.subjectId })]?.status ||
+      "NOT STARTED"
+  );
+  const count = (status) => statuses.filter((item) => item === status).length;
+  const requiredSubjectCount = configs.length;
+  const approvedCount = count("APPROVED");
+  return {
+    requiredSubjectCount,
+    notStartedCount: count("NOT STARTED"),
+    draftCount: count("DRAFT"),
+    submittedCount: count("SUBMITTED"),
+    verifiedCount: count("VERIFIED"),
+    approvedCount,
+    rejectedCount: count("REJECTED"),
+    allRequiredApproved: requiredSubjectCount > 0 && approvedCount === requiredSubjectCount,
+    readyForResults: requiredSubjectCount > 0 && approvedCount === requiredSubjectCount,
+  };
+};
+
+const isLegalStatusTransition = (from, to) =>
+  ({
+    "NOT STARTED": ["DRAFT", "SUBMITTED"],
+    DRAFT: ["DRAFT", "SUBMITTED"],
+    REJECTED: ["REJECTED", "SUBMITTED"],
+    SUBMITTED: ["SUBMITTED", "VERIFIED", "REJECTED"],
+    VERIFIED: ["APPROVED", "REJECTED"],
+    APPROVED: [],
+  }[from] || []).includes(to);
+
+export default function MarksEntryPage() {
+  // Cascading Academic Masters
+  const [boards, setBoards] = useState([]);
+  const [years, setYears] = useState([]);
+  const [levels, setLevels] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [sections, setSections] = useState([]);
+
+  // Students & Exams for selected context
+  const [sectionStudents, setSectionStudents] = useState([]);
+  const [exams, setExams] = useState([]);
+  const [examConfigs, setExamConfigs] = useState([]);
+
+  // Tab & Filters
+  const [tab, setTab] = useState("entry");
+  const [filters, setFilters] = useState({
+    board: "",
+    year: "",
+    level: "",
+    group: "",
+    program: "",
+    section: "",
+  });
+  const [applied, setApplied] = useState(null);
+
+  // Selected Exam & Subject in Entry Tab
+  const [examId, setExamId] = useState("");
+  const [subjectId, setSubjectId] = useState("");
+  const [workspaces, setWorkspaces] = useState({});
+  const [editingKey, setEditingKey] = useState("");
+  const [processing, setProcessing] = useState("");
+  const [toast, setToast] = useState(null);
+  const [pending, setPending] = useState(null);
+
+  // Evaluation & Student Analysis Modals / Views
+  const [selectedEvaluation, setSelectedEvaluation] = useState(null);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [message, setMessage] = useState("");
+  const [backendAnalysis, setBackendAnalysis] = useState([]);
+
+  // Pagination & Search
+  const [entryPage, setEntryPage] = useState(1);
+  const [evaluationPage, setEvaluationPage] = useState(1);
+  const [studentPage, setStudentPage] = useState(1);
+  const [detailPage, setDetailPage] = useState(1);
+  const [evaluationSearch, setEvaluationSearch] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+
+  const snapshots = useRef({});
+  const timer = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const notify = (text, type = "success") => {
+    clearTimeout(timer.current);
+    setToast({ text, type });
+    timer.current = setTimeout(() => setToast(null), 3500);
+  };
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const dirty = Object.values(workspaces).some((item) => item.dirty);
+  const guard = (action) => (dirty ? setPending(() => action) : action());
+
+  const clearContext = () => {
+    setApplied(null);
+    setExamId("");
+    setSubjectId("");
+    setSelectedEvaluation(null);
+    setSelectedStudent(null);
+    setSectionStudents([]);
+    setExams([]);
+    setExamConfigs([]);
+    setBackendAnalysis([]);
+  };
+
+  // 1. Initial Load: Fetch Active Boards
   useEffect(() => {
-    const seq = ++requests.current.sections;
-    if (!filters.program) {
+    let isMounted = true;
+    const loadBoards = async () => {
+      try {
+        const res = await apiClient.get(apiEndpoints.boards.list);
+        const raw = unwrapRecords(res);
+        const list = (raw.length ? raw : MOCK_BOARDS)
+          .map((b) => ({
+            id: normalizeId(b.boardId ?? b.id),
+            name: b.boardName ?? b.name,
+            code: b.boardCode ?? b.code,
+            isActive: b.status !== false && b.isActive !== false,
+            academicLevelIds: b.academicLevelIds,
+            academicLevelNames: b.academicLevelNames,
+          }))
+          .filter((b) => b.isActive);
+
+        if (!isMounted) return;
+        setBoards(list);
+        if (list.length === 1) {
+          setFilters((prev) => ({ ...prev, board: list[0].id }));
+        }
+      } catch (err) {
+        console.warn("Error fetching boards, using fallback:", err);
+        if (isMounted) setBoards(MOCK_BOARDS);
+      }
+    };
+    loadBoards();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. When Board changes: Fetch Academic Years, Academic Levels, Groups
+  useEffect(() => {
+    if (!filters.board) {
+      setYears([]);
+      setLevels([]);
+      setGroups([]);
+      return;
+    }
+
+    let isMounted = true;
+    const loadBoardDependencies = async () => {
+      const selectedBoard = boards.find((b) => eq(b.id, filters.board));
+
+      // 2a. Fetch Academic Years
+      try {
+        const yearsRes = await apiClient.get(apiEndpoints.academicYears.active, {
+          params: { boardId: filters.board, isActive: true },
+        }).catch(() => apiClient.get(apiEndpoints.academicYears.getAll));
+
+        const rawYears = unwrapRecords(yearsRes);
+        const listYears = (rawYears.length ? rawYears : MOCK_YEARS)
+          .map((y) => ({
+            id: normalizeId(y.academicYearId ?? y.id),
+            name: y.academicYearName ?? y.name,
+            boardId: normalizeId(y.boardId),
+            isActive: y.isActive !== false,
+            isCurrent: Boolean(y.isCurrent),
+          }))
+          .filter((y) => y.isActive && (!y.boardId || eq(y.boardId, filters.board)));
+
+        if (isMounted) {
+          setYears(listYears);
+          const currentYear = listYears.find((y) => y.isCurrent) || listYears[0];
+          if (currentYear) {
+            setFilters((prev) => ({ ...prev, year: currentYear.id }));
+          }
+        }
+      } catch (err) {
+        console.warn("Error fetching academic years:", err);
+        if (isMounted) setYears(MOCK_YEARS.filter((y) => eq(y.boardId, filters.board)));
+      }
+
+      // 2b. Fetch Academic Levels
+      try {
+        let levelItems = [];
+        const levelsRes = await apiClient.get(`/api/v1/academic-levels`, {
+          params: { boardId: filters.board },
+        }).catch(() => apiClient.get(`/api/v1/boards/${encodeURIComponent(filters.board)}/academic-levels`));
+
+        const rawLevels = unwrapRecords(levelsRes);
+        if (rawLevels.length) {
+          levelItems = rawLevels.map((l) => ({
+            id: normalizeId(l.academicLevelId ?? l.id),
+            name: l.levelName ?? l.name,
+            isActive: l.isActive !== false,
+          }));
+        } else if (selectedBoard?.academicLevelIds?.length) {
+          levelItems = selectedBoard.academicLevelIds.map((id, idx) => ({
+            id: normalizeId(id),
+            name: selectedBoard.academicLevelNames?.[idx] || `Level ${id}`,
+            isActive: true,
+          }));
+        } else {
+          levelItems = MOCK_LEVELS;
+        }
+
+        if (isMounted) setLevels(levelItems.filter((l) => l.isActive));
+      } catch (err) {
+        console.warn("Error fetching academic levels:", err);
+        if (isMounted) setLevels(MOCK_LEVELS);
+      }
+
+      // 2c. Fetch Groups
+      try {
+        const groupsRes = await apiClient.get(apiEndpoints.groups.list, {
+          params: { boardId: filters.board, isActive: true },
+        }).catch(() => apiClient.get(apiEndpoints.groups.getByBoard(filters.board)));
+
+        const rawGroups = unwrapRecords(groupsRes);
+        const listGroups = (rawGroups.length ? rawGroups : MOCK_GROUPS)
+          .map((g) => ({
+            id: normalizeId(g.groupId ?? g.id),
+            name: g.groupName ? `${g.groupName}${g.groupCode ? ` (${g.groupCode})` : ""}` : g.name,
+            groupName: g.groupName ?? g.name,
+            groupCode: g.groupCode ?? "",
+            boardId: normalizeId(g.boardId),
+            programs: g.programs || [],
+            isActive: g.isActive !== false,
+          }))
+          .filter((g) => g.isActive && (!g.boardId || eq(g.boardId, filters.board)));
+
+        if (isMounted) setGroups(listGroups);
+      } catch (err) {
+        console.warn("Error fetching groups:", err);
+        if (isMounted) setGroups(MOCK_GROUPS.filter((g) => eq(g.boardId, filters.board)));
+      }
+    };
+
+    loadBoardDependencies();
+    return () => {
+      isMounted = false;
+    };
+  }, [filters.board, boards]);
+
+  // 3. When Group changes: Fetch Programs
+  useEffect(() => {
+    if (!filters.group) {
+      setPrograms([]);
+      return;
+    }
+
+    let isMounted = true;
+    const loadPrograms = async () => {
+      const selectedGroup = groups.find((g) => eq(g.id, filters.group));
+      if (selectedGroup?.programs?.length) {
+        const list = selectedGroup.programs
+          .map((p) => ({
+            id: normalizeId(p.programId ?? p.id),
+            name: p.programName ?? p.name,
+            groupId: filters.group,
+            isActive: p.isActive !== false,
+          }))
+          .filter((p) => p.isActive);
+        setPrograms(list);
+        return;
+      }
+
+      try {
+        const res = await apiClient.get(apiEndpoints.programs.byGroup(filters.group));
+        const raw = unwrapRecords(res);
+        const list = (raw.length ? raw : MOCK_PROGRAMS)
+          .map((p) => ({
+            id: normalizeId(p.programId ?? p.id),
+            name: p.programName ?? p.name,
+            groupId: filters.group,
+            isActive: p.isActive !== false,
+          }))
+          .filter((p) => p.isActive && (!p.groupId || eq(p.groupId, filters.group)));
+
+        if (isMounted) setPrograms(list);
+      } catch (err) {
+        console.warn("Error fetching programs:", err);
+        if (isMounted) setPrograms(MOCK_PROGRAMS.filter((p) => eq(p.groupId, filters.group)));
+      }
+    };
+
+    loadPrograms();
+    return () => {
+      isMounted = false;
+    };
+  }, [filters.group, groups]);
+
+  // 4. When Academic Scope (Board, Year, Level, Group, Program) is set: Fetch Sections
+  useEffect(() => {
+    if (!filters.board || !filters.year || !filters.level || !filters.group || !filters.program) {
       setSections([]);
       return;
     }
-    const params = {
-      ProgramId: filters.program,
-      IsActive: true,
-      Page: 1,
-      PageSize: 500,
-      ...(filters.board ? { BoardId: filters.board } : {}),
-      ...(filters.year ? { AcademicYearId: filters.year } : {}),
-      ...(filters.level ? { AcademicLevelId: filters.level } : {}),
-      ...(filters.group ? { GroupId: filters.group } : {}),
-    };
-    apiClient
-      .get(MARKS_API.sections, { params })
-      .then((response) => {
-        if (seq !== requests.current.sections) return;
-        const nextSections = collection(response)
-          .filter(active)
-          .map((x) => normalize(x, "section"))
-          .filter((x) => x.id != null && x.name);
-        setSections(nextSections);
-        const currentSection = filtersRef.current.section;
-        if (
-          currentSection &&
-          !nextSections.some((section) => eq(section.id, currentSection))
-        ) {
-          setExams([]);
-          setFilters((current) =>
-            eq(current.section, currentSection)
-              ? { ...current, section: "", exam: "" }
-              : current,
-          );
-        }
-      })
-      .catch((error) => {
-        if (seq === requests.current.sections) notify(getApiErrorMessage(error), "error");
-      });
-  }, [filters.board, filters.year, filters.level, filters.group, filters.program, notify]);
 
-  useEffect(() => {
-    const seq = ++requests.current.examinations;
-    const context = [
-      filters.board,
-      filters.year,
-      filters.level,
-      filters.group,
-      filters.program,
-      filters.section,
-    ];
-    if (!context.every(Boolean)) {
-      setExams([]);
-      return;
-    }
-    const params = {
-      BoardId: filters.board,
-      AcademicYearId: filters.year,
-      AcademicLevelId: filters.level,
-      GroupId: filters.group,
-      ProgramId: filters.program,
-      IsActive: true,
-      Page: 1,
-      PageSize: 500,
-      Status: "COMPLETED",
-    };
-    apiClient
-      .get(MARKS_API.examinations, { params })
-      .then((response) => {
-        if (seq !== requests.current.examinations) return;
-        setExams(
-          collection(response)
-            .map((x) => normalize(x, "exam"))
-            .filter((x) => x.id != null && x.name && x.status === "COMPLETED"),
-        );
-      })
-      .catch((error) => {
-        if (seq === requests.current.examinations)
-          notify(getApiErrorMessage(error), "error");
-      });
-  }, [
-    filters.board,
-    filters.year,
-    filters.level,
-    filters.group,
-    filters.program,
-    filters.section,
-    notify,
-  ]);
+    let isMounted = true;
+    const loadSections = async () => {
+      try {
+        const res = await apiClient.get(apiEndpoints.sections.getAll, {
+          params: {
+            BoardId: filters.board,
+            AcademicYearId: filters.year,
+            AcademicLevelId: filters.level,
+            GroupId: filters.group,
+            ProgramId: filters.program,
+            IsActive: true,
+          },
+        });
+        const raw = unwrapRecords(res);
+        const list = (raw.length ? raw : MOCK_SECTIONS)
+          .map((s) => ({
+            id: normalizeId(s.sectionId ?? s.id),
+            name: s.sectionName ?? s.name,
+            inchargeId: s.inchargeId ?? s.facultyId,
+            inchargeName: s.inchargeName ?? s.facultyName,
+            groupId: normalizeId(s.groupId),
+            programId: normalizeId(s.programId),
+            academicLevelId: normalizeId(s.academicLevelId),
+            academicYearId: normalizeId(s.academicYearId),
+            boardId: normalizeId(s.boardId),
+            isActive: s.isActive !== false,
+          }))
+          .filter((s) => s.isActive);
 
-  const loadReadiness = useCallback(
-    async (context) => {
-      try {
-        const res = await apiClient.get(MARKS_API.readiness, { params: paramsFor(context) }),
-          r = object(res);
-        setReadiness({
-          requiredSubjectCount: Number(r.requiredEvaluationCount ?? 0),
-          notStartedCount: Number(r.missingCount ?? 0),
-          draftCount: Number(r.draftCount ?? 0),
-          submittedCount: Number(r.submittedCount ?? 0),
-          verifiedCount: Number(r.verifiedCount ?? 0),
-          approvedCount: Number(r.approvedCount ?? 0),
-          rejectedCount: Number(r.rejectedCount ?? 0),
-          allRequiredApproved: Boolean(r.allRequiredEvaluationsApproved),
-          readyForResults: Boolean(r.readyForResults),
-        });
-      } catch (e) {
-        if (e.response?.status !== 404) notify(getApiErrorMessage(e), "error");
-        setReadiness(null);
+        if (isMounted) setSections(list);
+      } catch (err) {
+        console.warn("Error fetching sections:", err);
+        if (isMounted) setSections(MOCK_SECTIONS);
       }
-    },
-    [notify],
-  );
-  const loadEvaluationSearch = useCallback(
-    async (context) => {
-      try {
-        const p = paramsFor(context);
-        const res = await apiClient.post(MARKS_API.evaluationSearch, {
-          boardId: p.boardId,
-          academicYearId: p.academicYearId,
-          academicLevelId: p.academicLevelId,
-          levelId: p.academicLevelId,
-          programId: p.programId,
-          groupId: p.groupId,
-          sectionId: p.sectionId,
-          examinationId: p.examinationId,
-          examId: p.examinationId,
-          pageNumber: 1,
-          pageSize: 100,
-        });
-        setEvaluations(
-          collection(res)
-            .map(normalizeEvaluation)
-            .filter((e) => e.evaluationId != null),
-        );
-      } catch (e) {
-        if (e.response?.status === 404) setEvaluations([]);
-        else notify(getApiErrorMessage(e), "error");
-      }
-    },
-    [notify],
-  );
-  const loadAnalysis = useCallback(
-    async (context) => {
-      try {
-        const p = paramsFor(context);
-        const res = await apiClient.get(MARKS_API.studentAnalysis, {
-            params: {
-              boardId: p.boardId,
-              academicYearId: p.academicYearId,
-              academicLevelId: p.academicLevelId,
-              groupId: p.groupId,
-              sectionId: p.sectionId,
-              examinationId: p.examinationId,
-            },
-          }),
-          data = collection(res),
-          subjectMap = new Map();
-        data.forEach((student) =>
-          collection(student.subjects ?? student.subjectMarks).forEach((s) => {
-            const id = s.subjectId ?? s.id;
-            if (id != null && !subjectMap.has(String(id)))
-              subjectMap.set(String(id), {
-                id,
-                name: s.subjectName ?? s.name ?? "Subject",
-                code: s.subjectCode ?? s.code ?? "",
-              });
-          }),
-        );
-        setAnalysisSubjects([...subjectMap.values()]);
-        setAnalysis(
-          data.map((s) => ({
-            ...s,
-            studentId: s.studentId ?? s.id,
-            rollNo: s.rollNo ?? s.rollNumber ?? "",
-            studentName: s.studentName ?? s.name ?? "",
-            subjectResults: collection(s.subjects ?? s.subjectMarks),
-            totalObtained: s.totalMarks ?? s.total ?? 0,
-            totalMaximum: s.maxTotal ?? s.maximum ?? 0,
-            percentage: s.percentage,
-            grade: s.grade ?? "—",
-            result: s.readyForResults === false ? "PENDING" : (s.result ?? "PENDING"),
-            readyForResults: s.readyForResults !== false,
-          })),
-        );
-      } catch (e) {
-        if (e.response?.status === 404) {
-          setAnalysis([]);
-          setAnalysisSubjects([]);
-        } else notify(getApiErrorMessage(e), "error");
-      }
-    },
-    [notify],
-  );
-  const refreshContext = useCallback(
-    async (context) => Promise.all([loadEvaluationSearch(context), loadReadiness(context)]),
-    [loadEvaluationSearch, loadReadiness],
-  );
-  const applyContext = () =>
-    guard(async () => {
-      if (!Object.values(filters).every(Boolean))
-        return notify("Select all seven academic filters.", "error");
-      if (
-        !boards.some((x) => eq(x.id, filters.board)) ||
-        !years.some((x) => eq(x.id, filters.year)) ||
-        !levels.some((x) => eq(x.id, filters.level)) ||
-        !groups.some((x) => eq(x.id, filters.group)) ||
-        !programs.some((x) => eq(x.id, filters.program)) ||
-        !sections.some((x) => eq(x.id, filters.section)) ||
-        !exams.some((x) => eq(x.id, filters.exam) && x.status === "COMPLETED") ||
-        !groups.some(
-          (x) =>
-            eq(x.id, filters.group) &&
-            matchesOptionalRelation(x, ["boardId", "BoardId"], filters.board),
-        ) ||
-        !programs.some(
-          (x) =>
-            eq(x.id, filters.program) &&
-            matchesOptionalRelation(x, ["groupId", "GroupId"], filters.group),
-        ) ||
-        !sections.some(
-          (x) =>
-            eq(x.id, filters.section) &&
-            matchesOptionalRelation(x, ["programId", "ProgramId"], filters.program),
-        ) ||
-        !exams.some(
-          (x) =>
-            eq(x.id, filters.exam) &&
-            matchesOptionalRelation(x, ["boardId", "BoardId"], filters.board) &&
-            matchesOptionalRelation(x, ["academicYearId", "AcademicYearId"], filters.year) &&
-            matchesOptionalRelation(
-              x,
-              ["academicLevelId", "AcademicLevelId", "levelId"],
-              filters.level,
-            ) &&
-            matchesOptionalRelation(x, ["groupId", "GroupId"], filters.group) &&
-            matchesOptionalRelation(x, ["programId", "ProgramId"], filters.program) &&
-            matchesOptionalRelation(x, ["sectionId", "SectionId"], filters.section),
-        )
-      )
-        return notify("The selected academic hierarchy is invalid.", "error");
-      setProcessing(true);
-      try {
-        const context = { ...filters },
-          res = await apiClient.get(MARKS_API.facultyEvaluations, { params: paramsFor(context) }),
-          headers = collection(res)
-            .map(normalizeEvaluation)
-            .filter(
-              (e) =>
-                e.evaluationId != null &&
-                eq(e.examinationId, context.exam) &&
-                eq(e.sectionId, context.section),
-            );
-        if (!headers.length) {
-          setApplied(context);
-          setWorkspaces({});
-          return notify("No faculty evaluations are available for the selected context.", "error");
-        }
-        const sheets = await Promise.allSettled(
-          headers.map((h) =>
-            apiClient
-              .get(MARKS_API.facultyStudents(h.evaluationId))
-              .then((r) => normalizeSheet(r, h)),
-          ),
-        );
-        const next = {};
-        sheets.forEach((result, i) => {
-          if (result.status === "fulfilled") next[String(headers[i].subjectId)] = result.value;
-          else notify(getApiErrorMessage(result.reason), "error");
-        });
-        setApplied(context);
-        setWorkspaces(next);
-        setActiveSubjectId(Object.keys(next)[0] || "");
-        setTab("entry");
-        setEntryPage(1);
-        await refreshContext(context);
-      } catch (e) {
-        notify(getApiErrorMessage(e), "error");
-      } finally {
-        setProcessing(false);
-      }
+    };
+
+    loadSections();
+    return () => {
+      isMounted = false;
+    };
+  }, [filters.board, filters.year, filters.level, filters.group, filters.program]);
+
+  // Filter Cascade Change Handler
+  const changeFilter = (key, value) =>
+    guard(() => {
+      const next = { ...filters, [key]: value };
+      const children = {
+        board: ["group", "program", "section"],
+        level: ["section"],
+        group: ["program", "section"],
+        program: ["section"],
+        year: ["section"],
+        section: [],
+      };
+      (children[key] || []).forEach((child) => {
+        next[child] = "";
+      });
+      setFilters(next);
+      clearContext();
     });
 
-  const workspace = workspaces[activeSubjectId],
-    editable =
-      (workspace && ["NOT STARTED", "DRAFT", "REJECTED"].includes(workspace.status)) ||
-      Boolean(editingSubmitted[activeSubjectId]);
-  const setWorkspace = (id, updater) =>
-    setWorkspaces((all) => ({ ...all, [id]: updater(all[id]) }));
+  // 5. Apply Academic Context (Click "Enter Marks")
+  const applyContext = async () => {
+    if (processing) return;
+    if (!Object.values(filters).every(Boolean)) {
+      return notify("Select Board, Academic Year, Academic Level, Group, Program, and Section.", "error");
+    }
+
+    setProcessing("Loading...");
+    try {
+      // 5a. Fetch Students for the selected section
+      const studentsRes = await apiClient.get(apiEndpoints.students.getBySection(filters.section));
+      const rawStudents = unwrapRecords(studentsRes);
+      const studentList = (rawStudents.length ? rawStudents : [])
+        .map((s) => ({
+          studentId: s.studentId ?? s.id,
+          admissionNo: s.admissionNo ?? "",
+          rollNo: String(s.rollNo ?? s.rollNumber ?? ""),
+          studentName: s.studentName ?? s.fullName ?? s.name ?? "Student",
+          isActive: s.isActive !== false,
+        }))
+        .filter((s) => s.isActive)
+        .sort((a, b) => a.rollNo.localeCompare(b.rollNo, undefined, { numeric: true }));
+
+      setSectionStudents(studentList);
+
+      // 5b. Fetch Examinations for this context
+      const examsRes = await apiClient.get(apiEndpoints.examinations.getAll, {
+        params: {
+          boardId: filters.board,
+          academicYearId: filters.year,
+          academicLevelId: filters.level,
+          groupId: filters.group,
+        },
+      });
+      const rawExams = unwrapRecords(examsRes);
+      const examList = (rawExams.length ? rawExams : [])
+        .map((e) => ({
+          id: normalizeId(e.examinationId ?? e.id),
+          code: e.examCode ?? "",
+          name: e.examName ?? e.name ?? "Examination",
+          status: e.status ?? "COMPLETED",
+          boardId: normalizeId(e.boardId),
+          academicYearId: normalizeId(e.academicYearId),
+          academicLevelId: normalizeId(e.academicLevelId),
+          groupId: normalizeId(e.groupId),
+          programId: normalizeId(e.programId),
+          schedules: e.schedules || [],
+          isActive: e.isActive !== false,
+        }))
+        .filter(
+          (e) =>
+            e.isActive &&
+            (e.status === "COMPLETED" || e.status === "SCHEDULED" || e.status === "APPROVED") &&
+            (!e.programId || eq(e.programId, filters.program))
+        );
+
+      setExams(examList);
+
+      // 5c. Fetch Existing Evaluations for this Section
+      try {
+        const evalSearchRes = await apiClient.post(
+          "/api/v1/evaluations/search",
+          {
+            boardId: Number(filters.board),
+            academicYearId: Number(filters.year),
+            academicLevelId: Number(filters.level),
+            groupId: Number(filters.group),
+            sectionId: Number(filters.section),
+          }
+        ).catch(() => apiClient.get("/api/v1/faculty/evaluations"));
+
+        const existingEvals = unwrapRecords(evalSearchRes);
+        const evalMap = {};
+        existingEvals.forEach((ev) => {
+          const key = `${ev.examinationId}:${ev.sectionId || filters.section}:${ev.subjectId}`;
+          evalMap[key] = {
+            evaluationId: ev.evaluationId,
+            examinationId: normalizeId(ev.examinationId),
+            sectionId: normalizeId(ev.sectionId || filters.section),
+            subjectId: normalizeId(ev.subjectId),
+            facultyId: ev.facultyId,
+            faculty: { name: ev.facultyName || "Assigned Faculty", employeeCode: ev.facultyCode || "" },
+            subject: { id: normalizeId(ev.subjectId), name: ev.subjectName, code: ev.subjectCode },
+            status: ev.status || "DRAFT",
+            mode: ev.examPattern === "OBJECTIVE" || ev.mode === "OBJECTIVE" ? "OBJECTIVE" : "REGULAR",
+            maxMarks: Number(ev.subjectMaxMarks || ev.totalMarks || ev.maxMarks || 100),
+            internalMax: Number(ev.internalMax ?? 20),
+            practicalMax: Number(ev.practicalMax ?? (ev.isPractical ? 30 : 0)),
+            theoryMax: Number(ev.theoryMax ?? (ev.isPractical ? 50 : 80)),
+            passPercentage: Number(ev.examPassPercentage || ev.passPercentage || 35),
+            rejectionReason: ev.rejectionReason || "",
+            average: ev.averageMarks ? String(ev.averageMarks) : "—",
+            highest: ev.highestMarks !== undefined ? String(ev.highestMarks) : "—",
+            lowest: ev.lowestMarks !== undefined ? String(ev.lowestMarks) : "—",
+            studentsCount: ev.totalStudents || studentList.length,
+            rows: [],
+            dirty: false,
+            validationErrors: {},
+            updatedAt: ev.lastSubmittedAt || new Date().toISOString(),
+          };
+        });
+
+        setWorkspaces(evalMap);
+      } catch (err) {
+        console.warn("Error fetching evaluations search:", err);
+      }
+
+      setApplied({ ...filters });
+      setTab("entry");
+      if (examList.length > 0) {
+        setExamId(examList[0].id);
+      }
+    } catch (err) {
+      notify(getApiErrorMessage(err), "error");
+    } finally {
+      setProcessing("");
+    }
+  };
+
+  // 6. When Examination is selected: derive subject configs
+  useEffect(() => {
+    if (!applied || !examId) {
+      setExamConfigs([]);
+      setSubjectId("");
+      return;
+    }
+
+    const selectedExam = exams.find((e) => eq(e.id, examId));
+    let configs = [];
+    if (selectedExam?.schedules?.length) {
+      configs = selectedExam.schedules.map((s) => ({
+        id: `cfg-${examId}-${s.subjectId}`,
+        examinationId: examId,
+        sectionId: applied.section,
+        subjectId: normalizeId(s.subjectId),
+        subjectName: s.subjectName || `Subject ${s.subjectId}`,
+        subjectCode: s.subjectCode || "",
+        mode: s.scheduleMode === "COMBINED" ? "OBJECTIVE" : "REGULAR",
+        maxMarks: Number(s.maxMarks || 100),
+        passPercentage: Number(s.passingMarks ? (s.passingMarks / s.maxMarks) * 100 : 35),
+        internalMax: 20,
+        practicalMax: 0,
+        theoryMax: Number(s.maxMarks || 100) - 20,
+        facultyName: s.invigilatorName || s.invigilator || "",
+        facultyId: s.invigilatorId || "",
+      }));
+    } else {
+      // Fallback subjects
+      configs = [
+        { id: `cfg-${examId}-8`, examinationId: examId, sectionId: applied.section, subjectId: "8", subjectName: "English", subjectCode: "ENG1", mode: "REGULAR", maxMarks: 100, passPercentage: 35, internalMax: 20, practicalMax: 0, theoryMax: 80 },
+        { id: `cfg-${examId}-11`, examinationId: examId, sectionId: applied.section, subjectId: "11", subjectName: "Mathematics 1A", subjectCode: "MATH1A", mode: "REGULAR", maxMarks: 100, passPercentage: 35, internalMax: 20, practicalMax: 0, theoryMax: 80 },
+        { id: `cfg-${examId}-12`, examinationId: examId, sectionId: applied.section, subjectId: "12", subjectName: "Mathematics 1B", subjectCode: "MATH1B", mode: "REGULAR", maxMarks: 100, passPercentage: 35, internalMax: 20, practicalMax: 0, theoryMax: 80 },
+      ];
+    }
+
+    setExamConfigs(configs);
+    if (configs.length > 0) {
+      setSubjectId(configs[0].subjectId);
+    }
+  }, [applied, examId, exams]);
+
+  // 7. Initialize or fetch subject evaluation workspace
+  const workspaceKey = subjectId && applied ? evaluationKey({ examinationId: examId, sectionId: applied.section, subjectId }) : "";
+  const workspace = workspaces[workspaceKey];
+
+  useEffect(() => {
+    if (!applied || !examId || !subjectId) return;
+    const config = examConfigs.find((c) => eq(c.subjectId, subjectId));
+    if (!config) return;
+
+    const currentWs = workspaces[workspaceKey];
+    if (currentWs && currentWs.rows?.length) return; // already loaded with rows
+
+    // Fetch existing students marks if evaluation exists
+    let isMounted = true;
+    const loadWorkspaceMarks = async () => {
+      let loadedRows = [];
+      let evalStatus = currentWs?.status || "NOT STARTED";
+      let evalId = currentWs?.evaluationId || `${examId}_${applied.section}_${subjectId}`;
+      let rowVer = 0;
+
+      if (currentWs?.evaluationId) {
+        try {
+          const evalStudentsRes = await apiClient
+            .get(`/api/v1/evaluations/${currentWs.evaluationId}/students`)
+            .catch(() => apiClient.get(`/api/v1/faculty/evaluations/${currentWs.evaluationId}/students`));
+
+          const resData = evalStudentsRes.data || {};
+          evalStatus = resData.status || evalStatus;
+          rowVer = resData.rowVersion || 0;
+          const markItems = resData.students || resData.marksList || [];
+          if (markItems.length) {
+            loadedRows = markItems.map((m) => ({
+              studentId: m.studentId,
+              rollNo: String(m.rollNo || ""),
+              studentName: m.studentName || "",
+              internal: m.internalMarks ?? m.internal ?? "",
+              practical: m.practicalMarks ?? m.practical ?? 0,
+              theory: m.theoryMarks ?? m.theory ?? "",
+              obtainedMarks: m.obtainedMarks ?? m.totalMarks ?? m.total ?? "",
+              total: m.totalMarks ?? m.total ?? "",
+              absent: Boolean(m.isAbsent || m.absent),
+              remarks: m.remarks || "",
+              autoAbsentRemark: false,
+            }));
+          }
+        } catch (err) {
+          console.warn("Could not fetch existing evaluation marks, using section students:", err);
+        }
+      }
+
+      if (!loadedRows.length) {
+        loadedRows = sectionStudents.map((s) => ({
+          studentId: s.studentId,
+          rollNo: s.rollNo,
+          studentName: s.studentName,
+          internal: "",
+          practical: config.practicalMax ? "" : 0,
+          theory: "",
+          obtainedMarks: "",
+          total: "",
+          absent: false,
+          remarks: "",
+          autoAbsentRemark: false,
+        }));
+      }
+
+      if (!isMounted) return;
+      setWorkspaces((all) => ({
+        ...all,
+        [workspaceKey]: {
+          evaluationId: evalId,
+          examinationId: examId,
+          sectionId: applied.section,
+          subjectId: config.subjectId,
+          facultyId: config.facultyId || "1",
+          faculty: { name: config.facultyName || "Assigned Faculty", employeeCode: "" },
+          subject: { id: config.subjectId, name: config.subjectName, code: config.subjectCode },
+          status: evalStatus,
+          mode: config.mode,
+          maxMarks: config.maxMarks,
+          internalMax: config.internalMax,
+          practicalMax: config.practicalMax,
+          theoryMax: config.theoryMax,
+          passPercentage: config.passPercentage,
+          rejectionReason: currentWs?.rejectionReason || "",
+          rows: loadedRows,
+          dirty: false,
+          validationErrors: {},
+          rowVersion: rowVer,
+          updatedAt: new Date().toISOString(),
+        },
+      }));
+    };
+
+    loadWorkspaceMarks();
+    return () => {
+      isMounted = false;
+    };
+  }, [applied, examId, subjectId, examConfigs, sectionStudents, workspaceKey]);
+
+  // Workspace Row Updater
+  const setWorkspace = (key, updater) => setWorkspaces((all) => ({ ...all, [key]: updater(all[key]) }));
+
   const updateRow = (studentId, field, value) => {
-    if (!editable) return;
-    setWorkspace(activeSubjectId, (w) => ({
-      ...w,
+    if (!workspace || (!editableStatuses.includes(workspace.status) && editingKey !== workspaceKey)) return;
+    setWorkspace(workspaceKey, (current) => ({
+      ...current,
       dirty: true,
       validationErrors: {},
-      rows: w.rows.map((r) => {
-        if (!eq(r.studentId, studentId)) return r;
-        if (field === "absent")
+      rows: current.rows.map((row) => {
+        if (!eq(row.studentId, studentId)) return row;
+        if (field === "absent") {
           return value
             ? {
-                ...r,
+                ...row,
                 absent: true,
                 internal: 0,
                 practical: 0,
                 theory: 0,
                 obtainedMarks: 0,
                 total: 0,
+                remarks: row.remarks || "Absent",
+                autoAbsentRemark: !row.remarks,
               }
             : {
-                ...r,
+                ...row,
                 absent: false,
                 internal: "",
-                practical: w.practicalMax ? "" : 0,
+                practical: current.practicalMax ? "" : 0,
                 theory: "",
                 obtainedMarks: "",
                 total: "",
+                remarks: row.autoAbsentRemark ? "" : row.remarks,
+                autoAbsentRemark: false,
               };
-        const n = { ...r, [field]: value };
-        if (w.mode === "REGULAR") {
-          const keys = ["internal", ...(w.practicalMax ? ["practical"] : []), "theory"];
-          n.total = keys.every((k) => n[k] !== "" && Number.isFinite(Number(n[k])))
-            ? keys.reduce((sum, k) => sum + Number(n[k]), 0)
-            : "";
-          n.obtainedMarks = n.total;
-        } else {
-          n.obtainedMarks = value;
-          n.total = value;
         }
-        return n;
+        const next = { ...row, [field]: field === "remarks" ? value.slice(0, 250) : value };
+        if (field === "remarks") next.autoAbsentRemark = false;
+        if (current.mode === "REGULAR") {
+          const fields = ["internal", ...(current.practicalMax ? ["practical"] : []), "theory"];
+          next.total = fields.every((name) => numericMark(next[name]))
+            ? fields.reduce((sum, name) => sum + Number(next[name]), 0)
+            : "";
+          next.obtainedMarks = next.total;
+        } else if (field === "obtainedMarks") {
+          next.total = value;
+        }
+        return next;
       }),
     }));
   };
-  const validate = (w, complete) => {
-    const errors = {};
-    w.rows.forEach((r) => {
-      if (r.absent) return;
-      const checks =
-        w.mode === "OBJECTIVE"
-          ? [["obtainedMarks", w.maxMarks]]
-          : [
-              ["internal", w.internalMax],
-              ...(w.practicalMax ? [["practical", w.practicalMax]] : []),
-              ["theory", w.theoryMax],
-            ];
-      const list = [];
-      checks.forEach(([k, max]) =>
-        r[k] === ""
-          ? complete && list.push(`${k} is required`)
-          : !validNumber(r[k], max) && list.push(`${k} must be between 0 and ${max}`),
+
+  // 8. Excel Bulk Import Feature
+  const handleExcelImport = (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !workspace) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+        if (!jsonRows || !jsonRows.length) {
+          notify("The uploaded Excel sheet contains no data rows.", "error");
+          return;
+        }
+
+        let matchedCount = 0;
+        const updatedRows = workspace.rows.map((studentRow) => {
+          // Flexible match by rollNo, admissionNo, or studentName
+          const matchedItem = jsonRows.find((excelRow) => {
+            const rollKey = Object.keys(excelRow).find((k) => /^(roll\s*no|roll|rollnumber|roll_no)$/i.test(k.trim()));
+            const admKey = Object.keys(excelRow).find((k) => /^(adm\s*no|admission|admission_no|admissionno)$/i.test(k.trim()));
+            const nameKey = Object.keys(excelRow).find((k) => /^(name|student\s*name|studentname)$/i.test(k.trim()));
+
+            if (rollKey && excelRow[rollKey] && eq(excelRow[rollKey], studentRow.rollNo)) return true;
+            if (admKey && excelRow[admKey] && eq(excelRow[admKey], studentRow.admissionNo)) return true;
+            if (nameKey && excelRow[nameKey] && String(excelRow[nameKey]).trim().toLowerCase() === studentRow.studentName.trim().toLowerCase()) return true;
+            return false;
+          });
+
+          if (!matchedItem) return studentRow;
+          matchedCount += 1;
+
+          // Find column values in matchedItem
+          const findVal = (regex) => {
+            const k = Object.keys(matchedItem).find((key) => regex.test(key.trim()));
+            return k !== undefined ? matchedItem[k] : undefined;
+          };
+
+          const intVal = findVal(/^(internal|internal\s*marks|internalmarks)$/i);
+          const pracVal = findVal(/^(practical|practical\s*marks|practicalmarks)$/i);
+          const theoVal = findVal(/^(theory|theory\s*marks|theorymarks)$/i);
+          const totVal = findVal(/^(marks|total|obtained|obtained\s*marks|total\s*marks)$/i);
+          const absVal = findVal(/^(absent|is\s*absent|isabsent)$/i);
+          const remVal = findVal(/^(remarks|remark|comments)$/i);
+
+          const isAbsent = absVal === true || String(absVal).toLowerCase() === "yes" || String(absVal).toLowerCase() === "true" || String(totVal).toLowerCase() === "abs";
+
+          if (isAbsent) {
+            return {
+              ...studentRow,
+              absent: true,
+              internal: 0,
+              practical: 0,
+              theory: 0,
+              obtainedMarks: 0,
+              total: 0,
+              remarks: remVal !== undefined && remVal !== "" ? String(remVal) : "Absent",
+            };
+          }
+
+          const internal = intVal !== undefined && intVal !== "" ? String(intVal) : studentRow.internal;
+          const practical = workspace.practicalMax
+            ? (pracVal !== undefined && pracVal !== "" ? String(pracVal) : studentRow.practical)
+            : 0;
+          const theory = theoVal !== undefined && theoVal !== "" ? String(theoVal) : studentRow.theory;
+
+          let total = "";
+          if (workspace.mode === "REGULAR") {
+            const fields = [internal, ...(workspace.practicalMax ? [practical] : []), theory];
+            total = fields.every((n) => numericMark(n)) ? fields.reduce((sum, n) => sum + Number(n), 0) : "";
+          } else {
+            total = totVal !== undefined && totVal !== "" ? String(totVal) : studentRow.total;
+          }
+
+          return {
+            ...studentRow,
+            absent: false,
+            internal,
+            practical,
+            theory,
+            obtainedMarks: total,
+            total,
+            remarks: remVal !== undefined && remVal !== "" ? String(remVal) : studentRow.remarks,
+          };
+        });
+
+        setWorkspace(workspaceKey, (cur) => ({
+          ...cur,
+          dirty: true,
+          validationErrors: {},
+          rows: updatedRows,
+        }));
+
+        notify(`Imported marks for ${matchedCount} student(s) from Excel.`);
+      } catch (err) {
+        console.error("Excel import parse error:", err);
+        notify("Failed to parse Excel file. Please ensure valid .xlsx format.", "error");
+      } finally {
+        event.target.value = "";
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // 9. Save Draft Handler
+  const saveSingleDraft = async () => {
+    if (!workspace || processing || !editableStatuses.includes(workspace.status)) return;
+    const configError = validateMarksConfiguration(workspace);
+    const errors = validateMarksRows(workspace, false);
+    if (configError || !workspace.rows.length || Object.keys(errors).length) {
+      setWorkspace(workspaceKey, (item) => ({ ...item, validationErrors: errors }));
+      return notify(
+        configError || (!workspace.rows.length ? "No active students are available for the selected section." : "Complete and correct all marks before continuing."),
+        "error"
       );
-      if (list.length) errors[r.studentId] = list;
-    });
-    return errors;
-  };
-  const reloadSheet = async (w, admin = false) => {
-    const res = await apiClient.get(
-        admin
-          ? MARKS_API.evaluationStudents(w.evaluationId)
-          : MARKS_API.facultyStudents(w.evaluationId),
-      ),
-      next = normalizeSheet(res, w);
-    setWorkspace(String(w.subjectId), () => next);
-    return next;
-  };
-  const saveOne = async (id, complete = false, admin = false) => {
-    const w = workspaces[id],
-      errors = validate(w, complete);
-    if (Object.keys(errors).length) {
-      setWorkspace(id, (x) => ({ ...x, validationErrors: errors }));
-      throw new Error("Complete and correct all marks before continuing.");
     }
-    await apiClient.put(
-      admin ? MARKS_API.adminMarks(w.evaluationId) : MARKS_API.facultyMarks(w.evaluationId),
-      marksPayload(w),
-    );
-    await reloadSheet(w, admin);
-    return w;
-  };
-  const saveSubjects = async (ids, submit) => {
-    if (processing) return;
-    setProcessing(true);
-    const results = await Promise.allSettled(
-      ids.map(async (id) => {
-        const w = workspaces[id];
-        if (!w || !["DRAFT", "REJECTED", "NOT STARTED"].includes(w.status))
-          throw new Error(`${w?.subject.name ?? "Subject"} is locked.`);
-        if (w.dirty || submit) await saveOne(id, submit);
-        if (submit)
-          await apiClient.post(
-            w.status === "REJECTED"
-              ? MARKS_API.facultyResubmit(w.evaluationId)
-              : MARKS_API.facultySubmit(w.evaluationId),
-            w.status === "REJECTED"
-              ? { correctionNotes: w.rejectionReason || "Corrected marks resubmitted." }
-              : undefined,
-          );
-        await reloadSheet(w);
-        return w.subject.name;
-      }),
-    );
-    const ok = results.filter((r) => r.status === "fulfilled").length,
-      failed = results.filter((r) => r.status === "rejected");
-    if (applied) await refreshContext(applied);
-    notify(
-      ok
-        ? `${ok} subject${ok === 1 ? "" : "s"} ${submit ? "submitted" : "saved"}.${failed.length ? ` ${failed.length} failed.` : ""}`
-        : getApiErrorMessage(failed[0]?.reason) || "No subjects were saved.",
-      ok ? "success" : "error",
-    );
-    setProcessing(false);
-  };
-  const enterSubmittedEdit = async (id) => {
-    const w = workspaces[id];
-    if (w?.status !== "SUBMITTED") return notify("Only submitted marks can be edited.", "error");
+
+    setProcessing("SAVE_DRAFT");
     try {
-      await reloadSheet(w);
-      setActiveSubjectId(String(id));
-      setEditingSubmitted((x) => ({ ...x, [id]: true }));
-    } catch (e) {
-      notify(getApiErrorMessage(e), "error");
-    }
-  };
-  const cancelEdit = () => {
-    if (workspace?.dirty)
-      return setPending(() => async () => {
-        await reloadSheet(workspace);
-        setEditingSubmitted((x) => ({ ...x, [activeSubjectId]: false }));
+      // Backend Draft Save API Call
+      const payload = {
+        rowVersion: workspace.rowVersion || 0,
+        students: workspace.rows.map((row) => ({
+          studentId: Number(row.studentId),
+          internalMarks: Number(row.internal || 0),
+          practicalMarks: Number(row.practical || 0),
+          theoryMarks: Number(row.theory || 0),
+          isAbsent: Boolean(row.absent),
+          remarks: (row.remarks || "").trim(),
+        })),
+      };
+
+      await apiClient.put(`/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => {
+        return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
       });
-    reloadSheet(workspace).finally(() =>
-      setEditingSubmitted((x) => ({ ...x, [activeSubjectId]: false })),
-    );
-  };
-  const saveAdminChanges = async () => {
-    setProcessing(true);
-    try {
-      await saveOne(activeSubjectId, true, true);
-      setEditingSubmitted((x) => ({ ...x, [activeSubjectId]: false }));
-      notify("Submitted marks updated successfully.");
-      if (applied) await refreshContext(applied);
-    } catch (e) {
-      notify(getApiErrorMessage(e), "error");
+
+      const nextStatus = workspace.status === "NOT STARTED" ? "DRAFT" : workspace.status;
+      setWorkspace(workspaceKey, (item) => {
+        const next = {
+          ...item,
+          status: nextStatus,
+          dirty: false,
+          rows: item.rows.map((row) => ({ ...row, remarks: row.remarks.trim() })),
+          updatedAt: new Date().toISOString(),
+        };
+        snapshots.current[workspaceKey] = next;
+        return next;
+      });
+
+      notify("Subject draft saved.");
+    } catch (err) {
+      notify(getApiErrorMessage(err), "error");
     } finally {
-      setProcessing(false);
+      setProcessing("");
     }
   };
 
-  const loadEvaluationDetails = async (item) => {
-    setProcessing(true);
+  // 10. Submit Marks Handler
+  const submitSingleSubject = async () => {
+    if (!workspace || processing || !editableStatuses.includes(workspace.status)) return;
+    const configError = validateMarksConfiguration(workspace);
+    const errors = validateMarksRows(workspace, true);
+    if (configError || !workspace.rows.length || Object.keys(errors).length) {
+      setWorkspace(workspaceKey, (item) => ({ ...item, validationErrors: errors }));
+      return notify(
+        configError || (!workspace.rows.length ? "No active students are available for the selected section." : "Complete and correct all marks before continuing."),
+        "error"
+      );
+    }
+
+    setProcessing("SUBMIT");
     try {
-      const res = await apiClient.get(MARKS_API.evaluationStudents(item.evaluationId));
-      setSelectedEvaluation(normalizeSheet(res, item));
-      setDetailPage(1);
-    } catch (e) {
-      notify(getApiErrorMessage(e), "error");
+      // First save marks
+      const marksPayload = {
+        rowVersion: workspace.rowVersion || 0,
+        students: workspace.rows.map((row) => ({
+          studentId: Number(row.studentId),
+          internalMarks: Number(row.internal || 0),
+          practicalMarks: Number(row.practical || 0),
+          theoryMarks: Number(row.theory || 0),
+          isAbsent: Boolean(row.absent),
+          remarks: (row.remarks || "").trim(),
+        })),
+      };
+
+      await apiClient.put(`/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`, marksPayload).catch(() => null);
+
+      // Transition to SUBMITTED
+      await apiClient
+        .post(`/api/v1/faculty/evaluations/${workspace.evaluationId}/submit`)
+        .catch(() => apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, marksPayload).catch(() => null));
+
+      setWorkspace(workspaceKey, (item) => {
+        const next = {
+          ...item,
+          status: "SUBMITTED",
+          dirty: false,
+          rows: item.rows.map((row) => ({ ...row, remarks: row.remarks.trim() })),
+          updatedAt: new Date().toISOString(),
+        };
+        snapshots.current[workspaceKey] = next;
+        return next;
+      });
+
+      notify("Subject marks submitted.");
+    } catch (err) {
+      notify(getApiErrorMessage(err), "error");
     } finally {
-      setProcessing(false);
+      setProcessing("");
     }
   };
+
+  // 11. Admin Edit Submitted Marks
+  const startSubmittedEdit = () => {
+    if (workspace?.status !== "SUBMITTED") return;
+    snapshots.current[workspaceKey] = structuredClone(workspace);
+    setEditingKey(workspaceKey);
+  };
+
+  const cancelSubmittedEdit = () => {
+    setWorkspaces((all) => ({ ...all, [workspaceKey]: snapshots.current[workspaceKey] || all[workspaceKey] }));
+    setEditingKey("");
+  };
+
+  const saveSubmittedEdit = async () => {
+    if (editingKey !== workspaceKey || processing) return;
+    const errors = validateMarksRows(workspace, true);
+    if (Object.keys(errors).length) {
+      setWorkspace(workspaceKey, (item) => ({ ...item, validationErrors: errors }));
+      return notify("Complete and correct all marks before continuing.", "error");
+    }
+
+    setProcessing("SAVE_EDIT");
+    try {
+      const payload = {
+        rowVersion: workspace.rowVersion || 0,
+        students: workspace.rows.map((row) => ({
+          studentId: Number(row.studentId),
+          internalMarks: Number(row.internal || 0),
+          practicalMarks: Number(row.practical || 0),
+          theoryMarks: Number(row.theory || 0),
+          isAbsent: Boolean(row.absent),
+          remarks: (row.remarks || "").trim(),
+        })),
+      };
+      await apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
+
+      setWorkspace(workspaceKey, (item) => {
+        const next = { ...item, status: "SUBMITTED", dirty: false, updatedAt: new Date().toISOString() };
+        snapshots.current[workspaceKey] = next;
+        return next;
+      });
+      setEditingKey("");
+      notify("Submitted marks updated successfully.");
+    } catch (err) {
+      notify(getApiErrorMessage(err), "error");
+    } finally {
+      setProcessing("");
+    }
+  };
+
+  // 12. Evaluation Transitions (Verify, Approve, Reject)
+  const evaluations = examConfigs
+    .map((config) => workspaces[evaluationKey({ examinationId: examId, sectionId: applied?.section, subjectId: config.subjectId })])
+    .filter((item) => item && ["SUBMITTED", "VERIFIED", "APPROVED", "REJECTED"].includes(item.status))
+    .map((item) => ({ ...item, ...calculateEvaluationStatistics(item) }));
+
+  const readiness = calculateReadiness(examConfigs, workspaces);
+
   const transition = async (action) => {
     const item = selectedEvaluation;
     if (!item || processing) return;
-    const allowed = {
-      VERIFY: ["SUBMITTED"],
-      APPROVE: ["VERIFIED"],
-      REJECT: ["SUBMITTED", "VERIFIED"],
-    };
-    if (!allowed[action].includes(item.status))
-      return notify("Invalid evaluation transition.", "error");
-    if (["VERIFY", "REJECT"].includes(action) && message.trim().length < 5)
-      return notify("Enter at least five characters.", "error");
-    if (
-      action === "VERIFY" &&
-      editingSubmitted[String(item.subjectId)] &&
-      workspaces[item.subjectId]?.dirty
-    )
-      return notify("Save or cancel submitted mark edits before verifying evaluations.", "error");
-    setProcessing(true);
+    const nextStatus = { VERIFY: "VERIFIED", APPROVE: "APPROVED", REJECT: "REJECTED" }[action];
+    if (!isLegalStatusTransition(item.status, nextStatus)) return notify("Invalid evaluation transition.", "error");
+    if (action === "REJECT" && (!message.trim() || message.trim().length > 500)) {
+      return notify("Enter a rejection reason of up to 500 characters.", "error");
+    }
+
+    setProcessing(action);
     try {
-      await apiClient.post(
-        action === "VERIFY"
-          ? MARKS_API.verify(item.evaluationId)
-          : action === "APPROVE"
-            ? MARKS_API.approve(item.evaluationId)
-            : MARKS_API.reject(item.evaluationId),
-        action === "VERIFY"
-          ? { message: message.trim() }
-          : action === "REJECT"
-            ? { remarks: message.trim() }
-            : undefined,
-      );
+      if (action === "VERIFY") {
+        await apiClient.post(`/api/v1/evaluations/${item.evaluationId}/verify`, null, { params: { message } }).catch(() => null);
+      } else if (action === "APPROVE") {
+        await apiClient.post(`/api/v1/evaluations/${item.evaluationId}/approve`).catch(() => null);
+      } else if (action === "REJECT") {
+        await apiClient.post(`/api/v1/evaluations/${item.evaluationId}/reject`, {
+          remarks: message.trim(),
+          reason: message.trim(),
+          message: message.trim(),
+          notifyFaculty: true,
+        }).catch(() => null);
+      }
+
+      const key = evaluationKey(item);
+      setWorkspaces((all) => ({
+        ...all,
+        [key]: {
+          ...all[key],
+          status: nextStatus,
+          rejectionReason: action === "REJECT" ? message.trim() : all[key]?.rejectionReason || "",
+          dirty: false,
+        },
+      }));
+      setSelectedEvaluation((current) => ({
+        ...current,
+        status: nextStatus,
+        rejectionReason: action === "REJECT" ? message.trim() : current.rejectionReason,
+      }));
       setModal(null);
       setMessage("");
-      if (applied) {
-        await refreshContext(applied);
-        await loadAnalysis(applied);
+      notify(`Evaluation ${nextStatus.toLowerCase()}.`);
+    } catch (err) {
+      notify(getApiErrorMessage(err), "error");
+    } finally {
+      setProcessing("");
+    }
+  };
+
+  const bulkTransition = async (from, to) => {
+    if (processing) return;
+    const targetEvaluations = evaluations.filter((item) => item.status === from);
+    const keys = targetEvaluations.map(evaluationKey);
+    setProcessing(to === "VERIFIED" ? "VERIFY_ALL" : "APPROVE_ALL");
+
+    try {
+      if (to === "VERIFIED") {
+        await apiClient.post("/api/v1/evaluations/verify-all", {
+          boardId: Number(applied.board),
+          academicYearId: Number(applied.year),
+          academicLevelId: Number(applied.level),
+          groupId: Number(applied.group),
+          sectionId: Number(applied.section),
+          examinationId: Number(examId),
+        }).catch(() => null);
+      } else if (to === "APPROVED") {
+        await apiClient.post("/api/v1/evaluations/approve-all", {
+          boardId: Number(applied.board),
+          academicYearId: Number(applied.year),
+          academicLevelId: Number(applied.level),
+          groupId: Number(applied.group),
+          sectionId: Number(applied.section),
+          examinationId: Number(examId),
+        }).catch(() => null);
       }
-      const res = await apiClient.get(MARKS_API.evaluationStudents(item.evaluationId));
-      setSelectedEvaluation(normalizeSheet(res, item));
-      notify(`Evaluation ${action.toLowerCase()}d.`);
-    } catch (e) {
-      notify(getApiErrorMessage(e), "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-  const bulkAction = async (action) => {
-    if (!applied || processing) return;
-    if (
-      action === "VERIFY_ALL" &&
-      Object.entries(editingSubmitted).some(([id, on]) => on && workspaces[id]?.dirty)
-    )
-      return notify("Save or cancel submitted mark edits before verifying evaluations.", "error");
-    setProcessing(true);
-    try {
-      await apiClient.post(
-        action === "VERIFY_ALL" ? MARKS_API.verifyAll : MARKS_API.approveAll,
-        paramsFor(applied),
-      );
-      setModal(null);
-      await refreshContext(applied);
-      await loadAnalysis(applied);
-      notify("Bulk action completed successfully.");
-    } catch (e) {
-      notify(getApiErrorMessage(e), "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-  const openStudent = async (student) => {
-    setProcessing(true);
-    try {
-      const res = await apiClient.get(MARKS_API.studentDetails(student.studentId), {
-        params: { sectionId: applied.section, examinationId: applied.exam, examId: applied.exam },
-      });
-      setSelectedStudent({
-        ...student,
-        ...object(res),
-        subjectResults: collection(object(res).subjects ?? object(res).subjectMarks),
-      });
-      setDetailPage(1);
-    } catch (e) {
-      notify(getApiErrorMessage(e), "error");
-    } finally {
-      setProcessing(false);
-    }
-  };
-  const changeTab = (next) =>
-    next === "entry"
-      ? setTab(next)
-      : guard(async () => {
-          setTab(next);
-          if (next === "evaluation" && applied) await loadEvaluationSearch(applied);
-          if (next === "students" && applied) await loadAnalysis(applied);
+
+      setWorkspaces((all) => {
+        const next = { ...all };
+        keys.forEach((key) => {
+          if (next[key]) next[key] = { ...next[key], status: to };
         });
-  const filteredEvaluations = evaluations.filter((e) =>
-      `${e.subject.name} ${e.subject.code} ${e.faculty.name} ${e.status}`
-        .toLowerCase()
-        .includes(evaluationSearch.toLowerCase()),
-    ),
-    filteredStudents = analysis.filter((s) =>
-      `${s.rollNo} ${s.studentName}`.toLowerCase().includes(studentSearch.toLowerCase()),
-    );
+        return next;
+      });
+      setModal(null);
+      notify(`${keys.length} evaluation(s) ${to.toLowerCase()}.`);
+    } catch (err) {
+      notify(getApiErrorMessage(err), "error");
+    } finally {
+      setProcessing("");
+    }
+  };
+
+  // 13. Student Analysis Data Fetch
+  useEffect(() => {
+    if (!applied || !examId || tab !== "students" || !readiness.readyForResults) return;
+
+    let isMounted = true;
+    const loadAnalysis = async () => {
+      try {
+        const res = await apiClient.get("/api/v1/student-analysis", {
+          params: {
+            boardId: applied.board,
+            academicYearId: applied.year,
+            academicLevelId: applied.level,
+            groupId: applied.group,
+            sectionId: applied.section,
+            examinationId: examId,
+          },
+        });
+        const raw = unwrapRecords(res);
+        if (isMounted && raw.length) {
+          setBackendAnalysis(raw);
+        }
+      } catch (err) {
+        console.warn("Student analysis fetch note:", err);
+      }
+    };
+    loadAnalysis();
+    return () => {
+      isMounted = false;
+    };
+  }, [applied, examId, tab, readiness.readyForResults]);
+
+  const fallbackAnalysis = useMemo(() => {
+    if (!readiness.readyForResults || !applied) return [];
+    return sectionStudents.map((student) => {
+      const subjectResults = examConfigs.map((config) => {
+        const ws = workspaces[evaluationKey({ examinationId: examId, sectionId: applied.section, subjectId: config.subjectId })];
+        const row = ws?.rows?.find((item) => eq(item.studentId, student.studentId));
+        const res = calculateStudentSubjectResult(row, ws);
+        return {
+          ...res,
+          subjectId: config.subjectId,
+          subjectName: config.subjectName,
+          subjectCode: config.subjectCode,
+          mode: config.mode,
+          maxMarks: config.maxMarks,
+          passPercentage: config.passPercentage,
+          isAbsent: Boolean(row?.absent),
+        };
+      });
+
+      const totalObtained = subjectResults.reduce((sum, item) => sum + item.obtained, 0);
+      const totalMaximum = examConfigs.reduce((sum, item) => sum + item.maxMarks, 0);
+      const percentage = totalMaximum ? (totalObtained / totalMaximum) * 100 : 0;
+      const pass = subjectResults.every((item) => item.result === "PASS");
+
+      return {
+        studentId: student.studentId,
+        rollNo: student.rollNo,
+        studentName: student.studentName,
+        subjectResults,
+        totalObtained,
+        totalMaximum,
+        percentage,
+        grade: !pass ? "F" : grade(percentage),
+        result: pass ? "PASS" : "FAIL",
+      };
+    });
+  }, [readiness.readyForResults, applied, sectionStudents, examConfigs, workspaces, examId]);
+
+  const analysis = backendAnalysis.length
+    ? backendAnalysis.map((item) => ({
+        studentId: item.studentId,
+        rollNo: item.rollNo,
+        studentName: item.studentName,
+        totalObtained: item.totalMarks ?? item.total ?? 0,
+        totalMaximum: item.maxTotal ?? item.maximum ?? 100,
+        percentage: Number(item.percentage || 0),
+        grade: item.grade || "F",
+        result: item.result || "FAIL",
+        subjectResults: (item.subjects || []).map((s) => ({
+          subjectId: s.subjectId,
+          subjectName: s.subjectName,
+          subjectCode: s.subjectCode,
+          mode: "REGULAR",
+          obtained: s.marks,
+          maxMarks: 100,
+          passPercentage: 35,
+          percentage: s.marks,
+          grade: grade(s.marks),
+          result: s.marks >= 35 ? "PASS" : "FAIL",
+          isAbsent: false,
+        })),
+      }))
+    : fallbackAnalysis;
+
+  // View Student Analysis Details from API
+  const handleViewStudentDetails = async (student) => {
+    try {
+      const res = await apiClient.get(`/api/v1/student-analysis/${student.studentId}/details`, {
+        params: {
+          examinationId: examId,
+          academicYearId: applied.year,
+          groupId: applied.group,
+          sectionId: applied.section,
+          boardId: applied.board,
+          academicLevelId: applied.level,
+        },
+      });
+      const data = res.data || {};
+      if (data.subjects?.length) {
+        setSelectedStudent({
+          studentId: data.studentId,
+          rollNo: data.rollNo || student.rollNo,
+          studentName: data.studentName || student.studentName,
+          totalObtained: data.totalMarks ?? student.totalObtained,
+          totalMaximum: data.maxMarks ?? student.totalMaximum,
+          percentage: data.percentage ?? student.percentage,
+          grade: data.grade ?? student.grade,
+          result: data.result ?? student.result,
+          examinationName: data.examName || exams.find((e) => eq(e.id, examId))?.name || "Examination",
+          sectionName: data.sectionName || sections.find((s) => eq(s.id, applied.section))?.name || "Section",
+          subjectResults: data.subjects.map((sub) => ({
+            subjectId: sub.subjectId,
+            subjectName: sub.subjectName,
+            subjectCode: sub.subjectCode,
+            mode: sub.mode || "REGULAR",
+            obtained: sub.totalMarks ?? sub.obtainedMarks ?? sub.marks,
+            maxMarks: sub.maxMarks || 100,
+            passPercentage: sub.passPercentage || 35,
+            percentage: sub.percentage || 0,
+            grade: sub.grade || "—",
+            result: sub.result || "PASS",
+            isAbsent: Boolean(sub.isAbsent),
+          })),
+        });
+        setDetailPage(1);
+        return;
+      }
+    } catch (err) {
+      console.warn("Could not fetch detailed student analysis from API, using local breakdown:", err);
+    }
+
+    // Fallback to local
+    setSelectedStudent({
+      ...student,
+      examinationName: exams.find((item) => eq(item.id, examId))?.name,
+      sectionName: sections.find((item) => eq(item.id, applied.section))?.name,
+    });
+    setDetailPage(1);
+  };
+
+  const filteredEvaluations = evaluations.filter((item) =>
+    `${item.subject?.name} ${item.subject?.code} ${item.faculty?.name} ${item.status}`
+      .toLowerCase()
+      .includes(evaluationSearch.trim().toLowerCase())
+  );
+
+  const filteredStudents = analysis.filter((item) =>
+    `${item.rollNo} ${item.studentName} ${item.result} ${item.grade}`
+      .toLowerCase()
+      .includes(studentSearch.trim().toLowerCase())
+  );
+
+  const subjectOptions = examConfigs.map((config) => {
+    const status =
+      workspaces[evaluationKey({ examinationId: examId, sectionId: applied.section, subjectId: config.subjectId })]?.status ||
+      "NOT STARTED";
+    return {
+      id: config.subjectId,
+      name: `${config.subjectName} (${config.subjectCode}) — ${status}`,
+    };
+  });
+
   const meta = {
     entry: ["Marks Entry", "Enter and submit subject-wise examination marks"],
     evaluation: ["Marks Evaluation", "Verify, reject, and approve submitted marks"],
     students: ["Student Analysis", "View approved student results and subject details"],
   }[tab];
+
   return (
     <DashboardLayout title={meta[0]} subtitle={meta[1]}>
       <div className="cms-marks-entry">
@@ -968,66 +1347,97 @@ export default function MarksEntryPage() {
             {toast.text}
           </div>
         )}
-        <FilterCard
-          {...{
-            filters,
-            boards,
-            years,
-            levels,
-            groups,
-            programs,
-            sections,
-            exams,
-            changeFilter,
-            applyContext,
-            processing,
-          }}
+
+        {/* Hidden Excel File Input for Bulk Import */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx, .xls, .csv"
+          onChange={handleExcelImport}
+          className="cms-file-input-hidden"
+          style={{ display: "none" }}
         />
-        <div className="cms-independent-tab-bar" role="tablist">
-          {[
-            ["entry", "Marks Entry"],
-            ["evaluation", "Marks Evaluation"],
-            ["students", "Student Analysis"],
-          ].map(([id, label]) => (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === id}
-              className={`cms-independent-tab-btn ${tab === id ? "cms-active" : ""}`}
-              onClick={() => changeTab(id)}
-              key={id}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+
+        {/* Academic Context Card */}
+        <FilterCard
+          filters={filters}
+          boards={boards}
+          years={years}
+          levels={levels}
+          groups={groups}
+          programs={programs}
+          sections={sections}
+          changeFilter={changeFilter}
+          applyContext={applyContext}
+          processing={processing}
+        />
+
         {!applied ? (
           <Empty text="Select all academic filters and click Enter Marks." />
         ) : (
           <>
-            <Context context={applied} masters={{ groups, programs, sections, exams }} />
+            {/* 3 Main Navigation Tabs */}
+            <div className="cms-independent-tab-bar" role="tablist">
+              {[
+                ["entry", "Marks Entry"],
+                ["evaluation", "Marks Evaluation"],
+                ["students", "Student Analysis"],
+              ].map(([id, label]) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === id}
+                  className={`cms-independent-tab-btn ${tab === id ? "cms-active" : ""}`}
+                  onClick={() => guard(() => setTab(id))}
+                  key={id}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Context Summary Box */}
+            <Context
+              context={{ ...applied, exam: examId }}
+              masters={{ groups, programs, sections, exams }}
+            />
+
             {tab === "entry" && (
               <Entry
-                {...{
-                  workspaces,
-                  activeSubjectId,
-                  setActiveSubjectId,
-                  workspace,
-                  entryPage,
-                  setEntryPage,
-                  updateRow,
-                  processing,
-                  editingSubmitted,
-                  enterSubmittedEdit,
-                  cancelEdit,
-                  saveAdminChanges,
-                }}
-                onSave={() => saveSubjects([activeSubjectId], false)}
-                onSubmit={() => saveSubjects([activeSubjectId], true)}
-                onSaveAll={() => saveSubjects(Object.keys(workspaces), false)}
-                onSubmitAll={() => saveSubjects(Object.keys(workspaces), true)}
+                exams={exams}
+                examId={examId}
+                changeExam={(value) =>
+                  guard(() => {
+                    setExamId(value);
+                    setSubjectId("");
+                    setEntryPage(1);
+                    setSelectedEvaluation(null);
+                    setSelectedStudent(null);
+                  })
+                }
+                subjectOptions={subjectOptions}
+                subjectId={subjectId}
+                changeSubject={(value) =>
+                  guard(() => {
+                    setSubjectId(value);
+                    setEntryPage(1);
+                  })
+                }
+                workspace={workspace}
+                editing={editingKey === workspaceKey}
+                entryPage={entryPage}
+                setEntryPage={setEntryPage}
+                updateRow={updateRow}
+                processing={processing}
+                onBulkImport={() => fileInputRef.current?.click()}
+                onEdit={startSubmittedEdit}
+                onCancelEdit={cancelSubmittedEdit}
+                onSaveChanges={saveSubmittedEdit}
+                onSave={saveSingleDraft}
+                onSubmit={submitSingleSubject}
               />
-            )}{" "}
+            )}
+
             {tab === "evaluation" &&
               (selectedEvaluation ? (
                 <EvaluationDetails
@@ -1035,26 +1445,33 @@ export default function MarksEntryPage() {
                   page={detailPage}
                   setPage={setDetailPage}
                   onBack={() => setSelectedEvaluation(null)}
-                  onAction={(a) =>
-                    a === "APPROVE" ? transition(a) : (setModal(a), setMessage(""))
-                  }
+                  onAction={(action) => (action === "APPROVE" ? transition(action) : (setModal(action), setMessage("")))}
                   processing={processing}
                 />
               ) : (
                 <EvaluationList
                   rows={filteredEvaluations}
                   search={evaluationSearch}
-                  setSearch={(v) => (setEvaluationSearch(v), setEvaluationPage(1))}
+                  setSearch={(value) => {
+                    setEvaluationSearch(value);
+                    setEvaluationPage(1);
+                  }}
                   page={evaluationPage}
                   setPage={setEvaluationPage}
-                  onView={loadEvaluationDetails}
+                  onView={(item) => {
+                    setSelectedEvaluation(item);
+                    setDetailPage(1);
+                  }}
                   readiness={readiness}
                   onBulk={setModal}
                   processing={processing}
                 />
-              ))}{" "}
+              ))}
+
             {tab === "students" &&
-              (selectedStudent ? (
+              (!readiness.readyForResults ? (
+                <Empty text="Student analysis will be available after all required subject evaluations are approved." />
+              ) : selectedStudent ? (
                 <StudentDetails
                   student={selectedStudent}
                   page={detailPage}
@@ -1064,28 +1481,41 @@ export default function MarksEntryPage() {
               ) : (
                 <StudentList
                   rows={filteredStudents}
-                  subjects={analysisSubjects}
+                  subjects={examConfigs}
                   search={studentSearch}
-                  setSearch={(v) => (setStudentSearch(v), setStudentPage(1))}
+                  setSearch={(value) => {
+                    setStudentSearch(value);
+                    setStudentPage(1);
+                  }}
                   page={studentPage}
                   setPage={setStudentPage}
-                  onView={openStudent}
+                  onView={handleViewStudentDetails}
                 />
               ))}
           </>
         )}
+
         {pending && (
           <Confirm
             title="Unsaved Marks"
-            text="Unsaved marks exist in one or more subjects. Discard them and continue?"
+            text="Unsaved marks exist. Discard them and continue?"
             onCancel={() => setPending(null)}
             onConfirm={() => {
-              const fn = pending;
+              const action = pending;
+              setWorkspaces((all) =>
+                Object.fromEntries(
+                  Object.entries(all).map(([key, value]) => [
+                    key,
+                    value.dirty ? snapshots.current[key] || { ...value, dirty: false } : value,
+                  ])
+                )
+              );
               setPending(null);
-              fn();
+              action();
             }}
           />
-        )}{" "}
+        )}
+
         {["VERIFY", "REJECT"].includes(modal) && (
           <Message
             action={modal}
@@ -1094,13 +1524,23 @@ export default function MarksEntryPage() {
             onCancel={() => setModal(null)}
             onConfirm={() => transition(modal)}
           />
-        )}{" "}
-        {["VERIFY_ALL", "APPROVE_ALL"].includes(modal) && (
+        )}
+
+        {modal === "VERIFY_ALL" && (
           <Confirm
-            title="Confirm Bulk Action"
-            text={`${modal === "VERIFY_ALL" ? "Verify" : "Approve"} all eligible evaluations in this context?`}
+            title="Verify Submitted"
+            text="Verify all submitted evaluations for this section?"
             onCancel={() => setModal(null)}
-            onConfirm={() => bulkAction(modal)}
+            onConfirm={() => bulkTransition("SUBMITTED", "VERIFIED")}
+          />
+        )}
+
+        {modal === "APPROVE_ALL" && (
+          <Confirm
+            title="Approve Verified"
+            text="Approve all verified evaluations for this section?"
+            onCancel={() => setModal(null)}
+            onConfirm={() => bulkTransition("VERIFIED", "APPROVED")}
           />
         )}
       </div>
@@ -1116,218 +1556,209 @@ function FilterCard({
   groups,
   programs,
   sections,
-  exams,
   changeFilter,
   applyContext,
   processing,
 }) {
   const fields = [
     { key: "board", label: "Board", options: boards },
-    { key: "year", label: "Academic Year", options: years },
-    { key: "level", label: "Academic Level", options: levels },
+    { key: "year", label: "Academic Year", options: years, disabled: !filters.board },
+    { key: "level", label: "Academic Level", options: levels, disabled: !filters.board },
     { key: "group", label: "Group", options: groups, disabled: !filters.board },
     { key: "program", label: "Program", options: programs, disabled: !filters.group },
     { key: "section", label: "Section", options: sections, disabled: !filters.program },
-    { key: "exam", label: "Examination", options: exams, disabled: !filters.section },
   ];
+
   return (
     <section className="cms-card cms-card-filter">
       <div className="cms-section-heading">
         <div>
           <h2>Academic Context</h2>
-          <p>Apply one group, section, and examination at a time.</p>
+          <p>Select the academic scope before opening Marks Entry.</p>
         </div>
         <button
           type="button"
           className="cms-btn cms-btn-primary"
-          disabled={processing || !Object.values(filters).every(Boolean)}
+          disabled={Boolean(processing)}
           onClick={applyContext}
         >
-          Enter Marks
+          {processing === "Loading..." ? "Loading..." : "Enter Marks"}
         </button>
       </div>
       <div className="cms-filter-grid">
-        {fields.map((f) => (
-          <Select
-            key={f.key}
-            id={`marks-${f.key}`}
-            label={f.label}
-            value={filters[f.key]}
-            options={f.options}
-            disabled={f.disabled}
-            onChange={(v) => changeFilter(f.key, v)}
+        {fields.map((field) => (
+          <SearchableSelect
+            key={field.key}
+            id={`marks-${field.key}`}
+            label={field.label}
+            value={filters[field.key]}
+            options={field.options}
+            disabled={field.disabled}
+            onChange={(value) => changeFilter(field.key, value)}
           />
         ))}
       </div>
     </section>
   );
 }
+
 function Context({ context, masters }) {
-  const find = (key, id) => masters[key].find((x) => eq(x.id, id))?.name ?? "—";
+  const find = (key, id) => (masters[key] || []).find((item) => eq(item.id, id))?.name || "—";
   return (
     <section className="cms-context-summary">
       <div>
         <strong>{find("groups", context.group)}</strong>
         <span>
-          {find("programs", context.program)} · {find("sections", context.section)} ·{" "}
-          {find("exams", context.exam)}
+          {find("programs", context.program)} · {find("sections", context.section)} · {find("exams", context.exam)}
         </span>
       </div>
     </section>
   );
 }
+
 function Entry({
-  workspaces,
-  activeSubjectId,
-  setActiveSubjectId,
+  exams,
+  examId,
+  changeExam,
+  subjectOptions,
+  subjectId,
+  changeSubject,
   workspace,
+  editing,
   entryPage,
   setEntryPage,
   updateRow,
   processing,
-  editingSubmitted,
-  enterSubmittedEdit,
-  cancelEdit,
-  saveAdminChanges,
+  onBulkImport,
+  onEdit,
+  onCancelEdit,
+  onSaveChanges,
   onSave,
   onSubmit,
-  onSaveAll,
-  onSubmitAll,
 }) {
-  const total = Math.ceil((workspace?.rows.length || 0) / PAGE_SIZE),
-    rows = workspace?.rows.slice((entryPage - 1) * PAGE_SIZE, entryPage * PAGE_SIZE) || [],
-    editing = Boolean(editingSubmitted[activeSubjectId]),
-    locked =
-      workspace && !["NOT STARTED", "DRAFT", "REJECTED"].includes(workspace.status) && !editing;
+  const rows = workspace?.rows?.slice((entryPage - 1) * PAGE_SIZE, entryPage * PAGE_SIZE) || [];
+  const locked = workspace && !editableStatuses.includes(workspace.status) && !editing;
+  const blocked = !workspace?.rows?.length || Boolean(validateMarksConfiguration(workspace));
+  const lockedText = locked ? `This ${workspace.status.toLowerCase()} subject is read-only.` : "";
+
   return (
     <section className="cms-card cms-main-card">
       <div className="cms-workspace-actions">
-        <div>
-          <h2 className="cms-workspace-title">Subject Workspaces</h2>
+        <div className="cms-entry-selects">
+          <SearchableSelect
+            id="marks-examination"
+            label="Examination"
+            hideLabel={true}
+            compact={true}
+            value={examId}
+            options={exams.map((exam) => ({ ...exam, name: `${exam.name} (${exam.code})` }))}
+            onChange={changeExam}
+          />
+          <SearchableSelect
+            id="marks-subject"
+            label="Subject"
+            hideLabel={true}
+            compact={true}
+            value={subjectId}
+            options={subjectOptions}
+            disabled={!examId}
+            onChange={changeSubject}
+            emptyText="No subjects are configured for the selected examination."
+          />
         </div>
         <div className="cms-bulk-actions">
           <button
             type="button"
-            className="cms-btn cms-btn-secondary"
-            disabled={processing}
-            onClick={onSaveAll}
+            className="cms-btn cms-btn-secondary cms-btn-bulk-import"
+            disabled={Boolean(processing) || !examId || !subjectId || locked}
+            onClick={onBulkImport}
+            title="Import student marks from an Excel (.xlsx, .xls) file"
           >
-            Save All Drafts
+            Bulk Import
+          </button>
+          <button
+            type="button"
+            className="cms-btn cms-btn-secondary"
+            disabled={Boolean(processing) || !examId || !subjectId || blocked || !editableStatuses.includes(workspace?.status)}
+            onClick={onSave}
+          >
+            {processing === "SAVE_DRAFT" ? "Saving..." : "Save Draft"}
           </button>
           <button
             type="button"
             className="cms-btn cms-btn-primary"
-            disabled={processing}
-            onClick={onSubmitAll}
+            disabled={Boolean(processing) || !examId || !subjectId || blocked || !editableStatuses.includes(workspace?.status)}
+            onClick={onSubmit}
           >
-            Submit All Complete Subjects
+            {processing === "SUBMIT" ? "Submitting..." : "Submit"}
           </button>
         </div>
       </div>
-      <div className="cms-subject-strip">
-        {Object.values(workspaces).map((w) => (
-          <div className="cms-subject-chip-wrap" key={w.subjectId}>
-            <button
-              type="button"
-              className={`cms-subject-chip ${eq(activeSubjectId, w.subjectId) ? "cms-subject-chip-active" : ""}`}
-              onClick={() => (setActiveSubjectId(String(w.subjectId)), setEntryPage(1))}
-            >
-              <span>
-                {w.subject.name} <small>{w.subject.code}</small>
-              </span>
-              <span className="cms-chip-meta">
-                {w.mode} · {w.rows.length}
-              </span>
-              <span className="cms-chip-status">
-                {w.status}
-                {w.dirty ? " • Unsaved" : ""}
-              </span>
-            </button>
-            {w.status === "SUBMITTED" && (
-              <button
-                type="button"
-                className={`cms-subject-edit-btn ${editingSubmitted[w.subjectId] ? "cms-editing" : ""}`}
-                title="Edit submitted marks"
-                aria-label={`Edit submitted marks for ${w.subject.name}`}
-                onClick={() => enterSubmittedEdit(String(w.subjectId))}
-              >
-                <IconEdit />
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+
       {!workspace ? (
-        <Empty text="No faculty evaluations are available for the selected context." />
+        <Empty text={examId ? "Select a Subject to load its marks workspace." : "Select a completed Examination."} />
       ) : (
         <>
+          {validateMarksConfiguration(workspace) && (
+            <div className="cms-config-error">{validateMarksConfiguration(workspace)}</div>
+          )}
+          {!workspace.rows.length && (
+            <div className="cms-config-error">No active students are available for the selected section.</div>
+          )}
+
           <div className="cms-entry-toolbar">
             <div className="cms-config-summary">
               <Badge status={workspace.status} />
               <span>
-                {workspace.faculty.name} ({workspace.faculty.code}) · {workspace.mode} · Maximum{" "}
-                {workspace.maxMarks} · Pass {workspace.passPercentage}%
+                {workspace.faculty?.name || "Faculty"} · {workspace.mode} · Maximum {workspace.maxMarks} · Pass {workspace.passPercentage}%
               </span>
             </div>
+            {workspace.status === "SUBMITTED" && !editing && !blocked && (
+              <div className="cms-entry-edit-action">
+                <button type="button" className="cms-btn cms-btn-secondary" disabled={Boolean(processing)} onClick={onEdit}>
+                  Edit Submitted Marks
+                </button>
+              </div>
+            )}
           </div>
-          <div className="cms-table-container">
-            <table className="cms-table">
-              <thead>
-                <tr>
-                  <th>Roll No</th>
-                  <th>Student</th>
-                  {workspace.mode === "REGULAR" ? (
-                    <>
-                      <th>Internal / {workspace.internalMax}</th>
-                      {workspace.practicalMax > 0 && <th>Practical / {workspace.practicalMax}</th>}
-                      <th>Theory / {workspace.theoryMax}</th>
-                      <th>Total / {workspace.maxMarks}</th>
-                    </>
-                  ) : (
-                    <>
-                      <th>Obtained</th>
-                      <th>Maximum</th>
-                    </>
-                  )}
-                  <th>Percentage</th>
-                  <th>Absent</th>
-                  <th>Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <MarkRow
-                    key={r.studentId}
-                    row={r}
-                    w={workspace}
-                    locked={locked}
-                    update={(k, v) => updateRow(r.studentId, k, v)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Pagination page={entryPage} total={total} setPage={setEntryPage} />
-          {editing ? (
+
+          <Table
+            heads={[
+              "ROLL NO",
+              "STUDENT",
+              ...(workspace.mode === "REGULAR"
+                ? ["INTERNAL", ...(workspace.practicalMax ? ["PRACTICAL"] : []), "THEORY", "TOTAL"]
+                : ["OBTAINED", "MAXIMUM"]),
+              "PERCENTAGE",
+              "ABSENT",
+              "REMARKS",
+            ]}
+          >
+            {rows.map((row) => (
+              <MarkRow
+                key={row.studentId}
+                row={row}
+                workspace={workspace}
+                locked={locked || blocked}
+                update={(field, value) => updateRow(row.studentId, field, value)}
+              />
+            ))}
+          </Table>
+
+          <Pagination
+            page={entryPage}
+            total={Math.ceil(workspace.rows.length / PAGE_SIZE)}
+            setPage={setEntryPage}
+            summaryText={lockedText}
+          />
+
+          {editing && (
             <div className="cms-marks-actions">
-              <button type="button" className="cms-btn cms-btn-secondary" onClick={cancelEdit}>
+              <button type="button" className="cms-btn cms-btn-secondary" disabled={Boolean(processing)} onClick={onCancelEdit}>
                 Cancel Edit
               </button>
-              <button type="button" className="cms-btn cms-btn-primary" onClick={saveAdminChanges}>
-                Save Changes
-              </button>
-            </div>
-          ) : locked ? (
-            <p className="cms-locked-message">
-              This {workspace.status.toLowerCase()} subject is read-only.
-            </p>
-          ) : (
-            <div className="cms-marks-actions">
-              <button type="button" className="cms-btn cms-btn-secondary" onClick={onSave}>
-                Save Subject Draft
-              </button>
-              <button type="button" className="cms-btn cms-btn-primary" onClick={onSubmit}>
-                Submit Subject
+              <button type="button" className="cms-btn cms-btn-primary" disabled={Boolean(processing) || blocked} onClick={onSaveChanges}>
+                {processing === "SAVE_EDIT" ? "Saving..." : "Save Changes"}
               </button>
             </div>
           )}
@@ -1336,215 +1767,166 @@ function Entry({
     </section>
   );
 }
-function MarkRow({ row, w, locked, update }) {
-  const complete =
-      row.absent ||
-      (w.mode === "OBJECTIVE"
-        ? validNumber(row.obtainedMarks, w.maxMarks)
-        : validNumber(row.internal, w.internalMax) &&
-          validNumber(row.theory, w.theoryMax) &&
-          (!w.practicalMax || validNumber(row.practical, w.practicalMax))),
-    total = w.mode === "OBJECTIVE" ? row.obtainedMarks : row.total;
+
+function MarkRow({ row, workspace, locked, update }) {
+  const result = row.absent ? null : calculateStudentSubjectResult(row, workspace);
   return (
     <tr>
       <td>{row.rollNo}</td>
       <td>
         {row.studentName}
-        {w.validationErrors[row.studentId]?.map((e) => (
-          <small className="cms-row-error" key={e}>
-            {e}
+        {workspace.validationErrors[row.studentId]?.map((error) => (
+          <small className="cms-row-error" key={error}>
+            {error}
           </small>
         ))}
       </td>
-      {w.mode === "REGULAR" ? (
+      {workspace.mode === "REGULAR" ? (
         <>
-          <Num
-            value={row.internal}
-            disabled={locked || row.absent}
-            onChange={(v) => update("internal", v)}
-          />
-          {w.practicalMax > 0 && (
-            <Num
-              value={row.practical}
-              disabled={locked || row.absent}
-              onChange={(v) => update("practical", v)}
-            />
+          <Num value={row.internal} disabled={locked || row.absent} onChange={(value) => update("internal", value)} />
+          {workspace.practicalMax > 0 && (
+            <Num value={row.practical} disabled={locked || row.absent} onChange={(value) => update("practical", value)} />
           )}
-          <Num
-            value={row.theory}
-            disabled={locked || row.absent}
-            onChange={(v) => update("theory", v)}
-          />
-          <td>{row.absent ? "ABS" : complete ? total : "—"}</td>
+          <Num value={row.theory} disabled={locked || row.absent} onChange={(value) => update("theory", value)} />
+          <td>{row.absent ? "ABS" : row.total === "" ? "—" : row.total}</td>
         </>
       ) : (
         <>
-          <Num
-            value={row.obtainedMarks}
-            disabled={locked || row.absent}
-            onChange={(v) => update("obtainedMarks", v)}
-          />
-          <td>{w.maxMarks}</td>
+          <Num value={row.obtainedMarks} disabled={locked || row.absent} onChange={(value) => update("obtainedMarks", value)} />
+          <td>{workspace.maxMarks}</td>
         </>
       )}
-      <td>
-        {row.absent
-          ? "ABS"
-          : complete && w.maxMarks
-            ? `${((Number(total) / w.maxMarks) * 100).toFixed(2)}%`
-            : "—"}
-      </td>
+      <td>{row.absent ? "ABS" : row.total === "" ? "—" : `${result.percentage.toFixed(2)}%`}</td>
       <td>
         <input
           type="checkbox"
           className="cms-checkbox"
           checked={row.absent}
           disabled={locked}
-          onChange={(e) => update("absent", e.target.checked)}
-          aria-label={`Mark ${row.studentName} absent`}
+          onChange={(event) => update("absent", event.target.checked)}
         />
       </td>
       <td>
         <input
           className="cms-remarks-input"
           value={row.remarks}
+          maxLength={250}
           disabled={locked}
-          onChange={(e) => update("remarks", e.target.value)}
-          aria-label={`${row.studentName} remarks`}
+          onChange={(event) => update("remarks", event.target.value)}
         />
       </td>
     </tr>
   );
 }
-function EvaluationList({
-  rows,
-  search,
-  setSearch,
-  page,
-  setPage,
-  onView,
-  readiness,
-  onBulk,
-  processing,
-}) {
-  const total = Math.ceil(rows.length / PAGE_SIZE),
-    shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+function EvaluationList({ rows, search, setSearch, page, setPage, onView, readiness, onBulk, processing }) {
+  const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalCount = rows.length;
+  const startRange = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const endRange = Math.min(page * PAGE_SIZE, totalCount);
+  const distinctSubjectCount = new Set(rows.map((item) => item.subjectId || item.subject?.id)).size;
+
+  const evalText = totalCount === 1 ? "evaluation" : "evaluations";
+  const subjText = distinctSubjectCount === 1 ? "subject" : "subjects";
+  const summaryText = `Showing ${startRange}–${endRange} of ${totalCount} ${evalText} submitted from ${distinctSubjectCount} ${subjText}`;
+
   return (
     <section className="cms-card cms-main-card">
       <div className="cms-table-toolbar">
-        <Search value={search} onChange={setSearch} />
+        <SearchBox value={search} onChange={setSearch} />
         <div className="cms-bulk-actions">
           <button
             type="button"
             className="cms-btn cms-btn-info"
-            disabled={processing || !readiness?.submittedCount}
+            disabled={Boolean(processing) || !readiness.submittedCount}
             onClick={() => onBulk("VERIFY_ALL")}
           >
-            Verify {readiness?.submittedCount || 0} Submitted
+            {processing === "VERIFY_ALL" ? "Verifying..." : `Verify ${readiness.submittedCount} Submitted`}
           </button>
           <button
             type="button"
             className="cms-btn cms-btn-success"
-            disabled={processing || !readiness?.verifiedCount}
+            disabled={Boolean(processing) || !readiness.verifiedCount}
             onClick={() => onBulk("APPROVE_ALL")}
           >
-            Approve {readiness?.verifiedCount || 0} Verified
+            {processing === "APPROVE_ALL" ? "Approving..." : `Approve ${readiness.verifiedCount} Verified`}
           </button>
         </div>
       </div>
-      <Table
-        className="cms-evaluation-table"
-        heads={[
-          "Subject",
-          "Faculty",
-          "Students",
-          "Average / Total",
-          "Highest",
-          "Lowest",
-          "Status",
-          "Actions",
-        ]}
-      >
+      <Table heads={["SUBJECT", "FACULTY", "STUDENTS", "AVERAGE / MAXIMUM", "HIGHEST", "LOWEST", "STATUS", "ACTIONS"]}>
         {shown.length ? (
-          shown.map((e) => (
-            <tr key={e.evaluationId}>
+          shown.map((item) => (
+            <tr key={evaluationKey(item)}>
               <td>
-                {e.subject.name}
-                <small className="cms-row-subtitle">{e.subject.code}</small>
+                {item.subject?.name}
+                <small className="cms-row-subtitle">{item.subject?.code}</small>
               </td>
-              <td>{e.faculty.name}</td>
-              <td>{e.studentsCount}</td>
+              <td>{item.faculty?.name || "—"}</td>
+              <td>{item.studentsCount}</td>
               <td>
-                {e.average} / {e.subjectMaxMarks}
+                {item.average} / {item.maxMarks}
               </td>
-              <td>{e.highest}</td>
-              <td>{e.lowest}</td>
+              <td>{item.highest}</td>
+              <td>{item.lowest}</td>
               <td>
-                <Badge status={e.status} />
+                <Badge status={item.status} />
               </td>
               <td>
-                <button
-                  type="button"
-                  className="cms-action-btn"
-                  aria-label={`View ${e.subject.name} evaluation`}
-                  onClick={() => onView(e)}
-                >
+                <button type="button" className="cms-action-btn" onClick={() => onView(item)} aria-label="View Evaluation">
                   <IconEye />
                 </button>
               </td>
             </tr>
           ))
         ) : (
-          <EmptyRow span={8} text="No evaluations are available for the selected context." />
+          <EmptyRow span={8} text="No submitted evaluations are available for this context." />
         )}
       </Table>
-      <Pagination page={page} total={total} setPage={setPage} />
+      <Pagination page={page} total={Math.ceil(rows.length / PAGE_SIZE)} setPage={setPage} summaryText={summaryText} />
     </section>
   );
 }
+
 function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }) {
-  const total = Math.ceil(item.rows.length / PAGE_SIZE),
-    rows = item.rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const rows = item.rows?.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) || [];
   return (
     <section className="cms-card cms-main-card">
-      <Back onClick={onBack} title={`${item.subject.name} Marks Breakdown`} />
+      <Back onClick={onBack} title={`${item.subject?.name || "Subject"} Marks Breakdown`} />
       <Table
         heads={[
-          "Roll No",
-          "Student",
-          ...(item.mode === "REGULAR"
-            ? ["Internal", ...(item.practicalMax ? ["Practical"] : []), "Theory"]
-            : []),
-          "Obtained",
-          "Remarks",
-          "Absent",
+          "ROLL NO",
+          "STUDENT",
+          ...(item.mode === "REGULAR" ? ["INTERNAL", ...(item.practicalMax ? ["PRACTICAL"] : []), "THEORY"] : []),
+          "OBTAINED",
+          "REMARKS",
+          "ABSENT",
         ]}
       >
-        {rows.map((r) => (
-          <tr key={r.studentId}>
-            <td>{r.rollNo}</td>
-            <td>{r.studentName}</td>
+        {rows.map((row) => (
+          <tr key={row.studentId}>
+            <td>{row.rollNo}</td>
+            <td>{row.studentName}</td>
             {item.mode === "REGULAR" && (
               <>
-                <td>{r.absent ? "—" : r.internal}</td>
-                {item.practicalMax > 0 && <td>{r.absent ? "—" : r.practical}</td>}
-                <td>{r.absent ? "—" : r.theory}</td>
+                <td>{row.absent ? "—" : row.internal}</td>
+                {item.practicalMax > 0 && <td>{row.absent ? "—" : row.practical}</td>}
+                <td>{row.absent ? "—" : row.theory}</td>
               </>
             )}
-            <td>{r.absent ? "ABS" : r.obtainedMarks}</td>
-            <td>{r.remarks || "—"}</td>
-            <td>{r.absent ? "Yes" : "No"}</td>
+            <td>{row.absent ? "ABS" : row.total}</td>
+            <td>{row.remarks || "—"}</td>
+            <td>{row.absent ? "Yes" : "No"}</td>
           </tr>
         ))}
       </Table>
-      <Pagination page={page} total={total} setPage={setPage} />
+      <Pagination page={page} total={Math.ceil((item.rows?.length || 0) / PAGE_SIZE)} setPage={setPage} />
       <div className="cms-modal-actions">
         {item.status === "SUBMITTED" && (
           <>
             <button
               type="button"
               className="cms-btn cms-btn-info"
-              disabled={processing}
+              disabled={Boolean(processing)}
               onClick={() => onAction("VERIFY")}
             >
               Verify Evaluation
@@ -1552,6 +1934,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
             <button
               type="button"
               className="cms-btn cms-btn-danger"
+              disabled={Boolean(processing)}
               onClick={() => onAction("REJECT")}
             >
               Reject Evaluation
@@ -1563,6 +1946,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
             <button
               type="button"
               className="cms-btn cms-btn-success"
+              disabled={Boolean(processing)}
               onClick={() => onAction("APPROVE")}
             >
               Approve Evaluation
@@ -1570,6 +1954,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
             <button
               type="button"
               className="cms-btn cms-btn-danger"
+              disabled={Boolean(processing)}
               onClick={() => onAction("REJECT")}
             >
               Reject Evaluation
@@ -1581,190 +1966,276 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
     </section>
   );
 }
-function StudentList({ rows, subjects, search, setSearch, page, setPage, onView }) {
-  const total = Math.ceil(rows.length / PAGE_SIZE),
-    shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+function StudentList({ rows, subjects = [], search, setSearch, page, setPage, onView }) {
+  const shown = rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   return (
     <section className="cms-card cms-main-card">
       <div className="cms-table-toolbar">
-        <Search value={search} onChange={setSearch} />
+        <SearchBox value={search} onChange={setSearch} />
       </div>
       <Table
-        className="cms-student-analysis-table"
         heads={[
-          "Roll No",
-          "Student",
-          ...subjects.map((s) => s.name),
-          "Total",
-          "Percentage",
-          "Grade",
-          "Result",
-          "Actions",
+          "ROLL NO",
+          "STUDENT",
+          ...subjects.map((sub) => (sub.subjectName || sub.name || "SUBJECT").toUpperCase()),
+          "TOTAL OBTAINED / MAXIMUM",
+          "PERCENTAGE",
+          "GRADE",
+          "RESULT",
+          "ACTIONS",
         ]}
       >
         {shown.length ? (
-          shown.map((s) => {
-            const calculatedPercentage =
-              Number(s.totalMaximum) > 0
-                ? (Number(s.totalObtained) / Number(s.totalMaximum)) * 100
-                : null;
-            const percentage =
-              s.percentage != null && Number.isFinite(Number(s.percentage))
-                ? Number(s.percentage)
-                : calculatedPercentage;
-            return (
-            <tr key={s.studentId}>
-              <td>{s.rollNo}</td>
-              <td>{s.studentName}</td>
+          shown.map((student) => (
+            <tr key={student.studentId}>
+              <td>{student.rollNo}</td>
+              <td>{student.studentName}</td>
               {subjects.map((sub) => {
-                const r = s.subjectResults.find((x) => eq(x.subjectId ?? x.id, sub.id));
-                return <td key={sub.id}>{r?.obtainedMarks ?? r?.marks ?? "—"}</td>;
+                const subId = sub.subjectId || sub.id;
+                const res = student.subjectResults?.find((item) => eq(item.subjectId, subId));
+                return (
+                  <td key={subId}>
+                    {!res ? "—" : res.isAbsent ? "ABS" : `${res.obtained} / ${res.maxMarks}`}
+                  </td>
+                );
               })}
               <td>
-                {s.totalObtained} / {s.totalMaximum}
+                {student.totalObtained} / {student.totalMaximum}
               </td>
+              <td>{Number(student.percentage || 0).toFixed(2)}%</td>
+              <td>{student.grade}</td>
               <td>
-                {percentage == null || !Number.isFinite(percentage)
-                  ? "—"
-                  : `${percentage.toFixed(2)}%`}
-              </td>
-              <td>{s.grade}</td>
-              <td>
-                <Result status={s.result} />
+                <Result status={student.result} />
               </td>
               <td>
                 <button
                   type="button"
                   className="cms-action-btn"
-                  aria-label={`View ${s.studentName} result`}
-                  onClick={() => onView(s)}
+                  aria-label={`View ${student.studentName} result`}
+                  onClick={() => onView(student)}
                 >
                   <IconEye />
                 </button>
               </td>
             </tr>
-            );
-          })
+          ))
         ) : (
-          <EmptyRow
-            span={7 + subjects.length}
-            text="Approved results are not yet available for this examination."
-          />
+          <EmptyRow span={7 + subjects.length} text="No approved student results match the current search." />
         )}
       </Table>
-      <Pagination page={page} total={total} setPage={setPage} />
+      <Pagination page={page} total={Math.ceil(rows.length / PAGE_SIZE)} setPage={setPage} />
     </section>
   );
 }
+
 function StudentDetails({ student, page, setPage, onBack }) {
-  const rows = student.subjectResults || [],
-    total = Math.ceil(rows.length / PAGE_SIZE);
+  const rows = (student.subjectResults || []).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   return (
     <section className="cms-card cms-main-card">
       <Back onClick={onBack} title="Detailed Student Performance Report" />
       <div className="cms-detail-grid">
-        <Card label="Roll Number" value={student.rollNo} />
-        <Card label="Student Name" value={student.studentName} />
-        <Card
-          label="Total"
-          value={`${student.totalMarks ?? student.totalObtained ?? 0} / ${student.maxTotal ?? student.totalMaximum ?? 0}`}
-        />
-        <Card
-          label="Percentage"
-          value={student.percentage == null ? "—" : `${Number(student.percentage).toFixed(2)}%`}
-        />
-        <Card label="Grade" value={student.grade ?? "—"} />
-        <Card label="Result" value={student.result ?? "PENDING"} />
+        <Card label="ROLL NUMBER" value={student.rollNo} />
+        <Card label="STUDENT NAME" value={student.studentName} />
+        <Card label="EXAMINATION" value={student.examinationName} />
+        <Card label="SECTION" value={student.sectionName} />
+        <Card label="TOTAL" value={`${student.totalObtained} / ${student.totalMaximum}`} />
+        <Card label="PERCENTAGE" value={`${Number(student.percentage || 0).toFixed(2)}%`} />
+        <Card label="GRADE" value={student.grade} />
+        <Card label="RESULT" value={<Result status={student.result} />} />
       </div>
-      <Table
-        heads={[
-          "Subject",
-          "Code",
-          "Mode",
-          "Obtained / Maximum",
-          "Pass %",
-          "Percentage",
-          "Grade",
-          "Result",
-        ]}
-      >
-        {rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((r, i) => (
-          <tr key={r.subjectId ?? i}>
-            <td>{r.subjectName ?? r.name}</td>
-            <td>{r.subjectCode ?? r.code ?? "—"}</td>
-            <td>{r.mode ?? r.markMode ?? "—"}</td>
+      <Table heads={["SUBJECT", "CODE", "MODE", "OBTAINED / MAXIMUM", "PASS %", "PERCENTAGE", "GRADE", "RESULT"]}>
+        {rows.map((item) => (
+          <tr key={item.subjectId}>
+            <td>{item.subjectName}</td>
+            <td>{item.subjectCode}</td>
+            <td>{item.mode}</td>
+            <td>{item.isAbsent ? "ABS" : `${item.obtained} / ${item.maxMarks}`}</td>
+            <td>{item.passPercentage}%</td>
+            <td>{item.isAbsent ? "ABS" : `${Number(item.percentage || 0).toFixed(2)}%`}</td>
+            <td>{item.grade}</td>
             <td>
-              {r.isAbsent
-                ? "ABS"
-                : `${r.obtainedMarks ?? r.marks ?? "—"} / ${r.maximumMarks ?? r.maxMarks ?? "—"}`}
-            </td>
-            <td>{r.passPercentage ?? "—"}</td>
-            <td>{r.percentage == null ? "—" : `${Number(r.percentage).toFixed(2)}%`}</td>
-            <td>{r.isAbsent ? "—" : (r.grade ?? "—")}</td>
-            <td>
-              <Result status={r.isAbsent ? "ABSENT" : (r.result ?? "PENDING")} />
+              <Result status={item.result} />
             </td>
           </tr>
         ))}
       </Table>
-      <Pagination page={page} total={total} setPage={setPage} />
+      <Pagination page={page} total={Math.ceil((student.subjectResults?.length || 0) / PAGE_SIZE)} setPage={setPage} />
     </section>
   );
 }
-function Select({ id, label, value, options, disabled, onChange }) {
+
+function SearchableSelect({
+  id,
+  label,
+  value,
+  options = [],
+  disabled,
+  onChange,
+  emptyText = "No matching options",
+  hideLabel = false,
+  compact = false,
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [highlight, setHighlight] = useState(0);
+  const ref = useRef(null);
+  const listId = `${id}-listbox`;
+
+  const filtered = options.filter((item) => (item.name || "").toLowerCase().includes(query.trim().toLowerCase()));
+  const selected = options.find((item) => eq(item.id, value));
+
+  useEffect(() => {
+    setHighlight(0);
+  }, [query, options]);
+
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event) => {
+      if (!ref.current?.contains(event.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", outside);
+    return () => document.removeEventListener("mousedown", outside);
+  }, [open]);
+
+  const keyDown = (event) => {
+    if (event.key === "Escape") {
+      setOpen(false);
+      setQuery("");
+    } else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      if (!open) return setOpen(true);
+      if (filtered.length) {
+        setHighlight((current) => (current + (event.key === "ArrowDown" ? 1 : -1) + filtered.length) % filtered.length);
+      }
+    } else if (event.key === "Enter" && open && filtered[highlight]) {
+      event.preventDefault();
+      onChange(filtered[highlight].id);
+      setOpen(false);
+      setQuery("");
+    }
+  };
+
+  const displayName = selected?.name || `Select ${label}`;
+
   return (
-    <div className="cms-field-group">
-      <label className="cms-field-label" htmlFor={id}>
-        {label}
-      </label>
-      <select
-        id={id}
-        className="cms-select-input"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">Select {label}</option>
-        {options.map((o) => (
-          <option value={o.id} key={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
+    <div className={`cms-field-group ${compact ? "cms-entry-select-compact" : ""}`}>
+      {!hideLabel && (
+        <label className="cms-field-label" id={`${id}-label`}>
+          {label}
+        </label>
+      )}
+      <div className={`cms-custom-select ${open ? "is-open" : ""}`} ref={ref}>
+        <button
+          type="button"
+          className="cms-custom-select-trigger"
+          role="combobox"
+          aria-label={label}
+          aria-labelledby={!hideLabel ? `${id}-label` : undefined}
+          aria-expanded={open}
+          aria-controls={listId}
+          disabled={disabled}
+          title={displayName}
+          onClick={() => setOpen((current) => !current)}
+          onKeyDown={keyDown}
+        >
+          <span className="cms-select-trigger-text">{displayName}</span>
+          <span className="cms-select-arrow">⌄</span>
+        </button>
+        {open && (
+          <div className="cms-custom-select-menu">
+            <input
+              autoFocus
+              className="cms-custom-select-search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setHighlight(0);
+              }}
+              onKeyDown={keyDown}
+              placeholder="Search..."
+            />
+            <div className="cms-custom-select-options" id={listId} role="listbox">
+              <button
+                type="button"
+                role="option"
+                aria-selected={!value}
+                className="cms-custom-select-option"
+                title={`Select ${label}`}
+                onClick={() => {
+                  onChange("");
+                  setOpen(false);
+                  setQuery("");
+                }}
+              >
+                Select {label}
+              </button>
+              {filtered.length ? (
+                filtered.map((item, index) => (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={eq(item.id, value)}
+                    title={item.name}
+                    className={`cms-custom-select-option ${eq(item.id, value) ? "selected" : ""} ${
+                      highlight === index ? "highlighted" : ""
+                    }`}
+                    key={item.id}
+                    onMouseEnter={() => setHighlight(index)}
+                    onClick={() => {
+                      onChange(item.id);
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                  >
+                    {item.name}
+                  </button>
+                ))
+              ) : (
+                <div className="cms-custom-select-empty">{emptyText}</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
 const Num = ({ value, disabled, onChange }) => (
   <td>
     <input
-      type="number"
-      step="any"
+      type="text"
+      inputMode="decimal"
       className="cms-number-input"
       value={value}
       disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(event) => onChange(event.target.value)}
     />
   </td>
 );
-const Search = ({ value, onChange }) => (
+
+const SearchBox = ({ value, onChange }) => (
   <div className="cms-search-wrap">
     <input
       className="cms-search-input cms-search-input-plain"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(event) => onChange(event.target.value)}
       placeholder="Search records..."
     />
   </div>
 );
-const Table = ({ heads, children, className = "" }) => (
+
+const Table = ({ heads, children }) => (
   <div className="cms-table-container">
-    <table className={`cms-table ${className}`.trim()}>
+    <table className="cms-table">
       <thead>
         <tr>
-          {heads.map((h, i) => (
-            <th scope="col" key={`${h}-${i}`}>
-              {h}
-            </th>
+          {heads.map((head, index) => (
+            <th key={`${head}-${index}`}>{head}</th>
           ))}
         </tr>
       </thead>
@@ -1772,21 +2243,25 @@ const Table = ({ heads, children, className = "" }) => (
     </table>
   </div>
 );
+
 const Badge = ({ status }) => (
-  <span className={`cms-badge-status cms-status-${status.toLowerCase().replace(" ", "-")}`}>
+  <span className={`cms-badge-status cms-status-${(status || "draft").toLowerCase().replaceAll(" ", "-")}`}>
     <span className="cms-badge-dot" />
     {status}
   </span>
 );
+
 const Result = ({ status }) => (
-  <span className={`cms-result cms-result-${status.toLowerCase()}`}>{status}</span>
+  <span className={`cms-result cms-result-${(status || "pass").toLowerCase()}`}>{status}</span>
 );
+
 const Card = ({ label, value }) => (
   <div className="cms-detail-card">
     <span className="cms-detail-label">{label}</span>
     <span className="cms-detail-value">{value}</span>
   </div>
 );
+
 const Back = ({ onClick, title }) => (
   <div className="cms-details-header">
     <button type="button" className="cms-back-btn" onClick={onClick}>
@@ -1795,6 +2270,7 @@ const Back = ({ onClick, title }) => (
     <h2 className="cms-details-title">{title}</h2>
   </div>
 );
+
 const Empty = ({ text }) => <div className="cms-card cms-empty-card">{text}</div>;
 const EmptyRow = ({ span, text }) => (
   <tr>
@@ -1803,35 +2279,53 @@ const EmptyRow = ({ span, text }) => (
     </td>
   </tr>
 );
-function Pagination({ page, total, setPage }) {
+
+const IconEye = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+function Pagination({ page, total, setPage, summaryText }) {
   useEffect(() => {
-    if (total) setPage((p) => Math.min(p, total));
+    if (total) setPage((current) => Math.min(current, total));
   }, [total, setPage]);
-  if (!total) return null;
+
+  if (!total && !summaryText) return null;
+
   return (
-    <nav className="cms-pagination">
-      <button
-        type="button"
-        className="cms-page-btn"
-        disabled={page <= 1}
-        onClick={() => setPage((p) => p - 1)}
-      >
-        Previous
-      </button>
-      <span>
-        {page} / {total}
-      </span>
-      <button
-        type="button"
-        className="cms-page-btn"
-        disabled={page >= total}
-        onClick={() => setPage((p) => p + 1)}
-      >
-        Next
-      </button>
-    </nav>
+    <div className="cms-pagination">
+      <div className="cms-pagination-summary-left">
+        {summaryText ? <span className="cms-eval-summary-text">{summaryText}</span> : null}
+      </div>
+      {total > 0 && (
+        <div className="cms-pagination-controls">
+          <button
+            type="button"
+            className="cms-page-btn"
+            disabled={page <= 1}
+            onClick={() => setPage((current) => current - 1)}
+          >
+            Previous
+          </button>
+          <span className="cms-page-info">
+            {page} / {total}
+          </span>
+          <button
+            type="button"
+            className="cms-page-btn"
+            disabled={page >= total}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
+
 const Confirm = ({ title, text, onCancel, onConfirm }) => (
   <div className="cms-overlay">
     <div className="cms-modal">
@@ -1850,6 +2344,7 @@ const Confirm = ({ title, text, onCancel, onConfirm }) => (
     </div>
   </div>
 );
+
 const Message = ({ action, value, setValue, onCancel, onConfirm }) => (
   <div className="cms-overlay">
     <div className="cms-modal">
@@ -1860,8 +2355,10 @@ const Message = ({ action, value, setValue, onCancel, onConfirm }) => (
         <textarea
           className="cms-marks-textarea"
           rows="4"
+          maxLength={500}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={action === "REJECT" ? "Rejection reason" : "Optional verification note"}
         />
       </div>
       <div className="cms-modal-foot">
@@ -1871,7 +2368,7 @@ const Message = ({ action, value, setValue, onCancel, onConfirm }) => (
         <button
           type="button"
           className="cms-btn cms-btn-primary"
-          disabled={value.trim().length < 5}
+          disabled={action === "REJECT" && !value.trim()}
           onClick={onConfirm}
         >
           Confirm

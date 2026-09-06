@@ -14,35 +14,6 @@ const eq = (a, b) => normalizeId(a) === normalizeId(b);
 const grade = (value) => value >= 90 ? "A+" : value >= 80 ? "A" : value >= 70 ? "B+" : value >= 60 ? "B" : value >= 50 ? "C" : value >= 40 ? "D" : "F";
 const editableStatuses = ["NOT STARTED", "DRAFT", "REJECTED"];
 
-// Fallback Mock Data in case backend is offline or empty for certain filters
-const MOCK_BOARDS = [
-  { id: "1", name: "Board of Intermediate Education, Andhra Pradesh", code: "BIEAP", isActive: true },
-  { id: "2", name: "Telangana Board of Intermediate Education", code: "TGBIE", isActive: true },
-];
-const MOCK_YEARS = [
-  { id: "9", name: "2026-2027", boardId: "1", isActive: true, isCurrent: true },
-  { id: "12", name: "2026-2027", boardId: "2", isActive: true, isCurrent: true },
-];
-const MOCK_LEVELS = [
-  { id: "1", name: "Intermediate 1st Year", isActive: true },
-  { id: "2", name: "Intermediate 2nd Year", isActive: true },
-];
-const MOCK_GROUPS = [
-  { id: "37", boardId: "1", name: "MPC", code: "MPC-1", isActive: true },
-  { id: "39", boardId: "1", name: "BiPC", code: "BIPC2", isActive: true },
-  { id: "40", boardId: "2", name: "MPC", code: "MPC-2", isActive: true },
-];
-const MOCK_PROGRAMS = [
-  { id: "1", groupId: "37", name: "Regular", isActive: true },
-  { id: "2", groupId: "37", name: "JEE", isActive: true },
-  { id: "3", groupId: "37", name: "JEE Advanced", isActive: true },
-  { id: "1", groupId: "39", name: "Regular", isActive: true },
-  { id: "1", groupId: "40", name: "Regular", isActive: true },
-];
-const MOCK_SECTIONS = [
-  { id: "30", programId: "1", groupId: "37", academicLevelId: "1", name: "REG-1", isActive: true },
-  { id: "31", programId: "1", groupId: "37", academicLevelId: "2", name: "MPC-2A", isActive: true },
-];
 
 const unwrapRecords = (response) => {
   if (!response) return [];
@@ -228,35 +199,81 @@ export default function MarksEntryPage() {
     setBackendAnalysis([]);
   };
 
-  // 1. Initial Load: Fetch Active Boards
+  // 1. Initial Load: Fetch and Auto-Select Active Board and Academic Year
   useEffect(() => {
     let isMounted = true;
-    const loadBoards = async () => {
+    const loadInitialAcademicContext = async () => {
       try {
-        const res = await apiClient.get(apiEndpoints.boards.list);
-        const raw = unwrapRecords(res);
-        const list = (raw.length ? raw : MOCK_BOARDS)
-          .map((b) => ({
-            id: normalizeId(b.boardId ?? b.id),
-            name: b.boardName ?? b.name,
-            code: b.boardCode ?? b.code,
-            isActive: b.status !== false && b.isActive !== false,
-            academicLevelIds: b.academicLevelIds,
-            academicLevelNames: b.academicLevelNames,
-          }))
-          .filter((b) => b.isActive);
+        const [boardsRes, yearsRes] = await Promise.allSettled([
+          apiClient.get(apiEndpoints.boards.active).catch(() => apiClient.get(apiEndpoints.boards.list)),
+          apiClient.get(apiEndpoints.academicYears.active).catch(() => apiClient.get(apiEndpoints.academicYears.getAll)),
+        ]);
+
+        let loadedBoards = [];
+        if (boardsRes.status === "fulfilled") {
+          const raw = unwrapRecords(boardsRes.value);
+          loadedBoards = raw
+            .map((b) => ({
+              id: normalizeId(b.boardId ?? b.id),
+              name: b.boardName ?? b.name,
+              code: b.boardCode ?? b.code,
+              isActive: b.status !== false && b.isActive !== false,
+              academicLevelIds: b.academicLevelIds,
+              academicLevelNames: b.academicLevelNames,
+            }))
+            .filter((b) => b.isActive);
+        } else {
+          console.error("Error fetching active boards:", boardsRes.reason);
+        }
+
+        let loadedYears = [];
+        if (yearsRes.status === "fulfilled") {
+          const rawYears = unwrapRecords(yearsRes.value);
+          loadedYears = rawYears
+            .map((y) => ({
+              id: normalizeId(y.academicYearId ?? y.id),
+              name: y.academicYearName ?? y.name,
+              boardId: normalizeId(y.boardId),
+              isActive: y.isActive !== false,
+              isCurrent: Boolean(y.isCurrent),
+            }))
+            .filter((y) => y.isActive);
+        } else {
+          console.error("Error fetching active academic years:", yearsRes.reason);
+        }
 
         if (!isMounted) return;
-        setBoards(list);
-        if (list.length === 1) {
-          setFilters((prev) => ({ ...prev, board: list[0].id }));
-        }
+
+        setBoards(loadedBoards);
+
+        const activeBoard = loadedBoards.find((b) => b.isActive) || loadedBoards[0];
+        const selectedBoardId = activeBoard ? activeBoard.id : "";
+
+        const relevantYears = selectedBoardId
+          ? loadedYears.filter((y) => !y.boardId || eq(y.boardId, selectedBoardId))
+          : loadedYears;
+
+        setYears(relevantYears.length ? relevantYears : loadedYears);
+
+        const activeYear = (relevantYears.length ? relevantYears : loadedYears).find((y) => y.isCurrent)
+          || (relevantYears.length ? relevantYears : loadedYears)[0];
+        const selectedYearId = activeYear ? activeYear.id : "";
+
+        setFilters((prev) => ({
+          ...prev,
+          board: prev.board || selectedBoardId,
+          year: prev.year || selectedYearId,
+        }));
       } catch (err) {
-        console.warn("Error fetching boards, using fallback:", err);
-        if (isMounted) setBoards(MOCK_BOARDS);
+        console.error("Error during initial academic context load:", err);
+        if (isMounted) {
+          setBoards([]);
+          setYears([]);
+        }
       }
     };
-    loadBoards();
+
+    loadInitialAcademicContext();
     return () => {
       isMounted = false;
     };
@@ -275,14 +292,14 @@ export default function MarksEntryPage() {
     const loadBoardDependencies = async () => {
       const selectedBoard = boards.find((b) => eq(b.id, filters.board));
 
-      // 2a. Fetch Academic Years
+      // 2a. Fetch Academic Years for the selected Board
       try {
         const yearsRes = await apiClient.get(apiEndpoints.academicYears.active, {
           params: { boardId: filters.board, isActive: true },
         }).catch(() => apiClient.get(apiEndpoints.academicYears.getAll));
 
         const rawYears = unwrapRecords(yearsRes);
-        const listYears = (rawYears.length ? rawYears : MOCK_YEARS)
+        const listYears = rawYears
           .map((y) => ({
             id: normalizeId(y.academicYearId ?? y.id),
             name: y.academicYearName ?? y.name,
@@ -294,22 +311,27 @@ export default function MarksEntryPage() {
 
         if (isMounted) {
           setYears(listYears);
-          const currentYear = listYears.find((y) => y.isCurrent) || listYears[0];
-          if (currentYear) {
-            setFilters((prev) => ({ ...prev, year: currentYear.id }));
-          }
+          setFilters((prev) => {
+            const hasValidYear = listYears.some((y) => eq(y.id, prev.year));
+            if (hasValidYear) return prev;
+            const currentYear = listYears.find((y) => y.isCurrent) || listYears[0];
+            return { ...prev, year: currentYear ? currentYear.id : "" };
+          });
         }
       } catch (err) {
-        console.warn("Error fetching academic years:", err);
-        if (isMounted) setYears(MOCK_YEARS.filter((y) => eq(y.boardId, filters.board)));
+        console.error("Error fetching academic years:", err);
+        if (isMounted) setYears([]);
       }
 
-      // 2b. Fetch Academic Levels
+      // 2b. Fetch Academic Levels for the selected Board
       try {
         let levelItems = [];
-        const levelsRes = await apiClient.get(`/api/v1/academic-levels`, {
-          params: { boardId: filters.board },
-        }).catch(() => apiClient.get(`/api/v1/boards/${encodeURIComponent(filters.board)}/academic-levels`));
+        const levelsRes = await apiClient.get(
+          apiEndpoints.academicLevels?.getByBoard
+            ? apiEndpoints.academicLevels.getByBoard(filters.board)
+            : `/api/v1/academic-levels?boardId=${filters.board}`
+        ).catch(() => apiClient.get(apiEndpoints.academicLevels?.getAll || "/api/v1/academic-levels", { params: { boardId: filters.board } }))
+         .catch(() => apiClient.get(`/api/v1/boards/${encodeURIComponent(filters.board)}/academic-levels`));
 
         const rawLevels = unwrapRecords(levelsRes);
         if (rawLevels.length) {
@@ -324,24 +346,26 @@ export default function MarksEntryPage() {
             name: selectedBoard.academicLevelNames?.[idx] || `Level ${id}`,
             isActive: true,
           }));
-        } else {
-          levelItems = MOCK_LEVELS;
         }
 
         if (isMounted) setLevels(levelItems.filter((l) => l.isActive));
       } catch (err) {
-        console.warn("Error fetching academic levels:", err);
-        if (isMounted) setLevels(MOCK_LEVELS);
+        console.error("Error fetching academic levels:", err);
+        if (isMounted) setLevels([]);
       }
 
-      // 2c. Fetch Groups
+      // 2c. Fetch Groups for the selected Board
       try {
-        const groupsRes = await apiClient.get(apiEndpoints.groups.list, {
+        const groupsRes = await apiClient.get(
+          apiEndpoints.groups?.getByBoard
+            ? apiEndpoints.groups.getByBoard(filters.board)
+            : `/api/v1/groups?boardId=${filters.board}`
+        ).catch(() => apiClient.get(apiEndpoints.groups.list, {
           params: { boardId: filters.board, isActive: true },
-        }).catch(() => apiClient.get(apiEndpoints.groups.getByBoard(filters.board)));
+        }));
 
         const rawGroups = unwrapRecords(groupsRes);
-        const listGroups = (rawGroups.length ? rawGroups : MOCK_GROUPS)
+        const listGroups = rawGroups
           .map((g) => ({
             id: normalizeId(g.groupId ?? g.id),
             name: g.groupName ? `${g.groupName}${g.groupCode ? ` (${g.groupCode})` : ""}` : g.name,
@@ -355,8 +379,8 @@ export default function MarksEntryPage() {
 
         if (isMounted) setGroups(listGroups);
       } catch (err) {
-        console.warn("Error fetching groups:", err);
-        if (isMounted) setGroups(MOCK_GROUPS.filter((g) => eq(g.boardId, filters.board)));
+        console.error("Error fetching groups:", err);
+        if (isMounted) setGroups([]);
       }
     };
 
@@ -390,9 +414,13 @@ export default function MarksEntryPage() {
       }
 
       try {
-        const res = await apiClient.get(apiEndpoints.programs.byGroup(filters.group));
+        const res = await apiClient.get(
+          apiEndpoints.programs?.byGroup
+            ? apiEndpoints.programs.byGroup(filters.group)
+            : apiEndpoints.groups.getPrograms(filters.group)
+        );
         const raw = unwrapRecords(res);
-        const list = (raw.length ? raw : MOCK_PROGRAMS)
+        const list = raw
           .map((p) => ({
             id: normalizeId(p.programId ?? p.id),
             name: p.programName ?? p.name,
@@ -403,8 +431,8 @@ export default function MarksEntryPage() {
 
         if (isMounted) setPrograms(list);
       } catch (err) {
-        console.warn("Error fetching programs:", err);
-        if (isMounted) setPrograms(MOCK_PROGRAMS.filter((p) => eq(p.groupId, filters.group)));
+        console.error("Error fetching programs:", err);
+        if (isMounted) setPrograms([]);
       }
     };
 
@@ -435,7 +463,7 @@ export default function MarksEntryPage() {
           },
         });
         const raw = unwrapRecords(res);
-        const list = (raw.length ? raw : MOCK_SECTIONS)
+        const list = raw
           .map((s) => ({
             id: normalizeId(s.sectionId ?? s.id),
             name: s.sectionName ?? s.name,
@@ -452,8 +480,8 @@ export default function MarksEntryPage() {
 
         if (isMounted) setSections(list);
       } catch (err) {
-        console.warn("Error fetching sections:", err);
-        if (isMounted) setSections(MOCK_SECTIONS);
+        console.error("Error fetching sections:", err);
+        if (isMounted) setSections([]);
       }
     };
 
@@ -492,7 +520,9 @@ export default function MarksEntryPage() {
     setProcessing("Loading...");
     try {
       // 5a. Fetch Students for the selected section
-      const studentsRes = await apiClient.get(apiEndpoints.students.getBySection(filters.section));
+      const studentsRes = await apiClient
+        .get(apiEndpoints.students.getBySection(filters.section))
+        .catch(() => apiClient.get(`/api/v1/students/section/${filters.section}`));
       const rawStudents = unwrapRecords(studentsRes);
       const studentList = (rawStudents.length ? rawStudents : [])
         .map((s) => ({
@@ -542,8 +572,9 @@ export default function MarksEntryPage() {
 
       // 5c. Fetch Existing Evaluations for this Section
       try {
+        const evalSearchUrl = apiEndpoints.evaluations?.search || "/api/v1/evaluations/search";
         const evalSearchRes = await apiClient.post(
-          "/api/v1/evaluations/search",
+          evalSearchUrl,
           {
             boardId: Number(filters.board),
             academicYearId: Number(filters.year),
@@ -629,12 +660,7 @@ export default function MarksEntryPage() {
         facultyId: s.invigilatorId || "",
       }));
     } else {
-      // Fallback subjects
-      configs = [
-        { id: `cfg-${examId}-8`, examinationId: examId, sectionId: applied.section, subjectId: "8", subjectName: "English", subjectCode: "ENG1", mode: "REGULAR", maxMarks: 100, passPercentage: 35, internalMax: 20, practicalMax: 0, theoryMax: 80 },
-        { id: `cfg-${examId}-11`, examinationId: examId, sectionId: applied.section, subjectId: "11", subjectName: "Mathematics 1A", subjectCode: "MATH1A", mode: "REGULAR", maxMarks: 100, passPercentage: 35, internalMax: 20, practicalMax: 0, theoryMax: 80 },
-        { id: `cfg-${examId}-12`, examinationId: examId, sectionId: applied.section, subjectId: "12", subjectName: "Mathematics 1B", subjectCode: "MATH1B", mode: "REGULAR", maxMarks: 100, passPercentage: 35, internalMax: 20, practicalMax: 0, theoryMax: 80 },
-      ];
+      configs = [];
     }
 
     setExamConfigs(configs);
@@ -665,8 +691,11 @@ export default function MarksEntryPage() {
 
       if (currentWs?.evaluationId) {
         try {
+          const evalStudentsUrl = apiEndpoints.evaluations?.students
+            ? apiEndpoints.evaluations.students(currentWs.evaluationId)
+            : `/api/v1/evaluations/${currentWs.evaluationId}/students`;
           const evalStudentsRes = await apiClient
-            .get(`/api/v1/evaluations/${currentWs.evaluationId}/students`)
+            .get(evalStudentsUrl)
             .catch(() => apiClient.get(`/api/v1/faculty/evaluations/${currentWs.evaluationId}/students`));
 
           const resData = evalStudentsRes.data || {};
@@ -931,7 +960,11 @@ export default function MarksEntryPage() {
         })),
       };
 
-      await apiClient.put(`/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => {
+      const saveMarksUrl = apiEndpoints.evaluations?.saveMarks
+        ? apiEndpoints.evaluations.saveMarks(workspace.evaluationId)
+        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`;
+
+      await apiClient.put(saveMarksUrl, payload).catch(() => {
         return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
       });
 
@@ -984,12 +1017,22 @@ export default function MarksEntryPage() {
         })),
       };
 
-      await apiClient.put(`/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`, marksPayload).catch(() => null);
+      const saveMarksUrl = apiEndpoints.evaluations?.saveMarks
+        ? apiEndpoints.evaluations.saveMarks(workspace.evaluationId)
+        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`;
+
+      await apiClient.put(saveMarksUrl, marksPayload).catch(() => {
+        return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, marksPayload).catch(() => null);
+      });
 
       // Transition to SUBMITTED
+      const submitUrl = apiEndpoints.evaluations?.submit
+        ? apiEndpoints.evaluations.submit(workspace.evaluationId)
+        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/submit`;
+
       await apiClient
-        .post(`/api/v1/faculty/evaluations/${workspace.evaluationId}/submit`)
-        .catch(() => apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, marksPayload).catch(() => null));
+        .post(submitUrl)
+        .catch(() => apiClient.put(saveMarksUrl, marksPayload).catch(() => null));
 
       setWorkspace(workspaceKey, (item) => {
         const next = {
@@ -1044,7 +1087,14 @@ export default function MarksEntryPage() {
           remarks: (row.remarks || "").trim(),
         })),
       };
-      await apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
+
+      const saveMarksUrl = apiEndpoints.evaluations?.saveMarks
+        ? apiEndpoints.evaluations.saveMarks(workspace.evaluationId)
+        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`;
+
+      await apiClient.put(saveMarksUrl, payload).catch(() => {
+        return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
+      });
 
       setWorkspace(workspaceKey, (item) => {
         const next = { ...item, status: "SUBMITTED", dirty: false, updatedAt: new Date().toISOString() };
@@ -1080,11 +1130,20 @@ export default function MarksEntryPage() {
     setProcessing(action);
     try {
       if (action === "VERIFY") {
-        await apiClient.post(`/api/v1/evaluations/${item.evaluationId}/verify`, null, { params: { message } }).catch(() => null);
+        const verifyUrl = apiEndpoints.evaluations?.verify
+          ? apiEndpoints.evaluations.verify(item.evaluationId)
+          : `/api/v1/evaluations/${item.evaluationId}/verify`;
+        await apiClient.post(verifyUrl, null, { params: { message } }).catch(() => null);
       } else if (action === "APPROVE") {
-        await apiClient.post(`/api/v1/evaluations/${item.evaluationId}/approve`).catch(() => null);
+        const approveUrl = apiEndpoints.evaluations?.approve
+          ? apiEndpoints.evaluations.approve(item.evaluationId)
+          : `/api/v1/evaluations/${item.evaluationId}/approve`;
+        await apiClient.post(approveUrl).catch(() => null);
       } else if (action === "REJECT") {
-        await apiClient.post(`/api/v1/evaluations/${item.evaluationId}/reject`, {
+        const rejectUrl = apiEndpoints.evaluations?.reject
+          ? apiEndpoints.evaluations.reject(item.evaluationId)
+          : `/api/v1/evaluations/${item.evaluationId}/reject`;
+        await apiClient.post(rejectUrl, {
           remarks: message.trim(),
           reason: message.trim(),
           message: message.trim(),
@@ -1125,7 +1184,8 @@ export default function MarksEntryPage() {
 
     try {
       if (to === "VERIFIED") {
-        await apiClient.post("/api/v1/evaluations/verify-all", {
+        const verifyAllUrl = apiEndpoints.evaluations?.verifyAll || "/api/v1/evaluations/verify-all";
+        await apiClient.post(verifyAllUrl, {
           boardId: Number(applied.board),
           academicYearId: Number(applied.year),
           academicLevelId: Number(applied.level),
@@ -1134,7 +1194,8 @@ export default function MarksEntryPage() {
           examinationId: Number(examId),
         }).catch(() => null);
       } else if (to === "APPROVED") {
-        await apiClient.post("/api/v1/evaluations/approve-all", {
+        const approveAllUrl = apiEndpoints.evaluations?.approveAll || "/api/v1/evaluations/approve-all";
+        await apiClient.post(approveAllUrl, {
           boardId: Number(applied.board),
           academicYearId: Number(applied.year),
           academicLevelId: Number(applied.level),
@@ -1167,7 +1228,8 @@ export default function MarksEntryPage() {
     let isMounted = true;
     const loadAnalysis = async () => {
       try {
-        const res = await apiClient.get("/api/v1/student-analysis", {
+        const analysisUrl = apiEndpoints.studentAnalysis?.getAll || "/api/v1/student-analysis";
+        const res = await apiClient.get(analysisUrl, {
           params: {
             boardId: applied.board,
             academicYearId: applied.year,
@@ -1258,7 +1320,10 @@ export default function MarksEntryPage() {
   // View Student Analysis Details from API
   const handleViewStudentDetails = async (student) => {
     try {
-      const res = await apiClient.get(`/api/v1/student-analysis/${student.studentId}/details`, {
+      const detailsUrl = apiEndpoints.studentAnalysis?.details
+        ? apiEndpoints.studentAnalysis.details(student.studentId)
+        : `/api/v1/student-analysis/${student.studentId}/details`;
+      const res = await apiClient.get(detailsUrl, {
         params: {
           examinationId: examId,
           academicYearId: applied.year,

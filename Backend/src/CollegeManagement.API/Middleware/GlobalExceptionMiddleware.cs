@@ -47,6 +47,10 @@ namespace CollegeManagement.API.Middleware
         {
             ValidationException => (HttpStatusCode.BadRequest, exception.Message),
 
+            InvalidOperationException => (HttpStatusCode.BadRequest, exception.Message),
+
+            ArgumentException => (HttpStatusCode.BadRequest, exception.Message),
+
             NotFoundException => (HttpStatusCode.NotFound, exception.Message),
 
             ConflictException => (HttpStatusCode.Conflict, exception.Message),
@@ -55,15 +59,20 @@ namespace CollegeManagement.API.Middleware
 
             ForbiddenException => (HttpStatusCode.Forbidden, exception.Message),
 
-            _ => (HttpStatusCode.InternalServerError, exception.Message)
+            _ => (HttpStatusCode.InternalServerError, "An unexpected server error occurred.")   
         };
 
-            context.Response.StatusCode = (int)statusCode;
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = (int)statusCode;
+            }
 
             var response = new
             {
                 statusCode = context.Response.StatusCode,
                 message = message,
+                details = exception.Message,
+                stackTrace = exception.StackTrace,
                 path = context.Request.Path.Value,
                 timestamp = DateTime.UtcNow
             };

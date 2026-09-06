@@ -1,8 +1,9 @@
-﻿using CollegeManagement.API.DTOs.Authentication;
+using CollegeManagement.API.DTOs.Authentication;
 using CollegeManagement.API.DTOs.AcademicYear;
 using CollegeManagement.API.Interfaces;
 using CollegeManagement.API.Services.Interfaces;
 using CollegeManagement.API.Services.Implementations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CollegeManagement.API.Controllers
@@ -10,6 +11,7 @@ namespace CollegeManagement.API.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Produces("application/json")]
+    [Authorize]
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
@@ -26,6 +28,7 @@ namespace CollegeManagement.API.Controllers
         /// that the user belongs to the requested Role (e.g., Super Admin, Admin, Teacher, Student).
         /// </summary>
         [HttpPost("login")]
+        [AllowAnonymous]
         public async Task<IActionResult> Login(LoginRequest request)
         {
             var result = await _authService.LoginAsync(request);
@@ -53,6 +56,7 @@ namespace CollegeManagement.API.Controllers
         /// Registers a new user.
         /// </summary>
         [HttpPost("register")]
+        [AllowAnonymous]
         public async Task<IActionResult> Register(RegisterRequest request)
         {
             var result = await _authService.RegisterAsync(request);
@@ -75,8 +79,11 @@ namespace CollegeManagement.API.Controllers
             });
         }
 
-        // Forgot Password API
+        /// <summary>
+        /// Initiates the forgot password process. Validates the email/mobile and sends a password reset OTP.
+        /// </summary>
         [HttpPost("forgot-password")]
+        [AllowAnonymous]
         public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request)
         {
             var result = await _authService.ForgotPasswordAsync(request);
@@ -117,8 +124,11 @@ namespace CollegeManagement.API.Controllers
             });
         }
 
-        // Verify OTP API
+        /// <summary>
+        /// Verifies the OTP sent for password reset validation.
+        /// </summary>
         [HttpPost("verify-otp")]
+        [AllowAnonymous]
         public async Task<IActionResult> VerifyOtp(VerifyOtpRequest request)
         {
             var result = await _authService.VerifyOtpAsync(request);
@@ -138,8 +148,11 @@ namespace CollegeManagement.API.Controllers
             });
         }
 
-        // Reset Password API
+        /// <summary>
+        /// Resets the user's password using the validated OTP and new password details.
+        /// </summary>
         [HttpPost("reset-password")]
+        [AllowAnonymous]
         public async Task<IActionResult> ResetPassword(ResetPasswordRequest request)
         {
             var result = await _authService.ResetPasswordAsync(request);

@@ -91,7 +91,7 @@ namespace CollegeManagement.API.Services.Implementations
 
             // 2. Map & Hash Password
             var faculty = _mapper.Map<Faculty>(dto);
-            faculty.Password = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+            // faculty.Password = BCrypt.Net.BCrypt.HashPassword(dto.Password);
 
             // 3. Persist Entity
             var createdFaculty = await _facultyRepository.AddAsync(faculty);
@@ -230,12 +230,12 @@ namespace CollegeManagement.API.Services.Implementations
             var allocation = new FacultySubjectAllocation
             {
                 FacultyId = dto.FacultyId,
-                Board = dto.Board,
-                AcademicYear = dto.AcademicYear,
-                Group = dto.Group,
-                AcademicLevel = dto.AcademicLevel,
-                Section = dto.Section,
-                Subject = dto.Subject
+                // Board = dto.Board,
+                // AcademicYear = dto.AcademicYear,
+                // Group = dto.Group,
+                // AcademicLevel = dto.AcademicLevel,
+                // Section = dto.Section,
+                // Subject = dto.Subject
             };
 
             var createdAllocation = await _allocationRepository.AddAsync(allocation);
@@ -254,12 +254,12 @@ namespace CollegeManagement.API.Services.Implementations
             if (await _allocationRepository.ExistsAllocationAsync(existingAllocation.FacultyId, dto.Board, dto.AcademicYear, dto.Group, dto.AcademicLevel, dto.Section, dto.Subject, id))
                 throw new ConflictException($"Subject '{dto.Subject}' is already allocated for Section '{dto.Section}' in Group '{dto.Group}'.");
 
-            existingAllocation.Board = dto.Board;
-            existingAllocation.AcademicYear = dto.AcademicYear;
-            existingAllocation.Group = dto.Group;
-            existingAllocation.AcademicLevel = dto.AcademicLevel;
-            existingAllocation.Section = dto.Section;
-            existingAllocation.Subject = dto.Subject;
+            // existingAllocation.Board = dto.Board;
+            // existingAllocation.AcademicYear = dto.AcademicYear;
+            // existingAllocation.Group = dto.Group;
+            // existingAllocation.AcademicLevel = dto.AcademicLevel;
+            // existingAllocation.Section = dto.Section;
+            // existingAllocation.Subject = dto.Subject;
 
             await _allocationRepository.UpdateAsync(existingAllocation);
 
@@ -286,8 +286,8 @@ namespace CollegeManagement.API.Services.Implementations
             var allocations = await _allocationRepository.GetByFacultyIdAsync(facultyId);
             var allocationDtos = _mapper.Map<List<FacultySubjectAllocationResponseDto>>(allocations);
 
-            int totalAssignedSubjects = allocations.Select(a => a.Subject).Distinct(StringComparer.OrdinalIgnoreCase).Count();
-            int totalSections = allocations.Select(a => $"{a.Group}_{a.AcademicLevel}_{a.Section}").Distinct(StringComparer.OrdinalIgnoreCase).Count();
+            int totalAssignedSubjects = 0; // allocations.Select(a => a.SubjectId).Distinct().Count();
+            int totalSections = 0;
             int weeklyClasses = allocations.Count * StandardWeeklyClassesPerSubject;
             decimal totalWorkloadHours = weeklyClasses * HoursPerClassPeriod;
 

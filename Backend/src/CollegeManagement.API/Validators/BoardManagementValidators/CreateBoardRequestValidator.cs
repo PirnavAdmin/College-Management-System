@@ -26,7 +26,7 @@ namespace CollegeManagement.API.Validators.BoardManagementValidators
                 .Matches(@"^[A-Za-z0-9_-]+$").WithMessage("Board code can only contain letters, numbers, hyphens, and underscores.");
 
             RuleFor(x => x.BoardType)
-                .NotEmpty().WithMessage("Board type is required.")
+                .NotEmpty().WithMessage("Board type is required.").Must(x => !string.IsNullOrWhiteSpace(x)).WithMessage("Board type cannot be empty.")
                 .MaximumLength(50).WithMessage("Board type cannot exceed 50 characters.");
 
             RuleFor(x => x.Description)
@@ -39,17 +39,11 @@ namespace CollegeManagement.API.Validators.BoardManagementValidators
                 .GreaterThan(0).WithMessage("State ID must be greater than 0.")
                 .When(x => x.StateId.HasValue);
 
-            RuleFor(x => x.AcademicPatternId)
-                .GreaterThan(0).WithMessage("Academic pattern ID must be greater than 0.");
-
             RuleFor(x => x.AcademicLevelIds)
                 .NotEmpty()
                 .WithMessage("At least one Academic Level is required.")
                 .Must(ids => ids.Distinct().Count() == ids.Count)
                 .WithMessage("Academic Level IDs must not contain duplicate values.");
-
-            RuleFor(x => x.PassPercentage)
-                .InclusiveBetween(0m, 100m).WithMessage("Pass percentage must be between 0 and 100.");
 
             RuleFor(x => x.GradingSystemId)
                 .GreaterThan(0).WithMessage("Grading system ID must be greater than 0.");

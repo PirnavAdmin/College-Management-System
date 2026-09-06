@@ -5,15 +5,16 @@ using System.Linq;
 using System.Threading.Tasks;
 using CollegeManagement.API.Data;
 using CollegeManagement.API.DTOs.Board.Requests;
+using CollegeManagement.API.DTOs.Board.Responses;
 using CollegeManagement.API.Models;
 using CollegeManagement.API.Repositories.Interfaces;
-using Dapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CollegeManagement.API.Repositories.Implementations
 {
     /// <summary>
-    /// Repository implementation for Board database operations using Dapper and MySQL Stored Procedures.
+    /// Repository implementation for Board database operations using Entity Framework Core.
     /// </summary>
     public class BoardRepository : IBoardRepository
     {
@@ -28,408 +29,370 @@ namespace CollegeManagement.API.Repositories.Implementations
             _context = context;
         }
 
-        private IDbConnection Connection => _context.Database.GetDbConnection();
-
         /// <summary>
-        /// Creates a new Board in the database using sp_CreateBoard.
+        /// Starts a database transaction.
         /// </summary>
-        public async Task<Board> CreateBoardAsync(Board board)
+        public async Task<IDbTransaction> BeginTransactionAsync()
         {
-            using var multi = await Connection.QueryMultipleAsync(
-                "sp_CreateBoard",
-                new
-                {
-                    p_BoardName = board.BoardName,
-                    p_BoardCode = board.BoardCode,
-                    p_Description = board.Description,
-                    p_CountryId = board.CountryId,
-                    p_StateId = board.StateId,
-                    p_AcademicPatternId = board.AcademicPatternId,
-                    p_GradingSystemId = board.GradingSystemId,
-                    p_InternalAssessment = board.InternalAssessment,
-                    p_PracticalExams = board.PracticalExams,
-                    p_BoardExams = board.BoardExams,
-                    p_PassPercentage = board.PassPercentage,
-                    p_RankCalculation = board.RankCalculation,
-                    p_IsActive = board.IsActive
-                },
-                commandType: CommandType.StoredProcedure);
-
-            var created = multi.Read<Board, Country, State, AcademicPattern, GradingSystem, Board>(
-                (b, c, s, ap, gs) =>
-                {
-                    b.Country = c;
-                    b.State = s;
-                    b.AcademicPattern = ap;
-                    b.GradingSystem = gs;
-                    return b;
-                },
-                splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId"
-            ).FirstOrDefault();
-            multi.Dispose();
-
-            if (created == null)
-            {
-                throw new InvalidOperationException("Failed to create board.");
-            }
-
-            await Connection.ExecuteAsync(
-                "UPDATE Boards SET BoardType = @BoardType WHERE BoardId = @BoardId",
-                new { board.BoardType, created.BoardId });
-            created.BoardType = board.BoardType;
-
-            return created;
+            var efTransaction = await _context.Database.BeginTransactionAsync();
+            return efTransaction.GetDbTransaction();
         }
 
         /// <summary>
-        /// Updates an existing Board in the database using sp_UpdateBoard.
+        /// Creates a new Board in the database.
         /// </summary>
-        public async Task<Board?> UpdateBoardAsync(Board board)
+        public async Task<Board> CreateBoardAsync(Board board, IDbTransaction? transaction = null)
         {
-            using var multi = await Connection.QueryMultipleAsync(
-                "sp_UpdateBoard",
-                new
-                {
-                    p_BoardId = board.BoardId,
-                    p_BoardName = board.BoardName,
-                    p_BoardCode = board.BoardCode,
-                    p_Description = board.Description,
-                    p_CountryId = board.CountryId,
-                    p_StateId = board.StateId,
-                    p_AcademicPatternId = board.AcademicPatternId,
-                    p_GradingSystemId = board.GradingSystemId,
-                    p_InternalAssessment = board.InternalAssessment,
-                    p_PracticalExams = board.PracticalExams,
-                    p_BoardExams = board.BoardExams,
-                    p_PassPercentage = board.PassPercentage,
-                    p_RankCalculation = board.RankCalculation,
-                    p_IsActive = board.IsActive
-                },
-                commandType: CommandType.StoredProcedure);
-
-            var updated = multi.Read<Board, Country, State, AcademicPattern, GradingSystem, Board>(
-                (b, c, s, ap, gs) =>
-                {
-                    b.Country = c;
-                    b.State = s;
-                    b.AcademicPattern = ap;
-                    b.GradingSystem = gs;
-                    return b;
-                },
-                splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId"
-            ).FirstOrDefault();
-            multi.Dispose();
-
-            if (updated != null)
-            {
-                await Connection.ExecuteAsync(
-                    "UPDATE Boards SET BoardType = @BoardType WHERE BoardId = @BoardId",
-                    new { board.BoardType, board.BoardId });
-                updated.BoardType = board.BoardType;
-            }
-
-            return updated;
-        }
-
-        /// <summary>
-        /// Soft deletes a Board using sp_DeleteBoard.
-        /// </summary>
-        public async Task<bool> DeleteBoardAsync(int boardId)
-        {
-            var affected = await Connection.ExecuteScalarAsync<int>(
-                "sp_DeleteBoard",
-                new { p_BoardId = boardId },
-                commandType: CommandType.StoredProcedure);
-
-            return affected > 0;
-        }
-
-        /// <summary>
-        /// Retrieves a Board by ID, mapping relationships from multi-result set using sp_GetBoardById.
-        /// </summary>
-        public async Task<Board?> GetBoardByIdAsync(int boardId)
-        {
-            using var multi = await Connection.QueryMultipleAsync(
-                "sp_GetBoardById",
-                new { p_BoardId = boardId },
-                commandType: CommandType.StoredProcedure);
-
-            var board = multi.Read<Board, Country, State, AcademicPattern, GradingSystem, Board>(
-                (b, c, s, ap, gs) =>
-                {
-                    b.Country = c;
-                    b.State = s;
-                    b.AcademicPattern = ap;
-                    b.GradingSystem = gs;
-                    return b;
-                },
-                splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId"
-            ).FirstOrDefault();
-
-            if (board != null)
-            {
-                var academicLevels = multi.Read<BoardAcademicLevel, AcademicLevel, BoardAcademicLevel>(
-                    (bal, al) =>
-                    {
-                        bal.AcademicLevel = al;
-                        bal.Board = board;
-                        return bal;
-                    },
-                    splitOn: "AcademicLevelId"
-                ).ToList();
-
-                board.BoardAcademicLevels = academicLevels;
-                multi.Dispose();
-                board.BoardType = await Connection.QuerySingleOrDefaultAsync<string>(
-                    "SELECT BoardType FROM Boards WHERE BoardId = @BoardId",
-                    new { boardId }) ?? string.Empty;
-            }
-
+            await _context.Boards.AddAsync(board);
+            await _context.SaveChangesAsync();
             return board;
         }
 
         /// <summary>
-        /// Retrieves filtered list of Boards using sp_GetBoards.
+        /// Updates an existing Board in the database with optimistic concurrency.
         /// </summary>
-        public async Task<List<Board>> GetBoardsAsync(BoardSearchRequest request)
+        public async Task<(Board? Board, int AffectedRows)> UpdateBoardAsync(Board board, uint expectedVersion, IDbTransaction? transaction = null)
         {
-            var result = await Connection.QueryAsync<Board, Country, State, AcademicPattern, GradingSystem, Board>(
-                "sp_GetBoards",
-                (b, c, s, ap, gs) =>
-                {
-                    b.Country = c;
-                    b.State = s;
-                    b.AcademicPattern = ap;
-                    b.GradingSystem = gs;
-                    return b;
-                },
-                new
-                {
-                    p_BoardName = string.IsNullOrWhiteSpace(request.BoardName) ? null : request.BoardName.Trim(),
-                    p_BoardCode = string.IsNullOrWhiteSpace(request.BoardCode) ? null : request.BoardCode.Trim(),
-                    p_CountryId = request.CountryId,
-                    p_StateId = request.StateId,
-                    p_Status = request.Status
-                },
-                splitOn: "CountryId,StateId,AcademicPatternId,GradingSystemId",
-                commandType: CommandType.StoredProcedure);
-
-            var boards = result.ToList();
-            foreach (var board in boards)
+            var existing = await _context.Boards.FirstOrDefaultAsync(b => b.BoardId == board.BoardId);
+            if (existing == null)
             {
-                board.BoardType = await Connection.QuerySingleOrDefaultAsync<string>(
-                    "SELECT BoardType FROM Boards WHERE BoardId = @BoardId",
-                    new { board.BoardId }) ?? string.Empty;
+                return (null, 0);
             }
 
-            return boards;
+            existing.BoardCode = board.BoardCode;
+            existing.BoardName = board.BoardName;
+            existing.BoardType = board.BoardType;
+            existing.Description = board.Description;
+            existing.CountryId = board.CountryId;
+            existing.StateId = board.StateId;
+            existing.GradingSystemId = board.GradingSystemId;
+            existing.IsActive = board.IsActive;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return (existing, 1);
         }
 
         /// <summary>
-        /// Changes status of a Board using sp_ChangeBoardStatus.
+        /// Performs soft delete of a Board using optimistic concurrency.
         /// </summary>
-        public async Task<bool> ChangeBoardStatusAsync(int boardId, bool status)
+        public async Task<int> DeleteBoardAsync(int boardId, uint expectedVersion, IDbTransaction? transaction = null)
         {
-            var affected = await Connection.ExecuteScalarAsync<int>(
-                "sp_ChangeBoardStatus",
-                new { p_BoardId = boardId, p_Status = status },
-                commandType: CommandType.StoredProcedure);
+            var existing = await _context.Boards.FirstOrDefaultAsync(b => b.BoardId == boardId);
+            if (existing == null)
+            {
+                return 0;
+            }
 
-            return affected > 0;
+            existing.IsActive = false;
+            existing.UpdatedAt = DateTime.UtcNow;
+            return await _context.SaveChangesAsync();
         }
 
         /// <summary>
-        /// Checks duplicate board code using sp_ValidateBoardCode.
+        /// Retrieves a Board by ID including relations.
+        /// </summary>
+        public async Task<Board?> GetBoardByIdAsync(int boardId, IDbTransaction? transaction = null)
+        {
+            return await _context.Boards
+                .Include(b => b.Country)
+                .Include(b => b.State)
+                .Include(b => b.GradingSystem)
+                .Include(b => b.BoardAcademicLevels)
+                    .ThenInclude(bal => bal.AcademicLevel)
+                .FirstOrDefaultAsync(b => b.BoardId == boardId);
+        }
+
+        /// <summary>
+        /// Retrieves filtered list of Boards with pagination, searching, and sorting.
+        /// </summary>
+        public async Task<(List<Board> Items, int TotalCount)> GetBoardsAsync(BoardSearchRequest request)
+        {
+            var query = _context.Boards
+                .Include(x => x.Country)
+                .Include(x => x.State)
+                .Include(x => x.GradingSystem)
+                .Include(x => x.BoardAcademicLevels)
+                    .ThenInclude(bal => bal.AcademicLevel)
+                .AsNoTracking()
+                .AsQueryable();
+
+            if (request.Status.HasValue)
+            {
+                query = query.Where(x => x.IsActive == request.Status.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Search))
+            {
+                var term = request.Search.Trim().ToLower();
+                query = query.Where(x =>
+                    x.BoardName.ToLower().Contains(term) ||
+                    x.BoardCode.ToLower().Contains(term) ||
+                    x.BoardType.ToLower().Contains(term) ||
+                    (x.State != null && x.State.StateName.ToLower().Contains(term)) ||
+                    (x.Description != null && x.Description.ToLower().Contains(term)) ||
+                    x.BoardAcademicLevels.Any(bal => bal.AcademicLevel != null && bal.AcademicLevel.LevelName.ToLower().Contains(term)));
+            }
+
+            int totalCount = await query.CountAsync();
+
+            int pageNumber = request.PageNumber <= 0 ? 1 : request.PageNumber;
+            int pageSize = request.PageSize <= 0 ? 10 : request.PageSize;
+            int skip = (pageNumber - 1) * pageSize;
+
+            var items = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (items, totalCount);
+        }
+
+        /// <summary>
+        /// Changes status of a Board.
+        /// </summary>
+        public async Task<int> ChangeBoardStatusAsync(int boardId, uint expectedVersion, bool status, IDbTransaction? transaction = null)
+        {
+            var board = await _context.Boards.FirstOrDefaultAsync(b => b.BoardId == boardId);
+            if (board == null) return 0;
+
+            board.IsActive = status;
+            board.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            return 1;
+        }
+
+        /// <summary>
+        /// Checks duplicate board code.
         /// </summary>
         public async Task<bool> IsBoardCodeExistsAsync(string boardCode, int? boardId = null)
         {
-            var exists = await Connection.ExecuteScalarAsync<int>(
-                "sp_ValidateBoardCode",
-                new { p_BoardCode = boardCode, p_ExcludeBoardId = boardId },
-                commandType: CommandType.StoredProcedure);
-
-            return exists > 0;
+            var code = boardCode.Trim().ToLower();
+            return await _context.Boards
+                .AsNoTracking()
+                .AnyAsync(b => b.BoardCode.ToLower() == code && (!boardId.HasValue || b.BoardId != boardId.Value));
         }
 
         /// <summary>
-        /// Retrieves active countries using sp_GetCountries.
+        /// Retrieves active countries.
         /// </summary>
         public async Task<List<Country>> GetCountriesAsync()
         {
-            var result = await Connection.QueryAsync<Country>(
-                "sp_GetCountries",
-                commandType: CommandType.StoredProcedure);
-
-            return result.ToList();
+            return await _context.Countries
+                .AsNoTracking()
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.CountryName)
+                .ToListAsync();
         }
 
         /// <summary>
-        /// Retrieves active states for a country using sp_GetStatesByCountry.
+        /// Retrieves active states for a country.
         /// </summary>
         public async Task<List<State>> GetStatesByCountryAsync(int countryId)
         {
-            var result = await Connection.QueryAsync<State>(
-                "sp_GetStatesByCountry",
-                new { p_CountryId = countryId },
-                commandType: CommandType.StoredProcedure);
-
-            return result.ToList();
-        }
-
-        /// <summary>
-        /// Retrieves active academic patterns using sp_GetAcademicPatterns.
-        /// </summary>
-        public async Task<List<AcademicPattern>> GetAcademicPatternsAsync()
-        {
-            var result = await Connection.QueryAsync<AcademicPattern>(
-                "sp_GetAcademicPatterns",
-                commandType: CommandType.StoredProcedure);
-
-            return result.ToList();
-        }
-
-        /// <summary>
-        /// Retrieves active academic levels using sp_GetAcademicLevels.
-        /// </summary>
-        public async Task<List<AcademicLevel>> GetAcademicLevelsAsync()
-        {
-            var result = await Connection.QueryAsync<AcademicLevel>(
-                "sp_GetAcademicLevels",
-                commandType: CommandType.StoredProcedure);
-
-            return result.ToList();
-        }
-
-        /// <summary>
-        /// Retrieves active grading systems using sp_GetGradingSystems.
-        /// </summary>
-        public async Task<List<GradingSystem>> GetGradingSystemsAsync()
-        {
-            var result = await Connection.QueryAsync<GradingSystem>(
-                "sp_GetGradingSystems",
-                commandType: CommandType.StoredProcedure);
-
-            return result.ToList();
-        }
-
-        /// <summary>
-        /// Replaces academic levels mapping for a board using sp_ReplaceBoardAcademicLevels.
-        /// </summary>
-        public async Task ReplaceAcademicLevelsAsync(int boardId, List<int> academicLevelIds)
-        {
-            var idsString = academicLevelIds != null && academicLevelIds.Any()
-                ? string.Join(",", academicLevelIds.Distinct())
-                : null;
-
-            await Connection.ExecuteAsync(
-                "sp_ReplaceBoardAcademicLevels",
-                new { p_BoardId = boardId, p_AcademicLevelIds = idsString },
-                commandType: CommandType.StoredProcedure);
-        }
-
-        /// <summary>
-        /// Checks if an academic level exists using sp_AcademicLevelExists.
-        /// </summary>
-        public async Task<bool> AcademicLevelExistsAsync(int academicLevelId)
-        {
-            var exists = await Connection.ExecuteScalarAsync<int>(
-                "sp_AcademicLevelExists",
-                new { p_AcademicLevelId = academicLevelId },
-                commandType: CommandType.StoredProcedure);
-
-            return exists > 0;
-        }
-
-        /// <summary>
-        /// Checks if a country exists using sp_CountryExists.
-        /// </summary>
-        public async Task<bool> CountryExistsAsync(int countryId)
-        {
-            var exists = await Connection.ExecuteScalarAsync<int>(
-                "sp_CountryExists",
-                new { p_CountryId = countryId },
-                commandType: CommandType.StoredProcedure);
-
-            return exists > 0;
-        }
-
-        /// <summary>
-        /// Checks if a state exists using sp_StateExists.
-        /// </summary>
-        public async Task<bool> StateExistsAsync(int stateId)
-        {
-            var exists = await Connection.ExecuteScalarAsync<int>(
-                "sp_StateExists",
-                new { p_StateId = stateId },
-                commandType: CommandType.StoredProcedure);
-
-            return exists > 0;
-        }
-
-        /// <summary>
-        /// Checks if an academic pattern exists using sp_AcademicPatternExists.
-        /// </summary>
-        public async Task<bool> AcademicPatternExistsAsync(int academicPatternId)
-        {
-            var exists = await Connection.ExecuteScalarAsync<int>(
-                "sp_AcademicPatternExists",
-                new { p_AcademicPatternId = academicPatternId },
-                commandType: CommandType.StoredProcedure);
-
-            return exists > 0;
-        }
-
-        /// <summary>
-        /// Checks if a grading system exists using sp_GradingSystemExists.
-        /// </summary>
-        public async Task<bool> GradingSystemExistsAsync(int gradingSystemId)
-        {
-            var exists = await Connection.ExecuteScalarAsync<int>(
-                "sp_GradingSystemExists",
-                new { p_GradingSystemId = gradingSystemId },
-                commandType: CommandType.StoredProcedure);
-
-            return exists > 0;
-        }
-
-        /// <summary>
-        /// Checks if a state belongs to a country using sp_StateBelongsToCountry.
-        /// </summary>
-        public async Task<bool> StateBelongsToCountryAsync(int stateId, int countryId)
-        {
-            var belongs = await Connection.ExecuteScalarAsync<int>(
-                "sp_StateBelongsToCountry",
-                new { p_StateId = stateId, p_CountryId = countryId },
-                commandType: CommandType.StoredProcedure);
-
-            return belongs > 0;
-        }
-
-        /// <summary>
-        /// Checks if all academic levels exist using sp_AcademicLevelExists.
-        /// </summary>
-        public async Task<bool> AcademicLevelsExistAsync(IEnumerable<int> academicLevelIds)
-        {
-            var ids = academicLevelIds.Distinct().ToList();
-            if (!ids.Any())
+            var query = _context.States.AsNoTracking().Where(x => x.IsActive);
+            if (countryId > 0)
             {
-                return true;
+                query = query.Where(x => x.CountryId == countryId);
             }
 
-            foreach (var id in ids)
-            {
-                var exists = await Connection.ExecuteScalarAsync<int>(
-                    "sp_AcademicLevelExists",
-                    new { p_AcademicLevelId = id },
-                    commandType: CommandType.StoredProcedure);
+            var states = await query
+                .OrderBy(x => x.DisplayOrder)
+                .ThenBy(x => x.StateName)
+                .ToListAsync();
 
-                if (exists == 0)
+            return states
+                .GroupBy(x => x.StateName.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+        }
+
+        /// <summary>
+        /// Retrieves active academic levels with zero duplicates guaranteed, optionally filtered by boardId.
+        /// </summary>
+        public async Task<List<AcademicLevel>> GetAcademicLevelsAsync(int? boardId = null)
+        {
+            var query = _context.AcademicLevels
+                .AsNoTracking()
+                .Where(x => x.IsActive);
+
+            if (boardId.HasValue && boardId.Value > 0)
+            {
+                var mappedLevelIds = await _context.BoardAcademicLevels
+                    .Where(b => b.BoardId == boardId.Value)
+                    .Select(b => b.AcademicLevelId)
+                    .ToListAsync();
+
+                if (mappedLevelIds.Any())
                 {
-                    return false;
+                    query = query.Where(x => mappedLevelIds.Contains(x.AcademicLevelId));
                 }
             }
 
-            return true;
+            var levels = await query
+                .OrderBy(x => x.DisplayOrder)
+                .ThenBy(x => x.LevelName)
+                .ToListAsync();
+
+            return levels
+                .GroupBy(x => x.LevelName.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+        }
+
+        /// <summary>
+        /// Retrieves active grading systems.
+        /// </summary>
+        public async Task<List<GradingSystem>> GetGradingSystemsAsync()
+        {
+            return await _context.GradingSystems
+                .AsNoTracking()
+                .Where(x => x.IsActive)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Replaces academic levels mapping for a board.
+        /// </summary>
+        public async Task ReplaceAcademicLevelsAsync(int boardId, List<int> academicLevelIds, IDbTransaction? transaction = null)
+        {
+            var existingMappings = await _context.BoardAcademicLevels
+                .Where(x => x.BoardId == boardId)
+                .ToListAsync();
+
+            _context.BoardAcademicLevels.RemoveRange(existingMappings);
+
+            if (academicLevelIds != null && academicLevelIds.Any())
+            {
+                var newMappings = academicLevelIds.Select(levelId => new BoardAcademicLevel
+                {
+                    BoardId = boardId,
+                    AcademicLevelId = levelId,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                await _context.BoardAcademicLevels.AddRangeAsync(newMappings);
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Checks if an academic level exists.
+        /// </summary>
+        public async Task<bool> AcademicLevelExistsAsync(int academicLevelId)
+        {
+            return await _context.AcademicLevels.AsNoTracking().AnyAsync(x => x.AcademicLevelId == academicLevelId && x.IsActive);
+        }
+
+        /// <summary>
+        /// Checks if a country exists.
+        /// </summary>
+        public async Task<bool> CountryExistsAsync(int countryId)
+        {
+            return await _context.Countries.AsNoTracking().AnyAsync(x => x.CountryId == countryId && x.IsActive);
+        }
+
+        /// <summary>
+        /// Checks if a state exists.
+        /// </summary>
+        public async Task<bool> StateExistsAsync(int stateId)
+        {
+            return await _context.States.AsNoTracking().AnyAsync(x => x.StateId == stateId && x.IsActive);
+        }
+
+        /// <summary>
+        /// Checks if a grading system exists.
+        /// </summary>
+        public async Task<bool> GradingSystemExistsAsync(int gradingSystemId)
+        {
+            return await _context.GradingSystems.AsNoTracking().AnyAsync(x => x.GradingSystemId == gradingSystemId && x.IsActive);
+        }
+
+        /// <summary>
+        /// Checks if a state belongs to a country.
+        /// </summary>
+        public async Task<bool> StateBelongsToCountryAsync(int stateId, int countryId)
+        {
+            return await _context.States.AsNoTracking().AnyAsync(x => x.StateId == stateId && x.CountryId == countryId && x.IsActive);
+        }
+
+        /// <summary>
+        /// Checks if all academic levels exist.
+        /// </summary>
+        public async Task<bool> AcademicLevelsExistAsync(IEnumerable<int> academicLevelIds)
+        {
+            if (academicLevelIds == null || !academicLevelIds.Any()) return true;
+            var ids = academicLevelIds.Distinct().ToList();
+            var count = await _context.AcademicLevels.AsNoTracking().CountAsync(x => ids.Contains(x.AcademicLevelId) && x.IsActive);
+            return count == ids.Count;
+        }
+
+        /// <inheritdoc />
+        public async Task<BoardSummaryResponse> GetDashboardSummaryAsync()
+        {
+            var total = await _context.Boards.CountAsync();
+            var active = await _context.Boards.CountAsync(x => x.IsActive);
+            var inactive = await _context.Boards.CountAsync(x => !x.IsActive);
+
+            var recentlyCreatedBoards = await _context.Boards
+                .Include(b => b.Country)
+                .OrderByDescending(b => b.CreatedAt)
+                .Take(5)
+                .Select(b => new BoardRecentActivityDto
+                {
+                    BoardId = b.BoardId,
+                    BoardCode = b.BoardCode,
+                    BoardName = b.BoardName,
+                    CountryName = b.Country != null ? b.Country.CountryName : string.Empty,
+                    Status = b.IsActive,
+                    CreatedAt = b.CreatedAt,
+                    UpdatedAt = b.UpdatedAt
+                })
+                .ToListAsync();
+
+            return new BoardSummaryResponse
+            {
+                TotalBoards = total,
+                ActiveBoards = active,
+                InactiveBoards = inactive,
+                RecentlyCreated = recentlyCreatedBoards,
+                RecentlyUpdated = new List<BoardRecentActivityDto>()
+            };
+        }
+
+        /// <inheritdoc />
+        public async Task<List<Board>> GetBoardsForExportAsync(BoardExportRequest request)
+        {
+            var query = _context.Boards
+                .Include(x => x.Country)
+                .Include(x => x.State)
+                .Include(x => x.GradingSystem)
+                .Include(x => x.BoardAcademicLevels)
+                    .ThenInclude(bal => bal.AcademicLevel)
+                .AsNoTracking()
+                .AsQueryable();
+
+            if (request.Status.HasValue)
+            {
+                query = query.Where(x => x.IsActive == request.Status.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(request.Search))
+            {
+                var term = request.Search.Trim().ToLower();
+                query = query.Where(x =>
+                    x.BoardName.ToLower().Contains(term) ||
+                    x.BoardCode.ToLower().Contains(term) ||
+                    x.BoardType.ToLower().Contains(term) ||
+                    (x.State != null && x.State.StateName.ToLower().Contains(term)) ||
+                    (x.Description != null && x.Description.ToLower().Contains(term)) ||
+                    x.BoardAcademicLevels.Any(bal => bal.AcademicLevel != null && bal.AcademicLevel.LevelName.ToLower().Contains(term)));
+            }
+
+            return await query.OrderBy(x => x.BoardName).ToListAsync();
         }
     }
 }

@@ -171,9 +171,17 @@
   font-size: 12px;
 }
 
+.cms-modal.reports-preview-modal {
+  width: min(1320px, calc(96vw - 24px));
+  max-width: 96vw;
+  height: min(88vh, 850px);
+  max-height: calc(96vh - 24px);
+}
+
 .reports-pdf-preview {
-  height: min(68vh, 720px);
-  min-height: 420px;
+  flex: 1;
+  height: 100%;
+  min-height: 520px;
   overflow: hidden;
   border: 1px solid var(--cms-border);
   border-radius: 12px;
@@ -188,14 +196,18 @@
 }
 
 .reports-excel-preview {
-  max-height: min(68vh, 720px);
+  flex: 1;
+  height: 100%;
+  max-height: calc(88vh - 140px);
+  min-height: 480px;
   overflow: auto;
   border: 1px solid var(--cms-border);
   border-radius: 12px;
 }
 
 .reports-excel-preview .reports-top-students {
-  min-width: 520px;
+  min-width: 100%;
+  width: 100%;
 }
 
 .reports-excel-preview td:last-child {

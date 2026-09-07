@@ -201,6 +201,14 @@ export const apiEndpoints = {
   },
   departments: {
     getAll: "/api/v1/departments",
+    create: "/api/v1/departments",
+  },
+  designations: {
+    getAll: "/api/v1/designations",
+    create: "/api/v1/designations",
+    getById: (id) => `/api/v1/designations/${id}`,
+    update: (id) => `/api/v1/designations/${id}`,
+    delete: (id) => `/api/v1/designations/${id}`,
   },
   sections: {
     getAll: "/api/v1/Sections",

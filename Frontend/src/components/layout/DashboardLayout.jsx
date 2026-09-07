@@ -35,7 +35,6 @@ export const menu = [
   {
     section: "Academics",
     items: [
-      { to: "/dashboard/board-academic-year", label: "Board & Academic Year Management", icon: boardAcademicYearIcon },
       { to: "/dashboard/courses", label: "Group Management", icon: groupsIcon },
       { to: "/dashboard/subjects", label: "Subject Management", icon: subjectsIcon },
       { to: "/dashboard/sections", label: "Section Management", icon: sectionsIcon },
@@ -409,13 +408,15 @@ export default function DashboardLayout({
                 aria-expanded={boardOpen}
               >
                 <div className="cms-academic-btn-icon">
-                  <Landmark size={18} />
+                  <Landmark size={14} />
                 </div>
                 <div className="cms-academic-btn-text">
                   <span className="cms-academic-btn-label">Board</span>
-                  <span className="cms-academic-btn-value">{selectedBoard?.name || selectedBoard?.code || "BIEAP"}</span>
+                  <span className="cms-academic-btn-value" title={selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code}>
+                    {selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || "Board of Intermediate Education, Andhra Pradesh"}
+                  </span>
                 </div>
-                <ChevronDown size={14} className="cms-academic-btn-arrow" />
+                <ChevronDown size={12} className="cms-academic-btn-arrow" />
               </button>
 
               {boardOpen && (
@@ -424,7 +425,7 @@ export default function DashboardLayout({
                   <div className="cms-academic-panel-list">
                     {boards.map((b) => {
                       const isSelected =
-                        selectedBoard?.code === b.code || selectedBoard?.id === b.id || selectedBoard?.name === b.name;
+                        selectedBoard?.code === b.code || selectedBoard?.id === b.id || selectedBoard?.name === b.name || selectedBoard?.boardName === b.boardName;
                       return (
                         <button
                           key={b.id || b.code}
@@ -435,7 +436,7 @@ export default function DashboardLayout({
                             setBoardOpen(false);
                           }}
                         >
-                          <span className="cms-academic-item-name">{b.name || b.code}</span>
+                          <span className="cms-academic-item-name" title={b.name || b.boardName || b.code}>{b.name || b.boardName || b.code}</span>
                           {isSelected && <CheckCircle2 size={16} className="cms-academic-check" />}
                         </button>
                       );
@@ -447,7 +448,7 @@ export default function DashboardLayout({
                       className="cms-academic-manage-btn"
                       onClick={() => {
                         setBoardOpen(false);
-                        navigate("/dashboard/board-academic-year");
+                        navigate("/dashboard/board-academic-year?tab=boards");
                       }}
                     >
                       <Settings size={14} /> Manage Boards
@@ -472,13 +473,13 @@ export default function DashboardLayout({
                 aria-expanded={yearOpen}
               >
                 <div className="cms-academic-btn-icon">
-                  <GraduationCap size={18} />
+                  <GraduationCap size={14} />
                 </div>
                 <div className="cms-academic-btn-text">
                   <span className="cms-academic-btn-label">Academic Year</span>
                   <span className="cms-academic-btn-value">{selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "2025–2026"}</span>
                 </div>
-                <ChevronDown size={14} className="cms-academic-btn-arrow" />
+                <ChevronDown size={12} className="cms-academic-btn-arrow" />
               </button>
 
               {yearOpen && (
@@ -513,7 +514,7 @@ export default function DashboardLayout({
                       className="cms-academic-manage-btn"
                       onClick={() => {
                         setYearOpen(false);
-                        navigate("/dashboard/board-academic-year");
+                        navigate("/dashboard/board-academic-year?tab=academic-years");
                       }}
                     >
                       <Settings size={14} /> Manage Academic Years

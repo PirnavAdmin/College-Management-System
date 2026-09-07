@@ -34,6 +34,13 @@ export default defineConfig(({ mode }) => {
           headers: {
             "ngrok-skip-browser-warning": "true",
           },
+          configure: (proxy) => {
+            proxy.on("error", (err, req, res) => {
+              if (res.headersSent) return;
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ data: [], message: "Local backend offline - using mock mode" }));
+            });
+          },
         },
       },
     },

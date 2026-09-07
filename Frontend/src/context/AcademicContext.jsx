@@ -2,12 +2,12 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import apiClient from "@/api/axios.js";
 
 const DEFAULT_BOARDS = [
-  { id: "1", code: "BIEAP", name: "BIEAP", fullName: "Board of Intermediate Education, Andhra Pradesh" },
-  { id: "2", code: "TSBIE", name: "Telangana State Board (TSBIE)", fullName: "Telangana Board of Intermediate Education" },
-  { id: "3", code: "CBSE", name: "CBSE", fullName: "Central Board of Secondary Education" },
-  { id: "4", code: "ICSE", name: "ICSE", fullName: "Council for the Indian School Certificate Examinations" },
-  { id: "5", code: "NIOS", name: "NIOS", fullName: "National Institute of Open Schooling" },
-  { id: "6", code: "IGCSE", name: "IGCSE", fullName: "International General Certificate of Secondary Education" },
+  { id: "1", code: "BIEAP", name: "Board of Intermediate Education, Andhra Pradesh", boardName: "Board of Intermediate Education, Andhra Pradesh", fullName: "Board of Intermediate Education, Andhra Pradesh" },
+  { id: "2", code: "TSBIE", name: "Telangana Board of Intermediate Education", boardName: "Telangana Board of Intermediate Education", fullName: "Telangana Board of Intermediate Education" },
+  { id: "3", code: "CBSE", name: "Central Board of Secondary Education", boardName: "Central Board of Secondary Education", fullName: "Central Board of Secondary Education" },
+  { id: "4", code: "ICSE", name: "Council for the Indian School Certificate Examinations", boardName: "Council for the Indian School Certificate Examinations", fullName: "Council for the Indian School Certificate Examinations" },
+  { id: "5", code: "NIOS", name: "National Institute of Open Schooling", boardName: "National Institute of Open Schooling", fullName: "National Institute of Open Schooling" },
+  { id: "6", code: "IGCSE", name: "International General Certificate of Secondary Education", boardName: "International General Certificate of Secondary Education", fullName: "International General Certificate of Secondary Education" },
 ];
 
 const DEFAULT_YEARS = [
@@ -48,9 +48,13 @@ export function AcademicProvider({ children }) {
     let target = boardOrCode;
     if (typeof boardOrCode === "string" || typeof boardOrCode === "number") {
       const found = boards.find(
-        (b) => String(b.code) === String(boardOrCode) || String(b.id) === String(boardOrCode) || String(b.name) === String(boardOrCode)
+        (b) =>
+          String(b.code) === String(boardOrCode) ||
+          String(b.id) === String(boardOrCode) ||
+          String(b.name) === String(boardOrCode) ||
+          String(b.boardName) === String(boardOrCode)
       );
-      target = found || { id: String(boardOrCode), code: String(boardOrCode), name: String(boardOrCode) };
+      target = found || { id: String(boardOrCode), code: String(boardOrCode), name: String(boardOrCode), boardName: String(boardOrCode) };
     }
     setSelectedBoardState(target);
     try {
@@ -80,43 +84,117 @@ export function AcademicProvider({ children }) {
 
   useEffect(() => {
     let isMounted = true;
-    apiClient
-      .get("/api/v1/boards")
-      .then((res) => {
+
+    const fetchMasters = async () => {
+      const asArray = (res) => {
+        if (!res) return [];
+        const raw = res.data ?? res;
+        if (Array.isArray(raw)) return raw;
+        if (raw && typeof raw === "object") {
+          if (Array.isArray(raw.data)) return raw.data;
+          if (Array.isArray(raw.items)) return raw.items;
+          if (Array.isArray(raw.records)) return raw.records;
+          if (Array.isArray(raw.results)) return raw.results;
+          if (Array.isArray(raw.$values)) return raw.$values;
+          if (Array.isArray(raw.Data)) return raw.Data;
+          if (Array.isArray(raw.Items)) return raw.Items;
+        }
+        return [];
+      };
+
+      try {
+        const boardRes = await apiClient.get("/api/v1/boards");
         if (!isMounted) return;
-        const data = res?.data?.data || res?.data || [];
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((item, idx) => ({
-            id: String(item.boardId || item.id || idx + 1),
-            code: item.boardCode || item.code || item.name || `BOARD-${idx}`,
-            name: item.boardCode || item.boardName || item.name || "Board",
-            fullName: item.boardName || item.fullName || item.name || "",
-          }));
+        const rawBoards = asArray(boardRes);
+        if (rawBoards.length > 0) {
+          const mapped = rawBoards.map((item, idx) => {
+            const code = item.boardCode || item.code || `BOARD-${idx + 1}`;
+            const boardName = item.boardName || item.fullName || item.name || item.boardCode || code;
+            return {
+              id: String(item.boardId || item.id || idx + 1),
+              code: String(code),
+              name: String(boardName),
+              boardName: String(boardName),
+              fullName: String(boardName),
+            };
+          });
           setBoards(mapped);
-        }
-      })
-      .catch(() => {});
 
-    apiClient
-      .get("/api/v1/academic-years")
-      .then((res) => {
+          setSelectedBoardState((current) => {
+            if (!current) return mapped[0];
+            const match = mapped.find(
+              (b) =>
+                String(b.id) === String(current.id) ||
+                String(b.code).toLowerCase() === String(current.code).toLowerCase() ||
+                String(b.name).toLowerCase() === String(current.name).toLowerCase() ||
+                String(b.boardName || "").toLowerCase() === String(current.name || current.boardName || "").toLowerCase()
+            );
+            const chosen = match || mapped[0];
+            try {
+              localStorage.setItem("cms_selected_board", JSON.stringify(chosen));
+            } catch {
+              /* ignore */
+            }
+            return chosen;
+          });
+        }
+      } catch (err) {
+        /* ignore */
+      }
+
+      try {
+        const yearRes = await apiClient.get("/api/v1/academic-years");
         if (!isMounted) return;
-        const data = res?.data?.data || res?.data || [];
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((item, idx) => ({
-            id: String(item.academicYearId || item.id || idx + 1),
-            code: item.academicYearName || item.yearName || item.code || item.name || `2025-2026`,
-            name: item.academicYearName || item.yearName || item.name || "2025–2026",
-            label: item.academicYearName || item.yearName || item.name || "2025–2026",
-            isCurrent: item.isCurrent || false,
-          }));
+        const rawYears = asArray(yearRes);
+        if (rawYears.length > 0) {
+          const mapped = rawYears.map((item, idx) => {
+            const yrName = item.academicYearName || item.yearName || item.name || item.code || "2025–2026";
+            const isCurr = Boolean(item.isCurrent || item.isActive || String(item.status).toLowerCase() === "active");
+            return {
+              id: String(item.academicYearId || item.id || idx + 1),
+              code: String(yrName),
+              name: String(yrName),
+              label: String(yrName),
+              isCurrent: isCurr,
+            };
+          });
           setAcademicYears(mapped);
-        }
-      })
-      .catch(() => {});
 
+          setSelectedAcademicYearState((current) => {
+            const normalize = (s) => String(s || "").trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
+            if (!current) {
+              const activeYr = mapped.find((y) => y.isCurrent) || mapped[0];
+              return activeYr;
+            }
+            const currNorm = normalize(current.code || current.name || current.label || current.id);
+            const match = mapped.find(
+              (y) =>
+                normalize(y.id) === currNorm ||
+                normalize(y.code) === currNorm ||
+                normalize(y.name) === currNorm ||
+                normalize(y.label) === currNorm
+            );
+            const chosen = match || mapped.find((y) => y.isCurrent) || mapped[0];
+            try {
+              localStorage.setItem("cms_selected_academic_year", JSON.stringify(chosen));
+            } catch {
+              /* ignore */
+            }
+            return chosen;
+          });
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    };
+
+    fetchMasters();
+
+    const handleUpdate = () => fetchMasters();
+    window.addEventListener("cms_academic_masters_updated", handleUpdate);
     return () => {
       isMounted = false;
+      window.removeEventListener("cms_academic_masters_updated", handleUpdate);
     };
   }, []);
 

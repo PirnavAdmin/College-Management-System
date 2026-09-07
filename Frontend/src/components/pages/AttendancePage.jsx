@@ -2,8 +2,15 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { CalendarDays, Pencil } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+<<<<<<< HEAD
+import { Toast } from "@/components/common/Ui.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
+import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import DetailedStudentAttendance from "@/components/pages/DetailedStudentAttendance.jsx";
+=======
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import { mockAcademicLevels, mockAcademicYears, mockBoards, mockGroups, mockSections, mockStaffAttendance, mockStudentAttendance } from "@/data/attendanceMockData.js";
+>>>>>>> 114d2b0d32531654babfb13b2896fc1e15ebacf2
 import "./AttendancePage.css";
 
 const studentStatuses = ["Present", "Absent", "Leave"];
@@ -17,9 +24,82 @@ const periodStatusesFor = (student) => Array.from({ length: 7 }, (_, index) => {
 function Select({ label, value, onChange, items, all }) { return <Field label={label}><select value={value} onChange={onChange}>{all && <option value="">{all}</option>}{items.map((x) => <option key={x.id ?? x} value={x.id ?? x}>{x.name ?? x}</option>)}</select></Field>; }
 
 export default function AttendancePage() {
+<<<<<<< HEAD
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const [toast, setToast] = useState("");
+
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const isDetailsParam = searchParams.get("view") === "details";
+  const initialViewBy = searchParams.get("viewBy") || "all";
+
+  const isStaff = pathname.includes("/staff");
+  const reports = pathname.endsWith("/reports");
+  const area = isStaff ? "staff" : "student";
+
+  const isDetailsView = !isStaff && (isDetailsParam || pathname.endsWith("/details"));
+
+  return (
+    <>
+      <DashboardLayout
+        title={isDetailsView ? "Student Attendance Details" : `${isStaff ? "Staff" : "Student"} Attendance`}
+        subtitle={
+          isDetailsView
+            ? "Comprehensive drill-down attendance analysis by level, group, section, and student."
+            : reports
+              ? "Monthly date-wise attendance history."
+              : isStaff
+                ? "View and manage staff attendance."
+                : "View and manage student attendance."
+        }
+        breadcrumb={["Operations", "Attendance", isDetailsView ? "Details" : reports ? "Reports" : "Mark"]}
+      >
+        <main className="attendance-module">
+          <nav className="att-nav">
+            <button
+              className={!reports && !isDetailsView ? "active" : ""}
+              onClick={() => navigate(`/dashboard/attendance/${area}`)}
+            >
+              Mark Attendance
+            </button>
+            {!isStaff && (
+              <button
+                className={isDetailsView ? "active" : ""}
+                onClick={() => navigate(`/dashboard/attendance/student?view=details`)}
+              >
+                Detailed Report
+              </button>
+            )}
+            <button
+              className={reports ? "active" : ""}
+              onClick={() => navigate(`/dashboard/attendance/${area}/reports`)}
+            >
+              Monthly Reports
+            </button>
+          </nav>
+          {isDetailsView ? (
+            <DetailedStudentAttendance initialViewBy={initialViewBy} />
+          ) : reports ? (
+            isStaff ? (
+              <StaffReports say={setToast} />
+            ) : (
+              <Reports staffMode={false} say={setToast} />
+            )
+          ) : isStaff ? (
+            <StaffMark say={setToast} />
+          ) : (
+            <StudentMark say={setToast} />
+          )}
+        </main>
+      </DashboardLayout>
+      <Toast message={toast} onClose={() => setToast("")} />
+    </>
+  );
+=======
   const { area = "student" } = useParams(); const staffMode = area === "staff";
   const [students, setStudents] = useState(mockStudentAttendance); const [staff, setStaff] = useState(mockStaffAttendance); const [toast, setToast] = useState("");
   return <><DashboardLayout title={staffMode ? "Staff Attendance" : "Student Attendance"} subtitle={staffMode ? "View and manage teaching and non-teaching staff attendance" : "View and manage student attendance records"} breadcrumb={["Operations", "Attendance"]}><main className="attendance-module">{staffMode ? <AttendanceScreen staff records={staff} setRecords={setStaff} say={setToast} /> : <StudentAttendanceScreen records={students} setRecords={setStudents} say={setToast} />}</main></DashboardLayout><Toast message={toast} onClose={() => setToast("")} /></>;
+>>>>>>> 114d2b0d32531654babfb13b2896fc1e15ebacf2
 }
 
 function StudentAttendanceScreen({ records, setRecords, say }) {

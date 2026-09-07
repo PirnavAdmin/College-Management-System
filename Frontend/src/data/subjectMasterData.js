@@ -15,10 +15,46 @@ export const subjectMaster = [
   { id: "EVS1", name: "Environmental Education", code: "EVS1", type: ["Theory"], marks: { theory: 50, practical: 0, internal: 0, total: 50, passing: 18 } },
 ];
 
+export const commonSubjectIds = ["ENG1", "SL1"];
+
+// Second Language is one shared common-subject slot. These are selectable
+// language choices for that slot, not separate common subjects or group maps.
+export const secondLanguageOptions = [
+  { name: "Telugu", code: "TEL1" },
+  { name: "Hindi", code: "HIN1" },
+  { name: "Sanskrit", code: "SAN1" },
+  { name: "Urdu", code: "URD1" },
+  { name: "Arabic", code: "ARA1" },
+];
+
+// Subject Management is currently frontend/mock driven. Keep the language
+// options for the SL1 common-subject slot in this same data module so they
+// survive a page refresh without creating another state architecture.
+const SECOND_LANGUAGE_STORAGE_KEY = "cms_subject_management_second_languages";
+
+export const loadSecondLanguages = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SECOND_LANGUAGE_STORAGE_KEY) || "[]");
+    return Array.isArray(stored)
+      ? stored.filter((language) => language?.name && language?.code)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveSecondLanguages = (languages) => {
+  try {
+    localStorage.setItem(SECOND_LANGUAGE_STORAGE_KEY, JSON.stringify(languages));
+  } catch {
+    // Storage may be unavailable; retain the current in-memory selection.
+  }
+};
+
 export const groupSubjectMap = {
-  MPC: ["ENG1", "SL1", "MATH1A", "MATH1B", "PHY1", "CHE1"],
-  BiPC: ["ENG1", "SL1", "BOT1", "ZOO1", "PHY1", "CHE1"],
-  MEC: ["ENG1", "SL1", "MATH1A", "MATH1B", "ECO1", "COM1"],
-  CEC: ["ENG1", "SL1", "CIV1", "ECO1", "COM1"],
-  HEC: ["ENG1", "SL1", "HIS1", "ECO1", "CIV1"],
+  MPC: ["MATH1A", "MATH1B", "PHY1", "CHE1"],
+  BIPC: ["BOT1", "ZOO1", "PHY1", "CHE1"],
+  MEC: ["MATH1A", "MATH1B", "ECO1", "COM1"],
+  CEC: ["CIV1", "ECO1", "COM1"],
+  HEC: ["HIS1", "ECO1", "CIV1"],
 };

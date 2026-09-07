@@ -1,4 +1,6 @@
 using CollegeManagement.API.DTOs.Students;
+using CollegeManagement.API.DTOs.Students.Requests;
+using CollegeManagement.API.DTOs.Students.Responses;
 using CollegeManagement.API.Repositories;
 
 namespace CollegeManagement.API.Services
@@ -372,5 +374,54 @@ namespace CollegeManagement.API.Services
             };
         }
 
+    
+        // =========================================================
+        // SELF-SERVICE PROFILE & CREDENTIALS
+        // =========================================================
+
+        public async Task<StudentSelfProfileResponseDto?> GetSelfProfileAsync(int studentId)
+        {
+            if (studentId <= 0)
+                throw new ArgumentException("Invalid student ID.");
+
+            return await _repository.GetSelfProfileAsync(studentId);
+        }
+
+        public async Task<bool> UpdateSelfProfileAsync(int studentId, StudentSelfProfileDto request)
+        {
+            if (studentId <= 0)
+                throw new ArgumentException("Invalid student ID.");
+
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            var student = await _repository.GetByIdAsync(studentId);
+            if (student == null)
+            {
+                throw new KeyNotFoundException($"Student with ID {studentId} not found.");
+            }
+
+            return await _repository.UpdateSelfProfileAsync(studentId, request);
+        }
+
+        public async Task<bool> ChangePasswordAsync(int studentId, StudentChangePasswordRequest request)
+        {
+            if (studentId <= 0)
+                throw new ArgumentException("Invalid student ID.");
+
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            if (string.IsNullOrWhiteSpace(request.OldPassword))
+                throw new ArgumentException("Old password is required.");
+
+            if (string.IsNullOrWhiteSpace(request.NewPassword))
+                throw new ArgumentException("New password is required.");
+
+            if (request.NewPassword != request.ConfirmPassword)
+                throw new ArgumentException("New password and confirmation password do not match.");
+
+            return await _repository.ChangePasswordAsync(studentId, request.OldPassword, request.NewPassword);
+        }
     }
 }

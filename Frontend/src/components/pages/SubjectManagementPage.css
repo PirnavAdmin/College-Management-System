@@ -145,6 +145,18 @@
   margin-top: 12px;
   overflow: hidden;
 }
+.subject-common-card { margin-top: 0; }
+.subject-common-head { align-items: flex-start; }
+.subject-common-head p {
+  margin: 4px 0 0;
+  color: var(--cms-muted);
+  font-size: 12px;
+}
+.subject-add-language-btn { min-height: 34px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+.second-language-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.second-language-title { display: block; }
+.second-language-options { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.language-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--cms-primary-soft); color: var(--cms-primary); font-size: 12px; font-weight: 650; line-height: 1; white-space: nowrap; }
 .subject-table-head,
 .assignment-footer {
   display: flex;
@@ -248,7 +260,7 @@
 .subject-master-screen { display: grid; gap: 14px; }
 .subject-master-context {
   display: grid;
-  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 320px));
   gap: 16px;
   padding: 16px;
   border: 1px solid var(--cms-border);
@@ -277,6 +289,11 @@
 .subject-remove-btn:hover { background: var(--cms-red-soft, #fef2f2); }
 .subject-modal { display: grid; gap: 16px; }
 .subject-combobox { position: relative; width: 100%; }
+.subject-group-input { position: relative; display: flex; align-items: center; }
+.subject-group-input > svg { position: absolute; z-index: 1; color: var(--cms-muted); pointer-events: none; }
+.subject-group-input > svg:first-child { left: 12px; }
+.subject-group-input > svg:last-child { right: 12px; }
+.subject-group-input input { padding-right: 38px; padding-left: 38px; cursor: text; }
 .subject-combobox-options {
   position: absolute;
   z-index: 20;
@@ -307,8 +324,16 @@
 .subject-combobox-options strong { font-size: 13px; }
 .subject-combobox-options span { color: var(--cms-muted); font-size: 12px; }
 .subject-combobox-empty { padding: 12px; color: var(--cms-muted); font-size: 13px; }
-.subject-add-modal { overflow: visible; }
-.subject-add-modal .cms-modal-body { overflow: visible; }
+.cms-modal.subject-add-modal {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
+}
+.subject-add-modal .cms-modal-body { min-height: 0; flex: 0 1 auto; overflow-y: auto; }
+.subject-add-modal .cms-modal-foot { flex: 0 0 auto; }
 .subject-add-modal:has(.subject-search-results) .cms-modal-body { padding-bottom: 266px; }
 .subject-search-wrapper { position: relative; z-index: 20; width: 100%; }
 .subject-search-input {

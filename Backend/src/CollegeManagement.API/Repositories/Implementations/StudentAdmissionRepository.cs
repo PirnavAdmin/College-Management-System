@@ -422,7 +422,8 @@ namespace CollegeManagement.API.Repositories.Implementations
         // APPROVE ADMISSION
         // =========================================================
         public async Task<bool> ApproveAsync(
-            ApproveStudentAdmissionRequest request)
+            ApproveStudentAdmissionRequest request,
+            string? passwordHash = null)
         {
             var connection = _context.Database.GetDbConnection();
 
@@ -432,7 +433,8 @@ namespace CollegeManagement.API.Repositories.Implementations
                     new
                     {
                         p_AdmissionId =
-                            request.AdmissionId
+                            request.AdmissionId,
+                        p_PasswordHash = passwordHash ?? string.Empty
                     },
                     commandType: CommandType.StoredProcedure);
 

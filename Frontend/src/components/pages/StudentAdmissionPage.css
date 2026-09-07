@@ -287,6 +287,14 @@
   width: 100%;
 }
 
+.cms-file-control .cms-admission-photo-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .cms-file-control.has-file input {
   padding-right: 34px;
 }
@@ -340,16 +348,153 @@
 }
 
 .cms-form-grid.cms-admission-address-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .cms-form-grid.cms-admission-address-grid .cms-field.full {
   grid-column: 1 / -1;
 }
 
+.cms-admission-form-section .cms-form-grid.cms-admission-details-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px 14px;
+}
+
+.cms-admission-details-grid .cms-field,
+.cms-admission-student-grid .cms-field {
+  min-width: 0;
+}
+
+.cms-admission-details-grid input,
+.cms-admission-details-grid select,
+.cms-admission-student-grid input,
+.cms-admission-student-grid select {
+  width: 100%;
+}
+
+.cms-admission-form-section .cms-form-grid.cms-admission-student-grid {
+  grid-template-columns: 88px repeat(3, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  align-items: start;
+  gap: 10px 14px;
+}
+
+.cms-admission-photo-field {
+  position: relative;
+  width: 80px;
+}
+
+.cms-admission-photo-field .cms-file-control {
+  position: static;
+}
+
+.cms-admission-photo-field .cms-file-control.has-file::after,
+.cms-admission-photo-field .cms-file-control span {
+  display: none;
+}
+
+.cms-admission-photo-preview {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 98px;
+  border: 1px solid var(--cms-border);
+  border-radius: 8px;
+  background: var(--cms-subtle);
+  overflow: hidden;
+}
+
+.cms-admission-photo-preview.is-empty {
+  color: var(--cms-muted);
+  font-size: 11px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.cms-admission-photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cms-admission-photo-box {
+  display: block;
+  width: 80px;
+  cursor: pointer;
+}
+
+.cms-admission-photo-field .cms-file-remove {
+  top: 8px;
+  right: 8px;
+  transform: none;
+  background: var(--cms-surface);
+}
+
+.cms-admission-photo-cell {
+  align-self: start;
+  grid-row: span 2;
+}
+
+.cms-preview-photo-item {
+  align-self: start;
+}
+
+.cms-preview-photo-item .cms-admission-photo-preview {
+  width: 78px;
+  height: 96px;
+}
+
+.cms-admission-quota-control {
+  position: relative;
+}
+
+.cms-admission-quota-control select,
+.cms-admission-quota-control input {
+  width: 100%;
+}
+
+.cms-admission-quota-control input {
+  padding-right: 34px;
+}
+
+.cms-admission-quota-reset {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--cms-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.cms-admission-quota-reset:hover {
+  background: var(--cms-hover);
+  color: var(--cms-text);
+}
+
+.cms-admission-fee-body {
+  padding: 14px;
+}
+
+.cms-admission-fee-form .cms-fee-step {
+  gap: 14px;
+}
+
 @media (max-width: 980px) {
   .cms-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-admission-form-section .cms-form-grid.cms-admission-details-grid,
   .cms-admission-address-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cms-admission-form-section .cms-form-grid.cms-admission-student-grid {
+    grid-template-columns: 88px repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -359,7 +504,14 @@
   }
 
   .cms-preview-grid { grid-template-columns: 1fr; }
+  .cms-admission-form-section .cms-form-grid.cms-admission-details-grid,
   .cms-admission-address-grid { grid-template-columns: 1fr; }
+  .cms-admission-form-section .cms-form-grid.cms-admission-student-grid {
+    grid-template-columns: 1fr;
+  }
+  .cms-admission-photo-cell {
+    grid-row: auto;
+  }
 }
 
 /* Board & Academic Year table-system alignment. */

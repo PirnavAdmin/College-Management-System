@@ -17,8 +17,6 @@ const normalize = (value) => String(value ?? "").trim().toLowerCase().replace(/[
 const isActive = (item) => {
   const value = valueOf(item, "isActive", "IsActive", "active", "Active", "status", "Status");
   const text = String(value ?? "").trim().toLowerCase();
-  // The Board & Academic Year Settings screen treats a missing status as
-  // active, and only excludes records explicitly marked inactive.
   return value == null || !(value === false || value === 0 || text === "false" || text === "inactive");
 };
 const boardIdOf = (board) => valueOf(board, "id", "boardId", "BoardId");
@@ -53,11 +51,13 @@ export function AcademicProvider({ children }) {
 
   const setSelectedBoard = useCallback((boardOrId) => {
     const board = typeof boardOrId === "object" && boardOrId !== null ? boardOrId : boards.find((item) => String(item.id) === String(boardOrId) || String(item.code) === String(boardOrId) || String(item.name) === String(boardOrId)) ?? null;
-    setSelectedBoardState(board); persist(BOARD_STORAGE_KEY, board);
+    setSelectedBoardState(board);
+    persist(BOARD_STORAGE_KEY, board);
   }, [boards]);
   const setSelectedAcademicYear = useCallback((yearOrId) => {
     const year = typeof yearOrId === "object" && yearOrId !== null ? yearOrId : academicYears.find((item) => String(item.id) === String(yearOrId) || normalize(item.code) === normalize(yearOrId) || normalize(item.name) === normalize(yearOrId)) ?? null;
-    setSelectedAcademicYearState(year); persist(YEAR_STORAGE_KEY, year);
+    setSelectedAcademicYearState(year);
+    persist(YEAR_STORAGE_KEY, year);
   }, [academicYears]);
 
   useEffect(() => {
@@ -72,10 +72,16 @@ export function AcademicProvider({ children }) {
       if (!active) return;
       const nextBoards = asList(response).filter(isActive).map(mapBoard);
       setBoards(nextBoards);
-      setSelectedBoardState((current) => { const next = nextBoards.find((board) => sameBoard(board, current)) ?? nextBoards[0] ?? null; persist(BOARD_STORAGE_KEY, next); return next; });
+      setSelectedBoardState((current) => {
+        const next = nextBoards.find((board) => sameBoard(board, current)) ?? nextBoards[0] ?? null;
+        persist(BOARD_STORAGE_KEY, next);
+        return next;
+      });
     }).catch(() => {
       if (!active) return;
-      setBoards([]); setSelectedBoardState(null); persist(BOARD_STORAGE_KEY, null);
+      setBoards([]);
+      setSelectedBoardState(null);
+      persist(BOARD_STORAGE_KEY, null);
     }).finally(() => active && setBoardsLoading(false));
     return () => { active = false; };
   }, [refreshToken]);
@@ -83,10 +89,14 @@ export function AcademicProvider({ children }) {
   useEffect(() => {
     let active = true;
     if (!selectedBoardId) {
-      setAcademicYears([]); setSelectedAcademicYearState(null); persist(YEAR_STORAGE_KEY, null); setAcademicYearsLoading(false);
+      setAcademicYears([]);
+      setSelectedAcademicYearState(null);
+      persist(YEAR_STORAGE_KEY, null);
+      setAcademicYearsLoading(false);
       return () => { active = false; };
     }
-    setAcademicYearsLoading(true); setAcademicYears([]);
+    setAcademicYearsLoading(true);
+    setAcademicYears([]);
     apiClient.get(apiEndpoints.academicYears.active, { params: { boardId: selectedBoardId, isActive: true } }).then((response) => {
       if (!active) return;
       const nextYears = asList(response).filter((year) => {
@@ -94,19 +104,32 @@ export function AcademicProvider({ children }) {
         return (boardId == null || String(boardId) === String(selectedBoardId)) && isActive(year);
       }).map(mapYear);
       setAcademicYears(nextYears);
-      setSelectedAcademicYearState((current) => { const next = nextYears.find((year) => sameYear(year, current)) ?? nextYears[0] ?? null; persist(YEAR_STORAGE_KEY, next); return next; });
+      setSelectedAcademicYearState((current) => {
+        const next = nextYears.find((year) => sameYear(year, current)) ?? nextYears[0] ?? null;
+        persist(YEAR_STORAGE_KEY, next);
+        return next;
+      });
     }).catch(() => {
       if (!active) return;
-      setAcademicYears([]); setSelectedAcademicYearState(null); persist(YEAR_STORAGE_KEY, null);
+      setAcademicYears([]);
+      setSelectedAcademicYearState(null);
+      persist(YEAR_STORAGE_KEY, null);
     }).finally(() => active && setAcademicYearsLoading(false));
     return () => { active = false; };
   }, [selectedBoardId, refreshToken]);
 
-  const value = useMemo(() => ({ boards, academicYears, selectedBoard, selectedBoardId, selectedAcademicYear, selectedAcademicYearId, setSelectedBoard, setSelectedAcademicYear, boardsLoading, academicYearsLoading, refreshAcademicContext }), [academicYears, academicYearsLoading, boards, boardsLoading, refreshAcademicContext, selectedAcademicYear, selectedAcademicYearId, selectedBoard, selectedBoardId, setSelectedAcademicYear, setSelectedBoard]);
+  const value = useMemo(() => ({
+    boards, academicYears, selectedBoard, selectedBoardId, selectedAcademicYear, selectedAcademicYearId,
+    setSelectedBoard, setSelectedAcademicYear, boardsLoading, academicYearsLoading, refreshAcademicContext,
+  }), [academicYears, academicYearsLoading, boards, boardsLoading, refreshAcademicContext, selectedAcademicYear, selectedAcademicYearId, selectedBoard, selectedBoardId, setSelectedAcademicYear, setSelectedBoard]);
   return <AcademicContext.Provider value={value}>{children}</AcademicContext.Provider>;
 }
 
 export function useAcademicContext() {
   const context = useContext(AcademicContext);
-  return context ?? { boards: [], academicYears: [], selectedBoard: null, selectedBoardId: undefined, selectedAcademicYear: null, selectedAcademicYearId: undefined, boardsLoading: false, academicYearsLoading: false, setSelectedBoard: () => {}, setSelectedAcademicYear: () => {}, refreshAcademicContext: () => {} };
+  return context ?? {
+    boards: [], academicYears: [], selectedBoard: null, selectedBoardId: undefined,
+    selectedAcademicYear: null, selectedAcademicYearId: undefined, boardsLoading: false, academicYearsLoading: false,
+    setSelectedBoard: () => {}, setSelectedAcademicYear: () => {}, refreshAcademicContext: () => {},
+  };
 }

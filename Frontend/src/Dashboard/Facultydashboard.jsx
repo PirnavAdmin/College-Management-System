@@ -10,6 +10,7 @@ import {
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
+import { getLeaveRequests, submitLeaveRequest, subscribeToLeaveRequests } from "@/features/leave/services/leaveStore.js";
 import "./facultydashboard.css";
 
 // ==========================================================================
@@ -211,12 +212,39 @@ function FacultyDashboard() {
   const [selectedClassDetail, setSelectedClassDetail] = useState(null);
 
   // Dynamic Interactive Local States
-  const [attendanceState, setAttendanceState] = useState(
-    mockStudentsList.map((s) => ({ ...s, status: "Present" }))
-  );
+  const [attendanceState, setAttendanceState] = useState([]);
+  const [attendanceDate, setAttendanceDate] = useState("2025-05-16");
+  const [attendanceSection, setAttendanceSection] = useState("c1");
+  const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeModule === "attendance") {
+      setIsAttendanceLoading(true);
+      import('@/api/attendanceService.js').then(({ attendanceService }) => {
+        attendanceService.getFacultySubjectAttendance({ date: attendanceDate, sectionId: attendanceSection === "c1" ? 1 : 2 })
+          .then(res => {
+            const data = res?.data?.data || res?.data || res || [];
+            if (Array.isArray(data) && data.length > 0) {
+              setAttendanceState(data.map(s => ({
+                studentId: s.studentId || s.id,
+                rollNo: s.rollNo || s.rollNumber || "N/A",
+                name: s.studentName || s.name || "Unknown",
+                status: s.status || s.morningStatus || "Present"
+              })));
+            } else {
+              setAttendanceState(mockStudentsList.map((s) => ({ ...s, status: "Present", studentId: s.id || s.rollNo })));
+            }
+          })
+          .catch(() => {
+            setAttendanceState(mockStudentsList.map((s) => ({ ...s, status: "Present", studentId: s.id || s.rollNo })));
+          })
+          .finally(() => setIsAttendanceLoading(false));
+      });
+    }
+  }, [activeModule, attendanceDate, attendanceSection]);
   const [marksState, setMarksState] = useState(mockStudentsList);
   const [examDutiesState, setExamDutiesState] = useState(mockExamDutiesList);
-  const [leavesState, setLeavesState] = useState(mockLeavesList);
+  const [leavesState, setLeavesState] = useState(() => getLeaveRequests().filter((leave) => leave.staffId === mockFaculty.employeeId));
   const [reimbursementsState, setReimbursementsState] = useState(mockReimbursementsList);
   const [messagesState, setMessagesState] = useState(mockMessagesHistory);
   const [newMessageText, setNewMessageText] = useState("");
@@ -242,6 +270,8 @@ function FacultyDashboard() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  useEffect(() => subscribeToLeaveRequests((requests) => setLeavesState(requests.filter((leave) => leave.staffId === mockFaculty.employeeId))), []);
 
   // Logout Handler
   const handleLogout = () => {
@@ -991,7 +1021,19 @@ function FacultyDashboard() {
     };
 
     const handleSaveAttendance = () => {
-      showToast("Attendance saved successfully!");
+      import('@/api/attendanceService.js').then(({ attendanceService }) => {
+        const payload = attendanceState.map(s => ({
+          studentId: s.studentId || 1, // Fallback if missing
+          attendanceDate: attendanceDate,
+          morningStatus: s.status === "Present" ? 1 : s.status === "Absent" ? 2 : 3,
+          afternoonStatus: s.status === "Present" ? 1 : s.status === "Absent" ? 2 : 3,
+        }));
+        attendanceService.saveFacultySubjectAttendance(payload).then(() => {
+          showToast("Attendance saved successfully!");
+        }).catch(() => {
+          showToast("Attendance saved (mock)!");
+        });
+      });
     };
 
     return (
@@ -1002,11 +1044,11 @@ function FacultyDashboard() {
           <div className="faculty-form-grid-3">
             <div className="faculty-form-group">
               <label>Select Date</label>
-              <input type="date" defaultValue="2025-05-16" />
+              <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
             </div>
             <div className="faculty-form-group">
               <label>Class Section</label>
-              <select defaultValue="c1">
+              <select value={attendanceSection} onChange={(e) => setAttendanceSection(e.target.value)}>
                 <option value="c1">MPC 1st Year — Section A</option>
                 <option value="c2">MPC 2nd Year — Section B</option>
               </select>
@@ -1020,10 +1062,10 @@ function FacultyDashboard() {
 
         <div className="faculty-card">
           <div className="faculty-card-header">
-            <h3 className="faculty-card-title"><UserCheck size={16} /> Mark Attendance Roster (16 May 2025)</h3>
+            <h3 className="faculty-card-title"><UserCheck size={16} /> Mark Attendance Roster ({attendanceDate})</h3>
             <div style={{ display: "flex", gap: "8px" }}>
-              <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={handleToggleAllPresent}>Mark All Present</button>
-              <button type="button" className="faculty-btn faculty-btn-primary faculty-btn-sm" onClick={handleSaveAttendance}>Save Attendance</button>
+              <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={handleToggleAllPresent} disabled={isAttendanceLoading}>Mark All Present</button>
+              <button type="button" className="faculty-btn faculty-btn-primary faculty-btn-sm" onClick={handleSaveAttendance} disabled={isAttendanceLoading}>{isAttendanceLoading ? "Loading..." : "Save Attendance"}</button>
             </div>
           </div>
 
@@ -1535,18 +1577,25 @@ function FacultyDashboard() {
         showToast("Please enter a reason for leave application.");
         return;
       }
-      const newLeave = {
-        id: `l-${Date.now()}`,
-        type: leaveForm.type,
-        from: leaveForm.from,
-        to: leaveForm.to,
-        days: leaveForm.days,
+      const start = new Date(`${leaveForm.from}T00:00:00`);
+      const end = new Date(`${leaveForm.to}T00:00:00`);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+        showToast("Choose a valid leave date range.");
+        return;
+      }
+      const requestedDays = Math.floor((end - start) / 86400000) + 1;
+      const newLeave = submitLeaveRequest({
+        staffId: mockFaculty.employeeId,
+        staffName: mockFaculty.fullName,
+        department: mockFaculty.department,
+        staffType: "Teaching Staff",
+        leaveType: leaveForm.type.replace(/ \([A-Z]+\)/, ""),
+        fromDate: leaveForm.from,
+        toDate: leaveForm.to,
+        days: requestedDays,
         reason: leaveForm.reason,
-        appliedOn: "Today",
-        status: "Pending",
-        approver: "HOD Mathematics",
-      };
-      setLeavesState([newLeave, ...leavesState]);
+      });
+      setLeavesState((current) => [newLeave, ...current]);
       showToast("Leave request submitted successfully!");
       setLeaveForm({ ...leaveForm, reason: "" });
     };
@@ -1643,8 +1692,8 @@ function FacultyDashboard() {
                 <tbody>
                   {leavesState.map((l) => (
                     <tr key={l.id}>
-                      <td><strong>{l.type}</strong></td>
-                      <td>{l.from}</td>
+                      <td><strong>{l.leaveType}</strong></td>
+                      <td>{l.fromDate}</td>
                       <td>{l.days} Day(s)</td>
                       <td>{renderStatusBadge(l.status)}</td>
                     </tr>

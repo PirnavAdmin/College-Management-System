@@ -103,88 +103,93 @@ export function AcademicProvider({ children }) {
       };
 
       try {
-        const boardRes = await apiClient.get("/api/v1/boards");
+        const boardRes = await apiClient.get("/api/v1/boards", { params: { status: true, pageSize: 100 } });
         if (!isMounted) return;
         const rawBoards = asArray(boardRes);
-        if (rawBoards.length > 0) {
-          const mapped = rawBoards.map((item, idx) => {
-            const code = item.boardCode || item.code || `BOARD-${idx + 1}`;
-            const boardName = item.boardName || item.fullName || item.name || item.boardCode || code;
-            return {
-              id: String(item.boardId || item.id || idx + 1),
-              code: String(code),
-              name: String(boardName),
-              boardName: String(boardName),
-              fullName: String(boardName),
-            };
-          });
+        const mapped = rawBoards.map((item, idx) => {
+          const code = item.boardCode || item.code || `BOARD-${item.boardId || idx + 1}`;
+          const boardName = item.boardName || item.fullName || item.name || item.boardCode || code;
+          return {
+            id: String(item.boardId || item.id),
+            code: String(code),
+            name: String(boardName),
+            boardName: String(boardName),
+            fullName: String(boardName),
+          };
+        });
+        
+        if (mapped.length > 0) {
           setBoards(mapped);
-
           setSelectedBoardState((current) => {
             if (!current) return mapped[0];
             const match = mapped.find(
-              (b) =>
-                String(b.id) === String(current.id) ||
-                String(b.code).toLowerCase() === String(current.code).toLowerCase() ||
-                String(b.name).toLowerCase() === String(current.name).toLowerCase() ||
-                String(b.boardName || "").toLowerCase() === String(current.name || current.boardName || "").toLowerCase()
+              (b) => String(b.id) === String(current.id)
             );
             const chosen = match || mapped[0];
-            try {
-              localStorage.setItem("cms_selected_board", JSON.stringify(chosen));
-            } catch {
-              /* ignore */
-            }
+            try { localStorage.setItem("cms_selected_board", JSON.stringify(chosen)); } catch { /* ignore */ }
             return chosen;
           });
+        } else {
+          setBoards([]);
+          setSelectedBoardState(null);
+          try { localStorage.removeItem("cms_selected_board"); } catch { /* ignore */ }
         }
       } catch (err) {
-        /* ignore */
+        setBoards([]);
+        setSelectedBoardState(null);
+        try { localStorage.removeItem("cms_selected_board"); } catch { /* ignore */ }
       }
 
       try {
-        const yearRes = await apiClient.get("/api/v1/academic-years");
+        const yearRes = await apiClient.get("/api/v1/academic-years/active");
         if (!isMounted) return;
         const rawYears = asArray(yearRes);
-        if (rawYears.length > 0) {
-          const mapped = rawYears.map((item, idx) => {
-            const yrName = item.academicYearName || item.yearName || item.name || item.code || "2025–2026";
-            const isCurr = Boolean(item.isCurrent || item.isActive || String(item.status).toLowerCase() === "active");
-            return {
-              id: String(item.academicYearId || item.id || idx + 1),
-              code: String(yrName),
-              name: String(yrName),
-              label: String(yrName),
-              isCurrent: isCurr,
-            };
-          });
-          setAcademicYears(mapped);
+        const mapped = rawYears.map((item, idx) => {
+          const yrName = item.academicYearName || item.yearName || item.name || item.code || "Unknown Year";
+          const isCurr = Boolean(item.isCurrent || item.isActive || String(item.status).toLowerCase() === "active");
+          return {
+            id: String(item.academicYearId || item.id),
+            code: String(yrName),
+            name: String(yrName),
+            label: String(yrName),
+            isCurrent: isCurr,
+          };
+        });
 
+        const uniqueMapped = [];
+        const seenNames = new Set();
+        for (const y of mapped) {
+          if (!seenNames.has(y.name)) {
+            seenNames.add(y.name);
+            uniqueMapped.push(y);
+          }
+        }
+
+        if (uniqueMapped.length > 0) {
+          setAcademicYears(uniqueMapped);
           setSelectedAcademicYearState((current) => {
             const normalize = (s) => String(s || "").trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
             if (!current) {
-              const activeYr = mapped.find((y) => y.isCurrent) || mapped[0];
+              const activeYr = uniqueMapped.find((y) => y.isCurrent) || uniqueMapped[0];
               return activeYr;
             }
-            const currNorm = normalize(current.code || current.name || current.label || current.id);
-            const match = mapped.find(
-              (y) =>
-                normalize(y.id) === currNorm ||
-                normalize(y.code) === currNorm ||
-                normalize(y.name) === currNorm ||
-                normalize(y.label) === currNorm
+            const currNorm = normalize(current.id);
+            const match = uniqueMapped.find(
+              (y) => normalize(y.id) === currNorm
             );
-            const chosen = match || mapped.find((y) => y.isCurrent) || mapped[0];
-            try {
-              localStorage.setItem("cms_selected_academic_year", JSON.stringify(chosen));
-            } catch {
-              /* ignore */
-            }
+            const chosen = match || uniqueMapped.find((y) => y.isCurrent) || uniqueMapped[0];
+            try { localStorage.setItem("cms_selected_academic_year", JSON.stringify(chosen)); } catch { /* ignore */ }
             return chosen;
           });
+        } else {
+          setAcademicYears([]);
+          setSelectedAcademicYearState(null);
+          try { localStorage.removeItem("cms_selected_academic_year"); } catch { /* ignore */ }
         }
       } catch (err) {
-        /* ignore */
+        setAcademicYears([]);
+        setSelectedAcademicYearState(null);
+        try { localStorage.removeItem("cms_selected_academic_year"); } catch { /* ignore */ }
       }
     };
 

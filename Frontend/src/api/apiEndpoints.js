@@ -275,6 +275,8 @@ export const apiEndpoints = {
     monthlyReport: "/api/v1/staff-attendance/monthly-report",
     monthlyExportCsv: "/api/v1/staff-attendance/monthly-report/export/csv",
     monthlyExport: "/api/v1/staff-attendance/monthly-report/export/excel",
+    leave: "/api/v1/staff-attendance/leave",
+    leaveAction: (id) => `/api/v1/staff-attendance/leave/${id}/action`,
   },
   students: {
     getAll: "/api/v1/students",

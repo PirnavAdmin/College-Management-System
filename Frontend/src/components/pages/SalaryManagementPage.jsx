@@ -2776,20 +2776,70 @@ function IndividualPayrollScreen({ month, staffId, store }) {
 }
 
 function AttendanceImpactScreen({ store }) {
+  const [report, setReport] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [monthParams, setMonthParams] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
+
+  useEffect(() => {
+    setLoading(true);
+    import('@/api/attendanceService.js').then(({ attendanceService }) => {
+      attendanceService.getStaffMonthlyReport(monthParams)
+        .then(res => {
+          const data = res?.data?.data || res?.data || res || [];
+          const rows = data.staffRows || data.rows || [];
+          
+          const enriched = store.assignments.map(a => {
+            const att = rows.find(r => (r.facultyId || r.staffId || r.id) === a.staffId) || {};
+            const workingDays = att.workingDays || 30;
+            const present = att.present || 30;
+            const lopDays = Math.max(0, workingDays - present);
+            const lopDeduction = calculateLOP(a.grossSalary || 0, workingDays, lopDays);
+            return {
+              ...a,
+              workingDays,
+              lopDays,
+              lopDeduction,
+              netImpact: (a.netSalary || 0) - lopDeduction
+            };
+          });
+          setReport(enriched);
+        })
+        .catch(() => {
+          setReport(store.assignments.map((a, i) => ({
+            ...a,
+            workingDays: 30,
+            lopDays: i % 3,
+            lopDeduction: calculateLOP(a.grossSalary || 0, 30, i % 3),
+            netImpact: (a.netSalary || 0) - calculateLOP(a.grossSalary || 0, 30, i % 3)
+          })));
+        })
+        .finally(() => setLoading(false));
+    });
+  }, [store.assignments, monthParams]);
+
   return (
     <DashboardLayout title="Attendance / LOP Impact" breadcrumb={["Home", "People", "Staff Salary Management", "Attendance Impact"]}>
       <main className="salary-page-container">
         <Link to="/dashboard/staff-salary" className="cms-back-link"><ArrowLeft size={14} /> Back to Salary Dashboard</Link>
         <div className="salary-card-panel">
-          <DataTable rows={store.assignments} data={store.assignments} columns={[
+          <div style={{ marginBottom: "16px", display: "flex", gap: "12px", alignItems: "center" }}>
+            <label>Select Month:</label>
+            <input type="month" value={`${monthParams.year}-${String(monthParams.month).padStart(2, '0')}`} onChange={(e) => {
+              const [y, m] = e.target.value.split('-');
+              setMonthParams({ year: Number(y), month: Number(m) });
+            }} />
+          </div>
+          {loading ? <div>Loading attendance impact...</div> : (
+          <DataTable rows={report} data={report} columns={[
             { key: "staffId", label: "Employee ID" },
             { key: "staffName", label: "Staff Name" },
             { key: "grossSalary", label: "Gross Salary", render: (r) => formatINR(r.grossSalary) },
-            { key: "workingDays", label: "Working Days", render: () => "30 Days" },
-            { key: "lopDays", label: "LOP Days", render: (_, i) => `${i % 3} Days` },
-            { key: "lopDeduction", label: "LOP Deduction", render: (r, i) => formatINR(calculateLOP(r.grossSalary, 30, i % 3)) },
-            { key: "netImpact", label: "Adjusted Net", render: (r, i) => <strong style={{ color: "#108E50" }}>{formatINR(r.netSalary - calculateLOP(r.grossSalary, 30, i % 3))}</strong> },
+            { key: "workingDays", label: "Working Days", render: (r) => `${r.workingDays} Days` },
+            { key: "lopDays", label: "LOP Days", render: (r) => `${r.lopDays} Days` },
+            { key: "lopDeduction", label: "LOP Deduction", render: (r) => formatINR(r.lopDeduction) },
+            { key: "netImpact", label: "Adjusted Net", render: (r) => <strong style={{ color: "#108E50" }}>{formatINR(r.netImpact)}</strong> },
           ]} />
+          )}
         </div>
       </main>
     </DashboardLayout>

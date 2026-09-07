@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -19,11 +19,16 @@ namespace CollegeManagement.API.Services.Implementations
     {
         private readonly AppDbContext _context;
         private readonly IWebHostEnvironment? _environment;
+        private readonly Microsoft.Extensions.Configuration.IConfiguration? _configuration;
 
-        public StudentExportService(AppDbContext context, IWebHostEnvironment? environment = null)
+        public StudentExportService(
+            AppDbContext context,
+            IWebHostEnvironment? environment = null,
+            Microsoft.Extensions.Configuration.IConfiguration? configuration = null)
         {
             _context = context;
             _environment = environment;
+            _configuration = configuration;
         }
 
         public async Task<(byte[] PdfBytes, string FileName)> ExportStudentProfilePdfAsync(int studentId, CancellationToken ct = default)
@@ -162,6 +167,72 @@ namespace CollegeManagement.API.Services.Implementations
             return (pdfBytes, fileName);
         }
 
+        public async Task<(byte[] PdfBytes, string FileName)> ExportStudentCredentialSlipPdfAsync(int studentId, CancellationToken ct = default)
+        {
+            if (studentId <= 0)
+                throw new ArgumentException("Invalid student ID.");
+
+            var student = await _context.Students
+                .AsNoTracking()
+                .Include(s => s.BoardNavigation)
+                .Include(s => s.AcademicYear)
+                .Include(s => s.AcademicLevelNavigation)
+                .Include(s => s.GroupNavigation)
+                .Include(s => s.ProgramNavigation)
+                .Include(s => s.SectionNavigation)
+                .FirstOrDefaultAsync(s => s.StudentId == studentId, ct);
+
+            if (student == null)
+            {
+                throw new KeyNotFoundException("Student not found.");
+            }
+
+            // Credential PDF is for INITIAL ONBOARDING only.
+            // Allow credential PDF generation only while IsFirstLogin = 1.
+            // If IsFirstLogin = 0, reject with clear error message.
+            if (!student.IsFirstLogin)
+            {
+                throw new InvalidOperationException("Initial credential has already been consumed. Student password has already been changed.");
+            }
+
+            var initialPassword = Helpers.StudentCredentialHelper.GenerateInitialPassword(student.DateOfBirth);
+
+            var model = new StudentIndividualCredentialSlipModel
+            {
+                StudentId = student.StudentId,
+                StudentName = student.StudentName,
+                AdmissionNo = string.IsNullOrWhiteSpace(student.AdmissionNo) ? $"ADM-{student.StudentId}" : student.AdmissionNo,
+                RollNo = student.RollNo,
+                DateOfBirth = student.DateOfBirth,
+                Gender = student.Gender,
+                MobileNumber = student.MobileNumber,
+                Email = student.Email,
+                BoardName = student.BoardNavigation?.BoardName ?? "Board of Intermediate Education",
+                AcademicYearName = student.AcademicYear?.AcademicYearName ?? "Current Academic Year",
+                AcademicLevelName = student.AcademicLevelNavigation?.LevelName ?? "Academic Level",
+                GroupName = student.GroupNavigation?.GroupName ?? "Group Stream",
+                ProgramName = student.ProgramNavigation?.ProgramName,
+                SectionName = student.SectionNavigation?.SectionName,
+                InstitutionName = _configuration?["InstitutionSettings:InstitutionName"] ?? "College Management System",
+                PortalLoginUrl = _configuration?["StudentPortal:LoginUrl"]
+                              ?? _configuration?["InstitutionSettings:PortalUrl"]
+                              ?? _configuration?["AppSettings:StudentPortalUrl"]
+                              ?? "http://localhost:5173",
+                LoginId = string.IsNullOrWhiteSpace(student.AdmissionNo) ? $"ADM-{student.StudentId}" : student.AdmissionNo,
+                InitialPassword = initialPassword,
+                IsFirstLogin = student.IsFirstLogin,
+                GeneratedAt = DateTime.UtcNow
+            };
+
+            var document = new StudentIndividualCredentialSlipDocument(model);
+            byte[] pdfBytes = document.GeneratePdf();
+
+            string safeAdmissionNo = SanitizeForFilename(model.AdmissionNo);
+            string safeStudentName = SanitizeForFilename(model.StudentName);
+            string fileName = $"CredentialSlip_{safeAdmissionNo}_{safeStudentName}.pdf";
+
+            return (pdfBytes, fileName);
+        }
         public async Task<(byte[] ExcelBytes, string FileName)> ExportStudentsToExcelAsync(StudentExportFilterDto filter, CancellationToken ct = default)
         {
             filter ??= new StudentExportFilterDto();

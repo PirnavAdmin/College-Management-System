@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -22,40 +22,69 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./DepartmentManagementPage.css";
 
+// Helper: Convert UI staffType label to backend API expected string
+export const toApiStaffType = (uiValue) => {
+  if (!uiValue || uiValue === "Both" || uiValue === "All") return "";
+  if (uiValue === "Non-Teaching" || uiValue === "NonTeaching") return "NonTeaching";
+  if (uiValue === "Teaching") return "Teaching";
+  return uiValue;
+};
+
 const unwrapRows = (payload) => {
   const value = payload?.data ?? payload?.Data ?? payload;
   if (Array.isArray(value)) return value;
-  for (const key of ["items", "Items", "results", "Results", "$values", "value", "Value"])
+  for (const key of ["items", "Items", "results", "Results", "$values", "value", "Value"]) {
     if (Array.isArray(value?.[key])) return value[key];
+  }
   return [];
 };
+
 const pick = (row, ...keys) =>
   keys
     .map((key) => row?.[key])
     .find((value) => value !== undefined && value !== null && value !== "");
-const normalizeDepartment = (row) => ({
+
+export const normalizeDepartment = (row) => ({
   id: pick(row, "departmentId", "DepartmentId", "id", "Id"),
+  departmentId: pick(row, "departmentId", "DepartmentId", "id", "Id"),
   name: String(pick(row, "departmentName", "DepartmentName", "name", "Name") || "").trim(),
+  departmentName: String(pick(row, "departmentName", "DepartmentName", "name", "Name") || "").trim(),
   code: String(pick(row, "departmentCode", "DepartmentCode", "code", "Code") || "—").trim(),
-  shortName: String(pick(row, "shortName", "ShortName") || "—").trim(),
-  staffType: String(pick(row, "staffType", "StaffType") || "Both").trim(),
+  departmentCode: String(pick(row, "departmentCode", "DepartmentCode", "code", "Code") || "—").trim(),
+  staffType: String(pick(row, "staffType", "StaffType") || "Teaching").trim(),
+  description: String(pick(row, "description", "Description") || "—").trim(),
+  isActive: Boolean(pick(row, "isActive", "IsActive") ?? true),
   status:
     pick(row, "isActive", "IsActive") === false ||
     String(pick(row, "status", "Status") || "").toLowerCase() === "inactive"
       ? "Inactive"
       : "Active",
+  createdAt: pick(row, "createdAt", "CreatedAt") || null,
+  updatedAt: pick(row, "updatedAt", "UpdatedAt") || null,
 });
-const PAGE_SIZE = 6;
-const UI_DEPARTMENTS_KEY = "pjc-ui-departments";
-const readUiDepartments = () => {
-  try {
-    return JSON.parse(sessionStorage.getItem(UI_DEPARTMENTS_KEY) || "[]");
-  } catch {
-    return [];
-  }
+
+export const normalizeDesignation = (row) => {
+  const idVal = pick(row, "id", "Id", "designationId", "DesignationId");
+  return {
+    id: idVal,
+    designationId: idVal,
+    name: String(pick(row, "designationName", "DesignationName", "name", "Name") || "").trim(),
+    designationName: String(pick(row, "designationName", "DesignationName", "name", "Name") || "").trim(),
+    code: String(pick(row, "designationCode", "DesignationCode", "code", "Code") || "—").trim(),
+    designationCode: String(pick(row, "designationCode", "DesignationCode", "code", "Code") || "—").trim(),
+    staffType: String(pick(row, "staffType", "StaffType") || "Teaching").trim(),
+    isActive: Boolean(pick(row, "isActive", "IsActive") ?? true),
+    status:
+      pick(row, "isActive", "IsActive") === false ||
+      String(pick(row, "status", "Status") || "").toLowerCase() === "inactive"
+        ? "Inactive"
+        : "Active",
+    createdAt: pick(row, "createdAt", "CreatedAt") || null,
+    updatedAt: pick(row, "updatedAt", "UpdatedAt") || null,
+  };
 };
-const writeUiDepartments = (items) =>
-  sessionStorage.setItem(UI_DEPARTMENTS_KEY, JSON.stringify(items));
+
+const PAGE_SIZE = 6;
 
 function Pager({ page, total, onChange }) {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -71,7 +100,7 @@ function Pager({ page, total, onChange }) {
           Prev
         </button>
         <strong>{page}</strong>
-        <button disabled={page === pages} onClick={() => onChange(page + 1)}>
+        <button disabled={page >= pages} onClick={() => onChange(page + 1)}>
           Next
         </button>
       </div>
@@ -79,7 +108,7 @@ function Pager({ page, total, onChange }) {
   );
 }
 
-function EmptyTable({ text, colSpan = 6 }) {
+function EmptyTable({ text, colSpan = 3 }) {
   return (
     <tr>
       <td colSpan={colSpan} className="master-empty">
@@ -89,121 +118,138 @@ function EmptyTable({ text, colSpan = 6 }) {
   );
 }
 
-function MasterCreateModal({ kind, staffType, onClose, onDepartmentSaved }) {
+const formDefinitions = {
+  department: [
+    ["departmentName", "Department Name", true, "Enter department name"],
+    ["status", "Status", true, "Select status", "select", ["Active", "Inactive"]],
+  ],
+  designation: [
+    ["designationName", "Designation Name", true, "Enter designation name"],
+    [
+      "staffType",
+      "Staff Type",
+      true,
+      "Select staff type",
+      "select",
+      ["Teaching", "Non-Teaching"],
+    ],
+    ["status", "Status", true, "Select status", "select", ["Active", "Inactive"]],
+  ],
+};
+
+function MasterCreateModal({ kind, staffType, onClose, onSaved }) {
   const label = kind === "department" ? "Department" : "Designation";
   const [values, setValues] = useState({
+    departmentName: "",
+    departmentCode: "",
+    designationName: "",
+    description: "",
     status: "Active",
-    staffType: staffType === "Non-Teaching" ? "NonTeaching" : "Teaching",
+    staffType: staffType === "Non-Teaching" ? "Non-Teaching" : "Teaching",
   });
   const [errors, setErrors] = useState({});
-  const [departmentOptions, setDepartmentOptions] = useState(() => readUiDepartments());
-  const [departmentOpen, setDepartmentOpen] = useState(false);
-  // The active Teaching / Non-Teaching tab determines the staff type, so it is not editable here.
-  const fields = formDefinitions[kind].filter(([name]) => name !== "staffType");
-  useEffect(() => {
-    if (kind !== "designation") return;
-    apiClient
-      .get(apiEndpoints.departments.getAll, {
-        params: { PageNumber: 1, PageSize: 1000 },
-        skipGlobalLoader: true,
-      })
-      .then((response) =>
-        setDepartmentOptions(
-          [...unwrapRows(response.data).map(normalizeDepartment), ...readUiDepartments()].filter(
-            (item, index, items) =>
-              item.name &&
-              items.findIndex((candidate) => candidate.name.toLowerCase() === item.name.toLowerCase()) === index,
-          ),
-        ),
-      )
-      .catch(() => setDepartmentOptions(readUiDepartments()));
-  }, [kind]);
-  const matchingDepartments = departmentOptions.filter((department) =>
-    department.name.toLowerCase().includes(String(values.departmentId || "").toLowerCase()),
-  );
-  const submit = (event) => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const fields = formDefinitions[kind];
+
+  const submit = async (event) => {
     event.preventDefault();
-    const next = {};
+    const nextErrors = {};
     fields.forEach(([name, fieldLabel, required]) => {
-      if (required && !String(values[name] ?? "").trim()) next[name] = `${fieldLabel} is required.`;
+      if (required && !String(values[name] ?? "").trim()) {
+        nextErrors[name] = `${fieldLabel} is required.`;
+      }
     });
-    setErrors(next);
-    if (Object.keys(next).length || kind !== "department") return;
-    const saved = readUiDepartments();
-    const name = String(values.departmentName).trim();
-    if (saved.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
-      setErrors({ departmentName: "This department already exists in this UI session." });
-      return;
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setSubmitting(true);
+    try {
+      if (kind === "department") {
+        const deptCode = values.departmentCode?.trim() || values.departmentName.trim().toUpperCase().replace(/\s+/g, "_").slice(0, 10);
+        const payload = {
+          departmentId: 0,
+          departmentName: values.departmentName.trim(),
+          departmentCode: deptCode,
+          staffType: toApiStaffType(values.staffType || staffType),
+          description: values.description ? values.description.trim() : "",
+          isActive: values.status === "Active",
+        };
+        const response = await apiClient.post(apiEndpoints.departments.create, payload);
+        const created = normalizeDepartment(response.data);
+        onSaved("Department created successfully.", created);
+      } else {
+        const payload = {
+          name: values.designationName.trim(),
+          staffType: toApiStaffType(values.staffType),
+          isActive: values.status === "Active",
+        };
+        const response = await apiClient.post(apiEndpoints.designations.create, payload);
+        const created = normalizeDesignation(response.data);
+        onSaved("Designation created successfully.", created);
+      }
+      onClose();
+    } catch (error) {
+      const errMsg = getApiErrorMessage(
+        error,
+        `Unable to create ${label.toLowerCase()}. Please verify details.`
+      );
+      setErrors({ apiError: errMsg });
+    } finally {
+      setSubmitting(false);
     }
-    const item = {
-      id: `ui-${Date.now()}`,
-      name,
-      staffType: values.staffType,
-      status: values.status,
-      code: "â€”",
-      shortName: "â€”",
-      uiOnly: true,
-    };
-    writeUiDepartments([...saved, item]);
-    onDepartmentSaved(item);
-    onClose();
   };
+
   return (
     <Modal title={`Add ${label}`} onClose={onClose} className="master-create-modal">
       <form className="master-form" onSubmit={submit} noValidate>
+        {errors.apiError && (
+          <div className="master-form-error-alert">
+            <Info /> <span>{errors.apiError}</span>
+          </div>
+        )}
         <div className="master-form-grid">
           {fields.map(([name, fieldLabel, required, placeholder, type = "text", options = []]) => (
-            <label key={name}>
-              <span>{fieldLabel}{required ? <b> *</b> : null}</span>
+            <label key={name} className={type === "textarea" ? "is-wide" : ""}>
+              <span>
+                {fieldLabel}
+                {required ? <b> *</b> : null}
+              </span>
               {type === "select" ? (
-                <select value={values[name] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}>
+                <select
+                  value={values[name] ?? ""}
+                  onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                >
                   <option value="">{placeholder}</option>
-                  {options.map((option) => <option key={option}>{option}</option>)}
+                  {options.map((option) => (
+                    <option key={option}>{option}</option>
+                  ))}
                 </select>
-              ) : type === "department-search" ? (
-                <div className="master-department-picker">
-                  <input
-                    value={values[name] ?? ""}
-                    placeholder={placeholder}
-                    autoComplete="off"
-                    onFocus={() => setDepartmentOpen(true)}
-                    onChange={(e) => {
-                      setValues((v) => ({ ...v, [name]: e.target.value }));
-                      setDepartmentOpen(true);
-                    }}
-                  />
-                  {departmentOpen ? (
-                    <div className="master-department-options" role="listbox">
-                      {matchingDepartments.length ? (
-                        matchingDepartments.map((department) => (
-                          <button
-                            type="button"
-                            role="option"
-                            key={department.id ?? department.name}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => {
-                              setValues((v) => ({ ...v, [name]: department.name }));
-                              setDepartmentOpen(false);
-                            }}
-                          >
-                            {department.name}
-                          </button>
-                        ))
-                      ) : (
-                        <span>No departments found.</span>
-                      )}
-                    </div>
-                  ) : null}
-                </div>
-              ) : <input value={values[name] ?? ""} placeholder={placeholder} onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))} />}
+              ) : type === "textarea" ? (
+                <textarea
+                  value={values[name] ?? ""}
+                  placeholder={placeholder}
+                  onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                />
+              ) : (
+                <input
+                  type={type}
+                  value={values[name] ?? ""}
+                  placeholder={placeholder}
+                  onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                />
+              )}
               {errors[name] ? <small>{errors[name]}</small> : null}
             </label>
           ))}
         </div>
-        {kind === "designation" ? <p className="master-modal-note">Designation saving will be enabled when its backend API is available.</p> : null}
         <footer>
-          <button type="button" className="cms-btn secondary" onClick={onClose}>Cancel</button>
-          <button className="cms-btn primary" disabled={kind === "designation"}>Save {label}</button>
+          <button type="button" className="cms-btn secondary" onClick={onClose} disabled={submitting}>
+            Cancel
+          </button>
+          <button type="submit" className="cms-btn primary" disabled={submitting}>
+            {submitting ? "Saving..." : `Save ${label}`}
+          </button>
         </footer>
       </form>
     </Modal>
@@ -212,96 +258,178 @@ function MasterCreateModal({ kind, staffType, onClose, onDepartmentSaved }) {
 
 export default function DepartmentManagementPage() {
   const navigate = useNavigate();
-  const [departments, setDepartments] = useState(() => readUiDepartments());
+  const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
   const [staffType, setStaffType] = useState("Teaching");
-  const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState("");
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+  const [designationsLoading, setDesignationsLoading] = useState(false);
+  const [deptQuery, setDeptQuery] = useState("");
   const [designationQuery, setDesignationQuery] = useState("");
-  const [page, setPage] = useState(1);
+  const [deptPage, setDeptPage] = useState(1);
+  const [desigPage, setDesigPage] = useState(1);
   const [toast, setToast] = useState("");
-  const [pendingDelete, setPendingDelete] = useState(null);
+  const [pendingDeleteDept, setPendingDeleteDept] = useState(null);
+  const [pendingDeleteDesig, setPendingDeleteDesig] = useState(null);
   const [createKind, setCreateKind] = useState(null);
+  const [deletingDesig, setDeletingDesig] = useState(false);
 
-  const load = useCallback(async (isManual = false) => {
-    setLoading(true);
+  const requestSeqRef = useRef(0);
+
+  const fetchMasterData = useCallback(async (targetStaffType, isManual = false) => {
+    const currentSeq = ++requestSeqRef.current;
+    const apiStaffType = toApiStaffType(targetStaffType);
+
+    setDepartmentsLoading(true);
+    setDesignationsLoading(true);
+
+    let deptSuccess = false;
+    let desigSuccess = false;
+
     try {
-      const response = await apiClient.get(apiEndpoints.departments.getAll, {
-        params: { PageNumber: 1, PageSize: 1000 },
+      // 1. Fetch Departments (GET /api/v1/departments?staffType=...)
+      const deptRes = await apiClient.get(apiEndpoints.departments.getAll, {
+        params: apiStaffType ? { staffType: apiStaffType } : {},
         skipGlobalLoader: true,
       });
-      const apiDepartments = unwrapRows(response.data)
-        .map(normalizeDepartment)
-        .filter((item) => item.name);
-      const savedDepartments = readUiDepartments();
-      setDepartments(
-        [...apiDepartments, ...savedDepartments].filter(
-          (item, index, items) =>
-            items.findIndex(
-              (candidate) => candidate.name.toLowerCase() === item.name.toLowerCase(),
-            ) === index,
-        ),
-      );
-      if (isManual) setToast("Departments data refreshed successfully.");
-    } catch (error) {
-      setDepartments(readUiDepartments());
-      if (isManual) {
-        setToast(
-          getApiErrorMessage(
-            error,
-            "Backend departments could not be loaded. Showing departments saved in this UI session.",
-          ),
-        );
+      if (requestSeqRef.current === currentSeq) {
+        const rows = unwrapRows(deptRes.data).map(normalizeDepartment).filter((d) => d.name);
+        setDepartments(rows);
+        deptSuccess = true;
+      }
+    } catch (err) {
+      if (requestSeqRef.current === currentSeq) {
+        setDepartments([]);
       }
     } finally {
-      setLoading(false);
+      if (requestSeqRef.current === currentSeq) setDepartmentsLoading(false);
+    }
+
+    try {
+      // 2. Fetch Designations (GET /api/v1/designations?includeInactive=true&staffType=...)
+      const desigRes = await apiClient.get(apiEndpoints.designations.getAll, {
+        params: {
+          includeInactive: true,
+          ...(apiStaffType ? { staffType: apiStaffType } : {}),
+        },
+        skipGlobalLoader: true,
+      });
+      if (requestSeqRef.current === currentSeq) {
+        const rows = unwrapRows(desigRes.data).map(normalizeDesignation).filter((d) => d.name);
+        setDesignations(rows);
+        desigSuccess = true;
+      }
+    } catch (err) {
+      if (requestSeqRef.current === currentSeq) {
+        setDesignations([]);
+      }
+    } finally {
+      if (requestSeqRef.current === currentSeq) setDesignationsLoading(false);
+    }
+
+    if (isManual && requestSeqRef.current === currentSeq) {
+      if (deptSuccess && desigSuccess) {
+        setToast("Department and Designation data refreshed successfully.");
+      } else {
+        setToast("Refreshed master data from server.");
+      }
     }
   }, []);
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const matchesStaffType = (item) => {
-      const type = String(item.staffType || "Both")
-        .toLowerCase()
-        .replace(/[\s_-]/g, "");
-      return type === "both" || type === staffType.toLowerCase().replace(/-/g, "");
-    };
-    const staffTypeDepartments = departments.filter(matchesStaffType);
-    return needle
-      ? staffTypeDepartments.filter((item) =>
-          [item.name, item.code, item.shortName].some((value) =>
-            value.toLowerCase().includes(needle),
-          ),
-        )
-      : staffTypeDepartments;
-  }, [departments, query, staffType]);
-  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const activeDepartments = filtered.filter((item) => item.status === "Active").length;
+  useEffect(() => {
+    fetchMasterData(staffType);
+  }, [staffType, fetchMasterData]);
+
+  // Department Client-side Filtering
+  const filteredDepartments = useMemo(() => {
+    const q = deptQuery.trim().toLowerCase();
+    if (!q) return departments;
+    return departments.filter((item) =>
+      [item.name, item.code, item.description, item.staffType].some((val) =>
+        String(val || "").toLowerCase().includes(q)
+      )
+    );
+  }, [departments, deptQuery]);
+
+  const visibleDepartments = useMemo(() => {
+    return filteredDepartments.slice((deptPage - 1) * PAGE_SIZE, deptPage * PAGE_SIZE);
+  }, [filteredDepartments, deptPage]);
+
+  const activeDepartmentsCount = useMemo(() => {
+    return filteredDepartments.filter((d) => d.status === "Active").length;
+  }, [filteredDepartments]);
+
+  // Designation Client-side Filtering
+  const filteredDesignations = useMemo(() => {
+    const q = designationQuery.trim().toLowerCase();
+    if (!q) return designations;
+    return designations.filter((item) =>
+      [item.name, item.code, item.staffType].some((val) =>
+        String(val || "").toLowerCase().includes(q)
+      )
+    );
+  }, [designations, designationQuery]);
+
+  const visibleDesignations = useMemo(() => {
+    return filteredDesignations.slice((desigPage - 1) * PAGE_SIZE, desigPage * PAGE_SIZE);
+  }, [filteredDesignations, desigPage]);
+
+  const activeDesignationsCount = useMemo(() => {
+    return filteredDesignations.filter((d) => d.status === "Active").length;
+  }, [filteredDesignations]);
+
+  // Delete Designation Handler (DELETE /api/v1/designations/{id})
+  const handleDeleteDesignation = async () => {
+    if (!pendingDeleteDesig?.id) return;
+    setDeletingDesig(true);
+    try {
+      await apiClient.delete(apiEndpoints.designations.delete(pendingDeleteDesig.id));
+      setToast(`Designation "${pendingDeleteDesig.name}" deleted successfully.`);
+      fetchMasterData(staffType);
+    } catch (error) {
+      const status = error?.response?.status;
+      if (status === 404) {
+        setToast("Designation was not found on the server.");
+        fetchMasterData(staffType);
+      } else {
+        const msg = getApiErrorMessage(
+          error,
+          "This designation cannot be deleted because it is currently assigned to staff."
+        );
+        setToast(msg);
+      }
+    } finally {
+      setDeletingDesig(false);
+      setPendingDeleteDesig(null);
+    }
+  };
+
   const pageActions = (
     <div className="master-page-actions master-summary-actions">
       <article>
         <Building2 />
         <span>
-          Total Departments<strong>{filtered.length}</strong>
-          <small>{activeDepartments} Active Departments</small>
+          Total Departments<strong>{filteredDepartments.length}</strong>
+          <small>{activeDepartmentsCount} Active Departments</small>
         </span>
       </article>
       <article>
         <Users />
         <span>
-          Total Designations<strong>—</strong>
-          <small>Awaiting backend API</small>
+          Total Designations<strong>{filteredDesignations.length}</strong>
+          <small>{activeDesignationsCount} Active Designations</small>
         </span>
       </article>
       <button
         type="button"
         className="cms-btn cms-btn-ghost"
-        disabled={loading}
-        onClick={() => load(true)}
+        disabled={departmentsLoading || designationsLoading}
+        onClick={() => fetchMasterData(staffType, true)}
       >
-        <RefreshCw className={loading ? "is-spinning" : ""} /> Refresh
+        <RefreshCw className={departmentsLoading || designationsLoading ? "is-spinning" : ""} /> Refresh
       </button>
     </div>
   );
+
   return (
     <DashboardLayout
       title="Department Management"
@@ -320,7 +448,8 @@ export default function DepartmentManagementPage() {
                 className={staffType === type ? "is-active" : ""}
                 onClick={() => {
                   setStaffType(type);
-                  setPage(1);
+                  setDeptPage(1);
+                  setDesigPage(1);
                 }}
               >
                 {type} Staff
@@ -329,12 +458,14 @@ export default function DepartmentManagementPage() {
           </div>
           {pageActions}
         </div>
+
         <section className="master-grid">
+          {/* DEPARTMENTS CARD */}
           <article className="master-card">
             <header>
               <div>
                 <h2>Departments</h2>
-                <p>Add, edit and manage {staffType.toLowerCase()} departments.</p>
+                <p>Add and view {staffType.toLowerCase()} departments.</p>
               </div>
               <div className="master-actions">
                 <button
@@ -355,10 +486,10 @@ export default function DepartmentManagementPage() {
               <Search />
               <span className="sr-only">Search departments</span>
               <input
-                value={query}
+                value={deptQuery}
                 onChange={(event) => {
-                  setQuery(event.target.value);
-                  setPage(1);
+                  setDeptQuery(event.target.value);
+                  setDeptPage(1);
                 }}
                 placeholder="Search departments..."
               />
@@ -373,11 +504,11 @@ export default function DepartmentManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {loading ? (
+                  {departmentsLoading ? (
                     <EmptyTable colSpan={3} text="Loading departments..." />
-                  ) : visible.length ? (
-                    visible.map((item) => (
-                      <tr key={item.id ?? item.name}>
+                  ) : visibleDepartments.length > 0 ? (
+                    visibleDepartments.map((item) => (
+                      <tr key={item.id || item.name}>
                         <td>
                           <strong>{item.name}</strong>
                           <small>{item.staffType}</small>
@@ -390,16 +521,21 @@ export default function DepartmentManagementPage() {
                             <button
                               className="master-icon-button"
                               aria-label={`View ${item.name}`}
-                              disabled={!item.id}
                               onClick={() => navigate(`/dashboard/departments/${item.id}/view`)}
                             >
                               <Eye />
                             </button>
                             <button
+                              className="master-icon-button"
+                              aria-label={`Edit ${item.name}`}
+                              onClick={() => navigate(`/dashboard/departments/${item.id}/edit`)}
+                            >
+                              <Pencil />
+                            </button>
+                            <button
                               className="master-icon-button is-delete"
                               aria-label={`Delete ${item.name}`}
-                              disabled={!item.id}
-                              onClick={() => setPendingDelete(item)}
+                              onClick={() => setPendingDeleteDept(item)}
                             >
                               <Trash2 />
                             </button>
@@ -411,18 +547,20 @@ export default function DepartmentManagementPage() {
                     <EmptyTable
                       colSpan={3}
                       text={
-                        query
+                        deptQuery
                           ? "No departments match your search."
-                          : "No departments have been added yet."
+                          : "No departments have been added for this staff type yet."
                       }
                     />
                   )}
                 </tbody>
               </table>
             </div>
-            <Pager page={page} total={filtered.length} onChange={setPage} />
+            <Pager page={deptPage} total={filteredDepartments.length} onChange={setDeptPage} />
           </article>
-          <article className="master-card is-unavailable">
+
+          {/* DESIGNATIONS CARD */}
+          <article className="master-card">
             <header>
               <div>
                 <h2>Designations</h2>
@@ -448,7 +586,10 @@ export default function DepartmentManagementPage() {
               <span className="sr-only">Search designations</span>
               <input
                 value={designationQuery}
-                onChange={(event) => setDesignationQuery(event.target.value)}
+                onChange={(event) => {
+                  setDesignationQuery(event.target.value);
+                  setDesigPage(1);
+                }}
                 placeholder="Search designations..."
               />
             </label>
@@ -462,98 +603,148 @@ export default function DepartmentManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <EmptyTable
-                    colSpan={3}
-                    text={
-                      designationQuery
-                        ? "No designations match your search."
-                        : "No designation API is available yet."
-                    }
-                  />
+                  {designationsLoading ? (
+                    <EmptyTable colSpan={3} text="Loading designations..." />
+                  ) : visibleDesignations.length > 0 ? (
+                    visibleDesignations.map((item) => (
+                      <tr key={item.id || item.name}>
+                        <td>
+                          <strong>{item.name}</strong>
+                          <small>{item.staffType}</small>
+                        </td>
+                        <td>
+                          <StatusBadge value={item.status} />
+                        </td>
+                        <td>
+                          <div className="master-row-actions">
+                            <button
+                              className="master-icon-button"
+                              aria-label={`View ${item.name}`}
+                              onClick={() => navigate(`/dashboard/designations/${item.id}/view`, { state: { designation: item } })}
+                            >
+                              <Eye />
+                            </button>
+                            <button
+                              className="master-icon-button"
+                              aria-label={`Edit ${item.name}`}
+                              onClick={() => navigate(`/dashboard/designations/${item.id}/edit`)}
+                            >
+                              <Pencil />
+                            </button>
+                            <button
+                              className="master-icon-button is-delete"
+                              aria-label={`Delete ${item.name}`}
+                              onClick={() => setPendingDeleteDesig(item)}
+                            >
+                              <Trash2 />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <EmptyTable
+                      colSpan={3}
+                      text={
+                        designationQuery
+                          ? "No designations match your search."
+                          : "No designations have been added for this staff type yet."
+                      }
+                    />
+                  )}
                 </tbody>
               </table>
             </div>
-            <Pager page={1} total={0} onChange={() => {}} />
+            <Pager page={desigPage} total={filteredDesignations.length} onChange={setDesigPage} />
           </article>
         </section>
+
         <aside className="master-note">
           <Info />
           <span>
-            Departments and Designations added here will be available in the Staff Management module
-            for assigning during staff creation or update.
+            Departments and Designations created here are retrieved live from the backend server API
+            and available across the Staff Management module.
           </span>
         </aside>
       </main>
-      {pendingDelete ? (
+
+      {/* DEPARTMENT DELETE NOTICE DIALOG (No Backend Delete API) */}
+      {pendingDeleteDept ? (
         <ConfirmDialog
           title="Delete department?"
-          message={
-            pendingDelete.uiOnly
-              ? `${pendingDelete.name} will be removed from this UI session.`
-              : `${pendingDelete.name} cannot be deleted until the backend provides a confirmed delete or deactivate operation.`
-          }
-          onCancel={() => setPendingDelete(null)}
-          onConfirm={() => {
-            if (pendingDelete.uiOnly) {
-              const next = readUiDepartments().filter((item) => item.id !== pendingDelete.id);
-              writeUiDepartments(next);
-              setDepartments((current) => current.filter((item) => item.id !== pendingDelete.id));
-            } else
-              setToast(
-                "Department deletion is not available until the backend contract is published.",
-              );
-            setPendingDelete(null);
-          }}
+          message={`Department deletion is not available because the backend DELETE endpoint has not been provided.`}
+          confirmLabel="OK"
+          onCancel={() => setPendingDeleteDept(null)}
+          onConfirm={() => setPendingDeleteDept(null)}
         />
       ) : null}
+
+      {/* DESIGNATION DELETE CONFIRM DIALOG (DELETE /api/v1/designations/{id}) */}
+      {pendingDeleteDesig ? (
+        <ConfirmDialog
+          title="Delete designation?"
+          message={`Are you sure you want to delete designation "${pendingDeleteDesig.name}"? This action cannot be undone.`}
+          confirmLabel={deletingDesig ? "Deleting..." : "Delete"}
+          onCancel={() => setPendingDeleteDesig(null)}
+          onConfirm={handleDeleteDesignation}
+        />
+      ) : null}
+
+      {/* CREATE MODAL */}
       {createKind ? (
         <MasterCreateModal
           kind={createKind}
           staffType={staffType}
           onClose={() => setCreateKind(null)}
-          onDepartmentSaved={(item) => setDepartments((current) => [...current, item])}
+          onSaved={(msg) => {
+            setToast(msg);
+            fetchMasterData(staffType);
+          }}
         />
       ) : null}
+
       {toast ? <Toast message={toast} onClose={() => setToast("")} /> : null}
     </DashboardLayout>
   );
 }
 
+// ----------------------------------------------------------------------
+// DEPARTMENT DETAILS PAGE
+// ----------------------------------------------------------------------
 export function DepartmentDetailsPage() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [department, setDepartment] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   useEffect(() => {
     let active = true;
     apiClient
-      .get(apiEndpoints.departments.getAll, {
-        params: { PageNumber: 1, PageSize: 1000 },
-        skipGlobalLoader: true,
-      })
+      .get(apiEndpoints.departments.getAll, { skipGlobalLoader: true })
       .then((response) => {
         if (!active) return;
-        const match = [
-          ...unwrapRows(response.data).map(normalizeDepartment),
-          ...readUiDepartments(),
-        ].find((item) => String(item.id) === String(id));
-        setDepartment(match || null);
-        if (!match) setError("Department details were not found.");
+        const list = unwrapRows(response.data).map(normalizeDepartment);
+        const match = list.find((item) => String(item.id) === String(id));
+        if (match) {
+          setDepartment(match);
+        } else {
+          setError("Department details were not found.");
+        }
       })
       .catch((requestError) => {
         if (!active) return;
-        const savedMatch = readUiDepartments().find((item) => String(item.id) === String(id));
-        if (savedMatch) setDepartment(savedMatch);
-        else setError(getApiErrorMessage(requestError, "Department details could not be loaded."));
+        setError(getApiErrorMessage(requestError, "Department details could not be loaded."));
       })
       .finally(() => {
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
   }, [id]);
+
   return (
     <DashboardLayout
       title="Department Details"
@@ -593,10 +784,6 @@ export function DepartmentDetailsPage() {
                 <dd>{department.name}</dd>
               </div>
               <div>
-                <dt>Staff Type Applicability</dt>
-                <dd>{department.staffType}</dd>
-              </div>
-              <div>
                 <dt>Status</dt>
                 <dd>
                   <StatusBadge value={department.status} />
@@ -610,11 +797,39 @@ export function DepartmentDetailsPage() {
   );
 }
 
+// ----------------------------------------------------------------------
+// DESIGNATION DETAILS PAGE (GET /api/v1/designations/{id})
+// ----------------------------------------------------------------------
 export function DesignationDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
-  const designation = location.state?.designation || null;
+  const [designation, setDesignation] = useState(location.state?.designation || null);
+  const [loading, setLoading] = useState(!designation);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (designation) return;
+    let active = true;
+    setLoading(true);
+    apiClient
+      .get(apiEndpoints.designations.getById(id), { skipGlobalLoader: true })
+      .then((response) => {
+        if (!active) return;
+        setDesignation(normalizeDesignation(response.data));
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(getApiErrorMessage(err, "Designation details could not be loaded."));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id, designation]);
+
   return (
     <DashboardLayout
       title="Designation Details"
@@ -643,11 +858,23 @@ export function DesignationDetailsPage() {
               <p>Designation master record</p>
             </div>
           </header>
-          {designation ? (
+          {loading ? (
+            <p className="master-details-state">Loading designation details...</p>
+          ) : error ? (
+            <p className="master-details-state">{error}</p>
+          ) : designation ? (
             <dl>
               <div>
                 <dt>Designation Name</dt>
                 <dd>{designation.name}</dd>
+              </div>
+              <div>
+                <dt>Designation Code</dt>
+                <dd><code>{designation.code}</code></dd>
+              </div>
+              <div>
+                <dt>Staff Type</dt>
+                <dd>{designation.staffType}</dd>
               </div>
               <div>
                 <dt>Status</dt>
@@ -657,9 +884,7 @@ export function DesignationDetailsPage() {
               </div>
             </dl>
           ) : (
-            <p className="master-details-state">
-              Designation details cannot be loaded until the backend provides a Designation API.
-            </p>
+            <p className="master-details-state">Designation details could not be found.</p>
           )}
         </section>
       </main>
@@ -667,109 +892,139 @@ export function DesignationDetailsPage() {
   );
 }
 
-const formDefinitions = {
-  department: [
-    ["departmentName", "Department Name", true, "Enter department name"],
-    [
-      "staffType",
-      "Staff Type Applicability",
-      true,
-      "Select staff type",
-      "select",
-      ["Teaching", "NonTeaching", "Both"],
-    ],
-    ["status", "Status", true, "Select status", "select", ["Active", "Inactive"]],
-  ],
-  designation: [
-    ["designationName", "Designation Name", true, "Enter designation name"],
-    ["departmentId", "Department", true, "Search department", "department-search", []],
-    [
-      "staffType",
-      "Staff Type",
-      true,
-      "Select staff type",
-      "select",
-      ["Teaching", "NonTeaching", "Both"],
-    ],
-    ["status", "Status", true, "Select status", "select", ["Active", "Inactive"]],
-  ],
-};
-
+// ----------------------------------------------------------------------
+// MASTER FORM PAGE (ADD/EDIT DEPARTMENT & DESIGNATION)
+// ----------------------------------------------------------------------
 export function MasterFormPage({ kind }) {
   const navigate = useNavigate();
   const { id } = useParams();
   const edit = Boolean(id);
   const label = kind === "department" ? "Department" : "Designation";
-  const [values, setValues] = useState({ status: "Active", staffType: "Both" });
+
+  const [values, setValues] = useState({
+    departmentName: "",
+    departmentCode: "",
+    designationName: "",
+    description: "",
+    status: "Active",
+    staffType: "Teaching",
+  });
   const [errors, setErrors] = useState({});
-  const [departmentOptions, setDepartmentOptions] = useState(() => readUiDepartments());
+  const [loading, setLoading] = useState(edit);
+  const [submitting, setSubmitting] = useState(false);
+  const [apiNotice, setApiNotice] = useState("");
+
   const fields = formDefinitions[kind];
+
   useEffect(() => {
-    if (kind !== "designation") return;
+    if (!edit) return;
     let active = true;
-    apiClient
-      .get(apiEndpoints.departments.getAll, {
-        params: { PageNumber: 1, PageSize: 1000 },
-        skipGlobalLoader: true,
-      })
-      .then((response) => {
-        if (!active) return;
-        const apiDepartments = unwrapRows(response.data)
-          .map(normalizeDepartment)
-          .filter((item) => item.name && item.status === "Active");
-        const combined = [...apiDepartments, ...readUiDepartments()].filter(
-          (item, index, items) =>
-            items.findIndex(
-              (candidate) => candidate.name.toLowerCase() === item.name.toLowerCase(),
-            ) === index,
-        );
-        setDepartmentOptions(combined);
-      })
-      .catch(() => {
-        if (active) setDepartmentOptions(readUiDepartments());
-      });
+    setLoading(true);
+
+    if (kind === "department") {
+      setApiNotice("Department update API is not available in the current backend contract.");
+      apiClient
+        .get(apiEndpoints.departments.getAll, { skipGlobalLoader: true })
+        .then((res) => {
+          if (!active) return;
+          const match = unwrapRows(res.data).map(normalizeDepartment).find((d) => String(d.id) === String(id));
+          if (match) {
+            setValues({
+              departmentName: match.name,
+              departmentCode: match.code,
+              description: match.description !== "—" ? match.description : "",
+              status: match.status,
+              staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : "Teaching",
+            });
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    } else {
+      // Edit Designation: GET /api/v1/designations/{id}
+      apiClient
+        .get(apiEndpoints.designations.getById(id), { skipGlobalLoader: true })
+        .then((res) => {
+          if (!active) return;
+          const match = normalizeDesignation(res.data);
+          setValues({
+            designationName: match.name,
+            status: match.status,
+            staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : "Teaching",
+          });
+        })
+        .catch((err) => {
+          if (!active) return;
+          setErrors({ apiError: getApiErrorMessage(err, "Failed to load designation details.") });
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    }
+
     return () => {
       active = false;
     };
-  }, [kind]);
-  const submit = (event) => {
+  }, [edit, id, kind]);
+
+  const submit = async (event) => {
     event.preventDefault();
-    const next = {};
+
+    if (kind === "department" && edit) {
+      setErrors({ apiError: "Department update API is not supported by the backend." });
+      return;
+    }
+
+    const nextErrors = {};
     fields.forEach(([name, fieldLabel, required]) => {
-      if (required && !String(values[name] ?? "").trim()) next[name] = `${fieldLabel} is required.`;
-    });
-    if (
-      kind === "designation" &&
-      values.departmentId &&
-      !departmentOptions.some(
-        (item) => item.name.toLowerCase() === String(values.departmentId).trim().toLowerCase(),
-      )
-    )
-      next.departmentId = "Select a saved department from the list.";
-    setErrors(next);
-    if (Object.keys(next).length) return;
-    if (kind === "department") {
-      const saved = readUiDepartments();
-      const name = String(values.departmentName).trim();
-      if (saved.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
-        setErrors({ departmentName: "This department already exists in this UI session." });
-        return;
+      if (required && !String(values[name] ?? "").trim()) {
+        nextErrors[name] = `${fieldLabel} is required.`;
       }
-      writeUiDepartments([
-        ...saved,
-        {
-          id: `ui-${Date.now()}`,
-          name,
-          staffType: values.staffType,
-          status: values.status,
-          code: "—",
-          shortName: "—",
-          uiOnly: true,
-        },
-      ]);
-      navigate("/dashboard/departments");
+    });
+
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    setSubmitting(true);
+    try {
+      if (kind === "department") {
+        const deptCode = values.departmentCode?.trim() || values.departmentName.trim().toUpperCase().replace(/\s+/g, "_").slice(0, 10);
+        const payload = {
+          departmentId: 0,
+          departmentName: values.departmentName.trim(),
+          departmentCode: deptCode,
+          staffType: toApiStaffType(values.staffType || "Teaching"),
+          description: values.description ? values.description.trim() : "",
+          isActive: values.status === "Active",
+        };
+        await apiClient.post(apiEndpoints.departments.create, payload);
+        navigate("/dashboard/departments");
+      } else {
+        const payload = {
+          name: values.designationName.trim(),
+          staffType: toApiStaffType(values.staffType),
+          isActive: values.status === "Active",
+        };
+        if (edit) {
+          await apiClient.put(apiEndpoints.designations.update(id), payload);
+        } else {
+          await apiClient.post(apiEndpoints.designations.create, payload);
+        }
+        navigate("/dashboard/departments");
+      }
+    } catch (error) {
+      setErrors({
+        apiError: getApiErrorMessage(
+          error,
+          `Unable to ${edit ? "update" : "create"} ${label.toLowerCase()}.`
+        ),
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
+
   return (
     <DashboardLayout
       title={`${edit ? "Edit" : "Add"} ${label}`}
@@ -780,137 +1035,131 @@ export function MasterFormPage({ kind }) {
         <button className="master-back" onClick={() => navigate("/dashboard/departments")}>
           <ArrowLeft /> Back to Department Management
         </button>
-        <form className="master-form" onSubmit={submit} noValidate>
-          <header>
-            <Building2 />
-            <div>
-              <h1>
-                {edit ? "Edit" : "Add"} {label}
-              </h1>
-              <p>
-                {edit ? "Review and update" : "Create a new"} {label.toLowerCase()} for your
-                institution.
-              </p>
-            </div>
-          </header>
-          <div className="master-form-grid">
-            {fields.map(
-              ([name, fieldLabel, required, placeholder, type = "text", options = []]) => (
-                <label key={name} className={type === "textarea" ? "is-wide" : ""}>
-                  <span>
-                    {fieldLabel}
-                    {required ? <b> *</b> : null}
-                  </span>
-                  {type === "select" ? (
-                    <select
-                      value={values[name] ?? ""}
-                      onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
-                    >
-                      <option value="">{placeholder}</option>
-                      {options.map((option) => (
-                        <option key={option}>{option}</option>
-                      ))}
-                    </select>
-                  ) : type === "department-search" ? (
-                    <>
-                      <span className="master-department-search">
-                        <Search aria-hidden="true" />
-                        <input
-                          type="search"
-                          list="designation-departments"
-                          value={values[name] ?? ""}
-                          placeholder={placeholder}
-                          autoComplete="off"
-                          onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
-                        />
-                      </span>
-                      <datalist id="designation-departments">
-                        {departmentOptions.map((department) => (
-                          <option key={department.id ?? department.name} value={department.name} />
-                        ))}
-                      </datalist>
-                    </>
-                  ) : type === "textarea" ? (
-                    <textarea
-                      value={values[name] ?? ""}
-                      placeholder={placeholder}
-                      onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
-                    />
-                  ) : (
-                    <input
-                      type={type}
-                      min={type === "number" ? 0 : undefined}
-                      value={values[name] ?? ""}
-                      placeholder={placeholder}
-                      onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
-                    />
-                  )}{" "}
-                  {errors[name] ? <small>{errors[name]}</small> : null}
-                </label>
-              ),
+        {loading ? (
+          <p className="master-details-state">Loading form details...</p>
+        ) : (
+          <form className="master-form" onSubmit={submit} noValidate>
+            <header>
+              <Building2 />
+              <div>
+                <h1>
+                  {edit ? "Edit" : "Add"} {label}
+                </h1>
+                <p>
+                  {edit ? "Review and update" : "Create a new"} {label.toLowerCase()} for your institution.
+                </p>
+              </div>
+            </header>
+
+            {apiNotice && (
+              <div className="master-contract-note" style={{ marginBottom: 16 }}>
+                <Info /> <span>{apiNotice}</span>
+              </div>
             )}
-          </div>
-          <aside className="master-contract-note">
-            <Info />{" "}
-            {kind === "department"
-              ? "Departments saved in this UI phase are available immediately in Add Designation for this browser session."
-              : "Search and select a Department saved in Department Management."}
-          </aside>
-          <footer>
-            <button
-              type="button"
-              className="cms-btn secondary"
-              onClick={() => navigate("/dashboard/departments")}
-            >
-              Cancel
-            </button>
-            <button className="cms-btn primary" disabled={kind === "designation"}>
-              Save {label}
-            </button>
-          </footer>
-        </form>
+
+            {errors.apiError && (
+              <div className="master-form-error-alert" style={{ marginBottom: 16, color: "#dc2626" }}>
+                <Info /> <span>{errors.apiError}</span>
+              </div>
+            )}
+
+            <div className="master-form-grid">
+              {fields.map(
+                ([name, fieldLabel, required, placeholder, type = "text", options = []]) => (
+                  <label key={name} className={type === "textarea" ? "is-wide" : ""}>
+                    <span>
+                      {fieldLabel}
+                      {required ? <b> *</b> : null}
+                    </span>
+                    {type === "select" ? (
+                      <select
+                        disabled={kind === "department" && edit}
+                        value={values[name] ?? ""}
+                        onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                      >
+                        <option value="">{placeholder}</option>
+                        {options.map((option) => (
+                          <option key={option}>{option}</option>
+                        ))}
+                      </select>
+                    ) : type === "textarea" ? (
+                      <textarea
+                        readOnly={kind === "department" && edit}
+                        value={values[name] ?? ""}
+                        placeholder={placeholder}
+                        onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                      />
+                    ) : (
+                      <input
+                        type={type}
+                        readOnly={kind === "department" && edit}
+                        value={values[name] ?? ""}
+                        placeholder={placeholder}
+                        onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
+                      />
+                    )}
+                    {errors[name] ? <small>{errors[name]}</small> : null}
+                  </label>
+                )
+              )}
+            </div>
+
+            <footer>
+              <button
+                type="button"
+                className="cms-btn secondary"
+                onClick={() => navigate("/dashboard/departments")}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="cms-btn primary"
+                disabled={submitting || (kind === "department" && edit)}
+              >
+                {submitting ? "Saving..." : `Save ${label}`}
+              </button>
+            </footer>
+          </form>
+        )}
       </main>
     </DashboardLayout>
   );
 }
 
+// ----------------------------------------------------------------------
+// EXCEL IMPORT PAGE (VALIDATION PREVIEW ONLY, NO BACKEND BULK UPLOAD API)
+// ----------------------------------------------------------------------
 const importColumns = {
   department: [
     "Department Name",
     "Department Code",
-    "Short Name",
-    "Description",
-    "Category",
-    "HOD Employee ID",
     "Staff Type",
+    "Description",
     "Status",
-    "Display Order",
   ],
   designation: [
     "Designation Name",
-    "Designation Code",
-    "Department Code",
     "Staff Type",
-    "Designation Level",
-    "Reports To Designation Code",
-    "Maximum Weekly Hours",
-    "Description",
     "Status",
-    "Display Order",
   ],
 };
+
 export function MasterImportPage({ kind }) {
   const navigate = useNavigate();
   const label = kind === "department" ? "Departments" : "Designations";
   const [rows, setRows] = useState([]);
   const [parsing, setParsing] = useState(false);
   const [fileName, setFileName] = useState("");
+
   const download = () => {
     const sheet = XLSX.utils.aoa_to_sheet([importColumns[kind]]);
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, label);
     XLSX.writeFile(book, `${kind}-import-template.xlsx`);
   };
+
   const parse = async (file) => {
     if (!file) return;
     setParsing(true);
@@ -919,35 +1168,39 @@ export function MasterImportPage({ kind }) {
       const data = await file.arrayBuffer();
       const book = XLSX.read(data);
       const json = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { defval: "" });
-      const required = importColumns[kind].slice(0, kind === "department" ? 2 : 4);
-      const codes = new Set();
+      const required = importColumns[kind].slice(0, 1);
+      const names = new Set();
       setRows(
         json.map((row, index) => {
           const problems = required
             .filter((column) => !String(row[column]).trim())
             .map((column) => `Missing ${column}`);
-          const codeKey = kind === "department" ? "Department Code" : "Designation Code";
-          const code = String(row[codeKey]).trim().toUpperCase();
-          if (code && codes.has(code)) problems.push(`Duplicate ${codeKey}`);
-          codes.add(code);
-          if (row.Status && !["Active", "Inactive"].includes(String(row.Status)))
+          const nameKey = kind === "department" ? "Department Name" : "Designation Name";
+          const nameVal = String(row[nameKey]).trim().toLowerCase();
+          if (nameVal && names.has(nameVal)) problems.push(`Duplicate ${nameKey}`);
+          names.add(nameVal);
+          if (row.Status && !["Active", "Inactive"].includes(String(row.Status))) {
             problems.push("Invalid Status");
+          }
           if (
             row["Staff Type"] &&
-            !["Teaching", "NonTeaching", "Both"].includes(String(row["Staff Type"]))
-          )
+            !["Teaching", "Non-Teaching", "NonTeaching", "Both"].includes(String(row["Staff Type"]))
+          ) {
             problems.push("Invalid Staff Type");
+          }
           return { index: index + 2, row, problems };
-        }),
+        })
       );
     } finally {
       setParsing(false);
     }
   };
+
   const valid = rows.filter((row) => !row.problems.length).length;
   const duplicates = rows.filter((row) =>
-    row.problems.some((problem) => problem.startsWith("Duplicate")),
+    row.problems.some((problem) => problem.startsWith("Duplicate"))
   ).length;
+
   return (
     <DashboardLayout
       title={`Import ${label}`}
@@ -1022,8 +1275,7 @@ export function MasterImportPage({ kind }) {
                 </table>
               </div>
               <aside className="master-contract-note">
-                <Info /> Preview is complete. Import remains disabled until the backend publishes a
-                bulk-upload contract.
+                <Info /> Preview is complete. Bulk import API is not available in the current backend contract.
               </aside>
               <footer>
                 <button className="cms-btn primary" disabled>

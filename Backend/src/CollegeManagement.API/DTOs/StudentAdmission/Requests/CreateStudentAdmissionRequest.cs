@@ -63,8 +63,8 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
 
 
         // Photo
-        
-        public IFormFile StudentPhoto { get; set; }
+        [Required]
+        public IFormFile StudentPhoto { get; set; } = null!;
 
 
         // Personal
@@ -113,8 +113,6 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
         // ADD THIS
         [Required]
         public int FeeStructureId { get; set; }
-
-        public string? PaymentPlan { get; set; }
         public string? ScholarshipStatus { get; set; }
 
 

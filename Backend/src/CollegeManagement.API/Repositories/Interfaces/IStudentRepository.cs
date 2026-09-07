@@ -1,4 +1,8 @@
 using CollegeManagement.API.DTOs.Students;
+using CollegeManagement.API.DTOs.Students.Requests;
+using CollegeManagement.API.DTOs.Students.Responses;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace CollegeManagement.API.Repositories
 {
@@ -25,7 +29,7 @@ namespace CollegeManagement.API.Repositories
 
 
         // =========================================================
-        // STUDENT PROFILE
+        // STUDENT PROFILE (ADMIN)
         // =========================================================
 
         Task<StudentProfileDto?> GetProfileAsync(
@@ -34,6 +38,26 @@ namespace CollegeManagement.API.Repositories
         Task<StudentProfileDto?> UpdateProfileAsync(
             int studentId,
             StudentProfileDto request);
+
+
+        // =========================================================
+        // SELF-SERVICE PROFILE & CREDENTIALS
+        // =========================================================
+
+        Task<StudentSelfProfileResponseDto?> GetSelfProfileAsync(
+            int studentId);
+
+        Task<bool> UpdateSelfProfileAsync(
+            int studentId,
+            StudentSelfProfileDto request);
+
+        Task<bool> ChangePasswordAsync(
+            int studentId,
+            string oldPassword,
+            string newPassword);
+
+        Task<string?> GetPasswordHashAsync(
+            int studentId);
 
 
         // =========================================================
@@ -66,7 +90,7 @@ namespace CollegeManagement.API.Repositories
 
 
         // =========================================================
-        // AUTHENTICATION
+        // AUTHENTICATION & FILES
         // =========================================================
 
         Task<bool> UpdatePhotoPathAsync(int studentId, string photoPath);
@@ -83,15 +107,14 @@ namespace CollegeManagement.API.Repositories
             int studentId);
 
 
-
         Task<List<StudentListItemDto>> SearchAsync(
-        string? search,
-        int? boardId,
-        int? academicYearId,
-        int? academicLevelId,
-        int? groupId,
-        int? sectionId,
-        bool? isActive);
+            string? search,
+            int? boardId,
+            int? academicYearId,
+            int? academicLevelId,
+            int? groupId,
+            int? sectionId,
+            bool? isActive);
 
         Task<List<StudentListItemDto>> GetByGroupAsync(
             int groupId);

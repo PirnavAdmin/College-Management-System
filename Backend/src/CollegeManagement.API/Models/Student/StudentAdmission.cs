@@ -133,7 +133,9 @@ namespace CollegeManagement.API.Models
 
         public int? PreviousYearOfPassing { get; set; }
 
-        
+        [NotMapped]
+        [MaxLength(500)]
+        public string? MarksMemo { get; set; }
 
         // Second Language
         [MaxLength(100)]
@@ -147,7 +149,6 @@ namespace CollegeManagement.API.Models
         public string? Medium { get; set; }
         // ADD THIS
         public int FeeStructureId { get; set; }
-        public string? PaymentPlan { get; set; }
         [MaxLength(50)]
         public string? ScholarshipStatus { get; set; }
 

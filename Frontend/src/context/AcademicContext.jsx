@@ -1,153 +1,156 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import apiClient from "@/api/axios.js";
-
-const DEFAULT_BOARDS = [
-  { id: "1", code: "BIEAP", name: "BIEAP", fullName: "Board of Intermediate Education, Andhra Pradesh" },
-  { id: "2", code: "TSBIE", name: "Telangana State Board (TSBIE)", fullName: "Telangana Board of Intermediate Education" },
-  { id: "3", code: "CBSE", name: "CBSE", fullName: "Central Board of Secondary Education" },
-  { id: "4", code: "ICSE", name: "ICSE", fullName: "Council for the Indian School Certificate Examinations" },
-  { id: "5", code: "NIOS", name: "NIOS", fullName: "National Institute of Open Schooling" },
-  { id: "6", code: "IGCSE", name: "IGCSE", fullName: "International General Certificate of Secondary Education" },
-];
-
-const DEFAULT_YEARS = [
-  { id: "1", code: "2025-2026", label: "2025–2026", name: "2025–2026", isCurrent: true },
-  { id: "2", code: "2024-2025", label: "2024–2025", name: "2024–2025" },
-  { id: "3", code: "2023-2024", label: "2023–2024", name: "2023–2024" },
-  { id: "4", code: "2022-2023", label: "2022–2023", name: "2022–2023" },
-  { id: "5", code: "2021-2022", label: "2021–2022", name: "2021–2022" },
-];
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
 
 const AcademicContext = createContext(null);
+const BOARD_STORAGE_KEY = "cms_selected_board";
+const YEAR_STORAGE_KEY = "cms_selected_academic_year";
+
+// Board/academic-year APIs are not entirely consistent about envelopes. Some
+// deployments return `Items`, while others wrap that result in `data`/`Data`.
+// Unwrap the known response shapes before deciding the list is empty.
+const asList = (response) => {
+  const unwrap = (value, depth = 0) => {
+    if (Array.isArray(value)) return value;
+    if (!value || typeof value !== "object" || depth > 4) return [];
+
+    for (const key of ["items", "Items", "records", "Records", "results", "Results", "$values"]) {
+      if (Array.isArray(value[key])) return value[key];
+    }
+    for (const key of ["data", "Data", "result", "Result", "payload", "Payload"]) {
+      const nested = unwrap(value[key], depth + 1);
+      if (nested.length) return nested;
+    }
+    return [];
+  };
+
+  return unwrap(response?.data ?? response);
+};
+const valueOf = (item, ...keys) => keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null);
+const normalize = (value) => String(value ?? "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
+const isActive = (item) => {
+  const value = valueOf(item, "isActive", "IsActive", "active", "Active", "status", "Status");
+  const text = String(value ?? "").trim().toLowerCase();
+  return value == null || !(value === false || value === 0 || text === "false" || text === "inactive");
+};
+const boardIdOf = (board) => valueOf(board, "id", "boardId", "BoardId");
+const yearIdOf = (year) => valueOf(year, "id", "academicYearId", "AcademicYearId");
+const readStored = (key) => { try { const stored = localStorage.getItem(key); return stored ? JSON.parse(stored) : null; } catch { return null; } };
+const persist = (key, value) => { try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); } catch { /* storage can be unavailable */ } };
+const mapBoard = (item, index) => {
+  const id = valueOf(item, "boardId", "BoardId", "id", "Id") ?? index + 1;
+  const code = valueOf(item, "boardCode", "BoardCode", "code", "Code") ?? `BOARD-${id}`;
+  const name = valueOf(item, "boardName", "BoardName", "fullName", "FullName", "name", "Name") ?? code;
+  return { ...item, id: String(id), code: String(code), name: String(name), boardName: String(name) };
+};
+const mapYear = (item, index) => {
+  const id = valueOf(item, "academicYearId", "AcademicYearId", "id", "Id") ?? index + 1;
+  const name = valueOf(item, "academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "code", "Code") ?? id;
+  return { ...item, id: String(id), code: String(name), name: String(name), label: String(name) };
+};
+const sameBoard = (left, right) => String(boardIdOf(left) ?? "") === String(boardIdOf(right) ?? "") || normalize(left?.code ?? left?.name ?? left?.boardName) === normalize(right?.code ?? right?.name ?? right?.boardName);
+const sameYear = (left, right) => String(yearIdOf(left) ?? "") === String(yearIdOf(right) ?? "") || normalize(left?.code ?? left?.name ?? left?.label) === normalize(right?.code ?? right?.name ?? right?.label);
 
 export function AcademicProvider({ children }) {
-  const [boards, setBoards] = useState(DEFAULT_BOARDS);
-  const [academicYears, setAcademicYears] = useState(DEFAULT_YEARS);
+  const [boards, setBoards] = useState([]);
+  const [academicYears, setAcademicYears] = useState([]);
+  const [boardsLoading, setBoardsLoading] = useState(true);
+  const [academicYearsLoading, setAcademicYearsLoading] = useState(false);
+  const [boardsError, setBoardsError] = useState("");
+  const [academicYearsError, setAcademicYearsError] = useState("");
+  const [selectedBoard, setSelectedBoardState] = useState(() => readStored(BOARD_STORAGE_KEY));
+  const [selectedAcademicYear, setSelectedAcademicYearState] = useState(() => readStored(YEAR_STORAGE_KEY));
+  const [refreshToken, setRefreshToken] = useState(0);
+  const selectedBoardId = boardIdOf(selectedBoard);
+  const selectedAcademicYearId = yearIdOf(selectedAcademicYear);
+  const refreshAcademicContext = useCallback(() => setRefreshToken((value) => value + 1), []);
 
-  const [selectedBoard, setSelectedBoardState] = useState(() => {
-    try {
-      const saved = localStorage.getItem("cms_selected_board");
-      if (saved) return JSON.parse(saved);
-    } catch {
-      /* ignore */
-    }
-    return DEFAULT_BOARDS[0];
-  });
-
-  const [selectedAcademicYear, setSelectedAcademicYearState] = useState(() => {
-    try {
-      const saved = localStorage.getItem("cms_selected_academic_year");
-      if (saved) return JSON.parse(saved);
-    } catch {
-      /* ignore */
-    }
-    return DEFAULT_YEARS[0];
-  });
-
-  const setSelectedBoard = (boardOrCode) => {
-    let target = boardOrCode;
-    if (typeof boardOrCode === "string" || typeof boardOrCode === "number") {
-      const found = boards.find(
-        (b) => String(b.code) === String(boardOrCode) || String(b.id) === String(boardOrCode) || String(b.name) === String(boardOrCode)
-      );
-      target = found || { id: String(boardOrCode), code: String(boardOrCode), name: String(boardOrCode) };
-    }
-    setSelectedBoardState(target);
-    try {
-      localStorage.setItem("cms_selected_board", JSON.stringify(target));
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const setSelectedAcademicYear = (yearOrCode) => {
-    let target = yearOrCode;
-    if (typeof yearOrCode === "string" || typeof yearOrCode === "number") {
-      const normalize = (s) => String(s).trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
-      const search = normalize(yearOrCode);
-      const found = academicYears.find(
-        (y) => normalize(y.code) === search || normalize(y.id) === search || normalize(y.name) === search || normalize(y.label) === search
-      );
-      target = found || { id: String(yearOrCode), code: String(yearOrCode), name: String(yearOrCode), label: String(yearOrCode) };
-    }
-    setSelectedAcademicYearState(target);
-    try {
-      localStorage.setItem("cms_selected_academic_year", JSON.stringify(target));
-    } catch {
-      /* ignore */
-    }
-  };
+  const setSelectedBoard = useCallback((boardOrId) => {
+    const board = typeof boardOrId === "object" && boardOrId !== null ? boardOrId : boards.find((item) => String(item.id) === String(boardOrId) || String(item.code) === String(boardOrId) || String(item.name) === String(boardOrId)) ?? null;
+    setSelectedBoardState(board);
+    persist(BOARD_STORAGE_KEY, board);
+  }, [boards]);
+  const setSelectedAcademicYear = useCallback((yearOrId) => {
+    const year = typeof yearOrId === "object" && yearOrId !== null ? yearOrId : academicYears.find((item) => String(item.id) === String(yearOrId) || normalize(item.code) === normalize(yearOrId) || normalize(item.name) === normalize(yearOrId)) ?? null;
+    setSelectedAcademicYearState(year);
+    persist(YEAR_STORAGE_KEY, year);
+  }, [academicYears]);
 
   useEffect(() => {
-    let isMounted = true;
-    apiClient
-      .get("/api/v1/boards")
-      .then((res) => {
-        if (!isMounted) return;
-        const data = res?.data?.data || res?.data || [];
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((item, idx) => ({
-            id: String(item.boardId || item.id || idx + 1),
-            code: item.boardCode || item.code || item.name || `BOARD-${idx}`,
-            name: item.boardCode || item.boardName || item.name || "Board",
-            fullName: item.boardName || item.fullName || item.name || "",
-          }));
-          setBoards(mapped);
-        }
-      })
-      .catch(() => {});
+    window.addEventListener("cms_academic_masters_updated", refreshAcademicContext);
+    return () => window.removeEventListener("cms_academic_masters_updated", refreshAcademicContext);
+  }, [refreshAcademicContext]);
 
-    apiClient
-      .get("/api/v1/academic-years")
-      .then((res) => {
-        if (!isMounted) return;
-        const data = res?.data?.data || res?.data || [];
-        if (Array.isArray(data) && data.length > 0) {
-          const mapped = data.map((item, idx) => ({
-            id: String(item.academicYearId || item.id || idx + 1),
-            code: item.academicYearName || item.yearName || item.code || item.name || `2025-2026`,
-            name: item.academicYearName || item.yearName || item.name || "2025–2026",
-            label: item.academicYearName || item.yearName || item.name || "2025–2026",
-            isCurrent: item.isCurrent || false,
-          }));
-          setAcademicYears(mapped);
-        }
-      })
-      .catch(() => {});
+  useEffect(() => {
+    let active = true;
+    setBoardsLoading(true);
+    setBoardsError("");
+    apiClient.get(apiEndpoints.boards.list, { params: { Status: true, PageNumber: 1, PageSize: 100 } }).then((response) => {
+      if (!active) return;
+      const nextBoards = asList(response).filter(isActive).map(mapBoard);
+      setBoards(nextBoards);
+      setSelectedBoardState((current) => {
+        const next = nextBoards.find((board) => sameBoard(board, current)) ?? nextBoards[0] ?? null;
+        persist(BOARD_STORAGE_KEY, next);
+        return next;
+      });
+    }).catch((error) => {
+      if (!active) return;
+      setBoards([]);
+      setBoardsError(getApiErrorMessage(error));
+      setSelectedBoardState(null);
+      persist(BOARD_STORAGE_KEY, null);
+    }).finally(() => active && setBoardsLoading(false));
+    return () => { active = false; };
+  }, [refreshToken]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  useEffect(() => {
+    let active = true;
+    if (!selectedBoardId) {
+      setAcademicYears([]);
+      setSelectedAcademicYearState(null);
+      persist(YEAR_STORAGE_KEY, null);
+      setAcademicYearsLoading(false);
+      return () => { active = false; };
+    }
+    setAcademicYearsLoading(true);
+    setAcademicYears([]);
+    setAcademicYearsError("");
+    apiClient.get(apiEndpoints.academicYears.active, { params: { boardId: selectedBoardId, isActive: true } }).then((response) => {
+      if (!active) return;
+      const nextYears = asList(response).filter((year) => {
+        const boardId = valueOf(year, "boardId", "BoardId");
+        return (boardId == null || String(boardId) === String(selectedBoardId)) && isActive(year);
+      }).map(mapYear);
+      setAcademicYears(nextYears);
+      setSelectedAcademicYearState((current) => {
+        const next = nextYears.find((year) => sameYear(year, current)) ?? nextYears[0] ?? null;
+        persist(YEAR_STORAGE_KEY, next);
+        return next;
+      });
+    }).catch((error) => {
+      if (!active) return;
+      setAcademicYears([]);
+      setAcademicYearsError(getApiErrorMessage(error));
+    setSelectedAcademicYearState(null);
+      persist(YEAR_STORAGE_KEY, null);
+    }).finally(() => active && setAcademicYearsLoading(false));
+    return () => { active = false; };
+  }, [selectedBoardId, refreshToken]);
 
-  return (
-    <AcademicContext.Provider
-      value={{
-        boards,
-        academicYears,
-        selectedBoard,
-        selectedAcademicYear,
-        setSelectedBoard,
-        setSelectedAcademicYear,
-      }}
-    >
-      {children}
-    </AcademicContext.Provider>
-  );
+  const value = useMemo(() => ({
+    boards, academicYears, selectedBoard, selectedBoardId, selectedAcademicYear, selectedAcademicYearId,
+    setSelectedBoard, setSelectedAcademicYear, boardsLoading, academicYearsLoading, boardsError, academicYearsError, refreshAcademicContext,
+  }), [academicYears, academicYearsError, academicYearsLoading, boards, boardsError, boardsLoading, refreshAcademicContext, selectedAcademicYear, selectedAcademicYearId, selectedBoard, selectedBoardId, setSelectedAcademicYear, setSelectedBoard]);
+  return <AcademicContext.Provider value={value}>{children}</AcademicContext.Provider>;
 }
 
 export function useAcademicContext() {
   const context = useContext(AcademicContext);
-  if (!context) {
-    return {
-      boards: DEFAULT_BOARDS,
-      academicYears: DEFAULT_YEARS,
-      selectedBoard: DEFAULT_BOARDS[0],
-      selectedAcademicYear: DEFAULT_YEARS[0],
-      setSelectedBoard: () => {},
-      setSelectedAcademicYear: () => {},
-    };
-  }
-  return context;
+  return context ?? {
+    boards: [], academicYears: [], selectedBoard: null, selectedBoardId: undefined,
+    selectedAcademicYear: null, selectedAcademicYearId: undefined, boardsLoading: false, academicYearsLoading: false,
+    boardsError: "", academicYearsError: "",
+    setSelectedBoard: () => {}, setSelectedAcademicYear: () => {}, refreshAcademicContext: () => {},
+  };
 }
-

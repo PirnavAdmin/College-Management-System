@@ -22,11 +22,12 @@ import "./SectionManagementPage.css";
 const PAGE_SIZE = 5;
 const BULK_ROOM_PAGE_SIZE = 5;
 const normalizeId = (value) => String(value ?? "");
-const isActiveRecord = (item) =>
-  item?.isActive === true ||
-  item?.status === true ||
-  String(item?.status ?? "").toLowerCase() === "active" ||
-  String(item?.status ?? "").toLowerCase() === "true";
+const isActiveRecord = (item, defaultActive = false) => {
+  const value = item?.isActive ?? item?.status;
+  if (value == null) return defaultActive;
+  return ["1", "true", "active", "enabled"].includes(String(value).trim().toLowerCase());
+};
+const isTeachingStaff = (item) => Boolean(item?.id && item.isActive && String(item.staffType).trim().toLowerCase() === "teaching");
 
 const unwrapList = (response) => {
   const payload = response?.data;
@@ -34,7 +35,14 @@ const unwrapList = (response) => {
   for (const key of ["data", "items", "records", "results"]) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
-  return [];
+  if (payload?.data && typeof payload.data === "object") return unwrapList({ data: payload.data });
+  throw new Error("The backend returned an invalid list response. Please reload and try again.");
+};
+
+const normalizeEntityList = (response, normalize) => {
+  const items = unwrapList(response).map(normalize);
+  if (items.some((item) => !item.id)) throw new Error("Backend data contains a record without an ID. Please reload and try again.");
+  return items;
 };
 
 const normalizeBoard = (item) => ({
@@ -48,22 +56,27 @@ const normalizeBoard = (item) => ({
     : Array.isArray(item.academicLevels)
       ? item.academicLevels
       : [],
-  isActive: isActiveRecord(item),
+  isActive: isActiveRecord({ status: item.status ?? item.isActive }),
 });
+
+const embeddedBoardLevels = (board) => (board?.academicLevelIds || []).map((id, index) => ({
+  id: normalizeId(id), name: board.academicLevelNames?.[index] || "", boardId: normalizeId(board.id), isActive: true,
+})).filter((level) => level.id && level.name);
+const yearBelongsToBoard = (year, boardId) => Boolean(boardId && year?.boardId) && normalizeId(year.boardId) === normalizeId(boardId);
 
 const normalizeYear = (item) => ({
   ...item,
   id: normalizeId(item.academicYearId ?? item.id),
   boardId: normalizeId(item.boardId),
   name: item.academicYearName ?? item.name ?? "",
-  isActive: isActiveRecord(item),
+  isActive: isActiveRecord(item, true),
 });
 
 const normalizeLevel = (item) => ({
   ...item,
   id: normalizeId(item.academicLevelId ?? item.id),
   name: item.academicLevelName ?? item.levelName ?? item.yearOfStudy ?? item.name ?? "",
-  isActive: isActiveRecord(item),
+  isActive: isActiveRecord(item, true),
 });
 
 const normalizeGroup = (item) => ({
@@ -74,18 +87,20 @@ const normalizeGroup = (item) => ({
   academicLevelId: normalizeId(item.academicLevelId),
   name: item.groupName ?? item.name ?? "",
   code: item.groupCode ?? item.code ?? "",
-  isActive: isActiveRecord(item),
+  isActive: isActiveRecord(item, true),
 });
+
+const matchesGroupScope = (group, scope) => Boolean(scope.boardId) &&
+  (!group.boardId || normalizeId(group.boardId) === normalizeId(scope.boardId));
 
 const normalizeProgram = (item) => ({
   ...item,
   id: normalizeId(item.programId ?? item.id),
   programId: normalizeId(item.programId ?? item.id),
-  groupProgramId: normalizeId(item.groupProgramId ?? item.programId ?? item.id),
   groupId: normalizeId(item.groupId),
   name: item.programName ?? item.name ?? "",
   code: item.programCode ?? item.code ?? "",
-  isActive: isActiveRecord(item),
+  isActive: isActiveRecord(item, true),
 });
 
 const normalizeTeacher = (item) => ({
@@ -93,7 +108,7 @@ const normalizeTeacher = (item) => ({
   id: normalizeId(item.staffId ?? item.facultyId ?? item.id ?? item.userId ?? (Number.isFinite(Number(item.employeeId)) ? item.employeeId : "")),
   name: item.staffName ?? item.facultyName ?? item.fullName ?? item.name ?? item.employeeName ?? "",
   employeeId: item.employeeId ?? item.employeeCode ?? "",
-  isActive: (item.isActive !== undefined || item.status !== undefined) ? isActiveRecord(item) : true,
+  isActive: (item.isActive !== undefined || item.status !== undefined) ? isActiveRecord(item, true) : true,
   staffType: item.staffType ?? item.type ?? "Teaching",
 });
 
@@ -105,8 +120,9 @@ const normalizeRoom = (item) => ({
   roomType: item.roomType ?? "",
   building: item.buildingName ?? item.blockName ?? item.building ?? item.block ?? "",
   floor: item.floor ?? "",
+  statusKnown: item.isActive != null || item.status != null,
   isActive: isActiveRecord(item),
-  status: isActiveRecord(item) ? "Active" : "Inactive",
+  status: item.isActive == null && item.status == null ? "" : isActiveRecord(item) ? "Active" : "Inactive",
 });
 
 const normalizeSection = (item) => ({
@@ -122,7 +138,7 @@ const normalizeSection = (item) => ({
   groupId: normalizeId(item.groupId),
   group: item.groupName ?? item.group ?? "",
   groupProgramId: normalizeId(item.groupProgramId),
-  programId: normalizeId(item.programId),
+  programId: normalizeId(item.programId ?? item.groupProgramId),
   program: item.programName ?? item.program ?? item.programme ?? "",
   name: item.sectionName ?? item.name ?? "",
   roomId: normalizeId(item.roomId),
@@ -130,8 +146,9 @@ const normalizeSection = (item) => ({
   classTeacherId: normalizeId(item.inchargeId ?? item.classTeacherId ?? item.teacherId ?? item.facultyId),
   teacher: item.inchargeName ?? item.classTeacherName ?? item.facultyName ?? item.teacher ?? item.incharge ?? "",
   strength: item.maximumStrength ?? item.strength ?? item.capacity ?? 0,
+  statusKnown: item.isActive != null || item.status != null,
   isActive: isActiveRecord(item),
-  status: isActiveRecord(item) ? "Active" : "Inactive",
+  status: item.isActive == null && item.status == null ? "" : isActiveRecord(item) ? "Active" : "Inactive",
   createdAt: item.createdAt,
   updatedAt: item.updatedAt,
 });
@@ -142,45 +159,42 @@ const ROOM_ENDPOINTS = {
   delete: (id) => `/api/v1/rooms/${id}`,
   bulk: "/api/v1/rooms/bulk",
 };
-const SECTION_BULK_ENDPOINT = "/api/v1/Sections/bulk";
+const SECTION_BULK_ENDPOINT = apiEndpoints.sections.bulk;
 
 const sectionPayload = (form, context = form) => {
   const program = context.program;
   const teacherId = form.classTeacherId ? Number(form.classTeacherId) : null;
-  const groupProgramId = program?.groupProgramId
-    ? Number(program.groupProgramId)
-    : context.groupProgramId
-      ? Number(context.groupProgramId)
-      : null;
   return {
     boardId: Number(context.boardId),
     academicYearId: Number(context.academicYearId),
     academicLevelId: Number(context.academicLevelId),
     groupId: Number(context.groupId),
-    groupProgramId: groupProgramId,
     programId: Number(program?.programId ?? context.programId),
     sectionName: form.name.trim(),
-    name: form.name.trim(),
     roomId: Number(form.roomId),
     inchargeId: teacherId,
-    classTeacherId: teacherId,
-    teacherId: teacherId,
     maximumStrength: Number(form.strength),
-    strength: Number(form.strength),
     isActive: form.status === "Active",
-    status: form.status,
   };
 };
 
 const roomPayload = (form) => ({
   roomNumber: form.roomNo.trim(),
-  roomNo: form.roomNo.trim(),
   capacity: Number(form.capacity),
   roomType: form.roomType,
   building: form.building.trim(),
   floor: String(form.floor).trim(),
   isActive: form.isActive === "Active",
 });
+
+const sameText = (a, b) => String(a ?? "").trim().replace(/\s+/g, " ").toLowerCase() === String(b ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+const matchesRoom = (room, payload) => room.id && sameText(room.roomNo, payload.roomNumber) && Number(room.capacity) === payload.capacity && sameText(room.building, payload.building) && sameText(room.floor, payload.floor) && room.roomType === payload.roomType && (room.statusKnown === false || room.isActive === payload.isActive);
+const matchesSection = (section, payload) => section.id && sameText(section.name, payload.sectionName) && ["boardId", "academicYearId", "academicLevelId", "groupId", "programId", "roomId"].every((key) => normalizeId(section[key]) === normalizeId(payload[key])) && normalizeId(section.classTeacherId) === normalizeId(payload.inchargeId) && Number(section.strength) === payload.maximumStrength && (section.statusKnown === false || section.isActive === payload.isActive);
+const verifyBulkResult = (response, count) => {
+  const result = response?.data?.data ?? response?.data;
+  if (result?.errors?.length) throw new Error(result.errors.join(" "));
+  if (result?.totalCreated !== undefined && result.totalCreated !== count) throw new Error("Only " + result.totalCreated + " of " + count + " records were saved. Review backend data before retrying.");
+};
 
 const sanitizeExcelCell = (value) => {
   if (typeof value !== "string") return Number.isNaN(value) ? 0 : value;
@@ -315,7 +329,7 @@ const EMPTY_BULK_ROOM_FORM = {
   roomCount: "",
   defaultCapacity: "",
   defaultRoomType: "",
-  isActive: "Active",
+  isActive: "",
 };
 
 const parseRoomNumberSequence = (value) => {
@@ -348,6 +362,7 @@ const validateBulkRoomAllocations = (allocations, rooms, expectedCount) => {
     const normalizedRoomNo = roomNo.toLowerCase();
     const capacity = Number(allocation.capacity);
     if (!parseRoomNumberSequence(roomNo)) errors[`bulk_roomNo_${index}`] = "Generated Room Number is invalid.";
+    else if (roomNo.length > 50) errors[`bulk_roomNo_${index}`] = "Room Number must not exceed 50 characters.";
     else if (seen.has(normalizedRoomNo)) errors[`bulk_roomNo_${index}`] = "Duplicate Room Number in preview.";
     else if (existing.has(normalizedRoomNo)) errors[`bulk_roomNo_${index}`] = `Room No "${roomNo}" already exists.`;
     seen.add(normalizedRoomNo);
@@ -631,15 +646,33 @@ export default function SectionManagementPage() {
   const [rooms, setRooms] = useState([]);
   const [sections, setSections] = useState([]);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [dependentLoading, setDependentLoading] = useState({ board: false, program: false });
+  const [dependentLoading, setDependentLoading] = useState({ board: false, group: false, program: false });
   const [operation, setOperation] = useState("");
+  const operationRef = useRef(false);
+  const runMutation = async (label, mutate, synchronize, onSuccess) => {
+    if (operationRef.current) return;
+    operationRef.current = true;
+    setOperation(label);
+    let saved = false;
+    try {
+      const response = await mutate();
+      saved = true;
+      await synchronize(response);
+      onSuccess();
+    } catch (error) {
+      console.error(label + " failed", error);
+      say((saved ? "The request succeeded, but backend synchronization could not be confirmed. Reload before retrying. " : "") + getApiErrorMessage(error));
+    } finally {
+      operationRef.current = false;
+      setOperation("");
+    }
+  };
   const boardRequestRef = useRef(0);
+  const groupRequestRef = useRef(0);
   const programRequestRef = useRef(0);
-  const createdSectionIdsRef = useRef(new Set());
-  const createdRoomIdsRef = useRef(new Set());
 
   // Filter & Search state for tables
-  const [filters, setFilters] = useState({ groupId: "", programId: "", academicLevelId: "" });
+  const [filters, setFilters] = useState({ boardId: "", academicYearId: "", groupId: "", programId: "", academicLevelId: "" });
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
@@ -663,16 +696,15 @@ export default function SectionManagementPage() {
     academicYearId: "",
     groupId: "",
     programId: "",
-    groupProgramId: "",
     academicLevelId: "",
     name: "",
     roomId: "",
     classTeacherId: "",
     strength: "",
-    status: "Active",
+    status: "",
   });
   const [bulkSections, setBulkSections] = useState([
-    { name: "", roomId: "", classTeacherId: "", strength: "", status: "Active" },
+    { name: "", roomId: "", classTeacherId: "", strength: "", status: "" },
   ]);
 
   const [selectedRoomId, setSelectedRoomId] = useState(null);
@@ -682,7 +714,7 @@ export default function SectionManagementPage() {
     roomType: "",
     building: "",
     floor: "",
-    isActive: "Active",
+    isActive: "",
   });
 
   const [bulkRoomForm, setBulkRoomForm] = useState(EMPTY_BULK_ROOM_FORM);
@@ -713,12 +745,8 @@ export default function SectionManagementPage() {
 
   const loadRooms = useCallback(async () => {
     const response = await apiClient.get(apiEndpoints.rooms.getAll);
-    const next = unwrapList(response).map(normalizeRoom);
+    const next = normalizeEntityList(response, normalizeRoom);
     next.sort((a, b) => {
-      const aNew = createdRoomIdsRef.current.has(normalizeId(a.id)) || createdRoomIdsRef.current.has(a.roomNo.trim().toLowerCase());
-      const bNew = createdRoomIdsRef.current.has(normalizeId(b.id)) || createdRoomIdsRef.current.has(b.roomNo.trim().toLowerCase());
-      if (aNew && !bNew) return -1;
-      if (!aNew && bNew) return 1;
       const numA = Number(a.id);
       const numB = Number(b.id);
       if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) return numB - numA;
@@ -730,12 +758,8 @@ export default function SectionManagementPage() {
 
   const loadSections = useCallback(async () => {
     const response = await apiClient.get(apiEndpoints.sections.getAll);
-    const next = unwrapList(response).map(normalizeSection);
+    const next = normalizeEntityList(response, normalizeSection);
     next.sort((a, b) => {
-      const aNew = createdSectionIdsRef.current.has(normalizeId(a.id)) || createdSectionIdsRef.current.has(a.name.trim().toLowerCase());
-      const bNew = createdSectionIdsRef.current.has(normalizeId(b.id)) || createdSectionIdsRef.current.has(b.name.trim().toLowerCase());
-      if (aNew && !bNew) return -1;
-      if (!aNew && bNew) return 1;
       const numA = Number(a.id);
       const numB = Number(b.id);
       if (!Number.isNaN(numA) && !Number.isNaN(numB) && numA !== numB) return numB - numA;
@@ -747,19 +771,24 @@ export default function SectionManagementPage() {
 
   useEffect(() => {
     let active = true;
+    const boardRequests = boardRequestRef;
+    const groupRequests = groupRequestRef;
+    const programRequests = programRequestRef;
     Promise.allSettled([
-      apiClient.get(apiEndpoints.boards.getAll, { params: { isActive: true } }),
+      apiClient.get(apiEndpoints.boards.getAll, { params: { Status: true, PageNumber: 1, PageSize: 100 } }),
+      apiClient.get(apiEndpoints.academicYears.active),
       apiClient.get(apiEndpoints.rooms.getAll),
       apiClient.get(apiEndpoints.sections.getAll),
       apiClient.get("/api/v1/staff/dropdown", { params: { staffType: "Teaching" } }),
     ]).then((results) => {
       if (!active) return;
-      const [boardsResult, roomsResult, sectionsResult, staffResult] = results;
+      const [boardsResult, yearsResult, roomsResult, sectionsResult, staffResult] = results;
       if (boardsResult.status === "fulfilled") {
-        setBoardsList(unwrapList(boardsResult.value).map(normalizeBoard).filter((item) => item.isActive));
+        setBoardsList(unwrapList(boardsResult.value).map(normalizeBoard).filter((item) => item.id && item.isActive));
       }
+      if (yearsResult.status === "fulfilled") setAcademicYearsList(unwrapList(yearsResult.value).map(normalizeYear).filter((item) => item.id && item.isActive));
       if (roomsResult.status === "fulfilled") {
-        const fetchedRooms = unwrapList(roomsResult.value).map(normalizeRoom);
+        const fetchedRooms = normalizeEntityList(roomsResult.value, normalizeRoom);
         fetchedRooms.sort((a, b) => {
           const numA = Number(a.id);
           const numB = Number(b.id);
@@ -769,7 +798,7 @@ export default function SectionManagementPage() {
         setRooms(fetchedRooms);
       }
       if (sectionsResult.status === "fulfilled") {
-        const fetchedSections = unwrapList(sectionsResult.value).map(normalizeSection);
+        const fetchedSections = normalizeEntityList(sectionsResult.value, normalizeSection);
         fetchedSections.sort((a, b) => {
           const numA = Number(a.id);
           const numB = Number(b.id);
@@ -783,27 +812,33 @@ export default function SectionManagementPage() {
         const teachingStaff = staffData.filter(
           (item) => item.isActive && String(item.staffType || "Teaching").toLowerCase() === "teaching"
         );
-        setTeachersList(teachingStaff.length > 0 ? teachingStaff : staffData);
+        setTeachersList(teachingStaff.filter((item) => item.id));
       }
       const rejected = results.find((result) => result.status === "rejected");
       if (rejected) say(getApiErrorMessage(rejected.reason) || "Some Section Management data could not be loaded.");
-    }).finally(() => { if (active) setInitialLoading(false); });
-    return () => { active = false; if (toastTimer.current) clearTimeout(toastTimer.current); };
+    }).catch((error) => { if (active) say(getApiErrorMessage(error)); }).finally(() => { if (active) setInitialLoading(false); });
+    return () => { active = false; ++boardRequests.current; ++groupRequests.current; ++programRequests.current; if (toastTimer.current) clearTimeout(toastTimer.current); };
   }, [say]);
 
-  const loadPrograms = useCallback(async (groupId) => {
+  const loadPrograms = useCallback(async (groupId, programId = "") => {
     const requestId = ++programRequestRef.current;
     setProgramsList([]);
-    if (!groupId) return;
+    setSectionForm((current) => ({ ...current, programId: "" }));
+    if (!groupId) {
+      setDependentLoading((current) => ({ ...current, program: false }));
+      return;
+    }
     setDependentLoading((current) => ({ ...current, program: true }));
     try {
       const response = await apiClient.get(apiEndpoints.groups.getPrograms(groupId));
       if (requestId === programRequestRef.current) {
-        setProgramsList(
-          unwrapList(response)
-            .map((item) => normalizeProgram({ ...item, groupId: item.groupId || groupId }))
-            .filter((item) => item.isActive)
-        );
+        const next = unwrapList(response)
+          .map((item) => normalizeProgram({ ...item, groupId: item.groupId ?? groupId }))
+          .filter((item) => item.id && item.isActive && item.groupId === normalizeId(groupId));
+        setProgramsList(next);
+        setSectionForm((current) => normalizeId(current.groupId) === normalizeId(groupId)
+          ? { ...current, programId: next.some((item) => item.programId === normalizeId(programId)) ? normalizeId(programId) : "" }
+          : current);
       }
     } catch (error) {
       if (requestId === programRequestRef.current) say(getApiErrorMessage(error));
@@ -812,77 +847,75 @@ export default function SectionManagementPage() {
     }
   }, [say]);
 
-  const loadBoardDependencies = useCallback(async (boardId, preserve = {}) => {
-    const requestId = ++boardRequestRef.current;
-    setAcademicYearsList([]);
-    setAcademicLevelsList([]);
+  const loadGroups = useCallback(async (scope, preserve = {}) => {
+    const requestId = ++groupRequestRef.current;
+    ++programRequestRef.current;
     setGroupsList([]);
     setProgramsList([]);
-    if (!boardId) return;
-    setDependentLoading((current) => ({ ...current, board: true }));
-
-    const selectedBoard = boardsList.find((b) => normalizeId(b.id) === normalizeId(boardId));
-    let embeddedLevels = [];
-    if (selectedBoard?.academicLevelIds?.length) {
-      embeddedLevels = selectedBoard.academicLevelIds.map((id, idx) => ({
-        id: normalizeId(id),
-        name: selectedBoard.academicLevelNames?.[idx] || `Academic Level ${id}`,
-        isActive: true,
-      }));
-    }
-
+    setSectionForm((current) => ({ ...current, groupId: "", programId: "" }));
+    const { boardId } = scope;
+    const ready = Boolean(boardId);
+    setDependentLoading((current) => ({ ...current, group: ready, program: false }));
+    if (!ready) return;
     try {
-      const [yearsResponse, levelsResponse, groupsResponse] = await Promise.allSettled([
-        apiClient.get(apiEndpoints.academicYears.active, { params: { boardId, isActive: true } }),
-        apiClient.get(`/api/v1/boards/${encodeURIComponent(boardId)}/academic-levels`),
-        apiClient.get(apiEndpoints.groups.getByBoard(boardId)),
-      ]);
+      const response = await apiClient.get(apiEndpoints.groups.getByBoard(boardId));
+      if (requestId !== groupRequestRef.current) return;
+      const next = unwrapList(response).map(normalizeGroup)
+        .filter((group) => group.id && group.isActive && matchesGroupScope(group, scope));
+      setGroupsList(next);
+      const restored = next.find((group) => group.id === normalizeId(preserve.groupId));
+      if (restored) {
+        setSectionForm((current) => matchesGroupScope(restored, current) ? { ...current, groupId: restored.id } : current);
+        await loadPrograms(restored.id, preserve.programId);
+      }
+    } catch (error) {
+      if (requestId === groupRequestRef.current) say(getApiErrorMessage(error));
+    } finally {
+      if (requestId === groupRequestRef.current) setDependentLoading((current) => ({ ...current, group: false }));
+    }
+  }, [loadPrograms, say]);
 
+  const changeAcademicScope = (field, value) => {
+    setSectionForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: null }));
+  };
+
+  const loadBoardDependencies = useCallback(async (boardId, preserve = {}) => {
+    const requestId = ++boardRequestRef.current;
+    const board = boardsList.find((item) => item.isActive && item.id === normalizeId(boardId));
+    const embedded = embeddedBoardLevels(board);
+    setAcademicLevelsList(embedded);
+    setSectionForm((current) => ({
+      ...current,
+      academicYearId: academicYearsList.some((year) => year.isActive && year.id === normalizeId(current.academicYearId) && yearBelongsToBoard(year, boardId)) ? current.academicYearId : "",
+      academicLevelId: embedded.some((level) => level.id === normalizeId(current.academicLevelId)) ? current.academicLevelId : normalizeId(preserve.academicLevelId),
+    }));
+    setDependentLoading((current) => ({ ...current, board: Boolean(board) }));
+    const groupsRequest = loadGroups({ boardId: board ? boardId : "" }, preserve);
+    if (!board) return groupsRequest;
+    try {
+      const response = await apiClient.get(apiEndpoints.academicLevels.getByBoard(boardId));
       if (requestId !== boardRequestRef.current) return;
-
-      if (yearsResponse.status === "fulfilled") {
-        const nextYears = unwrapList(yearsResponse.value)
-          .map(normalizeYear)
-          .filter((year) => year.isActive)
-          .filter((year) => !year.boardId || normalizeId(year.boardId) === normalizeId(boardId));
-        setAcademicYearsList(nextYears);
+      const merged = new Map(embedded.map((level) => [level.id, level]));
+      for (const item of unwrapList(response)) {
+        const level = normalizeLevel(item);
+        if (!level.id || (item.boardId != null && normalizeId(item.boardId) !== normalizeId(boardId))) continue;
+        if (level.isActive) merged.set(level.id, { ...level, boardId: normalizeId(boardId) });
+        else merged.delete(level.id);
       }
-
-      let fetchedLevels = [];
-      if (levelsResponse.status === "fulfilled") {
-        fetchedLevels = unwrapList(levelsResponse.value).map(normalizeLevel).filter((item) => item.isActive);
-      }
-
-      const levelMap = new Map();
-      fetchedLevels.forEach((lvl) => levelMap.set(normalizeId(lvl.id), lvl));
-      embeddedLevels.forEach((lvl) => {
-        if (!levelMap.has(normalizeId(lvl.id))) {
-          levelMap.set(normalizeId(lvl.id), lvl);
-        }
-      });
-      setAcademicLevelsList(Array.from(levelMap.values()));
-
-      let nextGroups = [];
-      if (groupsResponse.status === "fulfilled") {
-        nextGroups = unwrapList(groupsResponse.value)
-          .map(normalizeGroup)
-          .filter((group) => group.isActive)
-          .filter((group) => !group.boardId || normalizeId(group.boardId) === normalizeId(boardId));
-        setGroupsList(nextGroups);
-      }
-
-      if (preserve.groupId) {
-        const groupStillBelongsToBoard = nextGroups.some((g) => normalizeId(g.id) === normalizeId(preserve.groupId));
-        if (groupStillBelongsToBoard) {
-          await loadPrograms(preserve.groupId);
-        }
-      }
+      const next = Array.from(merged.values());
+      setAcademicLevelsList(next);
+      setSectionForm((current) => normalizeId(current.boardId) === normalizeId(boardId) ? {
+        ...current,
+        academicLevelId: next.some((level) => level.id === normalizeId(current.academicLevelId)) ? normalizeId(current.academicLevelId) : "",
+      } : current);
     } catch (error) {
       if (requestId === boardRequestRef.current) say(getApiErrorMessage(error));
     } finally {
       if (requestId === boardRequestRef.current) setDependentLoading((current) => ({ ...current, board: false }));
+      await groupsRequest;
     }
-  }, [boardsList, say, loadPrograms]);
+  }, [boardsList, academicYearsList, loadGroups, say]);
 
   // Lookup maps
   const boardsById = useMemo(() => new Map(boardsList.map((b) => [String(b.id), b])), [boardsList]);
@@ -914,78 +947,31 @@ export default function SectionManagementPage() {
     };
   }, [boardsById, yearsById, levelsById, groupsById, programsById, roomsById, teachersById]);
 
-  // Available Rooms: Active classrooms not assigned to another active section
-  const availableRooms = useMemo(() => {
-    const assignedRoomIds = new Set(
-      sections
-        .filter((s) => s.id !== selectedSectionId && s.status === "Active" && s.roomId)
-        .map((s) => String(s.roomId))
-    );
-
-    const options = rooms
-      .filter((r) => r.isActive && r.roomType === "Classroom")
-      .filter((r) => !assignedRoomIds.has(String(r.id)))
-      .map((r) => ({
-        value: String(r.id),
-        label: `${r.roomNo} (Cap: ${r.capacity})`,
-      }));
-
-    if (sectionForm.roomId && !options.some((o) => o.value === String(sectionForm.roomId))) {
-      const currentRoom = roomsById.get(String(sectionForm.roomId));
-      if (currentRoom?.isActive && currentRoom.roomType === "Classroom") {
-        options.unshift({
-          value: String(currentRoom.id),
-          label: `${currentRoom.roomNo} (Cap: ${currentRoom.capacity}) [Current]`,
-        });
-      }
-    }
-    return options;
-  }, [rooms, sections, selectedSectionId, sectionForm.roomId, roomsById]);
-
-  const getAvailableRoomsForBulkRow = (rowIndex) => {
-    const occupied = new Set(sections.filter((s) => s.status === "Active" && s.roomId).map((s) => normalizeId(s.roomId)));
-    const usedByOtherRows = new Set(bulkSections.filter((_, index) => index !== rowIndex).map((row) => normalizeId(row.roomId)).filter(Boolean));
-    const currentId = normalizeId(bulkSections[rowIndex]?.roomId);
-    return rooms.filter((room) => room.isActive && room.roomType === "Classroom" && ((!occupied.has(normalizeId(room.id)) && !usedByOtherRows.has(normalizeId(room.id))) || normalizeId(room.id) === currentId)).map((room) => ({ value: normalizeId(room.id), label: `${room.roomNo} (Cap: ${room.capacity})` }));
-  };
-
-  // Available Teachers: Optional, active teachers not assigned as incharge elsewhere
-  const availableTeachers = useMemo(() => {
-    const assignedTeacherIds = new Set(
-      sections
-        .filter((s) => s.id !== selectedSectionId && s.status === "Active" && s.classTeacherId)
-        .map((s) => String(s.classTeacherId))
-    );
-
-    const options = teachersList
-      .filter((t) => t.isActive && !assignedTeacherIds.has(String(t.id)))
-      .map((t) => ({
-        value: String(t.id),
-        label: t.employeeId ? `${t.name} (${t.employeeId})` : t.name,
-      }));
-
-    if (
-      sectionForm.classTeacherId &&
-      !options.some((o) => o.value === String(sectionForm.classTeacherId))
-    ) {
-      const currentTeacher = teachersById.get(String(sectionForm.classTeacherId));
-      if (currentTeacher) {
-        options.unshift({
-          value: String(currentTeacher.id),
-          label: currentTeacher.employeeId
-            ? `${currentTeacher.name} (${currentTeacher.employeeId}) [Current]`
-            : `${currentTeacher.name} [Current]`,
-        });
-      }
-    }
-    return options;
-  }, [teachersList, sections, selectedSectionId, sectionForm.classTeacherId, teachersById]);
+  const roomAllowed = (room, row, otherRows = []) => Boolean(room?.id && room.isActive && room.roomType === "Classroom" &&
+    (row.status !== "Active" || (![...sections.filter((section) => normalizeId(section.id) !== normalizeId(selectedSectionId)), ...otherRows]
+      .some((section) => section.status === "Active" && normalizeId(section.roomId) === normalizeId(room.id)))));
+  const teacherAllowed = (teacher, row, otherRows = []) => isTeachingStaff(teacher) &&
+    (row.status !== "Active" || ![...sections.filter((section) => normalizeId(section.id) !== normalizeId(selectedSectionId)), ...otherRows]
+      .some((section) => section.status === "Active" && normalizeId(section.classTeacherId) === normalizeId(teacher.id)));
+  const roomOptionsFor = (row, others = []) => rooms.filter((room) => roomAllowed(room, row, others))
+    .map((room) => ({ value: normalizeId(room.id), label: room.roomNo + " (Cap: " + room.capacity + ")" }));
+  const teacherOptionsFor = (row, others = []) => teachersList.filter((teacher) => teacherAllowed(teacher, row, others))
+    .map((teacher) => ({ value: normalizeId(teacher.id), label: teacher.employeeId ? teacher.name + " (" + teacher.employeeId + ")" : teacher.name }));
+  const previewOption = (options, id, label) => sectionFormMode === "preview" && id && !options.some((item) => item.value === normalizeId(id))
+    ? [{ value: normalizeId(id), label }, ...options] : options;
+  const previewSection = sections.find((item) => normalizeId(item.id) === normalizeId(selectedSectionId));
+  const availableRooms = previewOption(roomOptionsFor(sectionForm), sectionForm.roomId, previewSection?.roomNo || "Current Room");
+  const availableTeachers = previewOption(teacherOptionsFor(sectionForm), sectionForm.classTeacherId, previewSection?.teacher || "Current Incharge");
+  const getAvailableRoomsForBulkRow = (index) => roomOptionsFor(bulkSections[index], bulkSections.filter((_, other) => index !== other));
+  const getAvailableTeachersForBulkRow = (index) => teacherOptionsFor(bulkSections[index], bulkSections.filter((_, other) => index !== other));
 
   // Filtering & Pagination
   const filteredSections = useMemo(() => {
     const q = search.trim().toLowerCase();
     return sections.filter((sec) => {
       const d = resolveSection(sec);
+      if (filters.boardId && normalizeId(sec.boardId) !== normalizeId(filters.boardId)) return false;
+      if (filters.academicYearId && normalizeId(sec.academicYearId) !== normalizeId(filters.academicYearId)) return false;
       if (filters.groupId && normalizeId(sec.groupId) !== normalizeId(filters.groupId)) return false;
       if (filters.programId && normalizeId(sec.programId) !== normalizeId(filters.programId)) return false;
       if (filters.academicLevelId && normalizeId(sec.academicLevelId) !== normalizeId(filters.academicLevelId)) return false;
@@ -1030,103 +1016,97 @@ export default function SectionManagementPage() {
   const roomPages = Math.max(1, Math.ceil(filteredRooms.length / PAGE_SIZE));
   const shownRooms = filteredRooms.slice((roomPage - 1) * PAGE_SIZE, roomPage * PAGE_SIZE);
 
+  useEffect(() => { setPage((current) => Math.min(current, sectionPages)); }, [sectionPages]);
+  useEffect(() => { setRoomPage((current) => Math.min(current, roomPages)); }, [roomPages]);
+  useEffect(() => { setRoomPage(1); }, [roomFilters, roomSearch]);
+
+  useEffect(() => { setPage(1); }, [filters, search]);
+
   // Dropdowns
   const selectedSection = useMemo(() => sections.find((item) => normalizeId(item.id) === normalizeId(selectedSectionId)), [sections, selectedSectionId]);
   const boardOptions = useMemo(() => {
     const options = boardsList.filter((b) => b.isActive).map((b) => ({ value: String(b.id), label: b.name }));
-    if (selectedSection?.boardId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.boardId))) {
+    if (sectionFormMode === "preview" && selectedSection?.boardId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.boardId))) {
       options.unshift({ value: String(selectedSection.boardId), label: selectedSection.board || "Current Board" });
     }
     return options;
-  }, [boardsList, selectedSection]);
+  }, [boardsList, selectedSection, sectionFormMode]);
 
   const filteredYearOptions = useMemo(() => {
     const options = academicYearsList
-      .filter((y) => y.isActive)
-      .filter((y) => !sectionForm.boardId || !y.boardId || normalizeId(y.boardId) === normalizeId(sectionForm.boardId))
+      .filter((y) => y.isActive && yearBelongsToBoard(y, sectionForm.boardId))
       .map((y) => ({ value: String(y.id), label: y.name }));
-    if (selectedSection?.academicYearId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.academicYearId))) {
+    if (sectionFormMode === "preview" && selectedSection?.academicYearId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.academicYearId))) {
       options.unshift({ value: String(selectedSection.academicYearId), label: selectedSection.academicYear || "Current Academic Year" });
     }
     return options;
-  }, [academicYearsList, sectionForm.boardId, selectedSection]);
+  }, [academicYearsList, selectedSection, sectionForm.boardId, sectionFormMode]);
 
-  const filteredGroupOptions = useMemo(() => {
-    const options = groupsList
-      .filter((g) => g.isActive)
-      .filter((g) => !sectionForm.boardId || !g.boardId || normalizeId(g.boardId) === normalizeId(sectionForm.boardId))
-      .map((g) => ({ value: String(g.id), label: g.name }));
-    if (selectedSection?.groupId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.groupId))) {
-      options.unshift({ value: String(selectedSection.groupId), label: selectedSection.group || "Current Group" });
-    }
-    return options;
-  }, [groupsList, sectionForm.boardId, selectedSection]);
+  const filteredGroupOptions = useMemo(() => groupsList
+    .filter((group) => group.isActive && matchesGroupScope(group, sectionForm))
+    .map((group) => ({ value: normalizeId(group.id), label: group.name })),
+  [groupsList, sectionForm]);
 
-  const filteredProgramOptions = useMemo(() => {
-    const options = programsList
-      .filter((p) => p.isActive)
-      .filter((p) => !sectionForm.groupId || !p.groupId || normalizeId(p.groupId) === normalizeId(sectionForm.groupId))
-      .map((p) => ({ value: String(p.programId), label: p.name }));
-    if (selectedSection?.programId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.programId))) {
-      options.unshift({ value: String(selectedSection.programId), label: selectedSection.program || "Current Program" });
-    }
-    return options;
-  }, [programsList, sectionForm.groupId, selectedSection]);
+  const filteredProgramOptions = useMemo(() => programsList
+    .filter((program) => program.isActive && normalizeId(program.groupId) === normalizeId(sectionForm.groupId))
+    .map((program) => ({ value: normalizeId(program.programId), label: program.name })),
+  [programsList, sectionForm.groupId]);
 
   const levelOptions = useMemo(() => {
     const options = academicLevelsList.filter((l) => l.isActive).map((l) => ({ value: String(l.id), label: l.name }));
-    if (selectedSection?.academicLevelId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.academicLevelId))) {
+    if (sectionFormMode === "preview" && selectedSection?.academicLevelId && !options.some((item) => normalizeId(item.value) === normalizeId(selectedSection.academicLevelId))) {
       options.unshift({ value: String(selectedSection.academicLevelId), label: selectedSection.academicLevel || "Current Academic Level" });
     }
     return options;
-  }, [academicLevelsList, selectedSection]);
+  }, [academicLevelsList, selectedSection, sectionFormMode]);
 
-  const sectionGroupFilterOptions = useMemo(() => {
-    const values = [...groupsList.filter((group) => group.isActive).map((group) => ({ value: normalizeId(group.id), label: group.name })), ...sections.filter((item) => item.groupId).map((item) => ({ value: normalizeId(item.groupId), label: item.group || "Group" }))];
-    return values.filter((item, index) => values.findIndex((candidate) => candidate.value === item.value) === index);
-  }, [groupsList, sections]);
-
-  const sectionProgramFilterOptions = useMemo(() => {
-    const values = [...programsList.filter((program) => program.isActive && normalizeId(program.groupId) === normalizeId(filters.groupId)).map((program) => ({ value: normalizeId(program.programId), label: program.name })), ...sections.filter((item) => normalizeId(item.groupId) === normalizeId(filters.groupId) && item.programId).map((item) => ({ value: normalizeId(item.programId), label: item.program || "Program" }))];
-    return values.filter((item, index) => values.findIndex((candidate) => candidate.value === item.value) === index);
-  }, [programsList, sections, filters.groupId]);
-
-  const sectionLevelFilterOptions = useMemo(() => {
-    const values = [...academicLevelsList.map((item) => ({ value: String(item.id), label: item.name })), ...sections.filter((item) => item.academicLevelId).map((item) => ({ value: String(item.academicLevelId), label: item.academicLevel || "Academic Level" }))];
-    return values.filter((item, index) => values.findIndex((candidate) => normalizeId(candidate.value) === normalizeId(item.value)) === index);
-  }, [academicLevelsList, sections]);
+  const uniqueOptions = (items) => items.filter((item, index) => item.value && items.findIndex((other) => other.value === item.value) === index);
+  const sectionBoardFilterOptions = uniqueOptions([...boardsList.map((item) => ({ value: item.id, label: item.name })), ...sections.map((item) => ({ value: item.boardId, label: item.board || "Board" }))]);
+  const sectionYearFilterOptions = uniqueOptions([...academicYearsList.filter((item) => !filters.boardId || yearBelongsToBoard(item, filters.boardId)).map((item) => ({ value: item.id, label: item.name })), ...sections.filter((item) => !filters.boardId || normalizeId(item.boardId) === normalizeId(filters.boardId)).map((item) => ({ value: item.academicYearId, label: item.academicYear || "Academic Year" }))]);
+  const sectionGroupFilterOptions = uniqueOptions(sections.filter((item) => !filters.boardId || normalizeId(item.boardId) === normalizeId(filters.boardId)).map((item) => ({ value: item.groupId, label: item.group || "Group" })));
+  const sectionProgramFilterOptions = uniqueOptions(sections.filter((item) => (!filters.boardId || normalizeId(item.boardId) === normalizeId(filters.boardId)) && (!filters.groupId || normalizeId(item.groupId) === normalizeId(filters.groupId))).map((item) => ({ value: item.programId, label: item.program || "Program" })));
+  const sectionLevelFilterOptions = uniqueOptions([...boardsList.filter((board) => !filters.boardId || board.id === normalizeId(filters.boardId)).flatMap(embeddedBoardLevels).map((item) => ({ value: item.id, label: item.name })), ...sections.filter((item) => !filters.boardId || normalizeId(item.boardId) === normalizeId(filters.boardId)).map((item) => ({ value: item.academicLevelId, label: item.academicLevel || "Academic Level" }))]);
 
   const roomBuildings = useMemo(() => [...new Set(rooms.map((r) => r.building).filter(Boolean))], [rooms]);
   const roomFloors = useMemo(() => [...new Set(rooms.map((r) => String(r.floor)).filter(Boolean))], [rooms]);
   const roomFilterTypes = useMemo(() => [...new Set(rooms.map((r) => r.roomType).filter(Boolean))], [rooms]);
 
   const openAddSection = () => {
+    if (operationRef.current) return;
+    ++boardRequestRef.current;
+    ++groupRequestRef.current;
+    ++programRequestRef.current;
+    setDependentLoading({ board: false, group: false, program: false });
     setSelectedSectionId(null);
     setSectionFormMode("add");
     setSectionCreationType("single");
     setFieldErrors({});
+    const boardId = boardsList.some((item) => item.id === normalizeId(filters.boardId)) ? normalizeId(filters.boardId) : "";
+    const academicYearId = academicYearsList.some((item) => item.id === normalizeId(filters.academicYearId) && yearBelongsToBoard(item, boardId)) ? normalizeId(filters.academicYearId) : "";
+    const academicLevelId = embeddedBoardLevels(boardsList.find((item) => item.id === boardId)).some((item) => item.id === normalizeId(filters.academicLevelId)) || sections.some((item) => item.boardId === boardId && item.academicLevelId === normalizeId(filters.academicLevelId)) ? normalizeId(filters.academicLevelId) : "";
+    const groupId = boardId && sections.some((item) => item.boardId === boardId && item.groupId === normalizeId(filters.groupId)) ? normalizeId(filters.groupId) : "";
+    const programId = groupId && sections.some((item) => item.groupId === groupId && item.programId === normalizeId(filters.programId)) ? normalizeId(filters.programId) : "";
     setSectionForm({
-      boardId: "",
-      academicYearId: "",
-      groupId: "",
-      programId: "",
-      groupProgramId: "",
-      academicLevelId: "",
+      boardId,
+      academicYearId,
+      groupId,
+      programId,
+      academicLevelId,
       name: "",
       roomId: "",
       classTeacherId: "",
       strength: "",
-      status: "Active",
+      status: "",
     });
-    setAcademicYearsList([]);
-    setAcademicLevelsList([]);
     setGroupsList([]);
     setProgramsList([]);
-    setBulkSections([{ name: "", roomId: "", classTeacherId: "", strength: "", status: "Active" }]);
+    setBulkSections([{ name: "", roomId: "", classTeacherId: "", strength: "", status: "" }]);
     setSectionView("form");
+    loadBoardDependencies(boardId, { groupId, programId, academicLevelId });
   };
 
   const openEditSection = (sec, isPreview = false) => {
+    if (operationRef.current) return;
     setSelectedSectionId(sec.id);
     setSectionFormMode(isPreview ? "preview" : "edit");
     setSectionCreationType("single");
@@ -1136,7 +1116,6 @@ export default function SectionManagementPage() {
       academicYearId: sec.academicYearId ? String(sec.academicYearId) : "",
       groupId: sec.groupId ? String(sec.groupId) : "",
       programId: sec.programId ? String(sec.programId) : "",
-      groupProgramId: sec.groupProgramId ? String(sec.groupProgramId) : "",
       academicLevelId: sec.academicLevelId ? String(sec.academicLevelId) : "",
       name: sec.name || "",
       roomId: sec.roomId ? String(sec.roomId) : "",
@@ -1145,7 +1124,16 @@ export default function SectionManagementPage() {
       status: sec.status || "",
     });
     setSectionView("form");
-    if (!isPreview && sec.boardId) loadBoardDependencies(sec.boardId, { groupId: sec.groupId });
+    if (isPreview) {
+      ++boardRequestRef.current;
+      ++groupRequestRef.current;
+      ++programRequestRef.current;
+      setDependentLoading({ board: false, group: false, program: false });
+      setGroupsList(sec.groupId ? [{ id: normalizeId(sec.groupId), boardId: normalizeId(sec.boardId), name: sec.group, isActive: true }] : []);
+      setProgramsList(sec.programId ? [{ id: normalizeId(sec.programId), programId: normalizeId(sec.programId), groupId: normalizeId(sec.groupId), name: sec.program, isActive: true }] : []);
+    } else {
+      loadBoardDependencies(sec.boardId, { groupId: sec.groupId, programId: sec.programId, academicLevelId: sec.academicLevelId });
+    }
   };
 
   const openAddRoom = () => {
@@ -1159,7 +1147,7 @@ export default function SectionManagementPage() {
       roomType: "",
       building: "",
       floor: "",
-      isActive: "Active",
+      isActive: "",
     });
     setBulkRoomForm(EMPTY_BULK_ROOM_FORM);
     setBulkRoomAllocations([]);
@@ -1177,8 +1165,8 @@ export default function SectionManagementPage() {
       capacity: String(room.capacity || ""),
       roomType: room.roomType || "Classroom",
       building: room.building || "",
-      floor: String(room.floor || ""),
-      isActive: room.isActive === true ? "Active" : room.isActive === false ? "Inactive" : "",
+      floor: String(room.floor ?? ""),
+      isActive: room.status ?? (room.isActive === true ? "Active" : room.isActive === false ? "Inactive" : ""),
     });
     setRoomView("form");
   };
@@ -1188,7 +1176,7 @@ export default function SectionManagementPage() {
     setSectionForm((prev) => ({
       ...prev,
       roomId,
-      strength: selectedRoom ? String(selectedRoom.capacity) : "",
+      strength: selectedRoom ? String(Math.min(150, Number(selectedRoom.capacity))) : "",
     }));
     setFieldErrors((prev) => ({ ...prev, roomId: null, strength: null }));
   };
@@ -1200,7 +1188,7 @@ export default function SectionManagementPage() {
       next[index] = {
         ...next[index],
         roomId,
-        strength: selectedRoom ? String(selectedRoom.capacity) : "",
+        strength: selectedRoom ? String(Math.min(150, Number(selectedRoom.capacity))) : "",
       };
       return next;
     });
@@ -1231,7 +1219,7 @@ export default function SectionManagementPage() {
   // ---------- SAVE HANDLERS WITH INLINE ERROR MESSAGES ----------
   const saveSection = async (e) => {
     e.preventDefault();
-    if (operation) return;
+    if (operationRef.current || initialLoading || sectionFormMode === "preview") return;
     const errs = {};
 
     const { boardId, academicYearId, groupId, programId, academicLevelId } = sectionForm;
@@ -1246,28 +1234,29 @@ export default function SectionManagementPage() {
     const groupObj = groupsById.get(String(groupId));
     const programObj = programsById.get(String(programId));
     const levelObj = levelsById.get(String(academicLevelId));
+    if (dependentLoading.board || dependentLoading.group || dependentLoading.program) return say("Please wait for academic options to finish loading.");
+    if (!boardObj?.isActive) errs.boardId = "Select an active Board";
+    if (!yearObj?.isActive || !yearBelongsToBoard(yearObj, boardId)) errs.academicYearId = "Select an active Academic Year for this Board";
+    if (!groupObj?.isActive || !matchesGroupScope(groupObj, sectionForm)) errs.groupId = "Select an active Group for this Board";
+    if (!programObj?.isActive || programObj.groupId !== groupId) errs.programId = "Select an active Program for this Group";
+    if (!levelObj?.isActive || normalizeId(levelObj.boardId) !== normalizeId(boardId)) errs.academicLevelId = "Select an active Academic Level for this Board";
 
     if (sectionCreationType === "single" || selectedSectionId) {
-      if (!sectionForm.name.trim()) errs.name = "Section Name is required";
+      if (!sectionForm.name.trim() || sectionForm.name.trim().length > 50) errs.name = "Section Name must contain 1 to 50 characters";
       if (!sectionForm.roomId) errs.roomId = "Room No selection is required";
-      if (!sectionForm.status) errs.status = "Status selection is required (Active/Inactive)";
+      if (!["Active", "Inactive"].includes(sectionForm.status)) errs.status = "Status selection is required (Active/Inactive)";
 
       const roomObj = roomsById.get(String(sectionForm.roomId));
       const strengthNum = Number(sectionForm.strength);
-      const roomConflict = sections.some((item) => item.status === "Active" && normalizeId(item.id) !== normalizeId(selectedSectionId) && normalizeId(item.roomId) === normalizeId(sectionForm.roomId));
-      if (roomObj && (!roomObj.isActive || roomObj.roomType !== "Classroom" || roomConflict)) errs.roomId = "Room is not available for Section allocation";
-      if (sectionForm.classTeacherId) {
-        const teacherObjForValidation = teachersById.get(normalizeId(sectionForm.classTeacherId));
-        if (teacherObjForValidation && teacherObjForValidation.isActive === false) {
-          errs.classTeacherId = "Selected Incharge is inactive";
-        }
-      }
-      if (sections.some((item) => normalizeId(item.id) !== normalizeId(selectedSectionId) && item.name.trim().toLowerCase() === sectionForm.name.trim().toLowerCase() && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs.name = "Section Name already exists for this academic scope";
+      if (!roomAllowed(roomObj, sectionForm)) errs.roomId = "Room is not available for Section allocation";
+      if (!sectionForm.classTeacherId) errs.classTeacherId = "Incharge is required";
+      else if (!teacherAllowed(teachersById.get(normalizeId(sectionForm.classTeacherId)), sectionForm)) errs.classTeacherId = "Select an available active Teaching Incharge";
+      if (sections.some((item) => normalizeId(item.id) !== normalizeId(selectedSectionId) && sameText(item.name, sectionForm.name) && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs.name = "Section Name already exists for this academic scope";
 
       if (!String(sectionForm.strength).trim()) {
         errs.strength = "Capacity is required";
-      } else if (!Number.isInteger(strengthNum) || strengthNum <= 0) {
-        errs.strength = "Capacity must be a positive integer";
+      } else if (!Number.isInteger(strengthNum) || strengthNum <= 0 || strengthNum > 150) {
+        errs.strength = "Section capacity must be an integer from 1 to 150";
       } else if (roomObj && strengthNum > Number(roomObj.capacity)) {
         errs.strength = `Section capacity (${strengthNum}) cannot exceed room capacity (${roomObj.capacity})`;
       }
@@ -1277,60 +1266,21 @@ export default function SectionManagementPage() {
         return;
       }
 
-      const teacherObj = sectionForm.classTeacherId ? teachersById.get(String(sectionForm.classTeacherId)) : null;
-
       const isEdit = Boolean(selectedSectionId);
-      setOperation(isEdit ? "UPDATE_SECTION" : "ADD_SECTION");
-      let apiSuccess = false;
-      try {
-        const payload = sectionPayload(sectionForm, { ...sectionForm, program: programObj });
-        await (isEdit ? apiClient.put(apiEndpoints.sections.update(selectedSectionId), payload) : apiClient.post(apiEndpoints.sections.create, payload));
-        apiSuccess = true;
-      } catch (error) {
-        say(getApiErrorMessage(error));
-      } finally {
-        setOperation("");
-      }
-      const updatedItem = {
-        id: isEdit ? selectedSectionId : String(Date.now()),
-        boardId,
-        board: boardObj?.name || "",
-        boardCode: boardObj?.code || "",
-        academicYearId,
-        academicYear: yearObj?.name || "",
-        academicLevelId,
-        academicLevel: levelObj?.name || "",
-        groupId,
-        group: groupObj?.name || "",
-        programId,
-        program: programObj?.name || "",
-        groupProgramId: programObj?.groupProgramId || "",
-        name: sectionForm.name.trim(),
-        roomId: roomObj.id,
-        roomNo: roomObj.roomNo,
-        classTeacherId: teacherObj ? teacherObj.id : "",
-        teacher: teacherObj ? teacherObj.name : "—",
-        strength: strengthNum,
-        status: sectionForm.status,
-        createdAt: isEdit ? sections.find((s) => s.id === selectedSectionId)?.createdAt : new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (isEdit) {
-        setSections((prev) => prev.map((s) => (s.id === selectedSectionId ? updatedItem : s)));
-        say(`Section "${updatedItem.name}" updated & reassigned successfully!`);
-      } else {
-        // PREPEND NEW SECTION TO TOP
-        createdSectionIdsRef.current.add(normalizeId(updatedItem.id));
-        if (updatedItem.name) createdSectionIdsRef.current.add(updatedItem.name.trim().toLowerCase());
-        setSections((prev) => [updatedItem, ...prev]);
-        setPage(1);
-        say(`Section "${updatedItem.name}" added successfully!`);
-      }
-      if (apiSuccess) {
-        await Promise.all([loadSections().catch(() => { }), loadRooms().catch(() => { })]);
-      }
-      setSectionView("list");
+      const payload = sectionPayload(sectionForm, { ...sectionForm, program: programObj });
+      await runMutation(isEdit ? "UPDATE_SECTION" : "ADD_SECTION",
+        () => isEdit ? apiClient.put(apiEndpoints.sections.update(selectedSectionId), payload) : apiClient.post(apiEndpoints.sections.create, payload),
+        async () => {
+          const next = await loadSections();
+          await loadRooms();
+          if (!next.some((item) => (!isEdit || item.id === selectedSectionId) && matchesSection(item, payload))) throw new Error("The saved Section was not found with the requested values.");
+        },
+        () => {
+          if (!isEdit) setPage(1);
+          setFieldErrors({});
+          setSectionView("list");
+          say("Section " + sectionForm.name.trim() + (isEdit ? " updated" : " added") + " successfully!");
+        });
     } else {
       // BULK SECTIONS SAVE
       if (!bulkSections.length) {
@@ -1339,39 +1289,26 @@ export default function SectionManagementPage() {
         return;
       }
 
-      const newSections = [];
-      const assignedRoomsInBatch = new Set();
-      const assignedTeachersInBatch = new Set();
       const namesInBatch = new Set();
-      const occupiedRoomIds = new Set(sections.filter((item) => item.status === "Active" && item.roomId).map((item) => normalizeId(item.roomId)));
-      const occupiedTeacherIds = new Set(sections.filter((item) => item.status === "Active" && item.classTeacherId).map((item) => normalizeId(item.classTeacherId)));
 
       for (let i = 0; i < bulkSections.length; i++) {
         const sec = bulkSections[i];
-        if (!sec.name.trim()) errs[`name_${i}`] = `Section Name required`;
+        if (!sec.name.trim() || sec.name.trim().length > 50) errs[`name_${i}`] = "Section Name must contain 1 to 50 characters";
         if (!sec.roomId) errs[`room_${i}`] = `Room No required`;
-        if (!sec.status) errs[`status_${i}`] = `Status required`;
-        const normalizedName = sec.name.trim().toLowerCase();
+        if (!["Active", "Inactive"].includes(sec.status)) errs[`status_${i}`] = `Status required`;
+        const normalizedName = sec.name.trim().replace(/\s+/g, " ").toLowerCase();
         if (normalizedName && namesInBatch.has(normalizedName)) errs[`name_${i}`] = "Duplicate Section Name in batch";
         if (normalizedName) namesInBatch.add(normalizedName);
-        if (normalizedName && sections.some((item) => item.name.trim().toLowerCase() === normalizedName && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs[`name_${i}`] = "Section Name already exists for this academic scope";
+        if (normalizedName && sections.some((item) => sameText(item.name, normalizedName) && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs[`name_${i}`] = "Section Name already exists for this academic scope";
 
-        if (sec.roomId && assignedRoomsInBatch.has(sec.roomId)) {
-          errs[`room_${i}`] = `Duplicate room assignment in batch`;
-        }
-        if (sec.roomId) assignedRoomsInBatch.add(sec.roomId);
-
-        const roomObj = roomsById.get(String(sec.roomId));
-        if (sec.roomId && (!roomObj?.isActive || roomObj?.roomType !== "Classroom" || occupiedRoomIds.has(normalizeId(sec.roomId)))) errs[`room_${i}`] = "Room is not available for Section allocation";
-        if (sec.classTeacherId) {
-          const teacherObj = teachersById.get(normalizeId(sec.classTeacherId));
-          if (teacherObj && teacherObj.isActive === false) {
-            errs[`teacher_${i}`] = "Selected Incharge is inactive";
-          }
-        }
+        const roomObj = roomsById.get(normalizeId(sec.roomId));
+        const others = bulkSections.filter((_, index) => index !== i);
+        if (!roomAllowed(roomObj, sec, others)) errs[`room_${i}`] = "Room is not available for Section allocation";
+        if (!sec.classTeacherId) errs[`teacher_${i}`] = "Incharge is required";
+        else if (!teacherAllowed(teachersById.get(normalizeId(sec.classTeacherId)), sec, others)) errs[`teacher_${i}`] = "Select an available active Teaching Incharge";
         const strengthNum = Number(sec.strength);
-        if (!String(sec.strength).trim() || !Number.isInteger(strengthNum) || strengthNum <= 0) {
-          errs[`strength_${i}`] = `Valid capacity required`;
+        if (!String(sec.strength).trim() || !Number.isInteger(strengthNum) || strengthNum <= 0 || strengthNum > 150) {
+          errs[`strength_${i}`] = "Section capacity must be an integer from 1 to 150";
         } else if (roomObj && strengthNum > Number(roomObj.capacity)) {
           errs[`strength_${i}`] = `Exceeds room capacity (${roomObj.capacity})`;
         }
@@ -1382,246 +1319,103 @@ export default function SectionManagementPage() {
         return;
       }
 
-      setOperation("BULK_SECTION");
-      let apiSuccess = false;
-      try {
-        const context = { ...sectionForm, program: programObj };
-        await apiClient.post(SECTION_BULK_ENDPOINT, bulkSections.map((item) => sectionPayload(item, context)));
-        apiSuccess = true;
-      } catch (error) {
-        say(getApiErrorMessage(error));
-      } finally {
-        setOperation("");
-      }
-
-      for (let i = 0; i < bulkSections.length; i++) {
-        const sec = bulkSections[i];
-        const roomObj = roomsById.get(String(sec.roomId));
-        const teacherObj = sec.classTeacherId ? teachersById.get(String(sec.classTeacherId)) : null;
-
-        const secItem = {
-          id: String(Date.now() + i),
-          boardId,
-          board: boardObj?.name || "",
-          boardCode: boardObj?.code || "",
-          academicYearId,
-          academicYear: yearObj?.name || "",
-          academicLevelId,
-          academicLevel: levelObj?.name || "",
-          groupId,
-          group: groupObj?.name || "",
-          programId,
-          program: programObj?.name || "",
-          groupProgramId: programObj?.groupProgramId || "",
-          name: sec.name.trim(),
-          roomId: roomObj.id,
-          roomNo: roomObj.roomNo,
-          classTeacherId: teacherObj ? teacherObj.id : "",
-          teacher: teacherObj ? teacherObj.name : "—",
-          strength: Number(sec.strength),
-          status: sec.status,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        createdSectionIdsRef.current.add(normalizeId(secItem.id));
-        if (secItem.name) createdSectionIdsRef.current.add(secItem.name.trim().toLowerCase());
-        newSections.push(secItem);
-      }
-
-      // PREPEND BULK SECTIONS TO TOP
-      setSections((prev) => [...newSections, ...prev]);
-      setPage(1);
-      say(`${newSections.length} Sections created successfully!`);
-      if (apiSuccess) {
-        await Promise.all([loadSections().catch(() => { }), loadRooms().catch(() => { })]);
-      }
-      setBulkSections([{ name: "", roomId: "", classTeacherId: "", strength: "", status: "Active" }]);
-      setSectionView("list");
+      const payloads = bulkSections.map((item) => sectionPayload(item, { ...sectionForm, program: programObj }));
+      const { boardId: board, academicYearId: year, academicLevelId: level, groupId: group, programId: program } = payloads[0];
+      await runMutation("BULK_SECTION",
+        () => apiClient.post(SECTION_BULK_ENDPOINT, { boardId: board, academicYearId: year, academicLevelId: level, groupId: group, programId: program, sections: payloads.map(({ sectionName, roomId, inchargeId, maximumStrength, isActive }) => ({ sectionName, roomId, inchargeId, maximumStrength, isActive })) }),
+        async (response) => {
+          const next = await loadSections();
+          await loadRooms();
+          verifyBulkResult(response, payloads.length);
+          if (!payloads.every((payload) => next.some((item) => matchesSection(item, payload)))) throw new Error("Not all requested Sections were found in the backend data.");
+        },
+        () => {
+          setPage(1);
+          setBulkSections([{ name: "", roomId: "", classTeacherId: "", strength: "", status: "" }]);
+          setFieldErrors({});
+          setSectionView("list");
+          say(payloads.length + " Sections created successfully!");
+        });
     }
   };
 
-  const saveRoom = async (e) => {
-    e.preventDefault();
-    if (operation) return;
-    const errs = {};
-
-    if (roomCreationType === "single" || selectedRoomId) {
-      const roomNoTrimmed = roomForm.roomNo.trim();
-      if (!roomNoTrimmed) errs.roomNo = "Room No is required";
-      if (!roomForm.building.trim()) errs.building = "Block Name is required";
-      if (!String(roomForm.floor).trim()) errs.floor = "Floor is required";
-      if (!roomForm.roomType) errs.roomType = "Room Type is required";
-      if (!roomForm.isActive) errs.isActive = "Status selection is required";
-
-      const cap = Number(roomForm.capacity);
-      if (!String(roomForm.capacity).trim() || !Number.isInteger(cap) || cap <= 0) {
-        errs.capacity = "Room capacity must be a positive integer";
-      }
-
-      const duplicate = rooms.find(
-        (r) => r.id !== selectedRoomId && r.roomNo.toLowerCase() === roomNoTrimmed.toLowerCase()
-      );
-      if (duplicate) errs.roomNo = `Room No "${roomNoTrimmed}" already exists`;
-
-      if (Object.keys(errs).length > 0) {
-        setRoomFieldErrors(errs);
-        return;
-      }
-
-      const isEdit = Boolean(selectedRoomId);
-      setOperation(isEdit ? "UPDATE_ROOM" : "ADD_ROOM");
-      let apiSuccess = false;
-      try {
-        await (isEdit ? apiClient.put(ROOM_ENDPOINTS.update(selectedRoomId), roomPayload(roomForm)) : apiClient.post(ROOM_ENDPOINTS.create, roomPayload(roomForm)));
-        apiSuccess = true;
-      } catch (error) {
-        say(getApiErrorMessage(error));
-      } finally {
-        setOperation("");
-      }
-      const roomObj = {
-        id: isEdit ? selectedRoomId : String(Date.now()),
-        roomNo: roomNoTrimmed,
-        capacity: cap,
-        roomType: roomForm.roomType,
-        building: roomForm.building.trim(),
-        floor: String(roomForm.floor).trim(),
-        isActive: roomForm.isActive === "Active",
-      };
-
-      if (isEdit) {
-        setRooms((prev) => prev.map((r) => (r.id === selectedRoomId ? roomObj : r)));
-        say(`Room "${roomObj.roomNo}" updated successfully!`);
-      } else {
-        // PREPEND NEW ROOM TO TOP
-        createdRoomIdsRef.current.add(normalizeId(roomObj.id));
-        if (roomObj.roomNo) createdRoomIdsRef.current.add(roomObj.roomNo.trim().toLowerCase());
-        setRooms((prev) => [roomObj, ...prev]);
-        setRoomPage(1);
-        say(`Room "${roomObj.roomNo}" added successfully!`);
-      }
-      if (apiSuccess) {
-        await loadRooms().catch(() => { });
-      }
-      setRoomView("list");
+  const saveRoom = async (event) => {
+    event.preventDefault();
+    if (operationRef.current || initialLoading || roomFormMode === "preview") return;
+    const isEdit = Boolean(selectedRoomId);
+    const isBulk = !isEdit && roomCreationType === "bulk";
+    const errors = {};
+    const form = isBulk ? bulkRoomForm : roomForm;
+    if (!form.building.trim()) errors.building = "Building is required";
+    if (!String(form.floor).trim()) errors.floor = "Floor is required";
+    if (!["Active", "Inactive"].includes(form.isActive)) errors.isActive = "Status is required";
+    let forms;
+    if (isBulk) {
+      const count = Number(form.roomCount);
+      if (!parseRoomNumberSequence(form.startRoomNo)) errors.startRoomNo = "First Room Number must end with a numeric suffix";
+      if (!Number.isInteger(count) || count < 1 || count > 100) errors.roomCount = "Room count must be between 1 and 100";
+      Object.assign(errors, validateBulkRoomAllocations(bulkRoomAllocations, rooms, count));
+      const numbers = generateRoomNumbers(form.startRoomNo, count);
+      if (bulkRoomAllocations.some((row, index) => row.roomNo !== numbers[index])) errors.bulk = "Prepare the Room Allocation Preview again after changing the sequence.";
+      forms = bulkRoomAllocations.map((row) => ({ ...form, ...row }));
     } else {
-      // BULK ROOMS CREATION
-      const { building, floor, startRoomNo, roomCount, defaultCapacity, defaultRoomType, isActive } = bulkRoomForm;
-
-      if (!building.trim()) errs.building = "Block Name is required";
-      if (!String(floor).trim()) errs.floor = "Floor is required";
-      if (!startRoomNo.trim()) errs.startRoomNo = "Start Room No is required";
-      if (!isActive || !["Active", "Inactive"].includes(isActive)) errs.isActive = "Valid Status is required";
-
-      const countNum = Number(roomCount);
-      if (!String(roomCount).trim() || !Number.isInteger(countNum) || countNum < 1 || countNum > 100) {
-        errs.roomCount = "Room count must be between 1 and 100";
+      forms = [roomForm];
+      if (!roomForm.roomNo.trim() || roomForm.roomNo.trim().length > 50) errors.roomNo = "Room Number must contain 1 to 50 characters";
+      if (rooms.some((room) => normalizeId(room.id) !== normalizeId(selectedRoomId) && sameText(room.roomNo, roomForm.roomNo))) errors.roomNo = "Room Number already exists";
+      if (!Number.isInteger(Number(roomForm.capacity)) || Number(roomForm.capacity) < 1 || Number(roomForm.capacity) > 1000) errors.capacity = "Capacity must be an integer from 1 to 1000";
+      if (!ROOM_TYPES.includes(roomForm.roomType)) errors.roomType = "Room Type is required";
+      const assigned = sections.filter((section) => section.status === "Active" && normalizeId(section.roomId) === normalizeId(selectedRoomId));
+      if (assigned.length) {
+        const current = roomsById.get(normalizeId(selectedRoomId));
+        if (!sameText(roomForm.roomNo, current?.roomNo)) errors.roomNo = "An allocated Room cannot be renamed";
+        if (roomForm.roomType !== "Classroom") errors.roomType = "An allocated Room must remain a Classroom";
+        if (roomForm.isActive !== "Active") errors.isActive = "An allocated Room cannot be deactivated";
+        if (assigned.some((section) => Number(section.strength) > Number(roomForm.capacity))) errors.capacity = "Capacity cannot be less than allocated Section strength";
       }
-
-      const capNum = Number(defaultCapacity);
-      if (String(defaultCapacity).trim() && (!Number.isInteger(capNum) || capNum < 1 || capNum > 1000)) errs.defaultCapacity = "Capacity must be an integer from 1 to 1000";
-      if (defaultRoomType && !ROOM_TYPES.includes(defaultRoomType)) errs.defaultRoomType = "Select a valid Room Type";
-      if (!parseRoomNumberSequence(startRoomNo)) errs.startRoomNo = "First Room Number must end with a numeric suffix";
-      Object.assign(errs, validateBulkRoomAllocations(bulkRoomAllocations, rooms, countNum));
-
-      if (Object.keys(errs).length > 0) {
-        setRoomFieldErrors(errs);
-        const firstInvalidRow = Object.keys(errs)
-          .map((key) => key.match(/^bulk_(?:capacity|roomType|roomNo)_(\d+)$/))
-          .find(Boolean);
-        if (firstInvalidRow) setBulkRoomPage(Math.floor(Number(firstInvalidRow[1]) / BULK_ROOM_PAGE_SIZE) + 1);
-        return;
-      }
-
-      const bulkPayload = bulkRoomAllocations.map((allocation) => roomPayload({ ...allocation, building, floor, isActive }));
-      setOperation("BULK_ROOM");
-      let apiSuccess = false;
-      try {
-        await apiClient.post(ROOM_ENDPOINTS.bulk, bulkPayload);
-        apiSuccess = true;
-      } catch (error) {
-        say(getApiErrorMessage(error));
-      } finally {
-        setOperation("");
-      }
-
-      const idPrefix = `room-${Date.now()}`;
-      const generated = bulkRoomAllocations.map((allocation, index) => {
-        const rObj = {
-          id: `${idPrefix}-${index + 1}`,
-          roomNo: allocation.roomNo,
-          capacity: Number(allocation.capacity),
-          roomType: allocation.roomType,
-          building: building.trim(),
-          floor: String(floor).trim(),
-          isActive: isActive === "Active",
-        };
-        createdRoomIdsRef.current.add(normalizeId(rObj.id));
-        if (rObj.roomNo) createdRoomIdsRef.current.add(rObj.roomNo.trim().toLowerCase());
-        return rObj;
-      });
-
-      // PREPEND BULK ROOMS TO TOP
-      setRooms((prev) => [...generated, ...prev]);
-      setRoomPage(1);
-      say(`${generated.length} Rooms created successfully for ${building} (Floor ${floor})!`);
-      setBulkRoomForm(EMPTY_BULK_ROOM_FORM);
-      setBulkRoomAllocations([]);
-      setBulkRoomPage(1);
-      setRoomFieldErrors({});
-      if (apiSuccess) {
-        await loadRooms().catch(() => { });
-      }
-      setRoomView("list");
     }
+    setRoomFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+    const payloads = forms.map(roomPayload);
+    await runMutation(isBulk ? "BULK_ROOM" : isEdit ? "UPDATE_ROOM" : "ADD_ROOM",
+      () => isBulk ? apiClient.post(ROOM_ENDPOINTS.bulk, { rooms: payloads }) : isEdit ? apiClient.put(ROOM_ENDPOINTS.update(selectedRoomId), payloads[0]) : apiClient.post(ROOM_ENDPOINTS.create, payloads[0]),
+      async (response) => {
+        const next = await loadRooms();
+        if (isBulk) verifyBulkResult(response, payloads.length);
+        if (!payloads.every((payload) => next.some((room) => (!isEdit || room.id === selectedRoomId) && matchesRoom(room, payload)))) throw new Error("The saved Rooms were not found with the requested values.");
+      },
+      () => {
+        if (!isEdit) setRoomPage(1);
+        setRoomView("list");
+        if (isBulk) { setBulkRoomForm(EMPTY_BULK_ROOM_FORM); setBulkRoomAllocations([]); }
+        say(isBulk ? payloads.length + " Rooms created successfully!" : "Room " + roomForm.roomNo.trim() + (isEdit ? " updated" : " added") + " successfully!");
+      });
   };
 
   const deleteSection = async (sec) => {
-    if (operation) return;
-    if (window.confirm(`Are you sure you want to delete section "${sec.name}"?`)) {
-      setOperation(`DELETE_SECTION:${sec.id}`);
-      let apiSuccess = false;
-      try {
-        await apiClient.delete(apiEndpoints.sections.delete(sec.id));
-        apiSuccess = true;
-        await Promise.all([loadSections(), loadRooms()]);
-      } catch (error) {
-        say(getApiErrorMessage(error));
-      } finally {
-        setOperation("");
-      }
-      if (!apiSuccess) {
-        setSections((prev) => prev.filter((s) => s.id !== sec.id));
-      }
-      say(`Section "${sec.name}" deleted successfully.`);
-    }
+    if (operationRef.current || initialLoading) return;
+    if (!window.confirm('Are you sure you want to delete section "' + sec.name + '"?')) return;
+    await runMutation("DELETE_SECTION:" + sec.id,
+      () => apiClient.delete(apiEndpoints.sections.delete(sec.id)),
+      async () => {
+        const next = await loadSections();
+        await loadRooms();
+        if (next.some((item) => item.id === sec.id)) throw new Error("The Section is still present in the backend data.");
+      },
+      () => say('Section "' + sec.name + '" deleted successfully.'));
   };
 
   const deleteRoom = async (room) => {
-    if (operation) return;
-    const assigned = sections.find((s) => s.status === "Active" && String(s.roomId) === String(room.id));
-    if (assigned) {
-      say(`Cannot delete room "${room.roomNo}" because it is assigned to active section "${assigned.name}".`);
-      return;
-    }
-
-    if (window.confirm(`Are you sure you want to delete room "${room.roomNo}"?`)) {
-      setOperation(`DELETE_ROOM:${room.id}`);
-      let apiSuccess = false;
-      try {
-        await apiClient.delete(ROOM_ENDPOINTS.delete(room.id));
-        apiSuccess = true;
-        await loadRooms();
-      } catch (error) {
-        say(getApiErrorMessage(error));
-      } finally {
-        setOperation("");
-      }
-      if (!apiSuccess) {
-        setRooms((prev) => prev.filter((r) => r.id !== room.id));
-      }
-      say(`Room "${room.roomNo}" deleted successfully.`);
-    }
+    if (operationRef.current || initialLoading) return;
+    const assigned = sections.find((section) => section.status === "Active" && normalizeId(section.roomId) === normalizeId(room.id));
+    if (assigned) return say('Cannot delete room "' + room.roomNo + '" because it is assigned to active section "' + assigned.name + '".');
+    if (!window.confirm('Are you sure you want to delete room "' + room.roomNo + '"?')) return;
+    await runMutation("DELETE_ROOM:" + room.id,
+      () => apiClient.delete(ROOM_ENDPOINTS.delete(room.id)),
+      async () => {
+        const next = await loadRooms();
+        if (next.some((item) => item.id === room.id)) throw new Error("The Room is still present in the backend data.");
+      },
+      () => say('Room "' + room.roomNo + '" deleted successfully.'));
   };
 
   const exportAllocationExcel = () => {
@@ -1994,7 +1788,8 @@ export default function SectionManagementPage() {
                             }}
                             disabled={roomFormMode === "preview"}
                           >
-                            <option value="Active">Active</option>
+                            <option value="" disabled>Select Status</option>
+                              <option value="Active">Active</option>
                             <option value="Inactive">Inactive</option>
                           </select>
                           {roomFieldErrors.isActive && <span className="cms-field-error">{roomFieldErrors.isActive}</span>}
@@ -2137,6 +1932,7 @@ export default function SectionManagementPage() {
                                 setRoomFieldErrors((err) => ({ ...err, isActive: null }));
                               }}
                             >
+                              <option value="" disabled>Select Status</option>
                               <option value="Active">Active</option>
                               <option value="Inactive">Inactive</option>
                             </select>
@@ -2200,13 +1996,19 @@ export default function SectionManagementPage() {
                   </div>
                   <div className="cms-sec-toolbar-filters">
                     <div className="cms-field">
+                    <SearchableSelect value={filters.boardId} onChange={(boardId) => setFilters((current) => ({ ...current, boardId, academicYearId: "", academicLevelId: "", groupId: "", programId: "" }))} options={sectionBoardFilterOptions} placeholder="All Boards" showSearch={true} />
+                  </div>
+                  <div className="cms-field">
+                    <SearchableSelect value={filters.academicYearId} onChange={(academicYearId) => setFilters((current) => ({ ...current, academicYearId }))} options={sectionYearFilterOptions} placeholder="All Academic Years" showSearch={true} />
+                  </div>
+                  <div className="cms-field">
                       <SearchableSelect
                         value={filters.groupId}
                         onChange={(groupId) => {
                           setFilters((current) => ({
                             ...current,
                             groupId,
-                            programId: groupId && programsList.some((program) => program.isActive && normalizeId(program.groupId) === normalizeId(groupId) && normalizeId(program.programId) === normalizeId(current.programId)) ? current.programId : "",
+                            programId: (!groupId || sections.some((section) => (!current.boardId || normalizeId(section.boardId) === normalizeId(current.boardId)) && normalizeId(section.groupId) === normalizeId(groupId) && normalizeId(section.programId) === normalizeId(current.programId))) ? current.programId : "",
                           }));
                           setPage(1);
                         }}
@@ -2222,9 +2024,8 @@ export default function SectionManagementPage() {
                           setFilters((current) => ({ ...current, programId }));
                           setPage(1);
                         }}
-                        options={filters.groupId ? sectionProgramFilterOptions : []}
-                        disabled={!filters.groupId}
-                        placeholder={filters.groupId ? "Select Program" : "Select Group First"}
+                        options={sectionProgramFilterOptions}
+                        placeholder="Select Program"
                         showSearch={true}
                       />
                     </div>
@@ -2427,11 +2228,8 @@ export default function SectionManagementPage() {
                             setSectionForm((f) => ({
                               ...f,
                               boardId: val,
-                              academicYearId: "",
-                              academicLevelId: "",
                               groupId: "",
                               programId: "",
-                              groupProgramId: "",
                             }));
                             setFieldErrors((err) => ({
                               ...err,
@@ -2459,12 +2257,11 @@ export default function SectionManagementPage() {
                         <SearchableSelect
                           value={sectionForm.academicYearId}
                           onChange={(val) => {
-                            setSectionForm((f) => ({ ...f, academicYearId: val }));
-                            setFieldErrors((err) => ({ ...err, academicYearId: null }));
+                            changeAcademicScope("academicYearId", val);
                           }}
                           options={filteredYearOptions}
-                          disabled={sectionFormMode === "preview" || !sectionForm.boardId || dependentLoading.board}
-                          placeholder={!sectionForm.boardId ? "Select Board First" : "Select Academic Year"}
+                          disabled={sectionFormMode === "preview" || !sectionForm.boardId}
+                          placeholder="Select Academic Year"
                           showSearch={true}
                           hasError={Boolean(fieldErrors.academicYearId)}
                         />
@@ -2478,7 +2275,7 @@ export default function SectionManagementPage() {
                         <SearchableSelect
                           value={sectionForm.groupId}
                           onChange={(val) => {
-                            setSectionForm((f) => ({ ...f, groupId: val, programId: "", groupProgramId: "" }));
+                            setSectionForm((f) => ({ ...f, groupId: val, programId: "" }));
                             setFieldErrors((err) => ({ ...err, groupId: null, programId: null }));
                             loadPrograms(val);
                           }}
@@ -2498,8 +2295,7 @@ export default function SectionManagementPage() {
                         <SearchableSelect
                           value={sectionForm.programId}
                           onChange={(val) => {
-                            const selectedProgram = programsList.find((item) => normalizeId(item.programId) === normalizeId(val));
-                            setSectionForm((f) => ({ ...f, programId: val, groupProgramId: selectedProgram?.groupProgramId || "" }));
+                            setSectionForm((f) => ({ ...f, programId: val }));
                             setFieldErrors((err) => ({ ...err, programId: null }));
                           }}
                           options={filteredProgramOptions}
@@ -2518,12 +2314,11 @@ export default function SectionManagementPage() {
                         <SearchableSelect
                           value={sectionForm.academicLevelId}
                           onChange={(val) => {
-                            setSectionForm((f) => ({ ...f, academicLevelId: val }));
-                            setFieldErrors((err) => ({ ...err, academicLevelId: null }));
+                            changeAcademicScope("academicLevelId", val);
                           }}
                           options={levelOptions}
-                          disabled={sectionFormMode === "preview" || !sectionForm.boardId || dependentLoading.board}
-                          placeholder={!sectionForm.boardId ? "Select Board First" : "Select Academic Level"}
+                          disabled={sectionFormMode === "preview" || !sectionForm.boardId}
+                          placeholder="Select Academic Level"
                           showSearch={true}
                           hasError={Boolean(fieldErrors.academicLevelId)}
                         />
@@ -2573,13 +2368,13 @@ export default function SectionManagementPage() {
                           </div>
 
                           <div className="cms-field">
-                            <label>Incharge (Invigilator / Faculty)</label>
+                            <label>Incharge (Invigilator / Faculty) <span className="req">*</span></label>
                             <SearchableSelect
                               value={sectionForm.classTeacherId}
                               onChange={(val) => setSectionForm((f) => ({ ...f, classTeacherId: val }))}
                               options={availableTeachers}
                               disabled={sectionFormMode === "preview"}
-                              placeholder="Select Incharge (Optional)"
+                              placeholder="Select Incharge"
                               emptyText="No unassigned faculty available"
                               showSearch={true}
                               hasError={Boolean(fieldErrors.classTeacherId)}
@@ -2594,6 +2389,8 @@ export default function SectionManagementPage() {
                             <input
                               type="number"
                               min="1"
+                              max="150"
+                              step="1"
                               value={sectionForm.strength}
                               disabled={sectionFormMode === "preview"}
                               placeholder="Capacity"
@@ -2618,6 +2415,7 @@ export default function SectionManagementPage() {
                               }}
                               disabled={sectionFormMode === "preview"}
                             >
+                              <option value="" disabled>Select Status</option>
                               <option value="Active">Active</option>
                               <option value="Inactive">Inactive</option>
                             </select>
@@ -2652,7 +2450,7 @@ export default function SectionManagementPage() {
                                   roomId: "",
                                   classTeacherId: "",
                                   strength: "",
-                                  status: "Active",
+                                  status: "",
                                 },
                               ])
                             }
@@ -2702,8 +2500,8 @@ export default function SectionManagementPage() {
                                     return next;
                                   });
                                 }}
-                                options={availableTeachers}
-                                placeholder="Select Incharge (Optional)"
+                                options={getAvailableTeachersForBulkRow(idx)}
+                                placeholder="Select Incharge"
                                 showSearch={true}
                               />
                               {fieldErrors[`teacher_${idx}`] && <span className="cms-field-error">{fieldErrors[`teacher_${idx}`]}</span>}
@@ -2713,6 +2511,8 @@ export default function SectionManagementPage() {
                               <input
                                 type="number"
                                 min="1"
+                                max="150"
+                                step="1"
                                 placeholder="Capacity"
                                 value={sec.strength}
                                 onChange={(e) => {
@@ -2739,7 +2539,8 @@ export default function SectionManagementPage() {
                                   });
                                 }}
                               >
-                                <option value="Active">Active</option>
+                                <option value="" disabled>Select Status</option>
+                              <option value="Active">Active</option>
                                 <option value="Inactive">Inactive</option>
                               </select>
                               {fieldErrors[`status_${idx}`] && <span className="cms-field-error">{fieldErrors[`status_${idx}`]}</span>}

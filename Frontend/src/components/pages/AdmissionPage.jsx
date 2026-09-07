@@ -27,6 +27,7 @@ import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import {
   DEFAULT_INSTALLMENT_COUNT,
   INSTALLMENT_COUNTS,
+  PAYMENT_METHODS,
   buildInstallmentSchedule,
   feeScheduleLabel,
   formatCurrency,
@@ -56,12 +57,6 @@ const ALPHA_FIELDS = new Set([
   "prevSchool",
 ]);
 const ADMISSION_GENDER_OPTIONS = ["Male", "Female", "Other"];
-const newAdmissionValues = (values = {}) => {
-  const next = { ...values };
-  if (!next.admissionDate) next.admissionDate = todayISO();
-  if (String(next.quota || "").toLowerCase() === "other") next.quota = "Other";
-  return next;
-};
 
 const getCollection = (payload) => {
   const data = payload?.data ?? payload?.Data ?? payload;
@@ -113,28 +108,6 @@ const readId = (item, ...keys) => {
   return value === undefined || value === null || value === "" || isSchemaPlaceholder(value) ? "" : String(value);
 };
 
-const isRenderableImageSource = (value) => {
-  const text = String(value || "").trim();
-  return Boolean(text) && (
-    text.startsWith("blob:")
-    || text.startsWith("data:image/")
-    || /^https?:\/\//i.test(text)
-    || text.startsWith("/")
-  );
-};
-
-const normalizeImageSource = (value) => {
-  const text = String(value || "").trim();
-  if (!text || isSchemaPlaceholder(text)) return "";
-  if (isRenderableImageSource(text)) return text;
-  if (/[\\/]/.test(text) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(text)) {
-    const baseUrl = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
-    const path = text.replace(/\\/g, "/").replace(/^\/?/, "/");
-    return baseUrl ? `${baseUrl}${path}` : path;
-  }
-  return "";
-};
-
 const isLooseId = (value) => {
   const text = String(value ?? "").trim();
   return text === "" || text === "0";
@@ -147,39 +120,6 @@ const idsMatchOrLoose = (selected, candidate) => (
 const textMatchesOrLoose = (selected, candidate) => (
   !selected || !candidate || String(candidate).trim().toLowerCase() === String(selected).trim().toLowerCase()
 );
-
-const normalizeMatchText = (value) => String(value ?? "").trim().toLowerCase();
-
-const optionValuesFor = (options = [], value) => {
-  const selected = String(value ?? "").trim();
-  if (!selected) return [];
-  const option = options.find((item) => String(item.value) === selected);
-  return [selected, option?.label].filter(Boolean).map(normalizeMatchText);
-};
-
-const structureFieldMatches = (selectedValue, options, ...candidates) => {
-  const selectedValues = optionValuesFor(options, selectedValue);
-  if (!selectedValues.length) return true;
-  const candidateValues = candidates.map(normalizeMatchText).filter(Boolean).filter((value) => value !== "0");
-  if (!candidateValues.length) return true;
-  return candidateValues.some((candidate) => selectedValues.includes(candidate));
-};
-
-const requiredStructureFieldMatches = (selectedValue, options, ...candidates) => {
-  const selectedValues = optionValuesFor(options, selectedValue);
-  if (!selectedValues.length) return false;
-  const candidateValues = candidates.map(normalizeMatchText).filter(Boolean).filter((value) => value !== "0");
-  if (!candidateValues.length) return false;
-  return candidateValues.some((candidate) => selectedValues.includes(candidate));
-};
-
-const structureProgramMatches = (selectedValue, options, ...candidates) => {
-  const selectedValues = optionValuesFor(options, selectedValue);
-  const candidateValues = candidates.map(normalizeMatchText).filter(Boolean).filter((value) => value !== "0");
-  if (!selectedValues.length) return !candidateValues.length;
-  if (!candidateValues.length) return true;
-  return candidateValues.some((candidate) => selectedValues.includes(candidate));
-};
 
 const isPlaceholderOption = (value) => String(value || "").startsWith("__");
 
@@ -250,12 +190,6 @@ const expandFeeStructureItems = (item) => {
     item,
     "feeComponents",
     "FeeComponents",
-    "feeItems",
-    "FeeItems",
-    "items",
-    "Items",
-    "feeStructureItems",
-    "FeeStructureItems",
     "components",
     "Components",
     "feeDetails",
@@ -266,14 +200,21 @@ const expandFeeStructureItems = (item) => {
   if (!components.length) return [item];
 
   return components.map((component) => {
-    const parentStructureId = readId(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId", "id", "Id")
-      || readFeeStructureId(item);
-    const componentItemId = readId(component, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "feeComponentId", "FeeComponentId", "id", "Id");
+    const structureId = read(
+      component,
+      "feeStructureId",
+      "FeeStructureId",
+      "structureId",
+      "StructureId",
+      "feeComponentId",
+      "FeeComponentId",
+      "id",
+      "Id",
+    );
     return {
       ...item,
       ...component,
-      ...(parentStructureId ? { feeStructureId: parentStructureId, structureId: parentStructureId } : {}),
-      ...(componentItemId ? { feeStructureItemId: componentItemId } : {}),
+      ...(structureId !== undefined && structureId !== null && structureId !== "" ? { feeStructureId: structureId } : {}),
     };
   });
 };
@@ -306,7 +247,7 @@ const normalizeFeeStructureItem = (item, structure = {}) => {
   const feeType = read(item, "feeType", "FeeType", "type", "Type");
   const structureId = readId(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId")
     || readId(structure, "feeStructureId", "FeeStructureId", "id", "Id");
-  const feeStructureItemId = readId(item, "feeStructureComponentId", "FeeStructureComponentId", "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId", "id", "Id");
+  const feeStructureItemId = readId(item, "feeStructureItemId", "FeeStructureItemId", "structureItemId", "StructureItemId", "itemId", "ItemId", "id", "Id");
   const feeTypeId = readId(item, "feeTypeId", "FeeTypeId", "typeId", "TypeId")
     || readId(feeType, "feeTypeId", "FeeTypeId", "id", "Id", "typeId", "TypeId");
   const name = getFeeTypeName(item);
@@ -338,29 +279,18 @@ const normalizeFeeStructureSummary = (item) => {
   const program = read(item, "program", "Program");
   const board = read(item, "board", "Board");
   const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
-  const id = readFeeStructureId(item);
+  const id = readId(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId", "id", "Id");
   if (!id) return null;
   return {
     raw: item,
     id,
     boardId: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id"),
-    boardName: readText(item, "boardName", "BoardName") || (typeof board === "string" ? board : readText(board, "boardName", "BoardName", "name", "Name", "boardCode", "BoardCode")),
     academicYearId: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
-    academicYearName: readText(item, "academicYearName", "AcademicYearName") || (typeof academicYear === "string" ? academicYear : readText(academicYear, "academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name")),
     groupId: readId(item, "groupId", "GroupId") || readId(group, "groupId", "GroupId", "id", "Id"),
-    groupName: readText(item, "groupName", "GroupName", "courseName", "CourseName") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")),
     programId: readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id"),
-    programName: readText(item, "programName", "ProgramName") || (typeof program === "string" ? program : readText(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode")),
     status: readText(item, "status", "Status") || (read(item, "isActive", "IsActive") === false ? "Inactive" : "Active"),
   };
 };
-
-const feeStructureMatchesSelection = (item, { boardId, academicYearId, groupId, programId }, options = {}) => (
-  structureFieldMatches(boardId, options.boards, item.boardId, item.boardName)
-  && requiredStructureFieldMatches(academicYearId, options.years, item.academicYearId, item.academicYearName)
-  && requiredStructureFieldMatches(groupId, options.groups, item.groupId, item.groupName)
-  && structureProgramMatches(programId, options.programs, item.programId, item.programName)
-);
 
 const normalizeScholarship = (item) => {
   const id = readId(item, "scholarshipId", "ScholarshipId", "id", "Id");
@@ -483,7 +413,7 @@ const steps = [
       { name: "board", label: "Board", type: "select", options: [], required: true },
       { name: "year", label: "Academic Year", type: "select", options: [], required: true },
       { name: "admissionType", label: "Admission Type", type: "select", options: ["Regular", "Lateral Entry", "Transfer"] },
-      { name: "quota", label: "Admission Quota", type: "select", options: ["Regular", "Merit", "Management", "Sports", "Reserved", "Other"] },
+      { name: "quota", label: "Admission Quota", type: "select", options: ["Regular", "Merit", "Management", "Sports", "Reserved","other"] },
     ],
   },
   {
@@ -496,7 +426,7 @@ const steps = [
       { name: "dob", label: "Date of Birth", type: "date", required: true },
       { name: "bloodGroup", label: "Blood Group", type: "select", options: [], required: true },
       { name: "aadhaar", label: "Aadhaar Number", required: true },
-      { name: "mobile", label: "Student Mobile", type: "tel" },
+      { name: "mobile", label: "Mobile", type: "tel", required: true },
       { name: "email", label: "Email", type: "email" },
       { name: "religion", label: "Religion" },
       { name: "caste", label: "Caste Category", type: "select", options: ["General", "OBC", "SC", "ST", "EWS"] },
@@ -519,12 +449,11 @@ const steps = [
   {
     title: "Address",
     fields: [
-      { name: "address1", label: "House / Door Number", required: true },
-      { name: "address2", label: "Street / Village" },
-      { name: "city", label: "Town", required: true },
+      { name: "pincode", label: "Pincode", required: true },
+      { name: "city", label: "City", required: true },
       { name: "district", label: "District", required: true },
       { name: "state", label: "State", type: "select", options: ["Andhra Pradesh", "Telangana", "Karnataka", "Maharashtra", "Delhi"], required: true },
-      { name: "pincode", label: "Pincode", required: true },
+      { name: "address1", label: "Address", required: true, full: true },
     ],
   },
   {
@@ -597,7 +526,7 @@ const buildAdmissionFormData = (values) => {
   const formData = new FormData();
   appendIfPresent(formData, "AdmissionNo", values.admissionNo);
   appendIfPresent(formData, "AdmissionDate", toDateTime(values.admissionDate));
-  appendIfPresent(formData, "AdmissionQuota", values.quota === "Other" ? values.quotaOther : values.quota);
+  appendIfPresent(formData, "AdmissionQuota", values.quota);
   appendIfPresent(formData, "FirstName", values.firstName);
   appendIfPresent(formData, "LastName", values.lastName);
   appendIfPresent(formData, "Gender", values.gender);
@@ -605,6 +534,9 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "BloodGroup", values.bloodGroup);
   if (typeof File !== "undefined" && values.photo instanceof File) {
     formData.append("StudentPhoto", values.photo);
+  } else {
+    const fallbackPhoto = optionalStudentPhotoFile();
+    if (fallbackPhoto) formData.append("StudentPhoto", fallbackPhoto);
   }
   appendIfPresent(formData, "Email", values.email);
   appendIfPresent(formData, "MobileNumber", values.mobile);
@@ -666,10 +598,6 @@ const sanitizeValue = (field, value) => {
 const fieldByName = steps
   .flatMap((section) => section.fields)
   .reduce((lookup, field) => ({ ...lookup, [field.name]: field }), {});
-
-const visibleFieldsFor = (fields, currentValues) => fields.filter((field) => (
-  typeof field.conditional === "function" ? field.conditional(currentValues) : true
-));
 
 const focusFirstError = (nextErrors) => {
   const [firstName] = Object.keys(nextErrors);
@@ -755,34 +683,6 @@ const normalizeAdmissionStatus = (value, fallback = "Pending") => {
   return fallback;
 };
 
-const readPhotoUrl = (item, student) => readText(
-  item,
-  "studentPhotoUrl",
-  "StudentPhotoUrl",
-  "photoUrl",
-  "PhotoUrl",
-  "studentPhoto",
-  "StudentPhoto",
-  "photo",
-  "Photo",
-) || readText(
-  student,
-  "studentPhotoUrl",
-  "StudentPhotoUrl",
-  "photoUrl",
-  "PhotoUrl",
-  "studentPhoto",
-  "StudentPhoto",
-  "photo",
-  "Photo",
-);
-
-const readFeeStructureId = (item) => {
-  const feeStructure = read(item, "feeStructure", "FeeStructure", "structure", "Structure");
-  return readId(item, "feeStructureId", "FeeStructureId", "structureId", "StructureId")
-    || readId(feeStructure, "feeStructureId", "FeeStructureId", "id", "Id", "structureId", "StructureId");
-};
-
 const isAdmissionVerified = (...sources) => sources.some((source) => {
   const status = readText(source, "status", "Status", "admissionStatus", "AdmissionStatus", "verificationStatus", "VerificationStatus");
   const normalized = String(status || "").trim().toLowerCase();
@@ -816,19 +716,6 @@ const normalizeAdmissionRow = (item) => {
   const status = normalizeAdmissionStatus(readText(item, "status", "Status", "admissionStatus", "AdmissionStatus"));
   const programName = readText(item, "programName", "ProgramName")
     || (typeof program === "string" ? program : readText(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"));
-  const quotaValue = readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota");
-  const standardQuota = steps[0].fields.find((field) => field.name === "quota")?.options || [];
-  const isStandardQuota = standardQuota.some((option) => String(option).toLowerCase() === quotaValue.toLowerCase());
-  const photoUrl = normalizeImageSource(readPhotoUrl(item, student));
-  const feeStructureId = readFeeStructureId(item);
-  const combinedAddress = readText(item, "address", "Address");
-  const combinedAddressParts = combinedAddress.split(",").map((part) => part.trim()).filter(Boolean);
-  const addressLine1 = readText(item, "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
-  const addressLine2 = readText(item, "addressLine2", "AddressLine2") || combinedAddressParts[1] || "";
-  const city = readText(item, "city", "City") || combinedAddressParts[2] || "";
-  const district = readText(item, "district", "District") || combinedAddressParts[3] || "";
-  const state = readText(item, "state", "State") || combinedAddressParts[4] || "";
-  const pincode = readText(item, "pincode", "Pincode", "pinCode", "PinCode") || combinedAddressParts[5] || "";
 
   return {
     id: admissionId || admissionNo,
@@ -849,8 +736,7 @@ const normalizeAdmissionRow = (item) => {
       admissionNo,
       admissionDate: readText(item, "admissionDate", "AdmissionDate", "date", "Date").slice(0, 10),
       admissionType: readText(item, "admissionType", "AdmissionType"),
-      quota: quotaValue && !isStandardQuota ? "Other" : quotaValue,
-      quotaOther: quotaValue && !isStandardQuota ? quotaValue : "",
+      quota: readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota"),
       board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id"),
       year: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
       firstName,
@@ -858,7 +744,6 @@ const normalizeAdmissionRow = (item) => {
       gender: readText(item, "gender", "Gender"),
       dob: readText(item, "dateOfBirth", "DateOfBirth", "dob", "DOB").slice(0, 10),
       bloodGroup: readText(item, "bloodGroup", "BloodGroup"),
-      photoUrl,
       aadhaar: readText(item, "aadhaarNumber", "AadhaarNumber", "aadhaar", "Aadhaar"),
       mobile: readText(item, "mobileNumber", "MobileNumber", "mobile", "Mobile"),
       email: readText(item, "email", "Email"),
@@ -876,12 +761,12 @@ const normalizeAdmissionRow = (item) => {
       guardianMobile: readText(item, "guardianMobile", "GuardianMobile"),
       guardianEmail: readText(item, "guardianEmail", "GuardianEmail"),
       annualIncome: readText(item, "annualIncome", "AnnualIncome"),
-      address1: addressLine1,
-      address2: addressLine2,
-      city,
-      district,
-      state,
-      pincode,
+      address1: readText(item, "addressLine1", "AddressLine1", "address", "Address"),
+      address2: readText(item, "addressLine2", "AddressLine2"),
+      city: readText(item, "city", "City"),
+      district: readText(item, "district", "District"),
+      state: readText(item, "state", "State"),
+      pincode: readText(item, "pincode", "Pincode", "pinCode", "PinCode"),
       prevSchool: readText(item, "previousSchool", "PreviousSchool", "prevSchool", "PrevSchool"),
       prevBoard: readText(item, "previousBoard", "PreviousBoard", "prevBoard", "PrevBoard"),
       passYear: readText(item, "previousYearOfPassing", "PreviousYearOfPassing", "passYear", "PassYear"),
@@ -891,7 +776,6 @@ const normalizeAdmissionRow = (item) => {
       groupName: readText(item, "groupName", "GroupName") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode")),
       program: readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id"),
       programName,
-      feeStructureId,
       status,
       level: readId(item, "academicLevelId", "AcademicLevelId") || readId(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
       levelName: readText(item, "academicLevelName", "AcademicLevelName") || (typeof academicLevel === "string" ? academicLevel : readText(academicLevel, "academicLevelName", "AcademicLevelName", "name", "Name")),
@@ -992,6 +876,19 @@ const admissionFeeApprovalBody = (admissionId, status) => {
 
 const admissionStatusBody = (admissionId) => admissionFeeApprovalBody(admissionId, "Verified");
 
+const collectPayload = ({ studentId, studentFeeId, amount, values, feeInstallmentId = null, note = "" }) => ({
+  studentId: Number(studentId),
+  studentFeeId: Number(studentFeeId),
+  feeInstallmentId: feeInstallmentId ? Number(feeInstallmentId) : null,
+  amount: Number(amount),
+  paymentDate: toDateTime(values.paymentDate || values.admissionDate || todayISO()),
+  paymentMode: values.paymentMethod || values.paymentMode || "Cash",
+  discount: 0,
+  fine: 0,
+  transactionReference: values.transactionNumber || "",
+  note,
+});
+
 const findApplicableFeeStructure = async ({ boardId, academicYearId, groupId, programId }) => {
   if (!boardId || !academicYearId || !groupId) {
     throw new Error("Fee account was not created because Board, Academic Year and Group are required to find a fee structure.");
@@ -1002,7 +899,12 @@ const findApplicableFeeStructure = async ({ boardId, academicYearId, groupId, pr
     .map(normalizeFeeStructureSummary)
     .filter(Boolean)
     .filter((item) => item.status.toLowerCase() !== "inactive");
-  const matching = summaries.find((item) => feeStructureMatchesSelection(item, { boardId, academicYearId, groupId, programId }));
+  const matching = summaries.find((item) => (
+    String(item.boardId) === String(boardId)
+    && String(item.academicYearId) === String(academicYearId)
+    && String(item.groupId) === String(groupId)
+    && (Number(programId) ? String(item.programId) === String(programId) || !item.programId : true)
+  ));
   if (!matching) throw new Error("No active fee structure is configured for the approved student's academic combination.");
   return matching;
 };
@@ -1043,7 +945,8 @@ const deriveAdmissionFee = (values) => {
   const totalCommitment = admissionFee + courseFeePayable + optionalFeesTotal;
   const schedule = Array.isArray(values.installments) ? values.installments : [];
   const isInstallment = values.paymentPlan === "Installment Payment";
-  const coursePaidToday = isInstallment ? 0 : courseFeePayable;
+  const firstInstallment = schedule[0]?.amount ? Number(schedule[0].amount) : 0;
+  const coursePaidToday = isInstallment ? (values.collectFirstInstallment ? firstInstallment : 0) : courseFeePayable;
   const paidToday = admissionFee + optionalFeesTotal + coursePaidToday;
   const courseScheduleBalance = isInstallment ? Math.max(courseFeePayable - coursePaidToday, 0) : 0;
 
@@ -1075,12 +978,12 @@ const deriveAdmissionFee = (values) => {
     schedule: schedule.map((row, index) => ({
       ...row,
       no: row.no ?? index + 1,
-      paidAmount: 0,
+      paidAmount: isInstallment && values.collectFirstInstallment && index === 0 ? Number(row.amount || 0) : 0,
     })),
     courseSchedules: schedule.map((row, index) => ({
       ...row,
       no: row.no ?? index + 1,
-      paidAmount: 0,
+      paidAmount: isInstallment && values.collectFirstInstallment && index === 0 ? Number(row.amount || 0) : 0,
     })),
   };
 };
@@ -1096,9 +999,13 @@ const feeStepErrors = (values) => {
   if (!fee.courseFeeOriginal) next.feeStructure = "Course Fee is not configured in the selected fee structure";
   if (fee.feeItems.some((item) => item.required && !item.selected)) next.feeItems = "Mandatory fees cannot be removed";
   if (!values.paymentPlan) next.paymentPlan = "Select a course fee payment plan";
+  if (!values.paymentMethod) next.paymentMethod = "Payment Method is required when collecting money";
   if (!fee.selectedFeeItems.length) next.feeItems = "Select at least one applicable fee";
   if (fee.concessionType === "Percentage" && fee.concessionValue > 100) next.concessionValue = "Percentage concession cannot exceed 100%";
   if (fee.courseConcession > fee.courseFeeOriginal) next.concessionValue = "Concession cannot exceed the course fee";
+  if (values.paymentMethod && values.paymentMethod !== "Cash" && !String(values.transactionNumber || "").trim()) {
+    next.transactionNumber = "Transaction / Reference Number is required for this payment method";
+  }
 
   if (values.paymentPlan === "Installment Payment") {
     const schedule = Array.isArray(values.installments) ? values.installments : [];
@@ -1124,25 +1031,7 @@ const formatPreviewValue = (field, value) => {
   return String(value);
 };
 
-const previewFieldValue = (field, values) => {
-  if (field.name === "quota" && values.quota === "Other") return values.quotaOther || "";
-  return values[field.name];
-};
-
-function StudentPhotoPreview({ src, label = "Student photo", emptyLabel = "Upload Photo" }) {
-  const normalizedSrc = normalizeImageSource(src);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    setFailed(false);
-  }, [normalizedSrc]);
-  return (
-    <div className={`cms-admission-photo-preview ${!normalizedSrc || failed ? "is-empty" : ""}`}>
-      {normalizedSrc && !failed ? <img src={normalizedSrc} alt={label} onError={() => setFailed(true)} /> : <span>{emptyLabel}</span>}
-    </div>
-  );
-}
-
-function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPreviewUrl }) {
+function AdmissionPreview({ sections, values, errors, onEdit, feeNode }) {
   return (
     <div className="cms-admission-preview">
       {sections.map((section, index) => (
@@ -1157,15 +1046,13 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPrev
             <div className="cms-preview-fee">{feeNode}</div>
           ) : (
           <div className="cms-preview-grid">
-            {visibleFieldsFor(section.previewFields ?? section.fields, values).map((field) => {
-              const value = previewFieldValue(field, values);
-              const fieldRequired = field.required || (typeof field.requiredWhen === "function" && field.requiredWhen(values));
-              const missingRequired = fieldRequired && (value === undefined || value === null || String(value).trim() === "");
-              const isPhoto = field.type === "file" && field.name === "photo";
+            {(section.previewFields ?? section.fields).map((field) => {
+              const value = values[field.name];
+              const missingRequired = field.required && (value === undefined || value === null || String(value).trim() === "");
               return (
-                <div key={field.name} className={`cms-preview-item ${isPhoto ? "cms-preview-photo-item" : ""} ${missingRequired ? "is-missing" : ""}`}>
+                <div key={field.name} className={`cms-preview-item ${missingRequired ? "is-missing" : ""}`}>
                   <span>{field.label}</span>
-                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
+                  <strong>{formatPreviewValue(field, value)}</strong>
                   {errors[field.name] || missingRequired ? <small>{errors[field.name] || `${field.label} is required`}</small> : null}
                 </div>
               );
@@ -1178,7 +1065,7 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPrev
   );
 }
 
-function AdmissionFormSections({ sections, values, errors, onChange, onFileChange, onFileRemove, inputRefs, photoPreviewUrl }) {
+function AdmissionFormSections({ sections, values, errors, onChange, onFileChange, onFileRemove, inputRefs }) {
   return (
     <div className="cms-admission-form-sections">
       {sections.map((section) => {
@@ -1189,19 +1076,17 @@ function AdmissionFormSections({ sections, values, errors, onChange, onFileChang
               <span className="cms-admission-section-icon"><SectionIcon size={16} /></span>
               <h3>{section.title === "Admission" ? "Admission Details" : section.title}</h3>
             </div>
-            <div className={`cms-form-grid ${section.title === "Address" ? "cms-admission-address-grid" : "cols-3"} ${section.title === "Admission" ? "cms-admission-details-grid" : ""} ${section.title === "Student Details" ? "cms-admission-student-grid" : ""}`}>
-              {visibleFieldsFor(section.fields, values).map((field) => (
+            <div className={`cms-form-grid ${section.title === "Address" ? "cms-admission-address-grid" : "cols-3"}`}>
+              {section.fields.map((field) => (
                 <AdmissionField
                   key={field.name}
-                  field={{ ...field, required: field.required || (typeof field.requiredWhen === "function" && field.requiredWhen(values)) }}
+                  field={field}
                   value={values[field.name]}
-                  error={field.name === "quota" ? errors.quota || errors.quotaOther : errors[field.name]}
+                  error={errors[field.name]}
                   onChange={onChange}
                   onFileChange={onFileChange}
                   onFileRemove={onFileRemove}
                   inputRef={(element) => { inputRefs.current[field.name] = element; }}
-                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
-                  extraValue={field.name === "quota" ? values.quotaOther : ""}
                 />
               ))}
             </div>
@@ -1212,7 +1097,7 @@ function AdmissionFormSections({ sections, values, errors, onChange, onFileChang
   );
 }
 
-function AdmissionField({ field, value, error, onChange, onFileChange, onFileRemove, inputRef, previewUrl = "", extraValue = "" }) {
+function AdmissionField({ field, value, error, onChange, onFileChange, onFileRemove, inputRef }) {
   if (field.type === "select" && field.selectPlaceholder) {
     const normalizedOptions = (field.options || []).map((option) => (
       option && typeof option === "object"
@@ -1240,72 +1125,31 @@ function AdmissionField({ field, value, error, onChange, onFileChange, onFileRem
     );
   }
 
-  if (field.name === "quota") {
-    const isOtherQuota = value === "Other";
-    return (
-      <div className={`cms-field ${field.full ? "full" : ""} ${error ? "has-error" : ""}`}>
-        <label htmlFor={isOtherQuota ? "f-quotaOther" : "f-quota"}>
-          {field.label} {field.required ? <span className="req">*</span> : null}
-        </label>
-        <div className="cms-admission-quota-control">
-          {isOtherQuota ? (
-            <>
-            <input
-              id="f-quotaOther"
-              value={extraValue || ""}
-              placeholder="Specify Admission Quota"
-              autoFocus
-              onChange={(event) => onChange("quotaOther", event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") onChange("quota", "");
-              }}
-            />
-            <button type="button" className="cms-admission-quota-reset" onClick={() => onChange("quota", "")} aria-label="Choose predefined quota">
-              <X size={14} />
-            </button>
-            </>
-          ) : (
-            <select id="f-quota" value={value ?? ""} onChange={(event) => onChange(field.name, event.target.value)}>
-              <option value="">Select {field.label}</option>
-              {(field.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
-            </select>
-          )}
-        </div>
-        {error ? <span className="cms-error">{error}</span> : null}
-      </div>
-    );
-  }
-
   if (field.type !== "file") {
     return <Field field={field} value={value} error={error} onChange={onChange} />;
   }
 
   const fileName = value?.name || "";
-  const hasPhoto = Boolean(normalizeImageSource(previewUrl));
   return (
-    <div className={`cms-field cms-admission-photo-cell ${error ? "has-error" : ""}`}>
+    <div className={`cms-field ${error ? "has-error" : ""}`}>
       <label htmlFor={`file-${field.name}`}>
         {field.label} {field.required ? <span className="req">*</span> : null}
       </label>
-      <div className="cms-admission-photo-field">
-        <label className="cms-admission-photo-box" htmlFor={`file-${field.name}`}>
-          <StudentPhotoPreview src={previewUrl} />
-        </label>
-        <div className={`cms-file-control ${fileName || hasPhoto ? "has-file" : ""}`}>
-          <input
-            ref={inputRef}
-            id={`file-${field.name}`}
-            type="file"
-            className="cms-admission-photo-input"
-            accept="image/*"
-            onChange={(event) => onFileChange(field, event.target.files?.[0] || null)}
-          />
-          {fileName || hasPhoto ? (
-            <button type="button" className="cms-file-remove" onClick={() => onFileRemove(field.name)} aria-label={`Remove ${field.label}`}>
-              <X size={14} />
-            </button>
-          ) : null}
-        </div>
+      <div className={`cms-file-control ${fileName ? "has-file" : ""}`}>
+        <input
+          ref={inputRef}
+          id={`file-${field.name}`}
+          type="file"
+          onChange={(event) => onFileChange(field, event.target.files?.[0] || null)}
+        />
+        {fileName ? (
+          <span>{fileName}</span>
+        ) : null}
+        {fileName ? (
+          <button type="button" className="cms-file-remove" onClick={() => onFileRemove(field.name)} aria-label={`Remove ${field.label}`}>
+            <X size={14} />
+          </button>
+        ) : null}
       </div>
       {error ? <span className="cms-error">{error}</span> : null}
     </div>
@@ -1321,10 +1165,11 @@ function FeeSummaryRows({ fee }) {
       <div><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
       <div><span>Optional Selected Fees</span><strong>{formatCurrency(fee.optionalFeesTotal)}</strong></div>
       <div className="is-total"><span>Total Fee Commitment</span><strong>{formatCurrency(fee.totalCommitment)}</strong></div>
-      <div><span>Due on Admission</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
+      <div><span>Paid Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
       <div><span>Future Scheduled Course Fee</span><strong>{formatCurrency(fee.courseScheduleBalance)}</strong></div>
       <div className="is-total"><span>Remaining Balance</span><strong>{formatCurrency(fee.remainingBalance)}</strong></div>
       <div><span>Payment Plan</span><strong>{fee.paymentPlan ? paymentPlanLabel(fee.paymentPlan) : "Not selected"}</strong></div>
+      <div><span>Payment Method</span><strong>{fee.paymentMethod || "Not selected"}</strong></div>
     </div>
   );
 }
@@ -1532,7 +1377,7 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
                   <span className="cms-fee-radio" aria-hidden="true" />
                   <span>
                     <strong>{paymentPlanLabel(plan)}</strong>
-                    <small>{plan === "Full Payment" ? "Admission Fee and the full Course Fee are due on admission." : "Admission Fee is due on admission; schedule the Course Fee payable."}</small>
+                    <small>{plan === "Full Payment" ? "Collect Admission Fee and the full Course Fee payable today." : "Collect Admission Fee today and schedule only the Course Fee payable."}</small>
                   </span>
                 </button>
               ))}
@@ -1554,6 +1399,14 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
                     {INSTALLMENT_COUNTS.map((count) => <option key={count} value={String(count)}>{count} Course Fee Schedules</option>)}
                   </select>
                 </div>
+                <label className="cms-fee-toggle">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(values.collectFirstInstallment)}
+                    onChange={(event) => onChange("collectFirstInstallment", event.target.checked)}
+                  />
+                  <span>Collect First Course Fee Schedule Now</span>
+                </label>
               </div>
               <InstallmentScheduleTable schedule={schedule} editable onChange={onInstallmentChange} />
               {errors.installments ? <span className="cms-error">{errors.installments}</span> : null}
@@ -1565,10 +1418,44 @@ function FeeStep({ context, fee, values, errors, onChange, onInstallmentChange, 
                 <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFee)}</strong></div>
                 <div><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
                 <div><span>Optional One-Time Fees</span><strong>{formatCurrency(fee.optionalFeesTotal)}</strong></div>
-                <div className="is-total"><span>Total Due on Admission</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
+                <div className="is-total"><span>Total Collecting Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
               </div>
             </section>
           )}
+
+          <section className="cms-fee-block">
+            <h3>Payment Today</h3>
+            <div className="cms-fee-summary">
+              <div><span>Admission Fee</span><strong>{formatCurrency(fee.admissionFeeDueToday)}</strong></div>
+              <div><span>Course Fee Paid Today</span><strong>{formatCurrency(fee.coursePaidToday)}</strong></div>
+              {fee.optionalFeesTotal ? <div><span>Additional One-Time Fees Paid Today</span><strong>{formatCurrency(fee.optionalFeesTotal)}</strong></div> : null}
+              <div className="is-total"><span>Total Collecting Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
+            </div>
+            <div className="cms-form-grid cols-3">
+              <Field
+                field={{ name: "paymentMethod", label: "Payment Method", type: "select", options: PAYMENT_METHODS, required: true }}
+                value={values.paymentMethod}
+                error={errors.paymentMethod}
+                onChange={onChange}
+              />
+              <Field
+                field={{
+                  name: "transactionNumber",
+                  label: "Transaction / Reference Number",
+                  placeholder: values.paymentMethod === "Cash" ? "Optional for cash payments" : "Reference number",
+                }}
+                value={values.transactionNumber}
+                error={errors.transactionNumber}
+                onChange={onChange}
+              />
+              <Field
+                field={{ name: "paymentDate", label: "Payment Date", type: "date" }}
+                value={values.paymentDate || values.admissionDate || ""}
+                error={errors.paymentDate}
+                onChange={onChange}
+              />
+            </div>
+          </section>
 
           <section className="cms-fee-block">
             <h3>Final Fee Summary</h3>
@@ -1591,9 +1478,10 @@ function FeePreview({ fee, values }) {
         <div><span>Scholarship</span><strong>{fee.concessionName || "No scholarship"}</strong></div>
         <div><span>Course Fee Payable</span><strong>{formatCurrency(fee.courseFeePayable)}</strong></div>
         <div><span>Payment Plan</span><strong>{values.paymentPlan ? paymentPlanLabel(values.paymentPlan) : "Not selected"}</strong></div>
-        <div><span>Due on Admission</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
+        <div><span>Paid Today</span><strong>{formatCurrency(fee.paidToday)}</strong></div>
         <div><span>Future Course Schedules</span><strong>{formatCurrency(fee.courseScheduleBalance)}</strong></div>
         <div><span>Remaining Balance</span><strong>{formatCurrency(fee.remainingBalance)}</strong></div>
+        <div><span>Payment Method</span><strong>{values.paymentMethod || "Not selected"}</strong></div>
       </div>
       {fee.selectedFeeItems.length ? (
         <div className="cms-fee-preview-schedule">
@@ -1652,7 +1540,6 @@ export default function AdmissionPage() {
   const [editingAdmissionId, setEditingAdmissionId] = useState("");
   const [pincodeLoading, setPincodeLoading] = useState(false);
   const [feeSelection, setFeeSelection] = useState(initialDraft.feeSelection);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const fileInputRefs = useRef({});
   const committedAdmissionRef = useRef(null);
   const submitInFlightRef = useRef(false);
@@ -1681,10 +1568,8 @@ export default function AdmissionPage() {
     id: editingAdmissionId,
     admissionId: editingAdmissionId,
     admissionNo: values.admissionNo,
-    feeStructureId: values.feeStructureId,
-    values,
     status: previewAdmissionStatus,
-  }), [editingAdmissionId, previewAdmissionStatus, values]);
+  }), [editingAdmissionId, previewAdmissionStatus, values.admissionNo]);
   const canVerifyPreviewAdmission = isPreview && editingAdmissionId && previewAdmissionStatus === "Pending";
   const groupOptions = useMemo(() => {
     const rows = masterOptions.groups || [];
@@ -1867,7 +1752,7 @@ export default function AdmissionPage() {
           ["Admission Fee", formatCurrency(fee.admissionFee)],
           ["Course Fee", formatCurrency(fee.courseFee)],
           ["Total Payable", formatCurrency(fee.totalPayable)],
-          ["Due on Admission", formatCurrency(fee.paidToday)],
+          ["Paid Today", formatCurrency(fee.paidToday)],
           ["Remaining", formatCurrency(fee.remaining)],
           ["Payment Plan", paymentPlanLabel(fee.paymentPlan) || "-"],
         ];
@@ -1883,7 +1768,7 @@ export default function AdmissionPage() {
         return;
       }
 
-      const body = visibleFieldsFor(section.previewFields ?? section.fields, values).map((field) => [
+      const body = (section.previewFields ?? section.fields).map((field) => [
         field.label,
         cleanExportValue(formatPreviewValue(field, values[field.name])),
       ]);
@@ -1929,22 +1814,6 @@ export default function AdmissionPage() {
   }, []);
 
   useEffect(() => {
-    if (viewMode !== "form" || editingAdmissionId || values.admissionDate) return;
-    setValues((current) => (current.admissionDate ? current : { ...current, admissionDate: todayISO() }));
-  }, [editingAdmissionId, values.admissionDate, viewMode]);
-
-  useEffect(() => {
-    const photo = values.photo;
-    if (typeof File !== "undefined" && photo instanceof File) {
-      const objectUrl = URL.createObjectURL(photo);
-      setPhotoPreviewUrl(objectUrl);
-      return () => URL.revokeObjectURL(objectUrl);
-    }
-    setPhotoPreviewUrl(values.photoUrl || "");
-    return undefined;
-  }, [values.photo, values.photoUrl]);
-
-  useEffect(() => {
     const container = stepNavRef.current;
     const activeStep = stepButtonRefs.current[step];
     if (!container || !activeStep) return undefined;
@@ -1959,7 +1828,6 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
-    if (editingAdmissionId) return undefined;
     if (suppressPersistRef.current) return undefined;
 
     if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
@@ -1970,7 +1838,7 @@ export default function AdmissionPage() {
     return () => {
       if (persistTimerRef.current) window.clearTimeout(persistTimerRef.current);
     };
-  }, [editingAdmissionId, feeSelection, step, values, viewMode]);
+  }, [feeSelection, step, values, viewMode]);
 
   const feeStructureId = values.feeStructureId;
   const feeItems = values.feeItems;
@@ -2328,17 +2196,12 @@ export default function AdmissionPage() {
           .map(normalizeFeeStructureSummary)
           .filter(Boolean)
           .filter((item) => item.status.toLowerCase() !== "inactive");
-        const matching = summaries.find((item) => feeStructureMatchesSelection(item, {
-          boardId,
-          academicYearId,
-          groupId,
-          programId,
-        }, {
-          boards: masterOptions.boards,
-          years: masterOptions.years,
-          groups: masterOptions.groups,
-          programs: masterOptions.programs,
-        }));
+        const matching = summaries.find((item) => (
+          String(item.boardId) === String(boardId)
+          && String(item.academicYearId) === String(academicYearId)
+          && String(item.groupId) === String(groupId)
+          && (programId ? String(item.programId) === String(programId) || !item.programId : !item.programId)
+        ));
         if (!matching) {
           if (!ignore) {
             setValues((current) => ({
@@ -2409,7 +2272,7 @@ export default function AdmissionPage() {
         if (!ignore) setFeeStructureLoading(false);
       });
     return () => { ignore = true; };
-  }, [masterOptions.boards, masterOptions.groups, masterOptions.programs, masterOptions.years, values.board, values.group, values.program, values.year, viewMode]);
+  }, [values.board, values.group, values.program, values.year, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
@@ -2521,15 +2384,6 @@ export default function AdmissionPage() {
   const setValue = (name, val) => {
     const field = fieldByName[name] || {};
     if (isPlaceholderOption(val)) return;
-    if (name === "quota") {
-      setValues((v) => ({
-        ...v,
-        quota: val,
-        ...(val === "Other" ? {} : { quotaOther: "" }),
-      }));
-      setErrors((e) => ({ ...e, quota: undefined, quotaOther: undefined }));
-      return;
-    }
     if (name === "feeItems") {
       setValues((v) => ({ ...v, feeItems: val, installments: v.paymentPlan === "Installment Payment"
         ? buildInstallmentSchedule(deriveAdmissionFee({ ...v, feeItems: val }).courseFeePayable, Number(v.installmentCount) || DEFAULT_INSTALLMENT_COUNT, v.admissionDate || todayISO())
@@ -2640,7 +2494,7 @@ export default function AdmissionPage() {
       setErrors((e) => ({ ...e, [field.name]: "File size must not exceed 2 MB." }));
       return;
     }
-    setValues((v) => ({ ...v, [field.name]: file, ...(field.name === "photo" ? { photoUrl: "" } : {}) }));
+    setValues((v) => ({ ...v, [field.name]: file }));
     setErrors((e) => ({ ...e, [field.name]: undefined }));
   };
 
@@ -2649,7 +2503,6 @@ export default function AdmissionPage() {
     setValues((v) => {
       const next = { ...v };
       delete next[name];
-      if (name === "photo") delete next.photoUrl;
       return next;
     });
     setErrors((e) => ({ ...e, [name]: undefined }));
@@ -2657,11 +2510,9 @@ export default function AdmissionPage() {
 
   const validateFields = (fields) => {
     const next = {};
-    visibleFieldsFor(fields, values).forEach((f) => {
+    fields.forEach((f) => {
       const val = values[f.name];
-      const required = f.required || (typeof f.requiredWhen === "function" && f.requiredWhen(values));
-      if (required && (!String(val ?? "").trim() || isPlaceholderOption(val))) next[f.name] = `${f.label} is required`;
-      else if (f.name === "quota" && val === "Other" && !String(values.quotaOther || "").trim()) next.quotaOther = "Specify Admission Quota is required";
+      if (f.required && (!String(val ?? "").trim() || isPlaceholderOption(val))) next[f.name] = `${f.label} is required`;
       else if (f.name === "dob" && val && isTodayOrFutureDate(val)) next[f.name] = "Date of Birth must be before today";
       else if (f.type === "email" && val && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) next[f.name] = "Enter a valid email";
       else if (MOBILE_FIELDS.has(f.name) && val && !/^[0-9]{10}$/.test(String(val))) next[f.name] = "Enter a valid 10 digit number";
@@ -2725,12 +2576,12 @@ export default function AdmissionPage() {
 
   const goToStep = (targetStep) => {
     if (targetStep <= step) {
-      if (!editingAdmissionId) persistAdmissionDraft({ currentStep: targetStep, formData: values, feeSelection });
+      persistAdmissionDraft({ currentStep: targetStep, formData: values, feeSelection });
       setStep(targetStep);
       return;
     }
     if (validateBeforeStep(targetStep)) {
-      if (!editingAdmissionId) persistAdmissionDraft({ currentStep: targetStep, formData: values, feeSelection });
+      persistAdmissionDraft({ currentStep: targetStep, formData: values, feeSelection });
       setStep(targetStep);
     }
   };
@@ -2739,7 +2590,7 @@ export default function AdmissionPage() {
     if (!validateStep()) return;
     if (step < allSteps.length - 1) {
       const nextStep = step < ADMISSION_FORM_STEP_COUNT ? FEE_STEP_INDEX : step + 1;
-      if (!editingAdmissionId) persistAdmissionDraft({ currentStep: nextStep, formData: values, feeSelection });
+      persistAdmissionDraft({ currentStep: nextStep, formData: values, feeSelection });
       setStep(nextStep);
     }
   };
@@ -2762,7 +2613,7 @@ export default function AdmissionPage() {
     if (step !== 0) {
       const previousStep = isPreview ? FEE_STEP_INDEX : 0;
       
-      if (!editingAdmissionId) persistAdmissionDraft({ currentStep: previousStep, formData: values, feeSelection });
+      persistAdmissionDraft({ currentStep: previousStep, formData: values, feeSelection });
       setStep(previousStep);
       return;
     }
@@ -2772,7 +2623,7 @@ export default function AdmissionPage() {
 
   const editPreviewStep = (targetStep) => {
     const nextStep = targetStep < ADMISSION_FORM_STEP_COUNT ? 0 : targetStep;
-    if (!editingAdmissionId) persistAdmissionDraft({ currentStep: nextStep, formData: values, feeSelection });
+    persistAdmissionDraft({ currentStep: nextStep, formData: values, feeSelection });
     setStep(nextStep);
   };
 
@@ -2783,7 +2634,7 @@ export default function AdmissionPage() {
     committedAdmissionRef.current = admissionId
       ? { admissionId: String(admissionId), admissionNo: formValues.admissionNo || "" }
       : null;
-    setValues(admissionId ? formValues : newAdmissionValues(formValues));
+    setValues(formValues);
     setFeeSelection(Array.isArray(selection) ? selection : []);
     feeSelectionInitializedRef.current = Array.isArray(selection);
     setErrors({});
@@ -2792,13 +2643,8 @@ export default function AdmissionPage() {
   };
 
   const addNewAdmission = () => {
-    const draft = readAdmissionDraft();
-    const draftValues = { ...(draft.values || {}), admissionNo: "" };
-    openAdmissionForm({
-      formValues: draftValues,
-      targetStep: draft.step || 0,
-      selection: draft.feeSelection || [],
-    });
+    clearAdmissionDraft();
+    openAdmissionForm({ formValues: {}, targetStep: 0, selection: [] });
   };
 
   const continueAdmission = async (record, targetStep = record.currentStep || 0) => {
@@ -2825,7 +2671,7 @@ export default function AdmissionPage() {
   };
 
   const returnToAdmissions = () => {
-    if (!editingAdmissionId) persistAdmissionDraft({ currentStep: step, formData: values, feeSelection });
+    persistAdmissionDraft({ currentStep: step, formData: values, feeSelection });
     setViewMode("list");
     setPage(1);
     refreshAdmissions();
@@ -2853,7 +2699,7 @@ export default function AdmissionPage() {
     return resolveApprovedStudentId(matchingStudent);
   }, []);
 
-  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload, selectedFeeStructureId = "" }) => {
+  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload }) => {
     const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
     const detail = getObject(detailResponse.data);
     const detailRow = normalizeAdmissionRow(detail);
@@ -2870,26 +2716,16 @@ export default function AdmissionPage() {
       if (err?.response?.status && err.response.status !== 404) throw err;
     }
 
-    const selectedStructureId = numericId(selectedFeeStructureId || detailRow.values.feeStructureId)
-      ? String(selectedFeeStructureId || detailRow.values.feeStructureId)
-      : "";
-    const feeStructure = selectedStructureId
-      ? { id: selectedStructureId }
-      : await findApplicableFeeStructure({
-        boardId: detailRow.values.board,
-        academicYearId: detailRow.values.year,
-        groupId: detailRow.values.group,
-        programId: detailRow.values.program,
-      });
-    const feeStructureId = numericId(feeStructure?.id);
-    if (!feeStructureId) {
-      throw new Error("Fee account was not created because the selected Fee Structure ID was not available.");
-    }
+    const feeStructure = await findApplicableFeeStructure({
+      boardId: detailRow.values.board,
+      academicYearId: detailRow.values.year,
+      groupId: detailRow.values.group,
+      programId: detailRow.values.program,
+    });
 
     const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
-      studentId: Number(studentId),
-      feeStructureId,
-      FeeStructureId: feeStructureId,
+      studentId,
+      feeStructureId: Number(feeStructure.id),
     });
     const studentFeeId = readStudentFeeAssignmentId(assignResponse.data);
     if (!studentFeeId) throw new Error("Fee structure was assigned, but the student fee assignment ID was not returned.");
@@ -2922,6 +2758,16 @@ export default function AdmissionPage() {
           dueDate: toDateTime(item.dueDate || detailRow.values.admissionDate || todayISO()),
         })));
       }
+    }
+
+    if (fee.paidToday > 0) {
+      await apiClient.post(apiEndpoints.fee.collect, collectPayload({
+        studentId,
+        studentFeeId,
+        amount: fee.paidToday,
+        values: detailRow.values,
+        note: "Initial admission payment",
+      }));
     }
 
     return { studentId, studentFeeId, reused: false };
@@ -2970,11 +2816,7 @@ export default function AdmissionPage() {
         setApproveTarget(null);
         await refreshAdmissions();
         try {
-          await ensureApprovedStudentFeeAccount({
-            admissionId,
-            approvedPayload: getObject(response.data),
-            selectedFeeStructureId: record.feeStructureId || record.values?.feeStructureId || values.feeStructureId,
-          });
+          await ensureApprovedStudentFeeAccount({ admissionId, approvedPayload: getObject(response.data) });
         } catch (feeErr) {
           setToast(`Admission ${record.admissionNo} was approved, but fee account creation failed: ${getApiErrorMessage(feeErr)}`);
           return;
@@ -3336,32 +3178,21 @@ export default function AdmissionPage() {
               errors={errors}
               onEdit={editPreviewStep}
               feeNode={<FeePreview fee={fee} values={values} />}
-              photoPreviewUrl={photoPreviewUrl}
             />
           ) : isFeeStep ? (
-            <div className="cms-admission-form-sections cms-admission-fee-form">
-              <section className="cms-admission-form-section">
-                <div className="cms-admission-section-head">
-                  <span className="cms-admission-section-icon"><IndianRupee size={16} /></span>
-                  <h3>Fee Details</h3>
-                </div>
-                <div className="cms-admission-fee-body">
-                  <FeeStep
-                    context={feeContext}
-                    fee={fee}
-                    values={values}
-                    errors={errors}
-                    onChange={setValue}
-                    onPlanChange={changePlan}
-                    onInstallmentCountChange={changeInstallmentCount}
-                    onInstallmentChange={changeInstallment}
-                    scholarships={scholarships}
-                    feeStructureLoading={feeStructureLoading}
-                    feeStructureError={feeStructureError}
-                  />
-                </div>
-              </section>
-            </div>
+            <FeeStep
+              context={feeContext}
+              fee={fee}
+              values={values}
+              errors={errors}
+              onChange={setValue}
+              onPlanChange={changePlan}
+              onInstallmentCountChange={changeInstallmentCount}
+              onInstallmentChange={changeInstallment}
+              scholarships={scholarships}
+              feeStructureLoading={feeStructureLoading}
+              feeStructureError={feeStructureError}
+            />
           ) : isAdmissionFormStep ? (
             <AdmissionFormSections
               sections={admissionFormSections}
@@ -3371,22 +3202,19 @@ export default function AdmissionPage() {
               onFileChange={setFileValue}
               onFileRemove={removeFileValue}
               inputRefs={fileInputRefs}
-              photoPreviewUrl={photoPreviewUrl}
             />
           ) : (
-            <div className={`cms-form-grid ${current.title === "Address" ? "cms-admission-address-grid" : "cols-3"} ${current.title === "Admission" ? "cms-admission-details-grid" : ""} ${current.title === "Student Details" ? "cms-admission-student-grid" : ""}`}>
-              {visibleFieldsFor(currentFields, values).map((f) => (
+            <div className={`cms-form-grid ${current.title === "Address" ? "cms-admission-address-grid" : "cols-3"}`}>
+              {currentFields.map((f) => (
                 <AdmissionField
                   key={f.name}
-                  field={{ ...f, required: f.required || (typeof f.requiredWhen === "function" && f.requiredWhen(values)) }}
+                  field={f}
                   value={values[f.name]}
-                  error={f.name === "quota" ? errors.quota || errors.quotaOther : errors[f.name]}
+                  error={errors[f.name]}
                   onChange={setValue}
                   onFileChange={setFileValue}
                   onFileRemove={removeFileValue}
                   inputRef={(element) => { fileInputRefs.current[f.name] = element; }}
-                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
-                  extraValue={f.name === "quota" ? values.quotaOther : ""}
                 />
               ))}
             </div>

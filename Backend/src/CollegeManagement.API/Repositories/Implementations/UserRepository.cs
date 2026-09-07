@@ -1,4 +1,4 @@
-﻿using CollegeManagement.API.Repositories.Interfaces;
+using CollegeManagement.API.Repositories.Interfaces;
 using CollegeManagement.API.Data;
 using CollegeManagement.API.Models;
 using Microsoft.EntityFrameworkCore;
@@ -38,14 +38,14 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             if (user == null)
             {
-                user = await _context.Users.AsNoTracking()
+                user = await _context.Users
                     .Include(u => u.Role)
                     .FirstOrDefaultAsync(u => u.Email == term || u.PhoneNumber == term);
             }
 
             if (user == null)
             {
-                var admin = await _context.Admins.AsNoTracking().FirstOrDefaultAsync(a => a.Email == term);
+                var admin = await _context.Admins.FirstOrDefaultAsync(a => a.Email == term);
                 if (admin != null)
                 {
                     var adminRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Admin") ?? new Role { RoleId = 1, RoleName = "Admin" };
@@ -63,7 +63,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             if (user == null)
             {
-                var faculty = await _context.Faculties.AsNoTracking().FirstOrDefaultAsync(f => (f.Email == term || f.Mobile == term || f.EmployeeId == term) && !f.IsDeleted);
+                var faculty = await _context.Faculties.FirstOrDefaultAsync(f => (f.Email == term || f.Mobile == term || f.EmployeeId == term) && !f.IsDeleted);
                 if (faculty != null)
                 {
                     var facultyRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Faculty") ?? new Role { RoleId = 2, RoleName = "Faculty" };
@@ -82,7 +82,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             if (user == null)
             {
-                var student = await _context.Students.AsNoTracking().FirstOrDefaultAsync(s => (s.Email == term || s.MobileNumber == term || s.AdmissionNo == term || s.RollNo == term) && s.IsActive);
+                var student = await _context.Students.FirstOrDefaultAsync(s => (s.Email == term || s.MobileNumber == term || s.AdmissionNo == term || s.RollNo == term) && s.IsActive);
                 if (student != null)
                 {
                     var studentRole = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "Student") ?? new Role { RoleId = 3, RoleName = "Student" };
@@ -207,6 +207,3 @@ namespace CollegeManagement.API.Repositories.Implementations
         }
     }
 }
-
-
-

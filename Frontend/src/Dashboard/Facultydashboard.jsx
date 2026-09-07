@@ -211,36 +211,9 @@ function FacultyDashboard() {
   const [selectedClassDetail, setSelectedClassDetail] = useState(null);
 
   // Dynamic Interactive Local States
-  const [attendanceState, setAttendanceState] = useState([]);
-  const [attendanceDate, setAttendanceDate] = useState("2025-05-16");
-  const [attendanceSection, setAttendanceSection] = useState("c1");
-  const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
-
-  useEffect(() => {
-    if (activeModule === "attendance") {
-      setIsAttendanceLoading(true);
-      import('@/api/attendanceService.js').then(({ attendanceService }) => {
-        attendanceService.getFacultySubjectAttendance({ date: attendanceDate, sectionId: attendanceSection === "c1" ? 1 : 2 })
-          .then(res => {
-            const data = res?.data?.data || res?.data || res || [];
-            if (Array.isArray(data) && data.length > 0) {
-              setAttendanceState(data.map(s => ({
-                studentId: s.studentId || s.id,
-                rollNo: s.rollNo || s.rollNumber || "N/A",
-                name: s.studentName || s.name || "Unknown",
-                status: s.status || s.morningStatus || "Present"
-              })));
-            } else {
-              setAttendanceState(mockStudentsList.map((s) => ({ ...s, status: "Present", studentId: s.id || s.rollNo })));
-            }
-          })
-          .catch(() => {
-            setAttendanceState(mockStudentsList.map((s) => ({ ...s, status: "Present", studentId: s.id || s.rollNo })));
-          })
-          .finally(() => setIsAttendanceLoading(false));
-      });
-    }
-  }, [activeModule, attendanceDate, attendanceSection]);
+  const [attendanceState, setAttendanceState] = useState(
+    mockStudentsList.map((s) => ({ ...s, status: "Present" }))
+  );
   const [marksState, setMarksState] = useState(mockStudentsList);
   const [examDutiesState, setExamDutiesState] = useState(mockExamDutiesList);
   const [leavesState, setLeavesState] = useState(mockLeavesList);
@@ -1018,19 +991,7 @@ function FacultyDashboard() {
     };
 
     const handleSaveAttendance = () => {
-      import('@/api/attendanceService.js').then(({ attendanceService }) => {
-        const payload = attendanceState.map(s => ({
-          studentId: s.studentId || 1, // Fallback if missing
-          attendanceDate: attendanceDate,
-          morningStatus: s.status === "Present" ? 1 : s.status === "Absent" ? 2 : 3,
-          afternoonStatus: s.status === "Present" ? 1 : s.status === "Absent" ? 2 : 3,
-        }));
-        attendanceService.saveFacultySubjectAttendance(payload).then(() => {
-          showToast("Attendance saved successfully!");
-        }).catch(() => {
-          showToast("Attendance saved (mock)!");
-        });
-      });
+      showToast("Attendance saved successfully!");
     };
 
     return (
@@ -1041,11 +1002,11 @@ function FacultyDashboard() {
           <div className="faculty-form-grid-3">
             <div className="faculty-form-group">
               <label>Select Date</label>
-              <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
+              <input type="date" defaultValue="2025-05-16" />
             </div>
             <div className="faculty-form-group">
               <label>Class Section</label>
-              <select value={attendanceSection} onChange={(e) => setAttendanceSection(e.target.value)}>
+              <select defaultValue="c1">
                 <option value="c1">MPC 1st Year — Section A</option>
                 <option value="c2">MPC 2nd Year — Section B</option>
               </select>
@@ -1059,10 +1020,10 @@ function FacultyDashboard() {
 
         <div className="faculty-card">
           <div className="faculty-card-header">
-            <h3 className="faculty-card-title"><UserCheck size={16} /> Mark Attendance Roster ({attendanceDate})</h3>
+            <h3 className="faculty-card-title"><UserCheck size={16} /> Mark Attendance Roster (16 May 2025)</h3>
             <div style={{ display: "flex", gap: "8px" }}>
-              <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={handleToggleAllPresent} disabled={isAttendanceLoading}>Mark All Present</button>
-              <button type="button" className="faculty-btn faculty-btn-primary faculty-btn-sm" onClick={handleSaveAttendance} disabled={isAttendanceLoading}>{isAttendanceLoading ? "Loading..." : "Save Attendance"}</button>
+              <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={handleToggleAllPresent}>Mark All Present</button>
+              <button type="button" className="faculty-btn faculty-btn-primary faculty-btn-sm" onClick={handleSaveAttendance}>Save Attendance</button>
             </div>
           </div>
 

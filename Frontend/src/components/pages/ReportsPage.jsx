@@ -1400,14 +1400,14 @@ export default function ReportsPage() {
             </> : null}
           </section>
       }
-      {previewFile?.format === "pdf" ? <Modal title="PDF Preview" className="reports-preview-modal" onClose={() => setPreviewFile(null)} footer={<>
+      {previewFile?.format === "pdf" ? <Modal title="PDF Preview" onClose={() => setPreviewFile(null)} footer={<>
         {pdfPreviewLoaded ? <button className="cms-btn cms-btn-ghost" type="button" onClick={() => printBackendReport()}><Printer size={15} />Print PDF</button> : null}
         {pdfPreviewLoaded ? <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download PDF</button> : null}
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
       </>}>
-        <div className="reports-pdf-preview"><iframe src={`${previewFile.url}#toolbar=0&navpanes=0`} title="Generated report PDF preview" onLoad={() => setPdfPreviewLoaded(true)} /></div>
+        <div className="reports-pdf-preview"><iframe src={previewFile.url} title="Generated report PDF preview" onLoad={() => setPdfPreviewLoaded(true)} /></div>
       </Modal> : null}
-      {previewFile?.format === "excel" ? <Modal title="Excel Preview" className="reports-preview-modal" onClose={() => setPreviewFile(null)} footer={<>
+      {previewFile?.format === "excel" ? <Modal title="Excel Preview" onClose={() => setPreviewFile(null)} footer={<>
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => printBackendReport()}><Printer size={15} />Print Excel</button>
         <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download Excel</button>
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>

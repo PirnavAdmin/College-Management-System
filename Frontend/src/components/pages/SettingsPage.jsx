@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ListOrdered, Settings2, Users, ShieldCheck, ArrowRight, Landmark, GraduationCap, FileText, KeyRound } from "lucide-react";
+import { ListOrdered, Settings2, Users, ShieldCheck, ArrowRight } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import "./SettingsPage.css";
 
@@ -9,39 +9,12 @@ export default function SettingsPage() {
 
   const settingsCards = [
     {
-      id: "board-academic-year",
-      title: "Board & Academic Year Management",
-      description: "Create, edit and manage education boards, board codes, academic years, date ranges and status.",
-      icon: Landmark,
-      to: "/dashboard/board-academic-year",
-      buttonText: "Manage Board & Academic Year",
-      primary: true,
-    },
-    {
       id: "number-series",
       title: "ID & Number Series",
       description: "Configure Employee IDs, Admission Numbers and Roll Number formats.",
       icon: ListOrdered,
       to: "/dashboard/settings/number-series",
       buttonText: "Manage Number Series",
-      primary: true,
-    },
-    {
-      id: "templates",
-      title: "Templates",
-      description: "Manage certificate templates, document templates and downloadable bulk-upload templates.",
-      icon: FileText,
-      to: "/dashboard/settings/templates",
-      buttonText: "Manage Templates",
-      primary: true,
-    },
-    {
-      id: "credentials",
-      title: "Credentials Generator",
-      description: "Generate, manage, preview and send login credentials for faculty and students in bulk.",
-      icon: KeyRound,
-      to: "/dashboard/settings/credentials",
-      buttonText: "Manage Credentials",
       primary: true,
     },
     {
@@ -87,7 +60,7 @@ export default function SettingsPage() {
               <article key={card.id} className={`settings-card ${card.primary ? "is-featured" : ""}`}>
                 <div className="settings-card-header">
                   <div className="settings-card-icon">
-                    <Icon size={20} />
+                    <Icon size={24} />
                   </div>
                   <h3>{card.title}</h3>
                 </div>

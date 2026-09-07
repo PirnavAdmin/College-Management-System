@@ -35,6 +35,7 @@ export const menu = [
   {
     section: "Academics",
     items: [
+      { to: "/dashboard/board-academic-year", label: "Board & Academic Year Management", icon: boardAcademicYearIcon },
       { to: "/dashboard/courses", label: "Group Management", icon: groupsIcon },
       { to: "/dashboard/subjects", label: "Subject Management", icon: subjectsIcon },
       { to: "/dashboard/sections", label: "Section Management", icon: sectionsIcon },
@@ -188,11 +189,7 @@ export default function DashboardLayout({
   const { ready, navOpen, setNavOpen, facultyOpen, setFacultyOpen } = useSidebar();
   const {
     boards,
-    boardsLoading,
-    boardsError,
     academicYears,
-    academicYearsLoading,
-    academicYearsError,
     selectedBoard,
     selectedAcademicYear,
     setSelectedBoard,
@@ -408,29 +405,26 @@ export default function DashboardLayout({
                   setNotifOpen(false);
                   setProfileOpen(false);
                 }}
-                disabled={boardsLoading || !boards.length}
                 aria-label="Select Board"
                 aria-expanded={boardOpen}
               >
                 <div className="cms-academic-btn-icon">
-                  <Landmark size={14} />
+                  <Landmark size={18} />
                 </div>
                 <div className="cms-academic-btn-text">
                   <span className="cms-academic-btn-label">Board</span>
-                  <span className="cms-academic-btn-value" title={selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code}>
-                    {selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || (boardsLoading ? "Loading boards..." : boardsError ? "Unable to load boards" : "No active boards available")}
-                  </span>
+                  <span className="cms-academic-btn-value">{selectedBoard?.name || selectedBoard?.code || "BIEAP"}</span>
                 </div>
-                <ChevronDown size={12} className="cms-academic-btn-arrow" />
+                <ChevronDown size={14} className="cms-academic-btn-arrow" />
               </button>
 
               {boardOpen && (
                 <div className="cms-academic-dropdown-panel">
                   <div className="cms-academic-panel-header">Select Board</div>
                   <div className="cms-academic-panel-list">
-                    {boardsLoading ? <div className="cms-academic-panel-empty">Loading boards...</div> : !boards.length ? <div className="cms-academic-panel-empty">{boardsError || "No active boards available"}</div> : boards.map((b) => {
+                    {boards.map((b) => {
                       const isSelected =
-                        selectedBoard?.code === b.code || selectedBoard?.id === b.id || selectedBoard?.name === b.name || selectedBoard?.boardName === b.boardName;
+                        selectedBoard?.code === b.code || selectedBoard?.id === b.id || selectedBoard?.name === b.name;
                       return (
                         <button
                           key={b.id || b.code}
@@ -441,7 +435,7 @@ export default function DashboardLayout({
                             setBoardOpen(false);
                           }}
                         >
-                          <span className="cms-academic-item-name" title={b.name || b.boardName || b.code}>{b.name || b.boardName || b.code}</span>
+                          <span className="cms-academic-item-name">{b.name || b.code}</span>
                           {isSelected && <CheckCircle2 size={16} className="cms-academic-check" />}
                         </button>
                       );
@@ -453,7 +447,7 @@ export default function DashboardLayout({
                       className="cms-academic-manage-btn"
                       onClick={() => {
                         setBoardOpen(false);
-                        navigate("/dashboard/board-academic-year?tab=boards");
+                        navigate("/dashboard/board-academic-year");
                       }}
                     >
                       <Settings size={14} /> Manage Boards
@@ -474,25 +468,24 @@ export default function DashboardLayout({
                   setNotifOpen(false);
                   setProfileOpen(false);
                 }}
-                disabled={academicYearsLoading || !academicYears.length}
                 aria-label="Select Academic Year"
                 aria-expanded={yearOpen}
               >
                 <div className="cms-academic-btn-icon">
-                  <GraduationCap size={14} />
+                  <GraduationCap size={18} />
                 </div>
                 <div className="cms-academic-btn-text">
                   <span className="cms-academic-btn-label">Academic Year</span>
-                  <span className="cms-academic-btn-value">{selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || (academicYearsLoading ? "Loading years..." : academicYearsError ? "Unable to load years" : "No active academic years")}</span>
+                  <span className="cms-academic-btn-value">{selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "2025–2026"}</span>
                 </div>
-                <ChevronDown size={12} className="cms-academic-btn-arrow" />
+                <ChevronDown size={14} className="cms-academic-btn-arrow" />
               </button>
 
               {yearOpen && (
                 <div className="cms-academic-dropdown-panel">
                   <div className="cms-academic-panel-header">Select Academic Year</div>
                   <div className="cms-academic-panel-list">
-                    {academicYearsLoading ? <div className="cms-academic-panel-empty">Loading academic years...</div> : !academicYears.length ? <div className="cms-academic-panel-empty">{academicYearsError || "No active academic years available"}</div> : academicYears.map((y) => {
+                    {academicYears.map((y) => {
                       const normalize = (s) => String(s || "").trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
                       const isSelected =
                         normalize(selectedAcademicYear?.code) === normalize(y.code) ||
@@ -520,7 +513,7 @@ export default function DashboardLayout({
                       className="cms-academic-manage-btn"
                       onClick={() => {
                         setYearOpen(false);
-                        navigate("/dashboard/board-academic-year?tab=academic-years");
+                        navigate("/dashboard/board-academic-year");
                       }}
                     >
                       <Settings size={14} /> Manage Academic Years

@@ -1,10 +1,4 @@
 using CollegeManagement.API.DTOs.Students;
-using CollegeManagement.API.DTOs.Students.Requests;
-using CollegeManagement.API.DTOs.Students.Responses;
-using Microsoft.AspNetCore.Http;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace CollegeManagement.API.Services
 {
@@ -31,7 +25,7 @@ namespace CollegeManagement.API.Services
 
 
         // =========================================================
-        // STUDENT PROFILE (ADMIN)
+        // STUDENT PROFILE
         // =========================================================
 
         Task<StudentProfileDto?> GetProfileAsync(
@@ -40,22 +34,6 @@ namespace CollegeManagement.API.Services
         Task<StudentProfileDto?> UpdateProfileAsync(
             int studentId,
             StudentProfileDto request);
-
-
-        // =========================================================
-        // SELF-SERVICE PROFILE & CREDENTIALS
-        // =========================================================
-
-        Task<StudentSelfProfileResponseDto?> GetSelfProfileAsync(
-            int studentId);
-
-        Task<bool> UpdateSelfProfileAsync(
-            int studentId,
-            StudentSelfProfileDto request);
-
-        Task<bool> ChangePasswordAsync(
-            int studentId,
-            StudentChangePasswordRequest request);
 
 
         // =========================================================
@@ -88,11 +66,11 @@ namespace CollegeManagement.API.Services
 
 
         // =========================================================
-        // AUTHENTICATION & FILES
+        // AUTHENTICATION
         // =========================================================
 
-        Task<StudentPhotoUploadResultDto> UploadPhotoAsync(int studentId, IFormFile file, CancellationToken ct = default);
-        Task<StudentDocumentUploadResultDto> UploadDocumentAsync(int studentId, string documentType, IFormFile file, CancellationToken ct = default);
+        Task<StudentPhotoUploadResultDto> UploadPhotoAsync(int studentId, Microsoft.AspNetCore.Http.IFormFile file, System.Threading.CancellationToken ct = default);
+        Task<StudentDocumentUploadResultDto> UploadDocumentAsync(int studentId, string documentType, Microsoft.AspNetCore.Http.IFormFile file, System.Threading.CancellationToken ct = default);
         Task<bool> ResetPasswordAsync(
             int studentId);
 

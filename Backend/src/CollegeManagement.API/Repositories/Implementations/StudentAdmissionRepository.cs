@@ -60,7 +60,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             var result =
                 await connection.QueryFirstOrDefaultAsync<StudentAdmissionResponseDto>(
-                    "sp_CreateStudentAdmission",
+                    "sp_CreateAdmission",
                     new
                     {
                         // -------------------------------------------------
@@ -146,6 +146,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                         p_AnnualIncome =
                             request.AnnualIncome,
                         p_FeeStructureId = request.FeeStructureId,
+                        p_PaymentPlan = request.PaymentPlan,
 
                         p_ScholarshipStatus =
                             request.ScholarshipStatus,
@@ -422,8 +423,7 @@ namespace CollegeManagement.API.Repositories.Implementations
         // APPROVE ADMISSION
         // =========================================================
         public async Task<bool> ApproveAsync(
-            ApproveStudentAdmissionRequest request,
-            string? passwordHash = null)
+            ApproveStudentAdmissionRequest request)
         {
             var connection = _context.Database.GetDbConnection();
 
@@ -433,8 +433,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                     new
                     {
                         p_AdmissionId =
-                            request.AdmissionId,
-                        p_PasswordHash = passwordHash ?? string.Empty
+                            request.AdmissionId
                     },
                     commandType: CommandType.StoredProcedure);
 

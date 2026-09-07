@@ -1,7 +1,5 @@
 using CollegeManagement.API.Data;
 using CollegeManagement.API.DTOs.Students;
-using CollegeManagement.API.DTOs.Students.Requests;
-using CollegeManagement.API.DTOs.Students.Responses;
 using Dapper;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
@@ -666,90 +664,5 @@ namespace CollegeManagement.API.Repositories
             return rows > 0;
         }
 
-    
-        // =========================================================
-        // SELF-SERVICE PROFILE & CREDENTIALS
-        // =========================================================
-
-        public async Task<StudentSelfProfileResponseDto?> GetSelfProfileAsync(int studentId)
-        {
-            var connection = _context.Database.GetDbConnection();
-
-            return await connection.QueryFirstOrDefaultAsync<StudentSelfProfileResponseDto>(
-                "sp_GetStudentSelfProfile",
-                new
-                {
-                    p_StudentId = studentId
-                },
-                commandType: CommandType.StoredProcedure);
-        }
-
-        public async Task<bool> UpdateSelfProfileAsync(int studentId, StudentSelfProfileDto request)
-        {
-            var connection = _context.Database.GetDbConnection();
-
-            var rows = await connection.ExecuteAsync(
-                "sp_UpdateStudentSelfProfile",
-                new
-                {
-                    p_StudentId = studentId,
-                    p_MobileNumber = request.MobileNumber,
-                    p_Email = request.Email,
-                    p_Address = request.Address,
-                    p_City = request.City,
-                    p_District = request.District,
-                    p_State = request.State,
-                    p_Pincode = request.Pincode,
-                    p_BloodGroup = request.BloodGroup,
-                    p_AadhaarNumber = request.AadhaarNumber,
-                    p_Nationality = request.Nationality,
-                    p_Religion = request.Religion,
-                    p_PreviousSchool = request.PreviousSchool,
-                    p_PreviousHallTicketNumber = request.PreviousHallTicketNumber,
-                    p_PreviousBoard = request.PreviousBoard,
-                    p_PreviousYearOfPassing = request.PreviousYearOfPassing,
-                    p_PreviousPercentage = request.PreviousPercentage,
-                    p_FatherMobile = request.FatherMobile,
-                    p_FatherEmail = request.FatherEmail,
-                    p_MotherMobile = request.MotherMobile,
-                    p_MotherEmail = request.MotherEmail,
-                    p_GuardianMobile = request.GuardianMobile,
-                    p_GuardianEmail = request.GuardianEmail
-                },
-                commandType: CommandType.StoredProcedure);
-
-            return rows > 0;
-        }
-
-        public async Task<string?> GetPasswordHashAsync(int studentId)
-        {
-            var connection = _context.Database.GetDbConnection();
-            return await connection.QueryFirstOrDefaultAsync<string>(
-                "SELECT PasswordHash FROM Students WHERE StudentId = @StudentId AND IsActive = 1",
-                new { StudentId = studentId });
-        }
-
-        public async Task<bool> ChangePasswordAsync(int studentId, string oldPassword, string newPassword)
-        {
-            var currentHash = await GetPasswordHashAsync(studentId);
-            if (currentHash == null)
-            {
-                throw new KeyNotFoundException($"Student with ID {studentId} not found.");
-            }
-
-            if (!Helpers.PasswordHasher.VerifyPassword(oldPassword, currentHash))
-            {
-                throw new ArgumentException("Old password is incorrect.");
-            }
-
-            var newHash = Helpers.PasswordHasher.HashPassword(newPassword);
-
-            var connection = _context.Database.GetDbConnection();
-            var rows = await connection.ExecuteAsync(
-                "UPDATE Students SET PasswordHash = @PasswordHash, IsFirstLogin = 0, UpdatedAt = CURRENT_TIMESTAMP(6) WHERE StudentId = @StudentId AND IsActive = 1",
-                new { PasswordHash = newHash, StudentId = studentId });
-
-            return rows > 0;
-        }
     }
 }

@@ -3,7 +3,6 @@ import { useTheme } from "@/hooks/useTheme.js";
 
 export default function ThemeToggle() {
   const { theme, toggle } = useTheme();
-
   return (
     <button
       type="button"
@@ -16,3 +15,5 @@ export default function ThemeToggle() {
     </button>
   );
 }
+
+

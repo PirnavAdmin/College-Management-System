@@ -1,5 +1,4 @@
-﻿using CollegeManagement.API.DTOs.StudentAdmission;
-using CollegeManagement.API.Helpers;
+using CollegeManagement.API.DTOs.StudentAdmission;
 using CollegeManagement.API.Repositories.Implementations;
 using CollegeManagement.API.Repositories.Interfaces;
 using CollegeManagement.API.Services.Interfaces;
@@ -162,23 +161,8 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ArgumentException(
                     "Invalid AdmissionId.");
 
-            // 1. Fetch admission to get DateOfBirth for initial password generation
-            var admission = await _repository.GetByIdAsync(request.AdmissionId);
-            if (admission == null)
-                throw new KeyNotFoundException($"Admission with ID {request.AdmissionId} not found.");
-
-            // 2. Validate mandatory DateOfBirth for approval and credential creation
-            if (!admission.DateOfBirth.HasValue || admission.DateOfBirth.Value == default)
-            {
-                throw new InvalidOperationException("Date of birth is mandatory for admission approval and initial credential generation.");
-            }
-
-            // 3. Generate initial BCrypt password hash ONLY from actual admission DateOfBirth
-            var passwordHash = StudentCredentialHelper.GenerateInitialPasswordHash(admission.DateOfBirth.Value);
-
             return await _repository.ApproveAsync(
-                request,
-                passwordHash);
+                request);
         }
 
 
@@ -314,10 +298,6 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ArgumentException(
                     "Program is required.");
 
-            if (request.FeeStructureId <= 0)
-                throw new ArgumentException(
-                    "Fee structure is required.");
-
             if (string.IsNullOrWhiteSpace(
                     request.FirstName))
             {
@@ -335,13 +315,6 @@ namespace CollegeManagement.API.Services.Implementations
             if (request.DateOfBirth == default)
                 throw new ArgumentException(
                     "Date of birth is required.");
-
-            if (string.IsNullOrWhiteSpace(
-                    request.StudentMobileNumber))
-            {
-                throw new ArgumentException(
-                    "Student mobile number is required.");
-            }
 
             if (request.StudentPhoto == null ||
                 request.StudentPhoto.Length == 0)
@@ -450,4 +423,3 @@ namespace CollegeManagement.API.Services.Implementations
         }
     }
 }
-

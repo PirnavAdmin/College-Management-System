@@ -621,8 +621,8 @@
   padding: 20px 24px;
 }
 .master-details-card {
-  width: 100%;
-  margin: 0;
+  width: min(900px, 100%);
+  margin: auto;
   overflow: hidden;
   border: 1px solid var(--cms-border);
   border-radius: 14px;

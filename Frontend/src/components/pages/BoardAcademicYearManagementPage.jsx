@@ -579,7 +579,6 @@ function AcademicYearWorkspace() {
       setDraft(emptyForm);
       if (page !== 1) setPage(1);
       else await fetchAcademicYears(1);
-      window.dispatchEvent(new CustomEvent("cms_academic_masters_updated"));
     } catch (error) {
       setToast(getApiErrorMessage(error));
     } finally {
@@ -602,7 +601,6 @@ function AcademicYearWorkspace() {
       const targetPage = academicYears.length === 1 && page > 1 ? page - 1 : page;
       if (targetPage !== page) setPage(targetPage);
       else await fetchAcademicYears(targetPage);
-      window.dispatchEvent(new CustomEvent("cms_academic_masters_updated"));
     } catch (error) {
       setToast(getApiErrorMessage(error));
     } finally {
@@ -922,7 +920,6 @@ function AcademicYearWorkspace() {
 export default function BoardAcademicYearManagementPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const screen = searchParams.get("screen");
-  const tabParam = searchParams.get("tab");
   const formOpen = screen === "form";
   const detailsOpen = screen === "details";
   const [boardRows, setBoardRows] = useState([]),
@@ -955,17 +952,7 @@ export default function BoardAcademicYearManagementPage() {
   const listRequestRef = useRef(0);
   const statesRequestRef = useRef(0);
   const boardSelectionRequestRef = useRef(0);
-  const [activeTab, setActiveTab] = useState(
-    tabParam === "academic-years" || tabParam === "academic-year" ? "academic-years" : "boards",
-  );
-
-  useEffect(() => {
-    if (tabParam === "academic-years" || tabParam === "academic-year") {
-      setActiveTab("academic-years");
-    } else if (tabParam === "boards" || tabParam === "board") {
-      setActiveTab("boards");
-    }
-  }, [tabParam]);
+  const [activeTab, setActiveTab] = useState("boards");
   const indiaStates = useMemo(() => {
     const matching = states.filter((item) => INDIA_REGION_NAMES.has(optionValue(item, "stateName", "StateName")));
     const byName = new Map(matching.map((item) => [String(optionValue(item, "stateName", "StateName")).toLowerCase(), item]));
@@ -1353,7 +1340,6 @@ export default function BoardAcademicYearManagementPage() {
       setOtherCountryName("");
       setSearchParams({});
       await fetchBoards();
-      window.dispatchEvent(new CustomEvent("cms_academic_masters_updated"));
     } catch (error) {
       if (error?.response?.status === 409) {
         setToast("This Board was changed by another user. Please reload and try again.");
@@ -1383,7 +1369,6 @@ export default function BoardAcademicYearManagementPage() {
       const targetPage = boardRows.length === 1 && page > 1 ? page - 1 : page;
       if (targetPage !== page) setPage(targetPage);
       else await fetchBoards();
-      window.dispatchEvent(new CustomEvent("cms_academic_masters_updated"));
     } catch (error) {
       if (error?.response?.status === 404) {
         setToast("This Board no longer exists. The table has been refreshed.");
@@ -1406,7 +1391,7 @@ export default function BoardAcademicYearManagementPage() {
           ? "Create and manage academic years for boards and academic levels."
           : "Create and manage education boards, academic levels and status."
       }
-      breadcrumb={["Settings"]}
+      breadcrumb={["Academics"]}
     >
       <main className="bay-page">
         {!formOpen && !detailsOpen ? (
@@ -1419,11 +1404,6 @@ export default function BoardAcademicYearManagementPage() {
               onClick={() => {
                 setActiveTab("boards");
                 setPage(1);
-                setSearchParams((prev) => {
-                  const p = new URLSearchParams(prev);
-                  p.set("tab", "boards");
-                  return p;
-                });
               }}
             >
               Board Management
@@ -1436,11 +1416,6 @@ export default function BoardAcademicYearManagementPage() {
               onClick={() => {
                 setActiveTab("academic-years");
                 setPage(1);
-                setSearchParams((prev) => {
-                  const p = new URLSearchParams(prev);
-                  p.set("tab", "academic-years");
-                  return p;
-                });
               }}
             >
               Academic Year

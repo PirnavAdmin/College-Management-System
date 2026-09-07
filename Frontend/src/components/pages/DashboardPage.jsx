@@ -1,44 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  Award,
-  BookOpen,
-  CalendarDays,
-  ChevronRight,
-  ClipboardCheck,
-  Clock,
-  FileText,
-  GraduationCap,
-  Info,
-  RefreshCw,
-  RotateCcw,
-  Users,
-  AlertTriangle,
-  CheckCircle2,
-  UserX,
-  UserCheck,
-  ShieldAlert,
-  BarChart3,
-  Layers,
-  ArrowUpRight,
-} from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { Award, BookOpen, CalendarDays, ChevronRight, ClipboardCheck, FileText, GraduationCap, RotateCcw, Users, Info } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import totalStudentsIcon from "@/assets/dashboard-3d/total-students.png";
 import teachingStaffIcon from "@/assets/dashboard-3d/teaching-staff.png";
@@ -53,20 +18,29 @@ import createExamIcon from "@/assets/dashboard-3d/create-exam.png";
 import markAttendanceIcon from "@/assets/dashboard-3d/mark-attendance.png";
 import "./DashboardPage.css";
 
+const REQUEST_TIMEOUT = 12000;
 const GROUP_COLORS = ["#2563eb", "#7c3aed", "#f59e0b", "#16a34a", "#e11d48", "#0891b2", "#64748b"];
-
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const CERTIFICATE_TYPES = [
+  { key: "bonafide", label: "Bonafide Certificate", icon: GraduationCap, tone: "blue" },
+  { key: "study", label: "Study Certificate", icon: BookOpen, tone: "violet" },
+  { key: "conduct", label: "Conduct Certificate", icon: Award, tone: "green" },
+  { key: "transfer", label: "Transfer Certificate", icon: FileText, tone: "orange" },
+  { key: "others", label: "Others", icon: ClipboardCheck, tone: "cyan" },
+];
 const DASHBOARD_API = {
   filters: "/api/v1/dashboard/filters",
   summary: "/api/v1/dashboard/summary",
   studentsOverview: "/api/v1/dashboard/students-overview",
   groupDistribution: "/api/v1/dashboard/group-distribution",
-  studentsAttendanceToday: "/api/v1/dashboard/students-attendance-today",
-  staffAttendanceToday: "/api/v1/dashboard/staff-attendance-today",
+  admissionTrend: "/api/v1/dashboard/admission-trend",
+  weeklyAttendance: "/api/v1/dashboard/weekly-attendance",
   certificateRequests: "/api/v1/dashboard/certificate-requests",
   upcomingExaminations: "/api/v1/dashboard/upcoming-examinations",
-  todaysHighlights: "/api/v1/dashboard/todays-highlights",
 };
-
+const DASHBOARD_WIDGET_KEYS = Object.keys(DASHBOARD_API).filter((key) => key !== "filters");
+const DATE_WIDGET_KEYS = ["summary", "studentsOverview", "weeklyAttendance", "certificateRequests"];
+const SCOPE_WIDGET_KEYS = ["groupDistribution", "admissionTrend", "upcomingExaminations"];
 const QUICK_ACTIONS = [
   { label: "Add Student", to: "/dashboard/admission", icon: addStudentIcon, tone: "green" },
   { label: "Add Staff", to: "/dashboard/faculty", icon: addStaffIcon, tone: "blue" },
@@ -75,7 +49,8 @@ const QUICK_ACTIONS = [
   { label: "Create Exam", to: "/dashboard/examinations/add", icon: createExamIcon, tone: "orange" },
   { label: "Mark Attendance", to: "/dashboard/attendance/student", icon: markAttendanceIcon, tone: "green" },
 ];
-
+const EMPTY_WIDGETS = Object.fromEntries(DASHBOARD_WIDGET_KEYS.map((key) => [key, null]));
+const EMPTY_LOADING = Object.fromEntries(DASHBOARD_WIDGET_KEYS.map((key) => [key, false]));
 function unwrap(payload) {
   let value = payload;
   const visited = new Set();
@@ -88,9 +63,42 @@ function unwrap(payload) {
   return value;
 }
 
+function collection(payload, preferredKeys = []) {
+  const value = unwrap(payload);
+  if (Array.isArray(value)) return value;
+  for (const key of [...preferredKeys, "items", "Items", "records", "Records", "results", "Results", "$values"]) {
+    if (Array.isArray(value?.[key])) return value[key];
+  }
+  return [];
+}
+
+function findCollection(payload, preferredKeys) {
+  const wanted = new Set(preferredKeys.map((key) => key.toLowerCase()));
+  const queue = [unwrap(payload)];
+  const visited = new Set();
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node || typeof node !== "object" || visited.has(node)) continue;
+    visited.add(node);
+    if (Array.isArray(node)) return node;
+    for (const [key, value] of Object.entries(node)) {
+      if (Array.isArray(value) && wanted.has(key.toLowerCase())) return value;
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+  return [];
+}
+
 function read(item, ...keys) {
   const key = keys.find((candidate) => item?.[candidate] !== undefined && item?.[candidate] !== null && item?.[candidate] !== "");
   return key ? item[key] : undefined;
+}
+
+function numeric(item, ...keys) {
+  const value = read(item, ...keys);
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function metric(payload, keys) {
@@ -114,1030 +122,432 @@ function metric(payload, keys) {
   return undefined;
 }
 
-function formatNumber(value) {
-  if (value === undefined || value === null || value === "") return "Unavailable";
-  const num = Number(value);
-  if (!Number.isFinite(num)) return "Unavailable";
-  return new Intl.NumberFormat("en-IN").format(num);
+function localDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
+function shiftLocalDate(value, days) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return localDateValue(date);
+}
+
+function calendarWeekRange(anchorDate) {
+  const [year, month, day] = String(anchorDate).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  const daysSinceMonday = (date.getDay() + 6) % 7;
+  const start = shiftLocalDate(anchorDate, -daysSinceMonday);
+  return { start, end: shiftLocalDate(start, 6) };
+}
+
+function formatDateLabel(value, options = { month: "short", day: "numeric" }) {
+  const [year, month, day] = String(value).slice(0, 10).split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("en-IN", options).format(date);
+}
+
+function formatNumericDate(value) {
+  const [year, month, day] = String(value).slice(0, 10).split("-");
+  return year && month && day ? `${day}/${month}/${year}` : String(value);
+}
+
+function optionRows(payload, kind) {
+  const definitions = kind === "year"
+    ? { preferred: ["academicYears", "AcademicYears", "years", "Years"], ids: ["academicYearId", "AcademicYearId", "id", "Id"], labels: ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"] }
+    : { preferred: ["boards", "Boards"], ids: ["boardId", "BoardId", "id", "Id"], labels: ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"] };
+  const optionsByLabel = new Map();
+  collection(payload, definitions.preferred).forEach((item) => {
+    const id = read(item, ...definitions.ids);
+    const label = String(read(item, ...definitions.labels) ?? "").trim();
+    if (!id || !label) return;
+    const isCurrent = read(item, "isCurrent", "IsCurrent") === true;
+    const isDefault = read(item, "isDefault", "IsDefault") === true;
+    const activeValue = read(item, "isActive", "IsActive", "status", "Status");
+    const normalizedStatus = String(activeValue).trim().toLowerCase();
+    const explicitlyInactive = activeValue === false
+      || activeValue === 0
+      || ["false", "inactive", "disabled", "deactivated"].includes(normalizedStatus);
+    if (explicitlyInactive) return;
+    const isActive = activeValue === true || ["true", "active", "current", "default"].includes(normalizedStatus);
+    if (kind === "year" && !isActive) return;
+    const option = { value: String(id), label, priority: isCurrent ? 3 : isDefault ? 2 : isActive ? 1 : 0 };
+    const dedupeKey = label.toLowerCase();
+    const existing = optionsByLabel.get(dedupeKey);
+    if (!existing || option.priority > existing.priority) optionsByLabel.set(dedupeKey, option);
+  });
+  return Array.from(optionsByLabel.values());
+}
+
+function defaultOptionValue(options) {
+  return [...options].sort((left, right) => right.priority - left.priority)[0]?.value || "";
+}
+
+function preferredAcademicYearValue(options, preferredLabel = "2026-2027") {
+  const normalizeYear = (value) => String(value).trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
+  return options.find((item) => normalizeYear(item.label) === normalizeYear(preferredLabel))?.value
+    || defaultOptionValue(options);
+}
+
+function buildScopeParams(filters) {
+  return {
+    ...(Number(filters.year) > 0 ? { academicYearId: Number(filters.year) } : {}),
+    ...(Number(filters.board) > 0 ? { boardId: Number(filters.board) } : {}),
+  };
+}
+
+function buildDateParams(filters) {
+  return { ...buildScopeParams(filters), date: `${filters.date}T00:00:00` };
+}
+
+function buildWeeklyAttendanceParams(filters) {
+  const range = calendarWeekRange(filters.date);
+  return {
+    ...buildDateParams(filters),
+    startDate: `${range.start}T00:00:00`,
+    endDate: `${range.end}T23:59:59`,
+  };
+}
+
+function paramsForWidget(key, filters) {
+  if (key === "weeklyAttendance") return buildWeeklyAttendanceParams(filters);
+  if (DATE_WIDGET_KEYS.includes(key)) return buildDateParams(filters);
+  if (SCOPE_WIDGET_KEYS.includes(key)) return buildScopeParams(filters);
+  return {};
+}
+
+function normalizeAdmissionTrend(payload) {
+  return findCollection(payload, ["monthlyAdmissions", "MonthlyAdmissions", "admissionTrend", "AdmissionTrend", "monthlyAdmissionTrend", "MonthlyAdmissionTrend", "monthlyTrend", "MonthlyTrend", "trend", "Trend"])
+    .flatMap((item, index) => {
+      const value = numeric(item, "studentsJoined", "StudentsJoined", "admissions", "Admissions", "admissionCount", "AdmissionCount", "count", "Count");
+      const rawDate = read(item, "date", "Date", "monthStart", "MonthStart", "period", "Period", "monthYear", "MonthYear");
+      const year = numeric(item, "year", "Year", "admissionYear", "AdmissionYear");
+      const month = read(item, "month", "Month", "admissionMonth", "AdmissionMonth");
+      const suppliedLabel = String(read(item, "monthName", "MonthName", "label", "Label", "periodLabel", "PeriodLabel") ?? "").trim();
+      let date = rawDate ? new Date(rawDate) : null;
+      if ((!date || Number.isNaN(date.getTime())) && year && month !== undefined) {
+        const monthNumber = Number(month);
+        date = Number.isInteger(monthNumber) ? new Date(year, monthNumber - 1, 1) : new Date(`${month} 1, ${year}`);
+      }
+      if (value === undefined) return [];
+      if (date && !Number.isNaN(date.getTime())) return [{ sortDate: date.getTime(), period: new Intl.DateTimeFormat("en-IN", { month: "short" }).format(date), studentsJoined: value }];
+      const period = suppliedLabel || String(month ?? rawDate ?? "").trim();
+      return period ? [{ sortDate: index, period, studentsJoined: value }] : [];
+    }).sort((left, right) => left.sortDate - right.sortDate);
+}
+
+function normalizeGroupDistribution(payload) {
+  const source = findCollection(payload, ["groupDistribution", "GroupDistribution", "studentGroupDistribution", "StudentGroupDistribution", "groupWiseStrength", "GroupWiseStrength", "groups", "Groups"]);
+  const groups = new Map();
+  const sectionKeys = new Set();
+  source.forEach((item) => {
+    const name = String(read(item, "groupName", "GroupName", "groupCode", "GroupCode", "name", "Name") ?? "").trim();
+    const value = numeric(item, "studentCount", "StudentCount", "studentsCount", "StudentsCount", "totalStudents", "TotalStudents", "count", "Count", "value", "Value");
+    if (!name || value === undefined || value < 0) return;
+    const groupId = read(item, "groupId", "GroupId");
+    const sectionId = read(item, "sectionId", "SectionId");
+    const key = groupId !== undefined ? String(groupId) : name.toLowerCase();
+    const current = groups.get(key);
+    if (sectionId !== undefined) {
+      const sectionKey = `${key}:${sectionId}`;
+      if (sectionKeys.has(sectionKey)) return;
+      sectionKeys.add(sectionKey);
+      groups.set(key, { name, value: (current?.value ?? 0) + value });
+    } else if (!current || value > current.value) groups.set(key, { name, value });
+  });
+  return Array.from(groups.values()).sort((left, right) => right.value - left.value);
+}
+
+function normalizeWeeklyAttendance(payload, anchorDate) {
+  const source = findCollection(payload, ["weeklyAttendance", "WeeklyAttendance", "dailyAttendance", "DailyAttendance", "attendanceByDate", "AttendanceByDate", "attendanceTrend", "AttendanceTrend", "days", "Days"]);
+  const range = calendarWeekRange(anchorDate);
+  const attendanceByDate = new Map();
+
+  source.forEach((item) => {
+    const date = String(read(item, "attendanceDate", "AttendanceDate", "date", "Date", "day", "Day") ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date < range.start || date > range.end) return;
+    const present = numeric(item, "present", "Present", "presentCount", "PresentCount");
+    const absent = numeric(item, "absent", "Absent", "absentCount", "AbsentCount");
+    const late = numeric(item, "late", "Late", "lateCount", "LateCount");
+    const percentage = numeric(item, "percentage", "Percentage", "attendancePercentage", "AttendancePercentage");
+    if (present === undefined && absent === undefined && late === undefined && percentage === undefined) return;
+    const current = attendanceByDate.get(date) || { present: 0, absent: 0, late: 0, percentage: undefined };
+    attendanceByDate.set(date, {
+      present: current.present + (present ?? 0),
+      absent: current.absent + (absent ?? 0),
+      late: current.late + (late ?? 0),
+      percentage: percentage ?? current.percentage,
+    });
+  });
+
+  return Array.from(attendanceByDate, ([date, values]) => ({ date, ...values }))
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-7);
+}
+
+function normalizeCertificateRequests(payload) {
+  const source = findCollection(payload, ["certificateRequests", "CertificateRequests", "requestCounts", "RequestCounts", "requestsByType", "RequestsByType"]);
+  const byType = new Map(source.flatMap((item) => {
+    const name = String(read(item, "certificateType", "CertificateType", "type", "Type", "name", "Name") ?? "").trim();
+    const count = numeric(item, "requestCount", "RequestCount", "count", "Count", "total", "Total");
+    return name && count !== undefined ? [[name.toLowerCase(), count]] : [];
+  }));
+  return CERTIFICATE_TYPES.map((type) => {
+    const directValue = metric(payload, [`${type.key}Requests`, `${type.key}Count`, type.key]);
+    const listedValue = byType.get(type.label.toLowerCase()) ?? byType.get(type.key.toLowerCase());
+    return { ...type, value: listedValue ?? directValue };
+  }).filter((item) => item.value !== undefined);
+}
+
+function normalizeUpcomingExaminations(payload) {
+  const today = localDateValue();
+  const completedStatuses = ["completed", "complete", "conducted", "finished", "closed", "cancelled", "canceled"];
+
+  return findCollection(payload, ["upcomingExaminations", "UpcomingExaminations", "examinations", "Examinations", "exams", "Exams"])
+    .flatMap((item, index) => {
+      const name = String(read(item, "examName", "ExamName", "examinationName", "ExaminationName", "name", "Name", "title", "Title") ?? "").trim();
+      const rawDate = read(item, "examDate", "ExamDate", "startDate", "StartDate", "date", "Date");
+      const status = String(read(item, "status", "Status", "examStatus", "ExamStatus") ?? "").trim();
+      const isoDate = String(rawDate ?? "").trim().match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+      const parsedDate = isoDate ? null : new Date(rawDate);
+      const date = isoDate || (rawDate && !Number.isNaN(parsedDate?.getTime()) ? localDateValue(parsedDate) : "");
+      const isCompleted = completedStatuses.some((completedStatus) => status.toLowerCase().includes(completedStatus));
+
+      if ((!name && !date) || !date || date < today || isCompleted) return [];
+      return [{ id: read(item, "examId", "ExamId", "examinationId", "ExaminationId", "id", "Id") ?? index, name: name || "Examination", date, context: String(read(item, "academicLevelName", "AcademicLevelName", "groupName", "GroupName", "programName", "ProgramName") ?? ""), status }];
+    })
+    .sort((first, second) => first.date.localeCompare(second.date));
+}
+
+function formatNumber(value) { return value === undefined || value === null ? "Unavailable" : new Intl.NumberFormat("en-IN").format(value); }
 function greetingForHour(hour) {
-  if (hour < 12) return { message: "Good Morning", icon: "🌅" };
-  if (hour < 17) return { message: "Good Afternoon", icon: "☀️" };
-  return { message: "Good Evening", icon: "🌙" };
+  if (hour < 12) return { message: "Good Morning", icon: "\u{1F305}", iconLabel: "Sunrise" };
+  if (hour < 17) return { message: "Good Afternoon", icon: "\u{2600}\u{FE0F}", iconLabel: "Sun" };
+  return { message: "Good Evening", icon: "\u{1F319}", iconLabel: "Moon" };
 }
-
-function formattedTimestamp(date = new Date()) {
-  const dateStr = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(date);
-  const timeStr = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }).format(date);
-  return `${dateStr}, ${timeStr}`;
-}
-
-function CardHeader({ title, action, children }) {
-  return (
-    <header className="dashboard-card-head">
-      <h2>{title}</h2>
-      {action || children ? <div className="dashboard-card-head-actions">{children}{action}</div> : null}
-    </header>
-  );
-}
-
-function LoadingState({ label = "Loading..." }) {
-  return (
-    <div className="dashboard-card-loading">
-      <span className="dashboard-spinner" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function ErrorState({ message = "Unable to load data.", onRetry }) {
-  return (
-    <div className="dashboard-card-error">
-      <AlertTriangle size={18} className="dashboard-error-icon" />
-      <span>{message}</span>
-      {onRetry ? (
-        <button type="button" className="dashboard-retry-btn" onClick={onRetry}>
-          <RotateCcw size={13} /> Retry
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function EmptyState({ message = "No data available." }) {
-  return (
-    <div className="dashboard-card-empty">
-      <Info size={18} className="dashboard-empty-icon" />
-      <span>{message}</span>
-    </div>
-  );
-}
-
-function KpiCard({ label, value, icon, tone, loading, changeLabel = "vs last year", changePct = "↑ 5%", previousValue }) {
-  const isAvailable = value !== undefined && value !== null && value !== "";
-  const formattedPrev = isAvailable && previousValue !== undefined && previousValue !== null ? formatNumber(previousValue) : "Unavailable";
-  return (
-    <article className={`dashboard-kpi dashboard-kpi-${tone}`}>
-      <div className="dashboard-kpi-pop" role="tooltip">
-        <span>Last year: <strong>{formattedPrev}</strong></span>
-      </div>
-      <div className="dashboard-kpi-top">
-        <span className="dashboard-kpi-icon">
-          <img src={icon} alt="" aria-hidden="true" />
-        </span>
-        <div className="dashboard-kpi-title-wrap">
-          <span className="dashboard-kpi-label">{label}</span>
-          <div className="dashboard-kpi-value-row">
-            <strong className="dashboard-kpi-value">{loading ? "—" : formatNumber(value)}</strong>
-            <span className="dashboard-kpi-trend">{isAvailable ? changePct : "—"}</span>
-          </div>
-          <span className="dashboard-kpi-subtext">{isAvailable ? changeLabel : "API Pending"}</span>
-        </div>
-      </div>
-    </article>
-  );
+function LoadingState({ label = "Loading data..." }) { return <div className="dashboard-state" role="status"><span className="dashboard-spinner" />{label}</div>; }
+function EmptyState({ message = "No data available" }) { return <div className="dashboard-state dashboard-state-empty">{message}</div>; }
+function CardHeader({ title, action }) { return <header className="dashboard-card-head"><h2>{title}</h2>{action}</header>; }
+function KpiCard({ label, value, icon, tone, loading }) {
+  return <article className={`dashboard-kpi dashboard-kpi-${tone}`}><span className="dashboard-kpi-icon"><img src={icon} alt="" aria-hidden="true" /></span><div><span>{label}</span><strong>{loading ? "—" : formatNumber(value)}</strong></div></article>;
 }
 
 export default function DashboardPage() {
-  const navigate = useNavigate();
-  const { selectedBoard, selectedAcademicYear } = useAcademicContext();
-
-  const boardId = selectedBoard?.id || selectedBoard?.code || selectedBoard?.boardId;
-  const academicYearId = selectedAcademicYear?.id || selectedAcademicYear?.code || selectedAcademicYear?.academicYearId;
-  const todayDate = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const {
+    selectedBoard,
+    selectedAcademicYear,
+    setSelectedBoard,
+    setSelectedAcademicYear,
+  } = useAcademicContext();
 
   const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
-  const [lastUpdated, setLastUpdated] = useState(() => formattedTimestamp());
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
+  const [masterOptions, setMasterOptions] = useState({ years: [], boards: [] });
+  const [filters, setFilters] = useState({
+    year: selectedAcademicYear?.id || selectedAcademicYear?.code || "",
+    board: selectedBoard?.id || selectedBoard?.code || "",
+    date: localDateValue(),
+  });
+  const [widgets, setWidgets] = useState(EMPTY_WIDGETS);
+  const [loadingFilters, setLoadingFilters] = useState(true);
+  const [filtersReady, setFiltersReady] = useState(false);
+  const [loading, setLoading] = useState(EMPTY_LOADING);
+  const [errors, setErrors] = useState({});
+  const filterRequestRef = useRef(0);
+  const dateRequestRef = useRef(0);
+  const scopeRequestRef = useRef(0);
 
-  // Dropdown states
-  const [studentView, setStudentView] = useState("all");
-  const [staffType, setStaffType] = useState("all");
-
-  // State objects for cards
-  const [summaryState, setSummaryState] = useState({ loading: true, error: null, data: null });
-  const [overviewState, setOverviewState] = useState({ loading: true, error: null, data: null });
-  const [groupState, setGroupState] = useState({ loading: true, error: null, data: null });
-  const [studentAttState, setStudentAttState] = useState({ loading: true, error: null, data: null, timestamp: formattedTimestamp() });
-  const [staffAttState, setStaffAttState] = useState({ loading: true, error: null, data: null, timestamp: formattedTimestamp() });
-  const [certState, setCertState] = useState({ loading: true, error: null, data: null });
-  const [examState, setExamState] = useState({ loading: true, error: null, data: null });
-  const [highlightsState, setHighlightsState] = useState({ loading: true, error: null, data: null });
-
-  // Sequence ref counters for race condition protection
-  const summarySeq = useRef(0);
-  const overviewSeq = useRef(0);
-  const groupSeq = useRef(0);
-  const studentAttSeq = useRef(0);
-  const staffAttSeq = useRef(0);
-  const certSeq = useRef(0);
-  const examSeq = useRef(0);
-  const highlightsSeq = useRef(0);
-
-  // Hourly time trigger
+  // Synchronize global academic context changes to local filters
   useEffect(() => {
-    const timer = setInterval(() => setCurrentHour(new Date().getHours()), 60_000);
-    return () => clearInterval(timer);
+    setFilters((current) => ({
+      ...current,
+      board: selectedBoard?.id || selectedBoard?.code || current.board,
+      year: selectedAcademicYear?.id || selectedAcademicYear?.code || current.year,
+    }));
+  }, [selectedBoard, selectedAcademicYear]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nextHour = new Date().getHours();
+      setCurrentHour((hour) => hour === nextHour ? hour : nextHour);
+      const today = localDateValue();
+      setFilters((current) => current.date === today ? current : { ...current, date: today });
+    }, 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
-  // 1. GET /api/v1/dashboard/summary
-  const fetchSummary = useCallback(async () => {
-    const seq = ++summarySeq.current;
-    setSummaryState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(academicYearId ? { academicYearId } : {}),
-        ...(boardId ? { boardId } : {}),
-        date: todayDate,
-      };
-      const res = await apiClient.get(DASHBOARD_API.summary, { params });
-      if (summarySeq.current === seq) {
-        setSummaryState({ loading: false, error: null, data: unwrap(res.data) });
-      }
-    } catch (err) {
-      if (summarySeq.current === seq) {
-        setSummaryState({ loading: false, error: getApiErrorMessage(err, "Failed to load summary metrics"), data: null });
-      }
-    }
-  }, [boardId, academicYearId, todayDate]);
-
-  // 2. GET /api/v1/dashboard/students-overview
-  const fetchStudentsOverview = useCallback(async () => {
-    const seq = ++overviewSeq.current;
-    setOverviewState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(academicYearId ? { academicYearId } : {}),
-        ...(boardId ? { boardId } : {}),
-        date: todayDate,
-      };
-      const res = await apiClient.get(DASHBOARD_API.studentsOverview, { params });
-      if (overviewSeq.current === seq) {
-        setOverviewState({ loading: false, error: null, data: unwrap(res.data) });
-      }
-    } catch (err) {
-      if (overviewSeq.current === seq) {
-        setOverviewState({ loading: false, error: getApiErrorMessage(err, "Failed to load students overview"), data: null });
-      }
-    }
-  }, [boardId, academicYearId, todayDate]);
-
-  // 3. GET /api/v1/dashboard/group-distribution
-  const fetchGroupDistribution = useCallback(async () => {
-    const seq = ++groupSeq.current;
-    setGroupState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(academicYearId ? { academicYearId } : {}),
-        ...(boardId ? { boardId } : {}),
-      };
-      const res = await apiClient.get(DASHBOARD_API.groupDistribution, { params });
-      if (groupSeq.current === seq) {
-        setGroupState({ loading: false, error: null, data: unwrap(res.data) });
-      }
-    } catch (err) {
-      if (groupSeq.current === seq) {
-        setGroupState({ loading: false, error: getApiErrorMessage(err, "Failed to load group distribution"), data: null });
-      }
-    }
-  }, [boardId, academicYearId]);
-
-  // 4. GET /api/v1/dashboard/students-attendance-today
-  const fetchStudentAttendance = useCallback(async () => {
-    const seq = ++studentAttSeq.current;
-    setStudentAttState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(academicYearId ? { academicYearId } : {}),
-        ...(boardId ? { boardId } : {}),
-        viewBy: studentView,
-      };
-      const res = await apiClient.get(DASHBOARD_API.studentsAttendanceToday, { params });
-      if (studentAttSeq.current === seq) {
-        const now = new Date();
-        const timeStr = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }).format(now);
-        setStudentAttState({ loading: false, error: null, data: unwrap(res.data), timestamp: `Today, ${timeStr}` });
-      }
-    } catch (err) {
-      if (studentAttSeq.current === seq) {
-        setStudentAttState((prev) => ({ ...prev, loading: false, error: getApiErrorMessage(err, "Failed to load student attendance"), data: null }));
-      }
-    }
-  }, [boardId, academicYearId, studentView]);
-
-  // 5. GET /api/v1/dashboard/staff-attendance-today (Do NOT send academicYearId)
-  const fetchStaffAttendance = useCallback(async () => {
-    const seq = ++staffAttSeq.current;
-    setStaffAttState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(boardId ? { boardId } : {}),
-        staffType: staffType,
-      };
-      const res = await apiClient.get(DASHBOARD_API.staffAttendanceToday, { params });
-      if (staffAttSeq.current === seq) {
-        const now = new Date();
-        const timeStr = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }).format(now);
-        setStaffAttState({ loading: false, error: null, data: unwrap(res.data), timestamp: `Today, ${timeStr}` });
-      }
-    } catch (err) {
-      if (staffAttSeq.current === seq) {
-        setStaffAttState((prev) => ({ ...prev, loading: false, error: getApiErrorMessage(err, "Failed to load staff attendance"), data: null }));
-      }
-    }
-  }, [boardId, staffType]);
-
-  // 6. GET /api/v1/dashboard/certificate-requests
-  const fetchCertificateRequests = useCallback(async () => {
-    const seq = ++certSeq.current;
-    setCertState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(academicYearId ? { academicYearId } : {}),
-        ...(boardId ? { boardId } : {}),
-        date: todayDate,
-      };
-      const res = await apiClient.get(DASHBOARD_API.certificateRequests, { params });
-      if (certSeq.current === seq) {
-        setCertState({ loading: false, error: null, data: unwrap(res.data) });
-      }
-    } catch (err) {
-      if (certSeq.current === seq) {
-        setCertState({ loading: false, error: getApiErrorMessage(err, "Failed to load certificate requests"), data: null });
-      }
-    }
-  }, [boardId, academicYearId, todayDate]);
-
-  // 7. GET /api/v1/dashboard/upcoming-examinations
-  const fetchUpcomingExaminations = useCallback(async () => {
-    const seq = ++examSeq.current;
-    setExamState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const params = {
-        ...(academicYearId ? { academicYearId } : {}),
-        ...(boardId ? { boardId } : {}),
-      };
-      const res = await apiClient.get(DASHBOARD_API.upcomingExaminations, { params });
-      if (examSeq.current === seq) {
-        setExamState({ loading: false, error: null, data: unwrap(res.data) });
-      }
-    } catch (err) {
-      if (examSeq.current === seq) {
-        setExamState({ loading: false, error: getApiErrorMessage(err, "Failed to load upcoming examinations"), data: null });
-      }
-    }
-  }, [boardId, academicYearId]);
-
-  // 8. GET /api/v1/dashboard/todays-highlights
-  const fetchTodaysHighlights = useCallback(async () => {
-    const seq = ++highlightsSeq.current;
-    setHighlightsState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const res = await apiClient.get(DASHBOARD_API.todaysHighlights);
-      if (highlightsSeq.current === seq) {
-        setHighlightsState({ loading: false, error: null, data: unwrap(res.data) });
-      }
-    } catch (err) {
-      if (highlightsSeq.current === seq) {
-        setHighlightsState({ loading: false, error: getApiErrorMessage(err, "Failed to load highlights"), data: null });
-      }
-    }
+  useEffect(() => {
+    const requestId = ++filterRequestRef.current;
+    const controller = new AbortController();
+    setLoadingFilters(true);
+    apiClient.get(DASHBOARD_API.filters, { signal: controller.signal, timeout: REQUEST_TIMEOUT })
+      .then((response) => {
+      if (requestId !== filterRequestRef.current) return;
+      const years = optionRows(response.data, "year");
+      const boards = optionRows(response.data, "board");
+      setMasterOptions({ years, boards });
+      setFilters((current) => ({
+        ...current,
+        year: current.year || preferredAcademicYearValue(years),
+      }));
+      setErrors((current) => ({ ...current, filters: "" }));
+      setFiltersReady(true);
+    }).catch((error) => {
+      if (requestId !== filterRequestRef.current || error?.code === "ERR_CANCELED") return;
+      setMasterOptions({ years: [], boards: [] });
+      setErrors((current) => ({ ...current, filters: getApiErrorMessage(error, "Unable to load dashboard filters.") }));
+      setFiltersReady(true);
+    }).finally(() => { if (requestId === filterRequestRef.current) setLoadingFilters(false); });
+    return () => { filterRequestRef.current += 1; controller.abort(); };
   }, []);
 
-  // Board & Academic Year Context change effect -> Refresh all applicable cards
   useEffect(() => {
-    fetchSummary();
-    fetchStudentsOverview();
-    fetchGroupDistribution();
-    fetchCertificateRequests();
-    fetchUpcomingExaminations();
-    fetchTodaysHighlights();
-  }, [fetchSummary, fetchStudentsOverview, fetchGroupDistribution, fetchCertificateRequests, fetchUpcomingExaminations, fetchTodaysHighlights]);
+    if (!filtersReady || !filters.year || !filters.board) {
+      if (filtersReady) {
+        setWidgets((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, null])) }));
+        setLoading((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, false])) }));
+        setErrors((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, ""])) }));
+      }
+      return undefined;
+    }
+    const requestId = ++dateRequestRef.current;
+    const controller = new AbortController();
+    const requestFilters = { year: filters.year, board: filters.board, date: filters.date };
+    setWidgets((current) => ({
+      ...current,
+      ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, null])),
+    }));
+    setLoading((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, true])) }));
+    setErrors((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, ""])) }));
+    const requests = DATE_WIDGET_KEYS.map((key) => apiClient.get(DASHBOARD_API[key], { params: paramsForWidget(key, requestFilters), signal: controller.signal, timeout: REQUEST_TIMEOUT }));
+    Promise.allSettled(requests).then((results) => {
+      if (requestId !== dateRequestRef.current) return;
+      const nextErrors = {};
+      const successful = {};
+      DATE_WIDGET_KEYS.forEach((key, index) => {
+        const result = results[index];
+        if (result.status === "fulfilled") successful[key] = result.value.data;
+        else if (result.reason?.code !== "ERR_CANCELED" && result.reason?.name !== "CanceledError" && result.reason?.name !== "AbortError") nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
+      });
+      setWidgets((current) => ({ ...current, ...successful }));
+      setErrors((current) => ({ ...current, ...nextErrors }));
+      setLoading((current) => ({ ...current, ...Object.fromEntries(DATE_WIDGET_KEYS.map((key) => [key, false])) }));
+    });
+    return () => { dateRequestRef.current += 1; controller.abort(); };
+  }, [filters.year, filters.board, filters.date, filtersReady]);
 
-  // Student View-By dropdown change effect -> Refresh ONLY Student Attendance card
   useEffect(() => {
-    fetchStudentAttendance();
-  }, [fetchStudentAttendance]);
+    if (!filtersReady || !filters.year || !filters.board) {
+      if (filtersReady) {
+        setWidgets((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, null])) }));
+        setLoading((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, false])) }));
+        setErrors((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, ""])) }));
+      }
+      return undefined;
+    }
+    const requestId = ++scopeRequestRef.current;
+    const controller = new AbortController();
+    const requestFilters = { year: filters.year, board: filters.board, date: "" };
+    setWidgets((current) => ({
+      ...current,
+      ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, null])),
+    }));
+    setLoading((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, true])) }));
+    setErrors((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, ""])) }));
+    const requests = SCOPE_WIDGET_KEYS.map((key) => apiClient.get(DASHBOARD_API[key], { params: paramsForWidget(key, requestFilters), signal: controller.signal, timeout: REQUEST_TIMEOUT }));
+    Promise.allSettled(requests).then((results) => {
+      if (requestId !== scopeRequestRef.current) return;
+      const nextErrors = {};
+      const successful = {};
+      SCOPE_WIDGET_KEYS.forEach((key, index) => {
+        const result = results[index];
+        if (result.status === "fulfilled") successful[key] = result.value.data;
+        else if (result.reason?.code !== "ERR_CANCELED" && result.reason?.name !== "CanceledError" && result.reason?.name !== "AbortError") nextErrors[key] = getApiErrorMessage(result.reason, `Unable to load ${key}.`);
+      });
+      setWidgets((current) => ({ ...current, ...successful }));
+      setErrors((current) => ({ ...current, ...nextErrors }));
+      setLoading((current) => ({ ...current, ...Object.fromEntries(SCOPE_WIDGET_KEYS.map((key) => [key, false])) }));
+    });
+    return () => { scopeRequestRef.current += 1; controller.abort(); };
+  }, [filters.year, filters.board, filtersReady]);
 
-  // Staff Type dropdown change effect -> Refresh ONLY Staff Attendance card
-  useEffect(() => {
-    fetchStaffAttendance();
-  }, [fetchStaffAttendance]);
-
-  // Full Refresh Dashboard handler
-  const handleRefreshAll = useCallback(async () => {
-    setIsRefreshing(true);
-    await Promise.allSettled([
-      fetchSummary(),
-      fetchStudentsOverview(),
-      fetchGroupDistribution(),
-      fetchStudentAttendance(),
-      fetchStaffAttendance(),
-      fetchCertificateRequests(),
-      fetchUpcomingExaminations(),
-      fetchTodaysHighlights(),
-    ]);
-    setIsRefreshing(false);
-    const now = new Date();
-    const formattedNow = formattedTimestamp(now);
-    setLastUpdated(formattedNow);
-    setToastMessage(`Dashboard refreshed with latest data (${formattedNow})`);
-  }, [fetchSummary, fetchStudentsOverview, fetchGroupDistribution, fetchStudentAttendance, fetchStaffAttendance, fetchCertificateRequests, fetchUpcomingExaminations, fetchTodaysHighlights]);
-
-  // Extracted KPI Values from Summary API
-  const totalStudentsVal = metric(summaryState.data, ["totalStudents", "totalStudentCount", "studentCount"]);
-  const teachingStaffVal = metric(summaryState.data, ["teachingStaff", "teachingStaffCount"]);
-  const nonTeachingStaffVal = metric(summaryState.data, ["nonTeachingStaff", "nonTeachingStaffCount"]);
-  const totalGroupsVal = metric(summaryState.data, ["totalGroups", "groupCount"]);
-  const totalSectionsVal = metric(summaryState.data, ["totalSections", "sectionCount"]);
-
+  const totalStudents = metric(widgets.summary, ["totalStudents", "totalStudentCount", "studentCount", "studentsCount", "activeStudents", "students"]);
   const kpis = [
-    {
-      label: "Total Students",
-      value: totalStudentsVal,
-      previousValue: typeof totalStudentsVal === "number" ? Math.round(totalStudentsVal / 1.05) : null,
-      icon: totalStudentsIcon,
-      tone: "green",
-      changeLabel: "vs last year",
-      changePct: "↑ 5%",
-    },
-    {
-      label: "Teaching Staff",
-      value: teachingStaffVal,
-      previousValue: typeof teachingStaffVal === "number" ? Math.round(teachingStaffVal / 1.02) : null,
-      icon: teachingStaffIcon,
-      tone: "blue",
-      changeLabel: "vs last year",
-      changePct: "↑ 2%",
-    },
-    {
-      label: "Non-Teaching Staff",
-      value: nonTeachingStaffVal,
-      previousValue: typeof nonTeachingStaffVal === "number" ? nonTeachingStaffVal : null,
-      icon: nonTeachingStaffIcon,
-      tone: "orange",
-      changeLabel: "vs last year",
-      changePct: "→ 0%",
-    },
-    {
-      label: "Total Groups",
-      value: totalGroupsVal,
-      previousValue: typeof totalGroupsVal === "number" ? totalGroupsVal : null,
-      icon: totalGroupsIcon,
-      tone: "violet",
-      changeLabel: "vs last year",
-      changePct: "→ 0%",
-    },
-    {
-      label: "Total Sections",
-      value: totalSectionsVal,
-      previousValue: typeof totalSectionsVal === "number" ? Math.round(totalSectionsVal / 1.04) : null,
-      icon: totalSectionsIcon,
-      tone: "cyan",
-      changeLabel: "vs last year",
-      changePct: "↑ 4%",
-    },
+    { label: "Total Students", value: totalStudents, icon: totalStudentsIcon, tone: "green" },
+    { label: "Teaching Staff", value: metric(widgets.summary, ["teachingStaff", "teachingStaffCount", "totalTeachingStaff", "totalTeachingStaffCount"]), icon: teachingStaffIcon, tone: "blue" },
+    { label: "Non-Teaching Staff", value: metric(widgets.summary, ["nonTeachingStaff", "nonTeachingStaffCount", "totalNonTeachingStaff", "totalNonTeachingStaffCount"]), icon: nonTeachingStaffIcon, tone: "orange" },
+    { label: "Total Groups", value: metric(widgets.summary, ["totalGroups", "totalGroupCount", "groupCount", "groupsCount", "groups"]), icon: totalGroupsIcon, tone: "violet" },
+    { label: "Total Sections", value: metric(widgets.summary, ["totalSections", "totalSectionCount", "sectionCount", "sectionsCount", "sections"]), icon: totalSectionsIcon, tone: "cyan" },
   ];
-
-  // Students Overview Normalized Trend Data
-  const overviewChartData = useMemo(() => {
-    const raw = overviewState.data?.trend || overviewState.data?.admissionTrend || overviewState.data?.items || (Array.isArray(overviewState.data) ? overviewState.data : []);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((item) => ({
-      period: item.period || item.month || item.label || "",
-      studentsJoined: Number(item.studentsJoined ?? item.value ?? item.count ?? 0),
-    }));
-  }, [overviewState.data]);
-
-  // Group Distribution Normalized Data
-  const groupChartData = useMemo(() => {
-    const raw = groupState.data?.items || groupState.data?.groups || (Array.isArray(groupState.data) ? groupState.data : []);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((item) => ({
-      name: item.name || item.groupName || item.code || "Group",
-      value: Number(item.value ?? item.studentCount ?? item.count ?? 0),
-    }));
-  }, [groupState.data]);
-
-  // Student Attendance Normalized Values
-  const studentAttData = useMemo(() => {
-    const data = studentAttState.data || {};
-    const total = metric(data, ["total", "totalStudents", "totalCount"]);
-    const present = metric(data, ["present", "presentCount"]);
-    const absent = metric(data, ["absent", "absentCount"]);
-    const late = metric(data, ["late", "lateCount"]);
-    const percentage = metric(data, ["percentage", "attendancePercentage"]);
-
-    const chartData = data.chartData || [
-      { name: "Present", value: present ?? 0, color: "#22a447" },
-      { name: "Absent", value: absent ?? 0, color: "#ef4444" },
-      { name: "Late", value: late ?? 0, color: "#f59e0b" },
-    ];
-
-    const breakdownList = data.items || data.list || data.breakdown || (Array.isArray(data) ? data : []);
-
-    return { total, present, absent, late, percentage, chartData, breakdownList };
-  }, [studentAttState.data]);
-
-  // Staff Attendance Normalized Values
-  const staffAttData = useMemo(() => {
-    const data = staffAttState.data || {};
-    const total = metric(data, ["total", "totalStaff", "totalCount"]);
-    const present = metric(data, ["present", "presentCount"]);
-    const absent = metric(data, ["absent", "absentCount"]);
-    const late = metric(data, ["late", "lateCount"]);
-    const onLeave = metric(data, ["onLeave", "onLeaveCount", "leaveCount"]);
-    const percentage = metric(data, ["percentage", "attendancePercentage"]);
-    const teachingCount = metric(data, ["teachingCount", "teachingStaffCount"]);
-    const nonTeachingCount = metric(data, ["nonTeachingCount", "nonTeachingStaffCount"]);
-
-    const chartData = data.chartData || [
-      { name: "Present", value: present ?? 0, color: "#22a447" },
-      { name: "Absent", value: absent ?? 0, color: "#ef4444" },
-      { name: "Late", value: late ?? 0, color: "#f59e0b" },
-      { name: "On Leave", value: onLeave ?? 0, color: "#7c3aed" },
-    ];
-
-    return { total, present, absent, late, onLeave, percentage, teachingCount, nonTeachingCount, chartData };
-  }, [staffAttState.data]);
-
-  // Certificate Requests Normalized List
-  const certRequests = useMemo(() => {
-    const raw = certState.data?.items || certState.data?.requests || (Array.isArray(certState.data) ? certState.data : []);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((item, idx) => ({
-      id: item.id || idx,
-      label: item.label || item.certificateName || item.title || "Certificate Request",
-      subtitle: item.subtitle || item.studentName || item.requestNo || "",
-      status: item.status || "Pending",
-      tone: item.tone || (String(item.status).toLowerCase() === "approved" ? "green" : "orange"),
-    }));
-  }, [certState.data]);
-
-  // Upcoming Examinations Normalized List
-  const examsList = useMemo(() => {
-    const raw = examState.data?.items || examState.data?.examinations || (Array.isArray(examState.data) ? examState.data : []);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((item, idx) => ({
-      id: item.id || idx,
-      name: item.name || item.examName || "Examination",
-      context: item.context || item.dateRange || item.groupName || "",
-      badge: item.badge || item.daysLeft || item.status || "",
-    }));
-  }, [examState.data]);
-
-  // Highlights Normalized Values
-  const absentStudentsHighlight = metric(highlightsState.data, ["absentStudents", "studentsAbsentToday", "absentStudentsCount"]);
-  const lateStaffHighlight = metric(highlightsState.data, ["lateStaff", "staffLateToday", "lateStaffCount"]);
-  const pendingCertsHighlight = metric(highlightsState.data, ["pendingCertificates", "pendingCertificatesCount", "certificateRequestsPending"]);
-  const upcomingExamsHighlight = metric(highlightsState.data, ["upcomingExams", "upcomingExamsCount", "examsNext7Days"]);
-
+  const admissionTrend = useMemo(() => normalizeAdmissionTrend(widgets.admissionTrend), [widgets.admissionTrend]);
+  const gender = {
+    male: metric(widgets.studentsOverview, ["maleStudents", "maleCount", "totalMale", "boys", "boysCount", "totalBoys", "male"]),
+    female: metric(widgets.studentsOverview, ["femaleStudents", "femaleCount", "totalFemale", "girls", "girlsCount", "totalGirls", "female"]),
+    other: metric(widgets.studentsOverview, ["otherStudents", "otherCount", "totalOther", "others", "othersCount", "totalOthers", "other"]),
+  };
+  const groupDistribution = useMemo(() => normalizeGroupDistribution(widgets.groupDistribution), [widgets.groupDistribution]);
+  const groupTotal = groupDistribution.reduce((sum, item) => sum + item.value, 0);
+  const attendanceWeek = useMemo(() => calendarWeekRange(filters.date), [filters.date]);
+  const weeklyAttendance = useMemo(() => normalizeWeeklyAttendance(widgets.weeklyAttendance, filters.date), [widgets.weeklyAttendance, filters.date]);
+  const certificateRows = useMemo(() => normalizeCertificateRequests(widgets.certificateRequests), [widgets.certificateRequests]);
+  const certificateTotal = metric(widgets.certificateRequests, ["totalRequests", "totalCertificateRequests", "requestCount"])
+    ?? (certificateRows.length ? certificateRows.reduce((sum, item) => sum + item.value, 0) : undefined);
+  const upcomingExaminations = useMemo(() => normalizeUpcomingExaminations(widgets.upcomingExaminations), [widgets.upcomingExaminations]);
   const greeting = greetingForHour(currentHour);
+  const dashboardTitle = (
+    <span className="dashboard-welcome-title" style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontSize: "21px", fontWeight: 800 }}>
+      <span>{greeting.icon}</span>
+      <span>{greeting.message}, Admin!</span>
+    </span>
+  );
 
   return (
-    <DashboardLayout title={null} subtitle={null} actions={null} breadcrumb={["Overview"]}>
+    <DashboardLayout title={dashboardTitle} subtitle={null} actions={null} breadcrumb={["Overview"]}>
       <main className="dashboard-page">
-        {/* Top Header Bar & Control Panel */}
-        <div className="dashboard-header-bar">
-          <div className="dashboard-greeting-wrap">
-            <h1 className="dashboard-greeting-title">
-              <span className="dashboard-greeting-emoji">{greeting.icon}</span> {greeting.message}, Admin!
-            </h1>
-            <p className="dashboard-greeting-sub">Here's what's happening in your institution today.</p>
-          </div>
-          <div className="dashboard-header-controls">
-            <div className="dashboard-last-updated-badge">
-              <Clock size={14} />
-              <span>Last updated <strong>{lastUpdated}</strong></span>
-            </div>
-            <button
-              type="button"
-              className="cms-btn cms-btn-primary dashboard-refresh-btn"
-              disabled={isRefreshing}
-              onClick={handleRefreshAll}
-              title="Click to refresh latest dashboard metrics"
-            >
-              <RefreshCw size={14} className={isRefreshing ? "dashboard-spin" : ""} />
-              <span>{isRefreshing ? "Refreshing..." : "Refresh Dashboard"}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Global Context Viewing Banner */}
         <div className="dashboard-viewing-banner">
-          <Info size={16} className="dashboard-banner-icon" />
+          <Info size={18} className="dashboard-banner-icon" />
           <span>
-            You are viewing data for <strong>{selectedBoard?.name || selectedBoard?.code || "BIEAP"}</strong> •{" "}
-            <strong>Academic Year {selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "2026–2027"}</strong>. Change Board or Academic Year to view corresponding records.
+            You are viewing data for <strong>{selectedBoard?.name || selectedBoard?.code || "BIEAP"}</strong> • <strong>Academic Year {selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "2025–2026"}</strong>. Change Board or Academic Year to view corresponding records.
           </span>
         </div>
-
-        {/* 5 KPI Cards with 3D Icons */}
-        <section className="dashboard-kpi-grid" aria-label="College metrics">
-          {kpis.map((item) => (
-            <KpiCard key={item.label} {...item} loading={summaryState.loading} />
+      {errors.filters ? <div className="dashboard-warning" role="alert">{errors.filters}</div> : null}
+      <section className="dashboard-kpi-grid" aria-label="College totals">{kpis.map((item) => <KpiCard key={item.label} {...item} loading={loading.summary} />)}</section>
+      <nav className="dashboard-quick-actions" aria-label="Quick Actions">
+        <h2>Quick Actions</h2>
+        <div>
+          {QUICK_ACTIONS.map(({ label, to, icon, tone }) => (
+            <Link key={label} to={to} className={`dashboard-quick-action tone-${tone}`}>
+              <span className="dashboard-quick-action-icon">
+                <img src={icon} alt="" aria-hidden="true" />
+              </span>
+              {label}
+            </Link>
           ))}
-        </section>
-
-        {/* Quick Actions Bar with 3D Icons */}
-        <nav className="dashboard-quick-actions" aria-label="Quick Actions">
-          <h2>Quick Actions</h2>
-          <div className="dashboard-quick-actions-list">
-            {QUICK_ACTIONS.map(({ label, to, icon, tone }) => (
-              <Link key={label} to={to} className={`dashboard-quick-action tone-${tone}`}>
-                <span className="dashboard-quick-action-icon">
-                  <img src={icon} alt="" aria-hidden="true" />
-                </span>
-                <span>{label}</span>
-              </Link>
-            ))}
+        </div>
+      </nav>
+      <section className="dashboard-main-grid" aria-label="Dashboard analytics">
+        <article className="dashboard-card dashboard-students-overview-card"><CardHeader title="Students Overview" />
+          {loading.admissionTrend ? <LoadingState label="Loading admission trend..." /> : errors.admissionTrend ? <EmptyState message="Unable to load admission trend." /> : admissionTrend.length ? <div className="dashboard-chart dashboard-admission-chart" role="img" aria-label="Students joined by month"><ResponsiveContainer width="100%" height="100%"><AreaChart data={admissionTrend} margin={{ top: 10, right: 5, left: -24, bottom: 0 }}><defs><linearGradient id="studentsAdmissionArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.3} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.03} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="period" tickLine={false} axisLine={false} interval={0} height={20} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip formatter={(value) => [formatNumber(value), "Students joined"]} /><Area type="monotone" dataKey="studentsJoined" name="Students Joined" stroke="#2563eb" strokeWidth={2.5} fill="url(#studentsAdmissionArea)" dot={{ r: 3, fill: "#2563eb" }} activeDot={{ r: 5 }} /></AreaChart></ResponsiveContainer></div> : <EmptyState message="No admission trend is available for the selected filters." />}
+          <div className="dashboard-gender-summary dashboard-gender-summary-compact" aria-label="Student gender summary" aria-busy={loading.studentsOverview}>
+            <div><span className="dashboard-gender-icon male"><Users size={15} /></span><p>Male <strong>{loading.studentsOverview ? "…" : formatNumber(gender.male)}</strong></p></div>
+            <div><span className="dashboard-gender-icon female"><Users size={15} /></span><p>Female <strong>{loading.studentsOverview ? "…" : formatNumber(gender.female)}</strong></p></div>
+            <div><span className="dashboard-gender-icon other"><Users size={15} /></span><p>Other <strong>{loading.studentsOverview ? "…" : formatNumber(gender.other)}</strong></p></div>
           </div>
-        </nav>
-
-        {/* Second Row Grid: Students Overview | Students by Group | Student Attendance Today */}
-        <section className="dashboard-grid-row dashboard-row-three" aria-label="Main Analytics">
-          {/* Card 1: Students Overview */}
-          <article className="dashboard-card dashboard-students-overview-card">
-            <CardHeader title="Students Overview" action={<Link to="/dashboard/students" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>} />
-            {overviewState.loading ? (
-              <LoadingState label="Loading overview..." />
-            ) : overviewState.error ? (
-              <ErrorState message={overviewState.error} onRetry={fetchStudentsOverview} />
-            ) : overviewChartData.length === 0 ? (
-              <EmptyState message="No students overview data available." />
-            ) : (
-              <div className="dashboard-card-body">
-                <div className="dashboard-chart dashboard-area-chart-wrap">
-                  <ResponsiveContainer width="100%" height={135}>
-                    <AreaChart data={overviewChartData} margin={{ top: 10, right: 10, left: -24, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="admissionGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#22a447" stopOpacity={0.35} />
-                          <stop offset="100%" stopColor="#22a447" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--cms-border)" />
-                      <XAxis dataKey="period" tickLine={false} axisLine={false} height={20} tick={{ fontSize: 10 }} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-                      <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
-                      <Area type="monotone" dataKey="studentsJoined" stroke="#22a447" strokeWidth={2.5} fill="url(#admissionGradient)" dot={{ r: 3, fill: "#22a447" }} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="dashboard-students-chips">
-                  <div className="dashboard-student-chip chip-total">
-                    <span className="chip-icon"><Users size={15} /></span>
-                    <div>
-                      <strong>{formatNumber(totalStudentsVal ?? metric(overviewState.data, ["totalStudents", "totalCount"]))}</strong>
-                      <small>Total Students</small>
-                    </div>
-                  </div>
-                  <div className="dashboard-student-chip chip-boys">
-                    <span className="chip-icon"><Users size={15} /></span>
-                    <div>
-                      <strong>{formatNumber(metric(overviewState.data, ["boys", "boysCount", "male", "maleCount"]))}</strong>
-                      <small>Boys</small>
-                    </div>
-                  </div>
-                  <div className="dashboard-student-chip chip-girls">
-                    <span className="chip-icon"><Users size={15} /></span>
-                    <div>
-                      <strong>{formatNumber(metric(overviewState.data, ["girls", "girlsCount", "female", "femaleCount"]))}</strong>
-                      <small>Girls</small>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </article>
-
-          {/* Card 2: Students by Group */}
-          <article className="dashboard-card dashboard-group-card">
-            <CardHeader title="Students by Group" action={<Link to="/dashboard/courses" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>} />
-            {groupState.loading ? (
-              <LoadingState label="Loading groups..." />
-            ) : groupState.error ? (
-              <ErrorState message={groupState.error} onRetry={fetchGroupDistribution} />
-            ) : groupChartData.length === 0 ? (
-              <EmptyState message="No group distribution data available." />
-            ) : (
-              <div className="dashboard-card-body">
-                <div className="dashboard-chart dashboard-bar-chart-wrap">
-                  <ResponsiveContainer width="100%" height={175}>
-                    <BarChart data={groupChartData} margin={{ top: 15, right: 5, left: -22, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--cms-border)" />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} height={20} tick={{ fontSize: 10, fontWeight: 700 }} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-                      <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                        {groupChartData.map((entry, index) => (
-                          <Cell key={entry.name || index} fill={GROUP_COLORS[index % GROUP_COLORS.length]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-          </article>
-
-          {/* Card 3: Students Attendance Overview (Today) */}
-          <article className="dashboard-card dashboard-attendance-today-card">
-            <CardHeader title="Students Attendance Overview (Today)">
-              <div className="dashboard-header-select-wrap">
-                <span className="dashboard-select-label">View By:</span>
-                <select
-                  className="dashboard-header-dropdown"
-                  value={studentView}
-                  onChange={(e) => setStudentView(e.target.value)}
-                  aria-label="Select View By"
-                >
-                  <option value="all">Overall</option>
-                  <option value="academic-level">Academic Level</option>
-                  <option value="group">Group</option>
-                  <option value="section">Section</option>
-                </select>
-              </div>
-            </CardHeader>
-
-            {studentAttState.loading ? (
-              <LoadingState label="Updating attendance..." />
-            ) : studentAttState.error ? (
-              <ErrorState message={studentAttState.error} onRetry={fetchStudentAttendance} />
-            ) : (
-              <div className="dashboard-card-body dashboard-attendance-body">
-                {studentView === "all" ? (
-                  studentAttData.total === undefined && studentAttData.present === undefined ? (
-                    <EmptyState message="No student attendance data available for today." />
-                  ) : (
-                    <>
-                      {/* Donut Chart & Legend */}
-                      <div className="dashboard-attendance-donut-row">
-                        <div className="dashboard-donut-chart-wrap">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={studentAttData.chartData}
-                                dataKey="value"
-                                nameKey="name"
-                                innerRadius="65%"
-                                outerRadius="90%"
-                                paddingAngle={3}
-                                stroke="var(--cms-surface)"
-                                strokeWidth={2}
-                              >
-                                {studentAttData.chartData.map((entry) => (
-                                  <Cell key={entry.name} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div className="dashboard-donut-center">
-                            <strong>{studentAttData.percentage ?? 0}%</strong>
-                            <span>Attendance</span>
-                          </div>
-                        </div>
-
-                        <div className="dashboard-attendance-legend-vertical">
-                          <div className="legend-item">
-                            <span className="legend-label">
-                              <span className="dot dot-present" /> Present
-                            </span>
-                            <span className="legend-val">
-                              <strong>{formatNumber(studentAttData.present)}</strong> <small>({studentAttData.percentage ?? 0}%)</small>
-                            </span>
-                          </div>
-                          <div className="legend-item">
-                            <span className="legend-label">
-                              <span className="dot dot-absent" /> Absent
-                            </span>
-                            <span className="legend-val">
-                              <strong>{formatNumber(studentAttData.absent)}</strong>
-                            </span>
-                          </div>
-                          <div className="legend-item">
-                            <span className="legend-label">
-                              <span className="dot dot-late" /> Late
-                            </span>
-                            <span className="legend-val">
-                              <strong>{formatNumber(studentAttData.late)}</strong>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 5 Summary KPI Chips */}
-                      <div className="dashboard-attendance-kpi-row">
-                        <div className="att-kpi-chip">
-                          <small>Total Students</small>
-                          <strong>{formatNumber(studentAttData.total)}</strong>
-                        </div>
-                        <div className="att-kpi-chip text-present">
-                          <small>Present</small>
-                          <strong>{formatNumber(studentAttData.present)}</strong>
-                        </div>
-                        <div className="att-kpi-chip text-absent">
-                          <small>Absent</small>
-                          <strong>{formatNumber(studentAttData.absent)}</strong>
-                        </div>
-                        <div className="att-kpi-chip text-late">
-                          <small>Late</small>
-                          <strong>{formatNumber(studentAttData.late)}</strong>
-                        </div>
-                        <div className="att-kpi-chip text-primary">
-                          <small>Attendance</small>
-                          <strong>{formatNumber(studentAttData.percentage)}%</strong>
-                        </div>
-                      </div>
-                    </>
-                  )
-                ) : studentAttData.breakdownList.length === 0 ? (
-                  <EmptyState message={`No ${studentView} attendance records available.`} />
-                ) : (
-                  <div className="dashboard-attendance-breakdown-list">
-                    {studentAttData.breakdownList.map((item, idx) => {
-                      const name = item.name || item.groupName || item.sectionName || item.levelName || `Item ${idx + 1}`;
-                      const pct = Number(item.percentage ?? (item.total ? ((item.present / item.total) * 100).toFixed(1) : 0));
-                      const itemColor = item.color || "#22a447";
-                      return (
-                        <div key={name || idx} className="att-breakdown-item">
-                          <div className="att-breakdown-head">
-                            <span className="att-breakdown-name" style={{ color: item.color || "inherit" }}>{name}</span>
-                            <span className="att-breakdown-pct">{pct}%</span>
-                          </div>
-                          <div className="att-progress-bar">
-                            <div className="att-progress-fill" style={{ width: `${Math.min(100, Math.max(0, pct))}%`, backgroundColor: itemColor }} />
-                          </div>
-                          <div className="att-breakdown-meta">
-                            <span>Present: <strong>{formatNumber(item.present)}</strong> / {formatNumber(item.total)}</span>
-                            <span>Absent: <strong>{formatNumber(item.absent)}</strong></span>
-                            {item.late !== undefined ? <span>Late: <strong>{formatNumber(item.late)}</strong></span> : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Footer */}
-                <div className="dashboard-card-footer">
-                  <span className="dashboard-footer-time">
-                    <Clock size={13} /> Last updated: {studentAttState.timestamp}
-                  </span>
-                  <Link to={`/dashboard/attendance/student?view=details&viewBy=${studentView}`} className="dashboard-footer-btn">
-                    View Attendance Details <ChevronRight size={14} />
-                  </Link>
-                </div>
-              </div>
-            )}
-          </article>
-        </section>
-
-        {/* Third Row Grid: Staff Attendance Today | Certificate Requests | Upcoming Examinations */}
-        <section className="dashboard-grid-row dashboard-row-three" aria-label="Secondary Analytics">
-          {/* Card 1: Staff Attendance Overview (Today) */}
-          <article className="dashboard-card dashboard-staff-attendance-card">
-            <CardHeader title="Staff Attendance Overview (Today)">
-              <select
-                className="dashboard-header-dropdown"
-                value={staffType}
-                onChange={(e) => setStaffType(e.target.value)}
-                aria-label="Staff Type"
-              >
-                <option value="all">All Staff</option>
-                <option value="teaching">Teaching Staff</option>
-                <option value="non-teaching">Non-Teaching Staff</option>
-              </select>
-            </CardHeader>
-
-            {staffAttState.loading ? (
-              <LoadingState label="Updating staff attendance..." />
-            ) : staffAttState.error ? (
-              <ErrorState message={staffAttState.error} onRetry={fetchStaffAttendance} />
-            ) : staffAttData.total === undefined && staffAttData.present === undefined ? (
-              <EmptyState message="No staff attendance data available for today." />
-            ) : (
-              <div className="dashboard-card-body dashboard-attendance-body">
-                {/* Donut Chart & Legend */}
-                <div className="dashboard-attendance-donut-row">
-                  <div className="dashboard-donut-chart-wrap">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={staffAttData.chartData}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius="65%"
-                          outerRadius="90%"
-                          paddingAngle={3}
-                          stroke="var(--cms-surface)"
-                          strokeWidth={2}
-                        >
-                          {staffAttData.chartData.map((entry) => (
-                            <Cell key={entry.name} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(val) => [formatNumber(val), "Staff"]} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="dashboard-donut-center">
-                      <strong>{staffAttData.percentage ?? 0}%</strong>
-                      <span>Attendance</span>
-                    </div>
-                  </div>
-
-                  <div className="dashboard-attendance-legend-vertical">
-                    <div className="legend-item">
-                      <span className="legend-label">
-                        <span className="dot dot-present" /> Present
-                      </span>
-                      <span className="legend-val">
-                        <strong>{formatNumber(staffAttData.present)}</strong>
-                      </span>
-                    </div>
-                    <div className="legend-item">
-                      <span className="legend-label">
-                        <span className="dot dot-absent" /> Absent
-                      </span>
-                      <span className="legend-val">
-                        <strong>{formatNumber(staffAttData.absent)}</strong>
-                      </span>
-                    </div>
-                    <div className="legend-item">
-                      <span className="legend-label">
-                        <span className="dot dot-late" /> Late
-                      </span>
-                      <span className="legend-val">
-                        <strong>{formatNumber(staffAttData.late)}</strong>
-                      </span>
-                    </div>
-                    <div className="legend-item">
-                      <span className="legend-label">
-                        <span className="dot dot-leave" /> On Leave
-                      </span>
-                      <span className="legend-val">
-                        <strong>{formatNumber(staffAttData.onLeave)}</strong>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Staff Summary Metrics & Split Note */}
-                <div className="dashboard-staff-kpi-wrap">
-                  <div className="dashboard-staff-kpis">
-                    <div className="staff-chip">
-                      <small>Total Staff</small>
-                      <strong>{formatNumber(staffAttData.total)}</strong>
-                    </div>
-                    <div className="staff-chip text-present">
-                      <small>Present</small>
-                      <strong>{formatNumber(staffAttData.present)}</strong>
-                    </div>
-                    <div className="staff-chip text-absent">
-                      <small>Absent</small>
-                      <strong>{formatNumber(staffAttData.absent)}</strong>
-                    </div>
-                    <div className="staff-chip text-late">
-                      <small>Late</small>
-                      <strong>{formatNumber(staffAttData.late)}</strong>
-                    </div>
-                    <div className="staff-chip text-leave">
-                      <small>On Leave</small>
-                      <strong>{formatNumber(staffAttData.onLeave)}</strong>
-                    </div>
-                  </div>
-
-                  {staffType === "all" && (staffAttData.teachingCount !== undefined || staffAttData.nonTeachingCount !== undefined) ? (
-                    <div className="dashboard-staff-split-note">
-                      <span>Teaching: <strong>{formatNumber(staffAttData.teachingCount)}</strong></span>
-                      <span className="split-divider">|</span>
-                      <span>Non-Teaching: <strong>{formatNumber(staffAttData.nonTeachingCount)}</strong></span>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Footer */}
-                <div className="dashboard-card-footer">
-                  <span className="dashboard-footer-time">
-                    <Clock size={13} /> Last updated: {staffAttState.timestamp}
-                  </span>
-                  <Link to="/dashboard/attendance/staff" className="dashboard-footer-btn">
-                    View Staff Attendance <ChevronRight size={14} />
-                  </Link>
-                </div>
-              </div>
-            )}
-          </article>
-
-          {/* Card 2: Certificate Requests */}
-          <article className="dashboard-card dashboard-certificate-card">
-            <CardHeader
-              title="Certificate Requests"
-              action={<Link to="/dashboard/certificates" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>}
-            />
-            {certState.loading ? (
-              <LoadingState label="Loading requests..." />
-            ) : certState.error ? (
-              <ErrorState message={certState.error} onRetry={fetchCertificateRequests} />
-            ) : certRequests.length === 0 ? (
-              <EmptyState message="No certificate requests found." />
-            ) : (
-              <div className="dashboard-card-body">
-                <div className="dashboard-info-list">
-                  {certRequests.map((item) => (
-                    <div key={item.id} className="dashboard-info-item">
-                      <span className={`dashboard-list-icon tone-${item.tone}`}>
-                        <FileText size={15} />
-                      </span>
-                      <div className="dashboard-info-content">
-                        <strong>{item.label}</strong>
-                        <small>{item.subtitle}</small>
-                      </div>
-                      <span className={`dashboard-status-badge badge-${String(item.status).toLowerCase()}`}>
-                        {item.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </article>
-
-          {/* Card 3: Upcoming Examinations */}
-          <article className="dashboard-card dashboard-exams-card">
-            <CardHeader
-              title={`Upcoming Examinations (${examsList.length})`}
-              action={<Link to="/dashboard/examinations" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>}
-            />
-            {examState.loading ? (
-              <LoadingState label="Loading exams..." />
-            ) : examState.error ? (
-              <ErrorState message={examState.error} onRetry={fetchUpcomingExaminations} />
-            ) : examsList.length === 0 ? (
-              <EmptyState message="No upcoming examinations scheduled." />
-            ) : (
-              <div className="dashboard-card-body">
-                <div className="dashboard-info-list">
-                  {examsList.map((item) => (
-                    <div key={item.id} className="dashboard-info-item">
-                      <span className="dashboard-activity-marker">
-                        <CalendarDays size={15} />
-                      </span>
-                      <div className="dashboard-info-content">
-                        <strong>{item.name}</strong>
-                        <small>{item.context}</small>
-                      </div>
-                      <span className="dashboard-days-badge">{item.badge}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </article>
-        </section>
-
-        {/* Bottom Strip: Today's Highlights */}
-        <section className="dashboard-highlights-strip" aria-label="Today's Highlights">
-          <div className="highlights-header">
-            <span className="highlights-icon">💡</span>
-            <h3>Today's Highlights</h3>
-          </div>
-          <div className="highlights-cards">
-            <div className="highlight-card">
-              <span className="highlight-badge badge-red"><UserX size={13} /></span>
-              <div>
-                <strong>{formatNumber(absentStudentsHighlight)}</strong>
-                <small>Students absent today</small>
-              </div>
-            </div>
-            <div className="highlight-card">
-              <span className="highlight-badge badge-orange"><Clock size={13} /></span>
-              <div>
-                <strong>{formatNumber(lateStaffHighlight)}</strong>
-                <small>Staff are late today</small>
-              </div>
-            </div>
-            <div className="highlight-card">
-              <span className="highlight-badge badge-violet"><FileText size={13} /></span>
-              <div>
-                <strong>{formatNumber(pendingCertsHighlight)}</strong>
-                <small>Certificate requests pending</small>
-              </div>
-            </div>
-            <div className="highlight-card">
-              <span className="highlight-badge badge-blue"><CalendarDays size={13} /></span>
-              <div>
-                <strong>{formatNumber(upcomingExamsHighlight)}</strong>
-                <small>Exams in next 7 days</small>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-      <Toast message={toastMessage} onClose={() => setToastMessage("")} />
-    </DashboardLayout>
+        </article>
+        <article className="dashboard-card dashboard-group-card"><CardHeader title="Students by Group" />
+          {loading.groupDistribution ? <LoadingState label="Loading group distribution..." /> : groupDistribution.length ? <div className="dashboard-group-content"><div className={`dashboard-donut${groupTotal ? "" : " is-empty"}`} role="img" aria-label="Student distribution by group"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={groupDistribution} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2} stroke="var(--cms-surface)" strokeWidth={2}>{groupDistribution.map((item, index) => <Cell key={item.name} fill={GROUP_COLORS[index % GROUP_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [formatNumber(value), "Students"]} /></PieChart></ResponsiveContainer><div><strong>{formatNumber(totalStudents ?? groupTotal)}</strong><span>Total Students</span></div></div><div className="dashboard-group-list">{groupDistribution.map((item, index) => <div key={item.name}><i style={{ backgroundColor: GROUP_COLORS[index % GROUP_COLORS.length] }} /><span title={item.name}>{item.name}</span><strong>{formatNumber(item.value)}</strong><em>{groupTotal ? `${(item.value / groupTotal * 100).toFixed(1)}%` : "0%"}</em></div>)}</div></div> : <EmptyState message={errors.groupDistribution ? "Unable to load group distribution." : "No group distribution is available for the selected filters."} />}
+        </article>
+        <article className="dashboard-card dashboard-attendance-card"><CardHeader title="Students Attendance Overview (This Week)" />
+          {loading.weeklyAttendance ? <LoadingState label="Loading weekly attendance..." /> : errors.weeklyAttendance ? <EmptyState message="Unable to load weekly attendance." /> : weeklyAttendance.length ? <><div className="dashboard-chart dashboard-attendance-chart" role="img" aria-label={`Attendance from ${formatDateLabel(attendanceWeek.start)} through ${formatDateLabel(attendanceWeek.end)}`}><ResponsiveContainer width="100%" height="100%"><BarChart data={weeklyAttendance} margin={{ top: 22, right: 4, left: -24, bottom: 6 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" tickLine={false} axisLine={false} height={24} interval={0} tickFormatter={(date) => formatDateLabel(date, { weekday: "short" })} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} /><Tooltip labelFormatter={(_, entries) => entries?.[0]?.payload?.date ? formatDateLabel(entries[0].payload.date, { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) : ""} /><Bar dataKey="present" name="Present" stackId="attendance" fill="#22a447" radius={[3, 3, 0, 0]} /><Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" /><Bar dataKey="late" name="Late" stackId="attendance" fill="#f59e0b" /></BarChart></ResponsiveContainer></div><div className="dashboard-attendance-legend" aria-label="Attendance categories"><span><i className="present" />Present</span><span><i className="absent" />Absent</span><span><i className="late" />Late</span></div></> : <EmptyState message="No attendance data is available for the selected week." />}<p className="dashboard-card-note">Current week (Monday–Sunday) · {formatNumericDate(attendanceWeek.start)} – {formatNumericDate(attendanceWeek.end)}</p>
+        </article>
+      </section>
+      <section className="dashboard-lower-grid" aria-label="Certificate requests and upcoming examinations">
+        <article className="dashboard-card dashboard-certificate-card"><CardHeader title="Certificate Requests" action={<Link to="/dashboard/certificates" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.certificateRequests ? <LoadingState label="Loading certificate requests..." /> : certificateRows.length ? <div className="dashboard-certificate-list">{certificateRows.map(({ key, label, icon: Icon, tone, value }) => <div key={key}><span className={`dashboard-list-icon tone-${tone}`}><Icon size={16} /></span><span>{label}</span><strong>{formatNumber(value)}</strong></div>)}<footer><span>Total Requests</span><strong>{formatNumber(certificateTotal)}</strong></footer></div> : <EmptyState message={errors.certificateRequests ? "Unable to load certificate requests." : "No certificate requests are available for the selected filters."} />}</article>
+        <article className="dashboard-card"><CardHeader title={`Upcoming Examinations (${loading.upcomingExaminations ? "…" : upcomingExaminations.length})`} action={<Link to="/dashboard/examinations" className="dashboard-view-link">View All <ChevronRight size={15} /></Link>} />{loading.upcomingExaminations ? <LoadingState label="Loading upcoming examinations..." /> : upcomingExaminations.length ? <div className="dashboard-info-list">{upcomingExaminations.slice(0, 6).map((item) => <div key={item.id}><span className="dashboard-activity-marker"><CalendarDays size={14} /></span><p><strong>{item.name}</strong><span>{item.context || item.status || "Examination details"}</span></p><div className="dashboard-info-metrics"><span>{formatDateLabel(item.date, { day: "2-digit", month: "short", year: "numeric" })}</span></div></div>)}</div> : <EmptyState message={errors.upcomingExaminations ? "Unable to load upcoming examinations." : "No upcoming examinations are available for the selected filters."} />}</article>
+      </section>
+    </main>
+  </DashboardLayout>
   );
 }

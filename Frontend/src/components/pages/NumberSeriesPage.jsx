@@ -1,1024 +1,1179 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  Users,
-  GraduationCap,
-  Hash,
-  User,
-  Layers,
-  BookOpen,
-  Award,
-  Receipt,
-  Search,
-  ArrowLeft,
-  Edit3,
-  Eye,
-  Copy,
-  Check,
-  Sparkles,
-  Info,
-  AlertTriangle,
-  CheckCircle2,
-  X,
-  ChevronRight,
-  RefreshCw,
+  Plus, Search, Edit3, Eye, RotateCcw, Play, ArrowLeft, CheckCircle, AlertTriangle, ListOrdered, ShieldAlert, Copy, Sparkles, Check
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Modal, Toast } from "@/components/common/Ui.jsx";
+import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import {
-  readNumberSeriesSettings,
-  writeNumberSeriesSettings,
-  readConfigHistory,
-  appendConfigHistory,
-  buildNumberFromFormat,
-  getNextNumberPreview,
-  validateNumberSeries,
-  MOCK_GENERATED_HISTORY,
+  readNumberSeriesSettings, writeNumberSeriesSettings, formatSeriesNumber, resetNumberSeriesSequence
 } from "@/data/numberSeriesData.js";
 import "./NumberSeriesPage.css";
 
-const SERIES_ICONS = {
-  "employee-id": Users,
-  "admission-no": GraduationCap,
-  "roll-no": Hash,
-  "student-id": User,
-  "section-name": Layers,
-  "exam-code": BookOpen,
-  "certificate-number": Award,
-  "receipt-no": Receipt,
-};
-
 export default function NumberSeriesPage({ mode = "dashboard" }) {
   const navigate = useNavigate();
-  const { seriesId, id } = useParams();
-  const activeId = seriesId || id;
-
+  const { id } = useParams();
   const [seriesList, setSeriesList] = useState(readNumberSeriesSettings);
   const [toast, setToast] = useState(null);
-  const [previewModalSeries, setPreviewModalSeries] = useState(null);
 
   const activeSeries = useMemo(() => {
-    if (!activeId) return null;
-    return seriesList.find((s) => s.id === activeId || s.key === activeId) || null;
-  }, [activeId, seriesList]);
+    if (!id) return null;
+    return seriesList.find((s) => s.id === id || s.key === id) || null;
+  }, [id, seriesList]);
 
   const updateSeriesList = (newList) => {
     setSeriesList(newList);
     writeNumberSeriesSettings(newList);
   };
 
-  const handleSaveConfig = (updatedSeries) => {
-    const newList = seriesList.map((s) => (s.id === updatedSeries.id ? updatedSeries : s));
-    updateSeriesList(newList);
-    appendConfigHistory(updatedSeries.id, updatedSeries);
-    setToast({ message: "Number series updated successfully.", type: "success" });
-  };
+  if (mode === "add") {
+    return (
+      <AddNumberSeriesScreen
+        seriesList={seriesList}
+        onSave={(newSeries) => {
+          const updated = [newSeries, ...seriesList];
+          updateSeriesList(updated);
+          setToast("Number series created successfully!");
+          setTimeout(() => navigate("/dashboard/settings/number-series"), 400);
+        }}
+      />
+    );
+  }
 
   if (mode === "edit") {
-    if (!activeSeries) {
-      return (
-        <DashboardLayout title="ID & Number Series" subtitle="Configure Employee IDs, Admission Numbers and various document number formats.">
-          <div className="ns-not-found">
-            <h3>Series Not Found</h3>
-            <p>The requested number series configuration does not exist.</p>
-            <Link to="/dashboard/settings/number-series" className="cms-btn cms-btn-primary">
-              <ArrowLeft size={16} /> Back to ID & Number Series
-            </Link>
-          </div>
-        </DashboardLayout>
-      );
-    }
     return (
-      <NumberSeriesEditView
+      <NumberSeriesDetailsScreen
         series={activeSeries}
-        onSave={(updated) => {
-          handleSaveConfig(updated);
-          setTimeout(() => navigate(`/dashboard/settings/number-series/${updated.id}`), 400);
+        initialEditing={true}
+        onSave={(updatedSeries) => {
+          const updated = seriesList.map((s) => (s.id === updatedSeries.id ? updatedSeries : s));
+          updateSeriesList(updated);
         }}
-        onPreviewModal={(s) => setPreviewModalSeries(s)}
-        toast={toast}
-        setToast={setToast}
       />
     );
   }
 
-  if (mode === "detail" || mode === "view") {
-    if (!activeSeries) {
-      return (
-        <DashboardLayout title="ID & Number Series" subtitle="Configure Employee IDs, Admission Numbers and various document number formats.">
-          <div className="ns-not-found">
-            <h3>Series Not Found</h3>
-            <p>The requested number series configuration does not exist.</p>
-            <Link to="/dashboard/settings/number-series" className="cms-btn cms-btn-primary">
-              <ArrowLeft size={16} /> Back to ID & Number Series
-            </Link>
-          </div>
-        </DashboardLayout>
-      );
-    }
+  if (mode === "view") {
     return (
-      <>
-        <NumberSeriesDetailView
-          series={activeSeries}
-          onPreviewModal={(s) => setPreviewModalSeries(s)}
-          toast={toast}
-          setToast={setToast}
-        />
-        {previewModalSeries && (
-          <PreviewNextModal series={previewModalSeries} onClose={() => setPreviewModalSeries(null)} />
-        )}
-      </>
+      <NumberSeriesDetailsScreen
+        series={activeSeries}
+        initialEditing={false}
+        onSave={(updatedSeries) => {
+          const updated = seriesList.map((s) => (s.id === updatedSeries.id ? updatedSeries : s));
+          updateSeriesList(updated);
+        }}
+      />
+    );
+  }
+
+  if (mode === "preview") {
+    return <NumberSeriesPreviewScreen seriesList={seriesList} />;
+  }
+
+  if (mode === "reset") {
+    return (
+      <ResetNumberSeriesScreen
+        series={activeSeries}
+        onReset={(idToReset, newCurrent) => {
+          resetNumberSeriesSequence(idToReset, newCurrent);
+          setSeriesList(readNumberSeriesSettings());
+          setToast("Sequence counter reset successfully!");
+          setTimeout(() => navigate("/dashboard/settings/number-series"), 400);
+        }}
+      />
     );
   }
 
   return (
-    <>
-      <NumberSeriesDashboardView
-        seriesList={seriesList}
-        onPreviewModal={(s) => setPreviewModalSeries(s)}
-        toast={toast}
-        setToast={setToast}
-      />
-      {previewModalSeries && (
-        <PreviewNextModal series={previewModalSeries} onClose={() => setPreviewModalSeries(null)} />
-      )}
-    </>
+    <NumberSeriesDashboardScreen
+      seriesList={seriesList}
+      onUpdate={updateSeriesList}
+      toast={toast}
+      setToast={setToast}
+    />
   );
 }
 
-// ======================================================================
-// 1. DASHBOARD VIEW (MAIN CARD GRID)
-// ======================================================================
-function NumberSeriesDashboardView({ seriesList, onPreviewModal, toast, setToast }) {
+function NumberSeriesDashboardScreen({ seriesList, onUpdate, toast, setToast }) {
   const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("");
 
-  return (
-    <DashboardLayout
-      title="ID & Number Series"
-      subtitle="Configure Employee IDs, Admission Numbers and various document number formats."
-      breadcrumb={["Home", "Settings", "ID & Number Series"]}
-    >
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
-      <div className="ns-dashboard-container">
-        {/* TOP NOTICE BANNER */}
-        <div className="ns-info-banner">
-          <Info size={18} className="ns-info-icon" />
-          <div>
-            <strong>Fixed System Series</strong>
-            <p>
-              Numbering categories are fixed system configurations. You can edit formats, preview next sequence values, and view generation logs.
-            </p>
-          </div>
-        </div>
-
-        {/* 8 FIXED CARDS GRID (4 PER ROW DESKTOP, 2 TABLET, 1 MOBILE) */}
-        <div className="ns-card-grid">
-          {seriesList.map((series) => {
-            const IconComponent = SERIES_ICONS[series.id] || Hash;
-            const nextVal = getNextNumberPreview(series);
-
-            return (
-              <div key={series.id} className="ns-card">
-                <div className="ns-card-top">
-                  <div className="ns-card-icon-box">
-                    <IconComponent size={22} />
-                  </div>
-                  <div className="ns-card-badge">Active</div>
-                </div>
-
-                <h3 className="ns-card-title">{series.name}</h3>
-
-                <div className="ns-card-example-box">
-                  <span className="ns-card-example-lbl">Current / Next Example:</span>
-                  <div className="ns-card-example-val">{series.currentExample || nextVal}</div>
-                </div>
-
-                <p className="ns-card-desc">{series.description}</p>
-
-                <div className="ns-card-actions">
-                  <button
-                    type="button"
-                    className="ns-card-edit-btn"
-                    onClick={() => navigate(`/dashboard/settings/number-series/${series.id}/edit`)}
-                    aria-label={`Edit ${series.name} number series`}
-                  >
-                    <span>Edit</span>
-                    <ChevronRight size={15} />
-                  </button>
-
-                  <button
-                    type="button"
-                    className="ns-card-view-btn"
-                    onClick={() => navigate(`/dashboard/settings/number-series/${series.id}`)}
-                    title="View details and generated history"
-                  >
-                    <Eye size={15} />
-                    <span>Details</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </DashboardLayout>
-  );
-}
-
-// ======================================================================
-// 2. DETAIL VIEW (GENERATED IDS & CONFIGURATION HISTORY)
-// ======================================================================
-function NumberSeriesDetailView({ series, onPreviewModal, toast, setToast }) {
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("generated");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [pageSize, setPageSize] = useState(5);
-  const [currentPage, setCurrentPage] = useState(1);
-
-  const historyList = useMemo(() => {
-    return MOCK_GENERATED_HISTORY[series.id] || [];
-  }, [series.id]);
-
-  const configHistory = useMemo(() => {
-    return readConfigHistory(series.id);
-  }, [series.id]);
-
-  // Filter history rows by search query
-  const filteredHistory = useMemo(() => {
-    if (!searchQuery.trim()) return historyList;
-    const q = searchQuery.toLowerCase();
-    return historyList.filter((row) => {
-      return Object.values(row).some((val) => String(val).toLowerCase().includes(q));
+  const filtered = useMemo(() => {
+    return seriesList.filter((s) => {
+      const matchSearch =
+        !q ||
+        s.name.toLowerCase().includes(q.toLowerCase()) ||
+        s.prefix.toLowerCase().includes(q.toLowerCase()) ||
+        s.module.toLowerCase().includes(q.toLowerCase());
+      const matchModule = !moduleFilter || s.module === moduleFilter;
+      return matchSearch && matchModule;
     });
-  }, [historyList, searchQuery]);
-
-  // Pagination logic
-  const totalPages = Math.max(1, Math.ceil(filteredHistory.length / pageSize));
-  const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredHistory.slice(start, start + pageSize);
-  }, [filteredHistory, currentPage, pageSize]);
-
-  const nextNumberVal = getNextNumberPreview(series);
+  }, [q, moduleFilter, seriesList]);
 
   return (
     <DashboardLayout
-      title={`${series.name} Number Series`}
-      subtitle={`Manage the format and numbering sequence for ${series.name.toLowerCase()}.`}
-      breadcrumb={["Home", "Settings", "ID & Number Series", series.name]}
+      title="ID & Number Series Management"
+      subtitle="Configure prefixes and automatic numbering rules for staff and students."
+      breadcrumb={["Home", "Settings", "ID & Number Series"]}
+      actions={
+        <button
+          type="button"
+          className="cms-btn cms-btn-primary"
+          onClick={() => navigate("/dashboard/settings/number-series/add")}
+        >
+          <Plus size={15} /> Add Number Series
+        </button>
+      }
     >
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
-      <div className="ns-detail-container">
-        {/* BACK NAVIGATION */}
-        <div className="ns-back-bar">
-          <button
-            type="button"
-            className="ns-back-btn"
-            onClick={() => navigate("/dashboard/settings/number-series")}
-          >
-            <ArrowLeft size={16} />
-            <span>Back to ID & Number Series</span>
-          </button>
-        </div>
-
-        {/* HEADER & ACTION STRIP */}
-        <div className="ns-detail-header-card">
-          <div className="ns-detail-header-left">
-            <h2>{series.name}</h2>
-            <p>{series.description}</p>
-          </div>
-
-          <div className="ns-detail-header-actions">
-            <button
-              type="button"
-              className="cms-btn cms-btn-ghost"
-              onClick={() => onPreviewModal(series)}
-            >
-              <Sparkles size={16} />
-              <span>Preview Next Number</span>
-            </button>
-
-            <button
-              type="button"
-              className="cms-btn cms-btn-primary"
-              onClick={() => navigate(`/dashboard/settings/number-series/${series.id}/edit`)}
-            >
-              <Edit3 size={16} />
-              <span>Edit Series</span>
-            </button>
-          </div>
-        </div>
-
-        {/* SUMMARY STRIP */}
-        <div className="ns-summary-strip">
-          <div className="ns-summary-item">
-            <span className="ns-summary-lbl">Current Format</span>
-            <span className="ns-summary-val font-mono">{series.format}</span>
-          </div>
-
-          <div className="ns-summary-item highlight">
-            <span className="ns-summary-lbl">Next Number</span>
-            <span className="ns-summary-val font-bold">{nextNumberVal}</span>
-          </div>
-
-          <div className="ns-summary-item">
-            <span className="ns-summary-lbl">Prefix</span>
-            <span className="ns-summary-val">{series.prefix || "—"}</span>
-          </div>
-
-          <div className="ns-summary-item">
-            <span className="ns-summary-lbl">Total Generated</span>
-            <span className="ns-summary-val">{series.totalGenerated || series.currentNumber}</span>
-          </div>
-        </div>
-
-        {/* GENERATED IDS CARD */}
-        <div className="ns-tabs-card">
-          <div className="ns-tabs-bar">
-            <h3 className="ns-table-card-title">Generated IDs ({historyList.length})</h3>
-          </div>
-
-          <div className="ns-tab-body">
-            {/* SEARCH & PAGE SIZE BAR */}
-            <div className="ns-table-tools">
-              <div className="ns-search-box">
-                <Search size={16} className="ns-search-icon" />
-                <input
-                  type="text"
-                  placeholder={`Search generated ${series.name.toLowerCase()} history...`}
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                />
-                {searchQuery && (
-                  <button
-                    className="ns-search-clear"
-                    onClick={() => setSearchQuery("")}
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-
-              <div className="ns-table-page-size">
-                <span>Show</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                >
-                  <option value={5}>5 rows</option>
-                  <option value={10}>10 rows</option>
-                  <option value={25}>25 rows</option>
-                  <option value={50}>50 rows</option>
-                </select>
-              </div>
+      <main className="series-page-container">
+        <section className="series-panel">
+          <div className="series-toolbar">
+            <div className="series-search-box">
+              <Search size={16} />
+              <input
+                type="text"
+                placeholder="Search by series name, prefix, or module..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
             </div>
+            <select
+              value={moduleFilter}
+              onChange={(e) => setModuleFilter(e.target.value)}
+              className="series-filter-select"
+            >
+              <option value="">All Modules</option>
+              <option value="Staff Management">Staff Management</option>
+              <option value="Student Admission">Student Admission</option>
+              <option value="Student Management">Student Management</option>
+              <option value="Academics">Academics</option>
+            </select>
+          </div>
 
-            {/* GENERATED IDS TABLE */}
-            <div className="ns-table-responsive">
-              <table className="ns-data-table">
-                <thead>
-                  <RenderTableHead seriesId={series.id} />
-                </thead>
-                <tbody>
-                  {paginatedRows.length > 0 ? (
-                    paginatedRows.map((row, idx) => (
-                      <RenderTableRow
-                        key={row.id || idx}
-                        seriesId={series.id}
-                        row={row}
-                        index={(currentPage - 1) * pageSize + idx + 1}
-                      />
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={8} className="ns-empty-cell">
-                        No records found matching "{searchQuery}".
+          <div className="series-table-wrapper">
+            <table className="series-table">
+              <thead>
+                <tr>
+                  <th>Series Name</th>
+                  <th>Module</th>
+                  <th>Target Entity</th>
+                  <th>Prefix / Format</th>
+                  <th>Current<br />Sequence</th>
+                  <th>Next Value</th>
+                  <th>Reset<br />Frequency</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="empty-table-cell">
+                      No number series found.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <strong>{item.name}</strong>
+                        {item.description ? <small className="series-desc">{item.description}</small> : null}
+                      </td>
+                      <td>
+                        <span className="series-tag">{item.module}</span>
+                      </td>
+                      <td>{item.entity}</td>
+                      <td>
+                        <code className="series-code-badge">{item.prefix}</code>
+                      </td>
+                      <td>
+                        <strong>{item.currentNumber}</strong>
+                      </td>
+                      <td>
+                        <strong className="next-value-highlight">
+                          {formatSeriesNumber(item, item.currentNumber + 1)}
+                        </strong>
+                      </td>
+                      <td>{item.resetFrequency || "Never"}</td>
+                      <td>
+                        <span className={`status-badge ${item.active ? "is-active" : "is-inactive"}`}>
+                          {item.active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="series-row-actions">
+                          <button
+                            title="View Details"
+                            onClick={() => navigate(`/dashboard/settings/number-series/${item.id}`)}
+                          >
+                            <Eye size={14} />
+                          </button>
+                          <button
+                            title="Edit Series"
+                            onClick={() => navigate(`/dashboard/settings/number-series/${item.id}/edit`)}
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                          <button
+                            title="Reset Sequence"
+                            onClick={() => navigate(`/dashboard/settings/number-series/${item.id}/reset`)}
+                          >
+                            <RotateCcw size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* PAGINATION FOOTER */}
-            <div className="ns-pagination-bar">
-              <span className="ns-page-info">
-                Showing {filteredHistory.length ? (currentPage - 1) * pageSize + 1 : 0} to{" "}
-                {Math.min(currentPage * pageSize, filteredHistory.length)} of {filteredHistory.length} entries
-              </span>
-
-              <div className="ns-page-btns">
-                <button
-                  className="cms-btn cms-btn-ghost"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </button>
-                <span className="ns-page-num">Page {currentPage} of {totalPages}</span>
-                <button
-                  className="cms-btn cms-btn-ghost"
-                  disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </DashboardLayout>
   );
 }
 
-// Helper: Custom Table Headers per Series Type
-function RenderTableHead({ seriesId }) {
-  switch (seriesId) {
-    case "employee-id":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Employee ID</th>
-          <th>Employee Name</th>
-          <th>Staff Type</th>
-          <th>Department</th>
-          <th>Designation</th>
-          <th>Created On</th>
-        </tr>
-      );
-    case "admission-no":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Admission No.</th>
-          <th>Student Name</th>
-          <th>Academic Year</th>
-          <th>Board</th>
-          <th>Group</th>
-          <th>Created On</th>
-        </tr>
-      );
-    case "roll-no":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Roll No.</th>
-          <th>Student Name</th>
-          <th>Admission No.</th>
-          <th>Academic Level</th>
-          <th>Group</th>
-          <th>Section</th>
-          <th>Created On</th>
-        </tr>
-      );
-    case "student-id":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Student ID</th>
-          <th>Student Name</th>
-          <th>Admission No.</th>
-          <th>Academic Year</th>
-          <th>Status</th>
-          <th>Created On</th>
-        </tr>
-      );
-    case "section-name":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Section Name</th>
-          <th>Board</th>
-          <th>Academic Year</th>
-          <th>Academic Level</th>
-          <th>Group</th>
-          <th>Status</th>
-          <th>Created On</th>
-        </tr>
-      );
-    case "exam-code":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Exam Code</th>
-          <th>Exam Name</th>
-          <th>Academic Year</th>
-          <th>Board</th>
-          <th>Exam Type</th>
-          <th>Created On</th>
-        </tr>
-      );
-    case "certificate-number":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Certificate Number</th>
-          <th>Certificate Type</th>
-          <th>Student</th>
-          <th>Admission No.</th>
-          <th>Generated On</th>
-          <th>Status</th>
-        </tr>
-      );
-    case "receipt-no":
-      return (
-        <tr>
-          <th>#</th>
-          <th>Receipt No.</th>
-          <th>Student</th>
-          <th>Admission No.</th>
-          <th>Payment Type</th>
-          <th>Amount</th>
-          <th>Generated On</th>
-        </tr>
-      );
-    default:
-      return (
-        <tr>
-          <th>#</th>
-          <th>Identifier</th>
-          <th>Details</th>
-          <th>Created On</th>
-        </tr>
-      );
-  }
+function FormGroup({ label, required, help, children }) {
+  return (
+    <div className="series-form-group">
+      {label ? (
+        <label className="series-form-label">
+          {label} {required ? <span style={{ color: "#e53e3e", marginLeft: "2px" }}>*</span> : null}
+        </label>
+      ) : null}
+      {children}
+      {help ? <small className="field-help">{help}</small> : null}
+    </div>
+  );
 }
 
-// Helper: Custom Table Row per Series Type
-function RenderTableRow({ seriesId, row, index }) {
-  switch (seriesId) {
-    case "employee-id":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td><strong>{row.name}</strong></td>
-          <td>{row.staffType}</td>
-          <td>{row.dept}</td>
-          <td>{row.desig}</td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    case "admission-no":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td><strong>{row.name}</strong></td>
-          <td>{row.year}</td>
-          <td>{row.board}</td>
-          <td>{row.group}</td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    case "roll-no":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td>
-            {row.val === "Pending" ? (
-              <span className="cms-badge cms-badge-warn">Pending</span>
-            ) : (
-              <span className="ns-code-badge font-bold">{row.val}</span>
-            )}
-          </td>
-          <td><strong>{row.name}</strong></td>
-          <td>{row.admNo}</td>
-          <td>{row.level}</td>
-          <td>{row.group}</td>
-          <td>{row.section}</td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    case "student-id":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td><strong>{row.name}</strong></td>
-          <td>{row.admNo}</td>
-          <td>{row.year}</td>
-          <td><span className="cms-badge cms-badge-active">{row.status}</span></td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    case "section-name":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td>{row.board}</td>
-          <td>{row.year}</td>
-          <td>{row.level}</td>
-          <td>{row.group}</td>
-          <td><span className="cms-badge cms-badge-active">{row.status}</span></td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    case "exam-code":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td><strong>{row.examName}</strong></td>
-          <td>{row.year}</td>
-          <td>{row.board}</td>
-          <td>{row.type}</td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    case "certificate-number":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td>{row.certType}</td>
-          <td><strong>{row.student}</strong></td>
-          <td>{row.admNo}</td>
-          <td>{row.date}</td>
-          <td><span className="cms-badge cms-badge-active">{row.status}</span></td>
-        </tr>
-      );
-    case "receipt-no":
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge font-bold">{row.val}</span></td>
-          <td><strong>{row.student}</strong></td>
-          <td>{row.admNo}</td>
-          <td>{row.type}</td>
-          <td><strong>{row.amount}</strong></td>
-          <td>{row.date}</td>
-        </tr>
-      );
-    default:
-      return (
-        <tr>
-          <td>{index}</td>
-          <td><span className="ns-code-badge">{row.val || "—"}</span></td>
-          <td>{row.name || "—"}</td>
-          <td>{row.date || "—"}</td>
-        </tr>
-      );
-  }
-}
-
-// ======================================================================
-// 3. EDIT VIEW (2-COLUMN CONFIGURATION FORM)
-// ======================================================================
-function NumberSeriesEditView({ series, onSave, onPreviewModal, toast, setToast }) {
+function AddNumberSeriesScreen({ onSave }) {
   const navigate = useNavigate();
-
-  const [formState, setFormState] = useState({
-    prefix: series.prefix || "",
-    format: series.format || "",
-    numberLength: series.numberLength || 4,
-    startNumber: series.startNumber || 1,
-    description: series.description || "",
-    status: series.status || "Active",
+  const [toast, setToast] = useState(null);
+  const [formData, setFormData] = useState({
+    name: "",
+    key: "",
+    module: "Staff Management",
+    entity: "Teaching Staff",
+    prefix: "PCTCH",
+    suffix: "",
+    startingNumber: 1,
+    currentNumber: 0,
+    paddingWidth: 4,
+    resetFrequency: "Never",
+    description: "",
+    active: true,
   });
 
-  const [validationError, setValidationError] = useState("");
+  const presets = [
+    {
+      label: "Teaching Staff ID",
+      name: "Teaching Staff Employee ID",
+      key: "teaching-staff-emp-id",
+      module: "Staff Management",
+      entity: "Teaching Staff",
+      prefix: "PCTCH",
+      paddingWidth: 4,
+      startingNumber: 1,
+      resetFrequency: "Never",
+    },
+    {
+      label: "Non-Teaching Staff ID",
+      name: "Non-Teaching Staff Employee ID",
+      key: "non-teaching-staff-emp-id",
+      module: "Staff Management",
+      entity: "Non-Teaching Staff",
+      prefix: "PCNT",
+      paddingWidth: 3,
+      startingNumber: 1,
+      resetFrequency: "Never",
+    },
+    {
+      label: "Student Admission No",
+      name: "Student Admission Number",
+      key: "student-admission-num",
+      module: "Student Admission",
+      entity: "Student",
+      prefix: "ADM{YYYY}",
+      paddingWidth: 4,
+      startingNumber: 100,
+      resetFrequency: "Academic Year",
+    },
+    {
+      label: "Student Roll No",
+      name: "Student Roll Number",
+      key: "student-roll-num",
+      module: "Student Management",
+      entity: "Student",
+      prefix: "ROLL{YY}",
+      paddingWidth: 4,
+      startingNumber: 50,
+      resetFrequency: "Academic Year",
+    },
+    {
+      label: "Exam Hall Ticket",
+      name: "Exam Hall Ticket Series",
+      key: "exam-hall-ticket-series",
+      module: "Examination",
+      entity: "Hall Ticket",
+      prefix: "EXAM{YYYY}",
+      paddingWidth: 5,
+      startingNumber: 1000,
+      resetFrequency: "Academic Year",
+    },
+  ];
 
-  // Re-validate format live when form state changes
-  const liveValidation = useMemo(() => {
-    return validateNumberSeries(
-      formState.format,
-      formState.numberLength,
-      series.currentNumber,
-      series.allowedTokens || []
+  const applyPreset = (p) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: p.name,
+      key: p.key,
+      module: p.module,
+      entity: p.entity,
+      prefix: p.prefix,
+      paddingWidth: p.paddingWidth,
+      startingNumber: p.startingNumber,
+      resetFrequency: p.resetFrequency,
+    }));
+  };
+
+  const previewFormatted = useMemo(() => {
+    return formatSeriesNumber(
+      {
+        prefix: formData.prefix,
+        suffix: formData.suffix,
+        paddingWidth: formData.paddingWidth,
+      },
+      Number(formData.startingNumber || 1)
     );
-  }, [formState.format, formState.numberLength, series.currentNumber, series.allowedTokens]);
-
-  const livePreviewVal = useMemo(() => {
-    if (!liveValidation.valid) return null;
-    const nextSeqNum = Number(series.currentNumber || 0) + 1;
-    return buildNumberFromFormat(formState.format, nextSeqNum, formState.numberLength);
-  }, [formState.format, formState.numberLength, series.currentNumber, liveValidation]);
-
-  const handleTokenClick = (token) => {
-    setFormState((prev) => ({
-      ...prev,
-      format: prev.format + token,
-    }));
-  };
-
-  const handleApplySample = (sampleFormat) => {
-    setFormState((prev) => ({
-      ...prev,
-      format: sampleFormat,
-    }));
-  };
+  }, [formData]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!liveValidation.valid) {
-      setValidationError(liveValidation.message);
-      return;
-    }
-
-    const updated = {
-      ...series,
-      prefix: formState.prefix,
-      format: formState.format,
-      numberLength: Number(formState.numberLength),
-      startNumber: Number(formState.startNumber),
-      description: formState.description,
-      status: formState.status,
-      currentExample: livePreviewVal || series.currentExample,
+    if (!formData.name || !formData.prefix) return;
+    const newSeries = {
+      ...formData,
+      id: `series-${Date.now()}`,
+      key: formData.key || formData.name.toLowerCase().replace(/\s+/g, "-"),
+      startingNumber: Number(formData.startingNumber || 1),
+      currentNumber: Number(formData.startingNumber || 1) - 1,
+      paddingWidth: Number(formData.paddingWidth || 3),
+      createdOn: new Date().toISOString().slice(0, 10),
     };
-
-    onSave(updated);
+    onSave(newSeries);
   };
 
   return (
     <DashboardLayout
-      title={`Edit ${series.name} Number Series`}
-      subtitle="Update the format and settings for number generation."
-      breadcrumb={["Home", "Settings", "ID & Number Series", series.name, "Edit"]}
+      title="Add Number Series"
+      subtitle="Configure automatic numbering rules and prefix formats for a new module."
+      breadcrumb={["Home", "Settings", "ID & Number Series", "Add Number Series"]}
     >
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <main className="series-page-container">
+        <Link to="/dashboard/settings/number-series" className="cms-back-link">
+          <ArrowLeft size={14} /> Back to ID & Number Series
+        </Link>
 
-      <div className="ns-edit-container">
-        {/* BACK NAVIGATION */}
-        <div className="ns-back-bar">
-          <button
-            type="button"
-            className="ns-back-btn"
-            onClick={() => navigate(`/dashboard/settings/number-series/${series.id}`)}
-          >
-            <ArrowLeft size={16} />
-            <span>Back to {series.name} Details</span>
-          </button>
-        </div>
-
-        {/* 2-COLUMN LAYOUT */}
-        <div className="ns-edit-grid">
-          {/* LEFT COLUMN: CONFIGURATION FORM */}
-          <div className="ns-edit-left">
-            <div className="ns-form-card">
-              <div className="ns-form-header">
-                <h3>Configuration Form</h3>
-                <p>Modify prefix, tokens, sequence length, and start number.</p>
-              </div>
-
-              <form onSubmit={handleSubmit} className="ns-form-body">
-                {/* ROW 1: READ ONLY SERIES NAME & PREFIX */}
-                <div className="ns-field-row-2">
-                  <div className="ns-field">
-                    <label>Series Name (Read Only)</label>
-                    <input
-                      type="text"
-                      value={series.name}
-                      disabled
-                      className="ns-input-readonly"
-                    />
-                  </div>
-
-                  <div className="ns-field">
-                    <label>Prefix *</label>
-                    <input
-                      type="text"
-                      value={formState.prefix}
-                      onChange={(e) => setFormState({ ...formState, prefix: e.target.value })}
-                      placeholder="e.g. PCTCH, ADM, FEE"
-                    />
-                  </div>
-                </div>
-
-                {/* ROW 2: FORMAT PATTERN */}
-                <div className="ns-field">
-                  <label>Format Pattern *</label>
-                  <input
-                    type="text"
-                    value={formState.format}
-                    onChange={(e) => {
-                      setFormState({ ...formState, format: e.target.value });
-                      setValidationError("");
-                    }}
-                    placeholder="e.g. PCTCH{SEQ}"
-                  />
-                  <small>Combine prefix, fixed strings, and placeholders like {"{SEQ}"}, {"{YYYY}"}.</small>
-                </div>
-
-                {/* ROW 3: NUMBER LENGTH & START NUMBER */}
-                <div className="ns-field-row-2">
-                  <div className="ns-field">
-                    <label>Number Length *</label>
-                    <select
-                      value={formState.numberLength}
-                      onChange={(e) => setFormState({ ...formState, numberLength: Number(e.target.value) })}
-                    >
-                      <option value={1}>1 (e.g. 1)</option>
-                      <option value={2}>2 (e.g. 01)</option>
-                      <option value={3}>3 (e.g. 001)</option>
-                      <option value={4}>4 (e.g. 0001)</option>
-                      <option value={5}>5 (e.g. 00001)</option>
-                      <option value={6}>6 (e.g. 000001)</option>
-                    </select>
-                  </div>
-
-                  <div className="ns-field">
-                    <label>Start Number *</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={formState.startNumber}
-                      onChange={(e) => setFormState({ ...formState, startNumber: Number(e.target.value) })}
-                    />
-                  </div>
-                </div>
-
-                {/* ROW 4: DESCRIPTION */}
-                <div className="ns-field">
-                  <label>Description</label>
-                  <input
-                    type="text"
-                    value={formState.description}
-                    onChange={(e) => setFormState({ ...formState, description: e.target.value })}
-                    placeholder="Enter series description..."
-                  />
-                </div>
-
-                {/* LIVE FORMAT PREVIEW CARD */}
-                <div className="ns-preview-box">
-                  <span className="ns-preview-lbl">LIVE PREVIEW (NEXT NUMBER)</span>
-                  {liveValidation.valid ? (
-                    <div className="ns-preview-val font-mono">{livePreviewVal}</div>
-                  ) : (
-                    <div className="ns-preview-err">
-                      <AlertTriangle size={15} />
-                      <span>{liveValidation.message || "Unable to generate preview."}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* FORM ACTION BUTTONS */}
-                <div className="ns-form-actions">
-                  <button
-                    type="button"
-                    className="cms-btn cms-btn-ghost"
-                    onClick={() => navigate(`/dashboard/settings/number-series/${series.id}`)}
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="cms-btn cms-btn-primary"
-                    disabled={!liveValidation.valid}
-                  >
-                    Save Changes
-                  </button>
-                </div>
-              </form>
+        <form className="series-form-card" onSubmit={handleSubmit}>
+          <div className="preset-bar" style={{ marginBottom: "20px", padding: "12px 16px", background: "var(--cms-subtle)", borderRadius: "8px" }}>
+            <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "var(--cms-muted)" }}>
+              <Sparkles size={14} style={{ display: "inline", verticalAlign: "middle", marginRight: "4px" }} />
+              Quick Preset Templates (Click to auto-fill)
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {presets.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  style={{ fontSize: "12px", padding: "4px 10px", height: "auto" }}
+                  onClick={() => applyPreset(p)}
+                >
+                  + {p.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* RIGHT COLUMN: PLACEHOLDERS, SAMPLES, IMPORTANT NOTES */}
-          <div className="ns-edit-right">
-            {/* AVAILABLE PLACEHOLDERS */}
-            <div className="ns-side-panel">
-              <h4>Available Placeholders</h4>
-              <p>Click any token below to insert it into your format string:</p>
-              <div className="ns-token-grid">
-                {(series.allowedTokens || ["{SEQ}", "{YYYY}", "{YY}", "{MM}", "{DD}"]).map((token) => (
-                  <button
-                    key={token}
-                    type="button"
-                    className="ns-token-pill"
-                    onClick={() => handleTokenClick(token)}
-                    title={`Click to insert ${token}`}
-                  >
-                    <code>{token}</code>
-                  </button>
-                ))}
-              </div>
+          <div className="form-section-title" style={{ marginBottom: "8px", paddingBottom: "4px" }}>
+            <h3>Series Metadata</h3>
+          </div>
+
+          <div className="form-grid-4">
+            <FormGroup label="Series Name" required>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Teaching Staff Employee ID"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </FormGroup>
+
+            <FormGroup label="System Key">
+              <input
+                type="text"
+                placeholder="e.g. teaching-staff"
+                value={formData.key}
+                onChange={(e) => setFormData({ ...formData, key: e.target.value })}
+              />
+            </FormGroup>
+
+            <FormGroup label="Module" required>
+              <select
+                value={formData.module}
+                onChange={(e) => setFormData({ ...formData, module: e.target.value })}
+              >
+                <option value="Staff Management">Staff Management</option>
+                <option value="Student Admission">Student Admission</option>
+                <option value="Student Management">Student Management</option>
+                <option value="Examination">Examination</option>
+                <option value="Fee Management">Fee Management</option>
+                <option value="Academics">Academics</option>
+              </select>
+            </FormGroup>
+
+            <FormGroup label="Target Entity" required>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Teaching Staff / Student"
+                value={formData.entity}
+                onChange={(e) => setFormData({ ...formData, entity: e.target.value })}
+              />
+            </FormGroup>
+          </div>
+
+          <div className="form-section-title">
+            <h3>Format & Prefix Configuration</h3>
+          </div>
+
+          <div className="form-grid-3">
+            <FormGroup label="Prefix Pattern" required help="Tokens: {YYYY}, {YY}, {GRP}, {SEC}">
+              <input
+                type="text"
+                required
+                placeholder="e.g. PCTCH or ADM{YYYY}"
+                value={formData.prefix}
+                onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
+              />
+            </FormGroup>
+
+            <FormGroup label="Suffix (Optional)">
+              <input
+                type="text"
+                placeholder="e.g. -2026"
+                value={formData.suffix}
+                onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
+              />
+            </FormGroup>
+
+            <FormGroup label="Padding Digits (Width)">
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={formData.paddingWidth}
+                onChange={(e) => setFormData({ ...formData, paddingWidth: e.target.value })}
+              />
+            </FormGroup>
+
+            <FormGroup label="Starting Number">
+              <input
+                type="number"
+                min="1"
+                value={formData.startingNumber}
+                onChange={(e) => setFormData({ ...formData, startingNumber: e.target.value })}
+              />
+            </FormGroup>
+
+            <FormGroup label="Reset Frequency">
+              <select
+                value={formData.resetFrequency}
+                onChange={(e) => setFormData({ ...formData, resetFrequency: e.target.value })}
+              >
+                <option value="Never">Never</option>
+                <option value="Academic Year">Academic Year</option>
+                <option value="Calendar Year">Calendar Year</option>
+                <option value="Monthly">Monthly</option>
+              </select>
+            </FormGroup>
+
+            <FormGroup label="Status">
+              <select
+                value={formData.active ? "Active" : "Inactive"}
+                onChange={(e) => setFormData({ ...formData, active: e.target.value === "Active" })}
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </FormGroup>
+          </div>
+
+          <div className="preview-live-box" style={{ background: "#edf7e2", borderColor: "#496d12" }}>
+            <div>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#496d12" }}>Live Generated Output Sample:</span>
+              <div style={{ fontSize: "11px", color: "var(--cms-muted)" }}>This is what the first generated ID will look like in the system.</div>
             </div>
-
-            {/* SAMPLE FORMATS */}
-            {series.sampleFormats && series.sampleFormats.length > 0 && (
-              <div className="ns-side-panel">
-                <h4>Sample Formats</h4>
-                <p>Click a sample to apply it directly to your format field:</p>
-                <div className="ns-sample-list">
-                  {series.sampleFormats.map((sample, i) => (
-                    <div
-                      key={i}
-                      className="ns-sample-card"
-                      onClick={() => handleApplySample(sample.format)}
-                    >
-                      <code className="ns-sample-code">{sample.format}</code>
-                      <span className="ns-sample-arrow">→</span>
-                      <span className="ns-sample-ex">{sample.example}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* IMPORTANT NOTES PANEL */}
-            <div className="ns-side-panel notes-panel">
-              <h4>Important Notes</h4>
-              <ul>
-                <li>Changing the format must NOT alter already-generated IDs.</li>
-                <li>The new format applies only to future records.</li>
-                <li>The next number is calculated from the last committed number.</li>
-                <li>Previewing must NOT consume the next number.</li>
-                <li>Editing a record must NOT regenerate its identifier.</li>
-                <li>Deleted records must NOT cause old identifiers to be reused.</li>
-              </ul>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <code style={{ fontSize: "18px", fontWeight: "700", color: "#496d12", fontFamily: "monospace" }}>{previewFormatted}</code>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                style={{ padding: "4px 8px", fontSize: "12px" }}
+                onClick={() => {
+                  navigator.clipboard?.writeText(previewFormatted);
+                  setToast(`Copied sample: ${previewFormatted}`);
+                }}
+              >
+                <Copy size={13} /> Copy
+              </button>
             </div>
           </div>
-        </div>
-      </div>
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              onClick={() => navigate("/dashboard/settings/number-series")}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="cms-btn cms-btn-primary">
+              <Plus size={15} /> Save Series
+            </button>
+          </div>
+        </form>
+      </main>
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </DashboardLayout>
   );
 }
 
-// ======================================================================
-// 4. PREVIEW NEXT NUMBER MODAL (NON-MUTATING)
-// ======================================================================
-function PreviewNextModal({ series, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const nextVal = getNextNumberPreview(series);
-  const nextSeqNum = Number(series.currentNumber || 0) + 1;
+function EditNumberSeriesScreen({ series, onSave }) {
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState(series || {});
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(nextVal);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  useEffect(() => {
+    if (series) setFormData(series);
+  }, [series]);
+
+  if (!series) {
+    return (
+      <DashboardLayout
+        title="Number Series Not Found"
+        breadcrumb={["Home", "Settings", "ID & Number Series"]}
+      >
+        <main className="series-page-container">
+          <p>The requested number series does not exist.</p>
+          <button
+            className="cms-btn cms-btn-primary"
+            onClick={() => navigate("/dashboard/settings/number-series")}
+          >
+            Back to ID & Number Series
+          </button>
+        </main>
+      </DashboardLayout>
+    );
+  }
+
+  const previewFormatted = formatSeriesNumber(
+    {
+      prefix: formData.prefix,
+      suffix: formData.suffix,
+      paddingWidth: formData.paddingWidth,
+    },
+    Number(formData.currentNumber || 0) + 1
+  );
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      ...formData,
+      paddingWidth: Number(formData.paddingWidth),
+      currentNumber: Number(formData.currentNumber),
+    });
   };
 
   return (
-    <Modal
-      title={`Preview Next ${series.name}`}
-      onClose={onClose}
-      footer={
-        <>
-          <button type="button" className="cms-btn cms-btn-ghost" onClick={handleCopy}>
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-            <span>{copied ? "Copied to Clipboard!" : "Copy Preview"}</span>
-          </button>
-          <button type="button" className="cms-btn cms-btn-primary" onClick={onClose}>
-            Close
-          </button>
-        </>
-      }
+    <DashboardLayout
+      title="Edit Number Series"
+      subtitle={`Modify rule configurations for ${series.name}.`}
+      breadcrumb={["Home", "Settings", "ID & Number Series", "Edit Number Series"]}
     >
-      <div className="ns-modal-body">
-        <p className="ns-modal-sub">
-          Preview how the next {series.name.toLowerCase()} will be generated by the system.
-        </p>
+      <main className="series-page-container">
+        <Link to="/dashboard/settings/number-series" className="cms-back-link">
+          <ArrowLeft size={14} /> Back to ID & Number Series
+        </Link>
 
-        {/* LARGE HIGHLIGHTED PREVIEW VALUE */}
-        <div className="ns-modal-highlight-box">
-          <span className="ns-modal-hl-label">NEXT GENERATED VALUE</span>
-          <div className="ns-modal-hl-val font-mono">{nextVal}</div>
-        </div>
+        <form className="series-form-card" onSubmit={handleSubmit}>
+          <div className="form-section-title">
+            <h3>Edit Series Metadata & Rules</h3>
+          </div>
 
-        {/* SEQUENCE BREAKDOWN TABLE */}
-        <div className="ns-modal-detail-grid">
-          <div className="ns-modal-row">
-            <span>Series Name:</span>
-            <strong>{series.name}</strong>
-          </div>
-          <div className="ns-modal-row">
-            <span>Format Pattern:</span>
-            <code>{series.format}</code>
-          </div>
-          <div className="ns-modal-row">
-            <span>Prefix:</span>
-            <strong>{series.prefix || "—"}</strong>
-          </div>
-          <div className="ns-modal-row">
-            <span>Current Last Number:</span>
-            <strong>{String(series.currentNumber).padStart(series.numberLength, "0")}</strong>
-          </div>
-          <div className="ns-modal-row">
-            <span>Next Sequence Number:</span>
-            <strong>{String(nextSeqNum).padStart(series.numberLength, "0")}</strong>
-          </div>
-          <div className="ns-modal-row">
-            <span>Generated ID:</span>
-            <strong className="ns-accent-text">{nextVal}</strong>
-          </div>
-        </div>
+          <div className="form-grid-2">
+            <Field label="Series Name" required>
+              <input
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </Field>
 
-        <div className="ns-modal-note">
-          <Info size={14} />
-          <span>This is a preview only. Previewing does NOT increment the sequence counter in settings.</span>
-        </div>
-      </div>
-    </Modal>
+            <Field label="Module">
+              <input type="text" disabled value={formData.module} />
+            </Field>
+
+            <Field label="Prefix Pattern" required>
+              <input
+                type="text"
+                required
+                value={formData.prefix}
+                onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Suffix">
+              <input
+                type="text"
+                value={formData.suffix || ""}
+                onChange={(e) => setFormData({ ...formData, suffix: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Padding Digits (Width)">
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={formData.paddingWidth}
+                onChange={(e) => setFormData({ ...formData, paddingWidth: e.target.value })}
+              />
+            </Field>
+
+            <Field label="Current Sequence Value">
+              <input
+                type="number"
+                min="0"
+                value={formData.currentNumber}
+                onChange={(e) => setFormData({ ...formData, currentNumber: e.target.value })}
+              />
+              <small className="field-help">Next generated ID will be counter + 1.</small>
+            </Field>
+
+            <Field label="Reset Frequency">
+              <select
+                value={formData.resetFrequency}
+                onChange={(e) => setFormData({ ...formData, resetFrequency: e.target.value })}
+              >
+                <option value="Never">Never</option>
+                <option value="Academic Year">Academic Year</option>
+                <option value="Calendar Year">Calendar Year</option>
+                <option value="Monthly">Monthly</option>
+              </select>
+            </Field>
+
+            <Field label="Status">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={formData.active}
+                  onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                />
+                Active Series
+              </label>
+            </Field>
+          </div>
+
+          <div className="preview-live-box">
+            <span>Next Generated ID Sample:</span>
+            <strong>{previewFormatted}</strong>
+          </div>
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              onClick={() => navigate("/dashboard/settings/number-series")}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="cms-btn cms-btn-primary">
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </main>
+    </DashboardLayout>
   );
 }
+
+function NumberSeriesDetailsScreen({ series, initialEditing = false, onSave }) {
+  const navigate = useNavigate();
+  const [isEditing, setIsEditing] = useState(initialEditing);
+  const [formData, setFormData] = useState(series || {});
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    if (series) setFormData(series);
+  }, [series]);
+
+  useEffect(() => {
+    setIsEditing(initialEditing);
+  }, [initialEditing]);
+
+  if (!series) {
+    return (
+      <DashboardLayout title="Series Details" breadcrumb={["Home", "Settings", "ID & Number Series"]}>
+        <main className="series-page-container">
+          <p>Series not found.</p>
+          <button
+            className="cms-btn cms-btn-primary"
+            onClick={() => navigate("/dashboard/settings/number-series")}
+          >
+            Back to ID & Number Series
+          </button>
+        </main>
+      </DashboardLayout>
+    );
+  }
+
+  const activeData = isEditing ? formData : series;
+  const nextVal = formatSeriesNumber(
+    activeData,
+    Number(activeData.currentNumber !== undefined ? activeData.currentNumber : 0) + 1
+  );
+
+  const handleSave = () => {
+    const updated = {
+      ...series,
+      ...formData,
+      paddingWidth: Number(formData.paddingWidth || 3),
+      currentNumber: Number(formData.currentNumber || 0),
+    };
+    if (onSave) {
+      onSave(updated);
+    }
+    setIsEditing(false);
+    setToast("Series updated successfully!");
+  };
+
+  return (
+    <DashboardLayout
+      title={isEditing ? "Edit Number Series" : "Series Details"}
+      subtitle={isEditing ? `Edit rules and values directly for ${series.name}.` : `Detailed configuration and sequence state for ${series.name}.`}
+      breadcrumb={["Home", "Settings", "ID & Number Series", isEditing ? "Edit Number Series" : "Series Details"]}
+    >
+      <main className="series-page-container">
+        <Link to="/dashboard/settings/number-series" className="cms-back-link">
+          <ArrowLeft size={14} /> Back to ID & Number Series
+        </Link>
+
+        <section className={`series-details-card ${isEditing ? "is-editing-card" : ""}`}>
+          <header className="details-header">
+            <div>
+              {isEditing ? (
+                <input
+                  type="text"
+                  className="inline-edit-title-input"
+                  value={formData.name || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                />
+              ) : (
+                <h2>{series.name}</h2>
+              )}
+              <span className="series-tag">{series.module}</span>
+            </div>
+            <div className="details-actions">
+              {!isEditing ? (
+                <>
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-ghost"
+                    onClick={() => navigate(`/dashboard/settings/number-series/${series.id}/reset`)}
+                  >
+                    <RotateCcw size={14} /> Reset Counter
+                  </button>
+                  <button
+                    type="button"
+                    className="cms-btn cms-btn-primary"
+                    onClick={() => setIsEditing(true)}
+                  >
+                    <Edit3 size={14} /> Edit Series
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </header>
+
+          <div className="details-grid">
+            <div className="detail-item">
+              <span>Target Entity</span>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={formData.entity || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, entity: e.target.value }))}
+                />
+              ) : (
+                <strong>{series.entity}</strong>
+              )}
+            </div>
+
+            <div className="detail-item">
+              <span>Prefix Pattern</span>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={formData.prefix || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, prefix: e.target.value }))}
+                />
+              ) : (
+                <code>{series.prefix}</code>
+              )}
+            </div>
+
+            <div className="detail-item">
+              <span>Suffix Pattern</span>
+              {isEditing ? (
+                <input
+                  type="text"
+                  placeholder="Optional suffix"
+                  value={formData.suffix || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, suffix: e.target.value }))}
+                />
+              ) : (
+                <strong>{series.suffix || "—"}</strong>
+              )}
+            </div>
+
+            <div className="detail-item">
+              <span>Current Sequence Counter</span>
+              {isEditing ? (
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.currentNumber !== undefined ? formData.currentNumber : 0}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, currentNumber: e.target.value }))}
+                />
+              ) : (
+                <strong>{series.currentNumber}</strong>
+              )}
+            </div>
+
+            <div className="detail-item">
+              <span>Next Generated ID</span>
+              <strong className="next-value-highlight">{nextVal}</strong>
+            </div>
+
+            <div className="detail-item">
+              <span>Padding Width (Digits)</span>
+              {isEditing ? (
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={formData.paddingWidth !== undefined ? formData.paddingWidth : 3}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, paddingWidth: e.target.value }))}
+                />
+              ) : (
+                <strong>{series.paddingWidth} digits</strong>
+              )}
+            </div>
+
+            <div className="detail-item">
+              <span>Reset Policy</span>
+              {isEditing ? (
+                <select
+                  value={formData.resetFrequency || "Never"}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, resetFrequency: e.target.value }))}
+                >
+                  <option value="Never">Never</option>
+                  <option value="Academic Year">Academic Year</option>
+                  <option value="Calendar Year">Calendar Year</option>
+                  <option value="Monthly">Monthly</option>
+                </select>
+              ) : (
+                <strong>{series.resetFrequency || "Never"}</strong>
+              )}
+            </div>
+
+            <div className="detail-item">
+              <span>Status</span>
+              {isEditing ? (
+                <select
+                  value={formData.active ? "Active" : "Inactive"}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, active: e.target.value === "Active" }))}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              ) : (
+                <span className={`status-badge ${series.active ? "is-active" : "is-inactive"}`}>
+                  {series.active ? "Active" : "Inactive"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {isEditing ? (
+            <footer className="card-edit-footer" style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px", paddingTop: "16px", borderTop: "1px solid var(--cms-border)" }}>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={() => {
+                  setFormData(series);
+                  setIsEditing(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary"
+                onClick={handleSave}
+              >
+                Save
+              </button>
+            </footer>
+          ) : null}
+        </section>
+      </main>
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
+    </DashboardLayout>
+  );
+}
+
+function NumberSeriesPreviewScreen({ seriesList }) {
+  const navigate = useNavigate();
+  const [toast, setToast] = useState(null);
+  const [selectedKey, setSelectedKey] = useState(seriesList[0]?.key || "teaching-staff");
+  const [count, setCount] = useState(5);
+
+  const active = seriesList.find((s) => s.key === selectedKey || s.id === selectedKey) || seriesList[0];
+
+  const generatedSamples = useMemo(() => {
+    if (!active) return [];
+    const list = [];
+    const current = Number(active.currentNumber || 0);
+    for (let i = 1; i <= count; i++) {
+      list.push({
+        step: i,
+        sequenceNum: current + i,
+        formatted: formatSeriesNumber(active, current + i),
+      });
+    }
+    return list;
+  }, [active, count]);
+
+  const copyAll = () => {
+    const text = generatedSamples.map((s) => s.formatted).join("\n");
+    navigator.clipboard?.writeText(text);
+    setToast(`Copied ${generatedSamples.length} generated sample IDs to clipboard!`);
+  };
+
+  return (
+    <DashboardLayout
+      title="Number Series Preview Generator"
+      subtitle="Simulate and test automatic numbering rules in real time."
+      breadcrumb={["Home", "Settings", "ID & Number Series", "Preview Generator"]}
+    >
+      <main className="series-page-container">
+        <Link to="/dashboard/settings/number-series" className="cms-back-link">
+          <ArrowLeft size={14} /> Back to ID & Number Series
+        </Link>
+
+        <section className="preview-simulator-panel">
+          <div className="simulator-controls">
+            <Field label="Select Number Series">
+              <select
+                value={selectedKey}
+                onChange={(e) => setSelectedKey(e.target.value)}
+              >
+                {seriesList.map((s) => (
+                  <option key={s.id} value={s.key}>
+                    {s.name} ({s.module})
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Number of Samples to Generate">
+              <div style={{ display: "flex", gap: "6px" }}>
+                {[5, 10, 15, 20].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    className={`cms-btn ${count === n ? "cms-btn-primary" : "cms-btn-ghost"}`}
+                    style={{ flex: 1, padding: "6px 0", textAlign: "center" }}
+                    onClick={() => setCount(n)}
+                  >
+                    {n} IDs
+                  </button>
+                ))}
+              </div>
+            </Field>
+          </div>
+
+          {active ? (
+            <div className="series-summary-card" style={{ marginBottom: "20px", padding: "16px", background: "var(--cms-subtle)", borderRadius: "8px", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
+              <div>
+                <span style={{ fontSize: "11px", color: "var(--cms-muted)", display: "block" }}>Module</span>
+                <strong>{active.module}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: "11px", color: "var(--cms-muted)", display: "block" }}>Prefix Pattern</span>
+                <code className="series-code-badge">{active.prefix}</code>
+              </div>
+              <div>
+                <span style={{ fontSize: "11px", color: "var(--cms-muted)", display: "block" }}>Current Sequence Counter</span>
+                <strong>{active.currentNumber || 0}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: "11px", color: "var(--cms-muted)", display: "block" }}>Reset Frequency</span>
+                <strong>{active.resetFrequency || "Never"}</strong>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="simulator-results">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+              <h3 style={{ margin: 0 }}>Generated Sample IDs ({generatedSamples.length} Items)</h3>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={copyAll}
+                style={{ fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <Copy size={14} /> Copy All Generated Samples
+              </button>
+            </div>
+            <div className="series-table-wrapper">
+              <table className="series-table">
+                <thead>
+                  <tr>
+                    <th>Sample #</th>
+                    <th>Next Counter Value</th>
+                    <th>Generated Output ID Code</th>
+                    <th style={{ textAlign: "right" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {generatedSamples.map((sample) => (
+                    <tr key={sample.step}>
+                      <td>Sample #{sample.step}</td>
+                      <td>
+                        <span style={{ fontWeight: "600" }}>{sample.sequenceNum}</span>
+                      </td>
+                      <td>
+                        <code className="series-code-badge bold" style={{ fontSize: "14px", color: "var(--cms-primary)", padding: "4px 10px" }}>
+                          {sample.formatted}
+                        </code>
+                      </td>
+                      <td style={{ textAlign: "right" }}>
+                        <button
+                          type="button"
+                          className="cms-btn cms-btn-ghost"
+                          style={{ padding: "4px 8px", fontSize: "12px" }}
+                          onClick={() => {
+                            navigator.clipboard?.writeText(sample.formatted);
+                            setToast(`Copied ${sample.formatted}`);
+                          }}
+                        >
+                          <Copy size={13} /> Copy
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
+    </DashboardLayout>
+  );
+}
+
+function ResetNumberSeriesScreen({ series, onReset }) {
+  const navigate = useNavigate();
+  const [newCurrent, setNewCurrent] = useState(0);
+
+  if (!series) {
+    return (
+      <DashboardLayout title="Reset Series" breadcrumb={["Home", "Settings", "ID & Number Series"]}>
+        <main className="series-page-container">
+          <p>Series not found.</p>
+        </main>
+      </DashboardLayout>
+    );
+  }
+
+  const handleConfirm = (e) => {
+    e.preventDefault();
+    onReset(series.id, Number(newCurrent));
+  };
+
+  return (
+    <DashboardLayout
+      title="Reset Number Series Sequence"
+      subtitle={`Reset counter for ${series.name}.`}
+      breadcrumb={["Home", "Settings", "ID & Number Series", "Reset Number Series"]}
+    >
+      <main className="series-page-container">
+        <Link to="/dashboard/settings/number-series" className="cms-back-link">
+          <ArrowLeft size={14} /> Back to ID & Number Series
+        </Link>
+
+        <form className="series-form-card warning-card" onSubmit={handleConfirm}>
+          <div className="warning-banner">
+            <ShieldAlert size={20} />
+            <div>
+              <strong>Sequence Reset Warning</strong>
+              <p>
+                Resetting the counter for <strong>{series.name}</strong> will alter the sequence counter.
+                Existing records will not be changed, but future generated IDs will start after this counter.
+              </p>
+            </div>
+          </div>
+
+          <div className="form-grid-2">
+            <Field label="Current Counter">
+              <input type="number" disabled value={series.currentNumber} />
+            </Field>
+
+            <Field label="New Counter Value" required>
+              <input
+                type="number"
+                min="0"
+                required
+                value={newCurrent}
+                onChange={(e) => setNewCurrent(e.target.value)}
+              />
+              <small className="field-help">Next generated ID will be {Number(newCurrent) + 1}.</small>
+            </Field>
+          </div>
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="cms-btn cms-btn-ghost"
+              onClick={() => navigate("/dashboard/settings/number-series")}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="cms-btn cms-btn-primary">
+              Confirm Sequence Reset
+            </button>
+          </div>
+        </form>
+      </main>
+    </DashboardLayout>
+  );
+}
+

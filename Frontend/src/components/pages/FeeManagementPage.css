@@ -29,28 +29,6 @@
 }
 .cms-fee-tab:hover { color: var(--cms-text); }
 .cms-fee-tab.is-active { background: var(--cms-primary); color: #fff; }
-.cms-fee-subtabs {
-  justify-self: start;
-  width: auto;
-  max-width: 100%;
-  margin-bottom: 4px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.cms-fee-subtabs .cms-fee-tab {
-  min-height: 30px;
-  padding: 6px 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  font-size: 12.5px;
-}
-.cms-fee-subtabs .cms-fee-tab.is-active {
-  border-color: var(--cms-border);
-  background: var(--cms-primary-soft);
-  color: var(--cms-primary);
-}
 
 .cms-fee-stack { display: grid; gap: 16px; }
 
@@ -62,8 +40,8 @@
 .cms-fee-stat {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 14px;
   border: 1px solid var(--cms-border);
   border-radius: 12px;
   background: var(--cms-surface);
@@ -81,10 +59,10 @@
 .cms-fee-stat-icon {
   display: grid;
   place-items: center;
-  flex: 0 0 30px;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--cms-primary-soft);
   color: var(--cms-primary);
 }
@@ -93,8 +71,8 @@
 .cms-fee-stat.tone-red .cms-fee-stat-icon { background: var(--cms-red-soft); color: var(--cms-red); }
 .cms-fee-stat.tone-violet .cms-fee-stat-icon { background: var(--cms-violet-soft); color: var(--cms-violet); }
 .cms-fee-stat-label { display: block; color: var(--cms-muted); font-size: 12px; font-weight: 600; }
-.cms-fee-stat-value { display: block; margin-top: 2px; font-size: 17px; font-weight: 700; line-height: 1.15; }
-.cms-fee-stat small { display: block; margin-top: 2px; color: var(--cms-muted); font-size: 11px; }
+.cms-fee-stat-value { display: block; margin-top: 3px; font-size: 19px; font-weight: 700; line-height: 1.2; }
+.cms-fee-stat small { display: block; margin-top: 3px; color: var(--cms-muted); font-size: 11.5px; }
 
 .cms-fee-progress-head {
   display: flex;
@@ -120,23 +98,23 @@
   background: linear-gradient(90deg, var(--cms-primary), var(--cms-green));
 }
 
-.cms-fee-chart { height: 150px; width: 100%; }
+.cms-fee-chart { height: 280px; width: 100%; }
 .cms-fee-donut {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(170px, 240px);
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 260px);
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 .cms-fee-chart-summary {
   display: grid;
-  gap: 6px;
+  gap: 9px;
 }
 .cms-fee-chart-summary span {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 9px;
+  padding: 9px 10px;
   border: 1px solid var(--cms-border);
   border-radius: 8px;
   background: var(--cms-subtle);
@@ -146,7 +124,7 @@
 }
 .cms-fee-chart-summary strong {
   color: var(--cms-text);
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .cms-fee-chart-filter {
   display: inline-flex;
@@ -157,7 +135,7 @@
   font-weight: 650;
 }
 .cms-fee-chart-filter select {
-  min-height: 30px;
+  min-height: 32px;
   min-width: 150px;
   padding: 5px 9px;
   border: 1px solid var(--cms-border);
@@ -641,24 +619,6 @@
   padding: 16px 18px 24px;
   overflow-y: auto;
 }
-.cms-fee-account-screen {
-  overflow: hidden;
-}
-.cms-fee-account-head {
-  align-items: center;
-}
-.cms-fee-account-head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-.cms-fee-account-head span {
-  color: var(--cms-muted);
-  font-size: 12.5px;
-}
-.cms-fee-account-screen .cms-fee-drawer-body {
-  max-height: none;
-  overflow: visible;
-}
 .cms-fee-drawer-body .cms-fee-block {
   border: 1px solid var(--cms-border);
   border-radius: 12px;
@@ -702,171 +662,47 @@
 /* Receipt */
 .cms-fee-receipt {
   border: 1px solid var(--cms-border);
-  border-radius: 8px;
-  padding: 18px;
+  border-radius: 12px;
+  padding: 16px;
   background: var(--cms-surface);
-  max-width: 760px;
+  max-width: 620px;
   margin: 0 auto;
-  color: var(--cms-text);
 }
 .cms-fee-receipt-head {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  text-align: center;
-}
-.cms-fee-receipt-head img {
-  width: 58px;
-  height: 58px;
-  object-fit: contain;
-  flex: 0 0 auto;
-}
-.cms-fee-receipt-head > div {
   display: grid;
   gap: 2px;
-}
-.cms-fee-receipt-head strong {
-  font-size: 22px;
-  line-height: 1.1;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-.cms-fee-receipt-head span {
-  color: var(--cms-muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-.cms-fee-receipt-title {
-  margin: 14px 0 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--cms-primary);
-  background: color-mix(in srgb, var(--cms-primary) 10%, #fff);
-  color: var(--cms-primary);
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-align: center;
-  text-transform: uppercase;
-}
-.cms-fee-receipt-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
   margin-bottom: 12px;
-  font-size: 13px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--cms-border);
+  text-align: center;
 }
-.cms-fee-receipt-meta span {
-  overflow-wrap: anywhere;
-}
-.cms-fee-receipt-meta b {
-  margin-right: 6px;
-  color: var(--cms-muted);
-  font-weight: 700;
-}
-.cms-fee-receipt-section {
-  margin-top: 12px;
-  break-inside: avoid;
-}
-.cms-fee-receipt-section h4 {
-  margin: 0;
-  padding: 7px 10px;
-  border: 1px solid var(--cms-border);
-  border-bottom: 0;
-  background: var(--cms-subtle);
-  color: var(--cms-primary);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-.cms-fee-receipt-info-table,
-.cms-fee-receipt-breakdown {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: 13px;
-}
-.cms-fee-receipt-info-table th,
-.cms-fee-receipt-info-table td,
-.cms-fee-receipt-breakdown th,
-.cms-fee-receipt-breakdown td {
-  border: 1px solid var(--cms-border);
-  padding: 8px 10px;
-  text-align: left;
-  vertical-align: top;
-  overflow-wrap: anywhere;
-}
-.cms-fee-receipt-info-table th {
-  width: 34%;
-  background: #fff;
-  color: var(--cms-muted);
-  font-weight: 700;
-}
-.cms-fee-receipt-info-table td {
-  font-weight: 700;
-}
-.cms-fee-receipt-breakdown th {
-  background: var(--cms-subtle);
-  color: var(--cms-primary);
-  font-size: 12px;
-  font-weight: 800;
-}
-.cms-fee-receipt-breakdown th:not(:first-child),
-.cms-fee-receipt-breakdown td:not(:first-child) {
-  text-align: right;
-  white-space: nowrap;
-}
+.cms-fee-receipt-head strong { font-size: 16px; }
+.cms-fee-receipt-head span { color: var(--cms-muted); font-size: 12px; }
+.cms-fee-receipt dl { display: grid; gap: 8px; margin: 0; }
+.cms-fee-receipt dl > div { display: flex; justify-content: space-between; gap: 14px; font-size: 13px; }
+.cms-fee-receipt dt { color: var(--cms-muted); margin: 0; }
+.cms-fee-receipt dd { margin: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
 .cms-fee-receipt-total {
   display: flex;
   justify-content: space-between;
   gap: 14px;
   margin-top: 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--cms-primary);
-  background: color-mix(in srgb, var(--cms-primary) 8%, #fff);
-  font-size: 15px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--cms-border);
+  font-size: 14px;
   font-weight: 700;
-}
-.cms-fee-receipt-total strong {
-  white-space: nowrap;
-}
-.cms-fee-receipt-words {
-  display: grid;
-  gap: 3px;
-  margin-top: 10px;
-  padding: 9px 10px;
-  border: 1px solid var(--cms-border);
-  font-size: 12px;
-}
-.cms-fee-receipt-words span {
-  color: var(--cms-muted);
-  font-weight: 700;
-}
-.cms-fee-receipt-words strong {
-  font-size: 13px;
 }
 .cms-fee-signature {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 40px;
   margin-top: 42px;
-  font-size: 12px;
-  color: var(--cms-muted);
-}
-.cms-fee-signature span {
   padding-top: 10px;
   border-top: 1px solid var(--cms-border);
-  text-align: center;
-}
-.cms-fee-receipt-note {
-  margin: 14px 0 0;
-  text-align: center;
+  text-align: right;
   color: var(--cms-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @media (max-width: 1200px) {
+  .cms-fee-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cms-fee-kv { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
@@ -875,9 +711,8 @@
   .cms-fee-donut {
     grid-template-columns: 1fr;
     height: auto;
-    min-height: 250px;
+    min-height: 360px;
   }
-  .cms-fee-chart { height: 250px; }
   .cms-fee-chart-filter {
     width: 100%;
     justify-content: space-between;
@@ -895,12 +730,6 @@
   .cms-fee-drawer { width: calc(100vw - 24px); max-height: calc(100vh - 24px); }
   .cms-fee-drawer > header { align-items: flex-start; }
   .cms-fee-drawer-actions .cms-btn { flex: 1 1 auto; justify-content: center; }
-  .cms-fee-receipt { padding: 14px; }
-  .cms-fee-receipt-head { align-items: flex-start; }
-  .cms-fee-receipt-head img { width: 48px; height: 48px; }
-  .cms-fee-receipt-head strong { font-size: 18px; }
-  .cms-fee-receipt-meta { flex-direction: column; gap: 4px; }
-  .cms-fee-signature { gap: 24px; }
 }
 
 @media (max-width: 480px) {
@@ -932,7 +761,6 @@
   }
 
   body.cms-fee-print-student .cms-fee-drawer,
-  body.cms-fee-print-student .cms-fee-account-screen,
   body.cms-fee-print-receipt .cms-modal {
     position: static !important;
     display: block !important;
@@ -945,7 +773,6 @@
   }
 
   body.cms-fee-print-student .cms-fee-drawer > header,
-  body.cms-fee-print-student .cms-fee-account-head,
   body.cms-fee-print-receipt .cms-modal-head,
   body.cms-fee-print-receipt .cms-modal-foot {
     display: none !important;
@@ -963,120 +790,6 @@
     color: #1C2416 !important;
     border: 0 !important;
     box-shadow: none !important;
-  }
-
-  body.cms-fee-print-receipt {
-    background: #fff !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-print {
-    padding: 0 !important;
-    font-family: Arial, sans-serif !important;
-    font-size: 11px !important;
-    line-height: 1.35 !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-head {
-    gap: 10px !important;
-    padding-bottom: 8px !important;
-    border-bottom: 1px solid #111827 !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-head img {
-    width: 48px !important;
-    height: 48px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-head strong {
-    color: #111827 !important;
-    font-size: 18px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-head span,
-  body.cms-fee-print-receipt .cms-fee-receipt-meta b,
-  body.cms-fee-print-receipt .cms-fee-receipt-words span,
-  body.cms-fee-print-receipt .cms-fee-signature,
-  body.cms-fee-print-receipt .cms-fee-receipt-note {
-    color: #4b5563 !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-title {
-    margin: 10px 0 8px !important;
-    padding: 6px 8px !important;
-    border-color: #111827 !important;
-    background: #f3f4f6 !important;
-    color: #111827 !important;
-    font-size: 12px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-meta {
-    margin-bottom: 8px !important;
-    font-size: 11px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-section {
-    margin-top: 8px !important;
-    break-inside: avoid !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-section h4 {
-    padding: 5px 7px !important;
-    border-color: #9ca3af !important;
-    background: #f3f4f6 !important;
-    color: #111827 !important;
-    font-size: 10px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-info-table,
-  body.cms-fee-print-receipt .cms-fee-receipt-breakdown {
-    font-size: 10.5px !important;
-    page-break-inside: avoid !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-info-table th,
-  body.cms-fee-print-receipt .cms-fee-receipt-info-table td,
-  body.cms-fee-print-receipt .cms-fee-receipt-breakdown th,
-  body.cms-fee-print-receipt .cms-fee-receipt-breakdown td {
-    border-color: #9ca3af !important;
-    padding: 5px 7px !important;
-    color: #111827 !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-info-table th,
-  body.cms-fee-print-receipt .cms-fee-receipt-breakdown th {
-    background: #f9fafb !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-total {
-    margin-top: 10px !important;
-    padding: 7px 9px !important;
-    border-color: #111827 !important;
-    background: #f3f4f6 !important;
-    color: #111827 !important;
-    font-size: 12px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-words {
-    margin-top: 8px !important;
-    padding: 6px 7px !important;
-    border-color: #9ca3af !important;
-    color: #111827 !important;
-    font-size: 10.5px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-signature {
-    margin-top: 34px !important;
-    gap: 42px !important;
-    font-size: 10.5px !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-signature span {
-    border-color: #6b7280 !important;
-  }
-
-  body.cms-fee-print-receipt .cms-fee-receipt-note {
-    margin-top: 10px !important;
-    font-size: 9.5px !important;
   }
 
   body.cms-fee-print-student .cms-fee-block {

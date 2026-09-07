@@ -189,8 +189,10 @@ export default function DashboardLayout({
   const {
     boards,
     boardsLoading,
+    boardsError,
     academicYears,
     academicYearsLoading,
+    academicYearsError,
     selectedBoard,
     selectedAcademicYear,
     setSelectedBoard,
@@ -416,7 +418,7 @@ export default function DashboardLayout({
                 <div className="cms-academic-btn-text">
                   <span className="cms-academic-btn-label">Board</span>
                   <span className="cms-academic-btn-value" title={selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code}>
-                    {selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || (boardsLoading ? "Loading boards..." : "No active boards available")}
+                    {selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || (boardsLoading ? "Loading boards..." : boardsError ? "Unable to load boards" : "No active boards available")}
                   </span>
                 </div>
                 <ChevronDown size={12} className="cms-academic-btn-arrow" />
@@ -426,7 +428,7 @@ export default function DashboardLayout({
                 <div className="cms-academic-dropdown-panel">
                   <div className="cms-academic-panel-header">Select Board</div>
                   <div className="cms-academic-panel-list">
-                    {boardsLoading ? <div className="cms-academic-panel-empty">Loading boards...</div> : !boards.length ? <div className="cms-academic-panel-empty">No active boards available</div> : boards.map((b) => {
+                    {boardsLoading ? <div className="cms-academic-panel-empty">Loading boards...</div> : !boards.length ? <div className="cms-academic-panel-empty">{boardsError || "No active boards available"}</div> : boards.map((b) => {
                       const isSelected =
                         selectedBoard?.code === b.code || selectedBoard?.id === b.id || selectedBoard?.name === b.name || selectedBoard?.boardName === b.boardName;
                       return (
@@ -481,7 +483,7 @@ export default function DashboardLayout({
                 </div>
                 <div className="cms-academic-btn-text">
                   <span className="cms-academic-btn-label">Academic Year</span>
-                  <span className="cms-academic-btn-value">{selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || (academicYearsLoading ? "Loading years..." : "No active academic years")}</span>
+                  <span className="cms-academic-btn-value">{selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || (academicYearsLoading ? "Loading years..." : academicYearsError ? "Unable to load years" : "No active academic years")}</span>
                 </div>
                 <ChevronDown size={12} className="cms-academic-btn-arrow" />
               </button>
@@ -490,7 +492,7 @@ export default function DashboardLayout({
                 <div className="cms-academic-dropdown-panel">
                   <div className="cms-academic-panel-header">Select Academic Year</div>
                   <div className="cms-academic-panel-list">
-                    {academicYearsLoading ? <div className="cms-academic-panel-empty">Loading academic years...</div> : !academicYears.length ? <div className="cms-academic-panel-empty">No active academic years available</div> : academicYears.map((y) => {
+                    {academicYearsLoading ? <div className="cms-academic-panel-empty">Loading academic years...</div> : !academicYears.length ? <div className="cms-academic-panel-empty">{academicYearsError || "No active academic years available"}</div> : academicYears.map((y) => {
                       const normalize = (s) => String(s || "").trim().replace(/[–—]/g, "-").replace(/\s+/g, "");
                       const isSelected =
                         normalize(selectedAcademicYear?.code) === normalize(y.code) ||

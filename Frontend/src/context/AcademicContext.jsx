@@ -1,16 +1,30 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import apiClient from "@/api/axios.js";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 
 const AcademicContext = createContext(null);
 const BOARD_STORAGE_KEY = "cms_selected_board";
 const YEAR_STORAGE_KEY = "cms_selected_academic_year";
 
+// Board/academic-year APIs are not entirely consistent about envelopes. Some
+// deployments return `Items`, while others wrap that result in `data`/`Data`.
+// Unwrap the known response shapes before deciding the list is empty.
 const asList = (response) => {
-  const value = response?.data ?? response;
-  if (Array.isArray(value)) return value;
-  for (const key of ["data", "Data", "items", "Items", "records", "Records", "results", "Results", "$values"]) if (Array.isArray(value?.[key])) return value[key];
-  return [];
+  const unwrap = (value, depth = 0) => {
+    if (Array.isArray(value)) return value;
+    if (!value || typeof value !== "object" || depth > 4) return [];
+
+    for (const key of ["items", "Items", "records", "Records", "results", "Results", "$values"]) {
+      if (Array.isArray(value[key])) return value[key];
+    }
+    for (const key of ["data", "Data", "result", "Result", "payload", "Payload"]) {
+      const nested = unwrap(value[key], depth + 1);
+      if (nested.length) return nested;
+    }
+    return [];
+  };
+
+  return unwrap(response?.data ?? response);
 };
 const valueOf = (item, ...keys) => keys.map((key) => item?.[key]).find((value) => value !== undefined && value !== null);
 const normalize = (value) => String(value ?? "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
@@ -42,6 +56,8 @@ export function AcademicProvider({ children }) {
   const [academicYears, setAcademicYears] = useState([]);
   const [boardsLoading, setBoardsLoading] = useState(true);
   const [academicYearsLoading, setAcademicYearsLoading] = useState(false);
+  const [boardsError, setBoardsError] = useState("");
+  const [academicYearsError, setAcademicYearsError] = useState("");
   const [selectedBoard, setSelectedBoardState] = useState(() => readStored(BOARD_STORAGE_KEY));
   const [selectedAcademicYear, setSelectedAcademicYearState] = useState(() => readStored(YEAR_STORAGE_KEY));
   const [refreshToken, setRefreshToken] = useState(0);
@@ -68,7 +84,8 @@ export function AcademicProvider({ children }) {
   useEffect(() => {
     let active = true;
     setBoardsLoading(true);
-    apiClient.get(apiEndpoints.boards.list, { params: { Status: true } }).then((response) => {
+    setBoardsError("");
+    apiClient.get(apiEndpoints.boards.list, { params: { Status: true, PageNumber: 1, PageSize: 100 } }).then((response) => {
       if (!active) return;
       const nextBoards = asList(response).filter(isActive).map(mapBoard);
       setBoards(nextBoards);
@@ -77,9 +94,10 @@ export function AcademicProvider({ children }) {
         persist(BOARD_STORAGE_KEY, next);
         return next;
       });
-    }).catch(() => {
+    }).catch((error) => {
       if (!active) return;
       setBoards([]);
+      setBoardsError(getApiErrorMessage(error));
       setSelectedBoardState(null);
       persist(BOARD_STORAGE_KEY, null);
     }).finally(() => active && setBoardsLoading(false));
@@ -97,6 +115,7 @@ export function AcademicProvider({ children }) {
     }
     setAcademicYearsLoading(true);
     setAcademicYears([]);
+    setAcademicYearsError("");
     apiClient.get(apiEndpoints.academicYears.active, { params: { boardId: selectedBoardId, isActive: true } }).then((response) => {
       if (!active) return;
       const nextYears = asList(response).filter((year) => {
@@ -109,10 +128,11 @@ export function AcademicProvider({ children }) {
         persist(YEAR_STORAGE_KEY, next);
         return next;
       });
-    }).catch(() => {
+    }).catch((error) => {
       if (!active) return;
       setAcademicYears([]);
-      setSelectedAcademicYearState(null);
+      setAcademicYearsError(getApiErrorMessage(error));
+    setSelectedAcademicYearState(null);
       persist(YEAR_STORAGE_KEY, null);
     }).finally(() => active && setAcademicYearsLoading(false));
     return () => { active = false; };
@@ -120,8 +140,8 @@ export function AcademicProvider({ children }) {
 
   const value = useMemo(() => ({
     boards, academicYears, selectedBoard, selectedBoardId, selectedAcademicYear, selectedAcademicYearId,
-    setSelectedBoard, setSelectedAcademicYear, boardsLoading, academicYearsLoading, refreshAcademicContext,
-  }), [academicYears, academicYearsLoading, boards, boardsLoading, refreshAcademicContext, selectedAcademicYear, selectedAcademicYearId, selectedBoard, selectedBoardId, setSelectedAcademicYear, setSelectedBoard]);
+    setSelectedBoard, setSelectedAcademicYear, boardsLoading, academicYearsLoading, boardsError, academicYearsError, refreshAcademicContext,
+  }), [academicYears, academicYearsError, academicYearsLoading, boards, boardsError, boardsLoading, refreshAcademicContext, selectedAcademicYear, selectedAcademicYearId, selectedBoard, selectedBoardId, setSelectedAcademicYear, setSelectedBoard]);
   return <AcademicContext.Provider value={value}>{children}</AcademicContext.Provider>;
 }
 
@@ -130,6 +150,7 @@ export function useAcademicContext() {
   return context ?? {
     boards: [], academicYears: [], selectedBoard: null, selectedBoardId: undefined,
     selectedAcademicYear: null, selectedAcademicYearId: undefined, boardsLoading: false, academicYearsLoading: false,
+    boardsError: "", academicYearsError: "",
     setSelectedBoard: () => {}, setSelectedAcademicYear: () => {}, refreshAcademicContext: () => {},
   };
 }

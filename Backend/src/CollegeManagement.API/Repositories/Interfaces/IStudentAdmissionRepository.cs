@@ -1,4 +1,4 @@
-﻿using CollegeManagement.API.DTOs.StudentAdmission;
+using CollegeManagement.API.DTOs.StudentAdmission;
 
 namespace CollegeManagement.API.Repositories.Interfaces
 {
@@ -22,28 +22,25 @@ namespace CollegeManagement.API.Repositories.Interfaces
             UpdateStudentAdmissionRequest request,
             string? studentPhoto);
 
-
-
-        //bloodgroup//
+        // Blood groups
         public Task<IEnumerable<string>> GetBloodGroupsAsync()
         {
             IEnumerable<string> bloodGroups = new[]
             {
-        "A+",
-        "A-",
-        "B+",
-        "B-",
-        "AB+",
-        "AB-",
-        "O+",
-        "O-"
-    };
+                "A+",
+                "A-",
+                "B+",
+                "B-",
+                "AB+",
+                "AB-",
+                "O+",
+                "O-"
+            };
 
             return Task.FromResult(bloodGroups);
         }
-        //generate//
-        Task<string> GenerateAdmissionNumberAsync();
 
+        Task<string> GenerateAdmissionNumberAsync();
 
         // =====================================================
         // VERIFY / APPROVE / REJECT
@@ -53,11 +50,11 @@ namespace CollegeManagement.API.Repositories.Interfaces
             VerifyStudentAdmissionRequest request);
 
         Task<bool> ApproveAsync(
-            ApproveStudentAdmissionRequest request);
+            ApproveStudentAdmissionRequest request,
+            string? passwordHash = null);
 
         Task<bool> RejectAsync(
             RejectStudentAdmissionRequest request);
-
 
         // =====================================================
         // SECTION ALLOCATION
@@ -69,7 +66,6 @@ namespace CollegeManagement.API.Repositories.Interfaces
         Task<int> BulkAllocateSectionAsync(
             BulkSectionAllocationRequest request);
 
-
         // =====================================================
         // ROLL NUMBER ALLOCATION
         // =====================================================
@@ -77,6 +73,4 @@ namespace CollegeManagement.API.Repositories.Interfaces
         Task<int> BulkAllocateRollNumbersAsync(
             BulkRollNumberAllocationRequest request);
     }
-
-
-    }
+}

@@ -10,6 +10,7 @@ import {
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
+import { getLeaveRequests, submitLeaveRequest, subscribeToLeaveRequests } from "@/features/leave/services/leaveStore.js";
 import "./facultydashboard.css";
 
 // ==========================================================================
@@ -216,7 +217,7 @@ function FacultyDashboard() {
   );
   const [marksState, setMarksState] = useState(mockStudentsList);
   const [examDutiesState, setExamDutiesState] = useState(mockExamDutiesList);
-  const [leavesState, setLeavesState] = useState(mockLeavesList);
+  const [leavesState, setLeavesState] = useState(() => getLeaveRequests().filter((leave) => leave.staffId === mockFaculty.employeeId));
   const [reimbursementsState, setReimbursementsState] = useState(mockReimbursementsList);
   const [messagesState, setMessagesState] = useState(mockMessagesHistory);
   const [newMessageText, setNewMessageText] = useState("");
@@ -242,6 +243,8 @@ function FacultyDashboard() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  useEffect(() => subscribeToLeaveRequests((requests) => setLeavesState(requests.filter((leave) => leave.staffId === mockFaculty.employeeId))), []);
 
   // Logout Handler
   const handleLogout = () => {
@@ -1535,18 +1538,25 @@ function FacultyDashboard() {
         showToast("Please enter a reason for leave application.");
         return;
       }
-      const newLeave = {
-        id: `l-${Date.now()}`,
-        type: leaveForm.type,
-        from: leaveForm.from,
-        to: leaveForm.to,
-        days: leaveForm.days,
+      const start = new Date(`${leaveForm.from}T00:00:00`);
+      const end = new Date(`${leaveForm.to}T00:00:00`);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+        showToast("Choose a valid leave date range.");
+        return;
+      }
+      const requestedDays = Math.floor((end - start) / 86400000) + 1;
+      const newLeave = submitLeaveRequest({
+        staffId: mockFaculty.employeeId,
+        staffName: mockFaculty.fullName,
+        department: mockFaculty.department,
+        staffType: "Teaching Staff",
+        leaveType: leaveForm.type.replace(/ \([A-Z]+\)/, ""),
+        fromDate: leaveForm.from,
+        toDate: leaveForm.to,
+        days: requestedDays,
         reason: leaveForm.reason,
-        appliedOn: "Today",
-        status: "Pending",
-        approver: "HOD Mathematics",
-      };
-      setLeavesState([newLeave, ...leavesState]);
+      });
+      setLeavesState((current) => [newLeave, ...current]);
       showToast("Leave request submitted successfully!");
       setLeaveForm({ ...leaveForm, reason: "" });
     };
@@ -1643,8 +1653,8 @@ function FacultyDashboard() {
                 <tbody>
                   {leavesState.map((l) => (
                     <tr key={l.id}>
-                      <td><strong>{l.type}</strong></td>
-                      <td>{l.from}</td>
+                      <td><strong>{l.leaveType}</strong></td>
+                      <td>{l.fromDate}</td>
                       <td>{l.days} Day(s)</td>
                       <td>{renderStatusBadge(l.status)}</td>
                     </tr>

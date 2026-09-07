@@ -145,6 +145,16 @@
   margin-top: 12px;
   overflow: hidden;
 }
+.subject-common-card { margin-top: 0; }
+.subject-common-head { align-items: flex-start; }
+.subject-common-head p {
+  margin: 4px 0 0;
+  color: var(--cms-muted);
+  font-size: 12px;
+}
+.subject-add-language-btn { min-height: 34px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+.second-language-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.second-language-chips span { padding: 2px 7px; border-radius: 999px; background: var(--cms-primary-soft); color: var(--cms-primary); font-size: 11px; font-weight: 650; }
 .subject-table-head,
 .assignment-footer {
   display: flex;
@@ -248,7 +258,7 @@
 .subject-master-screen { display: grid; gap: 14px; }
 .subject-master-context {
   display: grid;
-  grid-template-columns: repeat(4, minmax(170px, 1fr));
+  grid-template-columns: repeat(2, minmax(220px, 320px));
   gap: 16px;
   padding: 16px;
   border: 1px solid var(--cms-border);
@@ -277,6 +287,11 @@
 .subject-remove-btn:hover { background: var(--cms-red-soft, #fef2f2); }
 .subject-modal { display: grid; gap: 16px; }
 .subject-combobox { position: relative; width: 100%; }
+.subject-group-input { position: relative; display: flex; align-items: center; }
+.subject-group-input > svg { position: absolute; z-index: 1; color: var(--cms-muted); pointer-events: none; }
+.subject-group-input > svg:first-child { left: 12px; }
+.subject-group-input > svg:last-child { right: 12px; }
+.subject-group-input input { padding-right: 38px; padding-left: 38px; cursor: text; }
 .subject-combobox-options {
   position: absolute;
   z-index: 20;

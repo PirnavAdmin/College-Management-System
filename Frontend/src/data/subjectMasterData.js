@@ -15,10 +15,22 @@ export const subjectMaster = [
   { id: "EVS1", name: "Environmental Education", code: "EVS1", type: ["Theory"], marks: { theory: 50, practical: 0, internal: 0, total: 50, passing: 18 } },
 ];
 
+export const commonSubjectIds = ["ENG1", "SL1"];
+
+// Second Language is one shared common-subject slot. These are selectable
+// language choices for that slot, not separate common subjects or group maps.
+export const secondLanguageOptions = [
+  { name: "Telugu", code: "TEL1" },
+  { name: "Hindi", code: "HIN1" },
+  { name: "Sanskrit", code: "SAN1" },
+  { name: "Urdu", code: "URD1" },
+  { name: "Arabic", code: "ARA1" },
+];
+
 export const groupSubjectMap = {
-  MPC: ["ENG1", "SL1", "MATH1A", "MATH1B", "PHY1", "CHE1"],
-  BiPC: ["ENG1", "SL1", "BOT1", "ZOO1", "PHY1", "CHE1"],
-  MEC: ["ENG1", "SL1", "MATH1A", "MATH1B", "ECO1", "COM1"],
-  CEC: ["ENG1", "SL1", "CIV1", "ECO1", "COM1"],
-  HEC: ["ENG1", "SL1", "HIS1", "ECO1", "CIV1"],
+  MPC: ["MATH1A", "MATH1B", "PHY1", "CHE1"],
+  BIPC: ["BOT1", "ZOO1", "PHY1", "CHE1"],
+  MEC: ["MATH1A", "MATH1B", "ECO1", "COM1"],
+  CEC: ["CIV1", "ECO1", "COM1"],
+  HEC: ["HIS1", "ECO1", "CIV1"],
 };

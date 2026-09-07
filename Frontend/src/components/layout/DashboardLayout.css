@@ -1056,6 +1056,11 @@
   flex-direction: column;
   gap: 3px;
 }
+.cms-academic-panel-empty {
+  padding: 14px 16px;
+  color: var(--cms-muted);
+  font-size: 13px;
+}
 
 .cms-academic-panel-item {
   display: flex;

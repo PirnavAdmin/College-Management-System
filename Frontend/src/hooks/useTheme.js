@@ -15,9 +15,7 @@ export function setTheme(theme) {
   themeColor?.setAttribute("content", theme === "dark" ? "#161916" : "#6F8400");
   try {
     window.localStorage.setItem(STORAGE_KEY, theme);
-  } catch {
-    /* storage unavailable */
-  }
+  } catch {}
   listeners.forEach((l) => l());
 }
 
@@ -28,7 +26,10 @@ function subscribe(cb) {
 
 export function useTheme() {
   const theme = useSyncExternalStore(subscribe, read, () => "light");
-  return { theme, toggle: () => setTheme(theme === "dark" ? "light" : "dark"), setTheme };
+
+  return {
+    theme,
+    toggle: () => setTheme(theme === "dark" ? "light" : "dark"),
+    setTheme,
+  };
 }
-
-

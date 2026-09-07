@@ -27,6 +27,8 @@ import StudentProfilePage from "@/components/pages/StudentProfilePage.jsx";
 import StudentEnrollmentPage from "@/components/pages/StudentEnrollmentPage.jsx";
 import SettingsPage from "@/components/pages/SettingsPage.jsx";
 import NumberSeriesPage from "@/components/pages/NumberSeriesPage.jsx";
+import TemplatesPage from "@/components/pages/TemplatesPage.jsx";
+import CredentialsGeneratorPage from "@/components/pages/CredentialsGeneratorPage.jsx";
 import SalaryManagementPage from "@/components/pages/SalaryManagementPage.jsx";
 import Login from "@/features/auth/pages/Login.jsx";
 import Register from "@/features/auth/pages/Register.jsx";
@@ -152,11 +154,26 @@ export default function AppRoutes() {
         <Route path="/dashboard/settings" element={<SettingsPage />} />
         <Route path="/dashboard/settings/general" element={<SettingsPage />} />
         <Route path="/dashboard/settings/number-series" element={<NumberSeriesPage mode="dashboard" />} />
-        <Route path="/dashboard/settings/number-series/add" element={<NumberSeriesPage mode="add" />} />
-        <Route path="/dashboard/settings/number-series/preview" element={<NumberSeriesPage mode="preview" />} />
-        <Route path="/dashboard/settings/number-series/:id/edit" element={<NumberSeriesPage mode="edit" />} />
-        <Route path="/dashboard/settings/number-series/:id/reset" element={<NumberSeriesPage mode="reset" />} />
-        <Route path="/dashboard/settings/number-series/:id" element={<NumberSeriesPage mode="view" />} />
+        <Route path="/dashboard/settings/number-series/:seriesId/edit" element={<NumberSeriesPage mode="edit" />} />
+        <Route path="/dashboard/settings/number-series/:seriesId" element={<NumberSeriesPage mode="detail" />} />
+
+        {/* Templates Management Module Routes */}
+        <Route path="/dashboard/settings/templates" element={<TemplatesPage />} />
+        <Route path="/dashboard/settings/templates/certificates/:id/edit" element={<TemplatesPage />} />
+        <Route path="/dashboard/settings/templates/reports/:id/edit" element={<TemplatesPage />} />
+        <Route path="/dashboard/settings/templates/letters/:id/edit" element={<TemplatesPage />} />
+        <Route path="/dashboard/settings/templates/upload" element={<TemplatesPage />} />
+        <Route path="/dashboard/settings/templates/add" element={<TemplatesPage />} />
+        <Route path="/dashboard/settings/templates/:id/preview" element={<TemplatesPage />} />
+
+        {/* Credentials Generator Module Routes */}
+        <Route path="/dashboard/settings/credentials" element={<CredentialsGeneratorPage />} />
+        <Route path="/dashboard/settings/credentials/faculty" element={<CredentialsGeneratorPage />} />
+        <Route path="/dashboard/settings/credentials/students" element={<CredentialsGeneratorPage />} />
+        <Route path="/dashboard/settings/credentials/history" element={<CredentialsGeneratorPage />} />
+        <Route path="/dashboard/settings/credentials/settings" element={<CredentialsGeneratorPage />} />
+        <Route path="/dashboard/settings/credentials/faculty/generate" element={<CredentialsGeneratorPage />} />
+        <Route path="/dashboard/settings/credentials/students/generate" element={<CredentialsGeneratorPage />} />
 
         {/* Staff Salary Management Module Routes */}
         <Route path="/dashboard/staff-salary" element={<SalaryManagementPage mode="dashboard" />} />

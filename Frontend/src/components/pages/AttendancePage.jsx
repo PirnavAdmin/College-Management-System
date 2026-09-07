@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import DetailedStudentAttendance from "@/components/pages/DetailedStudentAttendance.jsx";
 import "./AttendancePage.css";
 
 const STATUS = [
@@ -304,41 +305,61 @@ function AttendanceExportMenu({ disabled, exporting, onExport }) {
 }
 
 export default function AttendancePage() {
-  const { pathname } = useLocation(),
-    navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
   const [toast, setToast] = useState("");
-  const isStaff = pathname.includes("/staff"),
-    reports = pathname.endsWith("/reports"),
-    area = isStaff ? "staff" : "student";
+
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+  const isDetailsParam = searchParams.get("view") === "details";
+  const initialViewBy = searchParams.get("viewBy") || "all";
+
+  const isStaff = pathname.includes("/staff");
+  const reports = pathname.endsWith("/reports");
+  const area = isStaff ? "staff" : "student";
+
+  const isDetailsView = !isStaff && (isDetailsParam || pathname.endsWith("/details"));
+
   return (
     <>
       <DashboardLayout
-        title={`${isStaff ? "Staff" : "Student"} Attendance`}
+        title={isDetailsView ? "Student Attendance Details" : `${isStaff ? "Staff" : "Student"} Attendance`}
         subtitle={
-          reports
-            ? "Monthly date-wise attendance history."
-            : isStaff
-              ? "View and manage staff attendance."
-              : "View and manage student attendance."
+          isDetailsView
+            ? "Comprehensive drill-down attendance analysis by level, group, section, and student."
+            : reports
+              ? "Monthly date-wise attendance history."
+              : isStaff
+                ? "View and manage staff attendance."
+                : "View and manage student attendance."
         }
-        breadcrumb={["Operations", "Attendance"]}
+        breadcrumb={["Operations", "Attendance", isDetailsView ? "Details" : reports ? "Reports" : "Mark"]}
       >
         <main className="attendance-module">
           <nav className="att-nav">
             <button
-              className={!reports ? "active" : ""}
+              className={!reports && !isDetailsView ? "active" : ""}
               onClick={() => navigate(`/dashboard/attendance/${area}`)}
             >
-              Attendance
+              Mark Attendance
             </button>
+            {!isStaff && (
+              <button
+                className={isDetailsView ? "active" : ""}
+                onClick={() => navigate(`/dashboard/attendance/student?view=details`)}
+              >
+                Detailed Report
+              </button>
+            )}
             <button
               className={reports ? "active" : ""}
               onClick={() => navigate(`/dashboard/attendance/${area}/reports`)}
             >
-              Reports
+              Monthly Reports
             </button>
           </nav>
-          {reports ? (
+          {isDetailsView ? (
+            <DetailedStudentAttendance initialViewBy={initialViewBy} />
+          ) : reports ? (
             isStaff ? (
               <StaffReports say={setToast} />
             ) : (

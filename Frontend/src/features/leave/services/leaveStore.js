@@ -1,66 +1,148 @@
-import { mockLeaveRequests } from "@/data/attendanceMockData.js";
+import apiClient from "@/api/apiClient.js";
 
-const STORAGE_KEY = "cms.leave-requests";
-const CHANGE_EVENT = "cms:leave-requests-changed";
+// Note: Ensure the base endpoint path correctly resolves to /api/v1
+// apiClient handles baseUrl and auth headers automatically.
 
-const seedRequests = [
-  { id: 3, staffId: "FAC005", staffName: "Ravi Kumar", department: "Mathematics", staffType: "Teaching Staff", leaveType: "Casual Leave", fromDate: "2026-09-10", toDate: "2026-09-10", days: 1, reason: "Personal work", status: "Approved", createdDate: "2026-09-08", reviewedBy: "Admin", reviewedOn: "08-Sep-2026" },
-  ...mockLeaveRequests.map((request) => ({ ...request, createdDate: request.fromDate })),
-];
+const getAuthHeaders = () => { /* Not needed since apiClient handles it */ };
 
-const read = () => {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(saved) ? saved : seedRequests;
-  } catch {
-    return seedRequests;
-  }
+const mapLeaveType = (type) => {
+    switch(type) {
+        case 1: return "Casual Leave";
+        case 2: return "Sick Leave";
+        case 3: return "Earned Leave";
+        case 4: return "Maternity Leave";
+        case 5: return "Other";
+        default: return type;
+    }
 };
 
-const write = (requests) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(requests));
-  window.dispatchEvent(new Event(CHANGE_EVENT));
-  return requests;
+const mapLeaveStatus = (status) => {
+    switch(status) {
+        case 1: return "Pending";
+        case 2: return "Approved";
+        case 3: return "Rejected";
+        default: return status;
+    }
 };
 
-export const getLeaveRequests = () => read();
-
-export const subscribeToLeaveRequests = (listener) => {
-  const onChange = () => listener(read());
-  window.addEventListener(CHANGE_EVENT, onChange);
-  window.addEventListener("storage", onChange);
-  return () => {
-    window.removeEventListener(CHANGE_EVENT, onChange);
-    window.removeEventListener("storage", onChange);
-  };
+const mapLeaveRequest = (req) => {
+    if (!req) return req;
+    return {
+        ...req,
+        leaveType: mapLeaveType(req.leaveType),
+        status: mapLeaveStatus(req.status),
+        fromDate: req.startDate ? req.startDate.split('T')[0] : null,
+        toDate: req.endDate ? req.endDate.split('T')[0] : null,
+        days: req.totalDays
+    };
 };
 
-export const submitLeaveRequest = (request) => {
-  const requests = read();
-  const nextId = Math.max(0, ...requests.map((item) => Number(item.id) || 0)) + 1;
-  const record = { ...request, id: nextId, status: "Pending", createdDate: new Date().toISOString().slice(0, 10) };
-  write([record, ...requests]);
-  return record;
+export const getLeaveRequests = async (staffId = null, departmentId = null, status = null) => {
+    try {
+        const params = new URLSearchParams();
+        if (staffId) params.append('staffId', staffId);
+        if (departmentId) params.append('departmentId', departmentId);
+        if (status) params.append('status', status);
+
+        const response = await apiClient.get(`/api/v1/staff-attendance/leave?${params.toString()}`);
+        const data = response.data?.data || response.data?.Data || [];
+        return data.map(mapLeaveRequest);
+    } catch (error) {
+        console.error('Error fetching leave requests:', error);
+        throw error;
+    }
 };
 
-export const reviewLeaveRequest = (id, status, adminRemark = "") => {
-  if (!["Approved", "Rejected"].includes(status)) throw new Error("Invalid leave status.");
-  const requests = read();
-  const record = requests.find((item) => String(item.id) === String(id));
-  if (!record || record.status !== "Pending") throw new Error("Only pending leave requests can be reviewed.");
-  const reviewed = { ...record, status, adminRemark, reviewedBy: "Admin", reviewedOn: new Date().toLocaleDateString("en-IN") };
-  write(requests.map((item) => String(item.id) === String(id) ? reviewed : item));
-  return reviewed;
+export const getLeaveDetails = async (leaveRequestId) => {
+    try {
+        const response = await apiClient.get(`/api/v1/staff-attendance/leave/${leaveRequestId}`);
+        const data = response.data?.data || response.data?.Data;
+        return mapLeaveRequest(data);
+    } catch (error) {
+        console.error(`Error fetching leave details for ID ${leaveRequestId}:`, error);
+        throw error;
+    }
 };
 
-export const revokeApprovedLeave = (id, adminRemark) => {
-  if (!adminRemark?.trim()) throw new Error("Please enter a reason before rejecting the approved leave.");
-  const requests = read();
-  const record = requests.find((item) => String(item.id) === String(id));
-  if (!record || record.status !== "Approved") throw new Error("Only approved leave requests can be revoked.");
-  const reviewedOn = new Date().toLocaleDateString("en-IN");
-  const statusHistory = [...(record.statusHistory || []), { from: "Approved", to: "Rejected", remark: adminRemark.trim(), reviewedBy: "Admin", reviewedOn }];
-  const revoked = { ...record, status: "Rejected", adminRemark: adminRemark.trim(), reviewedBy: "Admin", reviewedOn, statusHistory };
-  write(requests.map((item) => String(item.id) === String(id) ? revoked : item));
-  return revoked;
+export const submitLeaveRequest = async (requestPayload) => {
+    try {
+        const response = await apiClient.post(`/api/v1/staff-attendance/leave`, requestPayload);
+        return response.data?.data || response.data?.Data;
+    } catch (error) {
+        console.error('Error submitting leave request:', error);
+        throw error;
+    }
+};
+
+export const reviewLeaveRequest = async (leaveRequestId, actionPayload) => {
+    try {
+        const response = await apiClient.post(`/api/v1/staff-attendance/leave/${leaveRequestId}/action`, actionPayload);
+        const data = response.data?.data || response.data?.Data;
+        return mapLeaveRequest(data);
+    } catch (error) {
+        console.error(`Error reviewing leave request ID ${leaveRequestId}:`, error);
+        throw error;
+    }
+};
+
+export const revokeApprovedLeave = async (leaveRequestId, adminRemark) => {
+    return reviewLeaveRequest(leaveRequestId, {
+        status: 3, // 3 mapped to Rejected in Enum
+        rejectionReason: adminRemark
+    });
+};
+
+export const getLeaveHistorySummary = async (departmentId = null, staffType = null) => {
+    try {
+        const params = new URLSearchParams();
+        if (departmentId) params.append('departmentId', departmentId);
+        if (staffType) params.append('staffType', staffType);
+
+        const response = await apiClient.get(`/api/v1/staff-attendance/leave/history?${params.toString()}`);
+        return response.data?.data || response.data?.Data || [];
+    } catch (error) {
+        console.error('Error fetching leave history summary:', error);
+        throw error;
+    }
+};
+
+export const getLeaveHistory = async (staffId) => {
+    try {
+        const response = await apiClient.get(`/api/v1/staff-attendance/leave/history/staff/${staffId}`);
+        return response.data?.data || response.data?.Data;
+    } catch (error) {
+        console.error(`Error fetching leave history for staff ID ${staffId}:`, error);
+        throw error;
+    }
+};
+
+export const getAffectedClasses = async (leaveRequestId) => {
+    try {
+        const response = await apiClient.get(`/api/v1/staff-leaves/${leaveRequestId}/affected-classes`);
+        return response.data?.data || response.data?.Data || [];
+    } catch (error) {
+        console.error(`Error fetching affected classes for leave ID ${leaveRequestId}:`, error);
+        throw error;
+    }
+};
+
+export const getEligibleSubstitutes = async (leaveRequestId, timetableId, date) => {
+    try {
+        const params = new URLSearchParams({ date });
+        const response = await apiClient.get(`/api/v1/staff-leaves/${leaveRequestId}/slots/${timetableId}/eligible-substitutes?${params.toString()}`);
+        return response.data?.data || response.data?.Data || [];
+    } catch (error) {
+        console.error('Error fetching eligible substitutes:', error);
+        throw error;
+    }
+};
+
+export const assignSubstitutes = async (leaveRequestId, requestPayload) => {
+    try {
+        const response = await apiClient.post(`/api/v1/staff-leaves/${leaveRequestId}/substitutions`, requestPayload);
+        return response.data?.data || response.data?.Data || [];
+    } catch (error) {
+        console.error('Error assigning substitutes:', error);
+        throw error;
+    }
 };

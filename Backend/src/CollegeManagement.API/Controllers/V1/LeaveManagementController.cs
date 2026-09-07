@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Asp.Versioning;
 using CollegeManagement.API.DTOs.StaffAttendance.Requests;
 using CollegeManagement.API.Services.Interfaces;
@@ -64,6 +64,35 @@ namespace CollegeManagement.API.Controllers.V1
         {
             var result = await _service.GetStaffLeaveRequestsAsync(staffId, departmentId, status);
             return Ok(new { Status = true, Message = "Staff leaves retrieved successfully.", Data = result });
+        }
+
+        [HttpGet("leave/{leaveRequestId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetStaffLeaveDetails(int leaveRequestId)
+        {
+            var result = await _service.GetStaffLeaveDetailsAsync(leaveRequestId);
+            return Ok(new { Status = true, Message = "Staff leave details retrieved successfully.", Data = result });
+        }
+
+        [HttpGet("leave/history")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> GetStaffLeaveHistorySummary([FromQuery] int? departmentId, [FromQuery] string? staffType)
+        {
+            var result = await _service.GetStaffLeaveHistorySummaryAsync(departmentId, staffType);
+            return Ok(new { Status = true, Message = "Staff leave history summary retrieved successfully.", Data = result });
+        }
+
+        [HttpGet("leave/history/staff/{staffId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetStaffLeaveHistory(int staffId)
+        {
+            var result = await _service.GetStaffLeaveHistoryAsync(staffId);
+            return Ok(new { Status = true, Message = "Staff leave history retrieved successfully.", Data = result });
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿using CollegeManagement.API.Models;
+using CollegeManagement.API.Models;
 
 namespace CollegeManagement.API.Repositories.Interfaces
 {
@@ -11,5 +11,6 @@ namespace CollegeManagement.API.Repositories.Interfaces
         Task<Role?> GetRoleByNameAsync(string roleName);
         Task<List<User>> GetAllUsersAsync();
         Task<User?> GetByIdAsync(int id);
+        Task DeleteAsync(int id);
     }
 }

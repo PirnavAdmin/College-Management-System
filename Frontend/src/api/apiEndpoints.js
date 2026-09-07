@@ -47,6 +47,7 @@ export const apiEndpoints = {
   boards: {
     list: "/api/v1/boards",
     getAll: "/api/v1/boards",
+    active: "/api/v1/boards/active",
     create: "/api/v1/boards",
     getById: (boardId) => `/api/v1/boards/${boardId}`,
     update: (boardId) => `/api/v1/boards/${boardId}`,
@@ -200,15 +201,24 @@ export const apiEndpoints = {
   },
   departments: {
     getAll: "/api/v1/departments",
+    create: "/api/v1/departments",
+  },
+  designations: {
+    getAll: "/api/v1/designations",
+    create: "/api/v1/designations",
+    getById: (id) => `/api/v1/designations/${id}`,
+    update: (id) => `/api/v1/designations/${id}`,
+    delete: (id) => `/api/v1/designations/${id}`,
   },
   sections: {
     getAll: "/api/v1/Sections",
     list: "/api/v1/Sections",
     create: "/api/v1/Sections",
-    getById: (sectionId) => `/api/v1/Sections/${sectionId}`,
     update: (sectionId) => `/api/v1/Sections/${sectionId}`,
     delete: (sectionId) => `/api/v1/Sections/${sectionId}`,
+    bulk: "/api/v1/Sections/bulk",
     byGroup: (groupId) => `/api/v1/Sections/group/${groupId}`,
+    getById: (sectionId) => `/api/v1/Sections/${sectionId}`,
     search: "/api/v1/Sections",
   },
   periods: {
@@ -230,6 +240,7 @@ export const apiEndpoints = {
   },
   rooms: {
     getAll: "/api/v1/rooms",
+    available: "/api/v1/rooms/available",
   },
   attendance: {
     create: "/api/v1/attendance/create",
@@ -289,7 +300,9 @@ export const apiEndpoints = {
     exportPdf: (studentId) => `/api/v1/students/${encodeURIComponent(studentId)}/export/pdf`,
   },
   academicLevels: {
+    getAll: "/api/v1/academic-levels",
     list: "/api/v1/academic-levels",
+    getByBoard: (boardId) => `/api/v1/academic-levels?boardId=${boardId}`,
   },
   studentAdmissions: {
     getAll: "/api/v1/student-admissions",
@@ -401,6 +414,21 @@ export const apiEndpoints = {
     exportPdf: "/api/reports/export/pdf",
     exportExcel: "/api/reports/export/excel",
     custom: "/api/reports/custom",
+  },
+  evaluations: {
+    search: "/api/v1/evaluations/search",
+    students: (evalId) => `/api/v1/evaluations/${evalId}/students`,
+    saveMarks: (evalId) => `/api/v1/faculty/evaluations/${evalId}/marks`,
+    submit: (evalId) => `/api/v1/faculty/evaluations/${evalId}/submit`,
+    verify: (evalId) => `/api/v1/evaluations/${evalId}/verify`,
+    approve: (evalId) => `/api/v1/evaluations/${evalId}/approve`,
+    reject: (evalId) => `/api/v1/evaluations/${evalId}/reject`,
+    verifyAll: "/api/v1/evaluations/verify-all",
+    approveAll: "/api/v1/evaluations/approve-all",
+  },
+  studentAnalysis: {
+    getAll: "/api/v1/student-analysis",
+    details: (studentId) => `/api/v1/student-analysis/${studentId}/details`,
   },
 };
 

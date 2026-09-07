@@ -24,8 +24,8 @@ namespace CollegeManagement.API.Profiles
                 .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.IsDeleted, opt => opt.Ignore())
                 .ForMember(dest => dest.EmployeeId, opt => opt.Ignore())
-                .ForMember(dest => dest.Username, opt => opt.Ignore())
-                .ForMember(dest => dest.Password, opt => opt.Ignore())
+                // .ForMember(dest => dest.Username, opt => opt.Ignore())
+                // .ForMember(dest => dest.Password, opt => opt.Ignore())
                 .ForMember(dest => dest.PhotoPath, opt => opt.Ignore())
                 .ForMember(dest => dest.Id, opt => opt.Ignore());
 

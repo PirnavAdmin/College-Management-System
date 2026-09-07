@@ -357,7 +357,60 @@ function SearchSelectInput({ label = "", opts = [], value = "", onChange }) {
   );
 }
 
-function Field({ item = [], values = {}, setValues, error = "", forceOptional = false }) {
+function useStaffTypeOptions(staffType) {
+  const [departments, setDepartments] = useState([]);
+  const [designations, setDesignations] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadOptions() {
+      setLoading(true);
+      const apiStaffType = staffType === "Non-Teaching" ? "NonTeaching" : staffType;
+
+      let deptOpts = [];
+      let desigOpts = [];
+
+      try {
+        const deptRes = await apiClient.get(apiEndpoints.departments.getAll, {
+          params: staffType ? { staffType: apiStaffType } : {},
+        });
+        const deptData = deptRes?.data?.items || deptRes?.data?.data || (Array.isArray(deptRes?.data) ? deptRes.data : []);
+        deptOpts = deptData.map((d) => (typeof d === "object" ? d.name || d.departmentName : d)).filter(Boolean);
+      } catch (e) {
+        console.warn("Failed to fetch departments from API:", e);
+      }
+
+      try {
+        const desigRes = await apiClient.get(apiEndpoints.designations.getAll, {
+          params: {
+            includeInactive: false,
+            ...(staffType ? { staffType: apiStaffType } : {}),
+          },
+        });
+        const desigData = desigRes?.data?.items || desigRes?.data?.data || (Array.isArray(desigRes?.data) ? desigRes.data : []);
+        desigOpts = desigData.map((d) => (typeof d === "object" ? d.name || d.designationName : d)).filter(Boolean);
+      } catch (e) {
+        console.warn("Failed to fetch designations from API:", e);
+      }
+
+      if (isMounted) {
+        setDepartments(deptOpts);
+        setDesignations(desigOpts);
+        setLoading(false);
+      }
+    }
+
+    loadOptions();
+    return () => {
+      isMounted = false;
+    };
+  }, [staffType]);
+
+  return { departments, designations, loading };
+}
+
+function Field({ item = [], values = {}, setValues, error = "", forceOptional = false, departmentOptions = null, designationOptions = null }) {
   if (!Array.isArray(item) || item.length < 2) return null;
   const name = item[0] || "";
   const label = item[1] || name || "";
@@ -369,9 +422,13 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
   const safeValues = values && typeof values === "object" ? values : {};
   const required = configuredRequired && !forceOptional;
 
-  const rawOpts = name === "designation"
-    ? designationMap[safeValues.department] || options
-    : options;
+  const rawOpts = name === "department"
+    ? (Array.isArray(departmentOptions) && departmentOptions.length > 0 ? departmentOptions : options)
+    : name === "designation"
+      ? (Array.isArray(designationOptions) && designationOptions.length > 0
+          ? designationOptions
+          : (safeValues.department && designationMap[safeValues.department] ? designationMap[safeValues.department] : options))
+      : options;
   const opts = Array.isArray(rawOpts) ? rawOpts : [];
 
   const change = (value) => {
@@ -760,8 +817,50 @@ function StaffList({ records = [], setRecords, forced }) {
     );
   }, [apiItems, list, currentTab, q, departmentFilter, designationFilter, staffTypeFilter]);
 
-  const departmentOptions = useMemo(() => [...new Set(list.map((r) => r?.department).filter(Boolean))], [list]);
-  const designationOptions = useMemo(() => [...new Set(list.map((r) => r?.designation).filter(Boolean))], [list]);
+  const [apiFilterDepts, setApiFilterDepts] = useState([]);
+  const [apiFilterDesigs, setApiFilterDesigs] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchFilterOptions() {
+      try {
+        const staffTypeParam = forced === "Teaching" || forced === "Non-Teaching"
+          ? (forced === "Non-Teaching" ? "NonTeaching" : "Teaching")
+          : (tab === "Teaching" || tab === "Non-Teaching" ? (tab === "Non-Teaching" ? "NonTeaching" : "Teaching") : undefined);
+        const params = staffTypeParam ? { staffType: staffTypeParam } : {};
+
+        const [deptRes, desigRes] = await Promise.allSettled([
+          apiClient.get(apiEndpoints.departments.getAll, { params }),
+          apiClient.get(apiEndpoints.designations.getAll, { params: { includeInactive: false, ...params } }),
+        ]);
+
+        if (isMounted) {
+          if (deptRes.status === "fulfilled" && deptRes.value?.data) {
+            const items = deptRes.value.data.items || deptRes.value.data.data || (Array.isArray(deptRes.value.data) ? deptRes.value.data : []);
+            setApiFilterDepts(items.map((d) => (typeof d === "object" ? d.name || d.departmentName : d)).filter(Boolean));
+          }
+          if (desigRes.status === "fulfilled" && desigRes.value?.data) {
+            const items = desigRes.value.data.items || desigRes.value.data.data || (Array.isArray(desigRes.value.data) ? desigRes.value.data : []);
+            setApiFilterDesigs(items.map((d) => (typeof d === "object" ? d.name || d.designationName : d)).filter(Boolean));
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load department/designation filter options from API:", err);
+      }
+    }
+    fetchFilterOptions();
+    return () => { isMounted = false; };
+  }, [forced, tab]);
+
+  const departmentOptions = useMemo(() => {
+    const fallback = list.map((r) => r?.department).filter(Boolean);
+    return [...new Set([...apiFilterDepts, ...fallback])];
+  }, [apiFilterDepts, list]);
+
+  const designationOptions = useMemo(() => {
+    const fallback = list.map((r) => r?.designation).filter(Boolean);
+    return [...new Set([...apiFilterDesigs, ...fallback])];
+  }, [apiFilterDesigs, list]);
   const showStaffType = forced !== "Teaching" && forced !== "Non-Teaching";
   const isTypedStaffList = forced === "Teaching" || forced === "Non-Teaching";
   const shown = rows.slice((page - 1) * size, page * size);
@@ -1004,6 +1103,7 @@ function TypeSelect() {
 // ----------------------------------------------------------------------
 function TeachingForm({ records, setRecords, existing }) {
   const n = useNavigate();
+  const { departments: apiDepts, designations: apiDesigs } = useStaffTypeOptions("Teaching");
   const [values, setValues] = useState(
     existing || {
       staffType: "Teaching",
@@ -1086,6 +1186,8 @@ function TeachingForm({ records, setRecords, existing }) {
                 setValues={setValues}
                 error={errors[f[0]]}
                 forceOptional={true}
+                departmentOptions={apiDepts}
+                designationOptions={apiDesigs}
               />
             ))}
           </div>
@@ -1108,6 +1210,7 @@ function TeachingForm({ records, setRecords, existing }) {
 // ----------------------------------------------------------------------
 function NonTeachingForm({ records, setRecords, existing }) {
   const n = useNavigate();
+  const { departments: apiDepts, designations: apiDesigs } = useStaffTypeOptions("Non-Teaching");
   const pincodeRequestRef = useRef(0);
   const labels = [
     "Personal Information",
@@ -1251,6 +1354,8 @@ function NonTeachingForm({ records, setRecords, existing }) {
                   setValues={setValues}
                   error={errors[f[0]] || (f[0] === "pin" ? pincodeError : "")}
                   forceOptional
+                  departmentOptions={apiDepts}
+                  designationOptions={apiDesigs}
                 />
               ))}
             </div>

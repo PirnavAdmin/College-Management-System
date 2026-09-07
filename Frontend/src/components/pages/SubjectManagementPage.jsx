@@ -1,1096 +1,134 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, Check, Plus, Save, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { Loader, Modal, Toast } from "@/components/common/Ui.jsx";
-import apiClient, { getApiErrorMessage } from "@/api/axios.js";
-import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { Modal, Toast } from "@/components/common/Ui.jsx";
+import { groupSubjectMap, subjectMaster } from "@/data/subjectMasterData.js";
 import "./SubjectManagementPage.css";
 
-const MASTER = [];
-const TYPES = ["Theory", "Practical", "Language"];
-const isActiveRecord = (record) => {
-  const status = record?.isActive ?? record?.IsActive ?? record?.active ?? record?.Active ?? record?.status ?? record?.Status;
-  return status === true || status === 1 || /^(active|true|1)$/i.test(String(status ?? ""));
+const groups = ["MPC", "BiPC", "MEC", "CEC", "HEC"];
+const types = ["Theory", "Practical", "Language"];
+const cloneMap = () => Object.fromEntries(Object.entries(groupSubjectMap).map(([group, ids]) => [group, ids.map((subjectId) => ({ subjectId, overrides: {} }))]));
+const empty = () => ({ id: "", name: "", code: "", type: [], marks: { theory: 0, practical: 0, internal: 0, passing: 0 } });
+const markValue = (value) => {
+  const raw = value && typeof value === "object" ? value.value ?? value.mark ?? value.marks ?? 0 : value;
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? numeric : 0;
 };
-const SUBJECT_CONTEXT = {
-  board: "",
-  boardId: "",
-  academicYear: "",
-  academicYearId: "",
-  group: "",
-  groupId: "",
-  academicLevel: "",
-  academicLevelId: "",
-};
-const DEFAULT = [];
-const groupContext = (group) => ({
-  boardId: group?.boardId ?? group?.BoardId ?? "",
-  board: group?.boardName ?? group?.BoardName ?? "",
-  groupId: group?.groupId ?? group?.GroupId ?? group?.id ?? group?.Id ?? "",
-  group: group?.groupName ?? group?.GroupName ?? group?.name ?? group?.Name ?? "",
-  academicLevelId: group?.academicLevelId ?? group?.AcademicLevelId ?? "",
-  academicLevel: group?.academicLevelName ?? group?.AcademicLevelName ?? "",
-});
-const itemsFromResponse = (data) => {
-  const body = data?.data ?? data;
-  return Array.isArray(body) ? body : body?.items ?? body?.records ?? body?.results ?? body?.boards ?? body?.data ?? body?.$values ?? [];
-};
-const academicLevelsForBoard = (board) => {
-  if (!board) return [];
+const total = (marks = {}) => markValue(marks.theory) + markValue(marks.practical) + markValue(marks.internal);
 
-  const levelIds = board.academicLevelIds ?? board.AcademicLevelIds ?? [];
-  const levelNames = board.academicLevelNames ?? board.AcademicLevelNames ??
-    board.academicLevels ?? board.AcademicLevels ?? [];
-
-  if (Array.isArray(levelIds) && levelIds.length) {
-    return levelIds.map((levelId, index) => {
-      const level = typeof levelNames[index] === "object" ? levelNames[index] : null;
-      return {
-        value: levelId ?? level?.academicLevelId ?? level?.AcademicLevelId ?? level?.id ?? level?.Id,
-        label: level?.levelName ?? level?.LevelName ?? level?.academicLevelName ?? level?.AcademicLevelName ?? level?.name ?? level?.Name ?? levelNames[index],
-      };
-    }).filter((level) => level.value != null && level.label);
-  }
-
-  return Array.isArray(levelNames)
-    ? levelNames.map((level) => ({
-      value: level?.academicLevelId ?? level?.AcademicLevelId ?? level?.id ?? level?.Id,
-      label: level?.levelName ?? level?.LevelName ?? level?.academicLevelName ?? level?.AcademicLevelName ?? level?.name ?? level?.Name,
-    })).filter((level) => level.value != null && level.label)
-    : [];
-};
-const apiRecord = (record) => {
-  const types = componentsOf(record);
-  const subjectType = types.includes("Language")
-    ? "Language"
-    : types.length === 2 ? "Theory + Practical" : types[0] || "";
-  const id = (key) => record[`${key}Id`] ?? record[`${key[0].toUpperCase()}${key.slice(1)}Id`];
-  return {
-    boardId: Number(id("board")) || 0,
-    groupId: Number(id("group")) || 0,
-    academicLevelId: Number(id("academicLevel")) || 0,
-    subjectName: record.subjectName,
-    subjectCode: record.subjectCode,
-    subjectType,
-    theory: types.includes("Theory") || types.includes("Language"),
-    practical: types.includes("Practical"),
-    language: types.includes("Language"),
-    elective: false,
-    internalMarks: Number(record.internalMarks || 0),
-    practicalMarks: Number(record.practicalMarks || 0),
-    externalMarks: Number(record.externalMarks || 0),
-    totalMarks: total(record),
-    passingMarks: Number(record.passingMarks || 0),
-    isActive: record.isActive ?? record.IsActive ?? true,
-  };
-};
-const master = (id) =>
-  MASTER.find((x) => x.subjectId === id) || { subjectName: "Select Subject", subjectCode: "—" };
-const total = (x) =>
-  Number(x.internalMarks || 0) + Number(x.externalMarks || 0) + Number(x.practicalMarks || 0);
-const subjectDetails = (record) => {
-  const existing = master(record?.subjectId);
-  return {
-    subjectName: record?.subjectName?.trim() || existing.subjectName,
-    subjectCode: record?.subjectCode?.trim() || existing.subjectCode,
-  };
-};
-const componentsOf = (record) => (Array.isArray(record?.components) ? record.components : []);
-const subjectTypesFrom = (value) => {
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => subjectTypesFrom(
-      typeof item === "string" ? item : item?.name ?? item?.type ?? item?.subjectType ?? item?.SubjectType,
-    ));
-  }
-  if (typeof value !== "string") return [];
-  const normalized = value.toLowerCase();
-  return TYPES.filter((type) => normalized.includes(type.toLowerCase()));
-};
-const cleanSubjectTypes = (types) => {
-  const selected = [...new Set(types.filter((type) => TYPES.includes(type)))];
-
-  // Preserve the Theory/Practical pairing when cleaning legacy invalid data.
-  return selected.includes("Language") && selected.some((type) => type !== "Language")
-    ? selected.filter((type) => type !== "Language")
-    : selected;
-};
-const subjectTypeError = (types) => {
-  if (!types.length) return "Select at least one subject type.";
-  if (types.some((type) => !TYPES.includes(type))) return "Select a valid subject type.";
-  if (types.includes("Language") && types.some((type) => type !== "Language")) {
-    return "Language cannot be combined with Theory or Practical.";
-  }
-  return "";
-};
-const normalize = (records) => {
-  if (!Array.isArray(records)) return DEFAULT;
-
-  return records.map((record, index) => {
-    const fallback = records.length === DEFAULT.length ? DEFAULT[index] : null;
-    const subject =
-      MASTER.find(
-        (item) => item.subjectId === record?.subjectId || item.subjectId === record?.id,
-      ) ||
-      MASTER.find(
-        (item) =>
-          item.subjectName === record?.subjectName || item.subjectCode === record?.subjectCode,
-      ) ||
-      (fallback ? MASTER.find((item) => item.subjectId === fallback.subjectId) : null);
-
-    return {
-      ...record,
-      // Context responses have differed between backend versions (SubjectId,
-      // SubjectID, subjectID, and subjectDefinitionId). Preserve one stable
-      // server ID so saving an existing record uses PUT rather than POST.
-      serverId: record?.subjectId ?? record?.SubjectId ?? record?.subjectID ?? record?.SubjectID ?? record?.subjectDefinitionId ?? record?.SubjectDefinitionId ?? record?.id ?? record?.Id ?? "",
-      id: record?.subjectId ?? record?.SubjectId ?? record?.subjectID ?? record?.SubjectID ?? record?.subjectDefinitionId ?? record?.SubjectDefinitionId ?? record?.id ?? record?.Id ?? `subject-${index}`,
-      subjectId: subject?.subjectId || record?.subjectId || record?.SubjectId || record?.subjectID || record?.SubjectID || record?.subjectDefinitionId || record?.SubjectDefinitionId || record?.id || record?.Id || "",
-      subjectName: record?.subjectName || record?.SubjectName || subject?.subjectName || fallback?.subjectName || "",
-      subjectCode: record?.subjectCode || record?.SubjectCode || subject?.subjectCode || fallback?.subjectCode || "",
-      components: cleanSubjectTypes(
-        subjectTypesFrom(
-          record?.components ?? record?.subjectTypes ?? record?.subjectType ?? record?.SubjectType ?? record?.type ?? record?.Type,
-        ).length
-          ? subjectTypesFrom(
-            record?.components ?? record?.subjectTypes ?? record?.subjectType ?? record?.SubjectType ?? record?.type ?? record?.Type,
-          )
-          : componentsOf(fallback),
-      ),
-      internalMarks: record?.internalMarks ?? record?.InternalMarks ?? record?.internal ?? record?.Internal ?? fallback?.internalMarks ?? 0,
-      externalMarks: record?.externalMarks ?? record?.ExternalMarks ?? record?.external ?? record?.External ?? fallback?.externalMarks ?? 0,
-      practicalMarks: record?.practicalMarks ?? record?.PracticalMarks ?? record?.practical ?? record?.Practical ?? fallback?.practicalMarks ?? 0,
-      passingMarks: record?.passingMarks ?? record?.PassingMarks ?? record?.passing ?? record?.Passing ?? fallback?.passingMarks ?? 0,
-      configured: record?.configured ?? record?.isConfigured ?? record?.IsConfigured ??
-        Number(record?.totalMarks ?? record?.TotalMarks ?? 0) > 0,
-    };
-  });
-};
 export const pageConfig = { title: "Subject Management", rows: [], fields: [] };
-export default function SubjectManagementPage({ screen = "list" }) {
-  const nav = useNavigate(),
-    location = useLocation(),
-    [records, setRecords] = useState(() => normalize(DEFAULT)),
-    [toast, setToast] = useState(""),
-    [apiAvailable, setApiAvailable] = useState(false),
-    [loading, setLoading] = useState(false);
-  const subjectRequestId = useRef(0);
-  const routeSubjectContext = location.state?.subjectContext;
-  const loadSubjects = useCallback(async (subjectContext) => {
-    const requestId = ++subjectRequestId.current;
-    const hasCompleteContext = Boolean(
-      subjectContext?.boardId && subjectContext?.groupId && subjectContext?.academicLevelId,
-    );
-    // Clear before loading so records from a previous request can never
-    // remain visible while the current list or academic context resolves.
-    setRecords([]);
-    setLoading(true);
-    try {
-      const response = hasCompleteContext
-        ? await apiClient.get(apiEndpoints.subjects.context, {
-          params: {
-            boardId: subjectContext.boardId,
-            groupId: subjectContext.groupId,
-            academicLevelId: subjectContext.academicLevelId,
-          },
-        })
-        : await apiClient.get(apiEndpoints.subjects.getAll);
-      if (requestId !== subjectRequestId.current) return;
-      const responseRecords = itemsFromResponse(response.data).map((record) => (
-        hasCompleteContext
-          ? {
-            ...record,
-            boardId: subjectContext.boardId,
-            groupId: subjectContext.groupId,
-            academicLevelId: subjectContext.academicLevelId,
-          }
-          : record
-      ));
-      setRecords(normalize(responseRecords));
-      setApiAvailable(hasCompleteContext);
-    } catch (error) {
-      if (requestId !== subjectRequestId.current) return;
-      setRecords([]);
-      setApiAvailable(false);
-      setToast(getApiErrorMessage(error) || "Unable to load subjects for the selected context.");
-    } finally {
-      if (requestId === subjectRequestId.current) setLoading(false);
-    }
-  }, []);
-  useEffect(() => {
-    if (screen === "assign") {
-      loadSubjects({ ...SUBJECT_CONTEXT, ...(routeSubjectContext || {}) });
-    }
-  }, [screen, loadSubjects, routeSubjectContext]);
-  const save = async (next, msg) => {
-    const normalizedRecords = normalize(next);
-    if (!apiAvailable) {
-      setToast("Subjects could not be loaded for this context. Please retry before saving.");
-      return false;
-    }
-    const missingContext = normalizedRecords.some((record) => {
-      if (!String(record.id).startsWith("new-")) return false;
-      const payload = apiRecord(record);
-      return !payload.boardId || !payload.groupId || !payload.academicLevelId;
-    });
-    if (missingContext) {
-      setToast("Select a Board, Group, and Academic Level before saving subjects.");
-      return false;
-    }
-    const previous = new Map(records.map((record) => [String(record.id), record]));
-    const nextIds = new Set(normalizedRecords.map((record) => String(record.id)));
-    try {
-      // The backend exposes a context-aware duplicate-code check. Use it
-      // before POST so an existing code never reaches the database as a
-      // duplicate insert (which currently returns a generic server 500).
-      const newRecords = normalizedRecords.filter((record) => !record.serverId && (!previous.has(String(record.id)) || String(record.id).startsWith("new-")));
-      const duplicateChecks = await Promise.all(newRecords.map(async (record) => {
-        const payload = apiRecord(record);
-        const response = await apiClient.get(apiEndpoints.subjects.checkCode, {
-          params: {
-            subjectCode: payload.subjectCode,
-            boardId: payload.boardId,
-            groupId: payload.groupId,
-            academicLevelId: payload.academicLevelId,
-          },
-        });
-        const result = response.data?.data ?? response.data;
-        const exists = result === true || result?.exists === true || result?.isExists === true || result?.isDuplicate === true || result?.isAvailable === false;
-        return exists ? payload.subjectCode : "";
-      }));
-      const duplicateCode = duplicateChecks.find(Boolean);
-      if (duplicateCode) {
-        setToast(`Subject code “${duplicateCode}” already exists for this academic context.`);
-        return false;
-      }
-      await Promise.all([
-        ...normalizedRecords.flatMap((record) => {
-          const existing = previous.get(String(record.id));
-          const candidateServerId = record.serverId || existing?.serverId || "";
-          // IDs beginning with new- are UI-only keys, never API resource IDs.
-          const serverId = String(candidateServerId).startsWith("new-") ? "" : candidateServerId;
-          if (!serverId && (!existing || String(record.id).startsWith("new-"))) {
-            return [apiClient.post(apiEndpoints.subjects.create, apiRecord(record))];
-          }
-          // A context result can supply a server ID while its normalized key
-          // differs from the previous collection. In that case it is still
-          // an existing subject: update it directly, never dereference an
-          // absent previous item or attempt a duplicate create.
-          return existing && JSON.stringify(apiRecord(existing)) === JSON.stringify(apiRecord(record))
-            ? []
-            : [apiClient.put(apiEndpoints.subjects.update(serverId), apiRecord(record))];
-        }),
-        ...records
-          .filter((record) => !nextIds.has(String(record.id)))
-          .map((record) => apiClient.delete(apiEndpoints.subjects.delete(record.id))),
-      ]);
-    } catch (error) {
-      setToast(getApiErrorMessage(error) || "The server could not save this subject. Please try again.");
-      return false;
-    }
-    setRecords(normalizedRecords);
-    setToast(msg);
-    return true;
-  };
-  let page =
-    screen === "assign" ? (
-      <Assign
-        records={records}
-        context={{ ...SUBJECT_CONTEXT, ...location.state?.subjectContext }}
-        loadSubjects={loadSubjects}
-        cancel={() => nav("/dashboard/subjects")}
-        save={async (next) => {
-          if (await save(next, "Subjects saved")) {
-            nav("/dashboard/subjects");
-          }
-        }}
-      />
-    ) : (
-      <List
-        records={records}
-        context={SUBJECT_CONTEXT}
-        loading={loading}
-        loadSubjects={loadSubjects}
-        onError={setToast}
-        assign={(subjectContext) => nav("/dashboard/subjects/assign", {
-          state: {
-            subjectContext: {
-              board: subjectContext.board,
-              boardId: subjectContext.boardId,
-              academicYear: subjectContext.academicYear,
-              academicYearId: subjectContext.academicYearId,
-              group: subjectContext.group,
-              groupId: subjectContext.groupId,
-              academicLevel: subjectContext.academicLevel,
-              academicLevelId: subjectContext.academicLevelId,
-            },
-          },
-        })}
-      />
-    );
-  return (
-    <>
-      {page}
-      <Toast message={toast} onClose={() => setToast("")} />
-    </>
-  );
-}
-function List({ records, context, assign, loading, loadSubjects, onError }) {
-  const [q, setQ] = useState("");
-  const [openingAssign, setOpeningAssign] = useState(false);
-  const [selectedContext, setSelectedContext] = useState(context);
-  const [boards, setBoards] = useState([]);
-  const [academicYears, setAcademicYears] = useState([]);
-  const [groups, setGroups] = useState([]);
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      apiClient.get(apiEndpoints.boards.getAll, { params: { Status: true } }),
-      apiClient.get(apiEndpoints.academicYears.getAll, { params: { Status: true } }),
-      apiClient.get(apiEndpoints.groups.getAll),
-    ]).then(([boardResponse, yearResponse, groupResponse]) => {
-      if (!active) return;
-      const nextBoards = itemsFromResponse(boardResponse.data).filter(isActiveRecord);
-      const nextGroups = itemsFromResponse(groupResponse.data);
-      setBoards(nextBoards);
-      setAcademicYears(itemsFromResponse(yearResponse.data).filter(isActiveRecord));
-      setGroups(nextGroups);
-    }).catch((error) => onError(getApiErrorMessage(error) || "Unable to load boards and groups."));
-    return () => { active = false; };
-  }, [onError]);
-  const academicLevels = useMemo(() => academicLevelsForBoard(
-    boards.find((board) => String(board.boardId ?? board.BoardId ?? board.id ?? board.Id) === String(selectedContext.boardId)),
-  ), [boards, selectedContext.boardId]);
-  useEffect(() => {
-    loadSubjects({
-      boardId: selectedContext.boardId,
-      board: selectedContext.board,
-      groupId: selectedContext.groupId,
-      group: selectedContext.group,
-      academicLevelId: selectedContext.academicLevelId,
-      academicLevel: selectedContext.academicLevel,
-    });
-  }, [
-    loadSubjects,
-    selectedContext.boardId,
-    selectedContext.board,
-    selectedContext.groupId,
-    selectedContext.group,
-    selectedContext.academicLevelId,
-    selectedContext.academicLevel,
-  ]);
-  const rows = useMemo(
-    () =>
-      records
-        .filter((x) =>
-          `${subjectDetails(x).subjectName} ${subjectDetails(x).subjectCode}`
-            .toLowerCase()
-            .includes(q.toLowerCase()),
-        ),
-    [records, q],
-  );
-  return (
-    <DashboardLayout
-      title="Subject Management"
-      subtitle="Manage subjects assigned to groups and academic levels."
-      breadcrumb={["Academics"]}
-    >
-      <div className="subject-screen">
-        <Table
-          rows={rows}
-          context={selectedContext}
-          setContext={setSelectedContext}
-          boards={boards}
-          academicYears={academicYears}
-          groups={groups}
-          academicLevels={academicLevels}
-          loading={loading}
-          query={q}
-          setQuery={setQ}
-          openingAssign={openingAssign}
-          assignDisabled={loading || openingAssign}
-          onAssign={() => {
-            setOpeningAssign(true);
-            window.setTimeout(() => assign(selectedContext), 120);
-          }}
-        />
-      </div>
-    </DashboardLayout>
-  );
-}
-function Assign({ records, context, loadSubjects, cancel, save }) {
-  const [selectedContext, setSelectedContext] = useState(context);
-  const [boards, setBoards] = useState([]);
-  const [academicYears, setAcademicYears] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [rows, setRows] = useState(records);
-  const [errors, setErrors] = useState({});
-  const [typeMessage, setTypeMessage] = useState("");
-  const [configurationMessage, setConfigurationMessage] = useState("");
-  const [configureSubject, setConfigureSubject] = useState(null);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => setRows(records), [records]);
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      apiClient.get(apiEndpoints.boards.getAll, { params: { Status: true } }),
-      apiClient.get(apiEndpoints.academicYears.getAll, { params: { Status: true } }),
-      apiClient.get(apiEndpoints.groups.getAll),
-    ]).then(([boardResponse, yearResponse, groupResponse]) => {
-      if (!active) return;
-      setBoards(itemsFromResponse(boardResponse.data).filter(isActiveRecord));
-      setAcademicYears(itemsFromResponse(yearResponse.data).filter(isActiveRecord));
-      setGroups(itemsFromResponse(groupResponse.data));
-    }).catch((error) => setTypeMessage(getApiErrorMessage(error) || "Unable to load subject context."));
-    return () => { active = false; };
-  }, []);
-  const academicLevels = useMemo(() => academicLevelsForBoard(
-    boards.find((board) => String(board.boardId ?? board.BoardId ?? board.id ?? board.Id) === String(selectedContext.boardId)),
-  ), [boards, selectedContext.boardId]);
-  useEffect(() => {
-    setRows([]);
-    loadSubjects({
-      boardId: selectedContext.boardId,
-      groupId: selectedContext.groupId,
-      academicLevelId: selectedContext.academicLevelId,
-    });
-  }, [loadSubjects, selectedContext.boardId, selectedContext.groupId, selectedContext.academicLevelId]);
-  const blankRow = () => ({
-    id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    subjectId: "",
-    subjectName: "",
-    subjectCode: "",
-    components: [],
-    internalMarks: 0,
-    externalMarks: 0,
-    practicalMarks: 0,
-    passingMarks: 0,
-    configured: false,
-    ...selectedContext,
+
+export default function SubjectManagementPage() {
+  const [context, setContext] = useState({ board: "BIEAP", year: "2026-2027", level: "Intermediate 1st Year", group: "MPC" });
+  const [master, setMaster] = useState(() => subjectMaster.map((item) => ({ ...item, marks: { ...item.marks } })));
+  const [mapping, setMapping] = useState(cloneMap);
+  const [addOpen, setAddOpen] = useState(false);
+  const [choice, setChoice] = useState("");
+  const [draft, setDraft] = useState(empty);
+  const [editing, setEditing] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [toast, setToast] = useState("");
+  const assigned = mapping[context.group] || [];
+  const subjects = useMemo(() => assigned.map((item) => {
+    const base = master.find((subject) => subject.id === item.subjectId);
+    return base && { ...base, ...item.overrides, marks: { ...base.marks, ...(item.overrides.marks || {}) } };
+  }).filter(Boolean), [assigned, master]);
+  const available = master.filter((subject) => !assigned.some((item) => item.subjectId === subject.id));
+  const editDraft = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
+  const editMark = (key, value) => setDraft((current) => ({ ...current, marks: { ...current.marks, [key]: Math.max(0, Number(value) || 0) } }));
+  const toggleType = (type) => setDraft((current) => {
+    const next = current.type.includes(type) ? current.type.filter((item) => item !== type) : [...current.type, type];
+    return { ...current, type: type === "Language" ? ["Language"] : next.filter((item) => item !== "Language") };
   });
-  const validateRows = (items, requireConfigured) => {
-    const nextErrors = {};
-    const names = new Set();
-    const codes = new Set();
-    items.forEach((row) => {
-      const rowErrors = {};
-      const name = row.subjectName?.trim();
-      const code = row.subjectCode?.trim();
-      if (!name) rowErrors.subjectName = "Subject name is required.";
-      if (!code) rowErrors.subjectCode = "Subject code is required.";
-      const typeError = subjectTypeError(componentsOf(row));
-      if (typeError) rowErrors.components = typeError;
-      if (name && names.has(name.toLowerCase())) rowErrors.subjectName = "Duplicate subject name.";
-      if (code && codes.has(code.toLowerCase())) rowErrors.subjectCode = "Duplicate subject code.";
-      if (name) names.add(name.toLowerCase());
-      if (code) codes.add(code.toLowerCase());
-      if (requireConfigured && !row.configured)
-        rowErrors.configured = "Configure marks before saving.";
-      if (Object.keys(rowErrors).length) nextErrors[row.id] = rowErrors;
-    });
-    return nextErrors;
+  const configureChoice = (id) => {
+    setChoice(id);
+    const subject = master.find((item) => item.id === id);
+    setDraft(id === "others" || !subject ? empty() : { ...subject, type: [...subject.type], marks: { ...subject.marks } });
   };
-  const update = (id, key, value) =>
-    setRows((items) =>
-      items.map((x) => (x.id === id ? { ...x, [key]: value, configured: false } : x)),
-    );
-  const clearTypeError = (id) =>
-    setErrors((current) => {
-      if (!current[id]?.components) return current;
-      const { components: _typeError, ...remainingRowErrors } = current[id];
-      return {
-        ...current,
-        [id]: Object.keys(remainingRowErrors).length ? remainingRowErrors : undefined,
-      };
-    });
-  const toggle = (row, component) => {
-    const components = componentsOf(row);
-    let nextComponents;
-    if (components.includes(component)) {
-      nextComponents = components.filter((type) => type !== component);
-    } else if (component === "Language") {
-      nextComponents = ["Language"];
-    } else {
-      nextComponents = [...components.filter((type) => type !== "Language"), component];
-    }
+  const valid = (newMaster) => {
+    if (!draft.name.trim() || !draft.code.trim()) return "Subject name and subject code are required.";
+    if (!draft.type.length) return "Select at least one subject type.";
+    if (Number(draft.marks.passing) > total(draft.marks)) return "Passing marks cannot exceed total marks.";
+    if (newMaster && master.some((subject) => subject.code.toLowerCase() === draft.code.trim().toLowerCase())) return "Subject code already exists in Subject Master.";
+    return "";
+  };
+  const add = () => {
+    if (!choice) return setToast("Select a subject to add.");
+    const isNew = choice === "others", error = valid(isNew);
+    if (error) return setToast(error);
+    const id = isNew ? draft.code.trim().toUpperCase() : choice;
+    if (assigned.some((item) => item.subjectId === id)) return setToast(draft.name + " is already assigned to " + context.group + ".");
+    const configuration = { name: draft.name.trim(), code: draft.code.trim().toUpperCase(), type: [...draft.type], marks: { ...draft.marks, total: total(draft.marks) } };
+    if (isNew) setMaster((current) => [...current, { ...configuration, id }]);
+    setMapping((current) => ({ ...current, [context.group]: [...assigned, { subjectId: id, overrides: isNew ? {} : configuration }] }));
+    setAddOpen(false); setChoice(""); setDraft(empty()); setToast((isNew ? "Subject created and added to " : "Subject added to ") + context.group + ".");
+  };
+  const save = () => {
+    const error = valid(false);
+    if (error) return setToast(error);
+    const configuration = { name: draft.name.trim(), code: draft.code.trim().toUpperCase(), type: [...draft.type], marks: { ...draft.marks, total: total(draft.marks) } };
+    setMapping((current) => ({ ...current, [context.group]: current[context.group].map((item) => item.subjectId === editing.id ? { ...item, overrides: configuration } : item) }));
+    setEditing(null); setToast("Subject configuration saved for " + context.group + ".");
+  };
+  const remove = () => {
+    setMapping((current) => ({ ...current, [context.group]: current[context.group].filter((item) => item.subjectId !== removing.id) }));
+    setToast(removing.name + " removed from " + context.group + "."); setRemoving(null);
+  };
+  const openEdit = (subject) => { setEditing(subject); setDraft({ ...subject, type: [...subject.type], marks: { ...subject.marks } }); };
 
-    update(row.id, "components", nextComponents);
-    clearTypeError(row.id);
-    setTypeMessage("");
-  };
-  const add = () => setRows((items) => [...items, blankRow()]);
-  const removeRow = (id) => {
-    setRows((items) => items.filter((row) => row.id !== id));
-    setErrors((current) => {
-      const { [id]: _removed, ...remaining } = current;
-      return remaining;
-    });
-  };
-  const configureRow = (row) => {
-    const nextErrors = validateRows(rows, false);
-    setErrors(nextErrors);
-    if (nextErrors[row.id]) {
-      if (nextErrors[row.id].components) setTypeMessage(nextErrors[row.id].components);
-      return;
-    }
-    setConfigureSubject(row);
-  };
-  const saveAssignments = async () => {
-    const nextErrors = validateRows(rows, true);
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length) {
-      const typeError = Object.values(nextErrors).find((rowErrors) => rowErrors.components)
-        ?.components;
-      if (typeError) setTypeMessage(typeError);
-      return;
-    }
-    setSaving(true);
-    try {
-      await save(rows);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <DashboardLayout
-      title="Assign Subjects"
-      subtitle="Assign reusable subjects and subject types to a group."
-      breadcrumb={["Academics", "Subject Management", "Assign Subjects"]}
-    >
-      <div className="subject-screen">
-        <Link to="/dashboard/subjects" className="cms-back-link"><ArrowLeft size={15} /> Back to Subject Management</Link>
-        <section className="subject-table-card assign-card">
-          <div className="subject-table-head">
-            <div className="assign-table-context">
-              <AssignContextControls
-                context={selectedContext}
-                boards={boards}
-                academicYears={academicYears}
-                groups={groups}
-                academicLevels={academicLevels}
-                onChange={setSelectedContext}
-              />
-            </div>
-            <span>{rows.length} Subjects Assigned</span>
-          </div>
-          <div className="assignment-head">
-            <span>Subject Name <RequiredMark /></span>
-            <span>Subject Code <RequiredMark /></span>
-            <span>Subject Type <RequiredMark /></span>
-            <span>Action</span>
-          </div>
-          {rows.map((row) => {
-            const components = componentsOf(row);
-            const rowErrors = errors[row.id] || {};
-            return (
-              <div className="assignment-row" key={row.id}>
-                <label className="assignment-field">
-                  <input
-                    value={row.subjectName}
-                    onChange={(e) => update(row.id, "subjectName", e.target.value)}
-                    placeholder="Subject name"
-                  />
-                  {rowErrors.subjectName && <small>{rowErrors.subjectName}</small>}
-                </label>
-                <label className="assignment-field">
-                  <input
-                    value={row.subjectCode}
-                    onChange={(e) => update(row.id, "subjectCode", e.target.value)}
-                    placeholder="Subject code"
-                  />
-                  {rowErrors.subjectCode && <small>{rowErrors.subjectCode}</small>}
-                </label>
-                <div className="component-picker assignment-components">
-                  {TYPES.map((c) => (
-                    <label key={c}>
-                      <input
-                        type="checkbox"
-                        checked={components.includes(c)}
-                        onChange={() => toggle(row, c)}
-                      />
-                      {c}
-                    </label>
-                  ))}
-                </div>
-                <div className="subject-row-actions">
-                  <button
-                    className="cms-btn cms-btn-primary subject-configure-button"
-                    disabled={
-                      !row.subjectName?.trim() || !row.subjectCode?.trim() || !components.length
-                    }
-                    onClick={() => configureRow(row)}
-                  >
-                    <span>Configure</span>
-                    <span>Marks</span>
-                  </button>
-                  <button
-                    className="subject-new-row-delete"
-                    onClick={() => removeRow(row.id)}
-                    aria-label={`Remove ${row.subjectName || "subject"}`}
-                    title="Remove subject"
-                  >
-                    <Trash2 size={18} aria-hidden="true" />
-                  </button>
-                  {rowErrors.configured && <small>{rowErrors.configured}</small>}
-                </div>
-              </div>
-            );
-          })}
-          <button className="add-subject" onClick={add}>
-            <Plus size={15} /> Add Subject
-          </button>
-          <footer className="assignment-footer">
-            <span>{rows.length} Subjects Assigned</span>
-            <div>
-              <button className="cms-btn cms-btn-ghost" onClick={cancel} disabled={saving}>
-                Cancel
-              </button>
-              <button className="cms-btn cms-btn-primary" onClick={saveAssignments} disabled={saving}>
-                {saving ? "Saving subjects..." : <><Save size={15} /> Save &amp; Assign Subjects</>}
-              </button>
-            </div>
-          </footer>
-        </section>
-      </div>
-      {configureSubject && (
-        <Configure
-          item={configureSubject}
-          cancel={() => setConfigureSubject(null)}
-          save={async (next) => {
-            setRows((items) => items.map((row) => (row.id === next.id ? next : row)));
-            setConfigureSubject(null);
-            setConfigurationMessage("Marks configuration saved.");
-          }}
-        />
-      )}
-      <Toast message={typeMessage} type="error" onClose={() => setTypeMessage("")} />
-      <Toast message={configurationMessage} onClose={() => setConfigurationMessage("")} />
-    </DashboardLayout>
-  );
-}
-function Configure({ item, cancel, save }) {
-  const [value, setValue] = useState(item);
-  const [errors, setErrors] = useState({});
-  const [touched, setTouched] = useState({});
-  const [submitMessage, setSubmitMessage] = useState("");
-  const [saving, setSaving] = useState(false);
-  const inputRefs = useRef({});
-  if (!value) return null;
-  const components = cleanSubjectTypes(componentsOf(value));
-  const theory = components.some((x) => ["Theory", "Language"].includes(x));
-  const practical = components.includes("Practical");
-  const applicableFields = [
-    ...(theory ? ["internalMarks", "externalMarks"] : []),
-    ...(practical ? ["practicalMarks"] : []),
-    "passingMarks",
-  ];
-  const validate = (candidate = value) => {
-    const nextErrors = {};
-    const checkRequiredMark = (key, label) => {
-      const raw = candidate[key];
-      const mark = Number(raw);
-      if (raw === "" || raw === null || raw === undefined || !Number.isFinite(mark) || mark < 0) {
-        nextErrors[key] = `${label} must be a non-negative number.`;
-      }
-    };
-
-    const typeError = subjectTypeError(componentsOf(candidate));
-    if (typeError) nextErrors.form = typeError;
-    if (!candidate.subjectName?.trim()) nextErrors.subjectName = "Subject name is required.";
-    if (!candidate.subjectCode?.trim()) nextErrors.subjectCode = "Subject code is required.";
-    if (theory) {
-      checkRequiredMark("internalMarks", "Internal marks");
-      checkRequiredMark("externalMarks", "External marks");
-    }
-    if (practical) checkRequiredMark("practicalMarks", "Practical marks");
-    checkRequiredMark("passingMarks", "Passing marks");
-
-    const passingMarks = Number(candidate.passingMarks);
-    const totalMarks = total(candidate);
-    if (!nextErrors.passingMarks && passingMarks > totalMarks) {
-      nextErrors.passingMarks = "Passing marks cannot exceed total marks.";
-    }
-    if (!nextErrors.form && totalMarks <= 0) {
-      nextErrors.form = "Total marks must be greater than zero.";
-    }
-    return nextErrors;
-  };
-  const set = (key, nextValue) => {
-    const nextValueState = { ...value, [key]: nextValue };
-    setValue(nextValueState);
-    setTouched((current) => ({ ...current, [key]: true }));
-    setErrors(validate(nextValueState));
-    setSubmitMessage("");
-  };
-  const setSubjectDetail = (key, nextValue) => {
-    const nextValueState = { ...value, [key]: nextValue };
-    setValue(nextValueState);
-    setTouched((current) => ({ ...current, [key]: true }));
-    setErrors(validate(nextValueState));
-    setSubmitMessage("");
-  };
-  const submit = async () => {
-    const nextErrors = validate();
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length) {
-      setTouched(
-        Object.fromEntries([...applicableFields, "subjectName", "subjectCode"].map((key) => [key, true])),
-      );
-      setSubmitMessage("Please fix the highlighted fields before saving.");
-      const firstInvalid = applicableFields.find((key) => nextErrors[key]);
-      if (firstInvalid) requestAnimationFrame(() => inputRefs.current[firstInvalid]?.focus());
-      return;
-    }
-    setSaving(true);
-    try {
-      await save({ ...value, configured: true });
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Modal
-      title="View / Edit Subject"
-      className="subject-config-modal"
-      onClose={cancel}
-      closeOnOverlay={false}
-      footer={
-        <>
-          <button className="cms-btn cms-btn-ghost" onClick={cancel} disabled={saving}>
-            Cancel
-          </button>
-          <button className="cms-btn cms-btn-primary" onClick={submit} disabled={saving}>
-            {saving ? "Saving marks..." : <><Save size={16} /> Save Configuration</>}
-          </button>
-        </>
-      }
-    >
-      <div className="subject-config-modal-summary">
-        <div className="subject-edit-fields">
-          <label className={`mark-input${touched.subjectName && errors.subjectName ? " has-error" : ""}`}>
-            <span>Subject Name <RequiredMark /></span>
-            <input
-              value={value.subjectName}
-              onChange={(event) => setSubjectDetail("subjectName", event.target.value)}
-              aria-invalid={Boolean(touched.subjectName && errors.subjectName)}
-            />
-            {touched.subjectName && errors.subjectName && <small>{errors.subjectName}</small>}
-          </label>
-          <label className={`mark-input${touched.subjectCode && errors.subjectCode ? " has-error" : ""}`}>
-            <span>Subject Code <RequiredMark /></span>
-            <input
-              value={value.subjectCode}
-              onChange={(event) => setSubjectDetail("subjectCode", event.target.value)}
-              aria-invalid={Boolean(touched.subjectCode && errors.subjectCode)}
-            />
-            {touched.subjectCode && errors.subjectCode && <small>{errors.subjectCode}</small>}
-          </label>
-        </div>
-        <p><Badges components={components} /></p>
-        {value.group && <small>Group: {value.group}</small>}
-      </div>
-      <section className="subject-config-modal-marks">
-        <h4>Marks Configuration</h4>
-          {(submitMessage || errors.form) && (
-            <p className="marks-validation-message">{submitMessage || errors.form}</p>
-          )}
-          <div className="marks-inputs">
-            {theory && (
-              <>
-                <Mark
-                  label="Internal Marks"
-                  required
-                  value={value.internalMarks}
-                  change={(v) => set("internalMarks", v)}
-                  error={touched.internalMarks ? errors.internalMarks : ""}
-                  inputRef={(element) => {
-                    inputRefs.current.internalMarks = element;
-                  }}
-                />
-                <Mark
-                  label="External Marks"
-                  required
-                  value={value.externalMarks}
-                  change={(v) => set("externalMarks", v)}
-                  error={touched.externalMarks ? errors.externalMarks : ""}
-                  inputRef={(element) => {
-                    inputRefs.current.externalMarks = element;
-                  }}
-                />
-              </>
-            )}
-            {practical && (
-              <Mark
-                label="Practical Marks"
-                required
-                value={value.practicalMarks}
-                change={(v) => set("practicalMarks", v)}
-                error={touched.practicalMarks ? errors.practicalMarks : ""}
-                inputRef={(element) => {
-                  inputRefs.current.practicalMarks = element;
-                }}
-              />
-            )}
-            <Mark
-              label="Passing Marks"
-              required
-              value={value.passingMarks}
-              change={(v) => set("passingMarks", v)}
-              error={touched.passingMarks ? errors.passingMarks : ""}
-              inputRef={(element) => {
-                inputRefs.current.passingMarks = element;
-              }}
-            />
-            <label className="mark-input">
-              <span>Total Marks</span>
-              <input value={total(value)} readOnly />
-            </label>
-          </div>
+  return <DashboardLayout title="Subject Management" subtitle="Manage reusable subjects and group-wise marks configuration." breadcrumb={["Academics", "Subject Management"]}>
+    <main className="subject-screen subject-master-screen">
+      <section className="subject-master-context">
+        <Select label="Board" value={context.board} options={["BIEAP"]} onChange={(board) => setContext({ ...context, board })} />
+        <Select label="Academic Year" value={context.year} options={["2026-2027"]} onChange={(year) => setContext({ ...context, year })} />
+        <Select label="Academic Level" value={context.level} options={["Intermediate 1st Year", "Intermediate 2nd Year"]} onChange={(level) => setContext({ ...context, level })} />
+        <GroupCombobox value={context.group} onChange={(group) => setContext({ ...context, group })} />
       </section>
-    </Modal>
-  );
+      <section className="subject-table-card">
+        <header className="subject-table-head"><h2>Assigned Subjects - {context.group}</h2><button className="cms-btn cms-btn-primary" type="button" onClick={() => { setChoice(""); setDraft(empty()); setAddOpen(true); }}><Plus size={16} /> Add Subject</button></header>
+        <div className="subject-table-scroll"><table className="subject-table subject-master-table"><thead><tr><th>Subject Name</th><th>Subject Code</th><th>Subject Type</th><th>Theory Marks</th><th>Practical Marks</th><th>Internal Marks</th><th>Total Marks</th><th>Passing Marks</th><th>Action</th></tr></thead><tbody>{subjects.map((subject) => <tr key={subject.id}><td>{subject.name}</td><td><b>{subject.code}</b></td><td><span className="subject-tag type">{subject.type.join(" + ")}</span></td><td>{markValue(subject.marks.theory)}</td><td>{markValue(subject.marks.practical)}</td><td>{markValue(subject.marks.internal)}</td><td>{total(subject.marks)}</td><td>{markValue(subject.marks.passing)}</td><td><div className="subject-master-actions"><button className="cms-action-btn" title="Edit subject" onClick={() => openEdit(subject)}><Pencil size={16} /></button><button className="cms-action-btn subject-remove-btn" title="Remove from group" onClick={() => setRemoving(subject)}><Trash2 size={16} /></button></div></td></tr>)}</tbody></table></div>
+      </section>
+    </main>
+    {addOpen && <Modal title="Add Subject to Group" onClose={() => setAddOpen(false)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setAddOpen(false)}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={add}>{choice === "others" ? "Create & Add Subject" : "Add to Group"}</button></>}><div className="subject-modal"><SubjectCombobox options={available} value={choice} onChange={configureChoice} />{choice && <Form draft={draft} editDraft={editDraft} editMark={editMark} toggleType={toggleType} />}</div></Modal>}
+    {editing && <Modal title={"Edit Subject - " + editing.name} onClose={() => setEditing(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setEditing(null)}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={save}>Save Changes</button></>}><div className="subject-modal"><Form draft={draft} editDraft={editDraft} editMark={editMark} toggleType={toggleType} /></div></Modal>}
+    {removing && <Modal title="Remove Subject" size="sm" onClose={() => setRemoving(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setRemoving(null)}>Cancel</button><button className="cms-btn cms-btn-danger" onClick={remove}>Remove</button></>}><p>Remove <b>{removing.name}</b> from {context.group}? It will remain available in Subject Master and other groups.</p></Modal>}
+    <Toast message={toast} onClose={() => setToast("")} />
+  </DashboardLayout>;
 }
-function Table({ rows, context, setContext, boards, academicYears, groups, academicLevels, loading, query, setQuery, openingAssign, assignDisabled, onAssign }) {
-  const [page, setPage] = useState(1);
-  const pageSize = 5;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  useEffect(() => setPage(1), [query, rows.length]);
-  const applyGroupContext = (group) => {
-    if (!group) return;
-    // Group metadata may contain a default academic level, but the level is
-    // intentionally a manual filter on this screen.
-    setContext((current) => ({ ...groupContext(group), academicYearId: current.academicYearId, academicYear: current.academicYear, academicLevelId: "", academicLevel: "" }));
+
+function Select({ label, value, options, onChange, placeholder, other }) { return <label className="subject-master-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}><option value="">{placeholder || "Select " + label}</option>{options.map((option) => typeof option === "string" ? <option key={option} value={option}>{option}</option> : <option key={option.value} value={option.value}>{option.label}</option>)}{other && <option value="others">Others / Add New Subject</option>}</select></label>; }
+function GroupCombobox({ value, onChange }) {
+  const [open, setOpen] = useState(false), [query, setQuery] = useState(value), [active, setActive] = useState(0);
+  const root = useRef(null);
+  const matches = groups.filter((group) => group.toLowerCase().includes(query.toLowerCase()));
+  useEffect(() => { setQuery(value); }, [value]);
+  useEffect(() => { const close = (event) => { if (!root.current?.contains(event.target)) { setOpen(false); setQuery(value); } }; document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close); }, [value]);
+  const choose = (group) => { onChange(group); setOpen(false); setActive(0); };
+  const keyDown = (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive((index) => Math.min(index + 1, matches.length - 1)); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); setOpen(true); setActive((index) => Math.max(index - 1, 0)); }
+    else if (event.key === "Enter" && open && matches[active]) { event.preventDefault(); choose(matches[active]); }
+    else if (event.key === "Escape") setOpen(false);
   };
-  const boardYears = academicYears.filter((year) => String(year.boardId ?? year.BoardId) === String(context.boardId));
-  return (
-    <section className="subject-table-card">
-      <div className="subject-table-toolbar">
-        <div className="subject-search">
-          <div>
-            <Search size={16} />
-            <input aria-label="Search subject or code" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search subject / code" />
-          </div>
-        </div>
-        <div className="subject-context-controls">
-          <ContextSelect
-            label="Board"
-            value={context.boardId}
-            options={boards.map((board) => ({
-              value: board.boardId ?? board.BoardId ?? board.id ?? board.Id,
-              label: board.boardName ?? board.BoardName ?? board.name ?? board.Name,
-            }))}
-            onChange={(boardId) => {
-              const board = boards.find((item) => String(item.boardId ?? item.BoardId ?? item.id ?? item.Id) === String(boardId));
-              setContext({
-                boardId,
-                board: board?.boardName ?? board?.BoardName ?? board?.name ?? board?.Name ?? "",
-                academicYearId: "",
-                academicYear: "",
-                groupId: "",
-                group: "",
-                academicLevelId: "",
-                academicLevel: "",
-              });
-            }}
-          />
-          <ContextSelect
-            label="Academic Year"
-            value={context.academicYearId}
-            options={boardYears.map((year) => ({
-              value: year.academicYearId ?? year.AcademicYearId ?? year.yearId ?? year.YearId ?? year.id ?? year.Id,
-              label: year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName ?? year.name ?? year.Name,
-            }))}
-            onChange={(academicYearId) => {
-              const year = academicYears.find((item) => String(item.academicYearId ?? item.AcademicYearId ?? item.yearId ?? item.YearId ?? item.id ?? item.Id) === String(academicYearId));
-              setContext((current) => ({ ...current, academicYearId, academicYear: year?.academicYearName ?? year?.AcademicYearName ?? year?.yearName ?? year?.YearName ?? year?.name ?? year?.Name ?? "", groupId: "", group: "", academicLevelId: "", academicLevel: "" }));
-            }}
-          />
-          <ContextSelect
-            label="Group"
-            value={context.groupId}
-            options={groups
-              .filter((group) => (!context.boardId || String(group.boardId ?? group.BoardId) === String(context.boardId)) && (!context.academicYearId || String(group.academicYearId ?? group.AcademicYearId) === String(context.academicYearId)))
-              .map((group) => ({
-                value: group.groupId ?? group.GroupId ?? group.id ?? group.Id,
-                label: group.groupName ?? group.GroupName ?? group.name ?? group.Name,
-              }))}
-            onChange={(groupId) => {
-              const group = groups.find((item) => String(item.groupId ?? item.GroupId ?? item.id ?? item.Id) === String(groupId));
-              applyGroupContext(group);
-            }}
-          />
-          <ContextSelect
-            label="Academic Level"
-            value={context.academicLevelId}
-            options={academicLevels}
-            onChange={(academicLevelId) => {
-              const academicLevel = academicLevels.find((level) => String(level.value) === String(academicLevelId));
-              setContext((current) => ({
-                ...current,
-                academicLevelId,
-                academicLevel: academicLevel?.label || "",
-              }));
-            }}
-          />
-        </div>
-        <div className="subject-toolbar-actions">
-          <button
-            type="button"
-            className={`cms-btn cms-btn-primary${openingAssign ? " is-loading" : ""}`}
-            disabled={assignDisabled}
-            onClick={onAssign}
-          >
-            {openingAssign ? <><span className="subject-btn-spinner" /> Opening Assign Subjects...</> : <><Plus size={16} /> Assign Subjects</>}
-          </button>
-        </div>
-      </div>
-      <div className="subject-table-scroll">
-        {loading ? <Loader label="Loading subjects..." /> : <table className="subject-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Subject Name</th>
-              <th>Subject Code</th>
-              <th>Subject Type</th>
-              <th>Total Marks</th>
-              <th>Passing Marks</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageRows.length === 0 ? (
-              <tr><td colSpan="7"><div className="cms-empty">{context.boardId && context.groupId && context.academicLevelId ? "No subjects are assigned to this context." : "No subjects have been added yet."}</div></td></tr>
-            ) : pageRows.map((x, i) => {
-              const s = subjectDetails(x);
-              return (
-                <tr key={x.id}>
-                  <td>{(currentPage - 1) * pageSize + i + 1}</td>
-                  <td className="cms-strong">{s.subjectName}</td>
-                  <td>{s.subjectCode}</td>
-                  <td className="subject-type-text">{componentsOf(x).join(" · ")}</td>
-                  <td>{total(x)}</td>
-                  <td>{x.passingMarks}</td>
-                  <td>
-                    <span className={`subject-status ${x.configured ? "configured" : "pending"}`}>
-                      {x.configured ? (
-                        <>
-                          <Check size={14} />
-                          Configured
-                        </>
-                      ) : (
-                        "Not Configured"
-                      )}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>}
-      </div>
-      {!loading && <footer className="subject-table-pagination">
-        <span>
-          Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} subjects
-        </span>
-        <div className="subject-table-pagination-actions">
-          <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
-          <span>Page {currentPage} of {totalPages}</span>
-          <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
-        </div>
-      </footer>}
-    </section>
-  );
+  return <div className="subject-combobox subject-group-combobox" ref={root}><label className="subject-master-field"><span>Group</span><input role="combobox" aria-expanded={open} aria-controls="group-options" aria-autocomplete="list" value={query} placeholder="Search or select group..." onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={keyDown} /></label>{open && <div id="group-options" className="subject-combobox-options" role="listbox">{matches.length ? matches.map((group, index) => <button key={group} type="button" role="option" aria-selected={group === value} className={index === active ? "is-active" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(group)}><strong>{group}</strong></button>) : <div className="subject-combobox-empty">No groups found.</div>}</div>}</div>;
 }
-function AssignContextControls({ context, boards, academicYears, groups, academicLevels, onChange }) {
-  const boardOptions = boards.map((board) => ({
-    value: board.boardId ?? board.BoardId ?? board.id ?? board.Id,
-    label: board.boardName ?? board.BoardName ?? board.name ?? board.Name,
-  }));
-  const yearOptions = academicYears
-    .filter((year) => String(year.boardId ?? year.BoardId) === String(context.boardId))
-    .map((year) => ({
-    value: year.academicYearId ?? year.AcademicYearId ?? year.yearId ?? year.YearId ?? year.id ?? year.Id,
-    label: year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName ?? year.name ?? year.Name,
-  }));
-  const groupOptions = groups
-    .filter((group) => (!context.boardId || String(group.boardId ?? group.BoardId) === String(context.boardId)) && (!context.academicYearId || String(group.academicYearId ?? group.AcademicYearId) === String(context.academicYearId)))
-    .map((group) => ({ value: group.groupId ?? group.GroupId ?? group.id ?? group.Id, label: group.groupName ?? group.GroupName ?? group.name ?? group.Name }));
-  return (
-    <div className="assign-context-controls">
-      <ContextSelect showLabel label="Board" value={context.boardId} options={boardOptions} onChange={(boardId) => {
-        const board = boardOptions.find((item) => String(item.value) === String(boardId));
-        onChange({ boardId, board: board?.label || "", academicYearId: "", academicYear: "", groupId: "", group: "", academicLevelId: "", academicLevel: "" });
-      }} />
-      <ContextSelect showLabel label="Academic Year" value={context.academicYearId} options={yearOptions} onChange={(academicYearId) => {
-        const year = yearOptions.find((item) => String(item.value) === String(academicYearId));
-        onChange((current) => ({ ...current, academicYearId, academicYear: year?.label || "", groupId: "", group: "", academicLevelId: "", academicLevel: "" }));
-      }} />
-      <ContextSelect showLabel label="Group" value={context.groupId} options={groupOptions} onChange={(groupId) => {
-        const group = groups.find((item) => String(item.groupId ?? item.GroupId ?? item.id ?? item.Id) === String(groupId));
-        onChange((current) => ({ ...current, ...groupContext(group), academicYearId: current.academicYearId, academicYear: current.academicYear }));
-      }} />
-      <ContextSelect showLabel label="Academic Level" value={context.academicLevelId} options={academicLevels} onChange={(academicLevelId) => {
-        const level = academicLevels.find((item) => String(item.value) === String(academicLevelId));
-        onChange((current) => ({ ...current, academicLevelId, academicLevel: level?.label || "" }));
-      }} />
-    </div>
-  );
+function SubjectCombobox({ options, value, onChange }) {
+  const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);
+  const root = useRef(null);
+  const selected = options.find((subject) => subject.id === value);
+  const filtered = options.filter((subject) => (subject.name + " " + subject.code).toLowerCase().includes(query.toLowerCase()));
+  const items = [...filtered, { id: "others", name: "Others / Add New Subject", code: "Create a new reusable subject", type: [] }];
+  useEffect(() => { setQuery(value === "others" ? "Others / Add New Subject" : selected?.name || ""); }, [value, selected?.name]);
+  useEffect(() => { const close = (event) => { if (!root.current?.contains(event.target)) setOpen(false); }; document.addEventListener("pointerdown", close); return () => document.removeEventListener("pointerdown", close); }, []);
+  const choose = (item) => { onChange(item.id); setOpen(false); setActive(0); };
+  const keyDown = (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive((index) => Math.min(index + 1, items.length - 1)); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); setOpen(true); setActive((index) => Math.max(index - 1, 0)); }
+    else if (event.key === "Enter" && open && items[active]) { event.preventDefault(); choose(items[active]); }
+    else if (event.key === "Escape") setOpen(false);
+  };
+  return <div className="subject-combobox" ref={root}><label className="subject-master-field"><span>Subject</span><input role="combobox" aria-expanded={open} aria-controls="subject-options" aria-autocomplete="list" value={query} placeholder="Search or select subject..." onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={keyDown} /></label>{open && <div id="subject-options" className="subject-combobox-options" role="listbox">{items.map((item, index) => <button key={item.id} type="button" role="option" aria-selected={item.id === value} className={index === active ? "is-active" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(item)}><strong>{item.name}</strong><span>{item.id === "others" ? item.code : item.code + " · " + item.type.join(" + ")}</span></button>)}</div>}</div>;
 }
-function ContextBadges({ context }) {
-  return (
-    <div className="subject-context-badges" aria-label="Selected academic context">
-      {context.board && <span><b>Board</b>{context.board}</span>}
-      <span><b>Group</b>{context.group}</span>
-      <span><b>Academic Level</b>{context.academicLevel}</span>
-    </div>
-  );
-}
-function ContextSelect({ label, value, options, onChange, showLabel = false }) {
-  return (
-    <div className="subject-context-select">
-      {showLabel && <span>{label}</span>}
-      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select {label}</option>
-        {options.map((option) => {
-          const valueOption = typeof option === "object" ? option.value : option;
-          const labelOption = typeof option === "object" ? option.label : option;
-          return <option key={valueOption} value={valueOption}>{labelOption}</option>;
-        })}
-      </select>
-    </div>
-  );
-}
-function RequiredMark() {
-  return <span className="subject-required-mark" aria-hidden="true">*</span>;
-}
-function Mark({ label, value, change, error, inputRef, required = false }) {
-  const errorId = `${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-error`;
-  return (
-    <label className={`mark-input${error ? " has-error" : ""}`}>
-      <span>{label}{required && <> <RequiredMark /></>}</span>
-      <input
-        type="number"
-        min="0"
-        value={value}
-        onChange={(e) => change(e.target.value)}
-        ref={inputRef}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? errorId : undefined}
-      />
-      {error && <small id={errorId}>{error}</small>}
-    </label>
-  );
-}
-function Badges({ components = [] }) {
-  return (
-    <span className="component-badges">
-      {componentsOf({ components }).map((x) => (
-        <span className={`subject-tag type component-${x.toLowerCase()}`} key={x}>
-          {x}
-        </span>
-      ))}
-    </span>
-  );
-}
+function Form({ draft, editDraft, editMark, toggleType }) { return <><div className="subject-form-grid"><Text label="Subject Name *" value={draft.name} onChange={(value) => editDraft("name", value)} /><Text label="Subject Code *" value={draft.code} onChange={(value) => editDraft("code", value)} /></div><fieldset className="subject-types"><legend>Subject Type *</legend>{types.map((type) => <label key={type}><input type="checkbox" checked={draft.type.includes(type)} onChange={() => toggleType(type)} /> {type}</label>)}</fieldset><div className="subject-form-grid subject-marks-grid"><MarkNumber label="Theory Marks" value={draft.marks.theory} onChange={(value) => editMark("theory", value)} /><MarkNumber label="Practical Marks" value={draft.marks.practical} onChange={(value) => editMark("practical", value)} /><MarkNumber label="Internal Marks" value={draft.marks.internal} onChange={(value) => editMark("internal", value)} /><Text label="Total Marks" value={total(draft.marks)} disabled /><MarkNumber label="Passing Marks *" value={draft.marks.passing} onChange={(value) => editMark("passing", value)} /></div></>; }
+function Text({ label, value, onChange, disabled }) { return <label className="subject-master-field"><span>{label}</span><input value={value} disabled={disabled} onChange={(event) => onChange && onChange(event.target.value)} /></label>; }
+function MarkNumber({ label, value, onChange }) { return <label className="subject-master-field"><span>{label}</span><input type="number" min="0" value={value} onChange={(event) => onChange(event.target.value)} /></label>; }

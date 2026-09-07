@@ -307,6 +307,43 @@
 .subject-combobox-options strong { font-size: 13px; }
 .subject-combobox-options span { color: var(--cms-muted); font-size: 12px; }
 .subject-combobox-empty { padding: 12px; color: var(--cms-muted); font-size: 13px; }
+.subject-add-modal { overflow: visible; }
+.subject-add-modal .cms-modal-body { overflow: visible; }
+.subject-add-modal:has(.subject-search-results) .cms-modal-body { padding-bottom: 266px; }
+.subject-search-wrapper { position: relative; z-index: 20; width: 100%; }
+.subject-search-input {
+  width: 100%;
+  height: 48px !important;
+  padding: 0 14px !important;
+  box-sizing: border-box;
+  border: 1px solid var(--cms-border) !important;
+  border-radius: 10px !important;
+  background: var(--cms-surface) !important;
+  color: var(--cms-text) !important;
+  font: inherit;
+}
+.subject-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  z-index: 9999;
+  max-height: 240px;
+  overflow-y: auto;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 14%);
+}
+.subject-search-option {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--cms-border) !important;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.subject-search-option:hover,
+.subject-search-option.is-active { background: var(--cms-primary-soft); }
 .subject-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .subject-marks-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .subject-types { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 12px; border: 1px solid var(--cms-border); border-radius: 8px; }

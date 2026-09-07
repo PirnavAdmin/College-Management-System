@@ -3,7 +3,7 @@ import { Eye } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import { mockLeaveRequests } from "@/data/attendanceMockData.js";
-import "./AttendancePage.css";
+import "./LeaveManagementPage.css";
 
 const Field = ({ label, children }) => <label className="att-field"><span>{label}</span>{children}</label>;
 const options = (items) => items.map((item) => <option key={item}>{item}</option>);

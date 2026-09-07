@@ -84,7 +84,6 @@
 .att-filter-action .cms-btn { min-height: 42px; }
 .att-student-filter-grid .att-field:nth-child(9),
 .att-staff-filter-grid .att-field:nth-child(7) { grid-column: span 1; }
-.att-leave-filter-grid { grid-template-columns: repeat(4, minmax(180px, 1fr)); }
 .att-table-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .att-search { width: min(100%, 280px); min-height: 38px; }
 .att-table-search { display: grid; gap: 4px; color: var(--cms-muted); font-size: 12px; font-weight: 700; }
@@ -116,16 +115,8 @@
 .att-modal-fields textarea { min-height: 82px; resize: vertical; }
 .att-time-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .att-person-filter { display: grid; grid-template-columns: minmax(220px, 340px); }
-.att-admission-search { position: relative; width: min(100%, 480px); }
-.att-admission-search .att-field { width: 100%; }
-.att-admission-results { position: absolute; z-index: 8; top: calc(100% + 5px); left: 0; width: 100%; max-height: 250px; overflow-y: auto; border: 1px solid var(--cms-border, #e5e7eb); border-radius: 10px; background: var(--cms-surface, #fff); box-shadow: 0 10px 24px rgb(15 23 42 / 12%); }
-.att-admission-results button { display: grid; width: 100%; gap: 2px; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--cms-border, #e5e7eb); background: transparent; color: var(--cms-text); text-align: left; cursor: pointer; }
-.att-admission-results button:hover { background: var(--cms-surface-alt, #f7f8ee); }
-.att-admission-results span, .att-admission-empty { color: var(--cms-muted); font-size: 12px; }
-.att-admission-empty { padding: 12px; }
-.att-leave-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 1000px) { .att-filter-grid, .att-leave-filter-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
-@media (max-width: 620px) { .att-filter-grid, .att-leave-filter-grid, .att-time-fields, .att-person-filter { grid-template-columns: 1fr; } .att-filter-action { justify-content: stretch; } .att-filter-action .cms-btn { flex: 1; } .att-table-top { align-items: stretch; flex-direction: column; } .att-search, .att-table-search, .att-table-search .att-search { width: 100%; } .att-summary, .att-leave-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .att-filter-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); } }
+@media (max-width: 620px) { .att-filter-grid, .att-time-fields, .att-person-filter { grid-template-columns: 1fr; } .att-filter-action { justify-content: stretch; } .att-filter-action .cms-btn { flex: 1; } .att-table-top { align-items: stretch; flex-direction: column; } .att-search, .att-table-search, .att-table-search .att-search { width: 100%; } .att-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .att-nav button {
   display: inline-flex;
   align-items: center;
@@ -717,7 +708,6 @@
 .att-month-table th,
 .att-month-table td { padding: 7px 8px !important; white-space: nowrap; }
 
-<<<<<<< HEAD
 /* Detailed Student Attendance Page Styles */
 .detailed-attendance-container {
   display: flex;
@@ -1266,7 +1256,6 @@
   display: flex;
   justify-content: flex-end;
 }
-=======
 /* Student monthly report: only this matrix owns horizontal scrolling. */
 .att-month-card { padding: 0; overflow: hidden; }
 .att-month-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--cms-border, #e5e7eb); }
@@ -1296,4 +1285,3 @@
 .att-person-profile { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
 .att-person-profile span { color: var(--cms-muted); font-size: 13px; }
 @media (max-width: 700px) { .att-month-header { align-items: flex-start; flex-direction: column; } }
->>>>>>> 114d2b0d32531654babfb13b2896fc1e15ebacf2

@@ -1,4 +1,4 @@
-using Asp.Versioning;
+ï»¿using Asp.Versioning;
 using CollegeManagement.API.DTOs.Students;
 using CollegeManagement.API.DTOs.Students.Requests;
 using CollegeManagement.API.DTOs.Students.Responses;
@@ -572,6 +572,45 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
+        // CHECK EMAIL
+        // =========================================================
+
+        [HttpGet("check-email")]
+        public async Task<IActionResult> EmailExists(
+            [FromQuery] string email,
+            [FromQuery] int? excludeStudentId = null)
+        {
+            var exists = await _service.EmailExistsAsync(
+                email,
+                excludeStudentId);
+
+            return Ok(new
+            {
+                exists
+            });
+        }
+
+
+        // =========================================================
+        // CHECK MOBILE
+        // =========================================================
+
+        [HttpGet("check-mobile")]
+        public async Task<IActionResult> MobileExists(
+            [FromQuery] string mobile,
+            [FromQuery] int? excludeStudentId = null)
+        {
+            var exists = await _service.MobileExistsAsync(
+                mobile,
+                excludeStudentId);
+
+            return Ok(new
+            {
+                exists
+            });
+        }
+
+        // =========================================================
         // EXPORT INDIVIDUAL STUDENT PDF
         // =========================================================
 
@@ -665,7 +704,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // LEGACY STUDENT BULK IMPORT — TEMPLATE GENERATION
+        // LEGACY STUDENT BULK IMPORT â€” TEMPLATE GENERATION
         // =========================================================
 
         /// <summary>
@@ -685,7 +724,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // LEGACY STUDENT BULK IMPORT — DRY-RUN VALIDATION
+        // LEGACY STUDENT BULK IMPORT â€” DRY-RUN VALIDATION
         // =========================================================
 
         /// <summary>
@@ -708,7 +747,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // LEGACY STUDENT BULK IMPORT — EXECUTE IMPORT
+        // LEGACY STUDENT BULK IMPORT â€” EXECUTE IMPORT
         // =========================================================
 
         /// <summary>
@@ -734,7 +773,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // LEGACY STUDENT BULK IMPORT — CREDENTIALS PDF (CATEGORY A)
+        // LEGACY STUDENT BULK IMPORT â€” CREDENTIALS PDF (CATEGORY A)
         // =========================================================
 
         /// <summary>
@@ -753,7 +792,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // COMMON STUDENT PHOTO UPLOAD (CATEGORY B — ALL STUDENTS)
+        // COMMON STUDENT PHOTO UPLOAD (CATEGORY B â€” ALL STUDENTS)
         // =========================================================
 
         /// <summary>
@@ -786,7 +825,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // COMMON STUDENT DOCUMENT UPLOAD (CATEGORY B — ALL STUDENTS)
+        // COMMON STUDENT DOCUMENT UPLOAD (CATEGORY B â€” ALL STUDENTS)
         // =========================================================
 
         /// <summary>

@@ -1,9 +1,18 @@
-using Asp.Versioning;
+﻿using Asp.Versioning;
 using CollegeManagement.API.DTOs.Students;
+using CollegeManagement.API.DTOs.Students.Requests;
+using CollegeManagement.API.DTOs.Students.Responses;
+using CollegeManagement.API.Exceptions;
 using CollegeManagement.API.Services;
 using CollegeManagement.API.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Security.Claims;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace CollegeManagement.API.Controllers.V1
 {
@@ -25,6 +34,153 @@ namespace CollegeManagement.API.Controllers.V1
             _service = service;
             _exportService = exportService;
             _importService = importService;
+        }
+
+        private int GetCurrentStudentId()
+        {
+            var studentIdClaim = User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                ?? User?.FindFirst("sub")?.Value
+                ?? User?.FindFirst("StudentId")?.Value
+                ?? User?.FindFirst("UserId")?.Value;
+
+            if (string.IsNullOrEmpty(studentIdClaim) || !int.TryParse(studentIdClaim, out var studentId) || studentId <= 0)
+            {
+                throw new UnauthorizedException("User is not authenticated or student identifier claim is missing/invalid.");
+            }
+            return studentId;
+        }
+
+
+        // =========================================================
+        // STUDENT SELF-SERVICE APIS
+        // =========================================================
+
+        /// <summary>
+        /// Retrieves the profile of the current authenticated student.
+        /// </summary>
+        [HttpGet("me")]
+        [ProducesResponseType(typeof(StudentSelfProfileResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetSelfProfile()
+        {
+            var studentId = GetCurrentStudentId();
+            var profile = await _service.GetSelfProfileAsync(studentId);
+
+            if (profile == null)
+            {
+                return NotFound(new { message = "Student profile not found." });
+            }
+
+            return Ok(profile);
+        }
+
+        /// <summary>
+        /// Updates the current authenticated student's self-editable profile fields.
+        /// Protected academic, financial, and system fields cannot be modified through this endpoint.
+        /// </summary>
+        [HttpPut("me/profile")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateSelfProfile([FromBody] StudentSelfProfileDto request)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            var studentId = GetCurrentStudentId();
+            var success = await _service.UpdateSelfProfileAsync(studentId, request);
+
+            if (!success)
+            {
+                return NotFound(new { message = "Student not found or profile could not be updated." });
+            }
+
+            var updatedProfile = await _service.GetSelfProfileAsync(studentId);
+            return Ok(new
+            {
+                status = true,
+                message = "Student profile updated successfully.",
+                data = updatedProfile
+            });
+        }
+
+        /// <summary>
+        /// Uploads or replaces the current authenticated student's profile photograph.
+        /// </summary>
+        [HttpPost("me/photo")]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(typeof(StudentPhotoUploadResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> UploadSelfPhoto(IFormFile file, CancellationToken ct = default)
+        {
+            var studentId = GetCurrentStudentId();
+            try
+            {
+                var result = await _service.UploadPhotoAsync(studentId, file, ct);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Uploads or replaces a document/certificate for the current authenticated student.
+        /// Supported types: BirthCertificate, TransferCertificate, StudyCertificate, AadhaarDocument,
+        /// CommunityCertificate, IncomeCertificate, CasteCertificate, TenthCertificate, MarksMemo.
+        /// </summary>
+        [HttpPost("me/documents")]
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(typeof(StudentDocumentUploadResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> UploadSelfDocument(
+            [FromForm] string documentType,
+            IFormFile file,
+            CancellationToken ct = default)
+        {
+            var studentId = GetCurrentStudentId();
+            try
+            {
+                var result = await _service.UploadDocumentAsync(studentId, documentType, file, ct);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Changes the current authenticated student's password after first login.
+        /// </summary>
+        [HttpPost("me/change-password")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> ChangeSelfPassword([FromBody] StudentChangePasswordRequest request)
+        {
+            if (!ModelState.IsValid)
+                return ValidationProblem(ModelState);
+
+            var studentId = GetCurrentStudentId();
+            try
+            {
+                var success = await _service.ChangePasswordAsync(studentId, request);
+                return Ok(new
+                {
+                    status = true,
+                    message = "Password changed successfully. Initial login credential is now consumed."
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
 
@@ -108,8 +264,7 @@ namespace CollegeManagement.API.Controllers.V1
         // =========================================================
 
         [HttpDelete("{studentId:int}")]
-        public async Task<IActionResult> Delete(
-            int studentId)
+        public async Task<IActionResult> Delete(int studentId)
         {
             var result = await _service.DeleteAsync(studentId);
 
@@ -127,15 +282,13 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // GET STUDENT PROFILE
+        // GET STUDENT PROFILE (ADMIN)
         // =========================================================
 
         [HttpGet("{studentId:int}/profile")]
-        public async Task<IActionResult> GetProfile(
-            int studentId)
+        public async Task<IActionResult> GetProfile(int studentId)
         {
-            var profile = await _service.GetProfileAsync(
-                studentId);
+            var profile = await _service.GetProfileAsync(studentId);
 
             if (profile == null)
                 return NotFound(new
@@ -148,7 +301,7 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // UPDATE STUDENT PROFILE
+        // UPDATE STUDENT PROFILE (ADMIN)
         // =========================================================
 
         [HttpPut("{studentId:int}/profile")]
@@ -159,17 +312,17 @@ namespace CollegeManagement.API.Controllers.V1
             if (!ModelState.IsValid)
                 return ValidationProblem(ModelState);
 
-            var profile = await _service.UpdateProfileAsync(
+            var result = await _service.UpdateProfileAsync(
                 studentId,
                 request);
 
-            if (profile == null)
+            if (result == null)
                 return NotFound(new
                 {
                     message = "Student not found"
                 });
 
-            return Ok(profile);
+            return Ok(result);
         }
 
 
@@ -177,7 +330,7 @@ namespace CollegeManagement.API.Controllers.V1
         // CHANGE SECTION
         // =========================================================
 
-        [HttpPut("{studentId:int}/section")]
+        [HttpPost("{studentId:int}/change-section")]
         public async Task<IActionResult> ChangeSection(
             int studentId,
             [FromBody] ChangeSectionRequest request)
@@ -192,12 +345,12 @@ namespace CollegeManagement.API.Controllers.V1
             if (!result)
                 return BadRequest(new
                 {
-                    message = "Section update failed"
+                    message = "Failed to change section"
                 });
 
             return Ok(new
             {
-                message = "Student section updated successfully"
+                message = "Section changed successfully"
             });
         }
 
@@ -206,7 +359,7 @@ namespace CollegeManagement.API.Controllers.V1
         // CHANGE GROUP
         // =========================================================
 
-        [HttpPut("{studentId:int}/group")]
+        [HttpPost("{studentId:int}/change-group")]
         public async Task<IActionResult> ChangeGroup(
             int studentId,
             [FromBody] ChangeGroupRequest request)
@@ -221,12 +374,12 @@ namespace CollegeManagement.API.Controllers.V1
             if (!result)
                 return BadRequest(new
                 {
-                    message = "Group update failed"
+                    message = "Failed to change group"
                 });
 
             return Ok(new
             {
-                message = "Student group updated successfully"
+                message = "Group changed successfully"
             });
         }
 
@@ -250,7 +403,7 @@ namespace CollegeManagement.API.Controllers.V1
             if (!result)
                 return BadRequest(new
                 {
-                    message = "Student transfer failed"
+                    message = "Failed to transfer student"
                 });
 
             return Ok(new
@@ -279,7 +432,7 @@ namespace CollegeManagement.API.Controllers.V1
             if (!result)
                 return BadRequest(new
                 {
-                    message = "Student suspension failed"
+                    message = "Failed to suspend student"
                 });
 
             return Ok(new
@@ -294,16 +447,14 @@ namespace CollegeManagement.API.Controllers.V1
         // =========================================================
 
         [HttpPost("{studentId:int}/activate")]
-        public async Task<IActionResult> Activate(
-            int studentId)
+        public async Task<IActionResult> Activate(int studentId)
         {
-            var result = await _service.ActivateAsync(
-                studentId);
+            var result = await _service.ActivateAsync(studentId);
 
             if (!result)
                 return BadRequest(new
                 {
-                    message = "Student activation failed"
+                    message = "Failed to activate student"
                 });
 
             return Ok(new
@@ -314,25 +465,23 @@ namespace CollegeManagement.API.Controllers.V1
 
 
         // =========================================================
-        // RESET PASSWORD
+        // RESET PASSWORD (ADMIN)
         // =========================================================
 
         [HttpPost("{studentId:int}/reset-password")]
-        public async Task<IActionResult> ResetPassword(
-            int studentId)
+        public async Task<IActionResult> ResetPassword(int studentId)
         {
-            var result = await _service.ResetPasswordAsync(
-                studentId);
+            var result = await _service.ResetPasswordAsync(studentId);
 
             if (!result)
                 return BadRequest(new
                 {
-                    message = "Password reset failed"
+                    message = "Failed to reset password"
                 });
 
             return Ok(new
             {
-                message = "Student password reset successfully"
+                message = "Password reset successfully"
             });
         }
 
@@ -342,11 +491,9 @@ namespace CollegeManagement.API.Controllers.V1
         // =========================================================
 
         [HttpGet("{studentId:int}/dashboard")]
-        public async Task<IActionResult> GetDashboard(
-            int studentId)
+        public async Task<IActionResult> GetDashboard(int studentId)
         {
-            var dashboard = await _service.GetDashboardAsync(
-                studentId);
+            var dashboard = await _service.GetDashboardAsync(studentId);
 
             if (dashboard == null)
                 return NotFound(new
@@ -390,11 +537,9 @@ namespace CollegeManagement.API.Controllers.V1
         // =========================================================
 
         [HttpGet("group/{groupId:int}")]
-        public async Task<IActionResult> GetByGroup(
-            int groupId)
+        public async Task<IActionResult> GetByGroup(int groupId)
         {
-            var students = await _service.GetByGroupAsync(
-                groupId);
+            var students = await _service.GetByGroupAsync(groupId);
 
             return Ok(students);
         }
@@ -405,11 +550,9 @@ namespace CollegeManagement.API.Controllers.V1
         // =========================================================
 
         [HttpGet("section/{sectionId:int}")]
-        public async Task<IActionResult> GetBySection(
-            int sectionId)
+        public async Task<IActionResult> GetBySection(int sectionId)
         {
-            var students = await _service.GetBySectionAsync(
-                sectionId);
+            var students = await _service.GetBySectionAsync(sectionId);
 
             return Ok(students);
         }
@@ -466,26 +609,26 @@ namespace CollegeManagement.API.Controllers.V1
                 exists
             });
         }
-    
 
         // =========================================================
-        // EXPORT INDIVIDUAL STUDENT PROFILE PDF
+        // EXPORT INDIVIDUAL STUDENT PDF
         // =========================================================
 
         /// <summary>
-        /// Exports an individual student's profile as a PDF document.
+        /// Exports an individual student's comprehensive profile to an A4 Portrait PDF.
         /// </summary>
-        /// <param name="studentId">The unique ID of the student.</param>
+        /// <param name="studentId">Primary key ID of the student.</param>
         /// <param name="ct">Cancellation token.</param>
-        /// <returns>A binary PDF stream.</returns>
+        /// <returns>A PDF binary stream.</returns>
         [HttpGet("{studentId:int}/export/pdf")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> ExportProfilePdf(
-            int studentId,
-            CancellationToken ct = default)
+        public async Task<IActionResult> ExportPdf(int studentId, CancellationToken ct = default)
         {
+            if (studentId <= 0)
+                return BadRequest(new { message = "Invalid student ID." });
+
             try
             {
                 var (pdfBytes, fileName) = await _exportService.ExportStudentProfilePdfAsync(studentId, ct);
@@ -495,12 +638,42 @@ namespace CollegeManagement.API.Controllers.V1
             {
                 return NotFound(new { message = ex.Message });
             }
-            catch (ArgumentException ex)
+        }
+
+
+        // =========================================================
+        // EXPORT INDIVIDUAL STUDENT CREDENTIAL SLIP PDF
+        // =========================================================
+
+        /// <summary>
+        /// Generates a PDF onboarding credential slip for an individual student.
+        /// Only allowed while IsFirstLogin = 1 (initial credential).
+        /// </summary>
+        [HttpGet("{studentId:int}/credentials-pdf")]
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> ExportCredentialSlipPdf(int studentId, CancellationToken ct = default)
+        {
+            if (studentId <= 0)
+                return BadRequest(new { message = "Invalid student ID." });
+
+            try
+            {
+                var (pdfBytes, fileName) = await _exportService.ExportStudentCredentialSlipPdfAsync(studentId, ct);
+                return File(pdfBytes, "application/pdf", fileName);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
             }
         }
-    
+
+
         // =========================================================
         // EXPORT ALL OR FILTERED STUDENTS EXCEL
         // =========================================================
@@ -508,9 +681,6 @@ namespace CollegeManagement.API.Controllers.V1
         /// <summary>
         /// Exports all or filtered students to an Excel spreadsheet (.xlsx).
         /// </summary>
-        /// <param name="filter">Optional query filters.</param>
-        /// <param name="ct">Cancellation token.</param>
-        /// <returns>An Excel binary stream.</returns>
         [HttpGet("export/excel")]
         [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -531,6 +701,7 @@ namespace CollegeManagement.API.Controllers.V1
                 return BadRequest(new { message = ex.Message });
             }
         }
+
 
         // =========================================================
         // LEGACY STUDENT BULK IMPORT — TEMPLATE GENERATION

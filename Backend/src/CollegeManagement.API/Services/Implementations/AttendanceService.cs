@@ -483,7 +483,7 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ValidationException("Request body cannot be null.");
             }
 
-            if (isAdmin && request.StudentId.HasValue && request.AttendanceDate.HasValue)
+            if (request.StudentId.HasValue && request.AttendanceDate.HasValue)
             {
                 return await HandleAdminSessionUpdateAsync(request, userName, userId);
             }
@@ -588,16 +588,25 @@ namespace CollegeManagement.API.Services.Implementations
             var studentId = request.StudentId!.Value;
             var date = request.AttendanceDate!.Value.Date;
             
+            if (userId.HasValue)
+            {
+                var userExists = await _context.Users.AnyAsync(u => u.UserId == userId.Value);
+                if (!userExists)
+                {
+                    userId = null; // Prevent FK constraint failure for Admin accounts that aren't in the Users table
+                }
+            }
+            
             var student = await _context.Students.FindAsync(studentId);
             if (student == null || !student.IsActive)
                 throw new ValidationException($"Student with ID {studentId} is not active or not found.");
 
-            if (student.SectionId != request.SectionId ||
-                student.ProgramId != request.ProgramId ||
-                student.GroupId != request.GroupId ||
-                student.AcademicLevelId != request.AcademicLevelId ||
-                student.AcademicYearId != request.AcademicYearId ||
-                student.BoardId != request.BoardId)
+            if ((request.SectionId.HasValue && student.SectionId != request.SectionId) ||
+                (request.ProgramId.HasValue && student.ProgramId != request.ProgramId) ||
+                (request.GroupId.HasValue && student.GroupId != request.GroupId) ||
+                (request.AcademicLevelId.HasValue && student.AcademicLevelId != request.AcademicLevelId) ||
+                (request.AcademicYearId.HasValue && student.AcademicYearId != request.AcademicYearId) ||
+                (request.BoardId.HasValue && student.BoardId != request.BoardId))
             {
                 throw new ValidationException($"Student with ID {studentId} does not match the provided academic context.");
             }
@@ -669,11 +678,11 @@ namespace CollegeManagement.API.Services.Implementations
                                 Remarks = request.Remarks,
                                 Session = session,
                                 AttendanceDate = request.AttendanceDate.Value,
-                                BoardId = request.BoardId,
-                                AcademicYearId = request.AcademicYearId,
-                                AcademicLevelId = request.AcademicLevelId,
-                                GroupId = request.GroupId,
-                                SectionId = request.SectionId,
+                                BoardId = student.BoardId,
+                                AcademicYearId = student.AcademicYearId,
+                                AcademicLevelId = student.AcademicLevelId,
+                                GroupId = student.GroupId,
+                                SectionId = student.SectionId,
                                 IsActive = true,
                                 CreatedAt = DateTime.UtcNow,
                                 ModifiedByUserId = userId,

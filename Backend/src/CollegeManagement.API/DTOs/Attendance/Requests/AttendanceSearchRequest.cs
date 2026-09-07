@@ -41,6 +41,11 @@ namespace CollegeManagement.API.DTOs.Attendance.Requests
         public int? GroupId { get; set; }
 
         /// <summary>
+        /// Gets or sets the program identifier.
+        /// </summary>
+        public int? ProgramId { get; set; }
+
+        /// <summary>
         /// Gets or sets the section identifier.
         /// </summary>
         public int? SectionId { get; set; }

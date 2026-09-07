@@ -85,6 +85,8 @@ namespace CollegeManagement.API.Services.Interfaces
         /// <returns>An attendance summary response DTO.</returns>
         Task<AttendanceSummaryResponse> GetAttendanceSummaryAsync(AttendanceSearchRequest request);
 
+        Task<IEnumerable<AttendanceDefaulterResponse>> GetAttendanceDefaultersAsync(AttendanceDefaultersRequest request);
+
         /// <summary>
         /// Retrieves attendance percentages and class counts per student for the specified filters.
         /// </summary>

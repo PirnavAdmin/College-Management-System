@@ -56,11 +56,11 @@ namespace CollegeManagement.API.Repositories.Interfaces
         Task<int> GetAttendancesTotalCountAsync(AttendanceSearchRequest request);
 
         /// <summary>
-        /// Retrieves statistical summary metrics for the specified filters.
+        /// Retrieves statistical summary metrics for the specified filters using stored procedure sp_GetAttendanceSummary.
         /// </summary>
-        /// <param name="request">The search and filter parameters.</param>
-        /// <returns>An attendance summary response DTO.</returns>
         Task<AttendanceSummaryResponse> GetAttendanceSummaryAsync(AttendanceSearchRequest request);
+
+        Task<IEnumerable<AttendanceDefaulterResponse>> GetAttendanceDefaultersAsync(AttendanceDefaultersRequest request);
 
         /// <summary>
         /// Retrieves attendance percentages and class counts per student for the specified filters.

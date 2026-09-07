@@ -14,6 +14,8 @@ namespace CollegeManagement.API.Repositories.Interfaces
 
         Task<int> BulkSaveStaffAttendanceAsync(BulkSaveStaffAttendanceRequest request, int? currentUserId);
 
+        Task<bool> UpdateStaffAttendanceAsync(UpdateStaffAttendanceRequest request, int? currentUserId);
+
         Task<StaffDetailsResponse?> GetStaffDetailsAsync(int facultyId, DateTime date);
 
         Task<StaffMonthlyReportResponse> GetStaffMonthlyReportGridAsync(StaffMonthlyReportRequest request);

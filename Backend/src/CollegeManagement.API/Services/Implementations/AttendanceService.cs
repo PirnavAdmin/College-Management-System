@@ -483,6 +483,11 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ValidationException("Request body cannot be null.");
             }
 
+            if (isAdmin && request.StudentId.HasValue && request.AttendanceDate.HasValue)
+            {
+                return await HandleAdminSessionUpdateAsync(request, userName, userId);
+            }
+
             var existing = await _context.Attendances.FindAsync(request.AttendanceId);
             if (existing == null || !existing.IsActive)
             {
@@ -568,6 +573,143 @@ namespace CollegeManagement.API.Services.Implementations
 
                     await transaction.CommitAsync();
                     _attendanceCache.InvalidateAll();
+                    return affectedRows;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
+        }
+
+        private async Task<int> HandleAdminSessionUpdateAsync(UpdateAttendanceRequest request, string userName, int? userId)
+        {
+            var studentId = request.StudentId!.Value;
+            var date = request.AttendanceDate!.Value.Date;
+            
+            var student = await _context.Students.FindAsync(studentId);
+            if (student == null || !student.IsActive)
+                throw new ValidationException($"Student with ID {studentId} is not active or not found.");
+
+            if (student.SectionId != request.SectionId ||
+                student.ProgramId != request.ProgramId ||
+                student.GroupId != request.GroupId ||
+                student.AcademicLevelId != request.AcademicLevelId ||
+                student.AcademicYearId != request.AcademicYearId ||
+                student.BoardId != request.BoardId)
+            {
+                throw new ValidationException($"Student with ID {studentId} does not match the provided academic context.");
+            }
+
+            var isLocked = await _context.AttendanceSessions.AnyAsync(s => 
+                s.AttendanceDate.Date == date &&
+                s.GroupId == student.GroupId &&
+                s.SectionId == student.SectionId &&
+                s.IsLocked);
+
+            if (isLocked)
+            {
+                throw new ValidationException("An attendance session for this class on this date is locked by Faculty and cannot be modified.");
+            }
+
+            var strategy = _context.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    int affectedRows = 0;
+
+                    async Task ProcessSessionUpdate(Enums.StudentAttendanceSession session, Enums.AttendanceStatus? newStatus)
+                    {
+                        if (!newStatus.HasValue) return;
+
+                        var existing = await _context.Attendances.FirstOrDefaultAsync(a => 
+                            a.StudentId == studentId && 
+                            a.AttendanceDate.Date == date && 
+                            a.Session == session && 
+                            a.IsActive);
+
+                        if (existing != null)
+                        {
+                            var oldStatus = existing.Status;
+                            if (oldStatus == newStatus.Value && existing.Remarks == request.Remarks) return;
+
+                            existing.Status = newStatus.Value;
+                            existing.Remarks = request.Remarks;
+                            existing.UpdatedAt = DateTime.UtcNow;
+                            existing.ModifiedByUserId = userId;
+                            existing.ModifiedAt = DateTime.UtcNow;
+                            
+                            _context.Attendances.Update(existing);
+                            
+                            _context.AttendanceAuditHistories.Add(new AttendanceAuditHistory
+                            {
+                                EntityType = "Student",
+                                EntityId = existing.AttendanceId,
+                                StudentId = studentId,
+                                AttendanceDate = date,
+                                OldStatus = (byte)oldStatus,
+                                NewStatus = (byte)newStatus.Value,
+                                Action = "UPDATE",
+                                Description = request.Remarks ?? $"Status updated from {oldStatus} to {newStatus.Value} for {session}.",
+                                ModifiedByUserId = userId,
+                                ModifiedByUserName = userName,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                            affectedRows++;
+                        }
+                        else
+                        {
+                            var newRecord = new Attendance
+                            {
+                                StudentId = studentId,
+                                Status = newStatus.Value,
+                                Remarks = request.Remarks,
+                                Session = session,
+                                AttendanceDate = request.AttendanceDate.Value,
+                                BoardId = request.BoardId,
+                                AcademicYearId = request.AcademicYearId,
+                                AcademicLevelId = request.AcademicLevelId,
+                                GroupId = request.GroupId,
+                                SectionId = request.SectionId,
+                                IsActive = true,
+                                CreatedAt = DateTime.UtcNow,
+                                ModifiedByUserId = userId,
+                                ModifiedAt = DateTime.UtcNow
+                            };
+                            _context.Attendances.Add(newRecord);
+                            await _context.SaveChangesAsync();
+                            
+                            _context.AttendanceAuditHistories.Add(new AttendanceAuditHistory
+                            {
+                                EntityType = "Student",
+                                EntityId = newRecord.AttendanceId,
+                                StudentId = studentId,
+                                AttendanceDate = date,
+                                OldStatus = null,
+                                NewStatus = (byte)newStatus.Value,
+                                Action = "CREATE",
+                                Description = request.Remarks ?? $"Attendance marked as {newStatus.Value} for {session}.",
+                                ModifiedByUserId = userId,
+                                ModifiedByUserName = userName,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                            affectedRows++;
+                        }
+                    }
+
+                    await ProcessSessionUpdate(Enums.StudentAttendanceSession.Morning, request.MorningStatus);
+                    await ProcessSessionUpdate(Enums.StudentAttendanceSession.Afternoon, request.AfternoonStatus);
+
+                    if (affectedRows > 0)
+                    {
+                        await _context.SaveChangesAsync();
+                        _attendanceCache.InvalidateAll();
+                    }
+
+                    await transaction.CommitAsync();
                     return affectedRows;
                 }
                 catch
@@ -1045,6 +1187,12 @@ namespace CollegeManagement.API.Services.Implementations
         /// <summary>
         /// Retrieves statistical summary metrics for the specified filters.
         /// </summary>
+        public async Task<IEnumerable<AttendanceDefaulterResponse>> GetAttendanceDefaultersAsync(AttendanceDefaultersRequest request)
+        {
+            var key = _attendanceCache.GetCacheKey("GetAttendanceDefaultersAsync", request);
+            return await _attendanceCache.GetOrCreateAsync(key, () => _repository.GetAttendanceDefaultersAsync(request));
+        }
+
         public async Task<AttendanceSummaryResponse> GetAttendanceSummaryAsync(AttendanceSearchRequest request)
         {
             var key = _attendanceCache.GetCacheKey("GetAttendanceSummaryAsync", request);

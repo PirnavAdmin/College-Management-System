@@ -39,6 +39,11 @@ namespace CollegeManagement.API.Services.Implementations
             return await _repository.BulkSaveStaffAttendanceAsync(request, currentUserId);
         }
 
+        public async Task<bool> UpdateStaffAttendanceAsync(UpdateStaffAttendanceRequest request, int? currentUserId)
+        {
+            return await _repository.UpdateStaffAttendanceAsync(request, currentUserId);
+        }
+
         public async Task<StaffDetailsResponse?> GetStaffDetailsAsync(int facultyId, DateTime date)
         {
             return await _repository.GetStaffDetailsAsync(facultyId, date);

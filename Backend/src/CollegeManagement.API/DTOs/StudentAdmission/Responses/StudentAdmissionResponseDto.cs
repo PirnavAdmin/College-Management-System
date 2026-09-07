@@ -115,8 +115,9 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
 
         // Address
 
-        public string? Address { get; set; }
+        public string? HouseDoorNumber { get; set; }
 
+        public string? StreetVillage { get; set; }
         public string? City { get; set; }
 
         public string? District { get; set; }

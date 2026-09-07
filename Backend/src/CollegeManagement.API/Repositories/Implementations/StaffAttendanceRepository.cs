@@ -91,6 +91,16 @@ namespace CollegeManagement.API.Repositories.Implementations
                 });
             }
 
+            if (request.FacultyId.HasValue && request.FacultyId.Value > 0)
+            {
+                result = result.Where(r => r.FacultyId == request.FacultyId.Value).ToList();
+            }
+
+            if (request.Status.HasValue)
+            {
+                result = result.Where(r => r.Status == request.Status.Value).ToList();
+            }
+
             return result;
         }
 
@@ -172,6 +182,107 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             await _context.SaveChangesAsync();
             return request.StaffAttendances.Count;
+        }
+
+        public async Task<bool> UpdateStaffAttendanceAsync(UpdateStaffAttendanceRequest request, int? currentUserId)
+        {
+            var targetDate = request.AttendanceDate.Date;
+
+            var session = await _context.StaffAttendanceSessions
+                .Include(s => s.StaffAttendances)
+                .FirstOrDefaultAsync(s => s.AttendanceDate.Date == targetDate
+                                          && s.StaffType == request.StaffType
+                                          && (request.DepartmentId == null || s.DepartmentId == request.DepartmentId));
+
+            if (session != null && session.IsLocked)
+            {
+                throw new InvalidOperationException("Attendance session is locked and cannot be modified.");
+            }
+
+            if (session == null)
+            {
+                var query = _context.Staffs.Where(f => !f.IsDeleted && f.Status == "Active");
+                if (request.StaffType == StaffType.Teaching)
+                {
+                    query = query.Where(f => f.StaffType == null || f.StaffType.ToLower() == "teaching");
+                }
+                else
+                {
+                    query = query.Where(f => f.StaffType != null && f.StaffType.ToLower() != "teaching");
+                }
+                if (request.DepartmentId.HasValue && request.DepartmentId.Value > 0)
+                {
+                    query = query.Where(f => f.DepartmentId == request.DepartmentId.Value);
+                }
+
+                session = new StaffAttendanceSession
+                {
+                    AttendanceDate = targetDate,
+                    DepartmentId = request.DepartmentId > 0 ? request.DepartmentId : null,
+                    StaffType = request.StaffType,
+                    TotalStaffCount = await query.CountAsync(),
+                    CreatedByUserId = currentUserId,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                await _context.StaffAttendanceSessions.AddAsync(session);
+                await _context.SaveChangesAsync();
+            }
+
+            var existingAttendance = session.StaffAttendances.FirstOrDefault(a => a.FacultyId == request.FacultyId);
+            
+            var oldStatus = existingAttendance?.Status;
+            
+            if (existingAttendance != null)
+            {
+                existingAttendance.Status = request.Status;
+                existingAttendance.InTime = request.InTime;
+                existingAttendance.OutTime = request.OutTime;
+                existingAttendance.Remarks = request.Remarks;
+                existingAttendance.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                var newAttendance = new StaffAttendance
+                {
+                    StaffSessionId = session.StaffSessionId,
+                    FacultyId = request.FacultyId,
+                    Status = request.Status,
+                    InTime = request.InTime,
+                    OutTime = request.OutTime,
+                    Remarks = request.Remarks,
+                    CreatedByUserId = currentUserId,
+                    CreatedAt = DateTime.UtcNow
+                };
+                session.StaffAttendances.Add(newAttendance);
+            }
+
+            session.PresentCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Present);
+            session.AbsentCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Absent);
+            session.LateCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Late);
+            session.LeaveCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Leave);
+            session.UpdatedAt = DateTime.UtcNow;
+            
+            var audit = new AttendanceAuditHistory
+            {
+                EntityType = "Staff",
+                EntityId = request.FacultyId,
+                FacultyId = request.FacultyId,
+                StudentId = null,
+                AttendanceDate = request.AttendanceDate,
+                Session = 0,
+                OldStatus = (byte?)oldStatus,
+                NewStatus = (byte)request.Status,
+                Action = oldStatus == null ? "Created" : "Updated",
+                ModifiedByUserId = currentUserId,
+                ModifiedByUserName = currentUserId.HasValue ? await _context.Users.Where(u => u.UserId == currentUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync() : null,
+                CreatedAt = DateTime.UtcNow,
+                Description = request.Remarks ?? (oldStatus == null ? "Created via Admin UI" : "Updated via Admin UI"),
+            };
+            await _context.AttendanceAuditHistories.AddAsync(audit);
+
+            await _context.SaveChangesAsync();
+            return true;
         }
 
         public async Task<StaffDetailsResponse?> GetStaffDetailsAsync(int facultyId, DateTime date)
@@ -285,7 +396,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                     var header = dayHeaders[day - 1];
                     if (header.IsHoliday)
                     {
-                        dailyStatus.Add("H");
+                        dailyStatus.Add("-");
                         continue;
                     }
 

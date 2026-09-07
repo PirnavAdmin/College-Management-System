@@ -110,14 +110,23 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
 
 
         // Address
-        public string? Address { get; set; }
+        // Address
+        [MaxLength(100)]
+        public string? HouseDoorNumber { get; set; }
 
-        public string? City { get; set; }
+        [MaxLength(200)]
+        public string? StreetVillage { get; set; }
 
+        [MaxLength(100)]
+        public string? City { get; set; } // UI label: Mandal / Town
+
+        [MaxLength(100)]
         public string? District { get; set; }
 
+        [MaxLength(100)]
         public string? State { get; set; }
 
+        [MaxLength(10)]
         public string? Pincode { get; set; }
 
 

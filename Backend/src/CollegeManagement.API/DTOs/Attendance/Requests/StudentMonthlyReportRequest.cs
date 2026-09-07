@@ -22,6 +22,8 @@ namespace CollegeManagement.API.DTOs.Attendance.Requests
 
         public int? GroupId { get; set; }
 
+        public int? ProgramId { get; set; }
+
         public int? SectionId { get; set; }
 
         public int? SubjectId { get; set; }

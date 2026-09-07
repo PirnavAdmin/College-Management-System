@@ -1,9 +1,10 @@
-using System.Data;
-using Dapper;
 using CollegeManagement.API.Data;
 using CollegeManagement.API.DTOs.StudentAdmission;
 using CollegeManagement.API.Repositories.Interfaces;
+using Dapper;
 using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
+using System.Data;
 
 namespace CollegeManagement.API.Repositories.Implementations
 {
@@ -153,7 +154,10 @@ namespace CollegeManagement.API.Repositories.Implementations
                         // -------------------------------------------------
                         // ADDRESS
                         // -------------------------------------------------
-                        p_Address = request.Address,
+                      p_HouseDoorNumber = request.HouseDoorNumber,
+                        p_StreetVillage = request.StreetVillage,
+
+        
                         p_City = request.City,
                         p_District = request.District,
                         p_State = request.State,
@@ -348,9 +352,8 @@ namespace CollegeManagement.API.Repositories.Implementations
                         // -------------------------------------------------
                         // ADDRESS
                         // -------------------------------------------------
-                        p_Address =
-                            request.Address,
-
+                        p_HouseDoorNumber = request.HouseDoorNumber,
+                        p_StreetVillage = request.StreetVillage,
                         p_City =
                             request.City,
 

@@ -143,7 +143,7 @@ public class StudentFeeResponse
     public decimal PaidAmount { get; set; }
     public decimal BalanceAmount { get; set; }
     public string Status { get; set; } = "Pending";
-    public string PaymentPlan { get; set; } = "Full Payment";
+    public string PaymentPlan { get; set; }
     public DateTime AssignedAt { get; set; }
     public List<StudentFeeComponentResponse> Components { get; set; } = new();
     public List<FeeScheduleResponse> Schedules { get; set; } = new();
@@ -294,7 +294,7 @@ public class StudentFeeLedgerResponse
     public string AdmissionNumber { get; set; } = string.Empty;
     public string GroupName { get; set; } = string.Empty;
     public string SectionName { get; set; } = string.Empty;
-    public string PaymentPlan { get; set; } = "Full Payment";
+    public string PaymentPlan { get; set; } 
     public decimal TotalPayable { get; set; }
     public decimal TotalPaid { get; set; }
     public decimal Balance { get; set; }
@@ -383,7 +383,7 @@ public class StudentFeeDetailsResponse
     public decimal TotalPayable { get; set; }
     public decimal TotalPaid { get; set; }
     public decimal OutstandingBalance { get; set; }
-    public string PaymentPlan { get; set; } = "Full Payment";
+    public string PaymentPlan { get; set; } 
     public string FeeStatus { get; set; } = string.Empty;
     public List<StudentFeeBreakdownResponse> Breakdown { get; set; } = new();
     public List<FeeScheduleResponse> Schedules { get; set; } = new();

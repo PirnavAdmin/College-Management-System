@@ -17,5 +17,9 @@ namespace CollegeManagement.API.DTOs.StaffAttendance.Requests
         public int? DepartmentId { get; set; }
 
         public StaffType StaffType { get; set; } = StaffType.Teaching;
+
+        public AttendanceStatus? Status { get; set; }
+
+        public int? FacultyId { get; set; }
     }
 }

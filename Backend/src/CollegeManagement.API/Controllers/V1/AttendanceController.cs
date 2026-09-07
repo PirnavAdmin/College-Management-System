@@ -215,8 +215,19 @@ namespace CollegeManagement.API.Controllers.V1
             return Ok(results);
         }
 
+        [HttpGet("defaulters")]
+        [Authorize(Roles = "Super Admin,College Admin,Admin,HOD")]
+        [ProducesResponseType(typeof(IEnumerable<AttendanceDefaulterResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> GetDefaulters([FromQuery] AttendanceDefaultersRequest request)
+        {
+            var results = await _attendanceService.GetAttendanceDefaultersAsync(request);
+            return Ok(results);
+        }
+
         /// <summary>
-        /// Retrieves statistical summary metrics for the specified filters.
+        /// Retrieves statistical summary metrics based on filters.pecified filters.
         /// </summary>
         [HttpPost("summary")]
         [HttpGet("summary")]

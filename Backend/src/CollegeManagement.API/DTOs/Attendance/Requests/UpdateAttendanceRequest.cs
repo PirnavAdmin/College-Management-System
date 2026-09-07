@@ -8,19 +8,22 @@ namespace CollegeManagement.API.DTOs.Attendance.Requests
     /// </summary>
     public class UpdateAttendanceRequest
     {
-        /// <summary>
-        /// Gets or sets the unique identifier of the attendance record.
-        /// </summary>
+        // Legacy single-record update
         public int AttendanceId { get; set; }
-
-        /// <summary>
-        /// Gets or sets the attendance status.
-        /// </summary>
         public AttendanceStatus Status { get; set; }
-
-        /// <summary>
-        /// Gets or sets any remarks or notes for the attendance.
-        /// </summary>
         public string? Remarks { get; set; }
+
+        // Admin Session-wise update
+        public int? StudentId { get; set; }
+        public DateTime? AttendanceDate { get; set; }
+        public int? BoardId { get; set; }
+        public int? AcademicYearId { get; set; }
+        public int? AcademicLevelId { get; set; }
+        public int? GroupId { get; set; }
+        public int? ProgramId { get; set; }
+        public int? SectionId { get; set; }
+
+        public AttendanceStatus? MorningStatus { get; set; }
+        public AttendanceStatus? AfternoonStatus { get; set; }
     }
 }

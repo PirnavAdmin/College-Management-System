@@ -82,13 +82,15 @@ namespace CollegeManagement.API.Models
 
         [Column(TypeName = "decimal(18,2)")]
         public decimal? AnnualIncome { get; set; }
-
         // Address
-        [MaxLength(500)]
-        public string? Address { get; set; }
+        [MaxLength(100)]
+        public string? HouseDoorNumber { get; set; }
+
+        [MaxLength(200)]
+        public string? StreetVillage { get; set; }
 
         [MaxLength(100)]
-        public string? City { get; set; }
+        public string? City { get; set; }  // Frontend label: Mandal / Town
 
         [MaxLength(100)]
         public string? District { get; set; }

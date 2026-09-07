@@ -54,6 +54,22 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
+        /// Updates a single staff attendance record.
+        /// </summary>
+        [HttpPut("update")]
+        [Authorize(Roles = "Admin,College Admin,Super Admin,HOD")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> UpdateStaffAttendance([FromBody] UpdateStaffAttendanceRequest request)
+        {
+            var userId = GetCurrentUserId();
+            await _service.UpdateStaffAttendanceAsync(request, userId);
+            return Ok(new { Status = true, Message = "Staff attendance updated successfully.", Data = true });
+        }
+
+        /// <summary>
         /// Retrieves staff details for the Staff Details popup modal.
         /// </summary>
         [HttpGet("staff/{facultyId}/details")]

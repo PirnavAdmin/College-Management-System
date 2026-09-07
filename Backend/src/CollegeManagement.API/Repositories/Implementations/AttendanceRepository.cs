@@ -267,6 +267,7 @@ namespace CollegeManagement.API.Repositories.Implementations
             if (request.BoardId.HasValue) studentsQuery = studentsQuery.Where(s => s.BoardId == request.BoardId);
             if (request.AcademicYearId.HasValue) studentsQuery = studentsQuery.Where(s => s.AcademicYearId == request.AcademicYearId);
             if (request.GroupId.HasValue) studentsQuery = studentsQuery.Where(s => s.GroupId == request.GroupId);
+            if (request.ProgramId.HasValue) studentsQuery = studentsQuery.Where(s => s.ProgramId == request.ProgramId);
             if (request.SectionId.HasValue) studentsQuery = studentsQuery.Where(s => s.SectionId == request.SectionId);
             if (request.StudentId.HasValue) studentsQuery = studentsQuery.Where(s => s.StudentId == request.StudentId);
             
@@ -286,7 +287,9 @@ namespace CollegeManagement.API.Repositories.Implementations
                     s.StudentId,
                     s.AdmissionNo,
                     s.RollNo,
-                    s.StudentName
+                    s.StudentName,
+                    GroupName = s.GroupNavigation.GroupName,
+                    SectionName = s.SectionNavigation.SectionName
                 })
                 .ToListAsync();
 
@@ -322,7 +325,9 @@ namespace CollegeManagement.API.Repositories.Implementations
             
             foreach (var student in students)
             {
-                var att = existingAttendances.FirstOrDefault(a => a.StudentId == student.StudentId);
+                var morningAtt = existingAttendances.FirstOrDefault(a => a.StudentId == student.StudentId && a.Session == CollegeManagement.API.Enums.StudentAttendanceSession.Morning);
+                var afternoonAtt = existingAttendances.FirstOrDefault(a => a.StudentId == student.StudentId && a.Session == CollegeManagement.API.Enums.StudentAttendanceSession.Afternoon);
+                var latestAtt = existingAttendances.Where(a => a.StudentId == student.StudentId).OrderByDescending(a => a.ModifiedAt).FirstOrDefault();
                 
                 result.Add(new StudentAttendanceResponse
                 {
@@ -330,17 +335,90 @@ namespace CollegeManagement.API.Repositories.Implementations
                     AdmissionNumber = student.AdmissionNo ?? "",
                     RollNumber = student.RollNo ?? "",
                     StudentName = student.StudentName,
-                    Status = att?.Status,
-                    Remarks = att?.Remarks,
-                    IsAttendanceMarked = att != null,
-                    Session = att?.Session,
-                    AttendanceId = att?.AttendanceId,
-                    ModifiedByUserName = att?.ModifiedByUserId.HasValue == true && users.ContainsKey(att.ModifiedByUserId.Value) ? users[att.ModifiedByUserId.Value] : null,
-                    ModifiedAt = att?.ModifiedAt
+                    GroupName = student.GroupName ?? "",
+                    SectionName = student.SectionName ?? "",
+                    MorningStatus = morningAtt?.Status,
+                    AfternoonStatus = afternoonAtt?.Status,
+                    Status = latestAtt?.Status,
+                    Remarks = latestAtt?.Remarks,
+                    IsAttendanceMarked = morningAtt != null || afternoonAtt != null || latestAtt != null,
+                    Session = latestAtt?.Session,
+                    AttendanceId = latestAtt?.AttendanceId,
+                    ModifiedByUserName = latestAtt?.ModifiedByUserId.HasValue == true && users.ContainsKey(latestAtt.ModifiedByUserId.Value) ? users[latestAtt.ModifiedByUserId.Value] : null,
+                    ModifiedAt = latestAtt?.ModifiedAt
                 });
             }
 
             return result;
+        }
+
+        public async Task<IEnumerable<AttendanceDefaulterResponse>> GetAttendanceDefaultersAsync(AttendanceDefaultersRequest request)
+        {
+            var studentsQuery = _context.Students.Where(s => s.IsActive);
+
+            if (request.BoardId.HasValue) studentsQuery = studentsQuery.Where(s => s.BoardId == request.BoardId);
+            if (request.AcademicYearId.HasValue) studentsQuery = studentsQuery.Where(s => s.AcademicYearId == request.AcademicYearId);
+            if (request.AcademicLevelId.HasValue) studentsQuery = studentsQuery.Where(s => s.AcademicLevelId == request.AcademicLevelId);
+            if (request.GroupId.HasValue) studentsQuery = studentsQuery.Where(s => s.GroupId == request.GroupId);
+            if (request.ProgramId.HasValue) studentsQuery = studentsQuery.Where(s => s.ProgramId == request.ProgramId);
+            if (request.SectionId.HasValue) studentsQuery = studentsQuery.Where(s => s.SectionId == request.SectionId);
+
+            var students = await studentsQuery
+                .Select(s => new 
+                {
+                    s.StudentId,
+                    s.StudentName,
+                    s.RollNo,
+                    s.AdmissionNo,
+                    GroupName = s.GroupNavigation.GroupName,
+                    SectionName = s.SectionNavigation.SectionName
+                })
+                .ToListAsync();
+
+            var studentIds = students.Select(s => s.StudentId).ToList();
+
+            var attendancesQuery = _context.Attendances
+                .Where(a => a.IsActive && studentIds.Contains(a.StudentId));
+
+            if (request.Month.HasValue)
+                attendancesQuery = attendancesQuery.Where(a => a.AttendanceDate.Month == request.Month.Value);
+            
+            if (request.Year.HasValue)
+                attendancesQuery = attendancesQuery.Where(a => a.AttendanceDate.Year == request.Year.Value);
+
+            var existingAttendances = await attendancesQuery
+                .Select(a => new { a.StudentId, a.Status })
+                .ToListAsync();
+
+            var result = new List<AttendanceDefaulterResponse>();
+
+            foreach (var student in students)
+            {
+                var studentAttendances = existingAttendances.Where(a => a.StudentId == student.StudentId).ToList();
+                int totalMarked = studentAttendances.Count;
+                if (totalMarked == 0) continue;
+
+                int presentOrLateCount = studentAttendances.Count(a => a.Status == Enums.AttendanceStatus.Present || a.Status == Enums.AttendanceStatus.Late);
+                
+                double percentage = Math.Round((double)presentOrLateCount / totalMarked * 100, 1);
+                
+                if (percentage < request.Threshold)
+                {
+                    result.Add(new AttendanceDefaulterResponse
+                    {
+                        StudentId = student.StudentId,
+                        StudentName = student.StudentName,
+                        RollNumber = student.RollNo ?? "",
+                        AdmissionNumber = student.AdmissionNo ?? "",
+                        GroupName = student.GroupName ?? "",
+                        SectionName = student.SectionName ?? "",
+                        AttendancePercentage = percentage,
+                        ShortagePercentage = Math.Round(request.Threshold - percentage, 1)
+                    });
+                }
+            }
+
+            return result.OrderBy(r => r.AttendancePercentage).ToList();
         }
 
         /// <summary>

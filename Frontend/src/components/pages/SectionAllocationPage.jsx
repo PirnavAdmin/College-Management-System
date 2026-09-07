@@ -1,6 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil } from "lucide-react";
+import {
+  Pencil,
+  Search,
+  X,
+  Plus,
+  ChevronDown,
+  CheckSquare,
+  Users,
+  AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
+} from "lucide-react";
+import * as XLSX from "xlsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -49,13 +61,13 @@ const changeStudentAllocation = async ({ admissionId, studentId, currentProgramI
 export default function SectionAllocationPage() {
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [ctx, setCtx] = useState({
-      board: "",
-      year: "",
-      level: "",
-      group: "",
-      program: "",
-      section: "",
-    }),
+    board: "",
+    year: "",
+    level: "",
+    group: "",
+    program: "",
+    section: "",
+  }),
     [boards, setBoards] = useState([]),
     [years, setYears] = useState([]),
     [levels, setLevels] = useState([]),
@@ -63,26 +75,49 @@ export default function SectionAllocationPage() {
     [programs, setPrograms] = useState([]),
     [sections, setSections] = useState([]),
     [sectionDirectory, setSectionDirectory] = useState([]),
+    [levelDirectory, setLevelDirectory] = useState([]),
     [students, setStudents] = useState([]),
     [message, setMessage] = useState(""),
     [messageType, setMessageType] = useState("success"),
     [changingStudent, setChangingStudent] = useState(null),
     [busy, setBusy] = useState(""),
-    [page, setPage] = useState(1);
+    [page, setPage] = useState(1),
+
+    // --- Selection State ---
+    [selectedIds, setSelectedIds] = useState([]),
+    [bulkActionModal, setBulkActionModal] = useState(null),
+    [bulkTargetSection, setBulkTargetSection] = useState(""),
+    [bulkLoading, setBulkLoading] = useState(false),
+
+    // --- Real-time Search & Secondary Table Filters ---
+    [searchQuery, setSearchQuery] = useState(""),
+    [tableSectionFilter, setTableSectionFilter] = useState(""),
+    [tableProgramFilter, setTableProgramFilter] = useState(""),
+
+    // --- Smart Excel Import & Verification State ---
+    [isImportModalOpen, setIsImportModalOpen] = useState(false),
+    [selectedExcelFile, setSelectedExcelFile] = useState(null),
+    [excelVerificationResult, setExcelVerificationResult] = useState(null),
+    [isVerifying, setIsVerifying] = useState(false),
+    [allocationPreview, setAllocationPreview] = useState(null),
+    [previewTab, setPreviewTab] = useState("allocated"),
+    [isAllocating, setIsAllocating] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const masterCheckboxRef = useRef(null);
+
   useEffect(() => {
     Promise.all([
-      apiClient.get(apiEndpoints.boards.list),
-      apiClient.get(apiEndpoints.academicYears.active),
-      apiClient.get(apiEndpoints.groups.list),
-      apiClient.get(apiEndpoints.sections.list),
+      apiClient.get(apiEndpoints.boards.list, { params: { status: true } }).catch(() => apiClient.get(apiEndpoints.boards.list)),
+      apiClient.get(apiEndpoints.sections.list).catch(() => ({ data: [] })),
+      apiClient.get(apiEndpoints.academicLevels.list).catch(() => ({ data: [] })),
       apiClient.get(apiEndpoints.admissions.getAll),
       apiClient.get(apiEndpoints.students.getAll),
     ])
-      .then(([b, y, g, allSectionsResponse, admissionsResponse, studentsResponse]) => {
+      .then(([b, allSectionsResponse, allLevelsResponse, admissionsResponse, studentsResponse]) => {
         setBoards(list(b.data));
-        setYears(list(y.data));
-        setGroups(list(g.data));
         setSectionDirectory(list(allSectionsResponse.data));
+        setLevelDirectory(list(allLevelsResponse.data));
         const studentsByAdmissionNumber = new Map(
           list(studentsResponse.data).map((student) => [
             String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
@@ -113,104 +148,148 @@ export default function SectionAllocationPage() {
               String(verified).toLowerCase() === "true" ||
               ["approved", "active", "completed"].includes(admissionStatus);
             return ({
-            ...x,
-            id: x.studentId ?? x.id ?? `admission-${admission.admissionId ?? i}`,
-            // The bulk allocation endpoint accepts admission IDs only. A
-            // student ID is a different record and makes the backend look up
-            // a non-existent admission.
-            // Prefer the admission foreign key already returned by the
-            // student record. Fall back to the admission-number lookup for
-            // older API responses that do not expose it.
-            admissionId:
-              x.admissionId ??
-              x.AdmissionId ??
-              x.studentAdmissionId ??
-              x.StudentAdmissionId ??
-              admission?.admissionId ??
-              admission?.studentAdmissionId ??
-              admission?.id ??
-              "",
-            studentId: x.studentId ?? x.id ?? "",
-            name: [admission.firstName, admission.lastName].filter(Boolean).join(" ") || x.studentName || x.fullName || x.name || "Unnamed Student",
-            admissionNo: admission.admissionNo ?? admission.admissionNumber ?? x.admissionNo ?? x.admissionNumber ?? "—",
-            boardId: admission.boardId ?? admission.BoardId ?? x.boardId ?? x.BoardId,
-            academicYearId: admission.academicYearId ?? admission.AcademicYearId ?? x.academicYearId ?? x.AcademicYearId,
-            academicLevelId: admission.academicLevelId ?? admission.AcademicLevelId ?? x.academicLevelId ?? x.AcademicLevelId,
-            groupId: admission.groupId ?? admission.GroupId ?? x.groupId,
-            programId:
-              x.programId ??
-              x.programmeId ??
-              admission?.programId ??
-              admission?.ProgramId ??
-              admission?.programmeId ??
-              admission?.ProgrammeId ??
-              admission?.program?.programId ??
-              admission?.Program?.programId,
-            group: admission.groupName ?? admission.GroupName ?? x.groupName ?? x.group ?? "",
-            programme:
-              x.programmeName ??
-              x.programName ??
-              x.programme ??
-              admission?.programmeName ??
-              admission?.ProgrammeName ??
-              admission?.programName ??
-              admission?.ProgramName ??
-              admission?.programme?.programmeName ??
-              admission?.program?.programName ??
-              admission?.Program?.programName ??
-              "",
-            // Keep the ID as well as the label. The roll-number action must
-            // compare IDs; comparing a section label to the selected ID makes
-            // every allocated student appear ineligible after a reload.
-            sectionId:
-              x.sectionId ??
-              x.SectionId ??
-              x.allocatedSectionId ??
-              x.AllocatedSectionId ??
-              x.assignedSectionId ??
-              x.AssignedSectionId ??
-              admission?.sectionId ??
-              admission?.SectionId ??
-              admission?.allocatedSectionId ??
-              admission?.AllocatedSectionId ??
-              admission?.assignedSectionId ??
-              admission?.AssignedSectionId ??
-              admission?.section?.sectionId ??
-              admission?.Section?.sectionId ??
-              "",
-            section:
-              x.sectionName ??
-              x.section ??
-              admission?.sectionName ??
-              admission?.SectionName ??
-              admission?.allocatedSectionName ??
-              admission?.AllocatedSectionName ??
-              admission?.assignedSectionName ??
-              admission?.AssignedSectionName ??
-              admission?.section?.sectionName ??
-              admission?.Section?.sectionName ??
-              "",
-            roll: admission.rollNumber ?? admission.RollNumber ?? admission.rollNo ?? admission.RollNo ?? x.rollNumber ?? x.rollNo ?? "",
-            status: admission.status ?? admission.Status ?? x.status ?? "Pending allocation",
-            isApproved: isApproved && isVerified,
-          });
+              ...x,
+              id: x.studentId ?? x.id ?? `admission-${admission.admissionId ?? i}`,
+              // The bulk allocation endpoint accepts admission IDs only. A
+              // student ID is a different record and makes the backend look up
+              // a non-existent admission.
+              // Prefer the admission foreign key already returned by the
+              // student record. Fall back to the admission-number lookup for
+              // older API responses that do not expose it.
+              admissionId:
+                x.admissionId ??
+                x.AdmissionId ??
+                x.studentAdmissionId ??
+                x.StudentAdmissionId ??
+                admission?.admissionId ??
+                admission?.studentAdmissionId ??
+                admission?.id ??
+                "",
+              studentId: x.studentId ?? x.id ?? "",
+              name: [admission.firstName, admission.lastName].filter(Boolean).join(" ") || x.studentName || x.fullName || x.name || "Unnamed Student",
+              admissionNo: admission.admissionNo ?? admission.admissionNumber ?? x.admissionNo ?? x.admissionNumber ?? "—",
+              boardId: admission.boardId ?? admission.BoardId ?? x.boardId ?? x.BoardId,
+              academicYearId: admission.academicYearId ?? admission.AcademicYearId ?? x.academicYearId ?? x.AcademicYearId,
+              academicYearName: admission.academicYearName ?? admission.AcademicYearName ?? x.academicYearName ?? x.yearName ?? "",
+              academicLevelId: admission.academicLevelId ?? admission.AcademicLevelId ?? x.academicLevelId ?? x.AcademicLevelId,
+              academicLevelName: admission.academicLevelName ?? admission.AcademicLevelName ?? admission.levelName ?? admission.LevelName ?? x.academicLevelName ?? x.levelName ?? "",
+              academicLevelCode: admission.academicLevelCode ?? admission.AcademicLevelCode ?? admission.levelCode ?? admission.LevelCode ?? x.academicLevelCode ?? x.levelCode ?? "",
+              groupId: admission.groupId ?? admission.GroupId ?? x.groupId,
+              programId:
+                x.programId ??
+                x.programmeId ??
+                admission?.programId ??
+                admission?.ProgramId ??
+                admission?.programmeId ??
+                admission?.ProgrammeId ??
+                admission?.program?.programId ??
+                admission?.Program?.programId,
+              group: admission.groupName ?? admission.GroupName ?? x.groupName ?? x.group ?? "",
+              programme:
+                x.programmeName ??
+                x.programName ??
+                x.programme ??
+                admission?.programmeName ??
+                admission?.ProgrammeName ??
+                admission?.programName ??
+                admission?.ProgramName ??
+                admission?.programme?.programmeName ??
+                admission?.program?.programName ??
+                admission?.Program?.programName ??
+                "",
+              // Keep the ID as well as the label. The roll-number action must
+              // compare IDs; comparing a section label to the selected ID makes
+              // every allocated student appear ineligible after a reload.
+              sectionId:
+                x.sectionId ??
+                x.SectionId ??
+                x.allocatedSectionId ??
+                x.AllocatedSectionId ??
+                x.assignedSectionId ??
+                x.AssignedSectionId ??
+                admission?.sectionId ??
+                admission?.SectionId ??
+                admission?.allocatedSectionId ??
+                admission?.AllocatedSectionId ??
+                admission?.assignedSectionId ??
+                admission?.AssignedSectionId ??
+                admission?.section?.sectionId ??
+                admission?.Section?.sectionId ??
+                "",
+              section:
+                x.sectionName ??
+                x.section ??
+                admission?.sectionName ??
+                admission?.SectionName ??
+                admission?.allocatedSectionName ??
+                admission?.AllocatedSectionName ??
+                admission?.assignedSectionName ??
+                admission?.AssignedSectionName ??
+                admission?.section?.sectionName ??
+                admission?.Section?.sectionName ??
+                "",
+              roll: admission.rollNumber ?? admission.RollNumber ?? admission.rollNo ?? admission.RollNo ?? x.rollNumber ?? x.rollNo ?? "",
+              status: admission.status ?? admission.Status ?? x.status ?? "Pending allocation",
+              isApproved: isApproved && isVerified,
+            });
           }),
         );
       })
       .catch((e) => { setMessageType("error"); setMessage(getApiErrorMessage(e)); })
       .finally(() => setStudentsLoading(false));
   }, []);
+
+  // Cascading dependency: Board -> Academic Years, Academic Levels, Groups
   useEffect(() => {
-    if (!ctx.board) return;
+    if (!ctx.board) {
+      setYears([]);
+      setLevels([]);
+      setGroups([]);
+      setPrograms([]);
+      setSections([]);
+      return;
+    }
+
+    // 1. Fetch active Academic Years for selected board
     apiClient
-      .get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } })
+      .get(apiEndpoints.academicYears.active, { params: { boardId: ctx.board } })
+      .catch(() => apiClient.get(apiEndpoints.academicYears.active))
+      .then((r) => {
+        const rawYears = list(r.data);
+        const boardYears = rawYears.filter((y) => {
+          const bId = y.boardId ?? y.BoardId;
+          return bId == null || String(bId) === String(ctx.board);
+        });
+        const finalYears = boardYears.length ? boardYears : rawYears;
+        setYears(finalYears);
+        const active = finalYears.find((y) => y.isActive);
+        if (active) setCtx((c) => ({ ...c, year: String(active.academicYearId ?? active.id) }));
+      })
+      .catch((e) => setMessage(getApiErrorMessage(e)));
+
+    // 2. Fetch Academic Levels for selected board
+    apiClient
+      .get(`/api/v1/boards/${encodeURIComponent(ctx.board)}/academic-levels`)
+      .catch(() => apiClient.get(apiEndpoints.academicLevels.list, { params: { boardId: ctx.board } }))
+      .catch(() => apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } }))
       .then((r) => setLevels(list(r.data)))
       .catch((e) => setMessage(getApiErrorMessage(e)));
-    const active = years.find((y) => String(y.boardId) === String(ctx.board) && y.isActive);
-    if (active) setCtx((c) => ({ ...c, year: String(active.academicYearId) }));
-  }, [ctx.board, years]);
+
+    // 3. Fetch Groups for selected board
+    apiClient
+      .get(apiEndpoints.groups.list, { params: { boardId: ctx.board } })
+      .catch(() => apiClient.get(`/api/v1/groups/board/${encodeURIComponent(ctx.board)}`))
+      .then((r) => setGroups(list(r.data)))
+      .catch((e) => setMessage(getApiErrorMessage(e)));
+  }, [ctx.board]);
+
+  // Cascading dependency: Group -> Programs
   useEffect(() => {
-    if (!ctx.group) return;
+    if (!ctx.group) {
+      setPrograms([]);
+      setSections([]);
+      return;
+    }
     const g = groups.find((x) => String(x.groupId ?? x.id) === String(ctx.group));
     const embedded = g?.programs || g?.programmes;
     if (embedded?.length) {
@@ -222,11 +301,9 @@ export default function SectionAllocationPage() {
       .then((r) => setPrograms(list(r.data)))
       .catch((e) => setMessage(getApiErrorMessage(e)));
   }, [ctx.group, groups]);
+
+  // Cascading dependency: Program -> Sections
   useEffect(() => {
-    // A section belongs to a programme.  Group-program records expose both a
-    // link ID and the actual ProgramId; the latter is what the sections API
-    // expects.  Supplying the link ID as every possible query parameter made
-    // valid sections disappear from this dropdown.
     if (!ctx.program) {
       setSections([]);
       return;
@@ -252,9 +329,6 @@ export default function SectionAllocationPage() {
         },
       })
       .then((r) => {
-        // Some backend versions return every section even when ProgramId is
-        // provided. Filter the response as a final guard so this select can
-        // only contain sections linked to the selected programme.
         const programmeName = String(programme ?? "").trim().toLowerCase();
         const programmeSections = list(r.data).filter((section) => {
           const sectionProgramId = section?.programId ?? section?.ProgramId ?? section?.programmeId ?? section?.ProgrammeId;
@@ -268,8 +342,6 @@ export default function SectionAllocationPage() {
             (programmeName && sectionProgrammeName === programmeName)
           );
         });
-        // Prefer the selected group's subset when sections include group IDs;
-        // retain the programme result for older records that omit that field.
         const groupSections = programmeSections.filter(
           (section) => String(section?.groupId ?? section?.GroupId ?? "") === String(ctx.group),
         );
@@ -280,7 +352,11 @@ export default function SectionAllocationPage() {
         setMessage(getApiErrorMessage(e));
       });
   }, [ctx.group, ctx.program, groups, programs]);
-  const rows = useMemo(
+
+  // Academic scope filtering:
+  // Fields 1-5 (board, year, level, group, program) act as FILTERS.
+  // Field 6 (section) is strictly the TARGET ALLOCATION section and does NOT filter out unallocated students.
+  const academicRows = useMemo(
     () =>
       students.filter(
         (s) =>
@@ -288,16 +364,496 @@ export default function SectionAllocationPage() {
           (!ctx.year || String(s.academicYearId ?? "") === String(ctx.year)) &&
           (!ctx.level || String(s.academicLevelId ?? "") === String(ctx.level)) &&
           (!ctx.group || String(s.groupId ?? s.group) === String(ctx.group)) &&
-          (!ctx.program || String(s.programId ?? s.programme) === String(ctx.program)) &&
-          (!ctx.section || String(s.sectionId ?? "") === String(ctx.section)),
+          (!ctx.program || String(s.programId ?? s.programme) === String(ctx.program)),
       ).sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" })),
-    [students, ctx],
+    [students, ctx.board, ctx.year, ctx.level, ctx.group, ctx.program],
   );
+
+  // Table toolbar instant search & filters
+  const filteredRows = useMemo(() => {
+    return academicRows.filter((s) => {
+      // 1. Search by Student Name or Admission No.
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        const matchName = String(s.name ?? "").toLowerCase().includes(q);
+        const matchAdm = String(s.admissionNo ?? "").toLowerCase().includes(q);
+        const matchgrp = String(s.groupId ?? s.Group ?? "").toLowerCase().includes(q);
+        if (!matchName && !matchAdm && !matchgrp) return false;
+      }
+      // 2. Program filter in table toolbar
+      if (tableProgramFilter) {
+        const matchProgId = String(s.programId ?? "") === String(tableProgramFilter);
+        const matchProgName = String(s.programme ?? "").toLowerCase() === String(tableProgramFilter).toLowerCase();
+        if (!matchProgId && !matchProgName) return false;
+      }
+      // 3. Section filter in table toolbar
+      if (tableSectionFilter) {
+        if (tableSectionFilter === "pending") {
+          const hasSection = Boolean(s.sectionId || (s.section && String(s.section).toLowerCase() !== "pending"));
+          if (hasSection) return false;
+        } else {
+          const matchesId = String(s.sectionId ?? "") === String(tableSectionFilter);
+          const matchesName = String(s.section ?? "").toLowerCase() === String(tableSectionFilter).toLowerCase();
+          if (!matchesId && !matchesName) return false;
+        }
+      }
+      return true;
+    });
+  }, [academicRows, searchQuery, tableProgramFilter, tableSectionFilter]);
+
+  const rows = filteredRows;
   const pageSize = 5;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  useEffect(() => setPage(1), [ctx, rows.length]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [ctx, searchQuery, tableProgramFilter, tableSectionFilter]);
+
+  // Section options for toolbar filter and modals
+  const tableSectionOptions = useMemo(() => {
+    const listToUse = sections.length ? sections : sectionDirectory;
+    const seen = new Set();
+    const result = [];
+    listToUse.forEach((sec) => {
+      const id = String(sec.sectionId ?? sec.id ?? "");
+      const name = sec.sectionName ?? sec.name;
+      if (id && name && !seen.has(id)) {
+        seen.add(id);
+        result.push({ id, name });
+      }
+    });
+    return result;
+  }, [sections, sectionDirectory]);
+
+  // Program options for toolbar filter: gathers options from master programs & all student records
+  const tableProgramOptions = useMemo(() => {
+    const seen = new Set();
+    const result = [];
+    programs.forEach((prog) => {
+      const id = String(prog.programId ?? prog.id ?? "");
+      const name = prog.programName ?? prog.name ?? prog.programmeName ?? prog.programme;
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        result.push({ id: id || name, name });
+      }
+    });
+    students.forEach((s) => {
+      const name = s.programme || s.programName;
+      if (name && name !== "—" && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        result.push({ id: s.programId ? String(s.programId) : name, name });
+      }
+    });
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [programs, students]);
+
+  // Master Checkbox synchronization
+  const visibleIds = pageRows.map((r) => r.id);
+  const isAllVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  const isSomeVisibleSelected = visibleIds.some((id) => selectedIds.includes(id)) && !isAllVisibleSelected;
+
+  useEffect(() => {
+    if (masterCheckboxRef.current) {
+      masterCheckboxRef.current.indeterminate = isSomeVisibleSelected;
+    }
+  }, [isSomeVisibleSelected]);
+
+  const toggleSelectAll = () => {
+    if (isAllVisibleSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  // Bulk Change Section Handler
+  const executeBulkChangeSection = async () => {
+    const sectionIdNum = Number(bulkTargetSection);
+    if (!sectionIdNum) return;
+    const selectedStudents = students.filter((s) => selectedIds.includes(s.id));
+    const targetSectionObj =
+      sections.find((sec) => String(sec.sectionId ?? sec.id) === String(sectionIdNum)) ||
+      sectionDirectory.find((sec) => String(sec.sectionId ?? sec.id) === String(sectionIdNum));
+
+    const admissionIds = selectedStudents
+      .map((s) => Number(s.admissionId))
+      .filter(Number.isFinite);
+
+    if (!admissionIds.length) {
+      setMessage("Selected students do not have valid admission records.");
+      setMessageType("error");
+      return;
+    }
+
+    setBulkLoading(true);
+    try {
+      await apiClient.post(apiEndpoints.studentAdmissions.bulkSection, {
+        sectionId: sectionIdNum,
+        admissionIds,
+      });
+
+      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
+        sectionId: sectionIdNum,
+        startingRollNumber: 1,
+        admissionIds,
+      }).catch(() => null);
+
+      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll).catch(() => null);
+      const refreshedRolls = new Map(
+        refreshedStudentsResponse
+          ? list(refreshedStudentsResponse.data).map((student) => [
+            String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
+            student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
+          ])
+          : []
+      );
+
+      const sectionName = targetSectionObj?.sectionName || targetSectionObj?.name || `Section ${sectionIdNum}`;
+      setStudents((current) =>
+        current.map((student) =>
+          selectedIds.includes(student.id)
+            ? {
+              ...student,
+              sectionId: sectionIdNum,
+              section: sectionName,
+              roll: refreshedRolls.get(String(student.admissionNo).trim()) || student.roll,
+            }
+            : student
+        )
+      );
+
+      setMessageType("success");
+      setMessage(`Successfully allocated ${selectedStudents.length} student(s) to ${sectionName}.`);
+      setSelectedIds([]);
+      setBulkActionModal(null);
+      setBulkTargetSection("");
+    } catch (err) {
+      setMessageType("error");
+      setMessage(getApiErrorMessage(err));
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  // Excel file selection inside the Import Modal
+  const handleExcelFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedExcelFile(file);
+      setExcelVerificationResult(null);
+    }
+  };
+
+  // Dedicated verification function for the Excel file
+  const handleVerifyExcelFile = () => {
+    if (!selectedExcelFile) {
+      setMessage("Please choose an Excel file to verify.");
+      setMessageType("error");
+      return;
+    }
+
+    setIsVerifying(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+        if (!rawJson || !rawJson.length) {
+          setExcelVerificationResult({
+            isValid: false,
+            error: "The uploaded file contains no data rows.",
+          });
+          return;
+        }
+
+        let skippedRowsCount = 0;
+        const validImportedRows = [];
+
+        rawJson.forEach((row) => {
+          const keys = Object.keys(row);
+          const findVal = (regex) => {
+            const k = keys.find((key) => regex.test(key.trim()));
+            return k !== undefined ? String(row[k]).trim() : "";
+          };
+
+          const admNo = findVal(/^(adm|admission|admission_?no|admission_?number|admissionno|roll|roll_?no|student_?id|enrollment_?no)$/i);
+          const name = findVal(/^(student_?name|name|full_?name|candidate_?name|studentname|student|fullname|first_?name)$/i);
+          const prog = findVal(/^(program|programme|course|stream|branch)$/i);
+          const reqSec = findVal(/^(section|sec|preferred_?section)$/i);
+
+          if (admNo && name) {
+            validImportedRows.push({
+              admissionNo: admNo,
+              name: name,
+              programme: prog,
+              requestedSection: reqSec,
+              rawRow: row,
+            });
+          } else {
+            skippedRowsCount++;
+          }
+        });
+
+        if (!validImportedRows.length) {
+          setExcelVerificationResult({
+            isValid: false,
+            error: "Validation failed: Every row must contain both a valid Admission Number and Student Name.",
+            totalRows: rawJson.length,
+            validRowsCount: 0,
+            skippedRowsCount,
+          });
+          return;
+        }
+
+        const matchedList = validImportedRows.map((imported) => {
+          const match = students.find(
+            (s) =>
+              (imported.admissionNo && String(s.admissionNo).trim().toLowerCase() === imported.admissionNo.toLowerCase()) ||
+              (imported.name && String(s.name).trim().toLowerCase() === imported.name.toLowerCase())
+          );
+          return {
+            ...imported,
+            existingStudent: match || null,
+            id: match?.id || `import-${imported.admissionNo || Math.random()}`,
+            admissionId: match?.admissionId || "",
+            studentId: match?.studentId || "",
+            name: match?.name || imported.name || "Unnamed Student",
+            admissionNo: match?.admissionNo || imported.admissionNo || "—",
+            programId: match?.programId || "",
+            programme: match?.programme || imported.programme || "General",
+            groupId: match?.groupId || "",
+            currentSection: match?.section || "Pending",
+            currentSectionId: match?.sectionId || "",
+          };
+        });
+
+        const candidateSections = (sections.length ? sections : sectionDirectory).filter(
+          (s) => s.isActive !== false
+        );
+
+        const sectionStatsMap = {};
+        candidateSections.forEach((sec) => {
+          const secId = String(sec.sectionId ?? sec.id);
+          const maxCapacity = Number(sec.maximumStrength ?? sec.capacity ?? sec.strength ?? sec.maxStudents ?? 40);
+          const currentAllocated = students.filter((s) => String(s.sectionId) === secId).length;
+          sectionStatsMap[secId] = {
+            sectionId: secId,
+            sectionName: sec.sectionName ?? sec.name ?? `Section ${secId}`,
+            programId: String(sec.programId ?? sec.programmeId ?? ""),
+            programme: sec.programme ?? sec.programName ?? "",
+            groupId: String(sec.groupId ?? ""),
+            maxCapacity,
+            currentAllocated,
+            remainingCapacity: Math.max(0, maxCapacity - currentAllocated),
+            newAllocatedCount: 0,
+          };
+        });
+
+        const allocated = [];
+        const overflow = [];
+
+        matchedList.forEach((st) => {
+          let targetSec = null;
+
+          const matchingSections = Object.values(sectionStatsMap).filter((sec) => {
+            if (st.programId && sec.programId && String(sec.programId) !== String(st.programId)) return false;
+            return true;
+          });
+
+          if (st.requestedSection) {
+            const directMatch = matchingSections.find(
+              (s) => s.sectionName.toLowerCase() === st.requestedSection.toLowerCase() && s.remainingCapacity > 0
+            );
+            if (directMatch) targetSec = directMatch;
+          }
+
+          if (!targetSec) {
+            targetSec =
+              matchingSections.find((s) => s.remainingCapacity > 0) ||
+              Object.values(sectionStatsMap).find((s) => s.remainingCapacity > 0);
+          }
+
+          if (targetSec) {
+            targetSec.remainingCapacity -= 1;
+            targetSec.newAllocatedCount += 1;
+            allocated.push({
+              ...st,
+              proposedSectionId: targetSec.sectionId,
+              proposedSectionName: targetSec.sectionName,
+              status: "Auto-Allocated",
+            });
+          } else {
+            overflow.push({
+              ...st,
+              proposedSectionId: "",
+              proposedSectionName: "Overflow (Approval Required)",
+              status: "Capacity Overflow - Requires Approval",
+              reason: "Section capacity limit reached. Requires administrator approval.",
+            });
+          }
+        });
+
+        setExcelVerificationResult({
+          isValid: true,
+          totalRows: rawJson.length,
+          validRowsCount: validImportedRows.length,
+          skippedRowsCount,
+          allocatedCount: allocated.length,
+          overflowCount: overflow.length,
+          allocated,
+          overflow,
+          sectionStats: Object.values(sectionStatsMap),
+          allCandidateSections: candidateSections,
+        });
+      } catch (err) {
+        console.error("Excel parse error:", err);
+        setExcelVerificationResult({
+          isValid: false,
+          error: "Failed to parse Excel file. Please ensure it is a valid spreadsheet format (.xlsx, .xls, .csv).",
+        });
+      } finally {
+        setIsVerifying(false);
+      }
+    };
+    reader.readAsArrayBuffer(selectedExcelFile);
+  };
+
+  // Proceed to the Capacity & Overflow Review Modal
+  const handleProceedToAllocation = () => {
+    if (!excelVerificationResult || !excelVerificationResult.isValid) return;
+    setAllocationPreview({
+      importedCount: excelVerificationResult.validRowsCount,
+      allocated: excelVerificationResult.allocated,
+      overflow: excelVerificationResult.overflow,
+      sectionStats: excelVerificationResult.sectionStats,
+      allCandidateSections: excelVerificationResult.allCandidateSections,
+    });
+    setPreviewTab(excelVerificationResult.overflow.length > 0 ? "overflow" : "allocated");
+    setIsImportModalOpen(false);
+  };
+
+  // Confirm and save auto-allocation
+  const handleConfirmSaveAllocation = async () => {
+    if (!allocationPreview?.allocated?.length) return;
+    setIsAllocating(true);
+    try {
+      const groupsBySection = {};
+      allocationPreview.allocated.forEach((st) => {
+        if (!st.proposedSectionId) return;
+        const admId = Number(st.admissionId);
+        if (Number.isFinite(admId) && admId > 0) {
+          if (!groupsBySection[st.proposedSectionId]) {
+            groupsBySection[st.proposedSectionId] = [];
+          }
+          groupsBySection[st.proposedSectionId].push({
+            admissionId: admId,
+            studentId: st.studentId,
+            studentObj: st,
+          });
+        }
+      });
+
+      let totalSaved = 0;
+      for (const [secId, studentGroup] of Object.entries(groupsBySection)) {
+        const admissionIds = studentGroup.map((item) => item.admissionId);
+        const sectionIdNum = Number(secId);
+        if (admissionIds.length) {
+          await apiClient.post(apiEndpoints.studentAdmissions.bulkSection, {
+            sectionId: sectionIdNum,
+            admissionIds,
+          });
+          await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
+            sectionId: sectionIdNum,
+            startingRollNumber: 1,
+            admissionIds,
+          }).catch(() => null);
+          totalSaved += admissionIds.length;
+        }
+      }
+
+      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll).catch(() => null);
+      const refreshedRolls = new Map(
+        refreshedStudentsResponse
+          ? list(refreshedStudentsResponse.data).map((student) => [
+            String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
+            student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
+          ])
+          : []
+      );
+
+      const allocatedMap = new Map();
+      allocationPreview.allocated.forEach((st) => {
+        if (st.admissionNo) allocatedMap.set(String(st.admissionNo).trim().toLowerCase(), st);
+        if (st.id) allocatedMap.set(String(st.id), st);
+      });
+
+      setStudents((current) =>
+        current.map((student) => {
+          const admKey = String(student.admissionNo ?? "").trim().toLowerCase();
+          const match = allocatedMap.get(admKey) || allocatedMap.get(String(student.id));
+          if (match && match.proposedSectionId) {
+            return {
+              ...student,
+              sectionId: Number(match.proposedSectionId),
+              section: match.proposedSectionName,
+              roll: refreshedRolls.get(String(student.admissionNo).trim()) || student.roll,
+            };
+          }
+          return student;
+        })
+      );
+
+      setMessageType("success");
+      setMessage(`Successfully allocated ${totalSaved} student(s) across sections.`);
+      setAllocationPreview(null);
+    } catch (err) {
+      setMessageType("error");
+      setMessage(getApiErrorMessage(err));
+    } finally {
+      setIsAllocating(false);
+    }
+  };
+
+  // Force-allocate all overflow students
+  const handleForceAllocateAll = () => {
+    if (!allocationPreview?.overflow?.length || !allocationPreview?.sectionStats?.length) return;
+    const sectionsList = allocationPreview.sectionStats;
+    let secIdx = 0;
+    const newlyAllocated = allocationPreview.overflow.map((st) => {
+      const chosenSection = sectionsList[secIdx % sectionsList.length];
+      secIdx++;
+      return {
+        ...st,
+        proposedSectionId: chosenSection.sectionId,
+        proposedSectionName: chosenSection.sectionName,
+        status: "Force-Allocated (Approved)",
+      };
+    });
+
+    setAllocationPreview((prev) => ({
+      ...prev,
+      allocated: [...prev.allocated, ...newlyAllocated],
+      overflow: [],
+    }));
+    setPreviewTab("allocated");
+    setMessage("All overflow students approved and assigned to sections.");
+    setMessageType("success");
+  };
+
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
     years.filter((year) => {
       const boardId = year.boardId ?? year.BoardId;
@@ -305,20 +861,25 @@ export default function SectionAllocationPage() {
     }),
     (year) => year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName,
   ), [ctx.board, years]);
+
   const update = (k, v) =>
     setCtx((c) => ({
       ...c,
       [k]: v,
+      ...(k === "board" ? { year: "", level: "", group: "", program: "", section: "" } : {}),
       ...(k === "group" ? { program: "", section: "" } : {}),
       ...(k === "program" ? { section: "" } : {}),
     }));
+
   const save = async () => {
     const ids = rows
-        .filter((student) => student.isApproved)
-        .map((student) => Number(student.admissionId))
-        .filter(Number.isFinite),
+      .filter((student) => student.isApproved)
+      .map((student) => Number(student.admissionId))
+      .filter(Number.isFinite),
       sectionId = Number(ctx.section);
-    if (!sectionId || !ids.length)
+    if (!sectionId)
+      return setMessage("Please select a Target Section from the dropdown above to allocate students.");
+    if (!ids.length)
       return setMessage("Only verified and approved admissions can be allocated to a section.");
     setBusy("save");
     try {
@@ -345,11 +906,11 @@ export default function SectionAllocationPage() {
         current.map((student) =>
           ids.includes(Number(student.admissionId))
             ? {
-                ...student,
-                sectionId,
-                section: sectionName ?? student.section,
-                roll: refreshedRolls.get(String(student.admissionNo).trim()) || "",
-              }
+              ...student,
+              sectionId,
+              section: sectionName ?? student.section,
+              roll: refreshedRolls.get(String(student.admissionNo).trim()) || "",
+            }
             : student,
         ),
       );
@@ -361,21 +922,22 @@ export default function SectionAllocationPage() {
       setBusy("");
     }
   };
+
   const rolls = async () => {
     const sectionId = Number(ctx.section);
     const selectedSectionName = sections.find(
       (section) => String(section.sectionId ?? section.id) === String(sectionId),
     )?.sectionName;
     const admissionIds = rows
-        .filter(
-          (student) =>
-            Number(student.sectionId) === sectionId ||
-            (!student.sectionId &&
-              String(student.section).trim().toLowerCase() ===
-                String(selectedSectionName ?? "").trim().toLowerCase()),
-        )
-        .map((student) => Number(student.admissionId))
-        .filter(Number.isFinite);
+      .filter(
+        (student) =>
+          Number(student.sectionId) === sectionId ||
+          (!student.sectionId &&
+            String(student.section).trim().toLowerCase() ===
+            String(selectedSectionName ?? "").trim().toLowerCase()),
+      )
+      .map((student) => Number(student.admissionId))
+      .filter(Number.isFinite);
     if (!admissionIds.length)
       return setMessage("Allocate students to a section before generating roll numbers.");
     setBusy("roll");
@@ -385,8 +947,6 @@ export default function SectionAllocationPage() {
         startingRollNumber: 1,
         admissionIds,
       });
-      // The generation endpoint updates student records on the server. Reload
-      // them instead of retaining the stale list that was fetched on mount.
       const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll);
       const refreshedRolls = new Map(
         list(refreshedStudentsResponse.data).map((student) => [
@@ -407,6 +967,7 @@ export default function SectionAllocationPage() {
       setBusy("");
     }
   };
+
   const opt = (arr, idKey, labelKey) =>
     (arr || []).map((x) => {
       const id =
@@ -427,12 +988,14 @@ export default function SectionAllocationPage() {
         </option>
       );
     });
+
   const allocationChanged = (student, updated) => {
     setStudents((current) => current.map((item) => item.id === student.id ? { ...item, ...updated } : item));
     setChangingStudent(null);
     setMessageType("success");
     setMessage("Program/Section changed successfully.");
   };
+
   return (
     <DashboardLayout
       title="Section Allocation"
@@ -453,7 +1016,7 @@ export default function SectionAllocationPage() {
             ["Academic Level", "level", levels, "academicLevelId", "levelName"],
             ["Group", "group", groups, "groupId", "groupName"],
             ["Program", "program", programs, "programId", "programName"],
-            ["Section", "section", sections, "sectionId", "sectionName"],
+            ["Target Section", "section", sections, "sectionId", "sectionName"],
           ].map(([l, k, a, i, n]) => (
             <label className="cms-field" key={k}>
               <span>{l}</span>
@@ -473,13 +1036,164 @@ export default function SectionAllocationPage() {
           </button>
         </div>
       </section>
+
       <section className="cms-card">
+        {/* ============================================================ */}
+        {/* TOOLBAR MATCHING REFERENCE SCREENSHOT                       */}
+        {/* ============================================================ */}
+        <div className="allocation-toolbar">
+          {/* Search bar on left */}
+          <div className="allocation-search">
+            <Search size={16} color="var(--cms-muted, #7B8275)" />
+            <input
+              type="search"
+              placeholder="Search by Name, Admission No,G..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="allocation-search-clear"
+                onClick={() => {
+                  setSearchQuery("");
+                  setPage(1);
+                }}
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Pill dropdown filters */}
+          <div className="allocation-toolbar-filters">
+            {/* Program Filter */}
+            <div className="allocation-filter-pill">
+              <select
+                value={tableProgramFilter}
+                onChange={(e) => {
+                  setTableProgramFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">Program</option>
+                {tableProgramOptions.map((prog) => (
+                  <option key={prog.id} value={prog.id}>
+                    {prog.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="allocation-pill-icon" />
+            </div>
+
+            {/* Section Filter */}
+            <div className="allocation-filter-pill">
+              <select
+                value={tableSectionFilter}
+                onChange={(e) => {
+                  setTableSectionFilter(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">Section</option>
+                <option value="pending">Pending / Unallocated</option>
+                {tableSectionOptions.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="allocation-pill-icon" />
+            </div>
+          </div>
+
+          <div className="allocation-toolbar-spacer" />
+
+          {/* Right action button */}
+          <button
+            type="button"
+            className="allocation-import-btn"
+            onClick={() => {
+              setSelectedExcelFile(null);
+              setExcelVerificationResult(null);
+              setIsImportModalOpen(true);
+            }}
+            title="Import Excel file to auto-allocate students by section capacity"
+          >
+            <Plus size={16} />
+            Import Excel & Auto-Allocate
+          </button>
+        </div>
+
+        {/* Dynamic Bulk Action Bar */}
+        {selectedIds.length > 0 && (
+          <div className="allocation-bulk-bar">
+            <div className="allocation-bulk-info">
+              <span className="allocation-bulk-badge">
+                <CheckSquare size={13} style={{ verticalAlign: "middle", marginRight: 4 }} />
+                {selectedIds.length} Student{selectedIds.length > 1 ? "s" : ""} Selected
+              </span>
+              {selectedIds.length < rows.length && (
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  style={{ height: 26, fontSize: 12, padding: "0 8px", background: "transparent" }}
+                  onClick={() => setSelectedIds(rows.map((r) => r.id))}
+                >
+                  Select all {rows.length} filtered
+                </button>
+              )}
+            </div>
+            <div className="allocation-bulk-actions">
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary allocation-bulk-btn"
+                onClick={() => {
+                  setBulkTargetSection("");
+                  setBulkActionModal("section");
+                }}
+                disabled={bulkLoading}
+              >
+                <Users size={14} />
+                Bulk Allocate Section
+              </button>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost allocation-bulk-btn"
+                onClick={clearSelection}
+                disabled={bulkLoading}
+              >
+                <X size={14} />
+                Clear Selection
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Students Table */}
         <div className="cms-table-wrap">
           <table className="cms-table">
             <thead>
               <tr>
+                {/* Starting Column: Master Checkbox */}
+                <th className="allocation-th-checkbox">
+                  <input
+                    type="checkbox"
+                    className="allocation-checkbox"
+                    ref={masterCheckboxRef}
+                    checked={isAllVisibleSelected}
+                    onChange={toggleSelectAll}
+                    aria-label="Select all students on active page"
+                  />
+                </th>
                 <th>Student Name</th>
                 <th>Admission No.</th>
+                <th>Academic Level</th>
+                <th>Group</th>
                 <th>Program</th>
                 <th>Section</th>
                 <th>Roll No.</th>
@@ -490,27 +1204,67 @@ export default function SectionAllocationPage() {
             <tbody>
               {studentsLoading ? (
                 <tr>
-                  <td colSpan="7">
+                  <td colSpan="10">
                     <div className="cms-empty">Loading admitted students...</div>
                   </td>
                 </tr>
               ) : pageRows.length ? (
                 pageRows.map((s) => (
-                  <tr key={s.id}>
+                  <tr key={s.id} className={selectedIds.includes(s.id) ? "row-selected" : ""}>
+                    {/* Starting Column: Row Checkbox */}
+                    <td className="allocation-td-checkbox">
+                      <input
+                        type="checkbox"
+                        className="allocation-checkbox"
+                        checked={selectedIds.includes(s.id)}
+                        onChange={() => toggleSelectRow(s.id)}
+                        aria-label={`Select student ${s.name}`}
+                      />
+                    </td>
                     <td>{s.name}</td>
                     <td>{s.admissionNo}</td>
+                    <td className="allocation-level-cell">
+                      <div className="allocation-level-main">
+                        {s.academicLevelName ||
+                          levelDirectory.find((l) => String(l.academicLevelId ?? l.id) === String(s.academicLevelId))?.levelName ||
+                          levels.find((l) => String(l.academicLevelId ?? l.id) === String(s.academicLevelId))?.levelName ||
+                          "Level —"}
+                      </div>
+                      <div className="allocation-level-sub">
+                        {s.academicLevelCode ||
+                          levelDirectory.find((l) => String(l.academicLevelId ?? l.id) === String(s.academicLevelId))?.levelCode ? (
+                          <span className="allocation-level-badge">
+                            {s.academicLevelCode ||
+                              levelDirectory.find((l) => String(l.academicLevelId ?? l.id) === String(s.academicLevelId))?.levelCode}
+                          </span>
+                        ) : null}
+                        <span>{s.academicYearName ? `AY: ${s.academicYearName}` : "—"}</span>
+                      </div>
+                    </td>
+                    <td>{s.group || groups.find((g) => String(g.groupId ?? g.id) === String(s.groupId))?.groupName || "—"}</td>
                     <td>{s.programme || programs.find((program) => String(program.programId ?? program.id) === String(s.programId))?.programName || "—"}</td>
                     <td>{s.section || sectionDirectory.find((section) => String(section.sectionId ?? section.id) === String(s.sectionId))?.sectionName || sections.find((section) => String(section.sectionId ?? section.id) === String(s.sectionId))?.sectionName || "Pending"}</td>
                     <td>{s.roll || "Pending"}</td>
                     <td>
                       <StatusBadge value={s.status} />
                     </td>
-                    <td><button type="button" className="cms-action-btn" aria-label={`Edit allocation for ${s.name}`} title="Edit program or section" disabled={!Number(s.studentId) || !Number(s.groupId)} onClick={() => setChangingStudent(s)}><Pencil size={16} aria-hidden="true" /></button></td>
+                    <td>
+                      <button
+                        type="button"
+                        className="cms-action-btn"
+                        aria-label={`Edit allocation for ${s.name}`}
+                        title="Edit program or section"
+                        disabled={!Number(s.studentId) || !Number(s.groupId)}
+                        onClick={() => setChangingStudent(s)}
+                      >
+                        <Pencil size={16} aria-hidden="true" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7">
+                  <td colSpan="10">
                     <div className="cms-empty">No admitted students found.</div>
                   </td>
                 </tr>
@@ -518,18 +1272,478 @@ export default function SectionAllocationPage() {
             </tbody>
           </table>
         </div>
-        {!studentsLoading && <footer className="section-allocation-pagination">
-          <span>
-            Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} students
-          </span>
-          <div className="section-allocation-pagination-actions">
-            <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
-            <span>Page {currentPage} of {totalPages}</span>
-            <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
-          </div>
-        </footer>}
+
+        {!studentsLoading && (
+          <footer className="section-allocation-pagination">
+            <span>
+              Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}-{Math.min(currentPage * pageSize, rows.length)} of {rows.length} students
+            </span>
+            <div className="section-allocation-pagination-actions">
+              <button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                Previous
+              </button>
+              <span>
+                Page {currentPage} of {totalPages}
+              </span>
+              <button disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>
+                Next
+              </button>
+            </div>
+          </footer>
+        )}
       </section>
-      {changingStudent ? <ChangeAllocationModal student={changingStudent} onClose={() => setChangingStudent(null)} onChanged={allocationChanged} /> : null}
+
+      {/* Existing Change Allocation Modal */}
+      {changingStudent ? (
+        <ChangeAllocationModal
+          student={changingStudent}
+          onClose={() => setChangingStudent(null)}
+          onChanged={allocationChanged}
+        />
+      ) : null}
+
+      {/* Bulk Change Section Modal */}
+      {bulkActionModal === "section" && (
+        <Modal
+          title="Bulk Change Section"
+          size="sm"
+          className="section-allocation-change-modal"
+          onClose={() => !bulkLoading && setBulkActionModal(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={() => setBulkActionModal(null)}
+                disabled={bulkLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary"
+                onClick={executeBulkChangeSection}
+                disabled={bulkLoading || !bulkTargetSection}
+              >
+                {bulkLoading ? "Allocating..." : `Allocate ${selectedIds.length} Students`}
+              </button>
+            </>
+          }
+        >
+          <div className="section-allocation-change-content">
+            <p>
+              Assign <strong>{selectedIds.length}</strong> selected student(s) to a target section:
+            </p>
+            <label className="cms-field">
+              <span>Target Section <span className="req">*</span></span>
+              <select
+                value={bulkTargetSection}
+                onChange={(e) => setBulkTargetSection(e.target.value)}
+                disabled={bulkLoading}
+              >
+                <option value="">Select Target Section</option>
+                {tableSectionOptions.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </Modal>
+      )}
+
+      {/* Excel Import & Verification Modal */}
+      {isImportModalOpen && (
+        <Modal
+          title="Import Excel & Auto-Allocate Students"
+          size="md"
+          className="excel-import-modal"
+          onClose={() => {
+            if (!isVerifying) {
+              setIsImportModalOpen(false);
+              setSelectedExcelFile(null);
+              setExcelVerificationResult(null);
+            }
+          }}
+          footer={
+            <>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={() => {
+                  setIsImportModalOpen(false);
+                  setSelectedExcelFile(null);
+                  setExcelVerificationResult(null);
+                }}
+                disabled={isVerifying}
+              >
+                Cancel
+              </button>
+
+              {!excelVerificationResult?.isValid ? (
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-primary"
+                  onClick={handleVerifyExcelFile}
+                  disabled={!selectedExcelFile || isVerifying}
+                >
+                  {isVerifying ? "Verifying..." : "Verify & Validate Excel"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-primary"
+                  onClick={handleProceedToAllocation}
+                >
+                  Proceed to Section Allocation ({excelVerificationResult.validRowsCount} Students)
+                </button>
+              )}
+            </>
+          }
+        >
+          <div className="excel-import-modal-content">
+            {/* File Dropzone / Selector */}
+            {!selectedExcelFile ? (
+              <label className="excel-dropzone">
+                <input
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  style={{ display: "none" }}
+                  onChange={handleExcelFileSelect}
+                />
+                <div className="excel-dropzone-icon">
+                  <FileSpreadsheet size={22} />
+                </div>
+                <span className="excel-dropzone-title">Click to upload or drag & drop Excel</span>
+                <span className="excel-dropzone-subtitle">Supported formats: .xlsx, .xls, .csv</span>
+              </label>
+            ) : (
+              <div className="excel-file-card">
+                <div className="excel-file-info">
+                  <FileSpreadsheet size={24} color="var(--cms-primary, #6F8400)" />
+                  <div>
+                    <strong>{selectedExcelFile.name}</strong>
+                    <span>{(selectedExcelFile.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  style={{ height: 30, padding: "0 10px", fontSize: 12 }}
+                  onClick={() => {
+                    setSelectedExcelFile(null);
+                    setExcelVerificationResult(null);
+                  }}
+                  disabled={isVerifying}
+                >
+                  Change File
+                </button>
+              </div>
+            )}
+
+            {/* Verification Result Panel */}
+            {excelVerificationResult && (
+              <div className="excel-verify-box">
+                <div className="excel-verify-header">
+                  <strong>Verification Status</strong>
+                  {excelVerificationResult.isValid ? (
+                    <span className="excel-verify-badge valid">
+                      <CheckCircle2 size={13} />
+                      Verified & Ready
+                    </span>
+                  ) : (
+                    <span className="excel-verify-badge invalid">
+                      <AlertTriangle size={13} />
+                      Validation Failed
+                    </span>
+                  )}
+                </div>
+
+                {excelVerificationResult.isValid ? (
+                  <>
+                    <div className="excel-verify-grid">
+                      <div className="excel-verify-stat">
+                        <span className="excel-verify-stat-label">Valid Records</span>
+                        <span className="excel-verify-stat-val" style={{ color: "var(--cms-primary, #6F8400)" }}>
+                          {excelVerificationResult.validRowsCount}
+                        </span>
+                      </div>
+                      <div className="excel-verify-stat">
+                        <span className="excel-verify-stat-label">Within Capacity</span>
+                        <span className="excel-verify-stat-val" style={{ color: "var(--cms-green, #0f9d58)" }}>
+                          {excelVerificationResult.allocatedCount}
+                        </span>
+                      </div>
+                      <div className="excel-verify-stat">
+                        <span className="excel-verify-stat-label">Capacity Overflow</span>
+                        <span
+                          className="excel-verify-stat-val"
+                          style={{
+                            color:
+                              excelVerificationResult.overflowCount > 0
+                                ? "var(--cms-red, #d93636)"
+                                : "var(--cms-muted)",
+                          }}
+                        >
+                          {excelVerificationResult.overflowCount}
+                        </span>
+                      </div>
+                    </div>
+
+                    {excelVerificationResult.skippedRowsCount > 0 && (
+                      <p style={{ margin: 0, fontSize: 12, color: "var(--cms-amber, #b7791f)" }}>
+                        ⚠️ {excelVerificationResult.skippedRowsCount} row(s) were skipped due to missing Admission Number or Student Name.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ margin: 0, fontSize: 12.5, color: "var(--cms-red, #d93636)" }}>
+                    {excelVerificationResult.error}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Allocation Review & Capacity Approval Modal */}
+      {allocationPreview && (
+        <Modal
+          title="Excel Auto-Allocation & Capacity Review"
+          size="lg"
+          className="allocation-review-modal"
+          onClose={() => !isAllocating && setAllocationPreview(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={() => setAllocationPreview(null)}
+                disabled={isAllocating}
+              >
+                Cancel
+              </button>
+              {allocationPreview.overflow.length > 0 && (
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  style={{ color: "var(--cms-amber, #b7791f)", borderColor: "var(--cms-amber, #b7791f)" }}
+                  onClick={handleForceAllocateAll}
+                  disabled={isAllocating}
+                  title="Force-allocates overflow students into sections evenly"
+                >
+                  Approve & Force Allocate All
+                </button>
+              )}
+              <button
+                type="button"
+                className="cms-btn cms-btn-primary"
+                onClick={handleConfirmSaveAllocation}
+                disabled={isAllocating || !allocationPreview.allocated.length}
+              >
+                {isAllocating ? "Saving..." : `Confirm & Save (${allocationPreview.allocated.length} Allocated)`}
+              </button>
+            </>
+          }
+        >
+          <div>
+            {/* Summary Metrics */}
+            <div className="allocation-preview-metrics">
+              <div className="allocation-metric-card">
+                <span className="allocation-metric-title">Total Processed</span>
+                <span className="allocation-metric-value">{allocationPreview.importedCount}</span>
+              </div>
+              <div className="allocation-metric-card highlight">
+                <span className="allocation-metric-title">Auto-Allocated</span>
+                <span className="allocation-metric-value" style={{ color: "var(--cms-primary, #6F8400)" }}>
+                  {allocationPreview.allocated.length}
+                </span>
+              </div>
+              <div className={`allocation-metric-card ${allocationPreview.overflow.length ? "danger" : ""}`}>
+                <span className="allocation-metric-title">Capacity Overflow</span>
+                <span className="allocation-metric-value" style={{ color: allocationPreview.overflow.length ? "var(--cms-red, #d93636)" : "var(--cms-muted)" }}>
+                  {allocationPreview.overflow.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Tab Headers */}
+            <div className="allocation-preview-tabs">
+              <button
+                type="button"
+                className={`allocation-preview-tab-btn ${previewTab === "allocated" ? "active" : ""}`}
+                onClick={() => setPreviewTab("allocated")}
+              >
+                <CheckCircle2 size={15} />
+                Auto-Allocated ({allocationPreview.allocated.length})
+              </button>
+              <button
+                type="button"
+                className={`allocation-preview-tab-btn ${previewTab === "overflow" ? "active" : ""}`}
+                onClick={() => setPreviewTab("overflow")}
+              >
+                <AlertTriangle size={15} />
+                Overflow ({allocationPreview.overflow.length})
+              </button>
+              <button
+                type="button"
+                className={`allocation-preview-tab-btn ${previewTab === "sections" ? "active" : ""}`}
+                onClick={() => setPreviewTab("sections")}
+              >
+                <Users size={15} />
+                Section Capacities ({allocationPreview.sectionStats.length})
+              </button>
+            </div>
+
+            {/* Tab 1: Allocated List */}
+            {previewTab === "allocated" && (
+              <div className="allocation-preview-table-wrap">
+                <table className="cms-table" style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Student Name</th>
+                      <th>Admission No</th>
+                      <th>Program</th>
+                      <th>Assigned Section</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allocationPreview.allocated.length ? (
+                      allocationPreview.allocated.map((st, idx) => (
+                        <tr key={`alloc-${st.id || idx}`}>
+                          <td>{st.name}</td>
+                          <td>{st.admissionNo}</td>
+                          <td>{st.programme}</td>
+                          <td>
+                            <strong>{st.proposedSectionName}</strong>
+                          </td>
+                          <td>
+                            <span className="cms-badge" style={{ background: "var(--cms-green-soft, #e6f6ee)", color: "var(--cms-green, #0f9d58)", padding: "3px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+                              Auto-Allocated
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="5" style={{ textAlign: "center", padding: 20, color: "var(--cms-muted)" }}>
+                          No students allocated yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Tab 2: Overflow List */}
+            {previewTab === "overflow" && (
+              <div className="allocation-preview-table-wrap">
+                <table className="cms-table" style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Student Name</th>
+                      <th>Admission No</th>
+                      <th>Program</th>
+                      <th>Reason</th>
+                      <th>Override Section</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allocationPreview.overflow.length ? (
+                      allocationPreview.overflow.map((st, idx) => (
+                        <tr key={`ovf-${st.id || idx}`}>
+                          <td>{st.name}</td>
+                          <td>{st.admissionNo}</td>
+                          <td>{st.programme}</td>
+                          <td style={{ color: "var(--cms-red, #d93636)", fontSize: 12 }}>
+                            {st.reason}
+                          </td>
+                          <td>
+                            <select
+                              style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid var(--cms-border)" }}
+                              value={st.proposedSectionId || ""}
+                              onChange={(e) => {
+                                const secId = e.target.value;
+                                const secObj = allocationPreview.sectionStats.find((s) => String(s.sectionId) === String(secId));
+                                setAllocationPreview((prev) => {
+                                  const updatedOverflow = prev.overflow.filter((_, i) => i !== idx);
+                                  const movedItem = {
+                                    ...st,
+                                    proposedSectionId: secId,
+                                    proposedSectionName: secObj?.sectionName || `Section ${secId}`,
+                                    status: "Manually Approved",
+                                  };
+                                  return {
+                                    ...prev,
+                                    allocated: [...prev.allocated, movedItem],
+                                    overflow: updatedOverflow,
+                                  };
+                                });
+                              }}
+                            >
+                              <option value="">Select Section to Override</option>
+                              {allocationPreview.sectionStats.map((sec) => (
+                                <option key={sec.sectionId} value={sec.sectionId}>
+                                  {sec.sectionName} (Cap: {sec.maxCapacity}, Occ: {sec.currentAllocated + sec.newAllocatedCount})
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="5" style={{ textAlign: "center", padding: 20, color: "var(--cms-green, #0f9d58)" }}>
+                          No capacity overflow. All students fit within available section capacities!
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Tab 3: Section Capacities */}
+            {previewTab === "sections" && (
+              <div className="allocation-section-cards">
+                {allocationPreview.sectionStats.map((sec) => {
+                  const totalAllocated = sec.currentAllocated + sec.newAllocatedCount;
+                  const percent = Math.min(100, Math.round((totalAllocated / (sec.maxCapacity || 1)) * 100));
+                  const isFull = totalAllocated >= sec.maxCapacity;
+                  const isNearFull = percent >= 85 && !isFull;
+                  const fillClass = isFull ? "full" : isNearFull ? "warning" : "normal";
+
+                  return (
+                    <div key={sec.sectionId} className="capacity-card">
+                      <div className="capacity-header">
+                        <span>{sec.sectionName}</span>
+                        <span style={{ color: isFull ? "var(--cms-red, #d93636)" : "var(--cms-primary, #6F8400)" }}>
+                          {totalAllocated} / {sec.maxCapacity} ({percent}%)
+                        </span>
+                      </div>
+                      <div className="capacity-meter-track">
+                        <div
+                          className={`capacity-meter-fill ${fillClass}`}
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                      <div className="capacity-subtext">
+                        {sec.newAllocatedCount > 0 && <span>+{sec.newAllocatedCount} new · </span>}
+                        {isFull ? "Section is at maximum capacity" : `${Math.max(0, sec.maxCapacity - totalAllocated)} slots available`}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       <Toast message={message} type={messageType} onClose={() => setMessage("")} />
     </DashboardLayout>
   );
@@ -626,7 +1840,7 @@ function ChangeAllocationModal({ student, onClose, onChanged }) {
     finally { setSaving(false); }
   };
 
-  return <Modal title="Change Program / Section" size="sm" className="section-allocation-change-modal" onClose={saving ? () => {} : onClose} footer={<><button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="cms-btn cms-btn-primary" onClick={confirm} disabled={loading || sectionsLoading || saving || !programId || !sectionId}>{saving ? "Changing..." : "Confirm Change"}</button></>}>
+  return <Modal title="Change Program / Section" size="sm" className="section-allocation-change-modal" onClose={saving ? () => { } : onClose} footer={<><button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button><button type="button" className="cms-btn cms-btn-primary" onClick={confirm} disabled={loading || sectionsLoading || saving || !programId || !sectionId}>{saving ? "Changing..." : "Confirm Change"}</button></>}>
     <div className="section-allocation-change-content">
       <div className="section-allocation-student"><strong>{student.name}</strong><span>· {student.admissionNo}</span></div>
       <p>Current: {currentProgramName} · Section {currentSectionName} · Roll No {currentRoll}</p>

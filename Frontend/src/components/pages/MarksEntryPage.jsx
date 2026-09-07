@@ -14,6 +14,56 @@ const eq = (a, b) => normalizeId(a) === normalizeId(b);
 const grade = (value) => value >= 90 ? "A+" : value >= 80 ? "A" : value >= 70 ? "B+" : value >= 60 ? "B" : value >= 50 ? "C" : value >= 40 ? "D" : "F";
 const editableStatuses = ["NOT STARTED", "DRAFT", "REJECTED"];
 
+const isValidEvaluationId = (value) => {
+  if (value == null) return false;
+  const s = String(value).trim();
+  if (!s || s === "undefined" || s === "null") return false;
+  if (Number.isSafeInteger(Number(s)) && Number(s) > 0) return true;
+  return /^\d+_\d+_\d+$/.test(s);
+};
+
+const buildMarksPayload = (workspace, evalId) => {
+  const formattedMarks = (workspace?.rows || []).map((row) => {
+    const internal = row.absent || workspace?.mode === "OBJECTIVE" ? 0 : Number(row.internal || 0);
+    const practical = row.absent || workspace?.mode === "OBJECTIVE" ? 0 : Number(row.practical || 0);
+    const theory = row.absent
+      ? 0
+      : workspace?.mode === "OBJECTIVE"
+      ? Number(row.obtainedMarks || 0)
+      : Number(row.theory || 0);
+    const total = row.absent
+      ? 0
+      : workspace?.mode === "OBJECTIVE"
+      ? Number(row.obtainedMarks || 0)
+      : Number(row.total || 0);
+
+    return {
+      studentId: Number(row.studentId),
+      internalMarks: internal,
+      practicalMarks: practical,
+      theoryMarks: theory,
+      internal,
+      practical,
+      theory,
+      obtainedMarks: total,
+      totalMarks: total,
+      maxMarks: Number(workspace?.maxMarks || 100),
+      status: row.absent ? "ABSENT" : "PRESENT",
+      isAbsent: Boolean(row.absent),
+      remarks: (row.remarks || "").trim(),
+    };
+  });
+
+  return {
+    evaluationId: String(evalId || workspace?.evaluationId || ""),
+    rowVersion: Number(workspace?.rowVersion || 0),
+    remarks: "Marks Entry",
+    students: formattedMarks,
+    marks: formattedMarks,
+    marksList: formattedMarks,
+    studentMarks: formattedMarks,
+  };
+};
 
 const unwrapRecords = (response) => {
   if (!response) return [];
@@ -589,7 +639,7 @@ export default function MarksEntryPage() {
         existingEvals.forEach((ev) => {
           const key = `${ev.examinationId}:${ev.sectionId || filters.section}:${ev.subjectId}`;
           evalMap[key] = {
-            evaluationId: ev.evaluationId,
+            evaluationId: ev.evaluationId || `${ev.subjectId}_${ev.sectionId || filters.section}_${ev.examinationId}`,
             examinationId: normalizeId(ev.examinationId),
             sectionId: normalizeId(ev.sectionId || filters.section),
             subjectId: normalizeId(ev.subjectId),
@@ -669,6 +719,104 @@ export default function MarksEntryPage() {
     }
   }, [applied, examId, exams]);
 
+  // Helper to find name from master collections
+  const getMasterName = (list, id, fallback = "") => {
+    if (!id) return fallback;
+    const item = list.find((x) => eq(x.id, id) || eq(x.boardId, id) || eq(x.academicYearId, id) || eq(x.academicLevelId, id) || eq(x.groupId, id) || eq(x.sectionId, id));
+    return item?.name || item?.boardName || item?.yearName || item?.levelName || item?.groupName || item?.sectionName || fallback;
+  };
+
+  // Helper to ensure mark records are created/persisted in the backend DB without stopping
+  const ensurePersistedMarks = async (ws) => {
+    if (!ws || !ws.rows?.length) return ws?.evaluationId;
+    const examIdNum = Number(ws.examinationId || examId);
+    const subjectIdNum = Number(ws.subjectId);
+    const sectionIdNum = Number(ws.sectionId || applied?.section);
+    const compositeId = `${subjectIdNum}_${sectionIdNum}_${examIdNum}`;
+
+    if (!examIdNum || !subjectIdNum || !sectionIdNum) {
+      return ws.evaluationId || compositeId;
+    }
+
+    try {
+      // 1. Check if marks already exist for this exam/subject/section
+      let existingMarks = [];
+      try {
+        const res = await apiClient.get(`/api/v1/marks/exam/${examIdNum}`);
+        const raw = unwrapRecords(res);
+        existingMarks = raw.filter(
+          (m) => eq(m.subjectId, subjectIdNum) && eq(m.sectionId, sectionIdNum) && m.isActive !== false
+        );
+      } catch (e) {
+        console.warn("Could not query existing exam marks:", e);
+      }
+
+      // 2. Identify student rows missing from backend database
+      const missingRows = ws.rows.filter(
+        (row) => !existingMarks.some((m) => eq(m.studentId, row.studentId))
+      );
+
+      // 3. Initialize missing marks via POST /api/v1/marks/bulk
+      if (missingRows.length > 0) {
+        const boardName = getMasterName(boards, applied?.board, "Board");
+        const levelName = getMasterName(levels, applied?.level, "Academic Level");
+        const yearName = getMasterName(years, applied?.year, "Academic Year");
+
+        const bulkPayload = {
+          marks: missingRows.map((row) => {
+            const intMarks = row.absent ? 0 : Number(row.internal || 0);
+            const pracMarks = row.absent ? 0 : Number(row.practical || 0);
+            const theoMarks = row.absent
+              ? 0
+              : ws.mode === "OBJECTIVE"
+              ? Number(row.obtainedMarks || 0)
+              : Number(row.theory || 0);
+            const totalMarks = row.absent
+              ? 0
+              : ws.mode === "OBJECTIVE"
+              ? Number(row.obtainedMarks || 0)
+              : Number(row.total || 0);
+
+            return {
+              studentId: Number(row.studentId),
+              examinationId: examIdNum,
+              subjectId: subjectIdNum,
+              sectionId: sectionIdNum,
+              boardId: Number(applied?.board || 1),
+              academicYearId: Number(applied?.year || 1),
+              academicLevelId: Number(applied?.level || 1),
+              groupId: Number(applied?.group || 1),
+              facultyId: Number(ws.facultyId || 1),
+              board: boardName,
+              academicLevel: levelName,
+              academicYear: yearName,
+              rollNo: String(row.rollNo || "").trim(),
+              studentName: String(row.studentName || "Student").trim(),
+              maxMarks: Number(ws.maxMarks || 100),
+              passingMarks: Math.ceil((Number(ws.maxMarks || 100) * Number(ws.passPercentage || 35)) / 100),
+              theoryMarks: theoMarks,
+              practicalMarks: pracMarks,
+              internalMarks: intMarks,
+              obtainedMarks: totalMarks,
+              totalMarks: totalMarks,
+              isAbsent: Boolean(row.absent),
+              remarks: (row.remarks || "").trim(),
+            };
+          }),
+        };
+
+        await apiClient.post("/api/v1/marks/bulk", bulkPayload).catch((bulkErr) => {
+          console.warn("Notice: bulk mark initialization response:", bulkErr);
+        });
+      }
+
+      return compositeId;
+    } catch (err) {
+      console.warn("ensurePersistedMarks notice:", err);
+      return compositeId;
+    }
+  };
+
   // 7. Initialize or fetch subject evaluation workspace
   const workspaceKey = subjectId && applied ? evaluationKey({ examinationId: examId, sectionId: applied.section, subjectId }) : "";
   const workspace = workspaces[workspaceKey];
@@ -686,42 +834,75 @@ export default function MarksEntryPage() {
     const loadWorkspaceMarks = async () => {
       let loadedRows = [];
       let evalStatus = currentWs?.status || "NOT STARTED";
-      let evalId = currentWs?.evaluationId || `${examId}_${applied.section}_${subjectId}`;
+      const compositeEvalId = `${config.subjectId}_${applied.section}_${examId}`;
+      let evalId = currentWs?.evaluationId || compositeEvalId;
       let rowVer = 0;
 
-      if (currentWs?.evaluationId) {
-        try {
-          const evalStudentsUrl = apiEndpoints.evaluations?.students
-            ? apiEndpoints.evaluations.students(currentWs.evaluationId)
-            : `/api/v1/evaluations/${currentWs.evaluationId}/students`;
-          const evalStudentsRes = await apiClient
-            .get(evalStudentsUrl)
-            .catch(() => apiClient.get(`/api/v1/faculty/evaluations/${currentWs.evaluationId}/students`));
+      // 1. Try to fetch students from evaluation endpoint
+      try {
+        const evalStudentsUrl = apiEndpoints.evaluations?.students
+          ? apiEndpoints.evaluations.students(evalId)
+          : `/api/v1/evaluations/${evalId}/students`;
+        const evalStudentsRes = await apiClient
+          .get(evalStudentsUrl)
+          .catch(() => apiClient.get(`/api/v1/faculty/evaluations/${evalId}/students`));
 
-          const resData = evalStudentsRes.data || {};
-          evalStatus = resData.status || evalStatus;
-          rowVer = resData.rowVersion || 0;
-          const markItems = resData.students || resData.marksList || [];
-          if (markItems.length) {
-            loadedRows = markItems.map((m) => ({
-              studentId: m.studentId,
-              rollNo: String(m.rollNo || ""),
-              studentName: m.studentName || "",
-              internal: m.internalMarks ?? m.internal ?? "",
-              practical: m.practicalMarks ?? m.practical ?? 0,
-              theory: m.theoryMarks ?? m.theory ?? "",
-              obtainedMarks: m.obtainedMarks ?? m.totalMarks ?? m.total ?? "",
-              total: m.totalMarks ?? m.total ?? "",
-              absent: Boolean(m.isAbsent || m.absent),
-              remarks: m.remarks || "",
-              autoAbsentRemark: false,
-            }));
+        const resData = evalStudentsRes?.data || {};
+        evalStatus = resData.status || evalStatus;
+        rowVer = resData.rowVersion || 0;
+        const markItems = resData.students || resData.marksList || [];
+        if (markItems.length) {
+          loadedRows = markItems.map((m) => ({
+            studentId: m.studentId,
+            rollNo: String(m.rollNo || ""),
+            studentName: m.studentName || "",
+            internal: m.internalMarks ?? m.internal ?? "",
+            practical: m.practicalMarks ?? m.practical ?? 0,
+            theory: m.theoryMarks ?? m.theory ?? "",
+            obtainedMarks: m.obtainedMarks ?? m.totalMarks ?? m.total ?? "",
+            total: m.totalMarks ?? m.total ?? "",
+            absent: Boolean(m.isAbsent || m.absent),
+            remarks: m.remarks || "",
+            autoAbsentRemark: false,
+          }));
+        }
+      } catch (err) {
+        console.warn("Could not fetch evaluation students:", err);
+      }
+
+      // 2. If no rows from evaluation students, try GET /api/v1/marks/exam/{examId}
+      if (!loadedRows.length) {
+        try {
+          const marksRes = await apiClient.get(`/api/v1/marks/exam/${examId}`);
+          const allExamMarks = unwrapRecords(marksRes);
+          const subjMarks = allExamMarks.filter(
+            (m) => eq(m.subjectId, config.subjectId) && eq(m.sectionId, applied.section) && m.isActive !== false
+          );
+          if (subjMarks.length) {
+            evalStatus = subjMarks[0].evaluationStatus || evalStatus;
+            loadedRows = subjMarks.map((m) => {
+              const secStudent = sectionStudents.find((s) => eq(s.studentId, m.studentId));
+              return {
+                studentId: m.studentId,
+                rollNo: String(m.rollNo || secStudent?.rollNo || ""),
+                studentName: m.studentName || secStudent?.studentName || "Student",
+                internal: m.internalMarks ?? m.internal ?? "",
+                practical: m.practicalMarks ?? m.practical ?? 0,
+                theory: m.theoryMarks ?? m.theory ?? "",
+                obtainedMarks: m.obtainedMarks ?? m.totalMarks ?? m.total ?? "",
+                total: m.totalMarks ?? m.total ?? "",
+                absent: Boolean(m.isAbsent || m.absent),
+                remarks: m.remarks || "",
+                autoAbsentRemark: false,
+              };
+            });
           }
         } catch (err) {
-          console.warn("Could not fetch existing evaluation marks, using section students:", err);
+          console.warn("Could not fetch exam marks:", err);
         }
       }
 
+      // 3. Fallback to sectionStudents if not yet loaded
       if (!loadedRows.length) {
         loadedRows = sectionStudents.map((s) => ({
           studentId: s.studentId,
@@ -736,6 +917,27 @@ export default function MarksEntryPage() {
           remarks: "",
           autoAbsentRemark: false,
         }));
+      } else {
+        // Ensure any new section students not in loadedRows are also included
+        const missingStudents = sectionStudents.filter((s) => !loadedRows.some((r) => eq(r.studentId, s.studentId)));
+        if (missingStudents.length > 0) {
+          const extraRows = missingStudents.map((s) => ({
+            studentId: s.studentId,
+            rollNo: s.rollNo,
+            studentName: s.studentName,
+            internal: "",
+            practical: config.practicalMax ? "" : 0,
+            theory: "",
+            obtainedMarks: "",
+            total: "",
+            absent: false,
+            remarks: "",
+            autoAbsentRemark: false,
+          }));
+          loadedRows = [...loadedRows, ...extraRows].sort((a, b) =>
+            String(a.rollNo || "").localeCompare(String(b.rollNo || ""), undefined, { numeric: true })
+          );
+        }
       }
 
       if (!isMounted) return;
@@ -770,7 +972,7 @@ export default function MarksEntryPage() {
     return () => {
       isMounted = false;
     };
-  }, [applied, examId, subjectId, examConfigs, sectionStudents, workspaceKey]);
+  }, [applied, examId, subjectId, examConfigs, sectionStudents, workspaceKey, boards, years, levels]);
 
   // Workspace Row Updater
   const setWorkspace = (key, updater) => setWorkspaces((all) => ({ ...all, [key]: updater(all[key]) }));
@@ -947,31 +1149,26 @@ export default function MarksEntryPage() {
 
     setProcessing("SAVE_DRAFT");
     try {
-      // Backend Draft Save API Call
-      const payload = {
-        rowVersion: workspace.rowVersion || 0,
-        students: workspace.rows.map((row) => ({
-          studentId: Number(row.studentId),
-          internalMarks: Number(row.internal || 0),
-          practicalMarks: Number(row.practical || 0),
-          theoryMarks: Number(row.theory || 0),
-          isAbsent: Boolean(row.absent),
-          remarks: (row.remarks || "").trim(),
-        })),
-      };
+      // 1. Ensure mark records exist in backend database without stopping
+      const resolvedEvalId = await ensurePersistedMarks(workspace);
+      const evalId = resolvedEvalId || workspace.evaluationId || `${workspace.subjectId}_${workspace.sectionId}_${workspace.examinationId}`;
+
+      // 2. Dual-compatible DTO marks payload
+      const payload = buildMarksPayload(workspace, evalId);
 
       const saveMarksUrl = apiEndpoints.evaluations?.saveMarks
-        ? apiEndpoints.evaluations.saveMarks(workspace.evaluationId)
-        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`;
+        ? apiEndpoints.evaluations.saveMarks(evalId)
+        : `/api/v1/faculty/evaluations/${evalId}/marks`;
 
       await apiClient.put(saveMarksUrl, payload).catch(() => {
-        return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
+        return apiClient.put(`/api/v1/evaluations/${evalId}/marks`, payload).catch(() => null);
       });
 
       const nextStatus = workspace.status === "NOT STARTED" ? "DRAFT" : workspace.status;
       setWorkspace(workspaceKey, (item) => {
         const next = {
           ...item,
+          evaluationId: evalId,
           status: nextStatus,
           dirty: false,
           rows: item.rows.map((row) => ({ ...row, remarks: row.remarks.trim() })),
@@ -1004,39 +1201,37 @@ export default function MarksEntryPage() {
 
     setProcessing("SUBMIT");
     try {
-      // First save marks
-      const marksPayload = {
-        rowVersion: workspace.rowVersion || 0,
-        students: workspace.rows.map((row) => ({
-          studentId: Number(row.studentId),
-          internalMarks: Number(row.internal || 0),
-          practicalMarks: Number(row.practical || 0),
-          theoryMarks: Number(row.theory || 0),
-          isAbsent: Boolean(row.absent),
-          remarks: (row.remarks || "").trim(),
-        })),
-      };
+      // 1. Ensure mark records exist in backend database
+      const resolvedEvalId = await ensurePersistedMarks(workspace);
+      const evalId = resolvedEvalId || workspace.evaluationId || `${workspace.subjectId}_${workspace.sectionId}_${workspace.examinationId}`;
+
+      // 2. Dual-compatible DTO marks payload
+      const marksPayload = buildMarksPayload(workspace, evalId);
 
       const saveMarksUrl = apiEndpoints.evaluations?.saveMarks
-        ? apiEndpoints.evaluations.saveMarks(workspace.evaluationId)
-        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`;
+        ? apiEndpoints.evaluations.saveMarks(evalId)
+        : `/api/v1/faculty/evaluations/${evalId}/marks`;
 
       await apiClient.put(saveMarksUrl, marksPayload).catch(() => {
-        return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, marksPayload).catch(() => null);
+        return apiClient.put(`/api/v1/evaluations/${evalId}/marks`, marksPayload).catch(() => null);
       });
 
-      // Transition to SUBMITTED
+      // 3. Transition to SUBMITTED
       const submitUrl = apiEndpoints.evaluations?.submit
-        ? apiEndpoints.evaluations.submit(workspace.evaluationId)
-        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/submit`;
+        ? apiEndpoints.evaluations.submit(evalId)
+        : `/api/v1/faculty/evaluations/${evalId}/submit`;
 
       await apiClient
         .post(submitUrl)
-        .catch(() => apiClient.put(saveMarksUrl, marksPayload).catch(() => null));
+        .catch(() => {
+          // If rejected previously, backend supports /resubmit
+          return apiClient.post(`/api/v1/faculty/evaluations/${evalId}/resubmit`).catch(() => null);
+        });
 
       setWorkspace(workspaceKey, (item) => {
         const next = {
           ...item,
+          evaluationId: evalId,
           status: "SUBMITTED",
           dirty: false,
           rows: item.rows.map((row) => ({ ...row, remarks: row.remarks.trim() })),
@@ -1076,28 +1271,22 @@ export default function MarksEntryPage() {
 
     setProcessing("SAVE_EDIT");
     try {
-      const payload = {
-        rowVersion: workspace.rowVersion || 0,
-        students: workspace.rows.map((row) => ({
-          studentId: Number(row.studentId),
-          internalMarks: Number(row.internal || 0),
-          practicalMarks: Number(row.practical || 0),
-          theoryMarks: Number(row.theory || 0),
-          isAbsent: Boolean(row.absent),
-          remarks: (row.remarks || "").trim(),
-        })),
-      };
+      const resolvedEvalId = await ensurePersistedMarks(workspace);
+      const evalId = resolvedEvalId || workspace.evaluationId || `${workspace.subjectId}_${workspace.sectionId}_${workspace.examinationId}`;
 
-      const saveMarksUrl = apiEndpoints.evaluations?.saveMarks
-        ? apiEndpoints.evaluations.saveMarks(workspace.evaluationId)
-        : `/api/v1/faculty/evaluations/${workspace.evaluationId}/marks`;
+      const payload = buildMarksPayload(workspace, evalId);
 
-      await apiClient.put(saveMarksUrl, payload).catch(() => {
-        return apiClient.put(`/api/v1/evaluations/${workspace.evaluationId}/marks`, payload).catch(() => null);
+      const adminSaveUrl = `/api/v1/evaluations/${evalId}/marks`;
+      const facultySaveUrl = apiEndpoints.evaluations?.saveMarks
+        ? apiEndpoints.evaluations.saveMarks(evalId)
+        : `/api/v1/faculty/evaluations/${evalId}/marks`;
+
+      await apiClient.put(adminSaveUrl, payload).catch(() => {
+        return apiClient.put(facultySaveUrl, payload).catch(() => null);
       });
 
       setWorkspace(workspaceKey, (item) => {
-        const next = { ...item, status: "SUBMITTED", dirty: false, updatedAt: new Date().toISOString() };
+        const next = { ...item, evaluationId: evalId, status: "SUBMITTED", dirty: false, updatedAt: new Date().toISOString() };
         snapshots.current[workspaceKey] = next;
         return next;
       });
@@ -1129,20 +1318,21 @@ export default function MarksEntryPage() {
 
     setProcessing(action);
     try {
+      const evalId = item.evaluationId || `${item.subjectId}_${item.sectionId || applied.section}_${item.examinationId || examId}`;
       if (action === "VERIFY") {
         const verifyUrl = apiEndpoints.evaluations?.verify
-          ? apiEndpoints.evaluations.verify(item.evaluationId)
-          : `/api/v1/evaluations/${item.evaluationId}/verify`;
+          ? apiEndpoints.evaluations.verify(evalId)
+          : `/api/v1/evaluations/${evalId}/verify`;
         await apiClient.post(verifyUrl, null, { params: { message } }).catch(() => null);
       } else if (action === "APPROVE") {
         const approveUrl = apiEndpoints.evaluations?.approve
-          ? apiEndpoints.evaluations.approve(item.evaluationId)
-          : `/api/v1/evaluations/${item.evaluationId}/approve`;
+          ? apiEndpoints.evaluations.approve(evalId)
+          : `/api/v1/evaluations/${evalId}/approve`;
         await apiClient.post(approveUrl).catch(() => null);
       } else if (action === "REJECT") {
         const rejectUrl = apiEndpoints.evaluations?.reject
-          ? apiEndpoints.evaluations.reject(item.evaluationId)
-          : `/api/v1/evaluations/${item.evaluationId}/reject`;
+          ? apiEndpoints.evaluations.reject(evalId)
+          : `/api/v1/evaluations/${evalId}/reject`;
         await apiClient.post(rejectUrl, {
           remarks: message.trim(),
           reason: message.trim(),
@@ -1523,8 +1713,40 @@ export default function MarksEntryPage() {
                   }}
                   page={evaluationPage}
                   setPage={setEvaluationPage}
-                  onView={(item) => {
-                    setSelectedEvaluation(item);
+                  onView={async (item) => {
+                    let targetItem = item;
+                    if (!item.rows?.length) {
+                      const evalId = item.evaluationId || `${item.subjectId}_${item.sectionId || applied.section}_${item.examinationId || examId}`;
+                      try {
+                        const evalStudentsUrl = apiEndpoints.evaluations?.students
+                          ? apiEndpoints.evaluations.students(evalId)
+                          : `/api/v1/evaluations/${evalId}/students`;
+                        const res = await apiClient.get(evalStudentsUrl).catch(() =>
+                          apiClient.get(`/api/v1/faculty/evaluations/${evalId}/students`)
+                        );
+                        const markItems = res.data?.students || res.data?.marksList || [];
+                        if (markItems.length) {
+                          const rows = markItems.map((m) => ({
+                            studentId: m.studentId,
+                            rollNo: String(m.rollNo || ""),
+                            studentName: m.studentName || "",
+                            internal: m.internalMarks ?? m.internal ?? "",
+                            practical: m.practicalMarks ?? m.practical ?? 0,
+                            theory: m.theoryMarks ?? m.theory ?? "",
+                            obtainedMarks: m.obtainedMarks ?? m.totalMarks ?? m.total ?? "",
+                            total: m.totalMarks ?? m.total ?? "",
+                            absent: Boolean(m.isAbsent || m.absent),
+                            remarks: m.remarks || "",
+                          }));
+                          targetItem = { ...item, rows };
+                          const key = evaluationKey(item);
+                          setWorkspaces((all) => ({ ...all, [key]: { ...all[key], rows } }));
+                        }
+                      } catch (err) {
+                        console.warn("Could not fetch evaluation student details:", err);
+                      }
+                    }
+                    setSelectedEvaluation(targetItem);
                     setDetailPage(1);
                   }}
                   readiness={readiness}

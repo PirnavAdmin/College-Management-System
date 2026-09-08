@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { env } from "@/config/env.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
@@ -139,21 +140,32 @@ const isRenderableImageSource = (value) => {
     text.startsWith("blob:")
     || text.startsWith("data:image/")
     || /^https?:\/\//i.test(text)
-    || text.startsWith("/")
   );
 };
 
-const normalizeImageSource = (value) => {
+const getBackendOrigin = () => {
+  const configuredBaseUrl = String(env.apiBaseUrl || "").trim();
+  if (!configuredBaseUrl) return "";
+  try {
+    return new URL(configuredBaseUrl).origin;
+  } catch {
+    return configuredBaseUrl.replace(/\/+$/, "");
+  }
+};
+
+const resolveStudentPhotoUrl = (value) => {
   const text = String(value || "").trim();
   if (!text || isSchemaPlaceholder(text)) return "";
   if (isRenderableImageSource(text)) return text;
   if (/[\\/]/.test(text) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(text)) {
-    const baseUrl = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+    const baseUrl = getBackendOrigin();
     const path = text.replace(/\\/g, "/").replace(/^\/?/, "/");
     return baseUrl ? `${baseUrl}${path}` : path;
   }
   return "";
 };
+
+const normalizeImageSource = resolveStudentPhotoUrl;
 
 const isLooseId = (value) => {
   const text = String(value ?? "").trim();
@@ -914,7 +926,8 @@ const normalizeAdmissionRow = (item) => {
   const quotaValue = readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota");
   const standardQuota = steps[0].fields.find((field) => field.name === "quota")?.options || [];
   const isStandardQuota = standardQuota.some((option) => String(option).toLowerCase() === quotaValue.toLowerCase());
-  const photoUrl = normalizeImageSource(readPhotoUrl(item, student));
+  const studentPhoto = readPhotoUrl(item, student);
+  const photoUrl = resolveStudentPhotoUrl(studentPhoto);
   const feeStructureId = readFeeStructureId(item);
   const savedFeeItems = readAdmissionFeeItems(item, feeStructureId);
   const savedInstallments = readAdmissionInstallments(item);
@@ -942,6 +955,8 @@ const normalizeAdmissionRow = (item) => {
     board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id") || readText(item, "boardName", "BoardName"),
     group: !isRawIdDisplay(groupName, groupId) ? groupName : groupId,
     program: !isRawIdDisplay(programName, programId) ? programName : programId,
+    studentPhoto,
+    photoUrl,
     status,
     currentStep: 0,
     source: "api",
@@ -959,6 +974,7 @@ const normalizeAdmissionRow = (item) => {
       gender: readText(item, "gender", "Gender"),
       dob: readText(item, "dateOfBirth", "DateOfBirth", "dob", "DOB").slice(0, 10),
       bloodGroup: readText(item, "bloodGroup", "BloodGroup"),
+      studentPhoto,
       photoUrl,
       aadhaar: readText(item, "aadhaarNumber", "AadhaarNumber", "aadhaar", "Aadhaar"),
       mobile: readText(item, "studentMobileNumber", "StudentMobileNumber", "mobileNumber", "MobileNumber", "mobile", "Mobile"),
@@ -1304,14 +1320,23 @@ const previewFieldValue = (field, values) => {
 };
 
 function StudentPhotoPreview({ src, label = "Student photo", emptyLabel = "Upload Photo" }) {
-  const normalizedSrc = normalizeImageSource(src);
+  const normalizedSrc = resolveStudentPhotoUrl(src);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
   }, [normalizedSrc]);
   return (
     <div className={`cms-admission-photo-preview ${!normalizedSrc || failed ? "is-empty" : ""}`}>
-      {normalizedSrc && !failed ? <img src={normalizedSrc} alt={label} onError={() => setFailed(true)} /> : <span>{emptyLabel}</span>}
+      {normalizedSrc && !failed ? (
+        <img
+          src={normalizedSrc}
+          alt={label}
+          onError={() => {
+            setFailed(true);
+            if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
+          }}
+        />
+      ) : <span>{emptyLabel}</span>}
     </div>
   );
 }
@@ -1339,7 +1364,7 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPrev
               return (
                 <div key={field.name} className={`cms-preview-item ${isPhoto ? "cms-preview-photo-item" : ""} ${missingRequired ? "is-missing" : ""}`}>
                   <span>{field.label}</span>
-                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
+                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl || values.studentPhoto} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
                   {errors[field.name] || missingRequired ? <small>{errors[field.name] || `${field.label} is required`}</small> : null}
                 </div>
               );
@@ -1374,7 +1399,7 @@ function AdmissionFormSections({ sections, values, errors, onChange, onFileChang
                   onFileChange={onFileChange}
                   onFileRemove={onFileRemove}
                   inputRef={(element) => { inputRefs.current[field.name] = element; }}
-                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
+                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
                   extraValue={field.name === "quota" ? values.quotaOther : ""}
                 />
               ))}
@@ -3665,7 +3690,7 @@ export default function AdmissionPage() {
                   onFileChange={setFileValue}
                   onFileRemove={removeFileValue}
                   inputRef={(element) => { fileInputRefs.current[f.name] = element; }}
-                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
+                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
                   extraValue={f.name === "quota" ? values.quotaOther : ""}
                 />
               ))}

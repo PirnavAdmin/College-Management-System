@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CollegeManagement.API.DTOs.StudentAdmission
 {
@@ -55,16 +56,15 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
         public DateTime DateOfBirth { get; set; }
 
         public string? BloodGroup { get; set; }
-
+        [FromForm(Name = "Email")]
         [EmailAddress]
         public string? StudentEmail { get; set; }
-
+        [FromForm(Name = "Student Mobile")]
         public string? StudentMobileNumber { get; set; }
 
-
         // Photo
-        [Required]
-        public IFormFile StudentPhoto { get; set; } = null!;
+       
+        public IFormFile? StudentPhoto { get; set; } 
 
 
         // Personal
@@ -113,6 +113,8 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
         // ADD THIS
         [Required]
         public int FeeStructureId { get; set; }
+        public string? PaymentPlan { get; set; }
+
         public string? ScholarshipStatus { get; set; }
 
 

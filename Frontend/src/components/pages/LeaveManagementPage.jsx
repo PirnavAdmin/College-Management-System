@@ -3,6 +3,7 @@ import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, History as HistoryIc
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import { 
+  LEAVE_STATUS,
   getLeaveRequests, 
   getLeaveDetails, 
   reviewLeaveRequest, 
@@ -293,7 +294,7 @@ function Assignment({ item, records = [], close, save, toast }) {
     }
   }, [item, existing]);
 
-  const chosen = candidates.find(person => (person.staffId === choice || person.id === choice));
+  const chosen = candidates.find(person => (String(person.staffId) === String(choice) || String(person.id) === String(choice)));
 
   const handleConfirm = () => {
     if (!chosen) return;
@@ -301,12 +302,20 @@ function Assignment({ item, records = [], close, save, toast }) {
     const ttId = item.timetableId || item.id;
     
     // Call backend API if possible
-    if (leaveId && typeof ttId === 'number') {
-      assignSubstitutes(leaveId, {
-        timetableId: ttId,
-        substituteStaffId: chosen.staffId || chosen.id,
-        date: item.date
-      }).catch(console.warn);
+    if (leaveId && (typeof ttId === 'number' || !isNaN(Number(ttId)))) {
+      const numTtId = Number(ttId);
+      const subStaffId = Number(chosen.staffId || chosen.id);
+      if (!isNaN(numTtId) && !isNaN(subStaffId)) {
+        assignSubstitutes(leaveId, {
+          assignments: [
+            {
+              timetableId: numTtId,
+              substituteStaffId: subStaffId,
+              substitutionDate: item.date
+            }
+          ]
+        }).catch(console.warn);
+      }
     }
 
     // Save record locally so UI updates immediately
@@ -533,18 +542,18 @@ function StaffLeaveHistory({ person, onClose, onLeave }) {
   }, [person]);
 
   const data = detailHistory || {
-    balance: { total: 12, used: person.used || 0, remaining: 12 - (person.used || 0) },
-    requests: [],
+    balance: { total: person.totalLeaves || 12, used: person.used || 0, remaining: person.remaining !== undefined ? person.remaining : (12 - (person.used || 0)) },
+    history: [],
     approved: person.approved || 0,
     pending: person.pending || 0,
     rejected: person.rejected || 0
   };
 
-  const total = data.balance?.total || 12;
-  const used = data.balance?.used || 0;
+  const total = data.balance?.total ?? 12;
+  const used = data.balance?.used ?? 0;
   const remaining = data.balance?.remaining !== undefined ? data.balance.remaining : (total - used);
   const percent = total ? Math.min(100, Math.round((used / total) * 100)) : 0;
-  const requests = data.requests || [];
+  const requests = data.history || data.History || data.requests || [];
 
   return (
     <Modal title="Faculty Leave History" className="leave-staff-history-modal" onClose={onClose} footer={<button className="cms-btn cms-btn-ghost" onClick={onClose}>Back to History</button>}>
@@ -571,9 +580,9 @@ function StaffLeaveHistory({ person, onClose, onLeave }) {
 
       <section className="history-request-summary">
         <strong>Total Requests: {requests.length || person.totalRequests || 0}</strong>
-        <span>Approved: {data.approved}</span>
-        <span>Pending: {data.pending}</span>
-        <span>Rejected: {data.rejected}</span>
+        <span>Approved: {data.approved ?? person.approved ?? 0}</span>
+        <span>Pending: {data.pending ?? person.pending ?? 0}</span>
+        <span>Rejected: {data.rejected ?? person.rejected ?? 0}</span>
       </section>
 
       <section className="history-leaves">
@@ -592,9 +601,9 @@ function StaffLeaveHistory({ person, onClose, onLeave }) {
                 {requests.map(leave => (
                   <tr key={leave.staffLeaveRequestId || leave.id}>
                     <td>{leave.leaveType}</td>
-                    <td>{prettyDate(leave.fromDate)}</td>
-                    <td>{prettyDate(leave.toDate)}</td>
-                    <td>{leave.days} {Number(leave.days) === 1 ? "day" : "days"}</td>
+                    <td>{prettyDate(leave.fromDate || leave.startDate)}</td>
+                    <td>{prettyDate(leave.toDate || leave.endDate)}</td>
+                    <td>{leave.days || leave.totalDays || 1} {Number(leave.days || leave.totalDays || 1) === 1 ? "day" : "days"}</td>
                     <td>
                       <button className="history-status-link" onClick={() => onLeave(leave)}>
                         <LeaveStatus status={leave.status} />
@@ -676,7 +685,7 @@ export default function LeaveManagementPage() {
   };
 
   const commitReview = (status) => { 
-    const statusVal = status === "Approved" ? 1 : 2;
+    const statusVal = status === "Approved" ? LEAVE_STATUS.APPROVED : LEAVE_STATUS.REJECTED;
     const leaveId = selected.staffLeaveRequestId || selected.id;
     reviewLeaveRequest(leaveId, {
       status: statusVal,

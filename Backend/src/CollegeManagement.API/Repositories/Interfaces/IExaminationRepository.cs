@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using CollegeManagement.API.DTOs.Examination.Requests;
+using CollegeManagement.API.DTOs.Examination.Responses;
 using CollegeManagement.API.Models;
 
 namespace CollegeManagement.API.Repositories.Interfaces
@@ -12,6 +13,7 @@ namespace CollegeManagement.API.Repositories.Interfaces
         Task<Examination> CreateExaminationAsync(Examination examination);
         Task<Examination?> GetExaminationByIdAsync(int examinationId);
         Task<IEnumerable<Examination>> GetExaminationsAsync(ExaminationSearchRequestDto filter);
+        Task<IEnumerable<ExaminationResponse>> GetExaminationResponsesAsync(ExaminationSearchRequestDto filter);
         Task UpdateExaminationAsync(Examination examination);
         Task<bool> DeleteExaminationAsync(Examination examination);
 

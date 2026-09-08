@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Asp.Versioning;
 using CollegeManagement.API.DTOs.Examination.Requests;
@@ -167,10 +169,12 @@ namespace CollegeManagement.API.Controllers.V1
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<FinalizeScheduleResponse>> FinalizeSchedule(int examinationId)
+        public async Task<ActionResult<FinalizeScheduleResponse>> FinalizeSchedule(
+            int examinationId,
+            [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] FinalizeScheduleRequest? request = null)
         {
             _logger.LogInformation("Finalizing schedule for examination ID: {Id}", examinationId);
-            var result = await _examinationService.FinalizeScheduleAsync(examinationId);
+            var result = await _examinationService.FinalizeScheduleAsync(examinationId, request);
             return Ok(result);
         }
 
@@ -240,37 +244,115 @@ namespace CollegeManagement.API.Controllers.V1
         #region Exam Schedule APIs
 
         /// <summary>
-        /// Creates a new schedule entry for an examination.
+        /// Creates a new schedule entry or bulk schedule entries for an examination.
+        /// Supports single schedule object, { "schedules": [...] } wrapper, or raw JSON array [...].
         /// </summary>
         [HttpPost("schedules")]
+        [HttpPost("{examinationId:int}/schedules")]
+        [HttpPost("schedules/bulk")]
+        [HttpPost("{examinationId:int}/schedules/bulk")]
+        [HttpPost("~/api/v{version:apiVersion}/schedules")]
+        [HttpPost("~/api/v{version:apiVersion}/schedules/bulk")]
         [ProducesResponseType(typeof(ExamScheduleResponse), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ExamScheduleResponse>> CreateExamSchedule([FromBody] CreateExamScheduleRequest request)
+        public async Task<ActionResult<object>> CreateExamSchedule(
+            [FromBody] JsonElement rawBody,
+            [FromRoute] int? examinationId = null)
         {
-            _logger.LogInformation("Creating schedule for Examination ID: {ExamId}", request.ExaminationId);
-            var result = await _examinationService.CreateExamScheduleAsync(request);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            options.Converters.Add(new Helpers.DateOnlyJsonConverter());
 
-            return CreatedAtAction(
-                nameof(GetExamScheduleById),
-                new
+            var scheduleRequests = new List<CreateExamScheduleRequest>();
+
+            if (rawBody.ValueKind == JsonValueKind.Array)
+            {
+                var list = JsonSerializer.Deserialize<List<CreateExamScheduleRequest>>(rawBody.GetRawText(), options);
+                if (list != null) scheduleRequests.AddRange(list);
+            }
+            else if (rawBody.ValueKind == JsonValueKind.Object)
+            {
+                if (rawBody.TryGetProperty("schedules", out var schedulesElement) && schedulesElement.ValueKind == JsonValueKind.Array)
                 {
-                    version = HttpContext.GetRequestedApiVersion()?.ToString(),
-                    examScheduleId = result.ExamScheduleId
-                },
-                result);
+                    var list = JsonSerializer.Deserialize<List<CreateExamScheduleRequest>>(schedulesElement.GetRawText(), options);
+                    if (list != null) scheduleRequests.AddRange(list);
+                }
+                else
+                {
+                    var single = JsonSerializer.Deserialize<CreateExamScheduleRequest>(rawBody.GetRawText(), options);
+                    if (single != null)
+                    {
+                        if (single.Schedules != null && single.Schedules.Any())
+                        {
+                            scheduleRequests.AddRange(single.Schedules);
+                        }
+                        else
+                        {
+                            scheduleRequests.Add(single);
+                        }
+                    }
+                }
+            }
+
+            if (!scheduleRequests.Any())
+            {
+                return BadRequest(new { message = "At least one exam schedule entry is required." });
+            }
+
+            var effectiveExamId = (examinationId.HasValue && examinationId.Value > 0)
+                ? examinationId.Value
+                : (scheduleRequests.FirstOrDefault(s => s.ExaminationId > 0)?.ExaminationId ?? 0);
+
+            var createdList = new List<ExamScheduleResponse>();
+            foreach (var item in scheduleRequests)
+            {
+                if (item.ExaminationId <= 0 && effectiveExamId > 0)
+                {
+                    item.ExaminationId = effectiveExamId;
+                }
+
+                _logger.LogInformation("Creating schedule for Examination ID: {ExamId}, Subject ID: {SubId}", item.ExaminationId, item.SubjectId);
+                var res = await _examinationService.CreateExamScheduleAsync(item);
+                createdList.Add(res);
+            }
+
+            if (createdList.Count == 1 && rawBody.ValueKind != JsonValueKind.Array && (!rawBody.TryGetProperty("schedules", out var sArr) || sArr.GetArrayLength() == 1))
+            {
+                var single = createdList[0];
+                return CreatedAtAction(
+                    nameof(GetExamScheduleById),
+                    new
+                    {
+                        version = HttpContext.GetRequestedApiVersion()?.ToString(),
+                        examScheduleId = single.ExamScheduleId
+                    },
+                    single);
+            }
+
+            return StatusCode(StatusCodes.Status201Created, createdList);
         }
 
         /// <summary>
         /// Retrieves exam schedules, optionally filtered by examination ID.
         /// </summary>
         [HttpGet("schedules")]
+        [HttpGet("{examinationId:int}/schedules")]
+        [HttpGet("~/api/v{version:apiVersion}/schedules")]
         [ProducesResponseType(typeof(IEnumerable<ExamScheduleResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<IEnumerable<ExamScheduleResponse>>> GetExamSchedules([FromQuery] int? examinationId)
+        public async Task<ActionResult<IEnumerable<ExamScheduleResponse>>> GetExamSchedules(
+            [FromQuery] int? examinationId,
+            [FromRoute(Name = "examinationId")] int? routeExaminationId = null)
         {
-            _logger.LogInformation("Fetching exam schedules for Examination ID: {ExaminationId}", examinationId);
-            var result = await _examinationService.GetExamSchedulesAsync(examinationId);
+            var effectiveExamId = (routeExaminationId.HasValue && routeExaminationId.Value > 0)
+                ? routeExaminationId
+                : examinationId;
+
+            _logger.LogInformation("Fetching exam schedules for Examination ID: {ExaminationId}", effectiveExamId);
+            var result = await _examinationService.GetExamSchedulesAsync(effectiveExamId);
             return Ok(result);
         }
 
@@ -278,10 +360,12 @@ namespace CollegeManagement.API.Controllers.V1
         /// Retrieves an exam schedule by unique schedule ID.
         /// </summary>
         [HttpGet("schedules/{examScheduleId:int}")]
+        [HttpGet("{examinationId:int}/schedules/{examScheduleId:int}")]
+        [HttpGet("~/api/v{version:apiVersion}/schedules/{examScheduleId:int}")]
         [ProducesResponseType(typeof(ExamScheduleResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ExamScheduleResponse>> GetExamScheduleById(int examScheduleId)
+        public async Task<ActionResult<ExamScheduleResponse>> GetExamScheduleById(int examScheduleId, [FromRoute] int? examinationId = null)
         {
             _logger.LogInformation("Fetching exam schedule ID: {Id}", examScheduleId);
             var result = await _examinationService.GetExamScheduleByIdAsync(examScheduleId);
@@ -293,11 +377,13 @@ namespace CollegeManagement.API.Controllers.V1
         /// Updates an existing exam schedule.
         /// </summary>
         [HttpPut("schedules/{examScheduleId:int}")]
+        [HttpPut("{examinationId:int}/schedules/{examScheduleId:int}")]
+        [HttpPut("~/api/v{version:apiVersion}/schedules/{examScheduleId:int}")]
         [ProducesResponseType(typeof(ExamScheduleResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ExamScheduleResponse>> UpdateExamSchedule(int examScheduleId, [FromBody] UpdateExamScheduleRequest request)
+        public async Task<ActionResult<ExamScheduleResponse>> UpdateExamSchedule(int examScheduleId, [FromBody] UpdateExamScheduleRequest request, [FromRoute] int? examinationId = null)
         {
             _logger.LogInformation("Updating schedule ID: {Id}", examScheduleId);
             var result = await _examinationService.UpdateExamScheduleAsync(examScheduleId, request);
@@ -309,10 +395,12 @@ namespace CollegeManagement.API.Controllers.V1
         /// Deletes an exam schedule entry.
         /// </summary>
         [HttpDelete("schedules/{examScheduleId:int}")]
+        [HttpDelete("{examinationId:int}/schedules/{examScheduleId:int}")]
+        [HttpDelete("~/api/v{version:apiVersion}/schedules/{examScheduleId:int}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> DeleteExamSchedule(int examScheduleId)
+        public async Task<IActionResult> DeleteExamSchedule(int examScheduleId, [FromRoute] int? examinationId = null)
         {
             _logger.LogInformation("Deleting exam schedule ID: {Id}", examScheduleId);
             var success = await _examinationService.DeleteExamScheduleAsync(examScheduleId);
@@ -324,11 +412,17 @@ namespace CollegeManagement.API.Controllers.V1
         /// Publishes examination schedules.
         /// </summary>
         [HttpPatch("schedules/publish")]
+        [HttpPatch("{examinationId:int}/schedules/publish")]
+        [HttpPatch("~/api/v{version:apiVersion}/schedules/publish")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<IActionResult> PublishExamSchedules([FromBody] PublishExamScheduleRequest request)
+        public async Task<IActionResult> PublishExamSchedules([FromBody] PublishExamScheduleRequest request, [FromRoute] int? examinationId = null)
         {
+            if (examinationId.HasValue && examinationId.Value > 0 && request.ExaminationId == 0)
+            {
+                request.ExaminationId = examinationId.Value;
+            }
             _logger.LogInformation("Publishing exam schedules.");
             var publishedCount = await _examinationService.PublishExamSchedulesAsync(request);
             return Ok(new { message = "Schedules published successfully.", publishedCount });
@@ -338,11 +432,17 @@ namespace CollegeManagement.API.Controllers.V1
         /// Creates a batch or combined objective examination schedule for multiple subjects in a single session slot.
         /// </summary>
         [HttpPost("schedules/batch")]
+        [HttpPost("{examinationId:int}/schedules/batch")]
+        [HttpPost("~/api/v{version:apiVersion}/schedules/batch")]
         [ProducesResponseType(typeof(IEnumerable<ExamScheduleResponse>), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<IEnumerable<ExamScheduleResponse>>> CreateBatchExamSchedules([FromBody] CreateBatchExamScheduleRequest request)
+        public async Task<ActionResult<IEnumerable<ExamScheduleResponse>>> CreateBatchExamSchedules([FromBody] CreateBatchExamScheduleRequest request, [FromRoute] int? examinationId = null)
         {
+            if (examinationId.HasValue && examinationId.Value > 0)
+            {
+                request.ExaminationId = examinationId.Value;
+            }
             _logger.LogInformation("Creating batch/combined schedule for Examination ID: {ExamId}, Subjects: {Count}", request.ExaminationId, request.SubjectIds?.Count);
             var result = await _examinationService.CreateBatchExamSchedulesAsync(request);
             return StatusCode(StatusCodes.Status201Created, result);

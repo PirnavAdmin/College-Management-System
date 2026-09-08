@@ -37,6 +37,15 @@ const sectionNameOf = (section) => valueOf(section, "sectionName", "SectionName"
 const levelIdOf = (level) => valueOf(level, "academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id");
 const levelNameOf = (level) => valueOf(level, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name");
 const asValues = (value) => Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+const normalizedValue = (value) => String(value ?? "").trim().toLowerCase();
+const matchesScope = (selectedId, options, rowId, rowName, idKeys, nameKeys) => {
+  if (!selectedId) return true;
+  const selected = String(selectedId);
+  const option = (options || []).find((item) => String(valueOf(item, ...idKeys) ?? "") === selected);
+  const selectedName = normalizedValue(option ? valueOf(option, ...nameKeys) : "");
+  const candidates = [rowId, rowName].map(normalizedValue).filter(Boolean);
+  return candidates.includes(normalizedValue(selected)) || Boolean(selectedName && candidates.includes(selectedName));
+};
 
 const levelsForBoard = (allLevels, boardId, boardRows) => {
   const board = boardRows.find((item) => String(item?.boardId ?? item?.BoardId ?? item?.id ?? item?.Id) === String(boardId));
@@ -386,13 +395,14 @@ export default function SectionAllocationPage() {
     () =>
       students.filter(
         (s) =>
-          (!ctx.board || String(s.boardId ?? "") === String(ctx.board)) &&
-          (!ctx.year || String(s.academicYearId ?? "") === String(ctx.year)) &&
-          (!ctx.level || String(s.academicLevelId ?? "") === String(ctx.level)) &&
-          (!ctx.group || String(s.groupId ?? s.group) === String(ctx.group)) &&
-          (!ctx.program || String(s.programId ?? s.programme) === String(ctx.program)),
+          s.isApproved &&
+          matchesScope(ctx.board, boards, s.boardId, s.boardName, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]) &&
+          matchesScope(ctx.year, years, s.academicYearId, s.academicYearName, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]) &&
+          matchesScope(ctx.level, levels, s.academicLevelId, s.academicLevelName, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"]) &&
+          matchesScope(ctx.group, groups, s.groupId, s.group, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name"]) &&
+          matchesScope(ctx.program, programs, s.programId, s.programme, ["programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId", "id", "Id"], ["programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "name", "Name"]),
       ).sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" })),
-    [students, ctx.board, ctx.year, ctx.level, ctx.group, ctx.program],
+    [boards, ctx.board, ctx.group, ctx.level, ctx.program, ctx.year, groups, levels, programs, students, years],
   );
 
   // Table toolbar instant search & filters

@@ -469,6 +469,28 @@ namespace CollegeManagement.API.Controllers.V1
                 });
             }
         }
+        //optional check box//
+        // POST: api/v1/admissions/5/fee-selections
+        [HttpPost("{id:int}/fee-selections")]
+        public async Task<IActionResult> SaveFeeSelections(
+            int id,
+            [FromBody] SaveAdmissionFeeSelectionsRequest request)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var count =
+                await _service.SaveAdmissionFeeSelectionsAsync(
+                    id,
+                    request);
+
+            return Ok(new
+            {
+                AdmissionId = id,
+                SelectedOptionalFees = count,
+                Message = "Admission fee selections saved successfully."
+            });
+        }
 
 
         // =========================================================

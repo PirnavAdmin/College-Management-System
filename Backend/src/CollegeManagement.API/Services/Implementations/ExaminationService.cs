@@ -40,6 +40,24 @@ namespace CollegeManagement.API.Services.Implementations
             }
         }
 
+        private static int ResolveAssessmentTypeId(int assessmentTypeId, string? examType, string? examCategory)
+        {
+            if (assessmentTypeId > 0) return assessmentTypeId;
+
+            var typeStr = !string.IsNullOrWhiteSpace(examType) ? examType : examCategory;
+            if (string.IsNullOrWhiteSpace(typeStr)) return 1;
+
+            if (int.TryParse(typeStr, out int parsed) && parsed > 0) return parsed;
+
+            var lower = typeStr.ToLowerInvariant();
+            if (lower.Contains("quarter")) return 2;
+            if (lower.Contains("half")) return 3;
+            if (lower.Contains("pre-final") || lower.Contains("prefinal")) return 4;
+            if (lower.Contains("annual") || lower.Contains("board") || lower.Contains("final")) return 5;
+
+            return 1; // Unit Test / Default
+        }
+
         #region Examination Implementations
 
         public async Task<ExaminationResponse> CreateExaminationAsync(CreateExaminationRequest request)
@@ -49,7 +67,46 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ValidationException("End Date cannot be earlier than Start Date.");
             }
 
+            if (request.BoardId <= 0)
+            {
+                throw new ValidationException("A valid Board is required.");
+            }
+
+            if (request.AcademicYearId <= 0)
+            {
+                throw new ValidationException("A valid Academic Year is required.");
+            }
+
+            var resolvedLevelId = request.AcademicLevelId > 0
+                ? request.AcademicLevelId
+                : (request.AcademicLevelIds != null && request.AcademicLevelIds.Count > 0 ? request.AcademicLevelIds[0] : 0);
+
+            if (resolvedLevelId <= 0)
+            {
+                throw new ValidationException("At least one Academic Level is required.");
+            }
+
+            var resolvedGroupId = request.GroupId > 0
+                ? request.GroupId
+                : (request.GroupIds != null && request.GroupIds.Count > 0 ? request.GroupIds[0] : 0);
+
+            if (resolvedGroupId <= 0)
+            {
+                throw new ValidationException("At least one Group is required.");
+            }
+
+            int? resolvedProgramId = (request.ProgramId.HasValue && request.ProgramId.Value > 0)
+                ? request.ProgramId.Value
+                : (request.ProgramIds != null && request.ProgramIds.Count > 0 && request.ProgramIds[0] > 0 ? request.ProgramIds[0] : null);
+
+            var resolvedAssessmentTypeId = ResolveAssessmentTypeId(request.AssessmentTypeId, request.ExamType, request.ExamCategory);
+
             var exam = _mapper.Map<Examination>(request);
+            exam.AcademicLevelId = resolvedLevelId;
+            exam.GroupId = resolvedGroupId;
+            exam.ProgramId = resolvedProgramId;
+            exam.AssessmentTypeId = resolvedAssessmentTypeId;
+
             var createdExam = await _examinationRepository.CreateExaminationAsync(exam);
 
             var fullyLoadedExam = await _examinationRepository.GetExaminationByIdAsync(createdExam.ExaminationId);
@@ -135,10 +192,35 @@ namespace CollegeManagement.API.Services.Implementations
             if (!string.IsNullOrWhiteSpace(request.ExamCode)) exam.ExamCode = request.ExamCode;
             if (request.BoardId.HasValue && request.BoardId.Value > 0) exam.BoardId = request.BoardId.Value;
             if (request.AcademicYearId.HasValue && request.AcademicYearId.Value > 0) exam.AcademicYearId = request.AcademicYearId.Value;
-            if (request.AcademicLevelId.HasValue && request.AcademicLevelId.Value > 0) exam.AcademicLevelId = request.AcademicLevelId.Value;
-            if (request.GroupId.HasValue && request.GroupId.Value > 0) exam.GroupId = request.GroupId.Value;
-            if (request.ProgramId.HasValue) exam.ProgramId = request.ProgramId.Value > 0 ? request.ProgramId.Value : null;
-            if (request.AssessmentTypeId.HasValue && request.AssessmentTypeId.Value > 0) exam.AssessmentTypeId = request.AssessmentTypeId.Value;
+
+            var resolvedLevelId = request.AcademicLevelId.HasValue && request.AcademicLevelId.Value > 0
+                ? request.AcademicLevelId.Value
+                : (request.AcademicLevelIds != null && request.AcademicLevelIds.Count > 0 ? request.AcademicLevelIds[0] : 0);
+            if (resolvedLevelId > 0) exam.AcademicLevelId = resolvedLevelId;
+
+            var resolvedGroupId = request.GroupId.HasValue && request.GroupId.Value > 0
+                ? request.GroupId.Value
+                : (request.GroupIds != null && request.GroupIds.Count > 0 ? request.GroupIds[0] : 0);
+            if (resolvedGroupId > 0) exam.GroupId = resolvedGroupId;
+
+            if (request.ProgramId.HasValue)
+            {
+                exam.ProgramId = request.ProgramId.Value > 0 ? request.ProgramId.Value : null;
+            }
+            else if (request.ProgramIds != null && request.ProgramIds.Count > 0)
+            {
+                exam.ProgramId = request.ProgramIds[0] > 0 ? request.ProgramIds[0] : null;
+            }
+
+            if (request.AssessmentTypeId.HasValue && request.AssessmentTypeId.Value > 0)
+            {
+                exam.AssessmentTypeId = request.AssessmentTypeId.Value;
+            }
+            else if (!string.IsNullOrWhiteSpace(request.ExamType) || !string.IsNullOrWhiteSpace(request.ExamCategory))
+            {
+                exam.AssessmentTypeId = ResolveAssessmentTypeId(0, request.ExamType, request.ExamCategory);
+            }
+
             if (request.StartDate.HasValue) exam.StartDate = request.StartDate.Value;
             if (request.EndDate.HasValue) exam.EndDate = request.EndDate.Value;
             if (!string.IsNullOrWhiteSpace(request.ExamPattern)) exam.ExamPattern = request.ExamPattern;

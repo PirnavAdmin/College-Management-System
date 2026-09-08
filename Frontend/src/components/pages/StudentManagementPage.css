@@ -28,9 +28,28 @@
 .student-management-filters .cms-field { min-width: 0; }
 .student-management-filters select { width: 100%; min-width: 0; }
 .student-management-actions { display:flex; justify-content:flex-end; gap:12px; padding:0 24px 22px; }
+.student-import-modal { display:grid; gap:16px; }
+.student-import-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.student-import-summary { display:grid; grid-template-columns:repeat(3, minmax(120px, 1fr)); gap:10px; }
+.student-import-summary span { display:grid; gap:4px; padding:11px 12px; border:1px solid var(--cms-border); border-radius:10px; color:var(--cms-muted); }
+.student-import-summary b { color:var(--cms-text); font-size:18px; }
+.student-import-results { display:grid; gap:16px; }
+.student-credentials-modal { display: grid; gap: 20px; }
+.student-credentials-subtitle { margin: 0; color: var(--cms-muted); }
+.student-credentials-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.student-credentials-filters .cms-field { min-width: 0; }
+.student-credentials-filters select,
+.student-credentials-filters input { width: 100%; box-sizing: border-box; }
+.student-credentials-about { padding: 16px; border: 1px solid var(--cms-border); border-radius: 12px; background: var(--cms-subtle); }
+.student-credentials-about h3 { margin: 0 0 12px; font-size: 16px; }
+.student-credentials-about ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; padding: 0; list-style: none; }
+.student-credentials-about li { display: flex; align-items: center; gap: 8px; color: var(--cms-text); font-size: 14px; }
+.student-credentials-about svg { flex: 0 0 auto; color: var(--cms-primary); }
+@media (max-width: 560px) { .student-import-summary { grid-template-columns:1fr; } }
 @media (max-width: 1200px) { .student-management-filters { grid-template-columns:repeat(4,minmax(150px,190px)); } }
 @media (max-width: 900px) { .student-management-filters { grid-template-columns:repeat(2,minmax(150px,190px)); } }
 @media (max-width: 560px) { .student-management-filters { grid-template-columns:1fr; padding:0 16px 18px; } }
+@media (max-width: 560px) { .student-credentials-filters, .student-credentials-about ul { grid-template-columns: 1fr; } }
 .student-action-buttons { display:flex; gap:8px; white-space:nowrap; }
 .student-action-buttons a, .student-action-buttons button { display:inline-flex; gap:5px; align-items:center; color:var(--cms-primary); font-weight:600; font-size:13px; }
 .student-roll-preview { margin:22px 0; padding:16px 18px; border-radius:12px; background:var(--cms-subtle); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
@@ -47,21 +66,20 @@
 /* Preserve readable desktop columns and scroll on narrow screens instead of
    compressing content into character-by-character wrapping. */
 .student-management-table-wrap { overflow-x: auto; }
-.student-management-table { width: 100%; min-width: 1160px; table-layout: fixed; }
+.student-management-table { width: 100%; min-width: 1060px; table-layout: fixed; }
 .student-management-table th,
 .student-management-table td { vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .student-management-table th { overflow: visible; text-overflow: clip; }
-.student-col-id { width: 8%; }
-.student-col-admission { width: 10%; }
-.student-col-name { width: 13%; }
+.student-col-admission { width: 12%; }
+.student-col-name { width: 15%; }
 .student-col-year { width: 10%; }
-.student-col-level { width: 12%; }
-.student-col-group { width: 7%; }
-.student-col-programme { width: 10%; }
-.student-col-section { width: 8%; }
+.student-col-level { width: 14%; }
+.student-col-group { width: 8%; }
+.student-col-programme { width: 11%; }
+.student-col-section { width: 9%; }
 .student-col-roll { width: 7%; }
 .student-col-status { width: 7%; }
-.student-col-actions { width: 8%; }
+.student-col-actions { width: 7%; }
 .student-management-table td:last-child { overflow: visible; }
 .student-management-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 46px; padding: 5px 14px; border-top: 1px solid var(--cms-border); background: var(--cms-subtle); color: var(--cms-muted); font-size: 14px; font-weight: 600; }
 .student-management-pagination-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }

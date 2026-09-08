@@ -39,7 +39,10 @@ namespace CollegeManagement.API.Services.Interfaces
         Task<int> BulkAllocateSectionAsync(
             BulkSectionAllocationRequest request);
 
-
+        //option check box//
+        Task<int> SaveAdmissionFeeSelectionsAsync(
+    int admissionId,
+    SaveAdmissionFeeSelectionsRequest request);
         // Roll Number
         Task<int> BulkAllocateRollNumbersAsync(
             BulkRollNumberAllocationRequest request);

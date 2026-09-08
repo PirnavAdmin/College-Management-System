@@ -60,7 +60,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             var result =
                 await connection.QueryFirstOrDefaultAsync<StudentAdmissionResponseDto>(
-                    "sp_CreateStudentAdmission",
+                    "sp_CreateAdmission",
                     new
                     {
                         // -------------------------------------------------
@@ -146,6 +146,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                         p_AnnualIncome =
                             request.AnnualIncome,
                         p_FeeStructureId = request.FeeStructureId,
+                        p_PaymentPlan = request.PaymentPlan,
 
                         p_ScholarshipStatus =
                             request.ScholarshipStatus,
@@ -344,6 +345,8 @@ namespace CollegeManagement.API.Repositories.Implementations
                         // -------------------------------------------------
                         p_AnnualIncome =
                             request.AnnualIncome,
+                        p_FeeStructureId = request.FeeStructureId,
+                        p_PaymentPlan = request.PaymentPlan,
 
                         p_ScholarshipStatus =
                             request.ScholarshipStatus,
@@ -562,7 +565,32 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             return totalAllocated;
         }
+        //options check box//
+        public async Task<int> SaveAdmissionFeeSelectionsAsync(
+    int admissionId,
+    SaveAdmissionFeeSelectionsRequest request)
+        {
+            var connection = _context.Database.GetDbConnection();
 
+            var selectedIds =
+                request.SelectedFeeStructureComponentIds
+                    ?? new List<int>();
+
+            var json =
+                System.Text.Json.JsonSerializer.Serialize(selectedIds);
+
+            var result =
+                await connection.QueryFirstOrDefaultAsync<dynamic>(
+                    "sp_SaveAdmissionFeeSelections",
+                    new
+                    {
+                        p_AdmissionId = admissionId,
+                        p_SelectedComponentIds = json
+                    },
+                    commandType: CommandType.StoredProcedure);
+
+            return result?.SelectedOptionalFees ?? 0;
+        }
 
         // =========================================================
         // BULK ROLL NUMBER ALLOCATION

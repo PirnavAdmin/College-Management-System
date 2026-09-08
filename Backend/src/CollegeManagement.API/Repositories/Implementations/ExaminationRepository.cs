@@ -102,7 +102,10 @@ namespace CollegeManagement.API.Repositories.Implementations
                 }
 
                 // 3. Format: EXAM-{academicYear}-{sequence:D4} (e.g. EXAM-2026-0001)
-                examination.ExamCode = $"EXAM-{yearStr}-{nextSeq:D4}";
+                if (string.IsNullOrWhiteSpace(examination.ExamCode))
+                {
+                    examination.ExamCode = $"EXAM-{yearStr}-{nextSeq:D4}";
+                }
 
                 // 4. Save Examination record inside database transaction
                 using var transaction = await _context.Database.BeginTransactionAsync();

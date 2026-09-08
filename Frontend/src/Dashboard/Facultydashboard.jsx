@@ -10,7 +10,7 @@ import {
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
-import { getLeaveRequests, submitLeaveRequest, subscribeToLeaveRequests } from "@/features/leave/services/leaveStore.js";
+import { getLeaveRequests, submitLeaveRequest } from "@/features/leave/services/leaveStore.js";
 import "./facultydashboard.css";
 
 // ==========================================================================
@@ -271,7 +271,13 @@ function FacultyDashboard() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  useEffect(() => subscribeToLeaveRequests((requests) => setLeavesState(requests.filter((leave) => leave.staffId === mockFaculty.employeeId))), []);
+  useEffect(() => {
+    let isMounted = true;
+    getLeaveRequests().then((data) => {
+      if (isMounted) setLeavesState(data.filter((leave) => leave.staffId === mockFaculty.employeeId));
+    }).catch(err => console.error(err));
+    return () => { isMounted = false; };
+  }, []);
 
   // Logout Handler
   const handleLogout = () => {

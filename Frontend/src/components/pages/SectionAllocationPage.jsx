@@ -34,6 +34,32 @@ const programIdOf = (program) => valueOf(program, "programId", "ProgramId", "pro
 const programNameOf = (program) => valueOf(program, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "name", "Name");
 const sectionIdOf = (section) => valueOf(section, "sectionId", "SectionId", "id", "Id");
 const sectionNameOf = (section) => valueOf(section, "sectionName", "SectionName", "name", "Name");
+const levelIdOf = (level) => valueOf(level, "academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id");
+const levelNameOf = (level) => valueOf(level, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name");
+const asValues = (value) => Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+
+const levelsForBoard = (allLevels, boardId, boardRows) => {
+  const board = boardRows.find((item) => String(item?.boardId ?? item?.BoardId ?? item?.id ?? item?.Id) === String(boardId));
+  const embedded = list(board?.academicLevels ?? board?.AcademicLevels ?? board?.levels ?? board?.Levels);
+  if (embedded.length) {
+    const embeddedIds = new Set(embedded.map(levelIdOf).filter((id) => id != null).map(String));
+    return embeddedIds.size ? allLevels.filter((level) => embeddedIds.has(String(levelIdOf(level)))) : embedded;
+  }
+
+  const levelIds = new Set([
+    ...asValues(board?.academicLevelIds),
+    ...asValues(board?.AcademicLevelIds),
+    ...asValues(board?.levelIds),
+    ...asValues(board?.LevelIds),
+  ].map(String).filter(Boolean));
+  if (levelIds.size) return allLevels.filter((level) => levelIds.has(String(levelIdOf(level))));
+
+  const directLevels = allLevels.filter((level) => {
+    const levelBoardId = level?.boardId ?? level?.BoardId;
+    return levelBoardId != null && String(levelBoardId) === String(boardId);
+  });
+  return directLevels.length ? directLevels : allLevels;
+};
 
 const changeStudentAllocation = async ({ admissionId, studentId, currentProgramId, programId, sectionId }) => {
   if (String(programId) !== String(currentProgramId)) {
@@ -269,10 +295,10 @@ export default function SectionAllocationPage() {
 
     // 2. Fetch Academic Levels for selected board
     apiClient
-      .get(`/api/v1/boards/${encodeURIComponent(ctx.board)}/academic-levels`)
+      .get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } })
+      .catch(() => apiClient.get(`/api/v1/boards/${encodeURIComponent(ctx.board)}/academic-levels`))
       .catch(() => apiClient.get(apiEndpoints.academicLevels.list, { params: { boardId: ctx.board } }))
-      .catch(() => apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } }))
-      .then((r) => setLevels(list(r.data)))
+      .then((r) => setLevels(levelsForBoard(list(r.data), ctx.board, boards)))
       .catch((e) => setMessage(getApiErrorMessage(e)));
 
     // 3. Fetch Groups for selected board
@@ -281,7 +307,7 @@ export default function SectionAllocationPage() {
       .catch(() => apiClient.get(`/api/v1/groups/board/${encodeURIComponent(ctx.board)}`))
       .then((r) => setGroups(list(r.data)))
       .catch((e) => setMessage(getApiErrorMessage(e)));
-  }, [ctx.board]);
+  }, [ctx.board, boards]);
 
   // Cascading dependency: Group -> Programs
   useEffect(() => {

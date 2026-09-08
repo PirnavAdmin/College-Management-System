@@ -26,6 +26,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import collegeLogo from "@/assets/pirnav-colleges-logo.png";
 import {
   COLLEGE_NAME,
@@ -107,6 +108,11 @@ const normalizeKey = (value) => String(value || "").trim().toLowerCase();
 
 const optionLabel = (list, value) => list?.find((option) => String(option.value) === String(value))?.label || "";
 
+const uniqueOptionsByValue = (items = []) => Array.from(items.reduce((lookup, item) => {
+  if (item?.value !== undefined && item.value !== null && item.value !== "") lookup.set(String(item.value), item);
+  return lookup;
+}, new Map()).values());
+
 const isRawIdDisplay = (value, id) => {
   const text = String(value ?? "").trim();
   if (!text) return true;
@@ -152,6 +158,59 @@ const isStructureItemPayload = (item) => {
   const hasFeeType = read(item, "feeTypeId", "FeeTypeId", "typeId", "TypeId", "feeType", "FeeType") !== undefined;
   const hasAmount = read(item, "amount", "Amount", "feeAmount", "FeeAmount", "originalAmount", "OriginalAmount", "payableAmount", "PayableAmount") !== undefined;
   return hasStructureId && hasFeeType && hasAmount;
+};
+
+const configuredFeeItemKey = (item) => {
+  const feeTypeId = textValue(item, "feeTypeId", "FeeTypeId", "typeId", "TypeId");
+  if (feeTypeId) return `fee-type:${feeTypeId}`;
+  const feeType = read(item, "feeType", "FeeType", "type", "Type");
+  const nestedFeeTypeId = textValue(feeType, "feeTypeId", "FeeTypeId", "id", "Id", "typeId", "TypeId");
+  if (nestedFeeTypeId) return `fee-type:${nestedFeeTypeId}`;
+  const structureItemId = structureItemIdentity(item) || textValue(item, "structureItemId", "StructureItemId");
+  if (structureItemId) return `structure-item:${structureItemId}`;
+  return `fee-name:${normalizeKey(textValue(item, "type", "Type", "name", "Name", "feeTypeName", "FeeTypeName"))}`;
+};
+
+const mergeFeeItem = (current, incoming) => {
+  if (!current) return incoming;
+  const currentHasStructureItem = Boolean(current.structureItemId);
+  const incomingHasStructureItem = Boolean(incoming.structureItemId);
+  const base = incomingHasStructureItem && !currentHasStructureItem ? incoming : current;
+  const other = base === incoming ? current : incoming;
+  return {
+    ...base,
+    structureItemId: base.structureItemId || other.structureItemId,
+    feeTypeId: base.feeTypeId || other.feeTypeId,
+    type: base.type && base.type !== "Fee Type" ? base.type : other.type,
+    originalAmount: Number(base.originalAmount || 0) > 0 ? base.originalAmount : other.originalAmount,
+    payableAmount: Number(base.payableAmount || 0) > 0 ? base.payableAmount : other.payableAmount,
+    selected: base.selected,
+    required: Boolean(base.required || other.required),
+    structureId: base.structureId || other.structureId,
+  };
+};
+
+const dedupeConfiguredFeeItems = (items = []) => Array.from(items.reduce((lookup, item) => {
+  const key = configuredFeeItemKey(item);
+  lookup.set(key, mergeFeeItem(lookup.get(key), item));
+  return lookup;
+}, new Map()).values());
+
+const stripFeeItemCollections = (item = {}) => {
+  const {
+    feeItems,
+    FeeItems,
+    items,
+    Items,
+    feeStructureItems,
+    FeeStructureItems,
+    components,
+    Components,
+    feeComponents,
+    FeeComponents,
+    ...rest
+  } = item;
+  return rest;
 };
 
 const cleanDateValue = (value) => {
@@ -369,6 +428,33 @@ const feeTypeRowsFromMaster = (feeTypes) => {
   });
 };
 
+const feeItemsWithMasterRows = (feeTypes = [], configuredItems = []) => {
+  const configured = dedupeConfiguredFeeItems(configuredItems);
+  const configuredByFeeType = new Map(configured
+    .filter((item) => item.feeTypeId || item.id)
+    .map((item) => [String(item.feeTypeId || item.id), item]));
+  const usedConfiguredKeys = new Set();
+  const rows = feeTypeRowsFromMaster(feeTypes).map((masterItem) => {
+    const key = String(masterItem.feeTypeId || masterItem.id);
+    const configuredItem = configuredByFeeType.get(key);
+    if (!configuredItem) return masterItem;
+    usedConfiguredKeys.add(key);
+    return {
+      ...masterItem,
+      ...configuredItem,
+      id: configuredItem.id || masterItem.id,
+      feeTypeId: configuredItem.feeTypeId || masterItem.feeTypeId,
+      type: configuredItem.type || masterItem.type,
+      structureId: configuredItem.structureId || masterItem.structureId,
+    };
+  });
+  const configuredWithoutActiveMaster = configured.filter((item) => {
+    const key = String(item.feeTypeId || item.id || "");
+    return !key || !usedConfiguredKeys.has(key);
+  });
+  return dedupeConfiguredFeeItems([...rows, ...configuredWithoutActiveMaster]);
+};
+
 const hasBackendFeeTypeIds = (feeTypes) => feeTypes.some((item) => Number(item.id) > 0);
 
 const pageItems = (items, page, pageSize = PAGE_SIZE) => items.slice((page - 1) * pageSize, page * pageSize);
@@ -436,6 +522,9 @@ const normalizeFeeStructureRows = (rows, feeTypes = [], lookups = {}) => {
       const amount = numberValue(feeItem, "amount", "Amount", "feeAmount", "FeeAmount", "originalAmount", "OriginalAmount", "payableAmount", "PayableAmount", "totalAmount", "TotalAmount");
       const status = read(feeItem, "isActive", "IsActive", "active", "Active", "status", "Status");
       const structureItemId = structureItemIdentity(feeItem);
+      const rule = textValue(feeItem, "rule", "Rule", "requirement", "Requirement");
+      const mandatoryValue = read(feeItem, "isMandatory", "IsMandatory", "required", "Required", "mandatory", "Mandatory");
+      const mandatoryText = String(mandatoryValue ?? "").trim().toLowerCase();
       row.feeItems.push({
         id: structureItemId || feeType.id || textValue(feeItem, "id", "Id") || `type-${index}-${feeIndex}`,
         feeTypeId: feeType.id,
@@ -444,18 +533,23 @@ const normalizeFeeStructureRows = (rows, feeTypes = [], lookups = {}) => {
         originalAmount: amount,
         payableAmount: amount,
         selected: isActiveStatus(status) && feeType.status !== "Inactive" && masterFeeType?.status !== "Inactive",
-        required: normalizeKey(textValue(feeItem, "rule", "Rule")) === "mandatory" || Boolean(read(feeItem, "isMandatory", "IsMandatory", "required", "Required")),
+        required: ["mandatory", "required"].includes(normalizeKey(rule))
+          || (typeof mandatoryValue === "string" ? ["true", "mandatory", "required", "yes", "1"].includes(mandatoryText) : Boolean(mandatoryValue)),
         structureId,
       });
     });
     grouped.set(key, row);
   });
-  return Array.from(grouped.values()).map((row) => ({
-    ...row,
-    totalFee: row.totalFee ?? row.feeItems
-      .filter((feeItem) => feeItem.selected !== false)
-      .reduce((sum, feeItem) => sum + Number(feeItem.originalAmount || feeItem.payableAmount || 0), 0),
-  }));
+  return Array.from(grouped.values()).map((row) => {
+    const feeItems = dedupeConfiguredFeeItems(row.feeItems);
+    return {
+      ...row,
+      feeItems,
+      totalFee: feeItems
+        .filter((feeItem) => feeItem.selected !== false)
+        .reduce((sum, feeItem) => sum + Number(feeItem.originalAmount || feeItem.payableAmount || 0), 0),
+    };
+  });
 };
 
 const normalizeTransactionRows = (rows, account = {}) => rows.map((item, index) => {
@@ -889,6 +983,7 @@ const normalizeDueRows = (rows) => rows
     const status = textValue(item, "status", "Status", "feeStatus", "FeeStatus") || "Due";
     return {
       key: String(read(item, "feeInstallmentId", "FeeInstallmentId", "studentFeeId", "StudentFeeId", "id", "Id") ?? `due-${index + 1}`),
+      studentId: textValue(item, "studentId", "StudentId") || textValue(student, "studentId", "StudentId", "id", "Id") || textValue(admission, "studentId", "StudentId"),
       studentName: textValue(item, "studentName", "StudentName", "name", "Name")
         || textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
         || admissionFullName(admission)
@@ -931,6 +1026,17 @@ const splitDueRows = (rows = []) => {
   };
 };
 
+const dueStudentKey = (row) => normalizeKey(row.studentId || row.admissionNo || row.studentName);
+
+const uniqueDueStudentCount = (rows = []) => {
+  const students = new Set();
+  rows.forEach((row) => {
+    const key = dueStudentKey(row);
+    if (key) students.add(key);
+  });
+  return students.size;
+};
+
 const normalizeDashboard = (payload) => {
   const data = getObject(payload);
   const chartRows = getCollection(read(data, "groupWiseCollection", "GroupWiseCollection", "groupWiseTotals", "GroupWiseTotals", "chartData", "ChartData"));
@@ -971,6 +1077,11 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
   const chartData = hasUsefulChartData(dashboardChart) ? dashboardChart : dashboardLoaded && hasAccountData && hasUsefulChartData(accountChart) ? accountChart : [];
   const sourceDueRows = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
   const { overdue, upcoming } = splitDueRows(sourceDueRows);
+  const pendingDueStudentCount = uniqueDueStudentCount([...overdue, ...upcoming]);
+  const overdueStudentCount = uniqueDueStudentCount(overdue);
+  const hasDueScheduleData = dashboardLoaded || sourceDueRows.length > 0;
+  const pendingOverdueStudents = hasDueScheduleData ? pendingDueStudentCount : totals.pendingStudents;
+  const overdueStudents = hasDueScheduleData ? overdueStudentCount : totals.overdueStudents || 0;
   const recent = dashboardData?.recent?.length ? dashboardData.recent : [];
   const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
   const groupOptions = chartData.map((row) => row.group).filter(Boolean);
@@ -1030,7 +1141,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
       <div className="cms-fee-stat-grid">
         <SummaryCard icon={Users} tone="blue" label="Total Students" value={`${totals.totalStudents} Students`} hint="With active fee accounts" />
         <SummaryCard icon={WalletCards} tone="green" label="Total Collected" value={formatCompactCurrency(totals.totalCollected)} hint={`${collectedPercent.toFixed(1)}% of expected`} onClick={() => openOverviewTab("recent")} />
-        <SummaryCard icon={AlertCircle} tone="red" label="Pending / Overdue" value={`${totals.pendingStudents} Students`} hint={`${overdue.length || totals.overdueStudents} overdue`} onClick={() => openOverviewTab("overdue")} />
+        <SummaryCard icon={AlertCircle} tone="red" label="Pending / Overdue" value={`${pendingOverdueStudents} Students`} hint={`${overdueStudents} overdue`} onClick={() => openOverviewTab("overdue")} />
         <SummaryCard icon={CalendarClock} tone="amber" label="Upcoming Fees" value={`${upcoming.length} Schedules`} hint="Unpaid schedules due today or later" onClick={() => openOverviewTab("upcoming")} />
       </div>
 
@@ -1642,6 +1753,14 @@ function LedgerTab({ accounts, onView, onPrint, masters, loading = false, error 
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({ academicYear: "", group: "", section: "", paymentPlan: "", feeStatus: "" });
   const [page, setPage] = useState(1);
+  useEffect(() => {
+    const nextAcademicYear = masters.selectedAcademicYearId ? String(masters.selectedAcademicYearId) : "";
+    setFilters((current) => {
+      if (String(current.academicYear || "") === nextAcademicYear) return current;
+      return { ...current, academicYear: nextAcademicYear, group: "", section: "" };
+    });
+    setPage(1);
+  }, [masters.selectedAcademicYearId]);
   const setSearchTerm = (value) => {
     setSearch(value);
     setPage(1);
@@ -1824,9 +1943,9 @@ function FeeCollectionTab({ accounts, onCollect, loading = false, error = "" }) 
 function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTypes, masters, masterErrors = {}, masterLoading = false }) {
   const initialProgram = initial?.programId || "";
   const initialValues = initial || {
-    boardId: "",
+    boardId: masters.selectedBoardId ? String(masters.selectedBoardId) : "",
     academicYear: "",
-    academicYearId: "",
+    academicYearId: masters.selectedAcademicYearId ? String(masters.selectedAcademicYearId) : "",
     group: "",
     groupId: "",
     programId: "",
@@ -1836,11 +1955,17 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     status: "Active",
   };
   const configuredFeeItems = feeTypeRowsFromMaster(feeTypes);
+  const initialFeeItems = initial
+    ? feeItemsWithMasterRows(feeTypes, initial.feeItems || [])
+    : configuredFeeItems;
   const [values, setValues] = useState({
     ...initialValues,
+    boardId: initialValues.boardId || (masters.selectedBoardId ? String(masters.selectedBoardId) : ""),
+    academicYearId: initialValues.academicYearId || (masters.selectedAcademicYearId ? String(masters.selectedAcademicYearId) : ""),
+    academicYear: initialValues.academicYear || optionLabel(masters.years, masters.selectedAcademicYearId),
     programId: initialProgram,
     program: initial?.program || "",
-    feeItems: initial?.feeItems?.length ? initial.feeItems : configuredFeeItems,
+    feeItems: initialFeeItems,
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1864,6 +1989,34 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
       current.feeItems.length ? current : { ...current, feeItems: configuredFeeItems }
     ));
   }, [configuredFeeItems, initial, values.feeItems.length]);
+
+  useEffect(() => {
+    if (initial) return;
+    const nextBoardId = masters.selectedBoardId ? String(masters.selectedBoardId) : "";
+    const nextAcademicYearId = masters.selectedAcademicYearId ? String(masters.selectedAcademicYearId) : "";
+    if (!nextBoardId && !nextAcademicYearId) return;
+    setValues((current) => {
+      if (String(current.boardId || "") === nextBoardId && String(current.academicYearId || "") === nextAcademicYearId) return current;
+      return {
+        ...current,
+        boardId: nextBoardId || current.boardId,
+        academicYearId: nextAcademicYearId || current.academicYearId,
+        academicYear: optionLabel(masters.years, nextAcademicYearId) || current.academicYear,
+        group: "",
+        groupId: "",
+        programId: "",
+        program: "",
+      };
+    });
+  }, [initial, masters.selectedAcademicYearId, masters.selectedBoardId, masters.years]);
+
+  useEffect(() => {
+    if (!initial || !configuredFeeItems.length) return;
+    setValues((current) => ({
+      ...current,
+      feeItems: feeItemsWithMasterRows(feeTypes, current.feeItems),
+    }));
+  }, [configuredFeeItems.length, feeTypes, initial]);
 
   useEffect(() => {
     const groupId = values.groupId;
@@ -1903,10 +2056,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
   }, [values.groupId]);
 
   const feeItemsForContext = (currentItems = []) => (
-    feeTypeRowsFromMaster(feeTypes).map((item) => {
-      const current = currentItems.find((feeItem) => String(feeItem.feeTypeId || feeItem.id) === String(item.feeTypeId || item.id));
-      return current ? { ...item, ...current, structureId: current.structureId } : item;
-    })
+    feeItemsWithMasterRows(feeTypes, currentItems)
   );
 
   const changeGroup = (groupId) => {
@@ -1951,7 +2101,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
 
   const updateFeeItem = (id, patch) => {
     setValues((current) => {
-      const feeItems = current.feeItems.map((item) => (item.id === id ? { ...item, ...patch } : item));
+      const feeItems = dedupeConfiguredFeeItems(current.feeItems.map((item) => (item.id === id ? { ...item, ...patch } : item)));
       const admissionFee = feeItems.find((item) => item.type === "Admission Fee")?.originalAmount ?? current.admissionFee;
       const courseFee = feeItems.find((item) => item.type === "Course Fee")?.originalAmount ?? current.courseFee;
       return { ...current, feeItems, admissionFee, courseFee };
@@ -1988,7 +2138,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
 
   const save = async () => {
     if (savingRef.current) return null;
-    const configuredItems = values.feeItems.filter((item) => item.structureItemId || item.required || Number(item.originalAmount || 0) > 0);
+    const configuredItems = dedupeConfiguredFeeItems(values.feeItems).filter((item) => item.structureItemId || item.required || Number(item.originalAmount || 0) > 0);
     const activeItems = configuredItems.filter((item) => item.selected !== false);
     if (!values.academicYear && !values.academicYearId) return setError("Academic Year is required");
     if (!values.group && !values.groupId) return setError("Group is required");
@@ -2032,6 +2182,8 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
     }
     return null;
   };
+
+  const displayFeeItems = dedupeConfiguredFeeItems(values.feeItems);
 
   return (
     <Modal
@@ -2094,7 +2246,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
               <tr><th>Fee Type</th><th>Rule</th><th>Status</th><th className="num">Amount</th></tr>
             </thead>
             <tbody>
-              {values.feeItems.map((item) => (
+              {displayFeeItems.map((item) => (
                 <tr key={item.id}>
                   <td><strong>{item.type}</strong>{item.required ? <small className="cms-fee-required">Mandatory</small> : null}</td>
                   <td>
@@ -2133,7 +2285,7 @@ function StructureFormModal({ initial, structures = [], onClose, onSaved, feeTyp
         </div>
         <div className="cms-fee-progress-head">
           <span>Total Active Fees</span>
-          <strong>{formatCurrency(values.feeItems.filter((item) => item.selected).reduce((sum, item) => sum + Number(item.originalAmount || 0), 0))}</strong>
+          <strong>{formatCurrency(displayFeeItems.filter((item) => item.selected).reduce((sum, item) => sum + Number(item.originalAmount || 0), 0))}</strong>
         </div>
         <p className="cms-fee-note"><CheckCircle size={14} /> Manage the reusable fee type list from the Fee Types tab, then adjust amounts here for this structure.</p>
       </div>
@@ -2508,11 +2660,12 @@ function StructureTab({ structures, onToast, onRefresh, loading, error, feeTypes
         apiClient.get(apiEndpoints.fee.getStructureItems(row.id)),
       ]);
       const detail = structureResult.status === "fulfilled" ? getObject(structureResult.value.data) : row;
+      const structureContext = { ...stripFeeItemCollections(row), ...stripFeeItemCollections(detail) };
       const itemRows = itemsResult.status === "fulfilled"
-        ? getCollection(itemsResult.value.data).map((item) => ({ ...row, ...detail, ...item }))
+        ? getCollection(itemsResult.value.data).map((item) => ({ ...structureContext, ...item }))
         : [];
       const [normalized] = normalizeFeeStructureRows(itemRows.length ? itemRows : [{ ...row, ...detail }], feeTypes, masters);
-      setEditing({ ...row, ...normalized, feeItems: normalized?.feeItems?.length ? normalized.feeItems : row.feeItems });
+      setEditing({ ...row, ...normalized, feeItems: dedupeConfiguredFeeItems(normalized?.feeItems?.length ? normalized.feeItems : row.feeItems) });
     } catch (err) {
       onToast(getApiErrorMessage(err));
       setEditing(row);
@@ -2788,6 +2941,14 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
 
 /* -------------------------------- Page ---------------------------------- */
 export default function FeeManagementPage() {
+  const {
+    boards: contextBoards,
+    academicYears: contextAcademicYears,
+    boardsError: contextBoardsError,
+    academicYearsError: contextAcademicYearsError,
+    selectedBoardId,
+    selectedAcademicYearId,
+  } = useAcademicContext();
   const [tab, setTab] = useState(TABS[0]);
   const [setupTab, setSetupTab] = useState(FEE_SETUP_TABS[0]);
   const [ledgerTab, setLedgerTab] = useState(LEDGER_TABS[0].id);
@@ -2816,10 +2977,36 @@ export default function FeeManagementPage() {
   const [paymentHistoryExtras, setPaymentHistoryExtras] = useState([]);
   const accountRequestRef = useRef({ ledger: 0, collection: 0 });
   const overviewRequestRef = useRef(0);
+  const structureRequestRef = useRef(0);
   const paymentHistoryRequestRef = useRef(0);
   const loadedTabsRef = useRef(new Set());
 
-  const structures = apiStructures;
+  const contextBoardOptions = useMemo(() => (
+    toSelectOptions(
+      (contextBoards || []).filter((item) => isActiveStatus(read(item, "isActive", "IsActive", "active", "Active", "status", "Status"))),
+      ["boardId", "BoardId", "id", "Id"],
+      ["boardName", "BoardName", "name", "Name", "code", "Code"],
+    )
+  ), [contextBoards]);
+  const contextYearOptions = useMemo(() => uniqueAcademicYearsByName(
+    toSelectOptions(
+      (contextAcademicYears || []).filter((item) => isActiveStatus(read(item, "isActive", "IsActive", "active", "Active", "status", "Status"))),
+      ["academicYearId", "AcademicYearId", "id", "Id"],
+      ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "label", "Label", "code", "Code"],
+    ),
+    (item) => item.label,
+  ), [contextAcademicYears]);
+  const selectedBoardLabel = optionLabel(contextBoardOptions, selectedBoardId);
+  const selectedAcademicYearLabel = optionLabel(contextYearOptions, selectedAcademicYearId);
+  const structures = useMemo(() => apiStructures.filter((item) => (
+    matchesContext(selectedBoardId, selectedBoardLabel, item.boardId, item.board)
+    && matchesContext(selectedAcademicYearId, selectedAcademicYearLabel, item.academicYearId, item.academicYear)
+  )), [apiStructures, selectedAcademicYearId, selectedAcademicYearLabel, selectedBoardId, selectedBoardLabel]);
+  const syncedMasters = useMemo(() => ({
+    ...masters,
+    selectedBoardId,
+    selectedAcademicYearId,
+  }), [masters, selectedAcademicYearId, selectedBoardId]);
   const overviewAccounts = ledgerAccounts;
   const selectedAccounts = selectedSource === "collection" ? [...collectionAccounts, ...ledgerAccounts] : [...ledgerAccounts, ...collectionAccounts];
   const selectedBase = selectedId ? selectedAccounts.find((item) => item.id === selectedId) : null;
@@ -2945,26 +3132,30 @@ export default function FeeManagementPage() {
   }, []);
 
   const loadFeeApiData = useCallback(async () => {
+    const requestId = structureRequestRef.current + 1;
+    structureRequestRef.current = requestId;
     setStructureLoading(true);
     setStructureError("");
     setMasterErrors({});
-    const [typesResult, structuresResult, scholarshipsResult, boardsResult, yearsResult, levelsResult, groupsResult, sectionsResult, programsResult] = await Promise.allSettled([
+    const [typesResult, structuresResult, scholarshipsResult, yearsResult, levelsResult, groupsResult, sectionsResult, programsResult] = await Promise.allSettled([
       apiClient.get(apiEndpoints.fee.feeTypes),
       apiClient.get(apiEndpoints.fee.getStructures),
       apiClient.get(apiEndpoints.fee.scholarships),
-      apiClient.get(apiEndpoints.boards.getAll),
       apiClient.get(apiEndpoints.academicYears.getAll),
       apiClient.get(apiEndpoints.boards.getAcademicLevels),
       apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } }).catch(() => apiClient.get(apiEndpoints.groups.dropdown)),
       apiClient.get(apiEndpoints.sections.getAll),
       apiClient.get(apiEndpoints.programs.getAll),
     ]);
-    const yearOptions = yearsResult.status === "fulfilled"
-      ? uniqueAcademicYearsByName(
-        toSelectOptions(getCollection(yearsResult.value.data), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "name", "Name"]),
-        (item) => item.label,
+    if (structureRequestRef.current !== requestId) return;
+    const allYearOptions = yearsResult.status === "fulfilled"
+      ? toSelectOptions(
+        getCollection(yearsResult.value.data),
+        ["academicYearId", "AcademicYearId", "id", "Id"],
+        ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name", "label", "Label", "code", "Code"],
       )
       : [];
+    const yearOptions = uniqueOptionsByValue([...contextYearOptions, ...allYearOptions]);
     const groupOptions = groupsResult.status === "fulfilled"
       ? getCollection(groupsResult.value.data).map(groupOption).filter(Boolean)
       : [];
@@ -2987,6 +3178,7 @@ export default function FeeManagementPage() {
           ? apiClient.get(apiEndpoints.fee.getStructureItems(structure.id))
           : Promise.resolve(null)
       )));
+      if (structureRequestRef.current !== requestId) return;
       const structuresWithItems = listedStructures.map((structure, index) => {
         const result = itemResults[index];
         if (result?.status !== "fulfilled" || !result.value) return structure;
@@ -3011,12 +3203,8 @@ export default function FeeManagementPage() {
       setScholarships(normalizeScholarshipRows(getCollection(scholarshipsResult.value.data)));
     }
     setMasters((current) => ({
-      boards: boardsResult.status === "fulfilled"
-        ? toSelectOptions(getCollection(boardsResult.value.data), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"])
-        : current.boards,
-      years: yearsResult.status === "fulfilled"
-        ? yearOptions
-        : current.years,
+      boards: contextBoardOptions,
+      years: yearOptions,
       levels: levelsResult.status === "fulfilled"
         ? toSelectOptions(getCollection(levelsResult.value.data), ["academicLevelId", "AcademicLevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "name", "Name"])
         : current.levels,
@@ -3031,16 +3219,16 @@ export default function FeeManagementPage() {
         : current.programs,
     }));
     setMasterErrors({
-      boards: boardsResult.status === "rejected" ? getApiErrorMessage(boardsResult.reason) : "",
-      years: yearsResult.status === "rejected" ? getApiErrorMessage(yearsResult.reason) : "",
+      boards: contextBoardsError || "",
+      years: yearsResult.status === "rejected" ? getApiErrorMessage(yearsResult.reason) || contextAcademicYearsError || "" : contextAcademicYearsError || "",
       levels: levelsResult.status === "rejected" ? getApiErrorMessage(levelsResult.reason) : "",
       groups: groupsResult.status === "rejected" ? getApiErrorMessage(groupsResult.reason) : "",
       sections: sectionsResult.status === "rejected" ? getApiErrorMessage(sectionsResult.reason) : "",
       programs: programsResult.status === "rejected" ? getApiErrorMessage(programsResult.reason) : "",
       scholarships: scholarshipsResult.status === "rejected" ? getApiErrorMessage(scholarshipsResult.reason) : "",
     });
-    setStructureLoading(false);
-  }, []);
+    if (structureRequestRef.current === requestId) setStructureLoading(false);
+  }, [contextAcademicYearsError, contextBoardOptions, contextBoardsError, contextYearOptions]);
 
   const openCollectPayment = (id) => {
     setSelectedId(id);
@@ -3115,14 +3303,15 @@ export default function FeeManagementPage() {
   }, [loadOverviewData]);
 
   useEffect(() => {
-    const loadKey = tab === "Student Fee Ledger" ? `${tab}:${ledgerTab}` : tab;
+    const contextKey = `${selectedBoardId || ""}:${selectedAcademicYearId || ""}`;
+    const loadKey = tab === "Student Fee Ledger" ? `${tab}:${ledgerTab}:${contextKey}` : `${tab}:${contextKey}`;
     if (loadedTabsRef.current.has(loadKey)) return;
     loadedTabsRef.current.add(loadKey);
     if (tab === "Overview") loadOverviewData();
     if (tab === "Fee Setup") loadFeeApiData();
     if (tab === "Student Fee Ledger" && ledgerTab === "Fee Collection") loadFeeAccounts("collection");
     if (tab === "Student Fee Ledger" && ledgerTab !== "Fee Collection") loadFeeAccounts("ledger");
-  }, [ledgerTab, loadFeeAccounts, loadFeeApiData, loadOverviewData, tab]);
+  }, [ledgerTab, loadFeeAccounts, loadFeeApiData, loadOverviewData, selectedAcademicYearId, selectedBoardId, tab]);
 
   useEffect(() => {
     if (tab !== "Student Fee Ledger" || ledgerTab !== "Payment History") return;
@@ -3164,7 +3353,7 @@ export default function FeeManagementPage() {
           onRefresh={loadFeeApiData}
           loading={structureLoading}
           error={structureError}
-          masters={masters}
+          masters={syncedMasters}
           masterErrors={masterErrors}
         />
       ) : null}
@@ -3188,7 +3377,7 @@ export default function FeeManagementPage() {
           onPrint={printStudentStatement}
           onCollect={openCollectPayment}
           onReceipt={setReceipt}
-          masters={masters}
+          masters={syncedMasters}
           loading={accountLoading}
           errors={accountErrors}
         />

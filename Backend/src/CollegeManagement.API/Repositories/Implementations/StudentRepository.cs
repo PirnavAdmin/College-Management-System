@@ -198,6 +198,12 @@ namespace CollegeManagement.API.Repositories
                 {
                     p_StudentId = studentId,
 
+                    p_AdmissionId = request.AdmissionId,
+                    p_AdmissionNo = request.AdmissionNo,
+                    p_AdmissionDate = request.AdmissionDate,
+                    p_Medium = request.Medium,
+                    p_SecondLanguage = request.SecondLanguage,
+
                     p_StudentName = request.StudentName,
                     p_Photo = request.Photo,
                     p_Gender = request.Gender,
@@ -216,36 +222,37 @@ namespace CollegeManagement.API.Repositories
                     p_State = request.State,
                     p_Pincode = request.Pincode,
 
+                    p_BoardId = request.BoardId,
+                    p_AcademicYearId = request.AcademicYearId,
+                    p_AcademicLevelId = request.AcademicLevelId,
+                    p_GroupId = request.GroupId,
+                    p_ProgramId = request.ProgramId,
+                    p_SectionId = request.SectionId,
+                    p_RollNo = request.RollNo,
+
+                    p_PreviousSchool = request.PreviousSchool,
+                    p_PreviousHallTicketNumber = request.PreviousHallTicketNumber,
+                    p_PreviousBoard = request.PreviousBoard,
+                    p_PreviousYearOfPassing = request.PreviousYearOfPassing,
+                    p_PreviousPercentage = request.PreviousPercentage,
+
                     p_FatherName = request.FatherName,
-                    p_FatherOccupation =
-                        request.FatherOccupation,
-                    p_FatherMobile =
-                        request.FatherMobile,
-                    p_FatherEmail =
-                        request.FatherEmail,
+                    p_FatherOccupation = request.FatherOccupation,
+                    p_FatherMobile = request.FatherMobile,
+                    p_FatherEmail = request.FatherEmail,
 
                     p_MotherName = request.MotherName,
-                    p_MotherOccupation =
-                        request.MotherOccupation,
-                    p_MotherMobile =
-                        request.MotherMobile,
-                    p_MotherEmail =
-                        request.MotherEmail,
+                    p_MotherOccupation = request.MotherOccupation,
+                    p_MotherMobile = request.MotherMobile,
+                    p_MotherEmail = request.MotherEmail,
 
-                    p_GuardianName =
-                        request.GuardianName,
-                    p_GuardianMobile =
-                        request.GuardianMobile,
-                    p_GuardianEmail =
-                        request.GuardianEmail,
-
-                    p_AnnualIncome =
-                        request.AnnualIncome,
-
-                    p_Remarks = request.Remarks
+                    p_GuardianName = request.GuardianName,
+                    p_GuardianMobile = request.GuardianMobile,
+                    p_GuardianEmail = request.GuardianEmail
                 },
                 commandType: CommandType.StoredProcedure);
         }
+
 
 
         // =========================================================

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { mockBoards, mockAcademicYears } from "@/data/attendanceMockData.js";
 
 const AcademicContext = createContext(null);
 const BOARD_STORAGE_KEY = "cms_selected_board";
@@ -87,7 +88,8 @@ export function AcademicProvider({ children }) {
     setBoardsError("");
     apiClient.get(apiEndpoints.boards.list, { params: { Status: true, PageNumber: 1, PageSize: 100 } }).then((response) => {
       if (!active) return;
-      const nextBoards = asList(response).filter(isActive).map(mapBoard);
+      const apiBoards = asList(response).filter(isActive).map(mapBoard);
+      const nextBoards = apiBoards.length ? apiBoards : mockBoards.map(mapBoard);
       setBoards(nextBoards);
       setSelectedBoardState((current) => {
         const next = nextBoards.find((board) => sameBoard(board, current)) ?? nextBoards[0] ?? null;
@@ -96,10 +98,15 @@ export function AcademicProvider({ children }) {
       });
     }).catch((error) => {
       if (!active) return;
-      setBoards([]);
+      const fallbackBoards = (readStored(BOARD_STORAGE_KEY) ? [readStored(BOARD_STORAGE_KEY)] : []).concat(mockBoards.map(mapBoard));
+      const effective = fallbackBoards.filter((b, idx, arr) => arr.findIndex(x => x.id === b.id) === idx);
+      setBoards(effective);
       setBoardsError(getApiErrorMessage(error));
-      setSelectedBoardState(null);
-      persist(BOARD_STORAGE_KEY, null);
+      setSelectedBoardState((current) => {
+        const next = effective.find((board) => sameBoard(board, current)) ?? effective[0] ?? null;
+        persist(BOARD_STORAGE_KEY, next);
+        return next;
+      });
     }).finally(() => active && setBoardsLoading(false));
     return () => { active = false; };
   }, [refreshToken]);
@@ -107,18 +114,15 @@ export function AcademicProvider({ children }) {
   useEffect(() => {
     let active = true;
     if (!selectedBoardId) {
-      setAcademicYears([]);
-      setSelectedAcademicYearState(null);
-      persist(YEAR_STORAGE_KEY, null);
+      const fallbackYears = mockAcademicYears.map(mapYear);
+      setAcademicYears(fallbackYears);
+      setSelectedAcademicYearState(fallbackYears[0] ?? null);
+      persist(YEAR_STORAGE_KEY, fallbackYears[0] ?? null);
       setAcademicYearsLoading(false);
       return () => { active = false; };
     }
     setAcademicYearsLoading(true);
-    setAcademicYears([]);
     setAcademicYearsError("");
-    // Some deployments do not expose the dedicated /active endpoint even
-    // though their regular academic-year list is available. Keep the global
-    // selector compatible with both API versions.
     const loadYears = async () => {
       try {
         return await apiClient.get(apiEndpoints.academicYears.active, {
@@ -133,10 +137,11 @@ export function AcademicProvider({ children }) {
 
     loadYears().then((response) => {
       if (!active) return;
-      const nextYears = asList(response).filter((year) => {
+      const apiYears = asList(response).filter((year) => {
         const boardId = valueOf(year, "boardId", "BoardId");
         return (boardId == null || String(boardId) === String(selectedBoardId)) && isActive(year);
       }).map(mapYear);
+      const nextYears = apiYears.length ? apiYears : mockAcademicYears.map(mapYear);
       setAcademicYears(nextYears);
       setSelectedAcademicYearState((current) => {
         const next = nextYears.find((year) => sameYear(year, current)) ?? nextYears[0] ?? null;
@@ -145,10 +150,14 @@ export function AcademicProvider({ children }) {
       });
     }).catch((error) => {
       if (!active) return;
-      setAcademicYears([]);
+      const fallbackYears = mockAcademicYears.map(mapYear);
+      setAcademicYears(fallbackYears);
       setAcademicYearsError(getApiErrorMessage(error));
-    setSelectedAcademicYearState(null);
-      persist(YEAR_STORAGE_KEY, null);
+      setSelectedAcademicYearState((current) => {
+        const next = fallbackYears.find((year) => sameYear(year, current)) ?? fallbackYears[0] ?? null;
+        persist(YEAR_STORAGE_KEY, next);
+        return next;
+      });
     }).finally(() => active && setAcademicYearsLoading(false));
     return () => { active = false; };
   }, [selectedBoardId, refreshToken]);

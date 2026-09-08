@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using ClosedXML.Excel;
@@ -37,7 +37,7 @@ namespace CollegeManagement.API.Services.Imports
             IEnumerable<(string Code, string Name)> academicLevels,
             IEnumerable<(string Code, string Name, string BoardCode, string LevelCode)> groups,
             IEnumerable<(string ProgramName, string GroupCode)> programs,
-            IEnumerable<(string SectionName, string GroupCode, string ProgramName, string YearName)> sections)
+            IEnumerable<(string SectionName, string GroupCode, string ProgramName, string YearName, string LevelCode, string BoardCode)> sections)
         {
             using var workbook = new XLWorkbook();
 
@@ -64,7 +64,7 @@ namespace CollegeManagement.API.Services.Imports
             ws.Cell(1, 1).Style.Font.FontSize = 14;
             ws.Cell(1, 1).Style.Font.FontColor = PrimaryNavy;
 
-            ws.Cell(2, 1).Value = "LEGACY STUDENT BULK IMPORT — OFFICIAL GUIDELINES";
+            ws.Cell(2, 1).Value = "LEGACY STUDENT BULK IMPORT - OFFICIAL GUIDELINES";
             ws.Cell(2, 1).Style.Font.Bold = true;
             ws.Cell(2, 1).Style.Font.FontSize = 11;
             ws.Cell(2, 1).Style.Font.FontColor = PrimaryBlue;
@@ -172,7 +172,7 @@ namespace CollegeManagement.API.Services.Imports
             IEnumerable<(string Code, string Name)> academicLevels,
             IEnumerable<(string Code, string Name, string BoardCode, string LevelCode)> groups,
             IEnumerable<(string ProgramName, string GroupCode)> programs,
-            IEnumerable<(string SectionName, string GroupCode, string ProgramName, string YearName)> sections)
+            IEnumerable<(string SectionName, string GroupCode, string ProgramName, string YearName, string LevelCode, string BoardCode)> sections)
         {
             var ws = workbook.Worksheets.Add("Academic Master Data");
 
@@ -261,20 +261,24 @@ namespace CollegeManagement.API.Services.Imports
             col += 3;
 
             // Sections
-            ws.Cell(3, col).Value = "Sections";
-            ws.Cell(4, col).Value = "Section Name";
-            ws.Cell(4, col + 1).Value = "Group Code";
-            ws.Cell(4, col + 2).Value = "Program Name";
-            ws.Cell(4, col + 3).Value = "Academic Year";
-            ws.Range(4, col, 4, col + 3).Style.Font.Bold = true;
-            ws.Range(4, col, 4, col + 3).Style.Fill.BackgroundColor = HeaderGray;
+            ws.Cell(3, col).Value = "Sections Master Reference";
+            ws.Cell(4, col).Value = "Board Code";
+            ws.Cell(4, col + 1).Value = "Academic Year";
+            ws.Cell(4, col + 2).Value = "Level Code";
+            ws.Cell(4, col + 3).Value = "Group Code";
+            ws.Cell(4, col + 4).Value = "Program Name";
+            ws.Cell(4, col + 5).Value = "Section Name";
+            ws.Range(4, col, 4, col + 5).Style.Font.Bold = true;
+            ws.Range(4, col, 4, col + 5).Style.Fill.BackgroundColor = HeaderGray;
             r = 5;
             foreach (var s in sections)
             {
-                ws.Cell(r, col).Value = s.SectionName;
-                ws.Cell(r, col + 1).Value = s.GroupCode;
-                ws.Cell(r, col + 2).Value = s.ProgramName;
-                ws.Cell(r, col + 3).Value = s.YearName;
+                ws.Cell(r, col).Value = s.BoardCode;
+                ws.Cell(r, col + 1).Value = s.YearName;
+                ws.Cell(r, col + 2).Value = s.LevelCode;
+                ws.Cell(r, col + 3).Value = s.GroupCode;
+                ws.Cell(r, col + 4).Value = s.ProgramName;
+                ws.Cell(r, col + 5).Value = s.SectionName;
                 r++;
             }
 

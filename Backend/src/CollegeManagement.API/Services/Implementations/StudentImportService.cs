@@ -138,14 +138,16 @@ namespace CollegeManagement.API.Services.Implementations
                   WHERE p.IsActive = 1 AND g.IsActive = 1
                   ORDER BY g.GroupCode, p.ProgramName")).ToList();
 
-            var sections = (await conn.QueryAsync<(string SectionName, string GroupCode, string ProgramName, string YearName)>(
-                @"SELECT s.SectionName, g.GroupCode, IFNULL(p.ProgramName, '') AS ProgramName, ay.AcademicYearName AS YearName
+            var sections = (await conn.QueryAsync<(string SectionName, string GroupCode, string ProgramName, string YearName, string LevelCode, string BoardCode)>(
+                @"SELECT s.SectionName, g.GroupCode, IFNULL(p.ProgramName, '') AS ProgramName, IFNULL(ay.AcademicYearName, '') AS YearName, al.LevelCode, b.BoardCode
                   FROM Sections s
                   JOIN `Groups` g ON s.GroupId = g.GroupId
+                  JOIN Boards b ON s.BoardId = b.BoardId
+                  JOIN AcademicLevels al ON s.AcademicLevelId = al.AcademicLevelId
                   LEFT JOIN Programs p ON s.ProgramId = p.ProgramId
-                  JOIN AcademicYears ay ON s.AcademicYearId = ay.AcademicYearId
+                  LEFT JOIN AcademicYears ay ON s.AcademicYearId = ay.AcademicYearId
                   WHERE s.IsActive = 1
-                  ORDER BY g.GroupCode, s.SectionName")).ToList();
+                  ORDER BY b.BoardCode, ay.AcademicYearName, al.LevelCode, g.GroupCode, s.SectionName")).ToList();
 
             return StudentExcelImportTemplateBuilder.BuildTemplate(boards, years, levels, groups, programs, sections);
         }
@@ -210,78 +212,210 @@ namespace CollegeManagement.API.Services.Implementations
                 await connection.OpenAsync(ct);
             }
 
+            const string insertSql = @"
+                INSERT INTO Students
+                (
+                    AdmissionId,
+                    AdmissionNo,
+                    RollNo,
+                    AdmissionDate,
+                    AdmissionType,
+                    AdmissionQuota,
+                    Medium,
+                    SecondLanguage,
+                    StudentName,
+                    Photo,
+                    Gender,
+                    DateOfBirth,
+                    BloodGroup,
+                    Email,
+                    MobileNumber,
+                    AadhaarNumber,
+                    Nationality,
+                    Religion,
+                    Category,
+                    Address,
+                    City,
+                    District,
+                    State,
+                    Pincode,
+                    BoardId,
+                    AcademicYearId,
+                    AcademicLevelId,
+                    GroupId,
+                    ProgramId,
+                    SectionId,
+                    PreviousSchool,
+                    PreviousHallTicketNumber,
+                    PreviousBoard,
+                    PreviousYearOfPassing,
+                    PreviousPercentage,
+                    StudentCategory,
+                    ScholarshipStatus,
+                    ScholarshipAmount,
+                    FatherName,
+                    FatherOccupation,
+                    FatherMobile,
+                    FatherEmail,
+                    MotherName,
+                    MotherOccupation,
+                    MotherMobile,
+                    MotherEmail,
+                    GuardianName,
+                    GuardianMobile,
+                    GuardianEmail,
+                    AnnualIncome,
+                    FeeAmount,
+                    FeePaid,
+                    FeeStatus,
+                    AttendancePercentage,
+                    PerformanceGrade,
+                    CGPA,
+                    Rank,
+                    Remarks,
+                    PasswordHash,
+                    IsFirstLogin,
+                    Status,
+                    IsActive,
+                    CreatedAt
+                )
+                VALUES
+                (
+                    NULL,
+                    @AdmissionNo,
+                    @RollNo,
+                    @AdmissionDate,
+                    @AdmissionType,
+                    @AdmissionQuota,
+                    @Medium,
+                    @SecondLanguage,
+                    @StudentName,
+                    @Photo,
+                    @Gender,
+                    @DateOfBirth,
+                    @BloodGroup,
+                    @Email,
+                    @MobileNumber,
+                    @AadhaarNumber,
+                    @Nationality,
+                    @Religion,
+                    @Category,
+                    @Address,
+                    @City,
+                    @District,
+                    @State,
+                    @Pincode,
+                    @BoardId,
+                    @AcademicYearId,
+                    @AcademicLevelId,
+                    @GroupId,
+                    @ProgramId,
+                    @SectionId,
+                    @PreviousSchool,
+                    @PreviousHallTicketNumber,
+                    @PreviousBoard,
+                    @PreviousYearOfPassing,
+                    @PreviousPercentage,
+                    @StudentCategory,
+                    @ScholarshipStatus,
+                    @ScholarshipAmount,
+                    @FatherName,
+                    @FatherOccupation,
+                    @FatherMobile,
+                    @FatherEmail,
+                    @MotherName,
+                    @MotherOccupation,
+                    @MotherMobile,
+                    @MotherEmail,
+                    @GuardianName,
+                    @GuardianMobile,
+                    @GuardianEmail,
+                    @AnnualIncome,
+                    @FeeAmount,
+                    @FeePaid,
+                    @FeeStatus,
+                    @AttendancePercentage,
+                    @PerformanceGrade,
+                    @CGPA,
+                    @Rank,
+                    @Remarks,
+                    @PasswordHash,
+                    @IsFirstLogin,
+                    'Active',
+                    1,
+                    CURRENT_TIMESTAMP(6)
+                );";
+
             using var transaction = connection.BeginTransaction();
             try
             {
                 foreach (var s in validRowsToInsert)
                 {
                     await connection.ExecuteAsync(
-                        "sp_CreateStudent",
+                        insertSql,
                         new
                         {
-                            p_AdmissionNo = s.AdmissionNo,
-                            p_RollNo = s.RollNo,
-                            p_AdmissionDate = s.AdmissionDate,
-                            p_AdmissionType = s.AdmissionType,
-                            p_AdmissionQuota = s.AdmissionQuota,
-                            p_Medium = s.Medium,
-                            p_SecondLanguage = s.SecondLanguage,
-                            p_StudentName = s.StudentName,
-                            p_Photo = (string?)null,
-                            p_Gender = s.Gender,
-                            p_DateOfBirth = s.DateOfBirth,
-                            p_BloodGroup = s.BloodGroup,
-                            p_Email = s.Email,
-                            p_MobileNumber = s.MobileNumber,
-                            p_AadhaarNumber = s.AadhaarNumber,
-                            p_Nationality = s.Nationality,
-                            p_Religion = s.Religion,
-                            p_Category = s.Category,
-                            p_Address = s.Address,
-                            p_City = s.City,
-                            p_District = s.District,
-                            p_State = s.State,
-                            p_Pincode = s.Pincode,
-                            p_BoardId = s.BoardId,
-                            p_AcademicYearId = s.AcademicYearId,
-                            p_AcademicLevelId = s.AcademicLevelId,
-                            p_GroupId = s.GroupId,
-                            p_ProgramId = s.ProgramId,
-                            p_SectionId = s.SectionId,
-                            p_PreviousSchool = s.PreviousSchool,
-                            p_PreviousHallTicketNumber = s.PreviousHallTicketNumber,
-                            p_PreviousBoard = s.PreviousBoard,
-                            p_PreviousYearOfPassing = s.PreviousYearOfPassing,
-                            p_PreviousPercentage = s.PreviousPercentage,
-                            p_StudentCategory = s.StudentCategory,
-                            p_ScholarshipStatus = s.ScholarshipStatus,
-                            p_ScholarshipAmount = s.ScholarshipAmount,
-                            p_FatherName = s.FatherName,
-                            p_FatherOccupation = s.FatherOccupation,
-                            p_FatherMobile = s.FatherMobile,
-                            p_FatherEmail = s.FatherEmail,
-                            p_MotherName = s.MotherName,
-                            p_MotherOccupation = s.MotherOccupation,
-                            p_MotherMobile = s.MotherMobile,
-                            p_MotherEmail = s.MotherEmail,
-                            p_GuardianName = s.GuardianName,
-                            p_GuardianMobile = s.GuardianMobile,
-                            p_GuardianEmail = s.GuardianEmail,
-                            p_AnnualIncome = s.AnnualIncome,
-                            p_FeeAmount = s.FeeAmount,
-                            p_FeePaid = s.FeePaid,
-                            p_FeeStatus = s.FeeStatus,
-                            p_AttendancePercentage = s.AttendancePercentage,
-                            p_PerformanceGrade = s.PerformanceGrade,
-                            p_CGPA = s.CGPA,
-                            p_Rank = s.Rank,
-                            p_Remarks = s.Remarks,
-                            p_PasswordHash = s.PasswordHash,
-                            p_IsFirstLogin = true,
-                            p_IsActive = true
+                            AdmissionNo = s.AdmissionNo,
+                            RollNo = s.RollNo,
+                            AdmissionDate = s.AdmissionDate,
+                            AdmissionType = s.AdmissionType,
+                            AdmissionQuota = s.AdmissionQuota,
+                            Medium = s.Medium,
+                            SecondLanguage = s.SecondLanguage,
+                            StudentName = s.StudentName,
+                            Photo = (string?)null,
+                            Gender = s.Gender,
+                            DateOfBirth = s.DateOfBirth,
+                            BloodGroup = s.BloodGroup,
+                            Email = s.Email,
+                            MobileNumber = s.MobileNumber,
+                            AadhaarNumber = s.AadhaarNumber,
+                            Nationality = s.Nationality,
+                            Religion = s.Religion,
+                            Category = s.Category,
+                            Address = s.Address,
+                            City = s.City,
+                            District = s.District,
+                            State = s.State,
+                            Pincode = s.Pincode,
+                            BoardId = s.BoardId,
+                            AcademicYearId = s.AcademicYearId,
+                            AcademicLevelId = s.AcademicLevelId,
+                            GroupId = s.GroupId,
+                            ProgramId = s.ProgramId,
+                            SectionId = s.SectionId,
+                            PreviousSchool = s.PreviousSchool,
+                            PreviousHallTicketNumber = s.PreviousHallTicketNumber,
+                            PreviousBoard = s.PreviousBoard,
+                            PreviousYearOfPassing = s.PreviousYearOfPassing,
+                            PreviousPercentage = s.PreviousPercentage,
+                            StudentCategory = s.StudentCategory,
+                            ScholarshipStatus = s.ScholarshipStatus,
+                            ScholarshipAmount = s.ScholarshipAmount,
+                            FatherName = s.FatherName,
+                            FatherOccupation = s.FatherOccupation,
+                            FatherMobile = s.FatherMobile,
+                            FatherEmail = s.FatherEmail,
+                            MotherName = s.MotherName,
+                            MotherOccupation = s.MotherOccupation,
+                            MotherMobile = s.MotherMobile,
+                            MotherEmail = s.MotherEmail,
+                            GuardianName = s.GuardianName,
+                            GuardianMobile = s.GuardianMobile,
+                            GuardianEmail = s.GuardianEmail,
+                            AnnualIncome = s.AnnualIncome,
+                            FeeAmount = s.FeeAmount,
+                            FeePaid = s.FeePaid,
+                            FeeStatus = s.FeeStatus,
+                            AttendancePercentage = s.AttendancePercentage,
+                            PerformanceGrade = s.PerformanceGrade,
+                            CGPA = s.CGPA,
+                            Rank = s.Rank,
+                            Remarks = s.Remarks,
+                            PasswordHash = s.PasswordHash,
+                            IsFirstLogin = true
                         },
-                        transaction: transaction,
-                        commandType: CommandType.StoredProcedure);
+                        transaction: transaction);
                 }
 
                 transaction.Commit();
@@ -622,13 +756,17 @@ namespace CollegeManagement.API.Services.Implementations
             {
                 AddError("Academic Year", r.AcademicYear, "Academic Year is required.");
             }
-            else if (!master.YearsByName.TryGetValue(r.AcademicYear.Trim(), out var yId))
+            else if (boardId > 0 && master.YearsByBoardAndName.TryGetValue($"{boardId}_{r.AcademicYear.Trim()}", out var byId))
             {
-                AddError("Academic Year", r.AcademicYear, $"Academic Year '{r.AcademicYear.Trim()}' does not exist or is inactive.");
+                academicYearId = byId;
+            }
+            else if (master.YearsByName.TryGetValue(r.AcademicYear.Trim(), out var yId))
+            {
+                academicYearId = yId;
             }
             else
             {
-                academicYearId = yId;
+                AddError("Academic Year", r.AcademicYear, $"Academic Year '{r.AcademicYear.Trim()}' does not exist or is inactive.");
             }
 
             int academicLevelId = 0;
@@ -683,17 +821,35 @@ namespace CollegeManagement.API.Services.Implementations
             int? sectionId = null;
             if (!string.IsNullOrWhiteSpace(r.SectionName))
             {
-                if (boardId > 0 && academicYearId > 0 && academicLevelId > 0 && groupId > 0)
+                if (boardId > 0 && academicYearId > 0 && groupId > 0)
                 {
-                    string secKey = $"{boardId}_{academicYearId}_{academicLevelId}_{groupId}_{programId ?? 0}_{r.SectionName.Trim()}";
-                    if (!master.SectionsByHierarchy.TryGetValue(secKey, out var sId))
+                    string secName = r.SectionName.Trim();
+                    int progId = programId ?? 0;
+
+                    // Multi-tier hierarchical lookup:
+                    // 1. Exact hierarchy (Board, Year, Level, Group, Program, Section)
+                    string key1 = $"{boardId}_{academicYearId}_{academicLevelId}_{groupId}_{progId}_{secName}";
+                    // 2. Hierarchy without Program (Board, Year, Level, Group, 0, Section)
+                    string key2 = $"{boardId}_{academicYearId}_{academicLevelId}_{groupId}_0_{secName}";
+                    // 3. Year & Group with Program (Board, Year, Group, Program, Section)
+                    string key3 = $"{boardId}_{academicYearId}_{groupId}_{progId}_{secName}";
+                    // 4. Year & Group without Program (Board, Year, Group, 0, Section)
+                    string key4 = $"{boardId}_{academicYearId}_{groupId}_0_{secName}";
+                    // 5. Group & Section fallback
+                    string key5 = $"{groupId}_{secName}";
+
+                    if (master.SectionsExact.TryGetValue(key1, out var sId) ||
+                        master.SectionsExact.TryGetValue(key2, out sId) ||
+                        master.SectionsByGroupYear.TryGetValue(key3, out sId) ||
+                        master.SectionsByGroupYear.TryGetValue(key4, out sId) ||
+                        master.SectionsByGroup.TryGetValue(key5, out sId))
                     {
-                        string progLabel = string.IsNullOrWhiteSpace(r.ProgramName) ? "(None)" : r.ProgramName.Trim();
-                        AddError("Section Name", r.SectionName, $"Section '{r.SectionName.Trim()}' not found under Group '{r.GroupCode?.Trim()}' and Program '{progLabel}' for Year '{r.AcademicYear?.Trim()}'.");
+                        sectionId = sId;
                     }
                     else
                     {
-                        sectionId = sId;
+                        string progLabel = string.IsNullOrWhiteSpace(r.ProgramName) ? "(None)" : r.ProgramName.Trim();
+                        AddError("Section Name", r.SectionName, $"Section '{r.SectionName.Trim()}' not found under Group '{r.GroupCode?.Trim()}' and Program '{progLabel}' for Year '{r.AcademicYear?.Trim()}'.");
                     }
                 }
             }
@@ -805,12 +961,18 @@ namespace CollegeManagement.API.Services.Implementations
             }
 
             // 2. Academic Years
-            var years = await conn.QueryAsync<(int AcademicYearId, string AcademicYearName)>(
-                "SELECT AcademicYearId, AcademicYearName FROM AcademicYears WHERE IsActive = 1");
+            var years = await conn.QueryAsync<(int AcademicYearId, int BoardId, string AcademicYearName)>(
+                "SELECT AcademicYearId, BoardId, AcademicYearName FROM AcademicYears WHERE IsActive = 1");
             foreach (var y in years)
             {
                 if (!string.IsNullOrWhiteSpace(y.AcademicYearName))
-                    cache.YearsByName[y.AcademicYearName.Trim()] = y.AcademicYearId;
+                {
+                    cache.YearsByBoardAndName[$"{y.BoardId}_{y.AcademicYearName.Trim()}"] = y.AcademicYearId;
+                    if (!cache.YearsByName.ContainsKey(y.AcademicYearName.Trim()))
+                    {
+                        cache.YearsByName[y.AcademicYearName.Trim()] = y.AcademicYearId;
+                    }
+                }
             }
 
             // 3. Academic Levels
@@ -825,14 +987,19 @@ namespace CollegeManagement.API.Services.Implementations
             }
 
             // 4. Groups
-            var groups = await conn.QueryAsync<(int GroupId, int BoardId, int AcademicYearId, int AcademicLevelId, string GroupCode)>(
-                "SELECT GroupId, BoardId, AcademicYearId, AcademicLevelId, GroupCode FROM Groups WHERE IsActive = 1");
+            var groups = await conn.QueryAsync<(int GroupId, int BoardId, int AcademicYearId, int AcademicLevelId, string GroupCode, string GroupName)>(
+                "SELECT GroupId, BoardId, AcademicYearId, AcademicLevelId, GroupCode, GroupName FROM `Groups` WHERE IsActive = 1");
             foreach (var g in groups)
             {
                 if (!string.IsNullOrWhiteSpace(g.GroupCode))
                 {
                     string key = $"{g.BoardId}_{g.AcademicYearId}_{g.AcademicLevelId}_{g.GroupCode.Trim()}";
                     cache.GroupsByContext[key] = g.GroupId;
+                }
+                if (!string.IsNullOrWhiteSpace(g.GroupName))
+                {
+                    string keyName = $"{g.BoardId}_{g.AcademicYearId}_{g.AcademicLevelId}_{g.GroupName.Trim()}";
+                    cache.GroupsByContext[keyName] = g.GroupId;
                 }
             }
 
@@ -841,7 +1008,7 @@ namespace CollegeManagement.API.Services.Implementations
                 @"SELECT gp.GroupId, p.ProgramId, p.ProgramName
                   FROM GroupPrograms gp
                   JOIN Programs p ON gp.ProgramId = p.ProgramId
-                  JOIN Groups g ON gp.GroupId = g.GroupId
+                  JOIN `Groups` g ON gp.GroupId = g.GroupId
                   WHERE p.IsActive = 1 AND g.IsActive = 1");
             foreach (var gp in groupPrograms)
             {
@@ -859,8 +1026,28 @@ namespace CollegeManagement.API.Services.Implementations
             {
                 if (!string.IsNullOrWhiteSpace(s.SectionName))
                 {
-                    string key = $"{s.BoardId}_{s.AcademicYearId}_{s.AcademicLevelId}_{s.GroupId}_{s.ProgramId ?? 0}_{s.SectionName.Trim()}";
-                    cache.SectionsByHierarchy[key] = s.SectionId;
+                    string sName = s.SectionName.Trim();
+                    int progId = s.ProgramId ?? 0;
+
+                    // 1 & 2: Exact
+                    cache.SectionsExact[$"{s.BoardId}_{s.AcademicYearId}_{s.AcademicLevelId}_{s.GroupId}_{progId}_{sName}"] = s.SectionId;
+                    if (!cache.SectionsExact.ContainsKey($"{s.BoardId}_{s.AcademicYearId}_{s.AcademicLevelId}_{s.GroupId}_0_{sName}"))
+                    {
+                        cache.SectionsExact[$"{s.BoardId}_{s.AcademicYearId}_{s.AcademicLevelId}_{s.GroupId}_0_{sName}"] = s.SectionId;
+                    }
+
+                    // 3 & 4: Level-agnostic by Board, Year, Group
+                    cache.SectionsByGroupYear[$"{s.BoardId}_{s.AcademicYearId}_{s.GroupId}_{progId}_{sName}"] = s.SectionId;
+                    if (!cache.SectionsByGroupYear.ContainsKey($"{s.BoardId}_{s.AcademicYearId}_{s.GroupId}_0_{sName}"))
+                    {
+                        cache.SectionsByGroupYear[$"{s.BoardId}_{s.AcademicYearId}_{s.GroupId}_0_{sName}"] = s.SectionId;
+                    }
+
+                    // 5: Group fallback
+                    if (!cache.SectionsByGroup.ContainsKey($"{s.GroupId}_{sName}"))
+                    {
+                        cache.SectionsByGroup[$"{s.GroupId}_{sName}"] = s.SectionId;
+                    }
                 }
             }
 
@@ -870,11 +1057,14 @@ namespace CollegeManagement.API.Services.Implementations
         private class MasterDataCache
         {
             public Dictionary<string, (int BoardId, string BoardName)> BoardsByCode { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, int> YearsByBoardAndName { get; } = new(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, int> YearsByName { get; } = new(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, int> LevelsByCodeOrName { get; } = new(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, int> GroupsByContext { get; } = new(StringComparer.OrdinalIgnoreCase);
             public Dictionary<string, int> ProgramsByGroup { get; } = new(StringComparer.OrdinalIgnoreCase);
-            public Dictionary<string, int> SectionsByHierarchy { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, int> SectionsExact { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, int> SectionsByGroupYear { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public Dictionary<string, int> SectionsByGroup { get; } = new(StringComparer.OrdinalIgnoreCase);
         }
 
         public class ResolvedStudentInsertModel

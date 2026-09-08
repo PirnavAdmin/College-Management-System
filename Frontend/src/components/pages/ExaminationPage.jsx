@@ -2374,10 +2374,10 @@ function ExamForm({
 
                         {getGroupPatterns(activeGroupObj.id).length > 0 && (
                           <div style={{ marginTop: "10px" }}>
-                            <small style={{ color: "var(--cms-muted)", display: "block", marginBottom: "6px" }}>
+                            {/* <small style={{ color: "var(--cms-muted)", display: "block", marginBottom: "6px" }}>
                               Quick Pattern Presets (Click to autofill Exam Pattern):
-                            </small>
-                            <div className="exam-pills-row">
+                            </small> */}
+                            {/* <div className="exam-pills-row">
                               {getGroupPatterns(activeGroupObj.id).map((pat) => (
                                 <button
                                   key={pat.id}
@@ -2388,7 +2388,7 @@ function ExamForm({
                                   <span>{pat.name}</span>
                                 </button>
                               ))}
-                            </div>
+                            </div> */}
                           </div>
                         )}
                       </div>
@@ -3085,12 +3085,12 @@ function ScheduleSection({
                     const scheduledGroupCount = isObjective
                       ? entries.filter((s) => normalizeId(s.groupId) === normalizeId(group.id)).length
                       : groupSubs.filter((sub) =>
-                          entries.some(
-                            (s) =>
-                              normalizeId(s.groupId) === normalizeId(group.id) &&
-                              normalizeId(s.subjectId) === normalizeId(sub.id),
-                          ),
-                        ).length;
+                        entries.some(
+                          (s) =>
+                            normalizeId(s.groupId) === normalizeId(group.id) &&
+                            normalizeId(s.subjectId) === normalizeId(sub.id),
+                        ),
+                      ).length;
                     const totalGroupCount = isObjective ? groupPatterns.length : groupSubs.length;
                     const isGroupDone = totalGroupCount > 0 && scheduledGroupCount >= totalGroupCount;
 
@@ -3390,17 +3390,17 @@ function ScheduleSection({
                           {item.roomName && item.roomName !== "—"
                             ? item.roomName
                             : (item.hallAssignments || [])
-                                .map((a) => a.hallName || a.roomNumber || a.hallId)
-                                .filter(Boolean)
-                                .join(", ") || "—"}
+                              .map((a) => a.hallName || a.roomNumber || a.hallId)
+                              .filter(Boolean)
+                              .join(", ") || "—"}
                         </td>
                         <td>
                           {item.invigilatorName && item.invigilatorName !== "—"
                             ? item.invigilatorName
                             : (item.hallAssignments || [])
-                                .flatMap((a) => a.invigilatorNames || a.invigilatorIds || [])
-                                .filter(Boolean)
-                                .join(", ") || "—"}
+                              .flatMap((a) => a.invigilatorNames || a.invigilatorIds || [])
+                              .filter(Boolean)
+                              .join(", ") || "—"}
                         </td>
                       </tr>
                     ))}

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,6 +20,16 @@ namespace CollegeManagement.API.Services.Implementations
 
         public async Task<StaffLeaveResponse> CreateStaffLeaveRequestAsync(CreateStaffLeaveRequest request, int userId)
         {
+            
+            decimal requestedDays = (decimal)(request.EndDate.Date - request.StartDate.Date).TotalDays + 1;
+            var balance = await _context.StaffLeaveBalances
+                .FirstOrDefaultAsync(b => b.StaffId == request.StaffId && b.LeaveType == request.LeaveType && b.AcademicYearId == request.AcademicYearId);
+            
+            if (balance != null && balance.RemainingDays < requestedDays)
+            {
+                throw new CollegeManagement.API.Exceptions.ConflictException("Insufficient leave balance.");
+            }
+
             var leave = new CollegeManagement.API.Models.StaffLeaveRequest
             {
                 StaffId = request.StaffId,
@@ -239,6 +249,153 @@ namespace CollegeManagement.API.Services.Implementations
                 }).ToListAsync();
                 
             return list;
+        }
+
+        
+        public async Task<LeaveDetailsDto> GetStaffLeaveDetailsAsync(int leaveRequestId)
+        {
+            var leave = await _context.StaffLeaveRequests
+                .Include(l => l.Staff)
+                .Include(l => l.Staff.DepartmentRef)
+                .FirstOrDefaultAsync(l => l.StaffLeaveRequestId == leaveRequestId);
+                
+            if (leave == null) throw new CollegeManagement.API.Exceptions.NotFoundException("Leave request not found");
+
+            decimal totalDays = (decimal)(leave.EndDate.Date - leave.StartDate.Date).TotalDays + 1;
+
+            var balance = await _context.StaffLeaveBalances
+                .FirstOrDefaultAsync(b => b.StaffId == leave.StaffId && b.LeaveType == leave.LeaveType && b.AcademicYearId == leave.AcademicYearId);
+
+            return new LeaveDetailsDto
+            {
+                StaffLeaveRequestId = leave.StaffLeaveRequestId,
+                StaffId = leave.StaffId,
+                StaffName = leave.Staff.FirstName + " " + leave.Staff.LastName,
+                StaffCode = leave.Staff.EmployeeId,
+                Department = leave.Staff.Department,
+                StaffType = leave.Staff.StaffType,
+                LeaveType = leave.LeaveType,
+                StartDate = leave.StartDate,
+                EndDate = leave.EndDate,
+                TotalDays = totalDays,
+                Reason = leave.Reason,
+                Status = leave.Status,
+                RejectionReason = leave.RejectionReason,
+                ApprovedByUserId = leave.ApprovedByUserId,
+                ApprovedByUserName = leave.ApprovedByUser?.FullName,
+                ApprovedAt = leave.ApprovedAt,
+                CreatedAt = leave.CreatedAt,
+                Balance = balance != null ? new LeaveBalanceDto
+                {
+                    Total = balance.TotalDays,
+                    Used = balance.UsedDays,
+                    Remaining = balance.RemainingDays
+                } : new LeaveBalanceDto()
+            };
+        }
+
+        public async Task<IEnumerable<StaffLeaveHistorySummaryDto>> GetStaffLeaveHistorySummaryAsync(int? departmentId = null, string staffType = null)
+        {
+            var query = _context.Staffs
+                .Include(s => s.DepartmentRef)
+                .AsQueryable();
+
+            if (departmentId.HasValue) query = query.Where(s => s.DepartmentId == departmentId);
+            if (!string.IsNullOrEmpty(staffType)) query = query.Where(s => s.StaffType == staffType);
+
+            var staffs = await query.ToListAsync();
+            var summaries = new List<StaffLeaveHistorySummaryDto>();
+
+            var currentYear = await _context.AcademicYears.FirstOrDefaultAsync(y => y.IsActive);
+            int yearId = currentYear?.AcademicYearId ?? 0;
+
+            foreach (var staff in staffs)
+            {
+                var requests = await _context.StaffLeaveRequests
+                    .Where(r => r.StaffId == staff.Id && r.AcademicYearId == yearId)
+                    .ToListAsync();
+                    
+                var balances = await _context.StaffLeaveBalances
+                    .Where(b => b.StaffId == staff.Id && b.AcademicYearId == yearId)
+                    .ToListAsync();
+
+                summaries.Add(new StaffLeaveHistorySummaryDto
+                {
+                    StaffId = staff.Id,
+                    StaffName = staff.FirstName + " " + staff.LastName,
+                    StaffCode = staff.EmployeeId,
+                    Department = staff.Department,
+                    StaffType = staff.StaffType,
+                    TotalRequests = requests.Count,
+                    TotalLeaves = balances.Sum(b => b.TotalDays),
+                    Used = balances.Sum(b => b.UsedDays),
+                    Remaining = balances.Sum(b => b.RemainingDays),
+                    Approved = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Approved),
+                    Pending = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Pending),
+                    Rejected = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Rejected)
+                });
+            }
+            return summaries;
+        }
+
+        public async Task<StaffLeaveHistoryDto> GetStaffLeaveHistoryAsync(int staffId)
+        {
+            var staff = await _context.Staffs
+                .Include(s => s.DepartmentRef)
+                .FirstOrDefaultAsync(s => s.Id == staffId);
+                
+            if (staff == null) throw new CollegeManagement.API.Exceptions.NotFoundException("Staff not found");
+
+            var currentYear = await _context.AcademicYears.FirstOrDefaultAsync(y => y.IsActive);
+            int yearId = currentYear?.AcademicYearId ?? 0;
+
+            var requests = await _context.StaffLeaveRequests
+                .Where(r => r.StaffId == staffId && r.AcademicYearId == yearId)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(l => new StaffLeaveResponse
+                {
+                    StaffLeaveRequestId = l.StaffLeaveRequestId,
+                    StaffId = l.StaffId,
+                    StaffName = l.Staff.FirstName + " " + l.Staff.LastName,
+                    Department = l.Staff.Department,
+                    StaffType = l.Staff.StaffType,
+                    LeaveType = l.LeaveType,
+                    StartDate = l.StartDate,
+                    EndDate = l.EndDate,
+                    TotalDays = (decimal)(l.EndDate.Date - l.StartDate.Date).TotalDays + 1,
+                    Reason = l.Reason,
+                    Status = l.Status,
+                    RejectionReason = l.RejectionReason,
+                    ApprovedByUserId = l.ApprovedByUserId,
+                    ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
+                    ApprovedAt = l.ApprovedAt,
+                    CreatedAt = l.CreatedAt
+                })
+                .ToListAsync();
+
+            var balances = await _context.StaffLeaveBalances
+                .Where(b => b.StaffId == staffId && b.AcademicYearId == yearId)
+                .ToListAsync();
+
+            return new StaffLeaveHistoryDto
+            {
+                StaffId = staff.Id,
+                StaffName = staff.FirstName + " " + staff.LastName,
+                StaffCode = staff.EmployeeId,
+                Department = staff.Department,
+                StaffType = staff.StaffType,
+                TotalRequests = requests.Count,
+                Approved = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Approved),
+                Pending = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Pending),
+                Rejected = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Rejected),
+                Balance = new LeaveBalanceDto
+                {
+                    Total = balances.Sum(b => b.TotalDays),
+                    Used = balances.Sum(b => b.UsedDays),
+                    Remaining = balances.Sum(b => b.RemainingDays)
+                },
+                History = requests
+            };
         }
 
         private async Task<StaffLeaveResponse> GetStaffLeaveByIdAsync(int id)

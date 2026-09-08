@@ -153,8 +153,10 @@
   font-size: 12px;
 }
 .subject-add-language-btn { min-height: 34px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
-.second-language-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.second-language-chips span { padding: 2px 7px; border-radius: 999px; background: var(--cms-primary-soft); color: var(--cms-primary); font-size: 11px; font-weight: 650; }
+.second-language-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.second-language-title { display: block; }
+.second-language-options { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.language-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--cms-primary-soft); color: var(--cms-primary); font-size: 12px; font-weight: 650; line-height: 1; white-space: nowrap; }
 .subject-table-head,
 .assignment-footer {
   display: flex;
@@ -322,8 +324,16 @@
 .subject-combobox-options strong { font-size: 13px; }
 .subject-combobox-options span { color: var(--cms-muted); font-size: 12px; }
 .subject-combobox-empty { padding: 12px; color: var(--cms-muted); font-size: 13px; }
-.subject-add-modal { overflow: visible; }
-.subject-add-modal .cms-modal-body { overflow: visible; }
+.cms-modal.subject-add-modal {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 80px);
+  overflow: hidden;
+}
+.subject-add-modal .cms-modal-body { min-height: 0; flex: 0 1 auto; overflow-y: auto; }
+.subject-add-modal .cms-modal-foot { flex: 0 0 auto; }
 .subject-add-modal:has(.subject-search-results) .cms-modal-body { padding-bottom: 266px; }
 .subject-search-wrapper { position: relative; z-index: 20; width: 100%; }
 .subject-search-input {

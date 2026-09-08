@@ -27,6 +27,30 @@ export const secondLanguageOptions = [
   { name: "Arabic", code: "ARA1" },
 ];
 
+// Subject Management is currently frontend/mock driven. Keep the language
+// options for the SL1 common-subject slot in this same data module so they
+// survive a page refresh without creating another state architecture.
+const SECOND_LANGUAGE_STORAGE_KEY = "cms_subject_management_second_languages";
+
+export const loadSecondLanguages = () => {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SECOND_LANGUAGE_STORAGE_KEY) || "[]");
+    return Array.isArray(stored)
+      ? stored.filter((language) => language?.name && language?.code)
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveSecondLanguages = (languages) => {
+  try {
+    localStorage.setItem(SECOND_LANGUAGE_STORAGE_KEY, JSON.stringify(languages));
+  } catch {
+    // Storage may be unavailable; retain the current in-memory selection.
+  }
+};
+
 export const groupSubjectMap = {
   MPC: ["MATH1A", "MATH1B", "PHY1", "CHE1"],
   BIPC: ["BOT1", "ZOO1", "PHY1", "CHE1"],

@@ -1,4 +1,4 @@
-﻿using CollegeManagement.API.Models;
+using CollegeManagement.API.Models;
 using CollegeManagement.API.Models.Faculty;
 using CollegeManagement.API.Models.Staff;
 using CollegeManagement.API.Data.Configurations;
@@ -35,6 +35,7 @@ namespace CollegeManagement.API.Data
         public DbSet<StaffAttendanceSession> StaffAttendanceSessions { get; set; }
         public DbSet<StaffAttendance> StaffAttendances { get; set; }
         public DbSet<StaffLeaveRequest> StaffLeaveRequests { get; set; }
+        public DbSet<StaffLeaveBalance> StaffLeaveBalances { get; set; }
         public DbSet<AttendanceAuditHistory> AttendanceAuditHistories { get; set; }
         public DbSet<GradingSystem> GradingSystems { get; set; }
         public DbSet<AssessmentType> AssessmentTypes { get; set; }
@@ -117,6 +118,7 @@ namespace CollegeManagement.API.Data
             modelBuilder.ApplyConfiguration(new AttendanceConfiguration());
             modelBuilder.ApplyConfiguration(new AttendanceSessionConfiguration());
             modelBuilder.ApplyConfiguration(new StaffLeaveRequestConfiguration());
+            modelBuilder.ApplyConfiguration(new StaffLeaveBalanceConfiguration());
             modelBuilder.ApplyConfiguration(new TimetableSubstitutionConfiguration());
             modelBuilder.ApplyConfiguration(new AttendanceAuditHistoryConfiguration());
             #endregion

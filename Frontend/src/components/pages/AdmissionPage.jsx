@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { env } from "@/config/env.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
@@ -139,21 +140,32 @@ const isRenderableImageSource = (value) => {
     text.startsWith("blob:")
     || text.startsWith("data:image/")
     || /^https?:\/\//i.test(text)
-    || text.startsWith("/")
   );
 };
 
-const normalizeImageSource = (value) => {
+const getBackendOrigin = () => {
+  const configuredBaseUrl = String(env.apiBaseUrl || "").trim();
+  if (!configuredBaseUrl) return "";
+  try {
+    return new URL(configuredBaseUrl).origin;
+  } catch {
+    return configuredBaseUrl.replace(/\/+$/, "");
+  }
+};
+
+const resolveStudentPhotoUrl = (value) => {
   const text = String(value || "").trim();
   if (!text || isSchemaPlaceholder(text)) return "";
   if (isRenderableImageSource(text)) return text;
   if (/[\\/]/.test(text) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(text)) {
-    const baseUrl = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+    const baseUrl = getBackendOrigin();
     const path = text.replace(/\\/g, "/").replace(/^\/?/, "/");
     return baseUrl ? `${baseUrl}${path}` : path;
   }
   return "";
 };
+
+const normalizeImageSource = resolveStudentPhotoUrl;
 
 const isLooseId = (value) => {
   const text = String(value ?? "").trim();
@@ -914,7 +926,8 @@ const normalizeAdmissionRow = (item) => {
   const quotaValue = readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota");
   const standardQuota = steps[0].fields.find((field) => field.name === "quota")?.options || [];
   const isStandardQuota = standardQuota.some((option) => String(option).toLowerCase() === quotaValue.toLowerCase());
-  const photoUrl = normalizeImageSource(readPhotoUrl(item, student));
+  const studentPhoto = readPhotoUrl(item, student);
+  const photoUrl = resolveStudentPhotoUrl(studentPhoto);
   const feeStructureId = readFeeStructureId(item);
   const savedFeeItems = readAdmissionFeeItems(item, feeStructureId);
   const savedInstallments = readAdmissionInstallments(item);
@@ -942,6 +955,8 @@ const normalizeAdmissionRow = (item) => {
     board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id") || readText(item, "boardName", "BoardName"),
     group: !isRawIdDisplay(groupName, groupId) ? groupName : groupId,
     program: !isRawIdDisplay(programName, programId) ? programName : programId,
+    studentPhoto,
+    photoUrl,
     status,
     currentStep: 0,
     source: "api",
@@ -959,6 +974,7 @@ const normalizeAdmissionRow = (item) => {
       gender: readText(item, "gender", "Gender"),
       dob: readText(item, "dateOfBirth", "DateOfBirth", "dob", "DOB").slice(0, 10),
       bloodGroup: readText(item, "bloodGroup", "BloodGroup"),
+      studentPhoto,
       photoUrl,
       aadhaar: readText(item, "aadhaarNumber", "AadhaarNumber", "aadhaar", "Aadhaar"),
       mobile: readText(item, "studentMobileNumber", "StudentMobileNumber", "mobileNumber", "MobileNumber", "mobile", "Mobile"),
@@ -1047,14 +1063,6 @@ const readStudentFeeAssignmentId = (payload) => {
   }
   return "";
 };
-
-const readPaymentPlanId = (payload) => readId(
-  getObject(payload),
-  "paymentPlanId",
-  "PaymentPlanId",
-  "id",
-  "Id",
-);
 
 const resolveApprovedStudentId = (...sources) => {
   for (const source of sources) {
@@ -1304,14 +1312,23 @@ const previewFieldValue = (field, values) => {
 };
 
 function StudentPhotoPreview({ src, label = "Student photo", emptyLabel = "Upload Photo" }) {
-  const normalizedSrc = normalizeImageSource(src);
+  const normalizedSrc = resolveStudentPhotoUrl(src);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
   }, [normalizedSrc]);
   return (
     <div className={`cms-admission-photo-preview ${!normalizedSrc || failed ? "is-empty" : ""}`}>
-      {normalizedSrc && !failed ? <img src={normalizedSrc} alt={label} onError={() => setFailed(true)} /> : <span>{emptyLabel}</span>}
+      {normalizedSrc && !failed ? (
+        <img
+          src={normalizedSrc}
+          alt={label}
+          onError={() => {
+            setFailed(true);
+            if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
+          }}
+        />
+      ) : <span>{emptyLabel}</span>}
     </div>
   );
 }
@@ -1339,7 +1356,7 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPrev
               return (
                 <div key={field.name} className={`cms-preview-item ${isPhoto ? "cms-preview-photo-item" : ""} ${missingRequired ? "is-missing" : ""}`}>
                   <span>{field.label}</span>
-                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
+                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl || values.studentPhoto} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
                   {errors[field.name] || missingRequired ? <small>{errors[field.name] || `${field.label} is required`}</small> : null}
                 </div>
               );
@@ -1374,7 +1391,7 @@ function AdmissionFormSections({ sections, values, errors, onChange, onFileChang
                   onFileChange={onFileChange}
                   onFileRemove={onFileRemove}
                   inputRef={(element) => { inputRefs.current[field.name] = element; }}
-                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
+                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
                   extraValue={field.name === "quota" ? values.quotaOther : ""}
                 />
               ))}
@@ -3135,10 +3152,19 @@ export default function AdmissionPage() {
       throw new Error("Fee account was not created because the selected Fee Structure ID was not available.");
     }
 
+    const fee = deriveAdmissionFee(detailRow.values);
+    const planName = normalizeCoursePaymentPlan(fee.paymentPlan || detailRow.values.paymentPlan) || "Full Payment";
+    const selectedInstallmentCount = Number(detailRow.values.installmentCount);
+    const numberOfInstallments = planName === "Installment Payment"
+      ? Math.max(Number.isInteger(selectedInstallmentCount) && selectedInstallmentCount > 0
+        ? selectedInstallmentCount
+        : Number(fee.courseSchedules.length || DEFAULT_INSTALLMENT_COUNT), 1)
+      : 1;
     const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
       studentId: Number(studentId),
       feeStructureId,
-      FeeStructureId: feeStructureId,
+      planName,
+      numberOfInstallments,
     });
     const studentFeeId = readStudentFeeAssignmentId(assignResponse.data);
     if (!studentFeeId) throw new Error("Fee structure was assigned, but the student fee assignment ID was not returned.");
@@ -3153,24 +3179,6 @@ export default function AdmissionPage() {
         discountValue: Number(detailRow.values.concessionValue || 0),
         reason: "Applied during admission approval",
       });
-    }
-
-    const fee = deriveAdmissionFee(detailRow.values);
-    if (fee.paymentPlan) {
-      const planResponse = await apiClient.post(apiEndpoints.fee.createPaymentPlan, {
-        studentFeeId: Number(studentFeeId),
-        planName: fee.paymentPlan,
-        numberOfInstallments: fee.paymentPlan === "Installment Payment" ? Math.max(fee.courseSchedules.length, 1) : 1,
-        installments: null,
-      });
-      const paymentPlanId = readPaymentPlanId(planResponse.data);
-      if (paymentPlanId && fee.paymentPlan === "Installment Payment") {
-        await Promise.all(fee.courseSchedules.map((item, index) => apiClient.post(apiEndpoints.fee.addPaymentPlanInstallment(paymentPlanId), {
-          installmentNumber: Number(item.no || index + 1),
-          amount: Number(item.amount || 0),
-          dueDate: toDateTime(item.dueDate || detailRow.values.admissionDate || todayISO()),
-        })));
-      }
     }
 
     return { studentId, studentFeeId, reused: false };
@@ -3665,7 +3673,7 @@ export default function AdmissionPage() {
                   onFileChange={setFileValue}
                   onFileRemove={removeFileValue}
                   inputRef={(element) => { fileInputRefs.current[f.name] = element; }}
-                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
+                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
                   extraValue={f.name === "quota" ? values.quotaOther : ""}
                 />
               ))}

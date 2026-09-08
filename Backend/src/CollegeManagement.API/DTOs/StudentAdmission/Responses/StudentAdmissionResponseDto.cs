@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -52,9 +53,10 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
         public DateTime? DateOfBirth { get; set; }
 
         public string? BloodGroup { get; set; }
-
+        [FromForm(Name = "Email")]
         public string? StudentEmail { get; set; }
 
+        [FromForm(Name = "Student Mobile")]
         public string? StudentMobileNumber { get; set; }
 
         public string? StudentPhoto { get; set; }

@@ -329,6 +329,7 @@ export const apiEndpoints = {
     bulkRollNumbers: "/api/v1/student-admissions/bulk-roll-numbers",
     bloodGroups: "/api/v1/student-admissions/blood-groups",
     generateNumber: "/api/v1/student-admissions/generate-number",
+    feeSelections: (admissionId) => `/api/v1/student-admissions/${encodeURIComponent(admissionId)}/fee-selections`,
   },
   admissions: {
     getAll: "/api/v1/student-admissions",

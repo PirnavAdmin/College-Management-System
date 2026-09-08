@@ -216,6 +216,7 @@ ORDER BY s.StudentName;
                     q.BoardId,
                     q.AcademicLevel,
                     q.GroupId,
+                    q.ProgramId,
                     q.Section,
                     q.Medium,
                     q.TargetAcademicYearId,
@@ -302,7 +303,8 @@ ORDER BY s.StudentName;
         // 3. EXECUTE PROMOTION
         // ============================================================
         public async Task<PromotionExecutionResponse> PromoteStudentsAsync(
-            PromoteStudentsRequest request)
+            PromoteStudentsRequest request,
+            string performedBy = "System")
         {
             await OpenAsync();
 
@@ -501,7 +503,7 @@ VALUES
 
                             ToSection = request.TargetSection,
 
-                            PromotedBy = "System",
+                            PromotedBy = string.IsNullOrWhiteSpace(performedBy) ? "System" : performedBy,
 
                             Remarks = ""
                         },
@@ -762,7 +764,8 @@ ORDER BY ph.Id DESC;
         // 5. ROLLBACK
         // ============================================================
         public async Task<RollbackResponse> RollbackAsync(
-            RollbackPromotionRequest request)
+            RollbackPromotionRequest request,
+            string performedBy = "System")
         {
             await OpenAsync();
 
@@ -879,7 +882,7 @@ SET
     IsRolledBack = 1,
     Status = 'RolledBack',
     RollbackDate = UTC_TIMESTAMP(),
-    RollbackBy = 'System',
+    RollbackBy = @RollbackBy,
     RollbackRemarks = @Reason
 
 WHERE Id = @PromotionId;
@@ -890,7 +893,10 @@ WHERE Id = @PromotionId;
                             request.PromotionId,
 
                         Reason =
-                            request.Reason
+                            request.Reason,
+
+                        RollbackBy =
+                            string.IsNullOrWhiteSpace(performedBy) ? "System" : performedBy
                     },
                     transaction);
 
@@ -917,7 +923,7 @@ WHERE Id = @PromotionId;
                         DateTime.UtcNow,
 
                     RolledBackBy =
-                        "System"
+                        string.IsNullOrWhiteSpace(performedBy) ? "System" : performedBy
                 };
             }
             catch
@@ -932,7 +938,8 @@ WHERE Id = @PromotionId;
         // ============================================================
         public async Task<PromotionHistoryDto?> PromoteSingleStudentAsync(
             int studentId,
-            PromoteSingleStudentRequest request)
+            PromoteSingleStudentRequest request,
+            string performedBy = "System")
         {
             await OpenAsync();
 
@@ -1045,7 +1052,8 @@ AND s.IsActive = 1;
 
                     TargetMedium =
                         request.TargetMedium
-                });
+                },
+                performedBy);
 
             return
                 (await GetHistoryAsync(
@@ -1150,6 +1158,88 @@ AND IsActive = 1;
                             Status = "Failed",
                             Message = ex.Message
                         });
+                }
+            }
+
+            return response;
+        }
+
+        // ============================================================
+        // 7b. PROGRAM ALLOCATION
+        // ============================================================
+        public async Task<AllocationResponse> AllocateProgramAsync(
+            ProgramAllocationRequest request)
+        {
+            await OpenAsync();
+
+            var response = new AllocationResponse();
+
+            int? targetLevelId = request.TargetAcademicLevelId;
+            if (!targetLevelId.HasValue || targetLevelId <= 0)
+            {
+                if (!string.IsNullOrWhiteSpace(request.TargetAcademicLevel))
+                {
+                    targetLevelId = await Connection.ExecuteScalarAsync<int?>(
+                        "SELECT AcademicLevelId FROM AcademicLevels WHERE LOWER(TRIM(LevelName)) = LOWER(TRIM(@Level)) LIMIT 1;",
+                        new { Level = request.TargetAcademicLevel });
+                }
+            }
+
+            foreach (var studentId in request.StudentIds.Distinct())
+            {
+                try
+                {
+                    var affected = await Connection.ExecuteAsync(
+                        @"
+UPDATE Students
+SET
+    AcademicYearId = CASE WHEN @AcademicYearId > 0 THEN @AcademicYearId ELSE AcademicYearId END,
+    AcademicLevelId = COALESCE(@TargetAcademicLevelId, AcademicLevelId),
+    GroupId = CASE WHEN @GroupId > 0 THEN @GroupId ELSE GroupId END,
+    ProgramId = @ProgramId,
+    UpdatedAt = UTC_TIMESTAMP()
+WHERE StudentId = @StudentId
+AND IsActive = 1;
+",
+                        new
+                        {
+                            AcademicYearId = request.TargetAcademicYearId,
+                            TargetAcademicLevelId = targetLevelId,
+                            GroupId = request.TargetGroupId,
+                            ProgramId = request.TargetProgramId,
+                            StudentId = studentId
+                        });
+
+                    if (affected > 0)
+                    {
+                        response.UpdatedCount++;
+                        response.Students.Add(new AllocationStudentDto
+                        {
+                            StudentId = studentId,
+                            Status = "Updated",
+                            Message = "Program allocated successfully."
+                        });
+                    }
+                    else
+                    {
+                        response.FailedCount++;
+                        response.Students.Add(new AllocationStudentDto
+                        {
+                            StudentId = studentId,
+                            Status = "Failed",
+                            Message = "Student not found or inactive."
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response.FailedCount++;
+                    response.Students.Add(new AllocationStudentDto
+                    {
+                        StudentId = studentId,
+                        Status = "Failed",
+                        Message = ex.Message
+                    });
                 }
             }
 

@@ -1,888 +1,107 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, History as HistoryIcon, Search, ShieldCheck, UserRound, UsersRound, XCircle } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
-import { 
-  getLeaveRequests, 
-  getLeaveDetails, 
-  reviewLeaveRequest, 
-  getLeaveHistorySummary, 
-  getLeaveHistory, 
-  getAffectedClasses, 
-  getEligibleSubstitutes, 
-  assignSubstitutes 
-} from "@/features/leave/services/leaveStore.js";
+import { mockLeaveRequests, mockStaffAttendance } from "@/data/attendanceMockData.js";
 import "./LeaveManagementPage.css";
 
 const Field = ({ label, children }) => <label className="att-field"><span>{label}</span>{children}</label>;
-
-const prettyDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "";
-
-const defaultSlots = [
-  { id: "tt-101", period: "P1", time: "09:00 AM - 10:00 AM", program: "MPC", section: "A", subject: "Mathematics" },
-  { id: "tt-103", period: "P3", time: "11:00 AM - 12:00 PM", program: "MPC", section: "B", subject: "Physics" },
-  { id: "tt-105", period: "P5", time: "01:00 PM - 02:00 PM", program: "IIT", section: "A", subject: "Physics" },
-  { id: "tt-107", period: "P7", time: "03:00 PM - 04:00 PM", program: "EAMCET", section: "A", subject: "Mathematics" }
-];
-
-const defaultFaculty = [
-  { id: "FAC002", name: "Mahesh Kumar", department: "Physics", subjects: ["Physics", "Mathematics"], classes: 3, active: true },
-  { id: "FAC001", name: "Suresh Kumar", department: "Physics", subjects: ["Physics"], classes: 4, active: true },
-  { id: "FAC004", name: "Anil Kumar", department: "Mathematics", subjects: ["Mathematics"], classes: 5, active: true },
-  { id: "FAC006", name: "Kiran Rao", department: "Mathematics", subjects: ["Mathematics"], classes: 2, active: true }
-];
-
-// Always allow viewing affected classes for any approved leave request
-const manage = (request) => {
-  if (!request) return false;
-  const status = String(request.status || "").toLowerCase();
-  const staffType = String(request.staffType || "").toLowerCase();
-  return status === "approved" && (staffType.includes("teach") || !staffType || staffType === "teaching staff" || staffType === "teaching");
-};
+const slots = [{ id: "tt-101", period: "P1", time: "09:00 AM - 10:00 AM", program: "MPC", section: "A", subject: "Mathematics" }, { id: "tt-103", period: "P3", time: "11:00 AM - 12:00 PM", program: "MPC", section: "B", subject: "Physics" }, { id: "tt-105", period: "P5", time: "01:00 PM - 02:00 PM", program: "IIT", section: "A", subject: "Physics" }, { id: "tt-107", period: "P7", time: "03:00 PM - 04:00 PM", program: "EAMCET", section: "A", subject: "Mathematics" }];
+const faculty = [{ id: "FAC001", name: "Suresh Kumar", department: "Physics", subjects: ["Physics"], busy: ["2026-09-10:P1"], leave: [], classes: 4, active: true }, { id: "FAC002", name: "Mahesh Kumar", department: "Physics", subjects: ["Physics", "Mathematics"], busy: [], leave: [], classes: 3, active: true }, { id: "FAC004", name: "Anil Kumar", department: "Mathematics", subjects: ["Mathematics"], busy: ["2026-09-10:P7"], leave: [], classes: 5, active: true }, { id: "FAC006", name: "Kiran Rao", department: "Mathematics", subjects: ["Mathematics"], busy: [], leave: ["2026-09-10"], classes: 2, active: true }];
+const requestsInitial = [{ id: 3, staffId: "FAC005", staffName: "Ravi Kumar", department: "Mathematics", staffType: "Teaching Staff", leaveType: "Casual Leave", fromDate: "2026-09-10", toDate: "2026-09-10", days: 1, reason: "Personal work", status: "Approved", reviewedBy: "Admin", reviewedOn: "08-Sep-2026" }, ...mockLeaveRequests];
+const prettyDate = (date) => new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+const manage = (request) => request.status === "Approved" && request.staffType === "Teaching Staff";
 
 function LeaveStatus({ status }) {
-  const normalized = String(status || "").toLowerCase();
+  const normalized = String(status).toLowerCase();
   const Icon = normalized === "approved" ? CheckCircle2 : normalized === "rejected" ? XCircle : Clock3;
   return <span className={`leave-detail-status ${normalized}`}><Icon size={15} />{status}</span>;
 }
 
-function LeaveDetails({ leave, remark, setRemark, onClose, onReview, onAffected }) {
-  const pending = String(leave.status || "").toLowerCase() === "pending";
-  const staffName = leave.staffName || leave.facultyName || "Staff Member";
-  const initials = staffName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-  const staffId = leave.staffCode || leave.employeeId || (typeof leave.staffId === 'string' && leave.staffId.startsWith('FAC') ? leave.staffId : (leave.staffId ? `FAC00${leave.staffId}` : "FAC005"));
-  const department = leave.department || "Mathematics";
-  const staffType = leave.staffType || "Teaching Staff";
-  
-  // Calculate or fallback balance
-  const balance = leave.balance || {
-    total: 12,
-    used: String(leave.status).toLowerCase() === "approved" ? (Number(leave.days) || 1) : 0,
-    remaining: 12 - (String(leave.status).toLowerCase() === "approved" ? (Number(leave.days) || 1) : 0)
-  };
-
-  const title = (
-    <span className="leave-details-title">
-      <i><FileText size={18} /></i>
-      <span>Leave Request Details<small>Complete information about the leave request</small></span>
-    </span>
-  );
-
-  const footer = pending ? (
-    <>
-      <button className="cms-btn cms-btn-ghost" onClick={onClose}>Close</button>
-      <button className="cms-btn cms-btn-danger" onClick={() => onReview("Rejected")}>Reject</button>
-      <button className="cms-btn cms-btn-primary" onClick={() => onReview("Approved")}>Approve</button>
-    </>
-  ) : (
-    <>
-      <button className="cms-btn cms-btn-ghost" onClick={onClose}>Close</button>
-      {manage(leave) && (
-        <button className="cms-btn cms-btn-primary" onClick={onAffected}>
-          <UsersRound size={16} /> View Affected Classes
-        </button>
-      )}
-    </>
-  );
-
-  return (
-    <Modal title={title} className="leave-details-modal" onClose={onClose} footer={footer}>
-      <section className="leave-identity-row">
-        <div className="leave-person">
-          <span className="leave-avatar">{initials}</span>
-          <div>
-            <div className="leave-person-name">
-              <strong>{staffName}</strong>
-              <b>{staffId}</b>
-            </div>
-            <span>{department} <i>·</i> {staffType}</span>
-          </div>
-        </div>
-        <div className="leave-type-card">
-          <CalendarDays size={19} />
-          <div>
-            <span>Leave Type</span>
-            <strong>{leave.leaveType || "Casual Leave"}</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="leave-date-grid">
-        <div className="leave-detail-card date">
-          <CalendarDays size={17} />
-          <span>From Date</span>
-          <strong>{leave.fromDate || "2026-09-10"}</strong>
-        </div>
-        <div className="leave-detail-card date">
-          <CalendarDays size={17} />
-          <span>To Date</span>
-          <strong>{leave.toDate || "2026-09-10"}</strong>
-        </div>
-        <div className="leave-detail-card days">
-          <Clock3 size={17} />
-          <span>Total Days</span>
-          <strong>{leave.days || 1} {Number(leave.days || 1) === 1 ? "day" : "days"}</strong>
-        </div>
-      </section>
-
-      <section className="leave-reason-status">
-        <div className="leave-detail-panel">
-          <span>Reason</span>
-          <strong>{leave.reason || "Personal work"}</strong>
-        </div>
-        <div className="leave-detail-panel">
-          <span>Current Status</span>
-          <LeaveStatus status={leave.status} />
-        </div>
-      </section>
-
-      <section className="leave-detail-balance">
-        <span>Leave Balance</span>
-        <div>
-          <b>Total <strong>{balance.total} days</strong></b>
-          <b>Used <strong>{balance.used} {Number(balance.used) === 1 ? "day" : "days"}</strong></b>
-          <b>Remaining <strong>{balance.remaining} days</strong></b>
-        </div>
-      </section>
-
-      <section className="leave-remark">
-        <div><FileText size={17} /><strong>Admin Remark</strong></div>
-        {pending ? (
-          <Field label="Add a remark">
-            <textarea value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="Add an optional review remark" />
-          </Field>
-        ) : (
-          <p>{leave.adminRemark || leave.rejectionReason || "No remarks added."}</p>
-        )}
-      </section>
-
-      {!pending && (
-        <section className="leave-reviewed">
-          <UserRound size={16} />
-          <span>Reviewed by <strong>{leave.reviewedBy || leave.approvedByUserName || "Admin"}</strong></span>
-          <i />
-          <span>Reviewed on <strong>{leave.reviewedOn || prettyDate(leave.approvedAt) || "08-Sep-2026"}</strong></span>
-        </section>
-      )}
-    </Modal>
-  );
+function LeaveDetails({ leave, remark, setRemark, onClose, onReview, onAffected, balance }) {
+  const pending = leave.status === "Pending";
+  const initials = leave.staffName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
+  const title = <span className="leave-details-title"><i><FileText size={18} /></i><span>Leave Request Details<small>Complete information about the leave request</small></span></span>;
+  const footer = pending ? <><button className="cms-btn cms-btn-ghost" onClick={onClose}>Close</button><button className="cms-btn cms-btn-danger" onClick={() => onReview("Rejected")}>Reject</button><button className="cms-btn cms-btn-primary" onClick={() => onReview("Approved")}>Approve</button></> : <><button className="cms-btn cms-btn-ghost" onClick={onClose}>Close</button>{manage(leave) && <button className="cms-btn cms-btn-primary" onClick={onAffected}><UsersRound size={16} /> View Affected Classes</button>}</>;
+  return <Modal title={title} className="leave-details-modal" onClose={onClose} footer={footer}>
+    <section className="leave-identity-row"><div className="leave-person"><span className="leave-avatar">{initials}</span><div><div className="leave-person-name"><strong>{leave.staffName}</strong><b>{leave.staffId}</b></div><span>{leave.department} <i>·</i> {leave.staffType}</span></div></div><div className="leave-type-card"><CalendarDays size={19} /><div><span>Leave Type</span><strong>{leave.leaveType}</strong></div></div></section>
+    <section className="leave-date-grid"><div className="leave-detail-card date"><CalendarDays size={17} /><span>From Date</span><strong>{leave.fromDate}</strong></div><div className="leave-detail-card date"><CalendarDays size={17} /><span>To Date</span><strong>{leave.toDate}</strong></div><div className="leave-detail-card days"><Clock3 size={17} /><span>Total Days</span><strong>{leave.days} {Number(leave.days) === 1 ? "day" : "days"}</strong></div></section>
+    <section className="leave-reason-status"><div className="leave-detail-panel"><span>Reason</span><strong>{leave.reason || "No reason provided."}</strong></div><div className="leave-detail-panel"><span>Current Status</span><LeaveStatus status={leave.status} /></div></section>
+    {balance?.total !== null && <section className="leave-detail-balance"><span>Leave Balance</span><div><b>Total <strong>{balance.total} days</strong></b><b>Used <strong>{balance.used} {balance.used === 1 ? "day" : "days"}</strong></b><b>Remaining <strong>{balance.remaining} days</strong></b></div></section>}
+    <section className="leave-remark"><div><FileText size={17} /><strong>Admin Remark</strong></div>{pending ? <Field label="Add a remark"><textarea value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="Add an optional review remark" /></Field> : <p>{leave.adminRemark || "No remarks added."}</p>}</section>
+    {!pending && <section className="leave-reviewed"><UserRound size={16} /><span>Reviewed by <strong>{leave.reviewedBy || "Admin"}</strong></span><i /> <span>Reviewed on <strong>{leave.reviewedOn || "—"}</strong></span></section>}
+  </Modal>;
 }
 
-function AffectedClasses({ leave, records = [], close, assign }) {
-  const date = leave.fromDate || "2026-09-10";
-  const [apiRows, setApiRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let active = true;
-    const leaveId = leave.staffLeaveRequestId || leave.id;
-    if (leaveId) {
-      getAffectedClasses(leaveId).then(data => {
-        if (active) {
-          setApiRows(Array.isArray(data) && data.length ? data : []);
-          setLoading(false);
-        }
-      }).catch(err => {
-        console.warn("Could not load affected classes from API:", err);
-        if (active) setLoading(false);
-      });
-    } else {
-      setLoading(false);
-    }
-    return () => { active = false; };
-  }, [leave]);
-
-  // Use API slots if available, otherwise use default slots so the UI is fully functional
-  const baseSlots = apiRows.length ? apiRows : defaultSlots;
-  const rows = baseSlots.map(slot => {
-    const slotId = slot.timetableId || slot.id;
-    const existingRec = records.find(r => (r.timetableId === slotId || r.id === slotId) && (r.date === date || !r.date) && r.status === "Active");
-    return {
-      ...slot,
-      substitution: slot.substitution || existingRec || null
-    };
-  });
-
-  const assignedCount = rows.filter(row => row.substitution).length;
-
-  return (
-    <Modal title="Affected Classes" className="leave-affected-modal" onClose={close} footer={<button className="cms-btn cms-btn-ghost" onClick={close}>Close</button>}>
-      <div className="leave-context">
-        <div><span>Staff</span><strong>{leave.staffName || "Staff Member"}</strong></div>
-        <div><span>Leave date</span><strong>{prettyDate(date)}</strong></div>
-        <div><span>Leave status</span><b className="leave-sub-status assigned">Approved</b></div>
-      </div>
-
-      <div className="leave-progress">
-        <div>
-          <strong>{assignedCount} of {rows.length} classes assigned</strong>
-          <span>Temporary coverage for {prettyDate(date)}</span>
-        </div>
-        <div className="leave-progress-track">
-          <i style={{ width: `${rows.length ? (assignedCount / rows.length) * 100 : 0}%` }} />
-        </div>
-      </div>
-
-      <div className="att-scroll leave-sub-scroll">
-        <table className="cms-table leave-sub-table">
-          <thead>
-            <tr>
-              {["Period", "Time", "Program / Group", "Section", "Subject", "Original Faculty", "Status", "Action"].map(head => (
-                <th key={head}>{head}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(row => {
-              const rowId = row.timetableId || row.id;
-              const isAssigned = Boolean(row.substitution);
-              return (
-                <tr key={rowId}>
-                  <td><b>{row.period}</b></td>
-                  <td>{row.time || `${row.startTime || ""} - ${row.endTime || ""}`}</td>
-                  <td>{row.program || row.group || "MPC"}</td>
-                  <td>{row.section || "A"}</td>
-                  <td>{row.subject || "Mathematics"}</td>
-                  <td>{leave.staffName || "Staff Member"}</td>
-                  <td>
-                    <span className={`leave-sub-status ${isAssigned ? "assigned" : "not-assigned"}`}>
-                      {isAssigned ? "Assigned" : "Not Assigned"}
-                    </span>
-                  </td>
-                  <td>
-                    <button 
-                      className="cms-btn cms-btn-primary leave-compact-btn" 
-                      onClick={() => assign({ ...row, date, leave, substitution: row.substitution })}
-                    >
-                      {isAssigned ? "View" : "Assign"}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </Modal>
-  );
+function AffectedClasses({ leave, records, close, assign }) {
+  const date = leave.fromDate;
+  const rows = slots.map((slot) => ({ ...slot, substitution: records.find((record) => record.timetableId === slot.id && record.date === date && record.status === "Active") }));
+  const assigned = rows.filter((row) => row.substitution).length;
+  return <Modal title="Affected Classes" className="leave-affected-modal" onClose={close} footer={<button className="cms-btn cms-btn-ghost" onClick={close}>Close</button>}>
+    <div className="leave-context"><div><span>Staff</span><strong>{leave.staffName}</strong></div><div><span>Leave date</span><strong>{prettyDate(date)}</strong></div><div><span>Leave status</span><b className="leave-sub-status assigned">Approved</b></div></div>
+    <div className="leave-progress"><div><strong>{assigned} of {rows.length} classes assigned</strong><span>Temporary coverage for {prettyDate(date)}</span></div><div className="leave-progress-track"><i style={{ width: `${assigned / rows.length * 100}%` }} /></div></div>
+    <div className="att-scroll leave-sub-scroll"><table className="cms-table leave-sub-table"><thead><tr>{["Period", "Time", "Program / Group", "Section", "Subject", "Original Faculty", "Status", "Action"].map((head) => <th key={head}>{head}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td><b>{row.period}</b></td><td>{row.time}</td><td>{row.program}</td><td>{row.section}</td><td>{row.subject}</td><td>{leave.staffName}</td><td><span className={`leave-sub-status ${row.substitution ? "assigned" : "not-assigned"}`}>{row.substitution ? "Assigned" : "Not Assigned"}</span></td><td><button className="cms-btn cms-btn-primary leave-compact-btn" onClick={() => assign({ ...row, date, leave })}>{row.substitution ? "View" : "Assign"}</button></td></tr>)}</tbody></table></div>
+  </Modal>;
 }
 
-function Assignment({ item, records = [], close, save, toast }) {
+function Assignment({ item, records, close, save, toast }) {
   const existing = item.substitution;
-  const [candidates, setCandidates] = useState([]);
-  const [choice, setChoice] = useState("");
-  const [checked, setChecked] = useState(false);
-
-  useEffect(() => {
-    if (!existing) {
-      const leaveId = item.leave?.staffLeaveRequestId || item.leave?.id;
-      const ttId = item.timetableId || item.id;
-      if (leaveId && ttId) {
-        getEligibleSubstitutes(leaveId, ttId, item.date).then(data => {
-          if (Array.isArray(data) && data.length) {
-            setCandidates(data);
-          } else {
-            setCandidates(defaultFaculty);
-          }
-        }).catch(() => {
-          setCandidates(defaultFaculty);
-        });
-      } else {
-        setCandidates(defaultFaculty);
-      }
-    }
-  }, [item, existing]);
-
-  const chosen = candidates.find(person => (person.staffId === choice || person.id === choice));
-
-  const handleConfirm = () => {
-    if (!chosen) return;
-    const leaveId = item.leave?.staffLeaveRequestId || item.leave?.id;
-    const ttId = item.timetableId || item.id;
-    
-    // Call backend API if possible
-    if (leaveId && typeof ttId === 'number') {
-      assignSubstitutes(leaveId, {
-        timetableId: ttId,
-        substituteStaffId: chosen.staffId || chosen.id,
-        date: item.date
-      }).catch(console.warn);
-    }
-
-    // Save record locally so UI updates immediately
-    save({
-      id: `sub-${Date.now()}`,
-      timetableId: item.timetableId || item.id,
-      date: item.date,
-      period: item.period,
-      status: "Active",
-      substituteStaffId: chosen.staffId || chosen.id,
-      faculty: chosen,
-      substituteName: chosen.staffName || chosen.name,
-      substituteId: chosen.staffId || chosen.id,
-      originalStaffId: item.leave?.staffId,
-      reason: "Faculty Leave"
-    });
-  };
-
-  return (
-    <Modal 
-      title={existing ? "Substitution Assignment" : "Assign Substitute"} 
-      className="leave-assignment-modal" 
-      onClose={close} 
-      footer={
-        <>
-          <button className="cms-btn cms-btn-ghost" onClick={close}>Cancel</button>
-          {!existing && (
-            <button className="cms-btn cms-btn-primary" disabled={!checked} onClick={handleConfirm}>
-              Confirm Assignment
-            </button>
-          )}
-        </>
-      }
-    >
-      <section className="leave-assignment-context">
-        <div><span>Subject</span><strong>{item.subject}</strong></div>
-        <div><span>Class</span><strong>{item.program || item.group || "MPC"} - {item.section || "A"}</strong></div>
-        <div><span>Date & period</span><strong>{prettyDate(item.date)} · {item.period}</strong></div>
-        <div><span>Time</span><strong>{item.time || `${item.startTime || ""} - ${item.endTime || ""}`}</strong></div>
-        <div><span>Original faculty</span><strong>{item.leave?.staffName}</strong><small>On leave</small></div>
-      </section>
-
-      {existing ? (
-        <div className="leave-existing">
-          <CheckCircle2 size={20} />
-          <div>
-            <strong>{(existing.faculty?.name || existing.faculty?.staffName || existing.substituteName || "Mahesh Kumar")} is assigned</strong>
-            <span>This date-specific override does not change the published timetable.</span>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="leave-candidate-head">
-            <div>
-              <h4>Eligible substitute faculty</h4>
-              <p>Active, subject-qualified faculty who are free this period and not on leave.</p>
-            </div>
-            <span>{candidates.length} available</span>
-          </div>
-
-          {candidates.length ? (
-            <div className="leave-candidates">
-              {candidates.map((person, index) => {
-                const id = person.staffId || person.id;
-                const name = person.staffName || person.name;
-                const isSelected = choice === id;
-                return (
-                  <label className={`leave-candidate ${isSelected ? "selected" : ""}`} key={id}>
-                    <input 
-                      type="radio" 
-                      checked={isSelected} 
-                      name="substitute" 
-                      onChange={() => { setChoice(id); setChecked(false); }} 
-                    />
-                    <div>
-                      <strong>{name}</strong>
-                      <span>{id} · {person.department || person.departmentName || "Physics"}</span>
-                    </div>
-                    <div className="leave-candidate-checks">
-                      <span>✓ {item.subject || "Physics"} eligible</span>
-                      <span>✓ Period free</span>
-                      <span>✓ Not on leave</span>
-                    </div>
-                    <div>
-                      <b>{person.classes || person.weeklyLoadCount || 3}</b>
-                      <span>classes today</span>
-                    </div>
-                    {index === 0 && <em>Recommended</em>}
-                  </label>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="cms-empty">No eligible faculty members are available for this class.</div>
-          )}
-
-          {chosen && (
-            <div className={`leave-availability ${checked ? "available" : ""}`}>
-              <div>
-                <ShieldCheck size={18} />
-                <span>{checked ? "Available for substitution" : "Validate the selected faculty before assignment."}</span>
-              </div>
-              <button 
-                className="cms-btn cms-btn-ghost" 
-                onClick={() => {
-                  setChecked(true);
-                  toast(`${chosen.staffName || chosen.name} is available for substitution.`);
-                }}
-              >
-                Check Availability
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </Modal>
-  );
+  const candidates = useMemo(() => faculty.filter((person) => person.active && person.subjects.includes(item.subject) && !person.leave.includes(item.date) && !person.busy.includes(`${item.date}:${item.period}`) && !records.some((record) => record.date === item.date && record.period === item.period && record.substituteStaffId === person.id && record.status === "Active")).sort((a, b) => a.classes - b.classes), [item, records]);
+  const [choice, setChoice] = useState(""); const [checked, setChecked] = useState(false);
+  const chosen = candidates.find((person) => person.id === choice);
+  return <Modal title={existing ? "Substitution Assignment" : "Assign Substitute"} className="leave-assignment-modal" onClose={close} footer={<><button className="cms-btn cms-btn-ghost" onClick={close}>Cancel</button>{!existing && <button className="cms-btn cms-btn-primary" disabled={!checked} onClick={() => save({ id: `sub-${Date.now()}`, timetableId: item.id, date: item.date, period: item.period, status: "Active", substituteStaffId: chosen.id, faculty: chosen, originalStaffId: item.leave.staffId, reason: "Faculty Leave" })}>Confirm Assignment</button>}</>}>
+    <section className="leave-assignment-context"><div><span>Subject</span><strong>{item.subject}</strong></div><div><span>Class</span><strong>{item.program} - {item.section}</strong></div><div><span>Date & period</span><strong>{prettyDate(item.date)} · {item.period}</strong></div><div><span>Time</span><strong>{item.time}</strong></div><div><span>Original faculty</span><strong>{item.leave.staffName}</strong><small>On leave</small></div></section>
+    {existing ? <div className="leave-existing"><CheckCircle2 size={20} /><div><strong>{existing.faculty.name} is assigned</strong><span>This date-specific override does not change the published timetable.</span></div></div> : <><div className="leave-candidate-head"><div><h4>Eligible substitute faculty</h4><p>Active, subject-qualified faculty who are free this period and not on leave.</p></div><span>{candidates.length} available</span></div>{candidates.length ? <div className="leave-candidates">{candidates.map((person, index) => <label className={`leave-candidate ${choice === person.id ? "selected" : ""}`} key={person.id}><input type="radio" checked={choice === person.id} name="substitute" onChange={() => { setChoice(person.id); setChecked(false); }} /><div><strong>{person.name}</strong><span>{person.id} · {person.department}</span></div><div className="leave-candidate-checks"><span>✓ {item.subject} eligible</span><span>✓ Period free</span><span>✓ Not on leave</span></div><div><b>{person.classes}</b><span>classes today</span></div>{index === 0 && <em>Recommended</em>}</label>)}</div> : <div className="cms-empty">No eligible faculty members are available for this class.</div>}{chosen && <div className={`leave-availability ${checked ? "available" : ""}`}><div><ShieldCheck size={18} /><span>{checked ? "Available for substitution" : "Validate the selected faculty before assignment."}</span></div><button className="cms-btn cms-btn-ghost" onClick={() => { setChecked(true); toast(`${chosen.name} is available for substitution.`); }}>Check Availability</button></div>}</>}
+  </Modal>;
 }
 
-function LeaveHistory({ onSelect }) {
-  const [historyData, setHistoryData] = useState([]);
-  
-  useEffect(() => {
-    getLeaveHistorySummary().then(data => {
-      if (Array.isArray(data) && data.length) setHistoryData(data);
-    }).catch(console.error);
-  }, []);
+const leaveDays = (leave) => Number(leave.days) || 0;
+const DEFAULT_LEAVE_ENTITLEMENT = 12;
+const relationId = (record) => String(record?.staffId ?? record?.facultyId ?? record?.employeeId ?? record?.userId ?? "").trim();
+const balanceFor = (person) => {
+  const entitlement = person?.leaveEntitlement ?? person?.totalLeaves ?? person?.leaveBalance?.total ?? person?.leaveBalance?.totalLeaves;
+  return Number.isFinite(Number(entitlement)) ? Number(entitlement) : DEFAULT_LEAVE_ENTITLEMENT;
+};
+const staffSummary = (requests) => Object.values([...mockStaffAttendance.map((staff) => ({ staffId: staff.staffId, staffName: staff.staffName, department: staff.department, staffType: staff.staffType })), ...requests].reduce((all, leave) => {
+  const key = relationId(leave) || `record-${leave.id}`;
+  if (!all[key]) all[key] = { ...leave, requests: [], approved: 0, pending: 0, rejected: 0, used: 0 };
+  const item = all[key];
+  if (!item.staffId && relationId(leave)) item.staffId = relationId(leave);
+  if (leave.leaveType) { item.requests.push(leave); item[String(leave.status).toLowerCase()] = (item[String(leave.status).toLowerCase()] || 0) + 1; if (leave.status === "Approved") item.used += leaveDays(leave); }
+  return all;
+}, {}));
 
-  const [staffType, setStaffType] = useState("All Staff");
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("All Status");
-
-  const people = useMemo(() => {
-    return historyData.filter(person => {
-      const matchType = staffType === "All Staff" || person.staffType === staffType;
-      const matchQuery = `${person.staffName || ""} ${person.staffId || ""} ${person.department || ""}`.toLowerCase().includes(query.toLowerCase());
-      return matchType && matchQuery;
-    });
-  }, [historyData, staffType, query]);
-
-  return (
-    <main className="attendance-module leave-history-screen">
-      <section className="att-card leave-history-card">
-        <div className="leave-history-filters">
-          <div className="leave-type-toggle">
-            {["All Staff", "Teaching Staff", "Non-Teaching Staff"].map(type => (
-              <button key={type} className={staffType === type ? "active" : ""} onClick={() => setStaffType(type)}>
-                {type}
-              </button>
-            ))}
-          </div>
-          <div className="leave-history-controls">
-            <label>
-              <Search size={15} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search faculty..." />
-            </label>
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
-              {["All Status", "Approved", "Pending", "Rejected"].map(item => (
-                <option key={item}>{item}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="leave-history-table-wrap">
-          <table className="cms-table leave-history-table">
-            <thead>
-              <tr>
-                {["Staff", "Department", "Staff Type", "Total Requests", "Total Leaves", "Used", "Remaining", "Approved", "Pending", "Rejected", "Action"].map(head => (
-                  <th key={head}>{head}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {people.length ? people.map(person => {
-                const total = person.totalLeaves || 12;
-                const used = person.used || 0;
-                const remaining = person.remaining !== undefined ? person.remaining : (total - used);
-                return (
-                  <tr key={person.staffId}>
-                    <td>
-                      <div className="history-staff">
-                        <b>{(person.staffName || "").split(" ").map(p => p[0]).join("").slice(0, 2)}</b>
-                        <div>
-                          <strong>{person.staffName}</strong>
-                          <span>{person.staffId}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{person.department}</td>
-                    <td>{person.staffType}</td>
-                    <td>{person.totalRequests || 0}</td>
-                    <td>{total} days</td>
-                    <td>{used} {used === 1 ? "day" : "days"}</td>
-                    <td>{remaining} days</td>
-                    <td><LeaveStatus status="Approved" /> <small>{person.approved || 0}</small></td>
-                    <td><LeaveStatus status="Pending" /> <small>{person.pending || 0}</small></td>
-                    <td><LeaveStatus status="Rejected" /> <small>{person.rejected || 0}</small></td>
-                    <td>
-                      <button className="cms-btn cms-btn-ghost leave-view-history" onClick={() => onSelect(person)}>
-                        View History
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }) : (
-                <tr><td colSpan="11"><div className="cms-empty">No staff leave history matches these filters.</div></td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </main>
-  );
+function LeaveHistory({ requests, onSelect }) {
+  const [staffType, setStaffType] = useState("All Staff"), [query, setQuery] = useState(""), [status, setStatus] = useState("All Status");
+  const selectStaff = (person) => onSelect(staffSummary(requests).find((item) => relationId(item) === relationId(person)) || person);
+  const people = useMemo(() => staffSummary(requests).filter((person) => (staffType === "All Staff" || person.staffType === staffType) && (`${person.staffName} ${person.staffId} ${person.department}`).toLowerCase().includes(query.toLowerCase()) && (status === "All Status" || person.requests.some((leave) => leave.status === status))), [requests, staffType, query, status]);
+  return <main className="attendance-module leave-history-screen"><section className="att-card leave-history-card"><div className="leave-history-filters"><div className="leave-type-toggle">{["All Staff", "Teaching Staff", "Non-Teaching Staff"].map((type) => <button key={type} className={staffType === type ? "active" : ""} onClick={() => setStaffType(type)}>{type}</button>)}</div><div className="leave-history-controls"><label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search faculty..." /></label><select value={status} onChange={(event) => setStatus(event.target.value)}>{["All Status", "Approved", "Pending", "Rejected"].map((item) => <option key={item}>{item}</option>)}</select></div></div>
+    <div className="leave-history-table-wrap"><table className="cms-table leave-history-table"><thead><tr>{["Staff", "Department", "Staff Type", "Total Requests", "Total Leaves", "Used", "Remaining", "Approved", "Pending", "Rejected", "Action"].map((head) => <th key={head}>{head}</th>)}</tr></thead><tbody>{people.length ? people.map((person) => { const total = balanceFor(person); const remaining = total === null ? null : Math.max(0, total - person.used); return <tr key={person.staffId}><td><div className="history-staff"><b>{person.staffName.split(" ").map((part) => part[0]).join("").slice(0, 2)}</b><div><strong>{person.staffName}</strong><span>{person.staffId}</span></div></div></td><td>{person.department}</td><td>{person.staffType}</td><td>{person.requests.length}</td><td>{total === null ? "—" : `${total} days`}</td><td>{person.used} {person.used === 1 ? "day" : "days"}</td><td>{remaining === null ? "—" : `${remaining} days`}</td><td><LeaveStatus status="Approved" /> <small>{person.approved}</small></td><td><LeaveStatus status="Pending" /> <small>{person.pending}</small></td><td><LeaveStatus status="Rejected" /> <small>{person.rejected}</small></td><td><button className="cms-btn cms-btn-ghost leave-view-history" onClick={() => selectStaff(person)}>View History</button></td></tr>; }) : <tr><td colSpan="11"><div className="cms-empty">No staff leave history matches these filters.</div></td></tr>}</tbody></table></div></section></main>;
 }
 
 function StaffLeaveHistory({ person, onClose, onLeave }) {
-  const [detailHistory, setDetailHistory] = useState(null);
-
-  useEffect(() => {
-    getLeaveHistory(person.staffId).then(data => {
-      if (data) setDetailHistory(data);
-    }).catch(console.error);
-  }, [person]);
-
-  const data = detailHistory || {
-    balance: { total: 12, used: person.used || 0, remaining: 12 - (person.used || 0) },
-    requests: [],
-    approved: person.approved || 0,
-    pending: person.pending || 0,
-    rejected: person.rejected || 0
-  };
-
-  const total = data.balance?.total || 12;
-  const used = data.balance?.used || 0;
-  const remaining = data.balance?.remaining !== undefined ? data.balance.remaining : (total - used);
-  const percent = total ? Math.min(100, Math.round((used / total) * 100)) : 0;
-  const requests = data.requests || [];
-
-  return (
-    <Modal title="Faculty Leave History" className="leave-staff-history-modal" onClose={onClose} footer={<button className="cms-btn cms-btn-ghost" onClick={onClose}>Back to History</button>}>
-      <section className="history-person-head">
-        <span>{(person.staffName || "").split(" ").map(p => p[0]).join("").slice(0, 2)}</span>
-        <div>
-          <h4>{person.staffName} <b>{person.staffId}</b></h4>
-          <p>{person.department} · {person.staffType}</p>
-        </div>
-      </section>
-      
-      <section className="history-balance">
-        <h4>Leave Balance</h4>
-        <div className="history-balance-grid">
-          <div><span>Total Leaves</span><strong>{total} days</strong></div>
-          <div><span>Used Leaves</span><strong>{used} {used === 1 ? "day" : "days"}</strong></div>
-          <div><span>Remaining</span><strong>{remaining} days</strong></div>
-        </div>
-        <div className="history-usage">
-          <div><strong>Leave Usage</strong><span>{used} of {total} days used · {percent}%</span></div>
-          <i><b style={{ width: `${percent}%` }} /></i>
-        </div>
-      </section>
-
-      <section className="history-request-summary">
-        <strong>Total Requests: {requests.length || person.totalRequests || 0}</strong>
-        <span>Approved: {data.approved}</span>
-        <span>Pending: {data.pending}</span>
-        <span>Rejected: {data.rejected}</span>
-      </section>
-
-      <section className="history-leaves">
-        <h4>Leave History</h4>
-        {requests.length ? (
-          <div className="leave-history-table-wrap">
-            <table className="cms-table leave-history-table">
-              <thead>
-                <tr>
-                  {["Leave Type", "From Date", "To Date", "Days", "Status"].map(head => (
-                    <th key={head}>{head}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {requests.map(leave => (
-                  <tr key={leave.staffLeaveRequestId || leave.id}>
-                    <td>{leave.leaveType}</td>
-                    <td>{prettyDate(leave.fromDate)}</td>
-                    <td>{prettyDate(leave.toDate)}</td>
-                    <td>{leave.days} {Number(leave.days) === 1 ? "day" : "days"}</td>
-                    <td>
-                      <button className="history-status-link" onClick={() => onLeave(leave)}>
-                        <LeaveStatus status={leave.status} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="cms-empty">No leave history found.</div>
-        )}
-      </section>
-    </Modal>
-  );
+  const total = balanceFor(person), remaining = total === null ? null : Math.max(0, total - person.used), percent = total ? Math.min(100, Math.round(person.used / total * 100)) : 0;
+  return <Modal title="Faculty Leave History" className="leave-staff-history-modal" onClose={onClose} footer={<button className="cms-btn cms-btn-ghost" onClick={onClose}>Back to History</button>}>
+    <section className="history-person-head"><span>{person.staffName.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span><div><h4>{person.staffName} <b>{person.staffId}</b></h4><p>{person.department} · {person.staffType}</p></div></section>
+    <section className="history-balance"><h4>Leave Balance</h4>{total !== null ? <><div className="history-balance-grid"><div><span>Total Leaves</span><strong>{total} days</strong></div><div><span>Used Leaves</span><strong>{person.used} {person.used === 1 ? "day" : "days"}</strong></div><div><span>Remaining</span><strong>{remaining} days</strong></div></div><div className="history-usage"><div><strong>Leave Usage</strong><span>{person.used} of {total} days used · {percent}%</span></div><i><b style={{ width: `${percent}%` }} /></i></div></> : <p className="history-no-balance">Leave entitlement is not available in the current leave data. Approved usage: <strong>{person.used} {person.used === 1 ? "day" : "days"}</strong>.</p>}</section>
+    <section className="history-request-summary"><strong>Total Requests: {person.requests.length}</strong><span>Approved: {person.approved}</span><span>Pending: {person.pending}</span><span>Rejected: {person.rejected}</span></section><section className="history-leaves"><h4>Leave History</h4>{person.requests.length ? <div className="leave-history-table-wrap"><table className="cms-table leave-history-table"><thead><tr>{["Leave Type", "From Date", "To Date", "Days", "Status"].map((head) => <th key={head}>{head}</th>)}</tr></thead><tbody>{person.requests.map((leave) => <tr key={leave.id}><td>{leave.leaveType}</td><td>{prettyDate(leave.fromDate)}</td><td>{prettyDate(leave.toDate)}</td><td>{leave.days} {leaveDays(leave) === 1 ? "day" : "days"}</td><td><button className="history-status-link" onClick={() => onLeave(leave)}><LeaveStatus status={leave.status} /></button></td></tr>)}</tbody></table></div> : <div className="cms-empty">No leave history found.</div>}</section>
+  </Modal>;
 }
 
 function RejectLeaveConfirmation({ leave, remark, setRemark, onCancel, onConfirm }) {
-  return (
-    <Modal 
-      title="Reject Leave Request?" 
-      size="sm" 
-      className="leave-reject-modal" 
-      onClose={onCancel} 
-      footer={
-        <>
-          <button className="cms-btn cms-btn-ghost" onClick={onCancel}>Cancel</button>
-          <button className="cms-btn cms-btn-danger" onClick={onConfirm}>Reject Leave</button>
-        </>
-      }
-    >
-      <div className="leave-reject-copy">
-        <p>Are you sure you want to reject this leave request?</p>
-        <strong>{leave.staffName}</strong>
-        <span>{leave.leaveType} · {prettyDate(leave.fromDate)} to {prettyDate(leave.toDate)}</span>
-        <Field label="Admin Remark (optional)">
-          <textarea value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="Enter rejection reason..." />
-        </Field>
-      </div>
-    </Modal>
-  );
+  return <Modal title="Reject Leave Request?" size="sm" className="leave-reject-modal" onClose={onCancel} footer={<><button className="cms-btn cms-btn-ghost" onClick={onCancel}>Cancel</button><button className="cms-btn cms-btn-danger" onClick={onConfirm}>Reject Leave</button></>}><div className="leave-reject-copy"><p>Are you sure you want to reject this leave request?</p><strong>{leave.staffName}</strong><span>{leave.leaveType} · {prettyDate(leave.fromDate)} to {prettyDate(leave.toDate)}</span><Field label="Admin Remark (optional)"><textarea value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="Enter rejection reason..." /></Field></div></Modal>;
 }
 
 export default function LeaveManagementPage() {
-  const [requests, setRequests] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [affected, setAffected] = useState(null);
-  const [assignment, setAssignment] = useState(null);
-  const [records, setRecords] = useState([]);
-  const [remark, setRemark] = useState("");
-  const [message, setMessage] = useState("");
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [staffHistory, setStaffHistory] = useState(null);
-  const [rejecting, setRejecting] = useState(null);
-
-  const loadRequests = () => {
-    getLeaveRequests().then(data => {
-      if (Array.isArray(data)) setRequests(data);
-    }).catch(console.error);
-  };
-
-  useEffect(() => {
-    loadRequests();
-  }, []);
-
-  const openDetails = (req) => {
-    setSelected(req); // Open immediately so the modal is never blocked
-    setRemark(req.adminRemark || "");
-    const rid = req.staffLeaveRequestId || req.id;
-    if (rid) {
-      getLeaveDetails(rid).then(detail => {
-        if (detail) {
-          setSelected(prev => ({ ...prev, ...detail }));
-          if (detail.adminRemark) setRemark(detail.adminRemark);
-        }
-      }).catch(console.warn);
-    }
-  };
-
-  const commitReview = (status) => { 
-    const statusVal = status === "Approved" ? 1 : 2;
-    const leaveId = selected.staffLeaveRequestId || selected.id;
-    reviewLeaveRequest(leaveId, {
-      status: statusVal,
-      rejectionReason: remark
-    }).then(() => {
-      loadRequests();
-      setSelected(null);
-      setRejecting(null);
-      setMessage(`Leave request ${status.toLowerCase()}.`);
-    }).catch(console.error);
-  };
-  
-  const review = (status) => { 
-    if (status === "Rejected") { 
-      setRejecting(selected); 
-      return; 
-    } 
-    commitReview(status); 
-  };
-
-  const openAssignment = (item) => {
-    setAssignment(item);
-  };
-
-  const saveAssignment = (record) => {
-    setRecords(prev => [...prev, record]);
-    setAssignment(null);
-    setMessage("Temporary substitution assigned. The published timetable was not changed.");
-  };
-
-  if (historyOpen) {
-    return (
-      <>
-        <DashboardLayout 
-          title="Leave History" 
-          subtitle="View staff leave usage, requests, and approval history" 
-          breadcrumb={["Operations", "Leave Management", "Leave History"]} 
-          actions={
-            <button className="cms-btn cms-btn-ghost leave-history-button" onClick={() => { setHistoryOpen(false); setStaffHistory(null); }}>
-              Back to Leave Management
-            </button>
-          }
-        >
-          <LeaveHistory onSelect={setStaffHistory} />
-        </DashboardLayout>
-
-        {staffHistory && (
-          <StaffLeaveHistory 
-            person={staffHistory} 
-            onClose={() => setStaffHistory(null)} 
-            onLeave={(leave) => { setStaffHistory(null); openDetails(leave); }} 
-          />
-        )}
-
-        {selected && (
-          <LeaveDetails 
-            leave={selected} 
-            remark={remark} 
-            setRemark={setRemark} 
-            onClose={() => setSelected(null)} 
-            onReview={review} 
-            onAffected={() => { setAffected(selected); setSelected(null); }} 
-          />
-        )}
-
-        {rejecting && (
-          <RejectLeaveConfirmation 
-            leave={rejecting} 
-            remark={remark} 
-            setRemark={setRemark} 
-            onCancel={() => setRejecting(null)} 
-            onConfirm={() => commitReview("Rejected")} 
-          />
-        )}
-
-        {affected && (
-          <AffectedClasses 
-            leave={affected} 
-            records={records}
-            close={() => setAffected(null)} 
-            assign={openAssignment} 
-          />
-        )}
-
-        {assignment && (
-          <Assignment 
-            item={assignment} 
-            records={records}
-            close={() => setAssignment(null)} 
-            save={saveAssignment} 
-            toast={setMessage} 
-          />
-        )}
-
-        <Toast message={message} onClose={() => setMessage("")} />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <DashboardLayout 
-        title="Leave Management" 
-        subtitle="Review leave requests and arrange temporary class coverage" 
-        breadcrumb={["Operations", "Leave Management"]} 
-        actions={
-          <button className="cms-btn cms-btn-ghost leave-history-button" onClick={() => setHistoryOpen(true)}>
-            <HistoryIcon size={16} /> History
-          </button>
-        }
-      >
-        <main className="attendance-module">
-          <section className="att-summary att-leave-summary">
-            {["Total Requests", "Pending", "Approved", "Rejected"].map(label => (
-              <div key={label}>
-                <span>{label}</span>
-                <b>
-                  {label === "Total Requests" 
-                    ? requests.length 
-                    : requests.filter(request => request.status === label).length}
-                </b>
-              </div>
-            ))}
-          </section>
-
-          <section className="att-card att-table-card">
-            <div className="att-scroll">
-              <table className="cms-table">
-                <thead>
-                  <tr>
-                    {["Request ID", "Staff Name", "Department", "Staff Type", "Leave Type", "From Date", "To Date", "Days", "Reason", "Status", "Action"].map(head => (
-                      <th key={head}>{head}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {requests.map(request => {
-                    const rid = request.staffLeaveRequestId || request.id;
-                    return (
-                      <tr key={rid}>
-                        <td>LR-{String(rid).padStart(3, "0")}</td>
-                        <td>{request.staffName}</td>
-                        <td>{request.department || "Mathematics"}</td>
-                        <td>{request.staffType || "Teaching Staff"}</td>
-                        <td>{request.leaveType}</td>
-                        <td>{request.fromDate}</td>
-                        <td>{request.toDate}</td>
-                        <td>{request.days}</td>
-                        <td>{request.reason}</td>
-                        <td><span className="att-status">{request.status}</span></td>
-                        <td>
-                          <button className="cms-action-btn" onClick={() => openDetails(request)} aria-label="View request">
-                            <Eye size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </main>
-      </DashboardLayout>
-
-      {selected && (
-        <LeaveDetails 
-          leave={selected} 
-          remark={remark} 
-          setRemark={setRemark} 
-          onClose={() => setSelected(null)} 
-          onReview={review} 
-          onAffected={() => { setAffected(selected); setSelected(null); }} 
-        />
-      )}
-
-      {rejecting && (
-        <RejectLeaveConfirmation 
-          leave={rejecting} 
-          remark={remark} 
-          setRemark={setRemark} 
-          onCancel={() => setRejecting(null)} 
-          onConfirm={() => commitReview("Rejected")} 
-        />
-      )}
-
-      {affected && (
-        <AffectedClasses 
-          leave={affected} 
-          records={records}
-          close={() => setAffected(null)} 
-          assign={openAssignment} 
-        />
-      )}
-
-      {assignment && (
-        <Assignment 
-          item={assignment} 
-          records={records}
-          close={() => setAssignment(null)} 
-          save={saveAssignment} 
-          toast={setMessage} 
-        />
-      )}
-
-      <Toast message={message} onClose={() => setMessage("")} />
-    </>
-  );
+  const [requests, setRequests] = useState(requestsInitial), [selected, setSelected] = useState(null), [affected, setAffected] = useState(null), [assignment, setAssignment] = useState(null), [records, setRecords] = useState([]), [remark, setRemark] = useState(""), [message, setMessage] = useState(""), [historyOpen, setHistoryOpen] = useState(false), [staffHistory, setStaffHistory] = useState(null), [rejecting, setRejecting] = useState(null);
+  const commitReview = (status) => { const updated = { ...selected, status, adminRemark: remark, reviewedBy: "Admin", reviewedOn: new Date().toLocaleDateString("en-IN") }; setRequests((list) => list.map((request) => request.id === updated.id ? updated : request)); setSelected(updated); setRejecting(null); setMessage(`Leave request ${status.toLowerCase()}.`); };
+  const review = (status) => { if (status === "Rejected") { setRejecting(selected); return; } commitReview(status); };
+  const detailBalance = selected ? (() => { const person = staffSummary(requests).find((item) => item.staffId === selected.staffId); const total = person ? balanceFor(person) : null; return { total, used: person?.used || 0, remaining: total === null ? null : Math.max(0, total - (person?.used || 0)) }; })() : null;
+  const openAssignment = (item) => setAssignment({ ...item, substitution: records.find((record) => record.timetableId === item.id && record.date === item.date && record.status === "Active") });
+  const save = (record) => { setRecords((list) => [...list, record]); setAssignment(null); setMessage("Temporary substitution assigned. The published timetable was not changed."); };
+  if (historyOpen) return <><DashboardLayout title="Leave History" subtitle="View staff leave usage, requests, and approval history" breadcrumb={["Operations", "Leave Management", "Leave History"]} actions={<button className="cms-btn cms-btn-ghost leave-history-button" onClick={() => { setHistoryOpen(false); setStaffHistory(null); }}>Back to Leave Management</button>}><LeaveHistory requests={requests} onSelect={setStaffHistory} /></DashboardLayout>
+    {staffHistory && <StaffLeaveHistory person={staffHistory} onClose={() => setStaffHistory(null)} onLeave={(leave) => { setStaffHistory(null); setSelected(leave); setRemark(leave.adminRemark || ""); }} />}{selected && <LeaveDetails leave={selected} balance={detailBalance} remark={remark} setRemark={setRemark} onClose={() => setSelected(null)} onReview={review} onAffected={() => { setSelected(null); setAffected(selected); }} />}{rejecting && <RejectLeaveConfirmation leave={rejecting} remark={remark} setRemark={setRemark} onCancel={() => setRejecting(null)} onConfirm={() => commitReview("Rejected")} />}{affected && <AffectedClasses leave={affected} records={records} close={() => setAffected(null)} assign={openAssignment} />}{assignment && <Assignment item={assignment} records={records} close={() => setAssignment(null)} save={save} toast={setMessage} />}<Toast message={message} onClose={() => setMessage("")} /></>;
+  return <><DashboardLayout title="Leave Management" subtitle="Review leave requests and arrange temporary class coverage" breadcrumb={["Operations", "Leave Management"]} actions={<button className="cms-btn cms-btn-ghost leave-history-button" onClick={() => setHistoryOpen(true)}><HistoryIcon size={16} /> History</button>}><main className="attendance-module"><section className="att-summary att-leave-summary">{["Total Requests", "Pending", "Approved", "Rejected"].map((label) => <div key={label}><span>{label}</span><b>{label === "Total Requests" ? requests.length : requests.filter((request) => request.status === label).length}</b></div>)}</section><section className="att-card att-table-card"><div className="att-scroll"><table className="cms-table"><thead><tr>{["Request ID", "Staff Name", "Department", "Staff Type", "Leave Type", "From Date", "To Date", "Days", "Reason", "Status", "Action"].map((head) => <th key={head}>{head}</th>)}</tr></thead><tbody>{requests.map((request) => <tr key={request.id}><td>LR-{String(request.id).padStart(3, "0")}</td><td>{request.staffName}</td><td>{request.department}</td><td>{request.staffType}</td><td>{request.leaveType}</td><td>{request.fromDate}</td><td>{request.toDate}</td><td>{request.days}</td><td>{request.reason}</td><td><span className="att-status">{request.status}</span></td><td><button className="cms-action-btn" onClick={() => { setSelected(request); setRemark(request.adminRemark || ""); }} aria-label="View request"><Eye size={16} /></button></td></tr>)}</tbody></table></div></section></main></DashboardLayout>
+    {selected && <LeaveDetails leave={selected} balance={detailBalance} remark={remark} setRemark={setRemark} onClose={() => setSelected(null)} onReview={review} onAffected={() => { setSelected(null); setAffected(selected); }} />}{rejecting && <RejectLeaveConfirmation leave={rejecting} remark={remark} setRemark={setRemark} onCancel={() => setRejecting(null)} onConfirm={() => commitReview("Rejected")} />}
+    {affected && <AffectedClasses leave={affected} records={records} close={() => setAffected(null)} assign={openAssignment} />}{assignment && <Assignment item={assignment} records={records} close={() => setAssignment(null)} save={save} toast={setMessage} />}<Toast message={message} onClose={() => setMessage("")} /></>;
 }

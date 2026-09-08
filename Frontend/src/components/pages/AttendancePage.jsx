@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { CalendarDays, ChevronDown, ClipboardClock, Pencil, PieChart, Search, UserCheck, UserX, Users } from "lucide-react";
+import { CalendarDays, ClipboardClock, Pencil, PieChart, Search, UserCheck, UserX, Users } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -58,7 +58,6 @@ function Screen({ staff = false, say }) {
 
 function Filters({ f, update, o, staff, busy, load, exportReport }) {
   const isMonth = f.view === "Monthly Report";
-  const [exportOpen, setExportOpen] = useState(false);
   const label = new Date(`${f.date.slice(0, 7)}-01T00:00:00`)
     .toLocaleDateString("en-US", { month: "long", year: "numeric" })
     .replace(" ", ", ");
@@ -77,7 +76,7 @@ function Filters({ f, update, o, staff, busy, load, exportReport }) {
       </>}
       <Select label="Status" value={f.status} onChange={update("status")} items={staff ? STAFF_STATUSES : STUDENT_STATUSES} all="All Status" />
       <Select label="View" value={f.view} onChange={update("view")} items={staff ? ["Attendance", "Monthly Report"] : ["Attendance", "Monthly Report", "Defaulters"]} />
-      <div className="att-filter-action"><button className="cms-btn cms-btn-primary" disabled={busy} onClick={load}>{busy ? "Loading..." : "Load"}</button>{isMonth ? <div className={`att-export-menu ${exportOpen ? "is-open" : ""}`} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setExportOpen(false); }}><button type="button" className="cms-btn cms-btn-ghost" aria-haspopup="menu" aria-expanded={exportOpen} disabled={busy} onClick={() => setExportOpen((open) => !open)}>Export <ChevronDown size={15} /></button>{exportOpen ? <div className="att-export-options" role="menu"><button type="button" role="menuitem" disabled={busy} onClick={() => { setExportOpen(false); exportReport("csv"); }}>Export CSV</button><button type="button" role="menuitem" disabled={busy} onClick={() => { setExportOpen(false); exportReport("excel"); }}>Export Excel</button></div> : null}</div> : null}</div>
+      <div className="att-filter-action"><button className="cms-btn cms-btn-primary" disabled={busy} onClick={load}>{busy ? "Loading..." : "Load"}</button>{isMonth ? <button type="button" className="cms-btn cms-btn-ghost" disabled={busy} onClick={() => exportReport("excel")}>Export</button> : null}</div>
     </div>
   </section>;
 }

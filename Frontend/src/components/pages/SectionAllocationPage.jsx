@@ -4,7 +4,6 @@ import {
   Pencil,
   Search,
   X,
-  Plus,
   ChevronDown,
   CheckSquare,
   Users,
@@ -1148,21 +1147,6 @@ export default function SectionAllocationPage() {
           </div>
 
           <div className="allocation-toolbar-spacer" />
-
-          {/* Right action button */}
-          <button
-            type="button"
-            className="allocation-import-btn"
-            onClick={() => {
-              setSelectedExcelFile(null);
-              setExcelVerificationResult(null);
-              setIsImportModalOpen(true);
-            }}
-            title="Import Excel file to auto-allocate students by section capacity"
-          >
-            <Plus size={16} />
-            Import Excel & Auto-Allocate
-          </button>
         </div>
 
         {/* Dynamic Bulk Action Bar */}

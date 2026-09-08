@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "@/layouts/AuthLayout.jsx";
 import { Field, useForm } from "@/components/common/Ui.jsx";
-import { loginUser } from "@/features/auth/services/authService.js";
+import { clearPasswordResetContext, loginUser } from "@/features/auth/services/authService.js";
 
 const fields = [
   { name: "email", label: "Email or Mobile", type: "text", required: true, placeholder: "Admin@CMS.com", full: true },
@@ -111,7 +111,7 @@ export default function Login() {
             <input id="remember-me" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             <span>Remember me</span>
           </label>
-          <Link to="/forgot-password">Forgot password?</Link>
+          <Link to="/forgot-password" state={{ email: String(values.email || "").trim() }} onClick={clearPasswordResetContext}>Forgot password?</Link>
         </div>
         <button type="submit" className="cms-btn cms-btn-primary auth-submit-btn" disabled={busy}>
           {busy ? "Signing in..." : "Login"}

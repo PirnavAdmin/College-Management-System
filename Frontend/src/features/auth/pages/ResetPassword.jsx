@@ -1,9 +1,13 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import AuthLayout from "@/layouts/AuthLayout.jsx";
 import { Field, useForm } from "@/components/common/Ui.jsx";
-import { resetPassword } from "@/features/auth/services/authService.js";
-import { getApiErrorMessage } from "@/api/axios.js";
+import {
+  clearPasswordResetContext,
+  getPasswordRecoveryErrorMessage,
+  readPasswordResetContext,
+  resetPasswordForAccount,
+} from "@/features/auth/services/authService.js";
 
 const fields = [
   { name: "password", label: "New Password", type: "password", required: true, full: true },
@@ -15,13 +19,27 @@ export default function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
   const navigate = useNavigate();
-  const email = sessionStorage.getItem("password-reset-email") || "";
+  const location = useLocation();
+  const storedContext = readPasswordResetContext();
+  const email = String(location.state?.email || storedContext?.email || "").trim();
+  const accountType = location.state?.accountType || storedContext?.accountType || "";
+  const otp = String(location.state?.otp || "").trim();
+  const hasValidContext = Boolean(email && otp && ["admin", "user"].includes(accountType));
+
+  useEffect(() => {
+    if (hasValidContext) return;
+    if (email && ["admin", "user"].includes(accountType)) {
+      navigate("/verify-otp", { replace: true, state: { email, accountType } });
+    } else {
+      navigate("/forgot-password", { replace: true });
+    }
+  }, [accountType, email, hasValidContext, navigate]);
 
   const submit = async (e) => {
     e.preventDefault();
     setFormError("");
     if (!validate()) return;
-    if (!email) {
+    if (!hasValidContext) {
       setFormError("Please verify your OTP before resetting your password.");
       return;
     }
@@ -31,11 +49,11 @@ export default function ResetPassword() {
     }
     setBusy(true);
     try {
-      await resetPassword({ email, password: values.password, confirmPassword: values.confirmPassword });
-      sessionStorage.removeItem("password-reset-email");
+      await resetPasswordForAccount({ email, otp, password: values.password, confirmPassword: values.confirmPassword, accountType });
+      clearPasswordResetContext();
       navigate("/login", { replace: true });
     } catch (error) {
-      setFormError(getApiErrorMessage(error));
+      setFormError(getPasswordRecoveryErrorMessage(error, "Unable to reset password. Please try again."));
     } finally {
       setBusy(false);
     }
@@ -50,7 +68,7 @@ export default function ResetPassword() {
         </div>
         <button type="submit" className="cms-btn cms-btn-primary" style={{ width: "100%", marginTop: 18 }} disabled={busy}>{busy ? "Resetting..." : "Reset Password"}</button>
       </form>
-      <div className="cms-auth-links"><Link to="/login">Back to login</Link></div>
+      <div className="cms-auth-links"><Link to="/login" onClick={clearPasswordResetContext}>Back to login</Link></div>
     </AuthLayout>
   );
 }

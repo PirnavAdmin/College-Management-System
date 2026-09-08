@@ -1,6 +1,9 @@
 export const apiEndpoints = {
   admin: {
     login: "/api/Admin/login",
+    forgotPassword: "/api/Admin/forgot-password",
+    verifyOtp: "/api/Admin/verify-otp",
+    resetPassword: "/api/Admin/reset-password",
     create: "/api/Admin",
     getAll: "/api/Admin",
     getById: (adminId) => `/api/Admin/${adminId}`,

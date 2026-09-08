@@ -3,6 +3,16 @@
    Theme: Unified Olive Glass Design System
    ============================================================ */
 
+:root {
+  --cms-primary: #6F8400;
+  --cms-primary-dark: #566900;
+  --cms-primary-soft: #F1F4E2;
+  --cms-surface: #ffffff;
+  --cms-text: #10203c;
+  --cms-muted: #7B8275;
+  --cms-border: #e4e8f0;
+}
+
 .cms-form-page.examination-form-page {
   width: 100%;
   max-width: none;
@@ -954,6 +964,11 @@
   color: var(--cms-red);
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* Print markup hidden on normal screen */
+.exam-print-area {
+  display: none;
 }
 
 /* Print Styles */

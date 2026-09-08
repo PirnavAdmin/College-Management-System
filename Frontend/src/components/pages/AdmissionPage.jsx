@@ -1064,14 +1064,6 @@ const readStudentFeeAssignmentId = (payload) => {
   return "";
 };
 
-const readPaymentPlanId = (payload) => readId(
-  getObject(payload),
-  "paymentPlanId",
-  "PaymentPlanId",
-  "id",
-  "Id",
-);
-
 const resolveApprovedStudentId = (...sources) => {
   for (const source of sources) {
     const student = read(source, "student", "Student", "approvedStudent", "ApprovedStudent", "createdStudent", "CreatedStudent", "studentDetails", "StudentDetails");
@@ -3160,10 +3152,19 @@ export default function AdmissionPage() {
       throw new Error("Fee account was not created because the selected Fee Structure ID was not available.");
     }
 
+    const fee = deriveAdmissionFee(detailRow.values);
+    const planName = normalizeCoursePaymentPlan(fee.paymentPlan || detailRow.values.paymentPlan) || "Full Payment";
+    const selectedInstallmentCount = Number(detailRow.values.installmentCount);
+    const numberOfInstallments = planName === "Installment Payment"
+      ? Math.max(Number.isInteger(selectedInstallmentCount) && selectedInstallmentCount > 0
+        ? selectedInstallmentCount
+        : Number(fee.courseSchedules.length || DEFAULT_INSTALLMENT_COUNT), 1)
+      : 1;
     const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
       studentId: Number(studentId),
       feeStructureId,
-      FeeStructureId: feeStructureId,
+      planName,
+      numberOfInstallments,
     });
     const studentFeeId = readStudentFeeAssignmentId(assignResponse.data);
     if (!studentFeeId) throw new Error("Fee structure was assigned, but the student fee assignment ID was not returned.");
@@ -3178,24 +3179,6 @@ export default function AdmissionPage() {
         discountValue: Number(detailRow.values.concessionValue || 0),
         reason: "Applied during admission approval",
       });
-    }
-
-    const fee = deriveAdmissionFee(detailRow.values);
-    if (fee.paymentPlan) {
-      const planResponse = await apiClient.post(apiEndpoints.fee.createPaymentPlan, {
-        studentFeeId: Number(studentFeeId),
-        planName: fee.paymentPlan,
-        numberOfInstallments: fee.paymentPlan === "Installment Payment" ? Math.max(fee.courseSchedules.length, 1) : 1,
-        installments: null,
-      });
-      const paymentPlanId = readPaymentPlanId(planResponse.data);
-      if (paymentPlanId && fee.paymentPlan === "Installment Payment") {
-        await Promise.all(fee.courseSchedules.map((item, index) => apiClient.post(apiEndpoints.fee.addPaymentPlanInstallment(paymentPlanId), {
-          installmentNumber: Number(item.no || index + 1),
-          amount: Number(item.amount || 0),
-          dueDate: toDateTime(item.dueDate || detailRow.values.admissionDate || todayISO()),
-        })));
-      }
     }
 
     return { studentId, studentFeeId, reused: false };

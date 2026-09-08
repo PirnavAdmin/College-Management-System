@@ -1071,3 +1071,26 @@
     margin-left: 0;
   }
 }
+
+/* Two-line text truncation and alignment for table cells */
+.exam-cell-two-lines {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+  max-height: 2.7em;
+  word-break: break-word;
+}
+
+.exam-cell-academic-level {
+  max-width: 160px;
+  line-height: 1.35;
+}
+
+.cms-action-btn.warning:hover {
+  color: var(--cms-amber, #b7791f);
+  border-color: #fed7aa;
+  background: var(--cms-amber-soft, #fdf3e0);
+}

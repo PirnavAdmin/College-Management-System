@@ -16,11 +16,17 @@ const mapLeaveType = (type) => {
     }
 };
 
+export const LEAVE_STATUS = {
+    PENDING: 1,
+    APPROVED: 2,
+    REJECTED: 3
+};
+
 const mapLeaveStatus = (status) => {
     switch(status) {
-        case 1: return "Pending";
-        case 2: return "Approved";
-        case 3: return "Rejected";
+        case LEAVE_STATUS.PENDING: return "Pending";
+        case LEAVE_STATUS.APPROVED: return "Approved";
+        case LEAVE_STATUS.REJECTED: return "Rejected";
         default: return status;
     }
 };
@@ -109,7 +115,15 @@ export const getLeaveHistorySummary = async (departmentId = null, staffType = nu
 export const getLeaveHistory = async (staffId) => {
     try {
         const response = await apiClient.get(`/api/v1/staff-attendance/leave/history/staff/${staffId}`);
-        return response.data?.data || response.data?.Data;
+        const data = response.data?.data || response.data?.Data;
+        if (data) {
+            const rawList = data.history || data.History || [];
+            return {
+                ...data,
+                history: rawList.map(mapLeaveRequest)
+            };
+        }
+        return data;
     } catch (error) {
         console.error(`Error fetching leave history for staff ID ${staffId}:`, error);
         throw error;

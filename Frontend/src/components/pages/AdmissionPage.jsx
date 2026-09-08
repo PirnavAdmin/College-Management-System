@@ -41,7 +41,7 @@ const formatAmount = (value) => {
   const amount = Number(value || 0);
   return `\u20b9${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-IN")}`;
 };
-const MOBILE_FIELDS = new Set(["mobile", "fatherMobile", "motherMobile", "guardianMobile"]);
+const MOBILE_FIELDS = new Set(["studentMobileNumber", "mobile", "fatherMobile", "motherMobile", "guardianMobile"]);
 const DIGIT_LIMITS = { aadhaar: 12, pincode: 6, passYear: 4 };
 const AMOUNT_FIELDS = new Set(["feeAmount", "totalFee", "discount", "fine", "netPayable", "amountPaid", "balanceAmount"]);
 const ALPHA_FIELDS = new Set([
@@ -118,10 +118,10 @@ const readId = (item, ...keys) => {
 const studentMobileValue = (values = {}) => {
   const value = read(
     values,
-    "mobile",
-    "studentMobile",
     "studentMobileNumber",
     "StudentMobileNumber",
+    "studentMobile",
+    "mobile",
     "mobileNumber",
     "MobileNumber",
     "StudentMobile",
@@ -131,7 +131,14 @@ const studentMobileValue = (values = {}) => {
 
 const normalizeAdmissionMobileState = (values = {}) => {
   const mobile = studentMobileValue(values);
-  return mobile && mobile !== values.mobile ? { ...values, mobile } : { ...values };
+  const houseDoorNumber = values.houseDoorNumber ?? values.HouseDoorNumber ?? values.address1;
+  const streetVillage = values.streetVillage ?? values.StreetVillage ?? values.address2;
+  return {
+    ...values,
+    ...(mobile ? { studentMobileNumber: mobile, mobile } : {}),
+    ...(houseDoorNumber !== undefined && houseDoorNumber !== null ? { houseDoorNumber, address1: houseDoorNumber } : {}),
+    ...(streetVillage !== undefined && streetVillage !== null ? { streetVillage, address2: streetVillage } : {}),
+  };
 };
 
 const isRenderableImageSource = (value) => {
@@ -558,7 +565,7 @@ const steps = [
       { name: "dob", label: "Date of Birth", type: "date", required: true },
       { name: "bloodGroup", label: "Blood Group", type: "select", options: [], required: true },
       { name: "aadhaar", label: "Aadhaar Number", required: true },
-      { name: "mobile", label: "StudentMobile" },
+      { name: "studentMobileNumber", label: "Student Mobile", type: "tel" },
       { name: "email", label: "Email", type: "email" },
       { name: "religion", label: "Religion" },
       { name: "caste", label: "Caste Category", type: "select", options: ["General", "OBC", "SC", "ST", "EWS"] },
@@ -581,8 +588,8 @@ const steps = [
   {
     title: "Address",
     fields: [
-      { name: "address1", label: "House / Door Number", required: true },
-      { name: "address2", label: "Street / Village" },
+      { name: "houseDoorNumber", label: "House / Door Number", required: true },
+      { name: "streetVillage", label: "Street / Village" },
       { name: "city", label: "Town", required: true },
       { name: "district", label: "District", required: true },
       { name: "state", label: "State", type: "select", options: ["Andhra Pradesh", "Telangana", "Karnataka", "Maharashtra", "Delhi"], required: true },
@@ -645,6 +652,8 @@ const stepIcons = {
 
 const buildAdmissionFormData = (values) => {
   const formData = new FormData();
+  const houseDoorNumber = values.houseDoorNumber ?? values.address1 ?? "";
+  const streetVillage = values.streetVillage ?? values.address2 ?? "";
   appendIfPresent(formData, "AdmissionNo", values.admissionNo);
   appendIfPresent(formData, "AdmissionDate", toDateTime(values.admissionDate));
   appendIfPresent(formData, "AdmissionQuota", values.quota === "Other" ? values.quotaOther : values.quota);
@@ -657,7 +666,7 @@ const buildAdmissionFormData = (values) => {
     formData.append("StudentPhoto", values.photo);
   }
   appendIfPresent(formData, "Email", values.email);
-  appendIfPresent(formData, "StudentMobileNumber", studentMobileValue(values));
+  appendIfPresent(formData, "Student Mobile", studentMobileValue(values));
   appendIfPresent(formData, "HallTicketNumber", values.hallTicket);
   appendIfPresent(formData, "AadhaarNumber", values.aadhaar);
   appendIfPresent(formData, "Nationality", values.nationality);
@@ -675,9 +684,9 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "GuardianMobile", values.guardianMobile);
   appendIfPresent(formData, "GuardianEmail", values.guardianEmail);
   appendIfPresent(formData, "AnnualIncome", values.annualIncome);
-  appendIfPresent(formData, "Address", [values.address1, values.address2, values.city, values.district, values.state, values.pincode].filter(Boolean).join(", "));
-  appendIfPresent(formData, "AddressLine1", values.address1);
-  appendIfPresent(formData, "AddressLine2", values.address2);
+  appendIfPresent(formData, "Address", [houseDoorNumber, streetVillage, values.city, values.district, values.state, values.pincode].filter(Boolean).join(", "));
+  appendIfPresent(formData, "HouseDoorNumber", houseDoorNumber);
+  appendIfPresent(formData, "StreetVillage", streetVillage);
   appendIfPresent(formData, "City", values.city);
   appendIfPresent(formData, "District", values.district);
   appendIfPresent(formData, "State", values.state);
@@ -702,20 +711,16 @@ const buildAdmissionFormData = (values) => {
 
 const debugAdmissionSubmitPayload = ({ endpoint, method, formData, values }) => {
   if (!import.meta.env.DEV) return;
-  const entries = Array.from(formData.entries()).map(([key, value]) => [
-    key,
-    typeof File !== "undefined" && value instanceof File
-      ? `[File: ${value.name || "unnamed"}, ${value.size} bytes]`
-      : value,
-  ]);
+  const keys = Array.from(formData.keys());
   console.log("Student Admission submit payload", {
     endpoint,
     method,
-    stateMobile: values.mobile,
-    normalizedStudentMobileNumber: studentMobileValue(values),
-    hasStudentMobileNumber: formData.has("StudentMobileNumber"),
-    studentMobileNumberEntry: formData.get("StudentMobileNumber"),
-    formDataEntries: Object.fromEntries(entries),
+    keys,
+    hasStudentMobileNumber: formData.has("Student Mobile"),
+    hasHouseDoorNumber: formData.has("HouseDoorNumber"),
+    hasStreetVillage: formData.has("StreetVillage"),
+    hasExistingStudentPhoto: Boolean(values.studentPhoto),
+    hasNewStudentPhoto: typeof File !== "undefined" && values.photo instanceof File,
   });
 };
 
@@ -937,8 +942,8 @@ const normalizeAdmissionRow = (item) => {
   );
   const combinedAddress = readText(item, "address", "Address");
   const combinedAddressParts = combinedAddress.split(",").map((part) => part.trim()).filter(Boolean);
-  const addressLine1 = readText(item, "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
-  const addressLine2 = readText(item, "addressLine2", "AddressLine2") || combinedAddressParts[1] || "";
+  const houseDoorNumber = readText(item, "houseDoorNumber", "HouseDoorNumber", "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
+  const streetVillage = readText(item, "streetVillage", "StreetVillage", "addressLine2", "AddressLine2") || combinedAddressParts[1] || "";
   const city = readText(item, "city", "City") || combinedAddressParts[2] || "";
   const district = readText(item, "district", "District") || combinedAddressParts[3] || "";
   const state = readText(item, "state", "State") || combinedAddressParts[4] || "";
@@ -977,8 +982,9 @@ const normalizeAdmissionRow = (item) => {
       studentPhoto,
       photoUrl,
       aadhaar: readText(item, "aadhaarNumber", "AadhaarNumber", "aadhaar", "Aadhaar"),
+      studentMobileNumber: readText(item, "studentMobileNumber", "StudentMobileNumber", "mobileNumber", "MobileNumber", "mobile", "Mobile"),
       mobile: readText(item, "studentMobileNumber", "StudentMobileNumber", "mobileNumber", "MobileNumber", "mobile", "Mobile"),
-      email: readText(item, "email", "Email"),
+      email: readText(item, "studentEmail", "StudentEmail", "email", "Email"),
       religion: readText(item, "religion", "Religion"),
       caste: readText(item, "category", "Category", "caste", "Caste"),
       fatherName: readText(item, "fatherName", "FatherName"),
@@ -993,8 +999,10 @@ const normalizeAdmissionRow = (item) => {
       guardianMobile: readText(item, "guardianMobile", "GuardianMobile"),
       guardianEmail: readText(item, "guardianEmail", "GuardianEmail"),
       annualIncome: readText(item, "annualIncome", "AnnualIncome"),
-      address1: addressLine1,
-      address2: addressLine2,
+      houseDoorNumber,
+      streetVillage,
+      address1: houseDoorNumber,
+      address2: streetVillage,
       city,
       district,
       state,
@@ -3304,11 +3312,11 @@ export default function AdmissionPage() {
     const submitAdmissionId = editingAdmissionId || committedAdmissionId;
     const isUpdate = Boolean(submitAdmissionId);
     const visibleMobile = typeof document !== "undefined"
-      ? studentMobileValue({ mobile: document.getElementById("f-mobile")?.value || "" })
+      ? studentMobileValue({ studentMobileNumber: document.getElementById("f-studentMobileNumber")?.value || "" })
       : "";
     const submitValues = normalizeAdmissionMobileState({
       ...values,
-      mobile: studentMobileValue(values) || visibleMobile,
+      studentMobileNumber: studentMobileValue(values) || visibleMobile,
     });
 
     submitInFlightRef.current = true;

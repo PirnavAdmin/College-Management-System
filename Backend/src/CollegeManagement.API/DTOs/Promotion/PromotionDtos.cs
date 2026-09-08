@@ -426,6 +426,27 @@ namespace CollegeManagement.API.DTOs.Promotion
     }
 
     // ============================================================
+    // PROGRAM ALLOCATION
+    // ============================================================
+
+    public class ProgramAllocationRequest
+    {
+        [Required]
+        [MinLength(1)]
+        public List<int> StudentIds { get; set; } = new();
+
+        public int TargetAcademicYearId { get; set; }
+
+        public int? TargetAcademicLevelId { get; set; }
+
+        public string? TargetAcademicLevel { get; set; }
+
+        public int TargetGroupId { get; set; }
+
+        public int TargetProgramId { get; set; }
+    }
+
+    // ============================================================
     // SECTION ALLOCATION
     // ============================================================
 

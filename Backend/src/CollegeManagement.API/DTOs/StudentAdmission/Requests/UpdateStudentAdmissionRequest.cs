@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -52,11 +53,11 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
 
         public string? BloodGroup { get; set; }
 
+        [FromForm(Name = "Email")]
         [EmailAddress]
         public string? StudentEmail { get; set; }
-
+        [FromForm(Name = "Student Mobile")]
         public string? StudentMobileNumber { get; set; }
-
 
         // Photo - optional on update
         public IFormFile? StudentPhoto { get; set; }
@@ -105,7 +106,8 @@ namespace CollegeManagement.API.DTOs.StudentAdmission
 
         // Other
         public decimal? AnnualIncome { get; set; }
-
+        public int FeeStructureId { get; set; }
+        public string? PaymentPlan { get; set; }
         public string? ScholarshipStatus { get; set; }
 
 

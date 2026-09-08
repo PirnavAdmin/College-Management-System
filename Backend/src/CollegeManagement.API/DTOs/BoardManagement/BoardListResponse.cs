@@ -34,6 +34,8 @@ namespace CollegeManagement.API.DTOs.Board.Responses
 
         public bool Status { get; set; }
 
+        public bool IsActive => Status;
+
         public uint RowVersion { get; set; }
 
         public DateTime CreatedDate { get; set; }

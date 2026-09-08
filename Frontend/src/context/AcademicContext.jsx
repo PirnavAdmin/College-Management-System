@@ -116,7 +116,22 @@ export function AcademicProvider({ children }) {
     setAcademicYearsLoading(true);
     setAcademicYears([]);
     setAcademicYearsError("");
-    apiClient.get(apiEndpoints.academicYears.active, { params: { boardId: selectedBoardId, isActive: true } }).then((response) => {
+    // Some deployments do not expose the dedicated /active endpoint even
+    // though their regular academic-year list is available. Keep the global
+    // selector compatible with both API versions.
+    const loadYears = async () => {
+      try {
+        return await apiClient.get(apiEndpoints.academicYears.active, {
+          params: { boardId: selectedBoardId, isActive: true },
+        });
+      } catch {
+        return apiClient.get(apiEndpoints.academicYears.list, {
+          params: { boardId: selectedBoardId, isActive: true, Status: true },
+        });
+      }
+    };
+
+    loadYears().then((response) => {
       if (!active) return;
       const nextYears = asList(response).filter((year) => {
         const boardId = valueOf(year, "boardId", "BoardId");

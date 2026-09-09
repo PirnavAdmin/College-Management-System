@@ -398,6 +398,18 @@ namespace CollegeManagement.API.Services.Implementations
             var sentAt = DateTime.UtcNow;
             var expiresAt = sentAt.AddDays(validityDays);
 
+            var toEmail = !string.IsNullOrWhiteSpace(dto.Email) ? dto.Email.Trim() : staff.Email;
+            var toMobile = !string.IsNullOrWhiteSpace(dto.Mobile) ? dto.Mobile.Trim() : staff.Mobile;
+
+            if (!string.IsNullOrWhiteSpace(toEmail) && !string.Equals(staff.Email, toEmail, StringComparison.OrdinalIgnoreCase))
+            {
+                staff.Email = toEmail;
+            }
+            if (!string.IsNullOrWhiteSpace(toMobile) && !string.Equals(staff.Mobile, toMobile, StringComparison.OrdinalIgnoreCase))
+            {
+                staff.Mobile = toMobile;
+            }
+
             staff.ProfileLinkToken = token;
             staff.ProfileLinkSentAt = sentAt;
             staff.ProfileLinkExpiresAt = expiresAt;
@@ -407,52 +419,73 @@ namespace CollegeManagement.API.Services.Implementations
             }
             await _staffRepository.UpdateAsync(staff);
 
-            var toEmail = !string.IsNullOrWhiteSpace(dto.Email) ? dto.Email.Trim() : staff.Email;
             var staffFullName = string.IsNullOrWhiteSpace(staff.MiddleName) ? $"{staff.FirstName} {staff.LastName}".Trim() : $"{staff.FirstName} {staff.MiddleName} {staff.LastName}".Trim();
 
-            var institutionName = _configuration["InstitutionSettings:InstitutionName"] ?? (!string.IsNullOrWhiteSpace(staff.BoardName) ? staff.BoardName : "College Management System");
+            var institutionName = _configuration["InstitutionSettings:InstitutionName"] ?? (!string.IsNullOrWhiteSpace(staff.BoardName) ? staff.BoardName : "Pirnav College");
             var portalBase = _configuration["InstitutionSettings:PortalUrl"] ?? "http://localhost:5173";
-            var profileUrl = $"{portalBase.TrimEnd('/')}/staff-portal/{token}";
+            var profileUrl = $"{portalBase.TrimEnd('/')}/mock-staff-portal/{staff.Id}";
+
+            bool emailSent = false;
+            string? emailError = null;
 
             // Send Email Notification
-            try
+            if (!string.IsNullOrWhiteSpace(toEmail))
             {
-                if (!string.IsNullOrWhiteSpace(toEmail))
+                try
                 {
+                    var customMsg = !string.IsNullOrWhiteSpace(dto.CustomMessage)
+                        ? dto.CustomMessage
+                        : $"You are invited to complete your official staff profile for {institutionName}. Please use the secure link below to fill your personal, address, qualification, and document details.";
+
                     var emailBody = $@"
-                    <div style=""font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;"">
-                        <div style=""background-color: #2e7d32; color: white; padding: 20px; text-align: center;"">
-                            <h2 style=""margin: 0; font-size: 22px; text-transform: uppercase;"">{institutionName}</h2>
-                            <p style=""margin: 5px 0 0 0; font-size: 14px; opacity: 0.9;"">Complete Your Staff Profile</p>
+                    <div style=""font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;"">
+                        <div style=""background-color: #6F8400; color: #ffffff; padding: 28px 24px; text-align: center;"">
+                            <h2 style=""margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; color: #ffffff;"">{institutionName}</h2>
+                            <p style=""margin: 6px 0 0 0; font-size: 14px; opacity: 0.95; color: #f4f7eb;"">Official Staff Profile Onboarding</p>
                         </div>
-                        <div style=""padding: 24px; color: #333333; line-height: 1.6;"">
+                        <div style=""padding: 28px 24px; color: #1e293b; line-height: 1.6;"">
                             <p style=""font-size: 16px; margin-top: 0;"">Dear <strong>{staffFullName}</strong> ({staff.EmployeeId}),</p>
-                            <p>{dto.CustomMessage ?? $"You are invited to complete your official staff profile for {institutionName}. Please use the secure link below to fill your personal, address, qualification, and document details."}</p>
+                            <p style=""font-size: 14px; color: #334155; margin: 12px 0 20px 0;"">{customMsg}</p>
                             <div style=""text-align: center; margin: 30px 0;"">
-                                <a href=""{profileUrl}"" style=""background-color: #2e7d32; color: #ffffff; text-decoration: none; padding: 12px 28px; font-weight: bold; border-radius: 6px; display: inline-block; font-size: 15px;"">Complete Your Profile</a>
+                                <a href=""{profileUrl}"" style=""background-color: #6F8400; color: #ffffff; text-decoration: none; padding: 12px 32px; font-weight: 600; border-radius: 8px; display: inline-block; font-size: 15px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"">Complete Your Profile</a>
                             </div>
-                            <p style=""font-size: 13px; color: #666666;"">This link is valid for <strong>{validityDays} days</strong> (Expires on {expiresAt:dd MMM yyyy}).</p>
-                            <hr style=""border: none; border-top: 1px solid #eee; margin: 20px 0;"" />
-                            <p style=""font-size: 12px; color: #888888; margin-bottom: 0;"">Regards,<br /><strong>{institutionName} Administration</strong></p>
+                            <div style=""background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-top: 20px;"">
+                                <p style=""font-size: 12px; color: #64748b; margin: 0 0 6px 0;"">Direct Link (if button doesn't open):</p>
+                                <a href=""{profileUrl}"" style=""font-size: 13px; color: #6F8400; word-break: break-all; text-decoration: underline;"">{profileUrl}</a>
+                            </div>
+                            <p style=""font-size: 13px; color: #64748b; margin-top: 20px;"">⏱️ This link is valid for <strong>{validityDays} days</strong> (Expires on {expiresAt:dd MMM yyyy, hh:mm tt UTC}).</p>
+                            <hr style=""border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;"">
+                            <p style=""font-size: 12px; color: #94a3b8; margin-bottom: 0;"">Regards,<br><strong style=""color: #475569;"">{institutionName} Administration</strong></p>
                         </div>
                     </div>";
 
                     await _emailService.SendEmailAsync(toEmail, $"Complete Your Staff Profile - {institutionName}", emailBody);
+                    emailSent = true;
+                }
+                catch (Exception ex)
+                {
+                    emailSent = false;
+                    emailError = ex.Message;
                 }
             }
-            catch
+            else
             {
-                // Fallback gracefully without failing link generation
+                emailError = "No recipient email address specified.";
             }
 
             return new SendProfileLinkResponseDto
             {
                 Success = true,
-                Message = "Profile completion link sent successfully.",
+                Message = emailSent 
+                    ? $"Profile completion link sent successfully to {toEmail}." 
+                    : (emailError != null ? $"Link generated, but email could not be delivered: {emailError}" : "Profile completion link generated successfully."),
                 Token = token,
                 ProfileLink = profileUrl,
                 SentAt = sentAt,
-                ExpiresAt = expiresAt
+                ExpiresAt = expiresAt,
+                EmailSent = emailSent,
+                EmailRecipient = toEmail,
+                EmailError = emailError
             };
         }
 

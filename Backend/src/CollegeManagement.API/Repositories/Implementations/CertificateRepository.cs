@@ -321,7 +321,7 @@ public class CertificateRepository : ICertificateRepository
                 );
                 SELECT LAST_INSERT_ID();";
 
-            newId = await connection.ExecuteScalarAsync<int>(
+            var rawId = await connection.ExecuteScalarAsync(
                 new CommandDefinition(insertSql, new
                 {
                     certNumber,
@@ -336,6 +336,8 @@ public class CertificateRepository : ICertificateRepository
                     remarks = request.Remarks?.Trim(),
                     requestDate
                 }, cancellationToken: ct));
+
+            newId = rawId != null ? Convert.ToInt32(rawId) : 0;
         }
         else
         {
@@ -348,7 +350,7 @@ public class CertificateRepository : ICertificateRepository
                 );
                 SELECT LAST_INSERT_ID();";
 
-            newId = await connection.ExecuteScalarAsync<int>(
+            var rawId = await connection.ExecuteScalarAsync(
                 new CommandDefinition(insertLegacySql, new
                 {
                     studentId,
@@ -358,9 +360,18 @@ public class CertificateRepository : ICertificateRepository
                     requestDate,
                     remarks = request.Remarks?.Trim()
                 }, cancellationToken: ct));
+
+            newId = rawId != null ? Convert.ToInt32(rawId) : 0;
         }
 
-        return await GetByIdAsync(newId, ct);
+        if (newId > 0)
+        {
+            var byId = await GetByIdAsync(newId, ct);
+            if (byId != null) return byId;
+        }
+
+        // Fallback: lookup by generated certificate number
+        return await VerifyAsync(certNumber, ct);
     }
 
     public async Task<CertificateResponseDto?> GenerateAsync(

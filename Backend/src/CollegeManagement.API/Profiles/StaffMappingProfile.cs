@@ -41,6 +41,7 @@ namespace CollegeManagement.API.Profiles
             CreateMap<Staff, StaffResponseDto>()
                 .ForMember(dest => dest.Department, opt => opt.MapFrom(src => src.DepartmentRef != null ? src.DepartmentRef.DepartmentName : src.Department))
                 .ForMember(dest => dest.BoardName, opt => opt.MapFrom(src => src.BoardRef != null ? src.BoardRef.BoardName : src.BoardName))
+                .ForMember(dest => dest.BoardCode, opt => opt.MapFrom(src => src.BoardRef != null ? src.BoardRef.BoardCode : (src.BoardName ?? string.Empty)))
                 .ForMember(dest => dest.Designation, opt => opt.MapFrom(src => src.DesignationRef != null ? src.DesignationRef.Name : src.Designation));
 
             // Staff Entity -> StaffProfileFullDto

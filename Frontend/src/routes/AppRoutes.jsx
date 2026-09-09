@@ -218,6 +218,9 @@ export default function AppRoutes() {
       <Route path="/mock-staff-portal/:id" element={<StaffManagementPage />} />
       <Route path="/mock-staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
       <Route path="/mock-staff-portal/:id/review" element={<StaffManagementPage />} />
+      <Route path="/staff-portal/:id" element={<StaffManagementPage />} />
+      <Route path="/staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
+      <Route path="/staff-portal/:id/review" element={<StaffManagementPage />} />
 
       {listSlugs.map((slug) => <Route key={`${slug}-redirect`} path={`/${slug}`} element={<Navigate to={`/dashboard/${slug}`} replace />} />)}
       {listSlugs.map((slug) => <Route key={`${slug}-add-redirect`} path={`/${slug}/add`} element={<Navigate to={`/dashboard/${slug}/add`} replace />} />)}

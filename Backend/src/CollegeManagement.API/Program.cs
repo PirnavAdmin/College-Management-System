@@ -1,4 +1,4 @@
-﻿using CollegeManagement.API.Repositories.Interfaces;
+using CollegeManagement.API.Repositories.Interfaces;
 using CollegeManagement.API.Repositories.Implementations;
 using Asp.Versioning;
 using CollegeManagement.API.Data;
@@ -280,10 +280,13 @@ builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IStudyMaterialRepository, StudyMaterialRepository>();
 builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
+builder.Services.AddScoped<INumberSeriesRepository, NumberSeriesRepository>();
 
 #endregion
 
 #region Services
+
+builder.Services.AddScoped<INumberSeriesService, NumberSeriesService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();

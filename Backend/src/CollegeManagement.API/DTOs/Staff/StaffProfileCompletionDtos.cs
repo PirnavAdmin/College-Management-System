@@ -21,6 +21,9 @@ namespace CollegeManagement.API.DTOs.Staff
         public string ProfileLink { get; set; } = string.Empty;
         public DateTime ExpiresAt { get; set; }
         public DateTime SentAt { get; set; }
+        public bool EmailSent { get; set; }
+        public string? EmailRecipient { get; set; }
+        public string? EmailError { get; set; }
     }
 
     public class StaffProfileFullDto

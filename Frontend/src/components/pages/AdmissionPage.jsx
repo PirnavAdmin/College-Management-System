@@ -512,13 +512,38 @@ const COURSE_PAYMENT_PLAN_LABELS = {
   "Full Payment": "Full Course Payment",
   "Installment Payment": "Course Fee Schedule",
 };
-const normalizeCoursePaymentPlan = (value, hasInstallments = false) => {
-  const text = String(value || "").trim();
+const normalizeCoursePaymentPlan = (source, hasInstallments = false) => {
+  const value = typeof source === "object" && source !== null
+    ? read(
+      source,
+      "planName",
+      "PlanName",
+      "name",
+      "Name",
+      "paymentPlanName",
+      "PaymentPlanName",
+      "paymentPlan",
+      "PaymentPlan",
+    )
+    : source;
+  const text = typeof value === "object" ? "" : String(value || "").trim();
   const normalized = text.toLowerCase();
   if (normalized.includes("installment") || normalized.includes("schedule")) return "Installment Payment";
   if (normalized.includes("full")) return "Full Payment";
   if (COURSE_PAYMENT_PLANS.includes(text)) return text;
-  return hasInstallments ? "Installment Payment" : text;
+  return hasInstallments ? "Installment Payment" : "";
+};
+const toAdmissionPaymentPlan = (plan) => {
+  const normalized = normalizeCoursePaymentPlan(plan);
+  if (normalized === "Full Payment") return "Full Payment";
+  if (normalized === "Installment Payment") return "Schedule Payment";
+  return "";
+};
+const toFeeAssignmentPlanName = (plan) => {
+  const normalized = normalizeCoursePaymentPlan(plan);
+  if (normalized === "Full Payment") return "Full Payment";
+  if (normalized === "Installment Payment") return "Installment Payment";
+  return "";
 };
 const PAGE_SIZE = 6;
 const ADMISSION_EXPORT_COLUMNS = [
@@ -698,6 +723,14 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "GroupId", values.group);
   appendIfPresent(formData, "ProgramId", values.program);
   appendIfPresent(formData, "FeeStructureId", numericId(values.feeStructureId));
+  const admissionPaymentPlan = toAdmissionPaymentPlan(values.paymentPlan);
+  appendIfPresent(formData, "PaymentPlan", admissionPaymentPlan);
+  if (import.meta.env.DEV) {
+    console.log("Student Admission payment plan payload:", {
+      uiPaymentPlan: values.paymentPlan,
+      admissionPaymentPlan,
+    });
+  }
   appendIfPresent(formData, "Medium", values.medium);
   appendIfPresent(formData, "SecondLanguage", values.secondLanguage);
   appendIfPresent(formData, "AdmissionType", values.admissionType);
@@ -909,6 +942,88 @@ const readAdmissionInstallments = (item) => getNestedRows(
   dueDate: readText(row, "dueDate", "DueDate", "date", "Date").slice(0, 10),
 }));
 
+const persistedFeeSources = (payload) => {
+  const root = getObject(payload);
+  return [
+    root,
+    read(
+      root,
+      "studentFee",
+      "StudentFee",
+      "feeDetails",
+      "FeeDetails",
+      "feeAccount",
+      "FeeAccount",
+      "admissionFeeSelection",
+      "AdmissionFeeSelection",
+      "feeSelection",
+      "FeeSelection",
+      "assignment",
+      "Assignment",
+    ),
+  ].filter((source) => source && typeof source === "object");
+};
+
+const readPersistedFeeState = (payload, currentValues = {}) => {
+  const sources = persistedFeeSources(payload);
+  const planSource = sources
+    .map((source) => read(
+      source,
+      "paymentPlan",
+      "PaymentPlan",
+      "planName",
+      "PlanName",
+      "paymentPlanName",
+      "PaymentPlanName",
+      "feePaymentPlan",
+      "FeePaymentPlan",
+      "plan",
+      "Plan",
+    ))
+    .find((source) => source !== undefined && source !== null && source !== "");
+  const planObject = planSource && typeof planSource === "object" ? planSource : {};
+  const schedules = [planObject, ...sources].map(readAdmissionInstallments).find((rows) => rows.length) || [];
+  const explicitCount = sources.map((source) => readNumber(
+    source,
+    "numberOfInstallments",
+    "NumberOfInstallments",
+    "installmentCount",
+    "InstallmentCount",
+    "scheduleCount",
+    "ScheduleCount",
+  )).find((count) => count !== null) ?? readNumber(
+    planObject,
+    "numberOfInstallments",
+    "NumberOfInstallments",
+    "installmentCount",
+    "InstallmentCount",
+    "scheduleCount",
+    "ScheduleCount",
+  );
+  const paymentPlan = normalizeCoursePaymentPlan(planSource, schedules.length > 0);
+  const installmentCount = paymentPlan === "Installment Payment"
+    ? explicitCount || schedules.length || Number(currentValues.installmentCount) || DEFAULT_INSTALLMENT_COUNT
+    : paymentPlan === "Full Payment" ? 1 : currentValues.installmentCount || "";
+
+  return {
+    paymentPlan,
+    installmentCount,
+    installments: schedules.length ? schedules : (currentValues.installments || []),
+    rawPaymentPlan: planSource,
+  };
+};
+
+const hydratePersistedFeeState = (currentValues, payload) => {
+  const persisted = readPersistedFeeState(payload, currentValues);
+  if (!persisted.paymentPlan) return currentValues;
+  return {
+    ...currentValues,
+    paymentPlan: persisted.paymentPlan,
+    installmentCount: persisted.installmentCount,
+    installments: persisted.paymentPlan === "Installment Payment" ? persisted.installments : [],
+  };
+};
+
 const normalizeAdmissionRow = (item) => {
   const admissionId = readId(item, "admissionId", "AdmissionId", "id", "Id");
   const student = read(item, "student", "Student");
@@ -936,10 +1051,8 @@ const normalizeAdmissionRow = (item) => {
   const feeStructureId = readFeeStructureId(item);
   const savedFeeItems = readAdmissionFeeItems(item, feeStructureId);
   const savedInstallments = readAdmissionInstallments(item);
-  const paymentPlan = normalizeCoursePaymentPlan(
-    readText(item, "paymentPlan", "PaymentPlan", "paymentPlanName", "PaymentPlanName", "feePaymentPlan", "FeePaymentPlan", "planName", "PlanName"),
-    savedInstallments.length > 0,
-  );
+  const persistedFee = readPersistedFeeState(item, { installments: savedInstallments });
+  const paymentPlan = persistedFee.paymentPlan;
   const combinedAddress = readText(item, "address", "Address");
   const combinedAddressParts = combinedAddress.split(",").map((part) => part.trim()).filter(Boolean);
   const houseDoorNumber = readText(item, "houseDoorNumber", "HouseDoorNumber", "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
@@ -1019,8 +1132,8 @@ const normalizeAdmissionRow = (item) => {
       feeStructureId,
       feeItems: savedFeeItems,
       paymentPlan,
-      installmentCount: savedInstallments.length ? savedInstallments.length : "",
-      installments: savedInstallments,
+      installmentCount: persistedFee.installmentCount,
+      installments: persistedFee.installments,
       status,
       level: readId(item, "academicLevelId", "AcademicLevelId") || readId(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
       levelName: readText(item, "academicLevelName", "AcademicLevelName") || (typeof academicLevel === "string" ? academicLevel : readText(academicLevel, "academicLevelName", "AcademicLevelName", "name", "Name")),
@@ -1258,6 +1371,11 @@ const saveAdmissionFeeSelections = async (admissionId, values) => {
     throw new Error("Selected fee components could not be saved because their backend component IDs were not available.");
   }
 
+  const payload = {
+    admissionId: numericAdmissionId,
+    selectedFeeStructureComponentIds: componentIds,
+  };
+
   if (import.meta.env.DEV) {
     console.log("Student Admission fee selections payload", {
       endpoint: apiEndpoints.studentAdmissions.feeSelections(numericAdmissionId),
@@ -1266,10 +1384,7 @@ const saveAdmissionFeeSelections = async (admissionId, values) => {
     });
   }
 
-  await apiClient.post(apiEndpoints.studentAdmissions.feeSelections(numericAdmissionId), {
-    admissionId: numericAdmissionId,
-    selectedFeeStructureComponentIds: componentIds,
-  });
+  await apiClient.post(apiEndpoints.studentAdmissions.feeSelections(numericAdmissionId), payload);
 };
 
 const feeStepErrors = (values) => {
@@ -2192,18 +2307,14 @@ export default function AdmissionPage() {
   const installmentCount = values.installmentCount;
   const admissionDate = values.admissionDate;
 
-  // Keeps the fee step consistent: default plan, and an installment schedule
-  // that always matches the applicable course fee.
+  // Keeps an explicitly selected installment schedule aligned with the course fee.
   useEffect(() => {
+    if (editingAdmissionId) return;
     if (!feeStructureId || !feeItems?.length) return;
     setValues((current) => {
       const courseFeePayable = deriveAdmissionFee(current).courseFeePayable;
       const next = { ...current };
       let changed = false;
-      if (!next.paymentPlan) {
-        next.paymentPlan = "Full Payment";
-        changed = true;
-      }
       if (next.paymentPlan === "Installment Payment") {
         const count = Number(next.installmentCount) || DEFAULT_INSTALLMENT_COUNT;
         const schedule = Array.isArray(next.installments) ? next.installments : [];
@@ -2216,7 +2327,7 @@ export default function AdmissionPage() {
       }
       return changed ? next : current;
     });
-  }, [admissionDate, feeItems, feeStructureId, installmentCount, paymentPlan]);
+  }, [admissionDate, editingAdmissionId, feeItems, feeStructureId, installmentCount, paymentPlan]);
 
   useEffect(() => {
     if (!isFeeStep) return;
@@ -2575,8 +2686,7 @@ export default function AdmissionPage() {
         ...current,
         feeStructureId: "",
         feeItems: [],
-        installments: [],
-        paymentPlan: "",
+        ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
         collectFirstInstallment: false,
       }));
       return undefined;
@@ -2609,8 +2719,7 @@ export default function AdmissionPage() {
               ...current,
               feeStructureId: "",
               feeItems: [],
-              installments: [],
-              paymentPlan: "",
+              ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
               collectFirstInstallment: false,
             }));
             setFeeStructureError("No fee structure is configured for the selected Academic Year, Group and Program.");
@@ -2638,8 +2747,7 @@ export default function AdmissionPage() {
             ...current,
             feeStructureId: "",
             feeItems: [],
-            installments: [],
-            paymentPlan: "",
+            ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
             collectFirstInstallment: false,
           }));
           setFeeStructureError("The matched fee structure has no configured fee items.");
@@ -2651,18 +2759,26 @@ export default function AdmissionPage() {
           const selectedByKey = new Map(previousItems.map((item) => [String(item.feeStructureItemId || item.structureItemId || item.feeTypeId || item.id), item]));
           const hydratedFeeItems = feeItems.map((item) => {
             const previous = selectedByKey.get(String(item.feeStructureItemId || item.structureItemId || item.feeTypeId || item.id));
+            const componentId = String(item.feeStructureItemId || item.structureItemId || item.id || "");
+            if (!previous && feeSelectionInitializedRef.current) {
+              return {
+                ...item,
+                selected: item.required || feeSelection.includes(componentId),
+              };
+            }
             if (!previous) return item;
             return {
               ...item,
               selected: item.required || previous.selected !== false,
             };
           });
+          const nextPlan = normalizeCoursePaymentPlan(current.paymentPlan, current.installments?.length > 0);
           return {
             ...current,
             feeStructureId: matching.id,
             feeItems: hydratedFeeItems,
-            paymentPlan: current.paymentPlan || "Full Payment",
-            installments: current.paymentPlan === "Installment Payment" ? current.installments : [],
+            paymentPlan: nextPlan,
+            installments: nextPlan === "Installment Payment" ? current.installments : [],
             collectFirstInstallment: false,
           };
         });
@@ -2673,8 +2789,7 @@ export default function AdmissionPage() {
           ...current,
           feeStructureId: "",
           feeItems: [],
-          installments: [],
-          paymentPlan: "",
+          ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
           collectFirstInstallment: false,
         }));
         setFeeStructureError(getApiErrorMessage(err));
@@ -2683,7 +2798,7 @@ export default function AdmissionPage() {
         if (!ignore) setFeeStructureLoading(false);
       });
     return () => { ignore = true; };
-  }, [editingAdmissionId, masterOptions.boards, masterOptions.groups, masterOptions.programs, masterOptions.years, values.board, values.group, values.program, values.year, viewMode]);
+  }, [editingAdmissionId, feeSelection, masterOptions.boards, masterOptions.groups, masterOptions.programs, masterOptions.years, values.board, values.group, values.program, values.year, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
@@ -3058,8 +3173,9 @@ export default function AdmissionPage() {
       ? { admissionId: String(admissionId), admissionNo: formValues.admissionNo || "" }
       : null;
     setValues(admissionId ? formValues : newAdmissionValues(formValues));
-    setFeeSelection(Array.isArray(selection) ? selection : []);
-    feeSelectionInitializedRef.current = Array.isArray(selection);
+    const hasPersistedSelection = Array.isArray(selection);
+    setFeeSelection(hasPersistedSelection ? selection : []);
+    feeSelectionInitializedRef.current = hasPersistedSelection;
     setErrors({});
     setStep(safeStepIndex(targetStep));
     setViewMode("form");
@@ -3084,11 +3200,61 @@ export default function AdmissionPage() {
     setActionBusy(`Load-${record.id}`);
     try {
       const response = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
-      const detailRow = normalizeAdmissionRow(getObject(response.data));
+      const detail = getObject(response.data);
+      const detailRow = normalizeAdmissionRow(detail);
+      let formValues = detailRow.values || {};
+      const persistedSelection = null;
+
+      let studentId = resolveApprovedStudentId(detail, detailRow.raw, detailRow, record.raw, record);
+      let studentFeeId = readStudentFeeAssignmentId(detail) || readStudentFeeAssignmentId(record.raw || record);
+      if (!studentId && !studentFeeId && detailRow.admissionNo) {
+        try {
+          const ledgerResponse = await apiClient.get(apiEndpoints.fee.ledger);
+          const matchingAccount = getCollection(ledgerResponse.data).find((account) => {
+            const admission = read(account, "admission", "Admission", "studentAdmission", "StudentAdmission");
+            const accountAdmissionNo = readText(account, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+              || readText(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber");
+            return accountAdmissionNo.trim().toLowerCase() === detailRow.admissionNo.trim().toLowerCase();
+          });
+          studentId = resolveApprovedStudentId(matchingAccount);
+          studentFeeId = readStudentFeeAssignmentId(matchingAccount);
+        } catch (ledgerError) {
+          if (import.meta.env.DEV) {
+            console.warn("Fee account lookup by admission number was unavailable.", {
+              status: ledgerError?.response?.status,
+            });
+          }
+        }
+      }
+      const feeDetailsEndpoint = studentId
+        ? apiEndpoints.fee.studentFeeDetailsByStudent(studentId)
+        : studentFeeId ? apiEndpoints.fee.studentFeeDetails(studentFeeId) : "";
+
+      if (feeDetailsEndpoint) {
+        try {
+          const feeDetailsResponse = await apiClient.get(feeDetailsEndpoint);
+          const persistedFee = readPersistedFeeState(feeDetailsResponse.data, formValues);
+          formValues = hydratePersistedFeeState(formValues, feeDetailsResponse.data);
+          if (import.meta.env.DEV) {
+            console.log("Payment plan hydration:", {
+              rawBackendPaymentPlan: persistedFee.rawPaymentPlan,
+              normalizedPaymentPlan: persistedFee.paymentPlan,
+              scheduleCount: persistedFee.installments.length,
+              currentMode: "edit",
+            });
+          }
+        } catch (feeDetailsError) {
+          if (feeDetailsError?.response?.status !== 404 && import.meta.env.DEV) {
+            console.warn("Persisted student fee details could not be loaded.", {
+              status: feeDetailsError?.response?.status,
+            });
+          }
+        }
+      }
       openAdmissionForm({
-        formValues: detailRow.values || {},
+        formValues,
         targetStep,
-        selection: [],
+        selection: persistedSelection,
         admissionId,
       });
     } catch (err) {
@@ -3127,7 +3293,7 @@ export default function AdmissionPage() {
     return resolveApprovedStudentId(matchingStudent);
   }, []);
 
-  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload, selectedFeeStructureId = "" }) => {
+  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload, selectedFeeStructureId = "", selectedFeeValues = {} }) => {
     const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
     const detail = getObject(detailResponse.data);
     const detailRow = normalizeAdmissionRow(detail);
@@ -3139,35 +3305,58 @@ export default function AdmissionPage() {
     try {
       const existingResponse = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(studentId));
       const existingStudentFeeId = readStudentFeeAssignmentId(existingResponse.data);
-      if (existingStudentFeeId) return { studentId, studentFeeId: existingStudentFeeId, reused: true };
+      if (existingStudentFeeId) {
+        return {
+          studentId,
+          studentFeeId: existingStudentFeeId,
+          reused: true,
+          persistedFeeValues: hydratePersistedFeeState(selectedFeeValues, existingResponse.data),
+        };
+      }
     } catch (err) {
       if (err?.response?.status && err.response.status !== 404) throw err;
     }
 
-    const selectedStructureId = numericId(selectedFeeStructureId || detailRow.values.feeStructureId)
-      ? String(selectedFeeStructureId || detailRow.values.feeStructureId)
+    const selectedValues = selectedFeeValues && typeof selectedFeeValues === "object" ? selectedFeeValues : {};
+    const feeValues = {
+      ...detailRow.values,
+      ...selectedValues,
+      feeItems: selectedValues.feeItems?.length ? selectedValues.feeItems : detailRow.values.feeItems,
+      installments: selectedValues.installments?.length ? selectedValues.installments : detailRow.values.installments,
+    };
+    const selectedStructureId = numericId(selectedFeeStructureId || feeValues.feeStructureId)
+      ? String(selectedFeeStructureId || feeValues.feeStructureId)
       : "";
     const feeStructure = selectedStructureId
       ? { id: selectedStructureId }
       : await findApplicableFeeStructure({
-        boardId: detailRow.values.board,
-        academicYearId: detailRow.values.year,
-        groupId: detailRow.values.group,
-        programId: detailRow.values.program,
+        boardId: feeValues.board,
+        academicYearId: feeValues.year,
+        groupId: feeValues.group,
+        programId: feeValues.program,
       });
     const feeStructureId = numericId(feeStructure?.id);
     if (!feeStructureId) {
       throw new Error("Fee account was not created because the selected Fee Structure ID was not available.");
     }
 
-    const fee = deriveAdmissionFee(detailRow.values);
-    const planName = normalizeCoursePaymentPlan(fee.paymentPlan || detailRow.values.paymentPlan) || "Full Payment";
-    const selectedInstallmentCount = Number(detailRow.values.installmentCount);
+    const fee = deriveAdmissionFee(feeValues);
+    const planName = toFeeAssignmentPlanName(fee.paymentPlan || feeValues.paymentPlan);
+    if (!planName) {
+      throw new Error("Course fee payment plan is missing. Please select and save a payment plan before fee assignment.");
+    }
+    const selectedInstallmentCount = Number(feeValues.installmentCount);
     const numberOfInstallments = planName === "Installment Payment"
       ? Math.max(Number.isInteger(selectedInstallmentCount) && selectedInstallmentCount > 0
         ? selectedInstallmentCount
         : Number(fee.courseSchedules.length || DEFAULT_INSTALLMENT_COUNT), 1)
       : 1;
+    if (import.meta.env.DEV) {
+      console.log("FINAL fee assignment request", {
+        planName,
+        numberOfInstallments,
+      });
+    }
     const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
       studentId: Number(studentId),
       feeStructureId,
@@ -3189,7 +3378,19 @@ export default function AdmissionPage() {
       });
     }
 
-    return { studentId, studentFeeId, reused: false };
+    let persistedFeeValues = null;
+    try {
+      const persistedResponse = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(studentId));
+      persistedFeeValues = hydratePersistedFeeState(feeValues, persistedResponse.data);
+    } catch (readbackError) {
+      if (import.meta.env.DEV) {
+        console.warn("Assigned student fee readback was unavailable.", {
+          status: readbackError?.response?.status,
+        });
+      }
+    }
+
+    return { studentId, studentFeeId, reused: false, persistedFeeValues };
   }, [resolveApprovedStudentIdFromBackend]);
 
   const updateAdmissionStatus = async (record, status) => {
@@ -3235,11 +3436,15 @@ export default function AdmissionPage() {
         setApproveTarget(null);
         await refreshAdmissions();
         try {
-          await ensureApprovedStudentFeeAccount({
+          const feeAccount = await ensureApprovedStudentFeeAccount({
             admissionId,
             approvedPayload: getObject(response.data),
             selectedFeeStructureId: record.feeStructureId || record.values?.feeStructureId || values.feeStructureId,
+            selectedFeeValues: record.values || values,
           });
+          if (feeAccount.persistedFeeValues && String(editingAdmissionId) === String(admissionId)) {
+            setValues((current) => ({ ...current, ...feeAccount.persistedFeeValues }));
+          }
         } catch (feeErr) {
           setToast(`Admission ${record.admissionNo} was approved, but fee account creation failed: ${getApiErrorMessage(feeErr)}`);
           return;

@@ -263,6 +263,15 @@ namespace CollegeManagement.API.Repositories.Implementations
             session.LeaveCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Leave);
             session.UpdatedAt = DateTime.UtcNow;
             
+            if (currentUserId.HasValue)
+            {
+                var userExists = await _context.Users.AnyAsync(u => u.UserId == currentUserId.Value);
+                if (!userExists)
+                {
+                    currentUserId = null;
+                }
+            }
+
             var audit = new AttendanceAuditHistory
             {
                 EntityType = "Staff",

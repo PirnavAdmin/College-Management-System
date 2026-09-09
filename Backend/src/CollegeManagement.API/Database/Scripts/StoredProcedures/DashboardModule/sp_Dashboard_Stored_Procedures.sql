@@ -552,6 +552,7 @@ DELIMITER //
 
 CREATE PROCEDURE sp_GetDashboardStaffAttendance(
     IN p_BoardId INT,
+    IN p_AcademicYearId INT,
     IN p_TargetDate DATE,
     IN p_StaffType VARCHAR(50)
 )

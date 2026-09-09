@@ -609,7 +609,7 @@ BEGIN
     LEFT JOIN `Departments` d ON st.DepartmentId = d.DepartmentId
     WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
       AND (st.Status = 'Active' OR st.Status IS NULL)
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR d.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
 
     SELECT COUNT(*) INTO v_TeachingCount
     FROM `Staff` st
@@ -617,7 +617,7 @@ BEGIN
     WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
       AND (st.Status = 'Active' OR st.Status IS NULL)
       AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching' OR st.StaffType IS NULL)
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR d.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
 
     SET v_NonTeachingCount = GREATEST(0, v_TotalStaff - v_TeachingCount);
 

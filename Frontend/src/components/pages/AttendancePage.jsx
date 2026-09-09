@@ -17,7 +17,7 @@ const num = (v) => v === "" || v == null ? undefined : Number(v);
 const studentSessionStatus = (row, session) => status(get(row, `${session}Status`, `${session}AttendanceStatus`, `${session}SessionStatus`, session, `${session}Attendance`));
 const status = (v) => LABEL[v] ?? v ?? "—";
 const staffType = (v) => v === "" || v == null ? undefined : String(v) === "1" || /non/i.test(v) ? 1 : 0;
-const ATTENDANCE_PAGE_SIZE = 10;
+const ATTENDANCE_PAGE_SIZE = 5;
 const Field = ({ label, children }) => <label className="att-field"><span>{label}</span>{children}</label>;
 function Select({ label, value, onChange, items = [], all, disabled = false }) { return <Field label={label}><select value={value} onChange={onChange} disabled={disabled}>{all ? <option value="">{all}</option> : null}{items.map((x) => { const id = get(x, "id", "Id", "sectionId", "programId", "groupId", "academicLevelId", "departmentId", "facultyId", "staffId", "academicYearId", "boardId") ?? x, name = get(x, "name", "Name", "sectionName", "programName", "programmeName", "groupName", "levelName", "departmentName", "staffName", "facultyName", "academicYearName", "boardName") ?? x; return <option key={String(id)} value={id}>{name}</option>; })}</select></Field>; }
 

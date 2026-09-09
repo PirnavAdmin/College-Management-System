@@ -61,7 +61,6 @@ namespace CollegeManagement.API.DTOs.Staff
         public int? BoardId { get; set; }
         public string? BoardCode { get; set; }
         public string? BoardName { get; set; }
-        public string? BoardCode { get; set; }
         public string? Board => !string.IsNullOrWhiteSpace(BoardCode) ? BoardCode : BoardName;
         
         public DateTime DateOfJoining

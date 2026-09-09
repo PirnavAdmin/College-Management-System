@@ -19,7 +19,7 @@ const status = (v) => LABEL[v] ?? v ?? "—";
 const staffType = (v) => v === "" || v == null ? undefined : String(v) === "1" || /non/i.test(v) ? 1 : 0;
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const formatTime = (v) => { if (!v) return null; const s = String(v).trim(); if (!s) return null; return s.length === 5 ? `${s}:00` : s; };
-const ATTENDANCE_PAGE_SIZE = 10;
+const ATTENDANCE_PAGE_SIZE = 5;
 const Field = ({ label, children }) => <label className="att-field"><span>{label}</span>{children}</label>;
 function Select({ label, value, onChange, items = [], all, disabled = false }) { return <Field label={label}><select value={value} onChange={onChange} disabled={disabled}>{all ? <option value="">{all}</option> : null}{items.map((x) => { const id = get(x, "id", "Id", "sectionId", "programId", "groupId", "academicLevelId", "departmentId", "facultyId", "staffId", "academicYearId", "boardId") ?? x, name = get(x, "name", "Name", "sectionName", "programName", "programmeName", "groupName", "levelName", "departmentName", "staffName", "facultyName", "academicYearName", "boardName") ?? x; return <option key={String(id)} value={id}>{name}</option>; })}</select></Field>; }
 

@@ -16,6 +16,7 @@ import {
 import * as XLSX from "xlsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import DashboardLayout from "../layout/DashboardLayout";
 import "./SectionManagementPage.css";
 
@@ -634,6 +635,13 @@ function BulkRoomAllocationPreview({ allocations, requested, errors, onChange, p
 }
 
 export default function SectionManagementPage() {
+  const {
+    selectedBoard,
+    selectedBoardId,
+    selectedAcademicYear,
+    selectedAcademicYearId,
+  } = useAcademicContext();
+
   // First Tab is Room Management ("rooms"), Second Tab is Section Management ("sections")
   const [activeTab, setActiveTab] = useState("rooms");
 
@@ -675,6 +683,42 @@ export default function SectionManagementPage() {
   const [filters, setFilters] = useState({ boardId: "", academicYearId: "", groupId: "", programId: "", academicLevelId: "" });
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+
+  const effectiveNavbarBoard = useMemo(() => {
+    if (!boardsList.length) return null;
+    return boardsList.find(
+      (b) =>
+        normalizeId(b.id) === normalizeId(selectedBoardId) ||
+        (selectedBoard?.code && String(b.code || "").trim().toLowerCase() === String(selectedBoard.code).trim().toLowerCase()) ||
+        (selectedBoard?.name && String(b.name || "").trim().toLowerCase() === String(selectedBoard.name).trim().toLowerCase())
+    ) || boardsList[0] || null;
+  }, [boardsList, selectedBoardId, selectedBoard]);
+
+  const effectiveNavbarYear = useMemo(() => {
+    if (!academicYearsList.length || !effectiveNavbarBoard) return null;
+    const boardYears = academicYearsList.filter((y) => yearBelongsToBoard(y, effectiveNavbarBoard.id));
+    return boardYears.find(
+      (y) =>
+        normalizeId(y.id) === normalizeId(selectedAcademicYearId) ||
+        (selectedAcademicYear?.name && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.name).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "")) ||
+        (selectedAcademicYear?.code && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.code).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, ""))
+    ) || boardYears.find((y) => y.isCurrent) || boardYears[0] || null;
+  }, [academicYearsList, effectiveNavbarBoard, selectedAcademicYearId, selectedAcademicYear]);
+
+  // Sync navbar selection with list filters
+  useEffect(() => {
+    if (effectiveNavbarBoard) {
+      const bId = normalizeId(effectiveNavbarBoard.id);
+      setFilters((current) => (normalizeId(current.boardId) === bId ? current : { ...current, boardId: bId }));
+    }
+  }, [effectiveNavbarBoard]);
+
+  useEffect(() => {
+    if (effectiveNavbarYear) {
+      const yId = normalizeId(effectiveNavbarYear.id);
+      setFilters((current) => (normalizeId(current.academicYearId) === yId ? current : { ...current, academicYearId: yId }));
+    }
+  }, [effectiveNavbarYear]);
 
   const [roomFilters, setRoomFilters] = useState({ building: "", floor: "", roomType: "" });
   const [roomSearch, setRoomSearch] = useState("");
@@ -1081,8 +1125,8 @@ export default function SectionManagementPage() {
     setSectionFormMode("add");
     setSectionCreationType("single");
     setFieldErrors({});
-    const boardId = boardsList.some((item) => item.id === normalizeId(filters.boardId)) ? normalizeId(filters.boardId) : "";
-    const academicYearId = academicYearsList.some((item) => item.id === normalizeId(filters.academicYearId) && yearBelongsToBoard(item, boardId)) ? normalizeId(filters.academicYearId) : "";
+    const boardId = effectiveNavbarBoard ? normalizeId(effectiveNavbarBoard.id) : (boardsList.some((item) => item.id === normalizeId(filters.boardId)) ? normalizeId(filters.boardId) : "");
+    const academicYearId = effectiveNavbarYear ? normalizeId(effectiveNavbarYear.id) : (academicYearsList.some((item) => item.id === normalizeId(filters.academicYearId) && yearBelongsToBoard(item, boardId)) ? normalizeId(filters.academicYearId) : "");
     const academicLevelId = embeddedBoardLevels(boardsList.find((item) => item.id === boardId)).some((item) => item.id === normalizeId(filters.academicLevelId)) || sections.some((item) => item.boardId === boardId && item.academicLevelId === normalizeId(filters.academicLevelId)) ? normalizeId(filters.academicLevelId) : "";
     const groupId = boardId && sections.some((item) => item.boardId === boardId && item.groupId === normalizeId(filters.groupId)) ? normalizeId(filters.groupId) : "";
     const programId = groupId && sections.some((item) => item.groupId === groupId && item.programId === normalizeId(filters.programId)) ? normalizeId(filters.programId) : "";
@@ -1104,6 +1148,19 @@ export default function SectionManagementPage() {
     setSectionView("form");
     loadBoardDependencies(boardId, { groupId, programId, academicLevelId });
   };
+
+  useEffect(() => {
+    if (sectionView === "form" && sectionFormMode === "add") {
+      const bId = effectiveNavbarBoard ? normalizeId(effectiveNavbarBoard.id) : "";
+      const yId = effectiveNavbarYear ? normalizeId(effectiveNavbarYear.id) : "";
+      if (bId && normalizeId(sectionForm.boardId) !== bId) {
+        setSectionForm((f) => ({ ...f, boardId: bId, academicYearId: yId || f.academicYearId }));
+        loadBoardDependencies(bId);
+      } else if (yId && normalizeId(sectionForm.academicYearId) !== yId) {
+        setSectionForm((f) => ({ ...f, academicYearId: yId }));
+      }
+    }
+  }, [sectionView, sectionFormMode, effectiveNavbarBoard, effectiveNavbarYear, sectionForm.boardId, sectionForm.academicYearId, loadBoardDependencies]);
 
   const openEditSection = (sec, isPreview = false) => {
     if (operationRef.current) return;
@@ -2242,9 +2299,9 @@ export default function SectionManagementPage() {
                             loadBoardDependencies(val);
                           }}
                           options={boardOptions}
-                          disabled={sectionFormMode === "preview" || dependentLoading.board}
+                          disabled={true}
                           placeholder="Select Board"
-                          showSearch={true}
+                          showSearch={false}
                           hasError={Boolean(fieldErrors.boardId)}
                         />
                         {fieldErrors.boardId && <span className="cms-field-error">{fieldErrors.boardId}</span>}
@@ -2260,9 +2317,9 @@ export default function SectionManagementPage() {
                             changeAcademicScope("academicYearId", val);
                           }}
                           options={filteredYearOptions}
-                          disabled={sectionFormMode === "preview" || !sectionForm.boardId}
+                          disabled={true}
                           placeholder="Select Academic Year"
-                          showSearch={true}
+                          showSearch={false}
                           hasError={Boolean(fieldErrors.academicYearId)}
                         />
                         {fieldErrors.academicYearId && <span className="cms-field-error">{fieldErrors.academicYearId}</span>}

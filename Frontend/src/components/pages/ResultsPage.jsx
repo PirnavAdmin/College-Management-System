@@ -22,6 +22,7 @@ import {
   FileText
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import "./ResultProcessingPage.css";
 
 const PAGE_SIZE = 6;
@@ -88,6 +89,13 @@ function Toast({ message, type = "success", onClose }) {
 }
 
 export default function ResultProcessingPage() {
+  const {
+    selectedBoard,
+    selectedBoardId,
+    selectedAcademicYear,
+    selectedAcademicYearId,
+  } = useAcademicContext();
+
   const emptyFilters = { board: "", year: "", level: "", group: "", program: "", exam: "" };
   const [filters, setFilters] = useState(emptyFilters);
   const [applied, setApplied] = useState(emptyFilters);
@@ -155,6 +163,37 @@ export default function ResultProcessingPage() {
 
   useEffect(() => () => toastRef.current && clearTimeout(toastRef.current), []);
 
+  const matchesBoard = useCallback((item, targetId, targetBoard) => {
+    if (!item) return false;
+    const itemId = String(item.boardId || item.id || "");
+    const itemCode = String(item.boardCode || item.code || "").trim().toLowerCase();
+    const itemName = String(item.boardName || item.name || "").trim().toLowerCase();
+    if (targetId && itemId === String(targetId)) return true;
+    if (targetBoard) {
+      const tgtId = String(targetBoard.id || targetBoard.boardId || "");
+      const tgtCode = String(targetBoard.code || targetBoard.boardCode || "").trim().toLowerCase();
+      const tgtName = String(targetBoard.name || targetBoard.boardName || "").trim().toLowerCase();
+      if (tgtId && itemId === tgtId) return true;
+      if (tgtCode && itemCode && tgtCode === itemCode) return true;
+      if (tgtName && itemName && tgtName === itemName) return true;
+    }
+    return false;
+  }, []);
+
+  const matchesYear = useCallback((item, targetId, targetYear) => {
+    if (!item) return false;
+    const itemId = String(item.academicYearId || item.id || "");
+    const itemName = String(item.academicYearName || item.name || item.code || item.label || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
+    if (targetId && itemId === String(targetId)) return true;
+    if (targetYear) {
+      const tgtId = String(targetYear.id || targetYear.academicYearId || "");
+      const tgtName = String(targetYear.name || targetYear.code || targetYear.label || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
+      if (tgtId && itemId === tgtId) return true;
+      if (tgtName && itemName && tgtName === itemName) return true;
+    }
+    return false;
+  }, []);
+
   /* ============================================================
      1. CASCADING DATA FETCHING & HIERARCHY FLOW
      ============================================================ */
@@ -166,16 +205,28 @@ export default function ResultProcessingPage() {
         const res = await apiClient.get("/api/v1/boards");
         const items = res.data?.items || res.data || [];
         const activeBoards = items.filter((b) => b.status === true || b.isActive === true);
-        setBoards(activeBoards);
-        if (activeBoards.length > 0) {
-          setFilters((f) => ({ ...f, board: String(activeBoards[0].boardId || activeBoards[0].id) }));
+        const resolvedBoards = activeBoards.length > 0 ? activeBoards : (selectedBoard ? [{ boardId: selectedBoard.id, boardName: selectedBoard.name || selectedBoard.boardName, isActive: true }] : []);
+        setBoards(resolvedBoards);
+        const matched = resolvedBoards.find((b) => matchesBoard(b, selectedBoardId, selectedBoard)) || resolvedBoards[0];
+        if (matched) {
+          setFilters((f) => ({ ...f, board: String(matched.boardId || matched.id) }));
         }
       } catch (err) {
         showToast("Failed to load active academic boards.", "error");
       }
     };
     fetchActiveBoards();
-  }, [showToast]);
+  }, [showToast, selectedBoardId, selectedBoard, matchesBoard]);
+
+  // Sync board when navbar selected board changes
+  useEffect(() => {
+    if (!boards.length) return;
+    const matched = boards.find((b) => matchesBoard(b, selectedBoardId, selectedBoard));
+    if (matched) {
+      const bId = String(matched.boardId || matched.id);
+      setFilters((f) => (f.board === bId ? f : { ...f, board: bId }));
+    }
+  }, [boards, selectedBoardId, selectedBoard, matchesBoard]);
 
   // 2. Cascading Board Dependencies (Board -> Years, Levels, Groups)
   useEffect(() => {
@@ -198,16 +249,27 @@ export default function ResultProcessingPage() {
         setAcademicLevels(levelsData);
         setGroups(groupsData.filter((g) => g.isActive === true || g.status === "Active"));
 
-        // Auto-select first active year if available
-        if (activeYears.length > 0) {
-          setFilters((f) => ({ ...f, year: String(activeYears[0].academicYearId || activeYears[0].id) }));
+        // Auto-select active year matched from navbar or first active
+        const matchedYear = activeYears.find((y) => matchesYear(y, selectedAcademicYearId, selectedAcademicYear)) || activeYears[0];
+        if (matchedYear) {
+          setFilters((f) => ({ ...f, year: String(matchedYear.academicYearId || matchedYear.id) }));
         }
       } catch (err) {
         showToast("Failed to load board academic hierarchy.", "error");
       }
     };
     fetchBoardDependencies();
-  }, [filters.board, showToast]);
+  }, [filters.board, showToast, selectedAcademicYearId, selectedAcademicYear, matchesYear]);
+
+  // Sync year when navbar selected academic year changes
+  useEffect(() => {
+    if (!academicYears.length) return;
+    const matched = academicYears.find((y) => matchesYear(y, selectedAcademicYearId, selectedAcademicYear));
+    if (matched) {
+      const yId = String(matched.academicYearId || matched.id);
+      setFilters((f) => (f.year === yId ? f : { ...f, year: yId }));
+    }
+  }, [academicYears, selectedAcademicYearId, selectedAcademicYear, matchesYear]);
 
   // 3. Group -> Program Dependency (NEW)
   useEffect(() => {
@@ -1396,6 +1458,7 @@ export default function ResultProcessingPage() {
                     <Select
                       label="Board"
                       value={filters.board}
+                      disabled={true}
                       onChange={(v) => changeFilter("board", v)}
                     >
                       <option value="">Select Board</option>
@@ -1412,7 +1475,7 @@ export default function ResultProcessingPage() {
                     <Select
                       label="Academic Year"
                       value={filters.year}
-                      disabled={!filters.board}
+                      disabled={true}
                       onChange={(v) => changeFilter("year", v)}
                     >
                       <option value="">Select Academic Year</option>

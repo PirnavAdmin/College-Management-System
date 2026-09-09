@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import {
   FiFileText,
   FiCheckSquare,
-  FiSearch,
   FiDownload,
   FiEye,
   FiPrinter,
@@ -42,13 +42,8 @@ const CERTIFICATE_TYPES = [
   "Bonafide Certificate",
   "Study Certificate",
   "Conduct Certificate",
-  "Transfer Certificate (TC)",
-  "Sports Participation Certificate",
-  "Course Completion Certificate",
-  "Migration Certificate",
-  "Custodian Certificate",
-  "Fee Certificate",
-  "Other",
+  "Transfer Certificate",
+  "Others",
 ];
 
 const PURPOSE_PRESETS = [
@@ -689,7 +684,7 @@ const CertificateManagement = () => {
           {/* Search, Filter, Export, New Request Bar */}
           <div className="cert-toolbar">
             <div className="cert-search-box">
-              <FiSearch className="cert-search-icon" />
+              <Search3DIcon className="cert-search-icon" size={17} />
               <input
                 type="text"
                 placeholder="Search by certificate no., admission no., or student name..."

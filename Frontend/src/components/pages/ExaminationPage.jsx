@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import DashboardLayout from "../layout/DashboardLayout.jsx";
 import { ConfirmDialog, Loader, Modal, StatusBadge, Toast } from "../common/Ui.jsx";
 import "./ExaminationPage.css";
@@ -1537,8 +1538,6 @@ export default function ExaminationPage() {
                 <tr>
                   <th>Exam Code</th>
                   <th>Exam Name</th>
-                  <th>Board</th>
-                  <th>Academic Year</th>
                   <th>Academic Level(s)</th>
                   <th>Group(s)</th>
                   <th>Program(s)</th>
@@ -1561,14 +1560,6 @@ export default function ExaminationPage() {
                       <td>
                         <span className="exam-cell-two-lines" title={e.name}>
                           {e.name}
-                        </span>
-                      </td>
-                      <td title={nameOf(boards, e.boardId)}>
-                        <span className="exam-cell-two-lines">{codeOf(boards, e.boardId)}</span>
-                      </td>
-                      <td>
-                        <span className="exam-cell-two-lines" title={nameOf(academicYears, e.yearId)}>
-                          {nameOf(academicYears, e.yearId)}
                         </span>
                       </td>
                       <td>
@@ -1676,7 +1667,7 @@ export default function ExaminationPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="12">
+                    <td colSpan="10">
                       <div className="cms-empty">
                         {loading ? "Loading examinations..." : "No examinations match the current filters."}
                       </div>
@@ -2110,6 +2101,13 @@ function ExamForm({
   onSave,
   onCancel,
 }) {
+  const {
+    selectedBoard,
+    selectedBoardId,
+    selectedAcademicYear,
+    selectedAcademicYearId,
+  } = useAcademicContext();
+
   const existing = exams.find((e) => String(e.id) === String(editId));
 
   const [formYears, setFormYears] = useState(academicYears);
@@ -2157,6 +2155,22 @@ function ExamForm({
         status: "DRAFT",
       },
   );
+
+  // Auto-fetch navbar board
+  useEffect(() => {
+    if (!boards.length) return;
+    const tgtBoard = boards.find(
+      (b) =>
+        normalizeId(b.id) === normalizeId(selectedBoardId) ||
+        (selectedBoard?.code && String(b.code || "").trim().toLowerCase() === String(selectedBoard.code).trim().toLowerCase()) ||
+        (selectedBoard?.name && String(b.name || "").trim().toLowerCase() === String(selectedBoard.name).trim().toLowerCase())
+    ) || boards[0];
+
+    if (tgtBoard) {
+      const bId = normalizeId(tgtBoard.id);
+      setForm((prev) => (normalizeId(prev.boardId) === bId ? prev : { ...prev, boardId: bId }));
+    }
+  }, [boards, selectedBoardId, selectedBoard]);
 
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -2209,17 +2223,39 @@ function ExamForm({
         setFormLevels(mappedLevels);
         setFormGroups(activeGroups);
 
-        // Auto-select current or first year if not set
-        if (!form.yearId && activeYears.length > 0) {
-          const currentYear = activeYears.find((y) => y.isCurrent) || activeYears[0];
-          setForm((prev) => ({ ...prev, yearId: currentYear.id }));
+        // Auto-select navbar year if available, otherwise current or first active year
+        if (activeYears.length > 0) {
+          const tgtYear = activeYears.find(
+            (y) =>
+              normalizeId(y.id) === normalizeId(selectedAcademicYearId) ||
+              (selectedAcademicYear?.name && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.name).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "")) ||
+              (selectedAcademicYear?.code && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.code).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, ""))
+          ) || activeYears.find((y) => y.isCurrent) || activeYears[0];
+          if (tgtYear) {
+            setForm((prev) => ({ ...prev, yearId: normalizeId(tgtYear.id) }));
+          }
         }
       } catch (err) {
         showToast("Failed to fetch academic hierarchy for selected board.", "error");
       }
     };
     fetchBoardHierarchy();
-  }, [form.boardId, showToast]);
+  }, [form.boardId, showToast, selectedAcademicYearId, selectedAcademicYear]);
+
+  // Sync year if navbar year changes after formYears loaded
+  useEffect(() => {
+    if (!formYears.length) return;
+    const tgtYear = formYears.find(
+      (y) =>
+        normalizeId(y.id) === normalizeId(selectedAcademicYearId) ||
+        (selectedAcademicYear?.name && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.name).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "")) ||
+        (selectedAcademicYear?.code && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.code).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, ""))
+    );
+    if (tgtYear) {
+      const yId = normalizeId(tgtYear.id);
+      setForm((prev) => (normalizeId(prev.yearId) === yId ? prev : { ...prev, yearId: yId }));
+    }
+  }, [formYears, selectedAcademicYearId, selectedAcademicYear]);
 
   // Available groups for active board
   const availableGroups = useMemo(
@@ -2608,6 +2644,7 @@ function ExamForm({
                 <SearchableSingleSelect
                   label="Board *"
                   value={form.boardId}
+                  disabled={true}
                   onChange={(v) => change("boardId", v)}
                   options={boards}
                   error={errors.boardId}
@@ -2618,7 +2655,7 @@ function ExamForm({
                 <SearchableSingleSelect
                   label="Academic Year *"
                   value={form.yearId}
-                  disabled={!form.boardId}
+                  disabled={true}
                   onChange={(v) => change("yearId", v)}
                   options={formYears}
                   error={errors.yearId}

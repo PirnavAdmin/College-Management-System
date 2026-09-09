@@ -323,6 +323,25 @@ public class CertificateRepository : ICertificateRepository
                     );
                     SELECT LAST_INSERT_ID();";
 
+<<<<<<< HEAD
+            var rawId = await connection.ExecuteScalarAsync(
+                new CommandDefinition(insertSql, new
+                {
+                    certNumber,
+                    studentId,
+                    admissionNo = request.AdmissionNo.Trim(),
+                    studentName,
+                    groupName,
+                    academicLevel,
+                    academicYear,
+                    certificateType = request.CertificateType.Trim(),
+                    purpose = request.Purpose.Trim(),
+                    remarks = request.Remarks?.Trim(),
+                    requestDate
+                }, cancellationToken: ct));
+
+            newId = rawId != null ? Convert.ToInt32(rawId) : 0;
+=======
                 var rawId = await connection.ExecuteScalarAsync<object>(
                     new CommandDefinition(insertSql, new
                     {
@@ -371,9 +390,43 @@ public class CertificateRepository : ICertificateRepository
                     newId = Convert.ToInt32(rawId);
                 }
             }
+>>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
         }
         catch (Exception ex)
         {
+<<<<<<< HEAD
+            // Fallback for legacy DB schema: (StudentId, CertificateNo, CertificateType, Purpose, IssueDate, Remarks, Status, CreatedAt, IsActive)
+            var insertLegacySql = @"
+                INSERT INTO `certificates` (
+                    StudentId, CertificateNo, CertificateType, Purpose, IssueDate, Remarks, Status, CreatedAt, IsActive
+                ) VALUES (
+                    @studentId, @certNumber, @certificateType, @purpose, @requestDate, @remarks, 'Generated', UTC_TIMESTAMP(), 1
+                );
+                SELECT LAST_INSERT_ID();";
+
+            var rawId = await connection.ExecuteScalarAsync(
+                new CommandDefinition(insertLegacySql, new
+                {
+                    studentId,
+                    certNumber,
+                    certificateType = request.CertificateType.Trim(),
+                    purpose = request.Purpose.Trim(),
+                    requestDate,
+                    remarks = request.Remarks?.Trim()
+                }, cancellationToken: ct));
+
+            newId = rawId != null ? Convert.ToInt32(rawId) : 0;
+        }
+
+        if (newId > 0)
+        {
+            var byId = await GetByIdAsync(newId, ct);
+            if (byId != null) return byId;
+        }
+
+        // Fallback: lookup by generated certificate number
+        return await VerifyAsync(certNumber, ct);
+=======
             Console.WriteLine($"[CertificateRepository.GenerateAsync] Insert Error for {request.AdmissionNo}: {ex.Message}");
         }
 
@@ -456,6 +509,7 @@ public class CertificateRepository : ICertificateRepository
             Console.WriteLine($"GetByCertificateNumberAsync Error: {ex.Message}");
             return null;
         }
+>>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
     }
 
     public async Task<CertificateResponseDto?> GenerateAsync(

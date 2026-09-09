@@ -1368,8 +1368,11 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
         params: { ...context, subjectId: form.subjectId },
       })
       .then((r) =>
-        setFaculty(optionize(r.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])),
-              ).filter((year) => isActiveRecord(year.raw))
+        setFaculty(
+          optionize(r.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])
+            .filter((entry) => isActiveRecord(entry.raw)),
+        ),
+      )
       .catch((e) => notify(getApiErrorMessage(e)));
   }, [context, form.subjectId, notify]);
   const set = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
@@ -1913,7 +1916,7 @@ function Draft({ initial, notify }) {
                           <td className="slot" key={period.id}>
                             <button
                               onClick={() => openSlotEditor(slot)}
-                              disabled={!slot || published || (actionBusy && activeAction === "slot")}
+                              disabled={!slot || (actionBusy && activeAction === "slot")}
                             >
                               {slot ? (
                                 <>

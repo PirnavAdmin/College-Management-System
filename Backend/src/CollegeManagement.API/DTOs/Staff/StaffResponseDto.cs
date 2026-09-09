@@ -59,6 +59,7 @@ namespace CollegeManagement.API.DTOs.Staff
         public int? DepartmentId { get; set; }
         public string Department { get; set; } = string.Empty;
         public int? BoardId { get; set; }
+        public string? BoardCode { get; set; }
         public string? BoardName { get; set; }
         public string? BoardCode { get; set; }
         public string? Board => !string.IsNullOrWhiteSpace(BoardCode) ? BoardCode : BoardName;

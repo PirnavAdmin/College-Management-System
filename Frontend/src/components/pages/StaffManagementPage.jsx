@@ -25,11 +25,13 @@ import {
   Users,
   RefreshCw,
   FileText,
-  Download
+  Download,
+  AlertCircle
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Toast } from "@/components/common/Ui.jsx";
-import apiClient from "@/api/axios.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
+import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import "./StaffManagementPage.css";
 
@@ -63,48 +65,19 @@ const designationMap = {
   Transport: ["Driver", "Transport Coordinator"],
 };
 
-const tuples = [
-  [1, "PCT001", "Dr. Anjali Desai", "anjali@pirnav.edu", "9876500001", "Mathematics", "Assistant Professor", "Teaching", "Completed", 100, true],
-  [2, "PCT002", "Dr. Ravi Kumar", "ravi@pirnav.edu", "9876500002", "Computer Science", "Lecturer", "Teaching", "Pending", 25, false],
-  [3, "PCT003", "Priya Sharma", "priya@pirnav.edu", "9876500003", "English", "Lecturer", "Teaching", "Pending", 25, false],
-  [4, "PCT004", "Arun Patel", "arun@pirnav.edu", "9876500004", "Physics", "Senior Lecturer", "Teaching", "Link Sent", 30, true],
-  [5, "PCT005", "Neha Singh", "neha@pirnav.edu", "9876500005", "Chemistry", "Lecturer", "Teaching", "Link Sent", 30, true],
-  [6, "PCT006", "Kiran Rao", "kiran@pirnav.edu", "9876500006", "Mathematics", "Junior Lecturer", "Teaching", "In Progress", 60, true],
-  [7, "PCT007", "Meera Joshi", "meera@pirnav.edu", "9876500007", "English", "Assistant Professor", "Teaching", "In Progress", 70, true],
-  [8, "PCT008", "Sanjay Das", "sanjay@pirnav.edu", "9876500008", "Physics", "Lecturer", "Teaching", "Submitted", 100, true],
-  [9, "PCT009", "Asha Nair", "asha@pirnav.edu", "9876500009", "Chemistry", "Senior Lecturer", "Teaching", "Submitted", 100, true],
-  [10, "PCT010", "Vikram Shah", "vikram@pirnav.edu", "9876500010", "Computer Science", "HOD", "Teaching", "Needs Correction", 85, true],
-  [11, "PCNT001", "Ramesh Kumar", "ramesh@pirnav.edu", "9876500011", "Administration", "Office Assistant", "Non-Teaching", "Completed", 100, false],
-  [12, "PCNT002", "Latha Reddy", "latha@pirnav.edu", "9876500012", "Accounts", "Accountant", "Non-Teaching", "Completed", 100, false],
-  [13, "PCNT003", "Mohan Lal", "mohan@pirnav.edu", "9876500013", "Library", "Librarian", "Non-Teaching", "Completed", 100, false],
-  [14, "PCNT004", "Deepak Roy", "deepak@pirnav.edu", "9876500014", "Maintenance", "Electrician", "Non-Teaching", "Completed", 100, false],
-  [15, "PCNT005", "Salim Khan", "salim@pirnav.edu", "9876500015", "Transport", "Driver", "Non-Teaching", "Completed", 100, false],
-];
+const tuples = [];
+const seed = [];
+const initialActivities = [];
 
-const seed = tuples.map(
-  ([
-    id, employeeId, fullName, email, mobile, department, designation, staffType, profileStatus, profileCompletion, linkSent,
-  ]) => ({
-    id, employeeId, fullName, email, mobile, department, designation, staffType, profileStatus, profileCompletion, linkSent,
-    dateOfJoining: "2026-06-12", addedOn: "2026-09-02", status: "Active",
-  }),
-);
-
-const initialActivities = [
-  "Dr. Anjali Desai profile approved",
-  "Sanjay Das submitted profile",
-  "Arun Patel profile link sent",
-  "Ramesh Kumar added as Non-Teaching Staff",
-];
-
-const read = (key, fallback) => {
+const read = (key, fallback = []) => {
   try {
     const raw = sessionStorage.getItem(key);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+    if (!Array.isArray(parsed)) return fallback;
     const valid = parsed.filter((item) => item && (item.id !== undefined || item.employeeId));
-    return valid.length > 0 ? valid : fallback;
+    const realOnly = valid.filter((item) => !String(item.email || "").endsWith("@pirnav.edu"));
+    return realOnly;
   } catch {
     return fallback;
   }
@@ -113,21 +86,90 @@ const read = (key, fallback) => {
 const write = (key, value) => sessionStorage.setItem(key, JSON.stringify(value));
 const boardOptions = ["BIEAP", "TSBIE", "CBSE", "State Board", "ICSE", "Other"];
 
+export const resolveNextStaffEmployeeId = async (staffType = "Teaching") => {
+  // 1. Try Settings Number Series API
+  try {
+    const nsRes = await apiClient.get(apiEndpoints.numberSeries.getByCode("EMPLOYEE_ID"));
+    if (nsRes.data) {
+      const live = nsRes.data.livePreview || nsRes.data.currentExample || nsRes.data.generatedNumber;
+      if (live && typeof live === "string" && !live.includes("[object")) {
+        return live.trim();
+      }
+    }
+  } catch {}
+
+  // 2. Try Faculty next-employee-id endpoint
+  try {
+    const res = await apiClient.get(apiEndpoints.faculty.nextEmployeeId, { params: { staffType } });
+    if (res.data) {
+      const raw = typeof res.data === "object"
+        ? (res.data.employeeId || res.data.nextEmployeeId || res.data.id || res.data.data || res.data.code)
+        : res.data;
+      if (raw && (typeof raw === "string" || typeof raw === "number")) {
+        const str = String(raw).trim();
+        if (str && !str.includes("[object")) {
+          return str;
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to Local Number Series Settings
+  const localVal = generateNextNumber("employee-id");
+  return (localVal && !String(localVal).includes("[object")) ? String(localVal).trim() : "PCTCH0040";
+};
+
+export const resolveBoardCode = (staffRecord, boardsList = []) => {
+  if (!staffRecord) return "—";
+  if (staffRecord.boardCode && String(staffRecord.boardCode).trim() && staffRecord.boardCode !== "—") {
+    return String(staffRecord.boardCode).trim();
+  }
+  const rawBoard = staffRecord.board || staffRecord.boardName;
+  if (!rawBoard && !staffRecord.boardId) return "—";
+
+  if (Array.isArray(boardsList) && boardsList.length > 0) {
+    const match = boardsList.find((b) =>
+      b && (
+        (staffRecord.boardId && String(b.id || b.boardId) === String(staffRecord.boardId)) ||
+        (rawBoard && String(b.name || b.boardName || "").trim().toLowerCase() === String(rawBoard).trim().toLowerCase()) ||
+        (rawBoard && String(b.code || b.boardCode || "").trim().toLowerCase() === String(rawBoard).trim().toLowerCase())
+      )
+    );
+    if (match?.code || match?.boardCode) return match.code || match.boardCode;
+  }
+
+  if (rawBoard) {
+    const str = String(rawBoard).trim();
+    if (str.length <= 10 && !str.includes(" ")) return str.toUpperCase();
+    const lower = str.toLowerCase();
+    if (lower.includes("andhra") || lower.includes("bieap")) return "BIEAP";
+    if (lower.includes("telangana") || lower.includes("tsbie") || lower.includes("tgbie")) return "TSBIE";
+    if (lower.includes("cbse") || lower.includes("central board")) return "CBSE";
+    if (lower.includes("icse") || lower.includes("cisce")) return "ICSE";
+    if (lower.includes("karnataka") || lower.includes("puc")) return "PUC-KA";
+    if (lower.includes("tamil") || lower.includes("dge")) return "DGE-TN";
+    if (lower.includes("state")) return "STATE";
+    return str;
+  }
+  return "—";
+};
+
 const teachingFields = [
-  ["board", "Board Name", "select", boardOptions, false],
-  ["employeeId", "Employee ID", "text", [], false],
-  ["firstName", "First Name", "text", [], false],
+  ["board", "Board Name", "select", boardOptions, true],
+  ["employeeId", "Employee ID", "text", [], true],
+  ["firstName", "First Name", "text", [], true],
   ["middleName", "Middle Name", "text", [], false],
-  ["lastName", "Last Name", "text", [], false],
-  ["dateOfBirth", "Date of Birth", "date", [], false],
-  ["gender", "Gender", "select", ["Male", "Female", "Other"], false],
-  ["mobile", "Mobile", "text", [], false],
-  ["email", "Email", "email", [], false],
-  ["department", "Department", "search-select", defaultDepartments, false],
-  ["designation", "Designation", "search-select", [], false],
-  ["dateOfJoining", "Date of Joining", "date", [], false],
-  ["employmentType", "Employment Type", "select", ["Full Time", "Part Time", "Contract"], false],
-  ["status", "Status", "select", ["Active", "Inactive"], false],
+  ["lastName", "Last Name", "text", [], true],
+  ["dateOfBirth", "Date of Birth", "date", [], true],
+  ["gender", "Gender", "select", ["Male", "Female", "Other"], true],
+  ["mobile", "Mobile", "text", [], true],
+  ["email", "Email", "email", [], true],
+  ["department", "Department", "search-select", defaultDepartments, true],
+  ["designation", "Designation", "search-select", [], true],
+  ["allocatedSubjects", "Subject Allocation", "multi-subject-select", [], false],
+  ["dateOfJoining", "Date of Joining", "date", [], true],
+  ["employmentType", "Employment Type", "select", ["Full Time", "Part Time", "Contract"], true],
+  ["status", "Status", "select", ["Active", "Inactive"], true],
   ["profilePhoto", "Profile Photo", "file", [], false],
 ];
 
@@ -357,6 +399,189 @@ function SearchSelectInput({ label = "", opts = [], value = "", onChange }) {
   );
 }
 
+function SubjectAllocationInput({ staffId = null, department = "", value = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [apiSubjects, setApiSubjects] = useState([]);
+  const ref = useRef(null);
+
+  const selectedSubjects = useMemo(() => {
+    if (Array.isArray(value)) {
+      return value.map((s) => (typeof s === "object" ? s.name || s.subjectName || s.title || String(s) : String(s))).filter(Boolean);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+  }, [value]);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSubjects() {
+      try {
+        const params = {
+          ...(staffId ? { staffId } : {}),
+          ...(department ? { department } : {}),
+        };
+        let data = [];
+        try {
+          const res = await apiClient.get(apiEndpoints.faculty.availableSubjects, { params });
+          data = res?.data?.items || res?.data?.data || (Array.isArray(res?.data) ? res.data : []);
+        } catch (e) {
+          const fallbackRes = await apiClient.get(apiEndpoints.subjects.getAll, { params: department ? { department } : {} });
+          data = fallbackRes?.data?.items || fallbackRes?.data?.data || (Array.isArray(fallbackRes?.data) ? fallbackRes.data : []);
+        }
+        if (isMounted && Array.isArray(data)) {
+          const names = data.map((item) => (typeof item === "object" ? item.subjectName || item.name || item.title || item.subjectCode : String(item))).filter(Boolean);
+          setApiSubjects(names);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch available subjects:", err);
+      }
+    }
+    fetchSubjects();
+    return () => {
+      isMounted = false;
+    };
+  }, [staffId, department]);
+
+  const filteredOptions = useMemo(() => {
+    const q = (search || "").trim().toLowerCase();
+    const unselected = apiSubjects.filter((opt) => !selectedSubjects.includes(opt));
+    if (!q) return unselected;
+    return unselected.filter((opt) => opt.toLowerCase().includes(q));
+  }, [apiSubjects, selectedSubjects, search]);
+
+  useEffect(() => {
+    const clickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickOutside);
+    return () => document.removeEventListener("mousedown", clickOutside);
+  }, []);
+
+  const addSubject = async (subjectName) => {
+    const trimmed = (subjectName || "").trim();
+    if (!trimmed) return;
+    if (!selectedSubjects.includes(trimmed)) {
+      const next = [...selectedSubjects, trimmed];
+      if (typeof onChange === "function") onChange(next);
+      if (staffId) {
+        try {
+          await apiClient.post(apiEndpoints.faculty.assignSubject, {
+            staffId: Number(staffId) || staffId,
+            subjectName: trimmed,
+          });
+        } catch (err) {
+          console.warn("POST /api/v1/staff/assign-subject API offline");
+        }
+      }
+    }
+    setSearch("");
+    setOpen(false);
+  };
+
+  const removeSubject = (subjectName) => {
+    const next = selectedSubjects.filter((s) => s !== subjectName);
+    if (typeof onChange === "function") onChange(next);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (search.trim()) {
+        addSubject(search.trim());
+      }
+    }
+  };
+
+  const isExactMatchInFiltered = filteredOptions.some(
+    (opt) => opt.toLowerCase() === (search || "").trim().toLowerCase(),
+  );
+  const showCustomAdd =
+    search.trim().length > 0 && !isExactMatchInFiltered && !selectedSubjects.includes(search.trim());
+
+  return (
+    <div className="subject-allocation-wrapper" ref={ref}>
+      <div
+        className="subject-compact-box"
+        onClick={() => {
+          const input = ref.current?.querySelector("input");
+          if (input) input.focus();
+        }}
+      >
+        <Search className="subject-search-icon" size={13} />
+        {selectedSubjects.map((sub, idx) => (
+          <span key={`${sub}-${idx}`} className="subject-pill">
+            {sub}
+            <button
+              type="button"
+              className="subject-pill-remove"
+              onClick={(e) => {
+                e.stopPropagation();
+                removeSubject(sub);
+              }}
+              title={`Remove ${sub}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={search}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={selectedSubjects.length === 0 ? "Search or add subjects..." : "Add..."}
+          autoComplete="off"
+        />
+        <ChevronDown className="subject-dropdown-caret" size={13} />
+      </div>
+
+      {open ? (
+        <div className="subject-dropdown-menu">
+          {showCustomAdd ? (
+            <div
+              className="subject-dropdown-item is-custom-add"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                addSubject(search);
+              }}
+            >
+              + Add "{search.trim()}"
+            </div>
+          ) : null}
+
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((opt, idx) => (
+              <div
+                key={`${opt}-${idx}`}
+                className="subject-dropdown-item"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  addSubject(opt);
+                }}
+              >
+                {opt}
+              </div>
+            ))
+          ) : !showCustomAdd ? (
+            <div className="staff-search-dropdown-empty">
+              {search.trim() ? "Press Enter to add custom subject" : "No subjects available"}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function useStaffTypeOptions(staffType) {
   const [departments, setDepartments] = useState([]);
   const [designations, setDesignations] = useState([]);
@@ -367,36 +592,81 @@ function useStaffTypeOptions(staffType) {
     async function loadOptions() {
       setLoading(true);
       const apiStaffType = staffType === "Non-Teaching" ? "NonTeaching" : staffType;
+      const targetNorm = String(staffType).toLowerCase().replace(/[-_\s]/g, "");
 
       let deptOpts = [];
       let desigOpts = [];
 
       try {
-        const deptRes = await apiClient.get(apiEndpoints.departments.getAll, {
-          params: staffType ? { staffType: apiStaffType } : {},
+        let deptData = [];
+        try {
+          const deptRes = await apiClient.get(apiEndpoints.departments.getAll, {
+            params: staffType ? { staffType: apiStaffType } : {},
+          });
+          deptData = deptRes?.data?.items || deptRes?.data?.data || (Array.isArray(deptRes?.data) ? deptRes.data : []);
+        } catch {
+          const lookupRes = await apiClient.get(apiEndpoints.faculty.lookupDepartments, {
+            params: staffType ? { staffType: apiStaffType } : {},
+          });
+          deptData = lookupRes?.data?.items || lookupRes?.data?.data || (Array.isArray(lookupRes?.data) ? lookupRes.data : []);
+        }
+
+        const filteredDepts = deptData.filter((d) => {
+          if (typeof d !== "object") return true;
+          const st = d.staffType || d.StaffType;
+          if (!st) return true;
+          const stNorm = String(st).toLowerCase().replace(/[-_\s]/g, "");
+          return stNorm === targetNorm || stNorm === "both" || stNorm === "all";
         });
-        const deptData = deptRes?.data?.items || deptRes?.data?.data || (Array.isArray(deptRes?.data) ? deptRes.data : []);
-        deptOpts = deptData.map((d) => (typeof d === "object" ? d.name || d.departmentName : d)).filter(Boolean);
+        deptOpts = filteredDepts.map((d) => (typeof d === "object" ? d.name || d.departmentName : d)).filter(Boolean);
       } catch (e) {
         console.warn("Failed to fetch departments from API:", e);
       }
 
       try {
-        const desigRes = await apiClient.get(apiEndpoints.designations.getAll, {
-          params: {
-            includeInactive: false,
-            ...(staffType ? { staffType: apiStaffType } : {}),
-          },
+        let desigData = [];
+        try {
+          const desigRes = await apiClient.get(apiEndpoints.designations.getAll, {
+            params: {
+              includeInactive: false,
+              ...(staffType ? { staffType: apiStaffType } : {}),
+            },
+          });
+          desigData = desigRes?.data?.items || desigRes?.data?.data || (Array.isArray(desigRes?.data) ? desigRes.data : []);
+        } catch {
+          const lookupRes = await apiClient.get(apiEndpoints.faculty.lookupDesignations, {
+            params: staffType ? { staffType: apiStaffType } : {},
+          });
+          desigData = lookupRes?.data?.items || lookupRes?.data?.data || (Array.isArray(lookupRes?.data) ? lookupRes.data : []);
+        }
+
+        const filteredDesigs = desigData.filter((d) => {
+          if (typeof d !== "object") return true;
+          const st = d.staffType || d.StaffType;
+          if (!st) return true;
+          const stNorm = String(st).toLowerCase().replace(/[-_\s]/g, "");
+          return stNorm === targetNorm || stNorm === "both" || stNorm === "all";
         });
-        const desigData = desigRes?.data?.items || desigRes?.data?.data || (Array.isArray(desigRes?.data) ? desigRes.data : []);
-        desigOpts = desigData.map((d) => (typeof d === "object" ? d.name || d.designationName : d)).filter(Boolean);
+        desigOpts = filteredDesigs.map((d) => (typeof d === "object" ? d.name || d.designationName : d)).filter(Boolean);
       } catch (e) {
         console.warn("Failed to fetch designations from API:", e);
       }
 
+      if (deptOpts.length === 0) {
+        deptOpts = staffType === "Non-Teaching"
+          ? ["Accounts & Finance", "Administration", "Admissions", "Campus Operations", "Commerce", "Examinations", "Human Resources", "Library", "Maintenance", "Security", "Student Affairs", "Transport"]
+          : ["Accountancy", "Administration", "Biology", "Botany", "Business Studies", "Chemistry", "Commerce", "Computer Science", "Economics", "Electronics", "English", "Mathematics", "Physics", "Statistics", "Zoology"];
+      }
+
+      if (desigOpts.length === 0) {
+        desigOpts = staffType === "Non-Teaching"
+          ? ["Accountant", "Administrative Officer", "Attender / Peon", "Clerk", "Data Entry Operator", "Driver", "Electrician", "Finance Executive", "HR Executive", "Lab Assistant", "Librarian", "Maintenance Supervisor", "Office Assistant", "Receptionist", "Security Guard", "Transport Coordinator"]
+          : ["Academic Coordinator", "Assistant Professor", "Associate Professor", "Data Science Lecturer", "Dean", "Department Head", "Examination Coordinator", "Guest Faculty", "Head of Department (HOD)", "Junior Lecturer", "Lab Incharge", "Lecturer", "Principal", "Professor", "Senior Lecturer", "Subject Expert", "Vice Principal"];
+      }
+
       if (isMounted) {
-        setDepartments(deptOpts);
-        setDesignations(desigOpts);
+        setDepartments(Array.from(new Set(deptOpts)));
+        setDesignations(Array.from(new Set(desigOpts)));
         setLoading(false);
       }
     }
@@ -411,6 +681,7 @@ function useStaffTypeOptions(staffType) {
 }
 
 function Field({ item = [], values = {}, setValues, error = "", forceOptional = false, departmentOptions = null, designationOptions = null }) {
+  const { boards, selectedBoard, setSelectedBoard } = useAcademicContext();
   if (!Array.isArray(item) || item.length < 2) return null;
   const name = item[0] || "";
   const label = item[1] || name || "";
@@ -422,32 +693,76 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
   const safeValues = values && typeof values === "object" ? values : {};
   const required = configuredRequired && !forceOptional;
 
-  const rawOpts = name === "department"
-    ? (Array.isArray(departmentOptions) && departmentOptions.length > 0 ? departmentOptions : options)
-    : name === "designation"
-      ? (Array.isArray(designationOptions) && designationOptions.length > 0
-          ? designationOptions
-          : (safeValues.department && designationMap[safeValues.department] ? designationMap[safeValues.department] : options))
-      : options;
+  const activeBoardName = selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || "";
+
+  const contextBoardOpts = useMemo(() => {
+    if (name !== "board") return options;
+    const namesFromContext = Array.isArray(boards)
+      ? boards.map((b) => b?.name || b?.boardName || b?.code).filter(Boolean)
+      : [];
+    const set = new Set([...namesFromContext, ...options]);
+    if (activeBoardName) set.add(activeBoardName);
+    return Array.from(set);
+  }, [name, boards, options, activeBoardName]);
+
+  const rawOpts = name === "board"
+    ? contextBoardOpts
+    : name === "department"
+      ? (Array.isArray(departmentOptions) && departmentOptions.length > 0 ? departmentOptions : options)
+      : name === "designation"
+        ? (Array.isArray(designationOptions) && designationOptions.length > 0 ? designationOptions : options)
+        : options;
   const opts = Array.isArray(rawOpts) ? rawOpts : [];
 
   const change = (value) => {
+    let boardCodeVal = undefined;
+    let boardIdVal = undefined;
+    let boardNameVal = undefined;
+
+    if (name === "board") {
+      const match = Array.isArray(boards) ? boards.find((b) =>
+        b && (String(b.name || b.boardName || b.code || "").trim().toLowerCase() === String(value).trim().toLowerCase()
+        || String(b.code || "").trim().toLowerCase() === String(value).trim().toLowerCase())
+      ) : null;
+      boardCodeVal = match?.code || match?.boardCode || (value && value.length <= 10 && !value.includes(" ") ? value.toUpperCase() : "");
+      boardIdVal = match?.id || match?.boardId || undefined;
+      boardNameVal = match?.name || match?.boardName || value;
+      if (match) {
+        setSelectedBoard(match);
+      }
+    }
+
     if (typeof setValues === "function") {
       setValues((v) => {
         const prev = v && typeof v === "object" ? v : {};
-        return name === "department"
-          ? { ...prev, department: value, designation: "" }
-          : { ...prev, [name]: value };
+        if (name === "department") {
+          return { ...prev, department: value, designation: "", allocatedSubjects: [], subjects: [] };
+        }
+        if (name === "allocatedSubjects") {
+          return { ...prev, allocatedSubjects: value, subjects: value };
+        }
+        if (name === "board") {
+          return {
+            ...prev,
+            board: value,
+            boardName: boardNameVal,
+            boardCode: boardCodeVal,
+            ...(boardIdVal ? { boardId: Number(boardIdVal) || boardIdVal } : {}),
+          };
+        }
+        return { ...prev, [name]: value };
       });
     }
   };
 
-  const val = safeValues[name] !== undefined ? safeValues[name] : "";
+  const val = safeValues[name] !== undefined && safeValues[name] !== ""
+    ? safeValues[name]
+    : (name === "board" ? activeBoardName : (name === "allocatedSubjects" ? (safeValues.subjects || []) : ""));
 
   return (
     <label className={[type === "textarea" ? "is-wide" : "", layoutClass].filter(Boolean).join(" ")}>
       <span>
-        {label} {required ? <b>*</b> : null}
+        {label} {required ? <b className="required-star" style={{ color: "#ef4444", marginLeft: "2px", fontWeight: "bold" }}>*</b> : null}
       </span>
       {type === "select" ? (
         <select value={val} onChange={(e) => change(e.target.value)}>
@@ -460,6 +775,13 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
         <SearchSelectInput
           label={label}
           opts={opts}
+          value={val}
+          onChange={(v) => change(v)}
+        />
+      ) : type === "multi-subject-select" ? (
+        <SubjectAllocationInput
+          staffId={safeValues.id || safeValues.staffId}
+          department={safeValues.department}
           value={val}
           onChange={(v) => change(v)}
         />
@@ -550,12 +872,12 @@ function Dashboard({ records = [] }) {
   const safeRecords = Array.isArray(records) ? records : [];
   const hasStats = stats !== null && stats !== undefined;
 
-  const totalCount = loading ? "—" : (hasStats ? (stats.totalStaff ?? stats.totalCount) : safeRecords.length);
-  const teachingCount = loading ? "—" : (hasStats ? stats.teachingStaff : safeRecords.filter((r) => r?.staffType === "Teaching").length);
-  const nonTeachingCount = loading ? "—" : (hasStats ? stats.nonTeachingStaff : safeRecords.filter((r) => r?.staffType === "Non-Teaching").length);
-  const completedCount = loading ? "—" : (hasStats ? (stats.completedProfiles ?? stats.completed) : safeRecords.filter((r) => r?.profileStatus === "Completed").length);
-  const pendingCount = loading ? "—" : (hasStats ? (stats.pendingProfileCompletion ?? stats.pending) : (typeof totalCount === "number" ? totalCount - completedCount : 0));
-  const pct = typeof totalCount === "number" && totalCount && typeof completedCount === "number" ? Math.round((completedCount / totalCount) * 100) : 0;
+  const totalCount = loading ? "—" : (hasStats ? (stats.totalStaff ?? stats.totalCount ?? 0) : (safeRecords.length || 0));
+  const teachingCount = loading ? "—" : (hasStats ? (stats.teachingStaff ?? 0) : (safeRecords.filter((r) => r?.staffType === "Teaching").length || 0));
+  const nonTeachingCount = loading ? "—" : (hasStats ? (stats.nonTeachingStaff ?? 0) : (safeRecords.filter((r) => r?.staffType === "Non-Teaching").length || 0));
+  const completedCount = loading ? "—" : (hasStats ? (stats.completedProfiles ?? stats.completed ?? 0) : (safeRecords.filter((r) => r?.profileStatus === "Completed").length || 0));
+  const pendingCount = loading ? "—" : (hasStats ? (stats.pendingProfileCompletion ?? stats.pending ?? 0) : (typeof totalCount === "number" ? Math.max(0, totalCount - completedCount) : 0));
+  const pct = typeof totalCount === "number" && totalCount > 0 && typeof completedCount === "number" ? Math.round((completedCount / totalCount) * 100) : 0;
 
   return (
     <DashboardLayout
@@ -643,7 +965,8 @@ function Dashboard({ records = [] }) {
 // ----------------------------------------------------------------------
 function StaffList({ records = [], setRecords, forced }) {
   const n = useNavigate();
-  const list = Array.isArray(records) && records.length > 0 ? records : seed;
+  const { boards } = useAcademicContext();
+  const list = Array.isArray(records) ? records : [];
   const importInputRef = useRef(null);
   const [tab, setTab] = useState(forced || "All");
   const [q, setQ] = useState("");
@@ -697,7 +1020,7 @@ function StaffList({ records = [], setRecords, forced }) {
     }
     fetchStaffList();
     return () => { isMounted = false; };
-  }, [page, size, q, departmentFilter, designationFilter, staffTypeFilter, forced, tab]);
+  }, [page, size, q, departmentFilter, designationFilter, staffTypeFilter, forced, tab, records]);
 
   // POST /api/v1/staff/import-excel Bulk Import
   const handleBulkImport = async (e) => {
@@ -716,10 +1039,11 @@ function StaffList({ records = [], setRecords, forced }) {
       setToast(res.data?.summaryMessage || `Successfully imported bulk staff members from ${file.name}`);
     } catch (err) {
       console.warn("POST /api/v1/staff/import-excel failed, fallback local import used");
+      const fallbackEmpId = generateNextNumber("employee-id");
       const newStaff = [
         {
           id: Date.now() + "-1",
-          employeeId: generateNextNumber(staffKind === "Non-Teaching" ? "non-teaching-staff" : "teaching-staff"),
+          employeeId: fallbackEmpId,
           fullName: "Bulk Imported Staff 1",
           email: "bulk1@pirnav.edu",
           mobile: "9876543210",
@@ -798,8 +1122,24 @@ function StaffList({ records = [], setRecords, forced }) {
   const currentTab = forced || tab;
 
   const rows = useMemo(() => {
-    if (apiItems && apiItems.length > 0) return apiItems;
-    return list.filter(
+    let combined = list;
+    if (apiItems && Array.isArray(apiItems) && apiItems.length > 0) {
+      const localMap = new Map();
+      list.forEach((r) => {
+        if (r && r.id !== undefined && r.id !== null) localMap.set(String(r.id), r);
+        if (r && r.employeeId) localMap.set(String(r.employeeId).trim().toLowerCase(), r);
+      });
+      combined = apiItems.map((apiItem) => {
+        const match = (apiItem.id && localMap.get(String(apiItem.id))) ||
+          (apiItem.employeeId && localMap.get(String(apiItem.employeeId).trim().toLowerCase()));
+        return match ? { ...apiItem, ...match } : apiItem;
+      });
+      const apiKeys = new Set(apiItems.map((a) => String(a.id ?? a.employeeId ?? "")));
+      const extras = list.filter((r) => !apiKeys.has(String(r.id)) && !apiKeys.has(String(r.employeeId)));
+      combined = [...extras, ...combined];
+    }
+
+    return combined.filter(
       (r) =>
         r &&
         (currentTab === "All" ||
@@ -922,19 +1262,17 @@ function StaffList({ records = [], setRecords, forced }) {
                   <option value="Non-Teaching">Non-Teaching</option>
                 </select>
               ) : null}
-              {isTypedStaffList ? (
-                <button
-                  type="button"
-                  className="cms-btn cms-btn-ghost"
-                  onClick={() => importInputRef.current?.click()}
-                  title="POST /api/v1/staff/import-excel"
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-                >
-                  <Upload size={16} /> Import Excel
-                </button>
-              ) : null}
             </div>
             <div className="staff-toolbar-actions">
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
+                onClick={() => importInputRef.current?.click()}
+                title="POST /api/v1/staff/import-excel"
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <Upload size={16} /> Import Excel
+              </button>
               <div className="staff-export-menu">
                 <button
                   type="button"
@@ -996,7 +1334,7 @@ function StaffList({ records = [], setRecords, forced }) {
                         <strong>{r.fullName || `${r.firstName || ""} ${r.lastName || ""}`}</strong>
                         <small>{r.email}</small>
                       </td>
-                      <td>{r.boardCode || r.board || r.boardName || "—"}</td>
+                      <td>{resolveBoardCode(r, boards)}</td>
                       <td>{r.department}</td>
                       <td>{r.designation}</td>
                       {showStaffType ? <td><Badge value={r.staffType} /></td> : null}
@@ -1103,42 +1441,72 @@ function TypeSelect() {
 // ----------------------------------------------------------------------
 function TeachingForm({ records, setRecords, existing }) {
   const n = useNavigate();
+  const { boards, selectedBoard } = useAcademicContext();
   const { departments: apiDepts, designations: apiDesigs } = useStaffTypeOptions("Teaching");
+  const activeBoardCode = selectedBoard?.code || selectedBoard?.boardCode || "";
+  const activeBoardName = selectedBoard?.name || selectedBoard?.boardName || activeBoardCode || "";
+  const activeBoardId = selectedBoard?.id || selectedBoard?.boardId || undefined;
   const [values, setValues] = useState(
     existing || {
       staffType: "Teaching",
-      employeeId: generateNextNumber("teaching-staff"),
+      employeeId: generateNextNumber("employee-id"),
+      board: activeBoardName,
+      boardName: activeBoardName,
+      boardCode: activeBoardCode,
+      ...(activeBoardId ? { boardId: Number(activeBoardId) || activeBoardId } : {}),
       status: "Active",
       employmentType: "Full Time",
+      allocatedSubjects: [],
+      subjects: [],
     },
   );
   const [errors, setErrors] = useState({});
+  const [toast, setToast] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  // GET /api/v1/staff/next-employee-id?staffType=Teaching
   useEffect(() => {
+    if (!existing && activeBoardName && !values.board) {
+      setValues((v) => ({
+        ...v,
+        board: activeBoardName,
+        boardName: activeBoardName,
+        boardCode: activeBoardCode,
+        ...(activeBoardId ? { boardId: Number(activeBoardId) || activeBoardId } : {}),
+      }));
+    }
+  }, [activeBoardName, activeBoardCode, activeBoardId, existing, values.board]);
+
+  // Fetch next employee ID dynamically from Settings Number Series / Staff API
+  useEffect(() => {
+    let isMounted = true;
     async function fetchNextId() {
-      try {
-        const res = await apiClient.get(apiEndpoints.faculty.nextEmployeeId, { params: { staffType: "Teaching" } });
-        if (res.data) setValues((v) => ({ ...v, employeeId: String(res.data) }));
-      } catch (err) {
-        console.warn("GET /api/v1/staff/next-employee-id API offline");
+      const nextId = await resolveNextStaffEmployeeId("Teaching");
+      if (isMounted && nextId) {
+        setValues((v) => ({ ...v, employeeId: nextId }));
       }
     }
     if (!existing) fetchNextId();
+    return () => { isMounted = false; };
   }, [existing]);
 
   const submit = async (e) => {
     e.preventDefault();
+    setErrors({});
     const fullName = [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" ") || values.employeeId || "Teaching Staff";
+    const resolvedCode = values.boardCode || resolveBoardCode({ board: values.board, boardName: values.boardName }, boards);
 
     const payload = {
       ...values,
+      boardCode: resolvedCode !== "—" ? resolvedCode : values.boardCode,
       fullName,
       staffType: "Teaching",
       profileStatus: existing?.profileStatus || "Pending",
       status: values.status || "Active",
+      allocatedSubjects: values.allocatedSubjects || values.subjects || [],
+      subjects: values.allocatedSubjects || values.subjects || [],
     };
 
+    setSubmitting(true);
     let targetId = existing?.id;
     try {
       if (existing?.id) {
@@ -1147,17 +1515,51 @@ function TeachingForm({ records, setRecords, existing }) {
       } else {
         // POST /api/v1/staff
         const res = await apiClient.post(apiEndpoints.faculty.create, payload);
-        targetId = res.data?.id || res.data?.staffId || Date.now();
+        targetId = res.data?.id || res.data?.staffId;
+      }
+      const record = { ...payload, id: targetId, profileCompletion: existing?.profileCompletion || 25, addedOn: existing?.addedOn || new Date().toISOString().split("T")[0] };
+      if (!existing) incrementSeriesSequence("employee-id");
+      setRecords(existing ? records.map((r) => (String(r.id) === String(existing.id) ? record : r)) : [record, ...records]);
+      if (existing) {
+        setToast("Teaching staff profile updated successfully.");
+        n(`/dashboard/staff/teaching`);
+      } else {
+        n(`/dashboard/staff/${record.id}/send-link`);
       }
     } catch (err) {
+      const status = err?.response?.status;
+      const errMsg = getApiErrorMessage(err, "Failed to save staff record.");
+      if (status === 409 || status === 400) {
+        setToast(errMsg);
+        const lower = errMsg.toLowerCase();
+        const nextErrors = {};
+        if (lower.includes("employee id")) {
+          nextErrors.employeeId = errMsg;
+          try {
+            const nextId = await resolveNextStaffEmployeeId("Teaching");
+            if (nextId) setValues((v) => ({ ...v, employeeId: nextId }));
+          } catch {}
+        }
+        if (lower.includes("email")) nextErrors.email = errMsg;
+        if (lower.includes("mobile")) nextErrors.mobile = errMsg;
+        if (lower.includes("aadhaar")) nextErrors.aadhaar = errMsg;
+        setErrors(nextErrors);
+        return;
+      }
       console.warn("Save staff API error, using local fallback save:", err);
       targetId = existing?.id || Date.now();
+      const record = { ...payload, id: targetId, profileCompletion: existing?.profileCompletion || 25, addedOn: existing?.addedOn || new Date().toISOString().split("T")[0] };
+      if (!existing) incrementSeriesSequence("employee-id");
+      setRecords(existing ? records.map((r) => (String(r.id) === String(existing.id) ? record : r)) : [record, ...records]);
+      if (existing) {
+        setToast("Teaching staff profile updated successfully.");
+        n(`/dashboard/staff/teaching`);
+      } else {
+        n(`/dashboard/staff/${record.id}/send-link`);
+      }
+    } finally {
+      setSubmitting(false);
     }
-
-    const record = { ...payload, id: targetId, profileCompletion: existing?.profileCompletion || 25, addedOn: "2026-09-02" };
-    if (!existing) incrementSeriesSequence("teaching-staff");
-    setRecords(existing ? records.map((r) => (r.id === existing.id ? record : r)) : [record, ...records]);
-    n(`/dashboard/staff/${record.id}/send-link`);
   };
 
   return (
@@ -1166,6 +1568,7 @@ function TeachingForm({ records, setRecords, existing }) {
       subtitle="Admin enters basic details only."
       breadcrumb={["People", "Staff Management"]}
     >
+      <Toast message={toast} onClose={() => setToast("")} />
       <main className="staff-mock-page">
         <Back />
         <Steps labels={["Basic Details", "Send Link"]} step={0} />
@@ -1185,7 +1588,7 @@ function TeachingForm({ records, setRecords, existing }) {
                 values={values}
                 setValues={setValues}
                 error={errors[f[0]]}
-                forceOptional={true}
+                forceOptional={false}
                 departmentOptions={apiDepts}
                 designationOptions={apiDesigs}
               />
@@ -1210,7 +1613,11 @@ function TeachingForm({ records, setRecords, existing }) {
 // ----------------------------------------------------------------------
 function NonTeachingForm({ records, setRecords, existing }) {
   const n = useNavigate();
+  const { boards, selectedBoard } = useAcademicContext();
   const { departments: apiDepts, designations: apiDesigs } = useStaffTypeOptions("Non-Teaching");
+  const activeBoardCode = selectedBoard?.code || selectedBoard?.boardCode || "";
+  const activeBoardName = selectedBoard?.name || selectedBoard?.boardName || activeBoardCode || "";
+  const activeBoardId = selectedBoard?.id || selectedBoard?.boardId || undefined;
   const pincodeRequestRef = useRef(0);
   const labels = [
     "Personal Information",
@@ -1225,27 +1632,45 @@ function NonTeachingForm({ records, setRecords, existing }) {
   const [values, setValues] = useState(
     existing || {
       staffType: "Non-Teaching",
-      employeeId: generateNextNumber("non-teaching-staff"),
+      employeeId: generateNextNumber("employee-id"),
+      board: activeBoardName,
+      boardName: activeBoardName,
+      boardCode: activeBoardCode,
+      ...(activeBoardId ? { boardId: Number(activeBoardId) || activeBoardId } : {}),
       status: "Active",
       nationality: "Indian",
       country: "India",
     },
   );
   const [errors, setErrors] = useState({});
+  const [toast, setToast] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [pincodeError, setPincodeError] = useState("");
   const [editingFromReview, setEditingFromReview] = useState(false);
 
-  // GET /api/v1/staff/next-employee-id?staffType=Non-Teaching
   useEffect(() => {
+    if (!existing && activeBoardName && !values.board) {
+      setValues((v) => ({
+        ...v,
+        board: activeBoardName,
+        boardName: activeBoardName,
+        boardCode: activeBoardCode,
+        ...(activeBoardId ? { boardId: Number(activeBoardId) || activeBoardId } : {}),
+      }));
+    }
+  }, [activeBoardName, activeBoardCode, activeBoardId, existing, values.board]);
+
+  // Fetch next employee ID dynamically from Settings Number Series / Staff API
+  useEffect(() => {
+    let isMounted = true;
     async function fetchNextId() {
-      try {
-        const res = await apiClient.get(apiEndpoints.faculty.nextEmployeeId, { params: { staffType: "Non-Teaching" } });
-        if (res.data) setValues((v) => ({ ...v, employeeId: String(res.data) }));
-      } catch (err) {
-        console.warn("GET /api/v1/staff/next-employee-id API offline");
+      const nextId = await resolveNextStaffEmployeeId("Non-Teaching");
+      if (isMounted && nextId) {
+        setValues((v) => ({ ...v, employeeId: nextId }));
       }
     }
     if (!existing) fetchNextId();
+    return () => { isMounted = false; };
   }, [existing]);
 
   useEffect(() => {
@@ -1299,14 +1724,17 @@ function NonTeachingForm({ records, setRecords, existing }) {
 
   const save = async () => {
     const fullName = [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" ") || values.employeeId;
+    const resolvedCode = values.boardCode || resolveBoardCode({ board: values.board, boardName: values.boardName }, boards);
     const payload = {
       ...values,
+      boardCode: resolvedCode !== "—" ? resolvedCode : values.boardCode,
       fullName,
       staffType: "Non-Teaching",
       profileStatus: "Completed",
       profileCompletionPercentage: 100,
     };
 
+    setSubmitting(true);
     let targetId = existing?.id;
     try {
       if (existing?.id) {
@@ -1315,16 +1743,52 @@ function NonTeachingForm({ records, setRecords, existing }) {
       } else {
         // POST /api/v1/staff
         const res = await apiClient.post(apiEndpoints.faculty.create, payload);
-        targetId = res.data?.id || res.data?.staffId || Date.now();
+        targetId = res.data?.id || res.data?.staffId;
+      }
+      const record = { ...payload, id: targetId, profileStatus: "Completed", profileCompletion: 100, addedOn: existing?.addedOn || new Date().toISOString().split("T")[0] };
+      if (!existing) incrementSeriesSequence("employee-id");
+      setRecords(existing ? records.map((r) => (String(r.id) === String(existing.id) ? record : r)) : [record, ...records]);
+      if (existing) {
+        setToast("Non-teaching staff profile updated successfully.");
+        n(`/dashboard/staff/non-teaching`);
+      } else {
+        n(`/dashboard/staff/${record.id}`);
       }
     } catch (err) {
+      const status = err?.response?.status;
+      const errMsg = getApiErrorMessage(err, "Failed to save non-teaching staff record.");
+      if (status === 409 || status === 400) {
+        setToast(errMsg);
+        const lower = errMsg.toLowerCase();
+        const nextErrors = {};
+        if (lower.includes("employee id")) {
+          nextErrors.employeeId = errMsg;
+          try {
+            const nextId = await resolveNextStaffEmployeeId("Non-Teaching");
+            if (nextId) setValues((v) => ({ ...v, employeeId: nextId }));
+          } catch {}
+        }
+        if (lower.includes("email")) nextErrors.email = errMsg;
+        if (lower.includes("mobile")) nextErrors.mobile = errMsg;
+        if (lower.includes("aadhaar")) nextErrors.aadhaar = errMsg;
+        setErrors(nextErrors);
+        setStep(0);
+        return;
+      }
       console.warn("Save non-teaching staff API error:", err);
       targetId = existing?.id || Date.now();
+      const record = { ...payload, id: targetId, profileStatus: "Completed", profileCompletion: 100, addedOn: existing?.addedOn || new Date().toISOString().split("T")[0] };
+      if (!existing) incrementSeriesSequence("employee-id");
+      setRecords(existing ? records.map((r) => (String(r.id) === String(existing.id) ? record : r)) : [record, ...records]);
+      if (existing) {
+        setToast("Non-teaching staff profile updated successfully.");
+        n(`/dashboard/staff/non-teaching`);
+      } else {
+        n(`/dashboard/staff/${record.id}`);
+      }
+    } finally {
+      setSubmitting(false);
     }
-
-    const record = { ...payload, id: targetId, profileStatus: "Completed", profileCompletion: 100, addedOn: "2026-09-02" };
-    setRecords(existing ? records.map((r) => (r.id === existing.id ? record : r)) : [record, ...records]);
-    n(`/dashboard/staff/${record.id}`);
   };
 
   return (
@@ -1333,6 +1797,7 @@ function NonTeachingForm({ records, setRecords, existing }) {
       subtitle="Admin completes the entire profile."
       breadcrumb={["People", "Staff Management"]}
     >
+      <Toast message={toast} onClose={() => setToast("")} />
       <main className="staff-mock-page">
         <Back />
         <Steps labels={labels} step={step} />
@@ -1394,31 +1859,90 @@ function NonTeachingForm({ records, setRecords, existing }) {
 // ----------------------------------------------------------------------
 function SendLink({ record, update, activity }) {
   const n = useNavigate();
-  const [sent, setSent] = useState(record.linkSent);
+  const [email, setEmail] = useState(record.email || "");
+  const [mobile, setMobile] = useState(record.mobile || "");
   const [days, setDays] = useState("7 Days");
-  const link = `${location.origin}/mock-staff-portal/${record.id}`;
+  const [message, setMessage] = useState("Please complete your remaining profile details using the link below.");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(record.linkSent);
+  const [feedback, setFeedback] = useState(null);
+  const [generatedLink, setGeneratedLink] = useState(
+    record.profileLinkToken
+      ? `${location.origin}/staff-portal/${record.profileLinkToken}`
+      : `${location.origin}/mock-staff-portal/${record.id}`
+  );
 
   const send = async () => {
+    if (!email.trim()) {
+      setFeedback({ success: false, message: "Please enter a valid recipient email address." });
+      return;
+    }
+    setSending(true);
+    setFeedback(null);
+    let success = false;
+    let finalLink = generatedLink;
+    let statusMsg = "";
+
     try {
       // POST /api/v1/staff/{id}/send-link
-      await apiClient.post(apiEndpoints.faculty.sendLink(record.id), {
-        email: record.email,
-        mobile: record.mobile,
+      const res = await apiClient.post(apiEndpoints.faculty.sendLink(record.id), {
+        email: email.trim(),
+        mobile: mobile.trim(),
         validityDays: parseInt(days, 10) || 7,
+        customMessage: message.trim(),
       });
+
+      if (res?.data) {
+        success = true;
+        if (res.data.profileLink) {
+          finalLink = res.data.profileLink;
+          setGeneratedLink(res.data.profileLink);
+        } else if (res.data.token) {
+          finalLink = `${location.origin}/staff-portal/${res.data.token}`;
+          setGeneratedLink(finalLink);
+        }
+
+        if (res.data.emailSent) {
+          statusMsg = `Profile completion email successfully sent to ${res.data.emailRecipient || email.trim()}!`;
+        } else if (res.data.emailError) {
+          statusMsg = `Link generated, but email delivery encountered an issue: ${res.data.emailError}`;
+        } else {
+          statusMsg = `Profile completion link generated successfully for ${email.trim()}.`;
+        }
+
+        setFeedback({
+          success: true,
+          emailSent: !!res.data.emailSent,
+          message: statusMsg,
+        });
+      }
     } catch (err) {
-      console.warn("POST /api/v1/staff/{id}/send-link API offline");
+      console.warn("POST /api/v1/staff/{id}/send-link failed", err);
+      const errMsg = getApiErrorMessage(err, "Failed to send profile link. Please verify backend API is running.");
+      setFeedback({
+        success: false,
+        emailSent: false,
+        message: errMsg,
+      });
+      // Keep existing local flow if offline
+      success = true;
+    } finally {
+      setSending(false);
     }
 
-    update({
-      ...record,
-      linkSent: true,
-      linkSentAt: "2026-09-02",
-      profileStatus: "Link Sent",
-      profileCompletion: 30,
-    });
-    if (activity) activity(`${record.fullName} profile link sent`);
-    setSent(true);
+    if (success) {
+      update({
+        ...record,
+        email: email.trim() || record.email,
+        mobile: mobile.trim() || record.mobile,
+        linkSent: true,
+        linkSentAt: new Date().toISOString().split("T")[0],
+        profileStatus: "Link Sent",
+        profileCompletion: record.profileCompletion || 30,
+      });
+      if (activity) activity(`${record.fullName} profile link dispatched to ${email.trim() || record.email}`);
+      setSent(true);
+    }
   };
 
   return (
@@ -1441,45 +1965,79 @@ function SendLink({ record, update, activity }) {
             </header>
             <div className="staff-form-grid">
               <label>
-                <span>Email</span>
-                <input value={record.email || ""} readOnly />
+                <span>Email Address <strong style={{ color: "var(--brand-primary, #6F8400)" }}>*</strong></span>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Enter staff email address"
+                  required
+                />
               </label>
               <label>
-                <span>Mobile</span>
-                <input value={record.mobile || ""} readOnly />
+                <span>Mobile Number</span>
+                <input
+                  type="tel"
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  placeholder="Enter mobile number"
+                />
               </label>
               <label>
                 <span>Link Validity</span>
                 <select value={days} onChange={(e) => setDays(e.target.value)}>
                   {[3, 7, 15, 30].map((x) => (
-                    <option key={x}>{x} Days</option>
+                    <option key={x} value={`${x} Days`}>{x} Days</option>
                   ))}
                 </select>
               </label>
               <label className="is-wide">
                 <span>Message</span>
-                <textarea defaultValue="Please complete your remaining profile details using the link below." />
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={3}
+                  placeholder="Personalized message to staff member..."
+                />
               </label>
             </div>
-            {sent ? (
+            {feedback ? (
+              <aside
+                style={{
+                  margin: "16px 0",
+                  padding: "12px 16px",
+                  borderRadius: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  fontSize: "0.9rem",
+                  background: feedback.success && feedback.emailSent ? "#f0fdf4" : feedback.success ? "#fefce8" : "#fef2f2",
+                  color: feedback.success && feedback.emailSent ? "#166534" : feedback.success ? "#854d0e" : "#991b1b",
+                  border: `1px solid ${feedback.success && feedback.emailSent ? "#bbf7d0" : feedback.success ? "#fef08a" : "#fecaca"}`
+                }}
+              >
+                {feedback.success && feedback.emailSent ? <Check size={18} /> : <AlertCircle size={18} />}
+                <span>{feedback.message}</span>
+              </aside>
+            ) : sent ? (
               <aside className="success-banner">
-                <Check /> Profile completion link sent successfully.
+                <Check /> Profile completion link generated successfully.
               </aside>
             ) : null}
             <footer>
               <button className="cms-btn cms-btn-ghost" onClick={() => n("/dashboard/staff/list")}>
                 Back
               </button>
-              <button className="cms-btn cms-btn-primary" onClick={send}>
-                <Send /> {sent ? "Resend Link" : "Send Link"}
+              <button className="cms-btn cms-btn-primary" onClick={send} disabled={sending}>
+                <Send /> {sending ? "Sending Link..." : sent ? "Resend Link" : "Send Link"}
               </button>
             </footer>
             {sent ? (
               <div className="link-actions">
-                <button onClick={() => navigator.clipboard?.writeText(link)}>
+                <button type="button" onClick={() => navigator.clipboard?.writeText(generatedLink)}>
                   <Copy /> Copy Link
                 </button>
-                <button onClick={() => n(`/mock-staff-portal/${record.id}`)}>
+                <button type="button" onClick={() => n(`/mock-staff-portal/${record.id}`)}>
                   <Eye /> Open Staff Portal
                 </button>
               </div>
@@ -1489,8 +2047,9 @@ function SendLink({ record, update, activity }) {
             <Mail />
             <h3>Complete Your Staff Profile - Pirnav College</h3>
             <p>Dear {record.fullName},</p>
-            <p>You are invited to complete your staff profile for Pirnav College.</p>
-            <button>Complete Your Profile</button>
+            <p>{message || "You are invited to complete your staff profile for Pirnav College."}</p>
+            <button type="button" onClick={() => n(`/mock-staff-portal/${record.id}`)}>Complete Your Profile</button>
+            <p>Recipient: <strong>{email || "—"}</strong></p>
             <p>Link expires in {days.toLowerCase()}.</p>
             <p>
               Regards,<br />
@@ -1760,11 +2319,12 @@ function Pending({ records = [], setRecords, activity }) {
             </div>
             {tab === "Link Sent" || tab === "In Progress" || tab === "Needs Correction" ? (
               <button
-                className="cms-btn cms-btn-primary"
+                type="button"
+                className="cms-btn cms-btn-primary staff-bulk-resend-btn"
                 onClick={bulkResendLinks}
                 style={{ marginLeft: "auto", flexShrink: 0, marginBottom: "4px" }}
               >
-                <Send /> {selectedIds.length ? `Bulk Resend (${selectedIds.length})` : "Bulk Resend"}
+                <Send size={15} /> {selectedIds.length ? `Bulk Resend (${selectedIds.length})` : "Bulk Resend"}
               </button>
             ) : null}
           </div>
@@ -1924,6 +2484,16 @@ function Details({ record, records, setRecords }) {
           <div>
             <h2>{activeRecord.fullName}</h2>
             <p>{activeRecord.employeeId} · {activeRecord.designation} · {activeRecord.department}</p>
+            {activeRecord.staffType === "Teaching" && Array.isArray(activeRecord.allocatedSubjects || activeRecord.subjects) && (activeRecord.allocatedSubjects || activeRecord.subjects).length > 0 ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", marginBottom: "4px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "11px", color: "var(--cms-muted)", fontWeight: "600" }}>Subject Allocation:</span>
+                {(activeRecord.allocatedSubjects || activeRecord.subjects).map((sub, i) => (
+                  <span key={i} className="subject-pill" style={{ padding: "1px 7px", fontSize: "10px" }}>
+                    {typeof sub === "object" ? sub.name || sub.subjectName || String(sub) : String(sub)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <Badge value={activeRecord.status || "Active"} />
           </div>
         </section>
@@ -2069,6 +2639,7 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
       [
         ["department", "Department"],
         ["designation", "Designation"],
+        ["allocatedSubjects", "Subject Allocation"],
         ["dateOfJoining", "Date of Joining"],
         ["employmentType", "Employment Type"],
         ["staffType", "Staff Type"],
@@ -2165,6 +2736,16 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
   };
 
   const renderFieldInput = (key, label) => {
+    if (key === "allocatedSubjects" || key === "subjects") {
+      const currentVal = formData.allocatedSubjects || formData.subjects || record.allocatedSubjects || record.subjects || [];
+      return (
+        <SubjectAllocationInput
+          department={formData.department || record.department || ""}
+          value={currentVal}
+          onChange={(newSubs) => setFormData((prev) => ({ ...prev, allocatedSubjects: newSubs, subjects: newSubs }))}
+        />
+      );
+    }
     const config = fieldTypes[key] || ["text"];
     const [type, options] = config;
     const val = formData[key] !== undefined ? formData[key] : record[key] || "";
@@ -2231,7 +2812,27 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
                   {isEditing ? (
                     renderFieldInput(key, label)
                   ) : (
-                    <strong>{record[key] || "—"}</strong>
+                    <strong>
+                      {key === "allocatedSubjects" || key === "subjects" ? (
+                        Array.isArray(record[key] || record.allocatedSubjects || record.subjects) &&
+                        (record[key] || record.allocatedSubjects || record.subjects).length > 0 ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
+                            {(record[key] || record.allocatedSubjects || record.subjects).map((sub, i) => (
+                              <span key={i} className="subject-pill" style={{ padding: "2px 8px", fontSize: "10px" }}>
+                                {typeof sub === "object" ? sub.name || sub.subjectName || String(sub) : String(sub)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : typeof (record[key] || record.allocatedSubjects || record.subjects) === "string" &&
+                          (record[key] || record.allocatedSubjects || record.subjects).trim() ? (
+                          record[key] || record.allocatedSubjects || record.subjects
+                        ) : (
+                          "—"
+                        )
+                      ) : (
+                        record[key] || "—"
+                      )}
+                    </strong>
                   )}
                 </p>
               );
@@ -2325,9 +2926,9 @@ export default function StaffManagementPage() {
   else if (p.endsWith("/edit") && record)
     page =
       record.staffType === "Teaching" ? (
-        <TeachingForm records={records} setRecords={setRecords} existing={record} />
+        <TeachingForm records={safeRecords} setRecords={setRecords} existing={record} />
       ) : (
-        <NonTeachingForm records={records} setRecords={setRecords} existing={record} />
+        <NonTeachingForm records={safeRecords} setRecords={setRecords} existing={record} />
       );
   else if (
     p.startsWith("/mock-staff-portal/") &&
@@ -2336,7 +2937,7 @@ export default function StaffManagementPage() {
     page = <PortalForm record={record} update={update} activity={activity} />;
   else if (p.startsWith("/mock-staff-portal/")) page = <PortalHome record={record} />;
   else if (record)
-    page = <Details record={record} records={records} setRecords={setRecords} />;
+    page = <Details record={record} records={safeRecords} setRecords={setRecords} />;
   else
     page = (
       <DashboardLayout title="Staff Record Not Found" breadcrumb={["People", "Staff Management"]}>

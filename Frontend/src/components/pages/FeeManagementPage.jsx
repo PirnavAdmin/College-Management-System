@@ -1084,7 +1084,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
   const overdueStudents = hasDueScheduleData ? overdueStudentCount : totals.overdueStudents || 0;
   const recent = dashboardData?.recent?.length ? dashboardData.recent : [];
   const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
-  const groupOptions = chartData.map((row) => row.group).filter(Boolean);
+  const groupOptions = Array.from(new Set(chartData.map((row) => row.group).filter(Boolean))).sort();
   const selectedChartRows = selectedGroup ? chartData.filter((row) => row.group === selectedGroup) : chartData;
   const selectedChartTotals = selectedChartRows.reduce((sum, row) => ({
     expected: sum.expected + Number(row.expected || 0),
@@ -1152,7 +1152,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
             <span>Group</span>
             <select value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)}>
               <option value="">All Groups</option>
-              {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+              {groupOptions.map((group, index) => <option key={`${group}-${index}`} value={group}>{group}</option>)}
             </select>
           </label>
         </div>

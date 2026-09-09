@@ -44,90 +44,6 @@ export const FIXED_NUMBER_SERIES = [
     ],
   },
   {
-    id: "roll-no",
-    key: "roll-no",
-    name: "Roll No.",
-    category: "Academics",
-    prefix: "",
-    format: "{SEQ}",
-    numberLength: 1,
-    startNumber: 1,
-    currentNumber: 1,
-    totalGenerated: 2,
-    currentExample: "1",
-    description: "Configure roll number format for students based on academic allocation.",
-    status: "Active",
-    allowedTokens: ["{SEQ}", "{GROUP}", "{LEVEL}", "{SECTION}"],
-    sampleFormats: [
-      { format: "{SEQ}", example: "1" },
-      { format: "{GROUP}-{SECTION}-{SEQ}", example: "MPC-A-01" },
-      { format: "{LEVEL}-{SEQ}", example: "BTECH-001" },
-    ],
-  },
-  {
-    id: "student-id",
-    key: "student-id",
-    name: "Student ID",
-    category: "Student Records",
-    prefix: "",
-    format: "{SEQ}",
-    numberLength: 3,
-    startNumber: 1,
-    currentNumber: 518,
-    totalGenerated: 518,
-    currentExample: "518",
-    description: "Configure internal student ID format for student records.",
-    status: "Active",
-    allowedTokens: ["{SEQ}", "{YYYY}", "{YY}", "{MM}", "{DD}"],
-    sampleFormats: [
-      { format: "{SEQ}", example: "518" },
-      { format: "STU-{SEQ}", example: "STU-001" },
-      { format: "STU-{YYYY}-{SEQ}", example: "STU-2026-0001" },
-    ],
-  },
-  {
-    id: "section-name",
-    key: "section-name",
-    name: "Section Name",
-    category: "Academic Architecture",
-    prefix: "",
-    format: "{GROUP}-Section {SECTION}",
-    numberLength: 1,
-    startNumber: 1,
-    currentNumber: 2,
-    totalGenerated: 5,
-    currentExample: "MPC-Section A",
-    description: "Configure section naming format for academic sections.",
-    status: "Active",
-    allowedTokens: ["{GROUP}", "{SECTION}", "{LEVEL}", "{BOARD}"],
-    sampleFormats: [
-      { format: "{GROUP}-Section {SECTION}", example: "MPC-Section A" },
-      { format: "{GROUP}-{SECTION}", example: "MPC-A" },
-      { format: "{BOARD}-{GROUP}-{SECTION}", example: "BIEAP-MPC-A" },
-    ],
-  },
-  {
-    id: "exam-code",
-    key: "exam-code",
-    name: "Exam Code",
-    category: "Examinations",
-    prefix: "EXAM",
-    format: "{GROUP}-{TYPE}-{YEAR}",
-    numberLength: 4,
-    startNumber: 1,
-    currentNumber: 19,
-    totalGenerated: 19,
-    currentExample: "MPC-FINAL-2025",
-    description: "Configure examination code format for internal and final exams.",
-    status: "Active",
-    allowedTokens: ["{EXAM}", "{GROUP}", "{YEAR}", "{SEQ}", "{TYPE}"],
-    sampleFormats: [
-      { format: "{GROUP}-{TYPE}-{YEAR}", example: "MPC-FINAL-2025" },
-      { format: "EXAM-{YEAR}-{SEQ}", example: "EXAM-2026-0019" },
-      { format: "EXAM-{GROUP}-{TYPE}", example: "EXAM-MPC-MID1" },
-    ],
-  },
-  {
     id: "certificate-number",
     key: "certificate-number",
     name: "Certificate Number",
@@ -170,6 +86,52 @@ export const FIXED_NUMBER_SERIES = [
     ],
   },
 ];
+
+export function normalizeNumberSeriesItem(item = {}) {
+  const code = item.seriesCode || item.slug || item.key || item.id || "";
+  const name = item.seriesName || item.name || code;
+  const format = item.formatPattern || item.format || "{SEQ}";
+  const prefix = item.prefix || "";
+  const numberLength = Number(item.numberLength ?? 4);
+  const startNumber = Number(item.startNumber ?? 1);
+  const currentSequence = Number(item.currentSequence ?? item.currentNumber ?? 0);
+  const allowedTokens = item.availablePlaceholders || item.allowedTokens || ["{SEQ}", "{YYYY}", "{YY}", "{MM}", "{DD}"];
+  const sampleFormats = (item.sampleFormats || []).map((sf) => ({
+    format: sf.pattern || sf.format || "",
+    pattern: sf.pattern || sf.format || "",
+    example: sf.example || "",
+  }));
+  const description = item.description || "";
+  const isActive = item.isActive ?? true;
+  const currentExample = item.currentExample || item.livePreview || format;
+  const livePreview = item.livePreview || item.currentExample || format;
+
+  return {
+    ...item,
+    id: code,
+    key: code,
+    seriesCode: code,
+    slug: item.slug || code,
+    name,
+    seriesName: name,
+    prefix,
+    format,
+    formatPattern: format,
+    numberLength,
+    startNumber,
+    currentSequence,
+    currentNumber: currentSequence,
+    totalGenerated: item.totalGenerated ?? currentSequence,
+    allowedTokens,
+    availablePlaceholders: allowedTokens,
+    sampleFormats,
+    description,
+    isActive,
+    status: isActive ? "Active" : "Inactive",
+    currentExample,
+    livePreview,
+  };
+}
 
 // --- MOCK GENERATED HISTORY DATA FOR EACH FIXED TYPE ---
 export const MOCK_GENERATED_HISTORY = {
@@ -373,23 +335,48 @@ export function formatSeriesNumber(series, sequenceNum = null, customTokens = {}
   return buildNumberFromFormat(series.format || "ID{SEQ}", num, series.numberLength || 4, customTokens);
 }
 
-export function generateNextNumber(seriesKey, customTokens = {}) {
+export function findSeriesConfig(seriesKey) {
   const seriesList = readNumberSeriesSettings();
-  const series = seriesList.find((s) => s.key === seriesKey || s.id === seriesKey);
+  const normalizedKey = String(seriesKey || "").trim().toLowerCase();
+  let series = seriesList.find((s) =>
+    s.key === seriesKey ||
+    s.id === seriesKey ||
+    String(s.slug || "").toLowerCase() === normalizedKey ||
+    String(s.seriesCode || "").toLowerCase() === normalizedKey
+  );
   if (!series) {
-    if (seriesKey === "teaching-staff" || seriesKey === "employee-id") return "PCTCH0040";
-    if (seriesKey === "non-teaching-staff") return "NT011";
-    if (seriesKey === "student-admission" || seriesKey === "admission-no") return "ADM-18";
-    if (seriesKey === "student-roll" || seriesKey === "roll-no") return "2";
+    if (normalizedKey.includes("staff") || normalizedKey.includes("employee") || normalizedKey.includes("teaching")) {
+      series = seriesList.find((s) => s.id === "employee-id" || s.key === "employee-id" || s.seriesCode === "EMPLOYEE_ID");
+    } else if (normalizedKey.includes("student") || normalizedKey.includes("admission")) {
+      series = seriesList.find((s) => s.id === "admission-no" || s.key === "admission-no" || s.seriesCode === "ADMISSION_NO");
+    } else if (normalizedKey.includes("cert")) {
+      series = seriesList.find((s) => s.id === "certificate-number" || s.key === "certificate-number" || s.seriesCode === "CERTIFICATE_NUMBER");
+    } else if (normalizedKey.includes("fee") || normalizedKey.includes("receipt")) {
+      series = seriesList.find((s) => s.id === "receipt-no" || s.key === "receipt-no" || s.seriesCode === "RECEIPT_NO");
+    }
+  }
+  return series;
+}
+
+export function generateNextNumber(seriesKey, customTokens = {}) {
+  const series = findSeriesConfig(seriesKey);
+  if (!series) {
+    const norm = String(seriesKey || "").toLowerCase();
+    if (norm.includes("staff") || norm.includes("employee") || norm.includes("teaching")) return "PCTCH0040";
+    if (norm.includes("admission") || norm.includes("student")) return "ADM-18";
+    if (norm.includes("roll")) return "2";
+    if (norm.includes("receipt") || norm.includes("fee")) return "FEE-20260904-000012";
     return "ID001";
   }
   return formatSeriesNumber(series, Number(series.currentNumber || 0) + 1, customTokens);
 }
 
 export function incrementSeriesSequence(seriesKey) {
+  const series = findSeriesConfig(seriesKey);
+  const targetId = series?.id || series?.key || seriesKey;
   const seriesList = readNumberSeriesSettings();
   const updated = seriesList.map((s) => {
-    if (s.key === seriesKey || s.id === seriesKey) {
+    if (s.id === targetId || s.key === targetId) {
       return { ...s, currentNumber: Number(s.currentNumber || 0) + 1, totalGenerated: Number(s.totalGenerated || 0) + 1 };
     }
     return s;
@@ -398,9 +385,11 @@ export function incrementSeriesSequence(seriesKey) {
 }
 
 export function resetNumberSeriesSequence(id, newCurrentNumber = 0) {
+  const series = findSeriesConfig(id);
+  const targetId = series?.id || series?.key || id;
   const seriesList = readNumberSeriesSettings();
   const updated = seriesList.map((s) => {
-    if (s.id === id || s.key === id) {
+    if (s.id === targetId || s.key === targetId) {
       return { ...s, currentNumber: Number(newCurrentNumber) };
     }
     return s;

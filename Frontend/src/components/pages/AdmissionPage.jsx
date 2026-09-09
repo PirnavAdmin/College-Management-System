@@ -2225,8 +2225,15 @@ export default function AdmissionPage() {
     });
   }, [isFeeStep]);
 
+  const mastersLoadedRef = useRef(false);
+  const loadedBoardLevelsRef = useRef(new Set());
+
   useEffect(() => {
+    if (viewMode !== "form" && viewMode !== "list") return;
+    if (mastersLoadedRef.current) return;
+
     let ignore = false;
+    mastersLoadedRef.current = true;
 
     const loadAdmissionMasters = async () => {
       setMasterStatus((current) => ({ ...current, groupsLoading: true, groupsError: "", sectionsError: "" }));
@@ -2260,14 +2267,25 @@ export default function AdmissionPage() {
           })
           .filter(Boolean)
         : [];
-      setMasterOptions({
-        boards: contextBoardOptions,
+      
+      const defaultBloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((bg) => ({ value: bg, label: bg }));
+      const loadedBloodGroups = bloodGroupsResult.status === "fulfilled"
+        ? getCollection(bloodGroupsResult.value.data).map((item) => (
+          typeof item === "string"
+            ? { value: item, label: item }
+            : toOption(item, ["bloodGroupId", "BloodGroupId", "id", "Id", "name", "Name", "value", "Value"], ["bloodGroupName", "BloodGroupName", "name", "Name", "value", "Value"])
+        )).filter(Boolean)
+        : [];
+
+      setMasterOptions((current) => ({
+        ...current,
+        boards: contextBoardOptions.length ? contextBoardOptions : current.boards || [],
         years: uniqueOptionsByValue([...contextYearOptions, ...allYearOptions]),
         levels: levelsResult.status === "fulfilled"
           ? getCollection(levelsResult.value.data)
             .map(normalizeLevelOption)
             .filter(Boolean)
-          : [],
+          : (current.levels || []),
         groups: groupsResult.status === "fulfilled"
           ? getCollection(groupsResult.value.data)
             .map((item) => {
@@ -2280,7 +2298,7 @@ export default function AdmissionPage() {
               } : null;
             })
             .filter((item) => item?.value)
-          : [],
+          : (current.groups || []),
         sections: sectionsResult.status === "fulfilled"
           ? getCollection(sectionsResult.value.data)
             .map((item) => {
@@ -2300,15 +2318,9 @@ export default function AdmissionPage() {
               } : null;
             })
             .filter((item) => item?.value)
-          : [],
-        bloodGroups: bloodGroupsResult.status === "fulfilled"
-          ? getCollection(bloodGroupsResult.value.data).map((item) => (
-            typeof item === "string"
-              ? { value: item, label: item }
-              : toOption(item, ["bloodGroupId", "BloodGroupId", "id", "Id", "name", "Name", "value", "Value"], ["bloodGroupName", "BloodGroupName", "name", "Name", "value", "Value"])
-          )).filter(Boolean)
-          : [],
-      });
+          : (current.sections || []),
+        bloodGroups: loadedBloodGroups.length ? loadedBloodGroups : defaultBloodGroups,
+      }));
       setMasterStatus((current) => ({
         ...current,
         groupsLoading: false,
@@ -2322,7 +2334,7 @@ export default function AdmissionPage() {
       ignore = true;
       setMasterStatus((current) => ({ ...current, groupsLoading: false }));
     };
-  }, [contextBoardOptions, contextYearOptions, viewMode]);
+  }, [viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form" || editingAdmissionId) return;
@@ -2398,9 +2410,9 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
-    if (!values.board) return undefined;
-    const selectedBoard = (masterOptions.boards || []).find((item) => String(item.value) === String(values.board));
-    if (!selectedBoard || selectedBoard.levelMappingLoaded) return undefined;
+    if (!values.board || loadedBoardLevelsRef.current.has(String(values.board))) return undefined;
+    loadedBoardLevelsRef.current.add(String(values.board));
+
     const requestId = boardMappingRequestRef.current + 1;
     boardMappingRequestRef.current = requestId;
     apiClient.get(apiEndpoints.boards.getById(values.board))
@@ -2429,7 +2441,7 @@ export default function AdmissionPage() {
         }));
       });
     return undefined;
-  }, [masterOptions.boards, values.board, viewMode]);
+  }, [values.board, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form") return;

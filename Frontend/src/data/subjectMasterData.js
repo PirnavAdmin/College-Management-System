@@ -69,9 +69,15 @@ export const academicLevelGroupSubjectMap = {
   firstYear: {
     MPC: ["MATH1A", "MATH1B", "PHY1", "CHE1"],
     BIPC: ["BOT1", "ZOO1", "PHY1", "CHE1"],
+    MEC: ["MATH1A", "MATH1B", "ECO1", "COM1"],
+    CEC: ["CIV1", "ECO1", "COM1"],
+    HEC: ["HIS1", "ECO1", "CIV1"],
   },
   secondYear: {
     MPC: ["MATH2A", "MATH2B", "PHY1", "CHE1"],
     BIPC: ["BOT1", "ZOO1", "PHY1", "CHE1"],
+    MEC: ["MATH2A", "MATH2B", "ECO1", "COM1"],
+    CEC: ["CIV1", "ECO1", "COM1"],
+    HEC: ["HIS1", "ECO1", "CIV1"],
   },
 };

@@ -58,6 +58,7 @@ const ALPHA_FIELDS = new Set([
   "prevSchool",
 ]);
 const ADMISSION_GENDER_OPTIONS = ["Male", "Female", "Other"];
+const DEFAULT_BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((group) => ({ value: group, label: group }));
 const newAdmissionValues = (values = {}) => {
   const next = normalizeAdmissionMobileState(values);
   if (!next.admissionDate) next.admissionDate = todayISO();
@@ -241,6 +242,19 @@ const lookupLabel = (options = [], value, currentLabel = "") => {
   const label = String(currentLabel || "").trim();
   if (label && !isRawIdDisplay(label, value)) return label;
   return optionLabel(options, value) || (label && !isRawIdDisplay(label) ? label : "");
+};
+
+const resolveOptionValue = (options = [], value, label = "") => {
+  const valueText = String(value ?? "").trim();
+  const labelText = String(label ?? "").trim();
+  const normalizedLabel = normalizeMatchText(labelText);
+  if (normalizedLabel) {
+    const byLabel = options.find((option) => normalizeMatchText(option.label) === normalizedLabel);
+    if (byLabel) return String(byLabel.value);
+  }
+  const byValue = valueText ? options.find((option) => String(option.value) === valueText) : null;
+  if (byValue) return String(byValue.value);
+  return valueText;
 };
 
 const formatFeeDate = (value) => {
@@ -443,6 +457,13 @@ const toOption = (item, idKeys, labelKeys) => {
   const label = read(item, ...labelKeys) || value;
   if (value === undefined || value === null || value === "") return null;
   return { value: String(value), label: String(label) };
+};
+
+const normalizeBloodGroupOption = (item) => {
+  if (typeof item === "string") return item.trim() ? { value: item, label: item } : null;
+  const label = readText(item, "bloodGroupName", "BloodGroupName", "bloodGroup", "BloodGroup", "name", "Name", "value", "Value", "label", "Label", "code", "Code");
+  if (!label) return null;
+  return { value: label, label };
 };
 
 const compactIds = (values = []) => (
@@ -1040,6 +1061,14 @@ const normalizeAdmissionRow = (item) => {
   const status = normalizeAdmissionStatus(readText(item, "status", "Status", "admissionStatus", "AdmissionStatus"));
   const programName = readText(item, "programName", "ProgramName")
     || (typeof program === "string" ? program : readText(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"));
+  const boardId = readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id");
+  const rawBoardName = readText(item, "boardName", "BoardName")
+    || (typeof board === "string" ? board : readText(board, "boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"));
+  const boardName = !isRawIdDisplay(rawBoardName, boardId) ? rawBoardName : "";
+  const academicYearId = readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id");
+  const rawAcademicYearName = readText(item, "academicYearName", "AcademicYearName")
+    || (typeof academicYear === "string" ? academicYear : readText(academicYear, "academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"));
+  const academicYearName = !isRawIdDisplay(rawAcademicYearName, academicYearId) ? rawAcademicYearName : "";
   const groupId = readId(item, "groupId", "GroupId") || readId(group, "groupId", "GroupId", "id", "Id");
   const groupName = readText(item, "groupName", "GroupName") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"));
   const programId = readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id");
@@ -1069,8 +1098,10 @@ const normalizeAdmissionRow = (item) => {
     admissionNo,
     studentName,
     admissionDate: readText(item, "admissionDate", "AdmissionDate", "date", "Date"),
-    academicYear: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id") || readText(item, "academicYearName", "AcademicYearName"),
-    board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id") || readText(item, "boardName", "BoardName"),
+    academicYear: academicYearId || academicYearName,
+    academicYearName,
+    board: boardId || boardName,
+    boardName,
     group: !isRawIdDisplay(groupName, groupId) ? groupName : groupId,
     program: !isRawIdDisplay(programName, programId) ? programName : programId,
     studentPhoto,
@@ -1085,8 +1116,8 @@ const normalizeAdmissionRow = (item) => {
       admissionType: readText(item, "admissionType", "AdmissionType"),
       quota: quotaValue && !isStandardQuota ? "Other" : quotaValue,
       quotaOther: quotaValue && !isStandardQuota ? quotaValue : "",
-      board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id"),
-      year: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
+      board: boardId,
+      year: academicYearId,
       firstName,
       lastName,
       gender: readText(item, "gender", "Gender"),
@@ -1943,7 +1974,9 @@ export default function AdmissionPage() {
   const {
     boards: contextBoards,
     academicYears: contextAcademicYears,
+    selectedBoard,
     selectedBoardId,
+    selectedAcademicYear,
     selectedAcademicYearId,
   } = useAcademicContext();
   const [initialDraft] = useState(readAdmissionDraft);
@@ -2015,6 +2048,42 @@ export default function AdmissionPage() {
       return option ? { ...option, boardId: readId(item, "boardId", "BoardId") } : null;
     }).filter(Boolean)
   ), [contextAcademicYears]);
+  const boardOptions = useMemo(() => uniqueOptionsByValue([
+    ...contextBoardOptions,
+    ...(masterOptions.boards || []),
+  ]), [contextBoardOptions, masterOptions.boards]);
+  const yearOptions = useMemo(() => uniqueOptionsByValue([
+    ...contextYearOptions,
+    ...(masterOptions.years || []),
+  ]), [contextYearOptions, masterOptions.years]);
+  const contextBoardLookupOptions = useMemo(() => uniqueOptionsByValue([
+    ...(masterOptions.boards || []),
+    ...contextBoardOptions,
+  ]), [contextBoardOptions, masterOptions.boards]);
+  const contextYearLookupOptions = useMemo(() => uniqueOptionsByValue([
+    ...(masterOptions.years || []),
+    ...contextYearOptions,
+  ]), [contextYearOptions, masterOptions.years]);
+  const selectedContextBoardLabel = selectedBoard?.boardName || selectedBoard?.name || selectedBoard?.label || selectedBoard?.code || "";
+  const selectedContextYearLabel = selectedAcademicYear?.academicYearName || selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "";
+  const selectedContextBoardValue = useMemo(() => resolveOptionValue(
+    contextBoardLookupOptions,
+    selectedBoardId,
+    selectedContextBoardLabel,
+  ), [contextBoardLookupOptions, selectedBoardId, selectedContextBoardLabel]);
+  const selectedContextYearValue = useMemo(() => resolveOptionValue(
+    contextYearLookupOptions,
+    selectedAcademicYearId,
+    selectedContextYearLabel,
+  ), [contextYearLookupOptions, selectedAcademicYearId, selectedContextYearLabel]);
+  const admissionYearDisplay = useCallback((row) => (
+    lookupLabel(yearOptions, row.academicYear, row.academicYearName)
+    || (!isRawIdDisplay(row.academicYear) ? row.academicYear : "-")
+  ), [yearOptions]);
+  const admissionBoardDisplay = useCallback((row) => (
+    lookupLabel(boardOptions, row.board, row.boardName)
+    || (!isRawIdDisplay(row.board) ? row.board : "-")
+  ), [boardOptions]);
   const groupOptions = useMemo(() => {
     const rows = masterOptions.groups || [];
     return rows.filter((item) => (
@@ -2037,23 +2106,26 @@ export default function AdmissionPage() {
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
   const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
   const groupFilterOptions = useMemo(() => masterOptions.groups || [], [masterOptions.groups]);
+  const bloodGroupOptions = useMemo(() => (
+    masterOptions.bloodGroups?.length ? masterOptions.bloodGroups : DEFAULT_BLOOD_GROUP_OPTIONS
+  ), [masterOptions.bloodGroups]);
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
-    (masterOptions.years || []).filter((item) => (
+    (yearOptions || []).filter((item) => (
       !values.board || !item.boardId || String(item.boardId) === String(values.board)
     )),
     (item) => item.label,
-  ), [masterOptions.years, values.board]);
+  ), [values.board, yearOptions]);
   const levelOptions = useMemo(() => {
     if (!values.board) return [];
     const levels = masterOptions.levels || [];
-    const selectedBoard = (masterOptions.boards || []).find((item) => String(item.value) === String(values.board));
+    const selectedBoard = (boardOptions || []).find((item) => String(item.value) === String(values.board));
     if (!selectedBoard) return [];
     const mappedIds = new Set((selectedBoard.academicLevelIds || []).map(String));
     if (mappedIds.size) return levels.filter((item) => mappedIds.has(String(item.value)));
     const mappedNames = new Set((selectedBoard.academicLevelNames || []).map((name) => String(name).trim().toLowerCase()));
     if (mappedNames.size) return levels.filter((item) => mappedNames.has(String(item.label).trim().toLowerCase()));
     return levels.filter((item) => item.boardId && String(item.boardId) === String(values.board));
-  }, [masterOptions.boards, masterOptions.levels, values.board]);
+  }, [boardOptions, masterOptions.levels, values.board]);
   const enhanceField = (field) => {
     if (field.name === "admissionNo" && !editingAdmissionId) {
       return {
@@ -2063,8 +2135,8 @@ export default function AdmissionPage() {
       };
     }
     if (field.name === "dob") return { ...field, max: yesterdayISO() };
-    if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
-    if (field.name === "year" && masterOptions.years?.length) return { ...field, options: academicYearOptions };
+    if (field.name === "board" && boardOptions?.length) return { ...field, options: boardOptions };
+    if (field.name === "year" && yearOptions?.length) return { ...field, options: academicYearOptions };
     if (field.name === "level") {
       if (!values.board) return { ...field, options: [], selectPlaceholder: "Select Board first", disabled: true };
       return {
@@ -2092,7 +2164,7 @@ export default function AdmissionPage() {
       if (masterStatus.programsError) return { ...field, options: [{ value: "__programs_error", label: "Unable to load programs. Please try again.", disabled: true }] };
       return { ...field, options: programOptions.length ? programOptions : [{ value: "__no_programs", label: "No programs available", disabled: true }] };
     }
-    if (field.name === "bloodGroup" && masterOptions.bloodGroups?.length) return { ...field, options: masterOptions.bloodGroups };
+    if (field.name === "bloodGroup") return { ...field, options: bloodGroupOptions };
     return field;
   };
   const currentFields = current.fields.map(enhanceField);
@@ -2110,14 +2182,17 @@ export default function AdmissionPage() {
       const matchesSearch = !term
         || String(row.studentName || "").toLowerCase().includes(term)
         || String(row.admissionNo || "").toLowerCase().includes(term);
-      const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
+      const rowYearLabel = admissionYearDisplay(row);
+      const matchesYear = !filters.year
+        || String(row.academicYear) === String(filters.year)
+        || normalizeMatchText(rowYearLabel) === normalizeMatchText(filters.year);
       const matchesGroup = !filters.group
         || String(row.values?.group || "") === String(filters.group)
         || String(row.group || "").trim().toLowerCase() === String(optionLabel(groupFilterOptions, filters.group) || filters.group).trim().toLowerCase();
       const matchesStatus = !filters.status || normalizeAdmissionStatus(row.status) === filters.status;
       return matchesSearch && matchesYear && matchesGroup && matchesStatus;
     });
-  }, [admissions, filters.group, filters.status, filters.year, groupFilterOptions, search]);
+  }, [admissionYearDisplay, admissions, filters.group, filters.status, filters.year, groupFilterOptions, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -2125,12 +2200,12 @@ export default function AdmissionPage() {
     "Admission No": cleanExportValue(row.admissionNo),
     "Student Name": cleanExportValue(row.studentName),
     "Admission Date": cleanExportValue(formatDate(row.admissionDate) || "-"),
-    "Academic Year": cleanExportValue(optionLabel(masterOptions.years, row.academicYear) || row.academicYear),
-    Board: cleanExportValue(optionLabel(masterOptions.boards, row.board) || row.board),
+    "Academic Year": cleanExportValue(admissionYearDisplay(row)),
+    Board: cleanExportValue(admissionBoardDisplay(row)),
     Group: cleanExportValue(row.group),
     Program: cleanExportValue(row.program),
     Status: cleanExportValue(row.status),
-  })), [displayedAdmissions, masterOptions.boards, masterOptions.years]);
+  })), [admissionBoardDisplay, admissionYearDisplay, displayedAdmissions]);
 
   const exportAdmissionsExcel = async () => {
     if (!admissionExportRows.length) {
@@ -2379,13 +2454,8 @@ export default function AdmissionPage() {
           .filter(Boolean)
         : [];
       
-      const defaultBloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((bg) => ({ value: bg, label: bg }));
       const loadedBloodGroups = bloodGroupsResult.status === "fulfilled"
-        ? getCollection(bloodGroupsResult.value.data).map((item) => (
-          typeof item === "string"
-            ? { value: item, label: item }
-            : toOption(item, ["bloodGroupId", "BloodGroupId", "id", "Id", "name", "Name", "value", "Value"], ["bloodGroupName", "BloodGroupName", "name", "Name", "value", "Value"])
-        )).filter(Boolean)
+        ? getCollection(bloodGroupsResult.value.data).map(normalizeBloodGroupOption).filter(Boolean)
         : [];
 
       setMasterOptions((current) => ({
@@ -2430,7 +2500,7 @@ export default function AdmissionPage() {
             })
             .filter((item) => item?.value)
           : (current.sections || []),
-        bloodGroups: loadedBloodGroups.length ? loadedBloodGroups : defaultBloodGroups,
+        bloodGroups: loadedBloodGroups.length ? loadedBloodGroups : DEFAULT_BLOOD_GROUP_OPTIONS,
       }));
       setMasterStatus((current) => ({
         ...current,
@@ -2449,17 +2519,18 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     if (viewMode !== "form" || editingAdmissionId) return;
-    if (!selectedBoardId && !selectedAcademicYearId) return;
+    if (!selectedContextBoardValue && !selectedContextYearValue) return;
     setValues((current) => {
-      const nextBoard = selectedBoardId ? String(selectedBoardId) : current.board || "";
-      const nextYear = selectedAcademicYearId ? String(selectedAcademicYearId) : current.year || "";
-      if (String(current.board || "") === nextBoard && String(current.year || "") === nextYear) return current;
+      const nextBoard = selectedContextBoardValue ? String(selectedContextBoardValue) : current.board || "";
+      const nextYear = selectedContextYearValue ? String(selectedContextYearValue) : current.year || "";
+      const boardChanged = String(current.board || "") !== nextBoard;
+      const yearChanged = String(current.year || "") !== nextYear;
+      if (!boardChanged && !yearChanged) return current;
       return {
         ...current,
         board: nextBoard,
         year: nextYear,
-        level: "",
-        levelName: "",
+        ...(boardChanged ? { level: "", levelName: "" } : {}),
         group: "",
         groupName: "",
         program: "",
@@ -2472,7 +2543,7 @@ export default function AdmissionPage() {
         collectFirstInstallment: false,
       };
     });
-  }, [editingAdmissionId, selectedAcademicYearId, selectedBoardId, viewMode]);
+  }, [editingAdmissionId, selectedContextBoardValue, selectedContextYearValue, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
@@ -2919,6 +2990,17 @@ export default function AdmissionPage() {
     { label: "Program", value: values.programName || optionLabel(programOptions, values.program) || values.program },
   ];
 
+  const applyNewAdmissionAcademicDefaults = useCallback((formValues = {}) => {
+    const next = { ...formValues };
+    if (!String(next.board ?? "").trim() && selectedContextBoardValue) {
+      next.board = String(selectedContextBoardValue);
+    }
+    if (!String(next.year ?? "").trim() && selectedContextYearValue) {
+      next.year = String(selectedContextYearValue);
+    }
+    return next;
+  }, [selectedContextBoardValue, selectedContextYearValue]);
+
   const setValue = (name, val) => {
     const field = fieldByName[name] || {};
     if (isPlaceholderOption(val)) return;
@@ -3195,7 +3277,7 @@ export default function AdmissionPage() {
 
   const addNewAdmission = () => {
     const draft = readAdmissionDraft();
-    const draftValues = { ...(draft.values || {}), admissionNo: "" };
+    const draftValues = applyNewAdmissionAcademicDefaults({ ...(draft.values || {}), admissionNo: "" });
     openAdmissionForm({
       formValues: draftValues,
       targetStep: draft.step || 0,
@@ -3710,8 +3792,8 @@ export default function AdmissionPage() {
                     <td className="cms-strong">{row.admissionNo}</td>
                     <td>{row.studentName}</td>
                     <td>{formatDate(row.admissionDate) || "-"}</td>
-                    <td>{optionLabel(masterOptions.years, row.academicYear) || row.academicYear || "-"}</td>
-                    <td>{optionLabel(masterOptions.boards, row.board) || row.board || "-"}</td>
+                    <td>{admissionYearDisplay(row)}</td>
+                    <td>{admissionBoardDisplay(row)}</td>
                     <td>{row.group || "-"}</td>
                     <td>{row.program || "-"}</td>
                     <td><span className={`cms-badge ${admissionStatusClass(row.status)}`}>{row.status}</span></td>

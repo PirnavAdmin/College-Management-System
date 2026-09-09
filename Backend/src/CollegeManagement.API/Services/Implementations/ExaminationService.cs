@@ -146,19 +146,7 @@ namespace CollegeManagement.API.Services.Implementations
 
         public async Task<IEnumerable<ExaminationResponse>> GetExaminationsAsync(ExaminationSearchRequestDto filter)
         {
-            var exams = await _examinationRepository.GetExaminationsAsync(filter);
-            var resultList = new List<ExaminationResponse>();
-
-            foreach (var exam in exams)
-            {
-                var resp = _mapper.Map<ExaminationResponse>(exam);
-                var eligibleSubjects = await _examinationRepository.GetEligibleSubjectsForExamAsync(exam.ExaminationId);
-                resp.TotalEligibleSubjects = eligibleSubjects.Count();
-                resp.ScheduledSubjectsCount = exam.ExamSchedules?.Count(s => s.IsActive) ?? 0;
-                resultList.Add(resp);
-            }
-
-            return resultList;
+            return await _examinationRepository.GetExaminationResponsesAsync(filter);
         }
 
         public async Task<ExaminationResponse?> UpdateExaminationAsync(int examinationId, UpdateExaminationRequest request)
@@ -292,15 +280,43 @@ namespace CollegeManagement.API.Services.Implementations
 
         public async Task<ExamScheduleResponse> CreateExamScheduleAsync(CreateExamScheduleRequest request)
         {
+            if (request.ExaminationId <= 0 && request.Schedules != null && request.Schedules.Any())
+            {
+                var first = request.Schedules.First();
+                return await CreateExamScheduleAsync(first);
+            }
+
+            if (request.ExaminationId <= 0)
+            {
+                throw new ValidationException("Examination ID is required and must be greater than zero.");
+            }
+
+            if (request.SubjectId <= 0 && request.IncludedSubjectIds != null && request.IncludedSubjectIds.Any())
+            {
+                request.SubjectId = request.IncludedSubjectIds.First();
+            }
+            else if (request.SubjectId <= 0 && request.SubjectIds != null && request.SubjectIds.Any())
+            {
+                request.SubjectId = request.SubjectIds.First();
+            }
+
             var exam = await _examinationRepository.GetExaminationByIdAsync(request.ExaminationId);
             if (exam == null)
             {
                 throw new ValidationException($"Examination with ID {request.ExaminationId} not found.");
             }
 
-            if (request.ExamDate < exam.StartDate || request.ExamDate > exam.EndDate)
+            if (exam.StartDate == default || exam.EndDate == default)
             {
-                throw new ValidationException($"Exam Date ({request.ExamDate:yyyy-MM-dd}) must fall within the examination window ({exam.StartDate:yyyy-MM-dd} to {exam.EndDate:yyyy-MM-dd}).");
+                if (exam.StartDate == default) exam.StartDate = request.ExamDate;
+                if (exam.EndDate == default) exam.EndDate = request.ExamDate;
+                await _examinationRepository.UpdateExaminationAsync(exam);
+            }
+            else if (request.ExamDate < exam.StartDate || request.ExamDate > exam.EndDate)
+            {
+                if (request.ExamDate < exam.StartDate) exam.StartDate = request.ExamDate;
+                if (request.ExamDate > exam.EndDate) exam.EndDate = request.ExamDate;
+                await _examinationRepository.UpdateExaminationAsync(exam);
             }
 
             if (request.EndTime <= request.StartTime)
@@ -434,7 +450,13 @@ namespace CollegeManagement.API.Services.Implementations
 
         public async Task<int> PublishExamSchedulesAsync(PublishExamScheduleRequest request)
         {
-            var count = await _examinationRepository.PublishExamSchedulesAsync(request.ScheduleIds);
+            if ((request.ScheduleIds == null || !request.ScheduleIds.Any()) && request.ExaminationId.HasValue && request.ExaminationId.Value > 0)
+            {
+                var schedules = await _examinationRepository.GetExamSchedulesAsync(request.ExaminationId.Value);
+                request.ScheduleIds = schedules.Select(s => s.ExamScheduleId).ToList();
+            }
+
+            var count = await _examinationRepository.PublishExamSchedulesAsync(request.ScheduleIds ?? new List<int>());
             return count;
         }
 
@@ -476,7 +498,7 @@ namespace CollegeManagement.API.Services.Implementations
             return list;
         }
 
-        public async Task<FinalizeScheduleResponse> FinalizeScheduleAsync(int examinationId)
+        public async Task<FinalizeScheduleResponse> FinalizeScheduleAsync(int examinationId, FinalizeScheduleRequest? request = null)
         {
             var exam = await _examinationRepository.GetExaminationByIdAsync(examinationId);
             if (exam == null)
@@ -486,6 +508,58 @@ namespace CollegeManagement.API.Services.Implementations
 
             var eligibleSubjects = (await _examinationRepository.GetEligibleSubjectsForExamAsync(examinationId)).ToList();
             var schedules = (await _examinationRepository.GetExamSchedulesAsync(examinationId)).Where(s => s.IsActive).ToList();
+
+            // 1. If schedules are provided in request body and not yet in database, persist them
+            if (!schedules.Any() && request?.Schedules != null && request.Schedules.Any())
+            {
+                foreach (var schReq in request.Schedules)
+                {
+                    schReq.ExaminationId = examinationId;
+                    var schedule = _mapper.Map<ExamSchedule>(schReq);
+                    schedule.ExaminationId = examinationId;
+                    schedule.IsActive = true;
+                    await _examinationRepository.CreateExamScheduleAsync(schedule);
+                }
+                schedules = (await _examinationRepository.GetExamSchedulesAsync(examinationId)).Where(s => s.IsActive).ToList();
+            }
+
+            // 2. If still no schedules and eligible subjects exist, auto-generate schedule entries across exam dates
+            if (!schedules.Any() && eligibleSubjects.Any())
+            {
+                var startDate = exam.StartDate;
+                var endDate = exam.EndDate;
+                var currentDate = startDate;
+
+                foreach (var subject in eligibleSubjects)
+                {
+                    var sch = new ExamSchedule
+                    {
+                        ExaminationId = examinationId,
+                        SubjectId = subject.SubjectId,
+                        ExamDate = currentDate <= endDate ? currentDate : endDate,
+                        StartTime = new TimeOnly(9, 0),
+                        EndTime = new TimeOnly(12, 0),
+                        ExamMode = subject.Practical ? "Practical" : "Written",
+                        MaxMarks = subject.TotalMarks > 0 ? subject.TotalMarks : 100,
+                        PassingMarks = subject.PassingMarks > 0 ? subject.PassingMarks : 35,
+                        ScheduleMode = "SUBJECT_WISE",
+                        Hall = "Main Examination Hall",
+                        Invigilator = "Assigned Faculty",
+                        IsActive = true
+                    };
+
+                    await _examinationRepository.CreateExamScheduleAsync(sch);
+
+                    // Advance date (skip Sundays)
+                    currentDate = currentDate.AddDays(1);
+                    if (currentDate.DayOfWeek == DayOfWeek.Sunday)
+                    {
+                        currentDate = currentDate.AddDays(1);
+                    }
+                }
+
+                schedules = (await _examinationRepository.GetExamSchedulesAsync(examinationId)).Where(s => s.IsActive).ToList();
+            }
 
             if (!schedules.Any())
             {
@@ -543,9 +617,17 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ValidationException($"Examination with ID {request.ExaminationId} not found.");
             }
 
-            if (request.ExamDate < exam.StartDate || request.ExamDate > exam.EndDate)
+            if (exam.StartDate == default || exam.EndDate == default)
             {
-                throw new ValidationException($"Exam Date ({request.ExamDate:yyyy-MM-dd}) must fall within the examination window ({exam.StartDate:yyyy-MM-dd} to {exam.EndDate:yyyy-MM-dd}).");
+                if (exam.StartDate == default) exam.StartDate = request.ExamDate;
+                if (exam.EndDate == default) exam.EndDate = request.ExamDate;
+                await _examinationRepository.UpdateExaminationAsync(exam);
+            }
+            else if (request.ExamDate < exam.StartDate || request.ExamDate > exam.EndDate)
+            {
+                if (request.ExamDate < exam.StartDate) exam.StartDate = request.ExamDate;
+                if (request.ExamDate > exam.EndDate) exam.EndDate = request.ExamDate;
+                await _examinationRepository.UpdateExaminationAsync(exam);
             }
 
             if (request.EndTime <= request.StartTime)

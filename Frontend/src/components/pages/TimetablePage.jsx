@@ -5,6 +5,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import "./TimetablePage.css";
 
 const EMPTY = {
@@ -95,6 +96,10 @@ const optionize = (x, ids, labels) =>
       raw,
     }))
     .filter((item) => item.id && item.name);
+const allocateWeeklyPeriods = (subjects, periodsPerDay) => {
+  const initialPeriods = Math.max(0, Math.floor(Number(periodsPerDay) || 0));
+  return Object.fromEntries(subjects.map((subject) => [subject.id, initialPeriods]));
+};
 const sectionsForProgramme = (payload, program, groupId, academicLevelId) => {
   if (!program) return [];
   const programId = String(pick(program.raw, "programId", "ProgramId", "id", "Id") ?? "");
@@ -386,14 +391,16 @@ function useLookups(initial = {}) {
   }, [value.boardId, data.allYears, data.boards]);
   useEffect(() => {
     if (!value.boardId) return;
-    apiClient
-      .get(apiEndpoints.groups.list, {
+    Promise.allSettled([
+      apiClient.get(apiEndpoints.groups.list, {
         params: {
           boardId: value.boardId,
           isActive: true,
         },
-      })
-      .then((r) =>
+      }),
+      apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId: value.boardId } }),
+    ])
+      .then(([groupsResult, levelsResult]) =>
         setData((current) => ({
           ...current,
           years: uniqueAcademicYearsByName(boardMappedOptions(
@@ -403,17 +410,26 @@ function useLookups(initial = {}) {
             ["academicYearIds", "AcademicYearIds", "yearIds", "YearIds"],
             ["academicYearNames", "AcademicYearNames", "yearNames", "YearNames"],
           ), (item) => item.name),
-          levels: boardMappedOptions(
-            current.allLevels,
-            current.boards,
-            value.boardId,
-            ["academicLevelIds", "AcademicLevelIds", "levelIds", "LevelIds"],
-            ["academicLevelNames", "AcademicLevelNames", "levelNames", "LevelNames"],
-          ),
-          groups: optionize(r.data, ["groupId", "id", "Id"], ["groupName", "name", "Name"]),
+          levels:
+            levelsResult.status === "fulfilled"
+              ? optionize(
+                  levelsResult.value.data,
+                  ["academicLevelId", "levelId", "id", "Id"],
+                  ["academicLevelName", "levelName", "name", "Name"],
+                )
+              : boardMappedOptions(
+                  current.allLevels,
+                  current.boards,
+                  value.boardId,
+                  ["academicLevelIds", "AcademicLevelIds", "levelIds", "LevelIds"],
+                  ["academicLevelNames", "AcademicLevelNames", "levelNames", "LevelNames"],
+                ),
+          groups: groupsResult.status === "fulfilled"
+            ? optionize(groupsResult.value.data, ["groupId", "id", "Id"], ["groupName", "name", "Name"])
+            : [],
         })),
       )
-      .catch(() => setData((current) => ({ ...current, groups: [] })));
+      .catch(() => setData((current) => ({ ...current, groups: [], levels: [] })));
   }, [
     value.boardId,
     data.allYears,
@@ -554,7 +570,7 @@ function useLookups(initial = {}) {
   };
   return { value, data, change, setValue, reloadSections };
 }
-function Context({ state, section = true, compact = false }) {
+function Context({ state, section = true, compact = false, hideGlobalContext = false }) {
   const { value, data, change } = state;
   const select = (label, key, values, disabled, emptyLabel = `Select ${label}`) => (
     <Field label={label}>
@@ -569,9 +585,9 @@ function Context({ state, section = true, compact = false }) {
     </Field>
   );
   return (
-    <div className={`ttm-context${compact ? " ttm-draft-context" : ""}`}>
-      {select("Board", "boardId", data.boards)}
-      {select("Academic Year", "academicYearId", data.years, !value.boardId)}
+    <div className={`ttm-context${compact ? " ttm-draft-context" : ""}${hideGlobalContext ? " ttm-global-context" : ""}`}>
+      {!hideGlobalContext && select("Board", "boardId", data.boards)}
+      {!hideGlobalContext && select("Academic Year", "academicYearId", data.years, !value.boardId)}
       {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
       {select("Group", "groupId", data.groups, !value.academicLevelId)}
       {select(
@@ -621,6 +637,7 @@ function StructureForm({ item, close, saved }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [breakTypes, setBreakTypes] = useState([]);
+  const [previewRequested, setPreviewRequested] = useState(Boolean(structureId(item)));
   useEffect(() => {
     apiClient
       .get(apiEndpoints.breakTypes.list)
@@ -641,13 +658,51 @@ function StructureForm({ item, close, saved }) {
       })
       .catch((requestError) => setError(getApiErrorMessage(requestError)));
   }, [item]);
+  const validationMessage = () => {
+    if (!form.name.trim()) return "Structure Name is required.";
+    if (!/^\d{2}:\d{2}/.test(form.dayStartTime)) return "Day Start Time is required.";
+    const periods = Number(form.totalTeachingPeriods), duration = Number(form.periodDurationMinutes);
+    if (!Number.isInteger(periods) || periods < 1 || periods > 15) return "Teaching Periods must be between 1 and 15.";
+    if (!Number.isFinite(duration) || duration < 20 || duration > 120) return "Period Duration must be between 20 and 120 minutes.";
+    const positions = new Set();
+    for (const entry of form.breaks) {
+      if (!entry.breakTypeId || !entry.afterPeriod || !entry.durationMinutes) return "Complete every break configuration row.";
+      const after = Number(entry.afterPeriod), breakDuration = Number(entry.durationMinutes);
+      if (!Number.isInteger(after) || after < 1 || after >= periods) return "A break must be after a valid teaching period, before the final period.";
+      if (!Number.isFinite(breakDuration) || breakDuration <= 0) return "Break duration must be greater than zero.";
+      if (positions.has(after)) return "Only one break can be configured after each period.";
+      positions.add(after);
+    }
+    return "";
+  };
+  const preview = useMemo(() => {
+    if (validationMessage()) return [];
+    const [hour, minute] = form.dayStartTime.slice(0, 5).split(":").map(Number);
+    let cursor = hour * 60 + minute;
+    const format = (total) => {
+      const normalized = ((total % 1440) + 1440) % 1440, h = Math.floor(normalized / 60), m = normalized % 60;
+      const suffix = h >= 12 ? "PM" : "AM", displayHour = h % 12 || 12;
+      return `${String(displayHour).padStart(2, "0")}:${String(m).padStart(2, "0")} ${suffix}`;
+    };
+    const breaksByPeriod = new Map(form.breaks.map((entry) => [Number(entry.afterPeriod), entry]));
+    return Array.from({ length: Number(form.totalTeachingPeriods) }, (_, index) => {
+      const period = index + 1, start = cursor; cursor += Number(form.periodDurationMinutes);
+      const rows = [{ kind: "period", label: `P${period}`, start: format(start), end: format(cursor) }];
+      const breakItem = breaksByPeriod.get(period);
+      if (breakItem) { const breakStart = cursor; cursor += Number(breakItem.durationMinutes); rows.push({ kind: "break", label: breakTypes.find((type) => String(type.id) === String(breakItem.breakTypeId))?.name || "Break", start: format(breakStart), end: format(cursor) }); }
+      return rows;
+    }).flat();
+  }, [form, breakTypes]);
   const save = async () => {
     if (saving) return;
+    const message = validationMessage();
+    if (message) { setError(message); return; }
     setSaving(true);
     setError("");
     try {
       const payload = {
         ...form,
+        name: form.name.trim(),
         dayStartTime: /^\d{2}:\d{2}$/.test(form.dayStartTime)
           ? `${form.dayStartTime}:00`
           : form.dayStartTime,
@@ -670,39 +725,42 @@ function StructureForm({ item, close, saved }) {
       setSaving(false);
     }
   };
-  const set = (key) => (e) => setForm((x) => ({ ...x, [key]: e.target.value }));
+  const set = (key) => (e) => { setPreviewRequested(false); setForm((x) => ({ ...x, [key]: e.target.value })); };
+  const updateBreak = (index, key, next) => { setPreviewRequested(false); setForm((current) => ({ ...current, breaks: current.breaks.map((entry, entryIndex) => entryIndex === index ? { ...entry, [key]: next } : entry) })); };
   return (
     <Modal
       title={structureId(item) ? "Edit Period Structure" : "Create Period Structure"}
       onClose={close}
     >
       <div className="ttm-modal-body">
-        <div className="ttm-form-grid">
+        <div className="ttm-period-structure-main-fields">
           <Field label="Structure Name">
             <input value={form.name} onChange={set("name")} />
           </Field>
           <Field label="Day Start Time">
             <input type="time" value={form.dayStartTime} onChange={set("dayStartTime")} />
           </Field>
-          <Field label="Period Duration (minutes)">
-            <input
-              type="number"
-              min="1"
-              value={form.periodDurationMinutes}
-              onChange={set("periodDurationMinutes")}
-            />
-          </Field>
           <Field label="Teaching Periods">
             <input
               type="number"
               min="1"
+              max="15"
               value={form.totalTeachingPeriods}
               onChange={set("totalTeachingPeriods")}
             />
           </Field>
+          <Field label="Period Duration (minutes)">
+            <input
+              type="number"
+              min="20"
+              max="120"
+              value={form.periodDurationMinutes}
+              onChange={set("periodDurationMinutes")}
+            />
+          </Field>
         </div>
         <div className="ttm-break-head">
-          <b>Break configuration</b>
+          <b>Break Configuration</b>
           <Btn
             className="cms-btn cms-btn-ghost"
             disabled={!breakTypes.length}
@@ -723,31 +781,17 @@ function StructureForm({ item, close, saved }) {
           <div className="ttm-break-row" key={`${breakItem.breakTypeId}-${index}`}>
             <select
               value={breakItem.breakTypeId}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  breaks: current.breaks.map((entry, entryIndex) =>
-                    entryIndex === index ? { ...entry, breakTypeId: event.target.value } : entry,
-                  ),
-                }))
-              }
+              onChange={(event) => updateBreak(index, "breakTypeId", event.target.value)}
             >
               <option value="">Select break type</option>
               {breakTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
             </select>
             <select
               value={breakItem.afterPeriod}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  breaks: current.breaks.map((entry, entryIndex) =>
-                    entryIndex === index ? { ...entry, afterPeriod: event.target.value } : entry,
-                  ),
-                }))
-              }
+              onChange={(event) => updateBreak(index, "afterPeriod", event.target.value)}
             >
               <option value="">After period</option>
-              {Array.from({ length: Number(form.totalTeachingPeriods) || 0 }, (_, number) => (
+              {Array.from({ length: Math.max((Number(form.totalTeachingPeriods) || 0) - 1, 0) }, (_, number) => (
                 <option key={number + 1} value={number + 1}>After P{number + 1}</option>
               ))}
             </select>
@@ -757,14 +801,7 @@ function StructureForm({ item, close, saved }) {
               aria-label="Break duration in minutes"
               placeholder="Minutes"
               value={breakItem.durationMinutes}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  breaks: current.breaks.map((entry, entryIndex) =>
-                    entryIndex === index ? { ...entry, durationMinutes: event.target.value } : entry,
-                  ),
-                }))
-              }
+              onChange={(event) => updateBreak(index, "durationMinutes", event.target.value)}
             />
             <button
               type="button"
@@ -772,10 +809,12 @@ function StructureForm({ item, close, saved }) {
                 setForm((current) => ({ ...current, breaks: current.breaks.filter((_, entryIndex) => entryIndex !== index) }))
               }
             >
-              Remove
+              Delete
             </button>
           </div>
         ))}
+        <Btn className="cms-btn cms-btn-ghost ttm-preview-button" onClick={() => { const message = validationMessage(); setError(message); setPreviewRequested(!message); }}>Generate Preview</Btn>
+        {previewRequested && preview.length ? <section className="ttm-structure-preview"><h3>Generated Period Structure</h3>{preview.map((entry, index) => <div key={`${entry.label}-${index}`} className={entry.kind === "break" ? "break" : ""}><b>{entry.label}</b><span>{entry.start} - {entry.end}</span></div>)}</section> : null}
         {error && <p className="ttm-validation-error">{error}</p>}
         <footer>
           <Btn className="cms-btn cms-btn-ghost" disabled={saving} onClick={close}>
@@ -885,8 +924,6 @@ function AssignStructureForm({ item, close, assigned, notify, initial }) {
     <Modal title="Assign Structure to Group" onClose={saving ? () => {} : close}>
       <div className="ttm-modal-body">
         <div className="ttm-form-grid">
-          {select("Board", "boardId", data.boards)}
-          {select("Academic Year", "academicYearId", data.years, true)}
           {select("Academic Level", "academicLevelId", data.levels, !value.academicYearId)}
           {select("Group", "groupId", data.groups, !value.academicLevelId)}
         </div>
@@ -1081,7 +1118,12 @@ function Structures({ notify, initial }) {
 }
 
 function Generate({ goDraft, notify, initial }) {
-  const state = useLookups(initial);
+  const { selectedBoardId, selectedAcademicYearId } = useAcademicContext();
+  const state = useLookups({
+    ...initial,
+    boardId: selectedBoardId || initial?.boardId || "",
+    academicYearId: selectedAcademicYearId || initial?.academicYearId || "",
+  });
   const { value, data } = state;
   const [requirements, setRequirements] = useState({});
   const [workingDays, setWorkingDays] = useState(() =>
@@ -1089,6 +1131,11 @@ function Generate({ goDraft, notify, initial }) {
   );
   const [capacityError, setCapacityError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [selectedSectionId, setSelectedSectionId] = useState(initial?.sectionId ?? "");
+  const [inputErrors, setInputErrors] = useState({});
+  const allocationContextRef = useRef("");
+  const allocationStateRef = useRef("");
+  const manuallyEditedRef = useRef(false);
   // The periods endpoint can include break slots. Capacity is based on actual
   // teaching periods, not every timeline entry returned by the API.
   const periodsPerDay = data.periods.filter((period) => !isBreakPeriod(period)).length;
@@ -1097,6 +1144,10 @@ function Generate({ goDraft, notify, initial }) {
     (total, weeklyPeriods) => total + (Number(weeklyPeriods) || 0),
     0,
   );
+  const selectedSection = data.sections.find((section) => String(section.id) === String(selectedSectionId)) ?? data.sections[0];
+  const remainingCapacity = weeklyCapacity - totalRequiredPeriods;
+  const allocationContext = [value.boardId, value.academicYearId, value.academicLevelId, value.groupId, value.programId].join(":");
+  const allocationState = `${allocationContext}:${periodsPerDay}:${data.subjects.map((subject) => subject.id).join(",")}`;
   const ready =
     value.boardId &&
     value.academicYearId &&
@@ -1111,6 +1162,52 @@ function Generate({ goDraft, notify, initial }) {
       current.includes(day) ? current.filter((value) => value !== day) : [...current, day].sort((a, b) => a - b),
     );
     setCapacityError("");
+  };
+  useEffect(() => {
+    setSelectedSectionId((current) =>
+      data.sections.some((section) => String(section.id) === String(current))
+        ? current
+        : (data.sections[0]?.id ?? ""),
+    );
+  }, [data.sections]);
+  useEffect(() => {
+    const contextChanged = allocationContextRef.current !== allocationContext;
+    if (contextChanged) {
+      allocationContextRef.current = allocationContext;
+      manuallyEditedRef.current = false;
+      setInputErrors({});
+    }
+    if (!data.subjects.length || (!contextChanged && (manuallyEditedRef.current || allocationStateRef.current === allocationState))) return;
+    setRequirements(allocateWeeklyPeriods(data.subjects, periodsPerDay));
+    allocationStateRef.current = allocationState;
+    setCapacityError("");
+  }, [allocationContext, allocationState, data.subjects, periodsPerDay]);
+  const updateRequirement = (subjectId, rawValue) => {
+    const text = String(rawValue ?? "");
+    if (text !== "" && !/^\d+$/.test(text)) {
+      setInputErrors((current) => ({ ...current, [subjectId]: "Enter a whole number." }));
+      return;
+    }
+    const value = text === "" ? 0 : Number(text);
+    if (!Number.isInteger(value) || value < 0 || value > weeklyCapacity) {
+      setInputErrors((current) => ({ ...current, [subjectId]: `Enter a whole number from 0 to ${weeklyCapacity}.` }));
+      return;
+    }
+    manuallyEditedRef.current = true;
+    setInputErrors((current) => {
+      const { [subjectId]: _error, ...rest } = current;
+      return rest;
+    });
+    setRequirements((current) => ({ ...current, [subjectId]: value }));
+    setCapacityError("");
+  };
+  const resetRequirements = () => {
+    manuallyEditedRef.current = false;
+    setRequirements(allocateWeeklyPeriods(data.subjects, periodsPerDay));
+    allocationStateRef.current = allocationState;
+    setWorkingDays(DEFAULT_WORKING_DAYS.map(Number));
+    setCapacityError("");
+    setInputErrors({});
   };
   const generate = async () => {
     if (busy) return;
@@ -1128,7 +1225,15 @@ function Generate({ goDraft, notify, initial }) {
       return;
     }
     if (totalRequiredPeriods > weeklyCapacity) {
-      setCapacityError(`Subject requirements total ${totalRequiredPeriods} periods, but the selected working days allow only ${weeklyCapacity} periods.`);
+      setCapacityError(`Allocated subject periods exceed weekly capacity by ${totalRequiredPeriods - weeklyCapacity} periods.`);
+      return;
+    }
+    const invalidSubject = data.subjects.find((subject) => {
+      const value = Number(requirements[subject.id]);
+      return !Number.isInteger(value) || value < 0 || value > weeklyCapacity;
+    });
+    if (invalidSubject) {
+      setCapacityError("Weekly Periods must be whole numbers from 0 to the weekly capacity.");
       return;
     }
     try {
@@ -1192,55 +1297,50 @@ function Generate({ goDraft, notify, initial }) {
       action={<div className="ttm-page-actions"><Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable/setup" state={{ timetableContext: value }}>Create Period Structure</Link></div>}
     >
       <section className="ttm-card">
-        <Context state={state} section={false} />
+        <Context state={state} section={false} hideGlobalContext />
         {value.programId ? (
           <div className="ttm-generation-content">
-            <ProgrammeSections data={data} onRetry={state.reloadSections} />
-            <section className="ttm-working-days" aria-labelledby="working-days-label">
-              <header className="ttm-working-days-head">
-                <span id="working-days-label">Working Days</span>
-                <span className="ttm-capacity">Weekly Capacity: {weeklyCapacity} periods</span>
-              </header>
-              <div className="ttm-day-toggles">
-                {WORKING_DAY_OPTIONS.map((day) => (
-                  <button
-                    type="button"
-                    key={day.value}
-                    className={workingDays.includes(day.value) ? "active" : ""}
-                    aria-pressed={workingDays.includes(day.value)}
-                    onClick={() => toggleWorkingDay(day.value)}
-                  >
-                    {day.shortLabel}
-                  </button>
-                ))}
+            <section className="ttm-generate-overview">
+              <div className="ttm-generate-working-days" aria-labelledby="working-days-label">
+                <b id="working-days-label">Working Days</b>
+                <div className="ttm-day-toggles">
+                  {WORKING_DAY_OPTIONS.map((day) => (
+                    <button type="button" key={day.value} className={workingDays.includes(day.value) ? "active" : ""} aria-pressed={workingDays.includes(day.value)} onClick={() => toggleWorkingDay(day.value)}>
+                      {day.shortLabel}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="ttm-generation-help">
-                Set the weekly teaching periods for each subject. These values tell the generator how many slots to create for every loaded section.
-              </p>
+              <div className="ttm-generate-sections">
+                <b>Sections ({data.sections.length})</b>
+                {data.sectionsLoading ? <span className="ttm-generate-state">Loading sections…</span> : data.sectionsError ? <button type="button" className="cms-btn cms-btn-ghost" onClick={state.reloadSections}>Retry sections</button> : <div className="ttm-generate-section-chips">
+                  {data.sections.map((section) => <button type="button" key={section.id} className={String(section.id) === String(selectedSection?.id) ? "active" : ""} aria-pressed={String(section.id) === String(selectedSection?.id)} onClick={() => setSelectedSectionId(section.id)}>{section.name}</button>)}
+                </div>}
+              </div>
+              <aside className={`ttm-generate-capacity${remainingCapacity < 0 ? " is-exceeded" : ""}`} aria-label="Weekly period capacity">
+                <b>Weekly Period Capacity</b>
+                <span>Allocated Periods <strong>{totalRequiredPeriods} / {weeklyCapacity}</strong></span>
+                <span>{remainingCapacity < 0 ? "Exceeded By" : "Periods Remaining"} <strong>{Math.abs(remainingCapacity)}</strong></span>
+                <small>{periodsPerDay} teaching periods × {workingDays.length} working days</small>
+              </aside>
             </section>
-            <section className="ttm-subject-period-section">
-              <div className="ttm-subject-period-grid">
-                {data.subjects.map((subject) => (
-                  <div className="ttm-subject-card" key={subject.id}>
-                    <Field label={`${subject.name} weekly periods`}>
-                      <input
-                        type="number"
-                        min="0"
-                        value={requirements[subject.id] ?? ""}
-                        onChange={(e) => {
-                          setRequirements((current) => ({ ...current, [subject.id]: e.target.value }));
-                          setCapacityError("");
-                        }}
-                      />
-                    </Field>
-                  </div>
-                ))}
+            <section className="ttm-generate-subjects">
+              <div className="ttm-generate-subject-table-wrap">
+                <table className="ttm-generate-subject-table">
+                  <thead><tr><th>#</th><th>Subject Code</th><th>Subject Name</th><th>Type</th><th>Weekly Periods</th></tr></thead>
+                  <tbody>{data.subjects.length ? data.subjects.map((subject, index) => {
+                    const type = pick(subject.raw, "subjectType", "SubjectType", "type", "Type") ?? "Subject";
+                    const code = pick(subject.raw, "subjectCode", "SubjectCode", "code", "Code") ?? "—";
+                    return <tr key={subject.id}><td>{index + 1}</td><td>{code}</td><td>{subject.name}</td><td><span className={`ttm-subject-type ${String(type).toLowerCase().replace(/[^a-z]+/g, "-")}`}>{type}</span></td><td><input type="number" min="0" max={weeklyCapacity} step="1" value={requirements[subject.id] ?? 0} onChange={(event) => updateRequirement(subject.id, event.target.value)} aria-invalid={Boolean(inputErrors[subject.id])} aria-label={`${subject.name} weekly periods`} />{inputErrors[subject.id] ? <small className="ttm-weekly-period-error">{inputErrors[subject.id]}</small> : null}</td></tr>;
+                  }) : <tr><td colSpan="5" className="ttm-generate-no-subjects">No subjects are available for this timetable context.</td></tr>}</tbody>
+                </table>
               </div>
             </section>
             {capacityError ? <p className="ttm-validation-error ttm-capacity-error">{capacityError}</p> : null}
           </div>
         ) : null}
         <footer className={`ttm-screen-actions${value.programId ? " ttm-generation-footer" : ""}`}>
+          {value.programId ? <button type="button" className="cms-btn cms-btn-ghost" onClick={resetRequirements}>Reset</button> : null}
           <Btn disabled={!ready || busy} onClick={generate}>
             {busy ? "Generating…" : "Generate Timetable"}
           </Btn>
@@ -1680,7 +1780,7 @@ function Draft({ initial, notify }) {
       }
     >
       <section className="ttm-card">
-        <Context state={state} compact />
+        <Context state={state} compact hideGlobalContext />
         {value.sectionId && (
           <>
             <div className="ttm-grid-head">
@@ -1902,7 +2002,12 @@ function Draft({ initial, notify }) {
 }
 function MainTimetable({ notify }) {
   const location = useLocation();
-  const state = useLookups(location.state?.timetableContext);
+  const { selectedBoardId, selectedAcademicYearId } = useAcademicContext();
+  const state = useLookups({
+    ...location.state?.timetableContext,
+    boardId: selectedBoardId || location.state?.timetableContext?.boardId || "",
+    academicYearId: selectedAcademicYearId || location.state?.timetableContext?.academicYearId || "",
+  });
   const { value } = state;
   const navigate = useNavigate();
   const [opening, setOpening] = useState(false);
@@ -1942,7 +2047,7 @@ function MainTimetable({ notify }) {
     <Page title="Timetable" subtitle="Choose a timetable context to create or view a generated timetable.">
       <section className="ttm-card">
         <div className="ttm-main-row">
-          <Context state={state} />
+          <Context state={state} hideGlobalContext />
           <footer className="ttm-screen-actions ttm-main-actions">
             <Btn disabled={!completeContext} onClick={() => navigate("/dashboard/timetable/setup", { state: { timetableContext: value } })}>Create Timetable</Btn>
             <Btn className="cms-btn cms-btn-ghost" disabled={!completeContext || opening} onClick={openGenerated}>{opening ? "Opening…" : "Generated Timetable"}</Btn>

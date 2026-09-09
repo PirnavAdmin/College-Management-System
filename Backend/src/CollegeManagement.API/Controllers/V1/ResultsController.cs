@@ -318,10 +318,23 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="200">Returns list of failed students with marks and section details.</response>
         [HttpGet("failed-students")]
         [ProducesResponseType(typeof(IEnumerable<StudentResultDto>), StatusCodes.Status200OK)]
-        public async Task<ActionResult<IEnumerable<StudentResultDto>>> GetFailedStudents()
+        public async Task<ActionResult<IEnumerable<StudentResultDto>>> GetFailedStudents(
+            [FromQuery] int? boardId = null,
+            [FromQuery] int? academicYearId = null,
+            [FromQuery] int? academicLevelId = null,
+            [FromQuery] int? groupId = null,
+            [FromQuery] string? programId = null,
+            [FromQuery] int? examId = null,
+            [FromQuery] int? examinationId = null)
         {
-            _logger.LogInformation("Retrieving failed students.");
-            var result = await _resultService.GetFailedStudentsAsync();
+            _logger.LogInformation("Retrieving failed students. BoardId: {BoardId}, ExamId: {ExamId}", boardId, examId ?? examinationId);
+            var result = await _resultService.GetFailedStudentsAsync(
+                boardId,
+                academicYearId,
+                academicLevelId,
+                groupId,
+                programId,
+                examId ?? examinationId);
             return Ok(result);
         }
 
@@ -331,10 +344,21 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="200">Returns system-level result statistics.</response>
         [HttpGet("statistics")]
         [ProducesResponseType(typeof(ResultStatisticsDto), StatusCodes.Status200OK)]
-        public async Task<ActionResult<ResultStatisticsDto>> GetResultStatistics()
+        public async Task<ActionResult<ResultStatisticsDto>> GetResultStatistics(
+            [FromQuery] int? boardId = null,
+            [FromQuery] int? academicYearId = null,
+            [FromQuery] int? academicLevelId = null,
+            [FromQuery] int? groupId = null,
+            [FromQuery] int? examId = null,
+            [FromQuery] int? examinationId = null)
         {
-            _logger.LogInformation("Retrieving result statistics.");
-            var statistics = await _resultService.GetResultStatisticsAsync();
+            _logger.LogInformation("Retrieving result statistics. BoardId: {BoardId}, AcademicYearId: {AcademicYearId}", boardId, academicYearId);
+            var statistics = await _resultService.GetResultStatisticsAsync(
+                boardId,
+                academicYearId,
+                academicLevelId,
+                groupId,
+                examId ?? examinationId);
             return Ok(statistics);
         }
 
@@ -368,9 +392,20 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="200">Returns result dashboard overview.</response>
         [HttpGet("dashboard")]
         [ProducesResponseType(typeof(ResultDashboardDto), StatusCodes.Status200OK)]
-        public async Task<IActionResult> GetResultDashboard()
+        public async Task<IActionResult> GetResultDashboard(
+            [FromQuery] int? boardId = null,
+            [FromQuery] int? academicYearId = null,
+            [FromQuery] int? academicLevelId = null,
+            [FromQuery] int? groupId = null,
+            [FromQuery] int? examId = null,
+            [FromQuery] int? examinationId = null)
         {
-            var dashboard = await _resultService.GetResultDashboardAsync();
+            var dashboard = await _resultService.GetResultDashboardAsync(
+                boardId,
+                academicYearId,
+                academicLevelId,
+                groupId,
+                examId ?? examinationId);
             return Ok(dashboard);
         }
 

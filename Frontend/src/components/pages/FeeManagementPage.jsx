@@ -361,6 +361,14 @@ const feeDetailScheduleRows = (detail) => getCollection(read(detail, "schedules"
 
 const feeDetailPaymentRows = (detail) => getCollection(read(detail, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions", "history", "History"));
 
+const readStudentFeeId = (...items) => {
+  for (const item of items) {
+    const id = read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId");
+    if (id !== undefined && id !== null && id !== "") return id;
+  }
+  return undefined;
+};
+
 const feePaymentRows = (item, detail) => {
   const sources = [
     feeDetailPaymentRows(detail),
@@ -368,8 +376,6 @@ const feePaymentRows = (item, detail) => {
   ];
   return sources.find((rows) => rows.length) || [];
 };
-
-const mergeFeeDetailPayloads = (...payloads) => Object.assign({}, ...payloads.filter(Boolean).map(getObject));
 
 const toSelectOptions = (rows, idKeys, labelKeys) => rows
   .map((item) => {
@@ -790,17 +796,14 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
   const studentId = read(item, "studentId", "StudentId") ?? read(student, "studentId", "StudentId", "id", "Id");
   const studentRecord = studentsById.get(String(studentId)) || {};
   const admissionRecord = findMatchingAdmission(admissions, item, studentRecord);
-  const ledgerAssignmentId = read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
-    ?? read(studentFee, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id");
+  const ledgerAssignmentId = readStudentFeeId(item, studentFee);
   const detail = feeDetailsByStudentId.get(String(studentId)) || feeDetailsByAccountId.get(String(ledgerAssignmentId)) || {};
   const detailStudentFee = read(detail, "studentFee", "StudentFee", "feeAccount", "FeeAccount", "assignment", "Assignment");
   const group = read(item, "group", "Group");
   const section = read(item, "section", "Section");
   const program = read(item, "program", "Program");
   const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
-  const assignmentId = read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
-    ?? read(studentFee, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
-    ?? read(detail, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "id", "Id");
+  const assignmentId = readStudentFeeId(item, studentFee, detail);
   const feeItems = feeDetailPayloadRows(detail).length ? feeDetailPayloadRows(detail) : getCollection(read(item, "feeItems", "FeeItems", "items", "Items", "breakdown", "Breakdown"));
   const normalizedItems = feeItems.map((feeItem, feeIndex) => {
     const originalAmount = numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount", "feeAmount", "FeeAmount", "baseAmount", "BaseAmount");
@@ -861,7 +864,7 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
     ? rawBalance
     : Math.max(totalPayable - totalPaid, 0);
   const account = {
-    id: String(assignmentId ?? read(item, "studentId", "StudentId") ?? `fee-account-${index + 1}`),
+    id: String(assignmentId ?? read(item, "studentId", "StudentId") ?? read(item, "id", "Id") ?? `fee-account-${index + 1}`),
     assignmentId,
     studentFeeAssignmentId: assignmentId,
     studentFeeId: assignmentId,
@@ -3375,16 +3378,12 @@ export default function FeeManagementPage() {
     setSelectedDetail(null);
     if (!selectedId || !selectedBase?.studentId) return undefined;
     const loadSelectedDetail = async () => {
-      const [studentDetailResult, feeDetailResult] = await Promise.allSettled([
-        apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId)),
-        selectedBase.studentFeeId || selectedBase.studentFeeAssignmentId || selectedBase.assignmentId
-          ? apiClient.get(apiEndpoints.fee.studentFeeDetails(selectedBase.studentFeeId || selectedBase.studentFeeAssignmentId || selectedBase.assignmentId))
-          : Promise.resolve(null),
-      ]);
+      const studentDetailResult = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId)).then(
+        (response) => ({ status: "fulfilled", response }),
+        (error) => ({ status: "rejected", error }),
+      );
       if (ignore) return;
-      const studentDetail = studentDetailResult.status === "fulfilled" ? getObject(studentDetailResult.value?.data) : {};
-      const feeDetail = feeDetailResult.status === "fulfilled" && feeDetailResult.value ? getObject(feeDetailResult.value.data) : {};
-      let detail = mergeFeeDetailPayloads(studentDetail, feeDetail);
+      let detail = studentDetailResult.status === "fulfilled" ? getObject(studentDetailResult.response?.data) : {};
       const hasPayments = feeDetailPaymentRows(detail).length > 0;
       if (!hasPayments && Number(selectedBase.totalPaid || 0) > 0) {
         const historyResult = await apiClient.get(apiEndpoints.fee.getHistory(selectedBase.studentId)).then(
@@ -3405,8 +3404,8 @@ export default function FeeManagementPage() {
         });
         setSelectedDetail(normalized || selectedBase);
       }
-      const primaryError = studentDetailResult.status === "rejected" ? studentDetailResult.reason : null;
-      if (primaryError && feeDetailResult.status === "rejected") {
+      const primaryError = studentDetailResult.status === "rejected" ? studentDetailResult.error : null;
+      if (primaryError) {
         setAccountErrors((current) => ({ ...current, ledger: current.ledger || getApiErrorMessage(primaryError) }));
       }
     };

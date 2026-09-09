@@ -42,10 +42,12 @@ export const apiEndpoints = {
     lookupBoards: "/api/v1/staff/lookup/boards",
     lookupDepartments: "/api/v1/staff/lookup/departments",
     lookupDesignations: "/api/v1/staff/lookup/designations",
+    availableSubjects: "/api/v1/staff/available-subjects",
     assignSubject: "/api/v1/staff/assign-subject",
     updateSubjectAssignment: (id) => `/api/v1/staff/assign-subject/${id}`,
     deleteSubjectAssignment: (id) => `/api/v1/staff/assign-subject/${id}`,
-    getWorkload: (facultyId) => `/api/v1/staff/workload/${facultyId}`,
+    getSubjectAllocations: (staffId) => `/api/v1/staff/${staffId}/subject-allocations`,
+    getWorkload: (staffId) => `/api/v1/staff/workload/${staffId}`,
   },
   boards: {
     list: "/api/v1/boards",
@@ -444,6 +446,13 @@ export const apiEndpoints = {
     getAll: "/api/v1/student-analysis",
     details: (studentId) => `/api/v1/student-analysis/${studentId}/details`,
   },
+  numberSeries: {
+    getAll: "/api/v1/settings/number-series",
+    getByCode: (code) => `/api/v1/settings/number-series/${encodeURIComponent(code)}`,
+    update: (code) => `/api/v1/settings/number-series/${encodeURIComponent(code)}`,
+    generateNext: (code) => `/api/v1/settings/number-series/${encodeURIComponent(code)}/generate-next`,
+    preview: (code) => `/api/v1/settings/number-series/${encodeURIComponent(code)}/preview`,
+  },
 };
 
 export const uniqueAcademicYearsByName = (items = [], getName = (item) => (
@@ -465,3 +474,5 @@ export const uniqueAcademicYearsByName = (items = [], getName = (item) => (
     return true;
   });
 };
+
+export default apiEndpoints;

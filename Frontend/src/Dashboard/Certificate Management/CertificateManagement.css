@@ -339,6 +339,8 @@
 .cert-search-icon {
   position: absolute;
   left: 0.9rem;
+  width: 17px;
+  height: 17px;
   color: #889966;
   font-size: 1.05rem;
 }

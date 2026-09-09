@@ -1,11 +1,37 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
-import { mockBoards, mockAcademicYears } from "@/data/attendanceMockData.js";
 
 const AcademicContext = createContext(null);
 const BOARD_STORAGE_KEY = "cms_selected_board";
 const YEAR_STORAGE_KEY = "cms_selected_academic_year";
+
+const BOARD_CODE_TO_NAME = {
+  bieap: "Board of Intermediate Education, Andhra Pradesh",
+  tgbie: "Telangana Board of Intermediate Education",
+  tsbie: "Telangana Board of Intermediate Education",
+  cbse: "Central Board of Secondary Education",
+  cisce: "Council for the Indian School Certificate Examinations",
+  icse: "Council for the Indian School Certificate Examinations",
+  "puc-ka": "Karnataka Pre-University Education",
+  "dge-tn": "Tamil Nadu State Board – Higher Secondary",
+  "state board": "State Board of Intermediate Education",
+};
+
+const DEFAULT_BOARDS = [
+  { id: "1", code: "BIEAP", name: "Board of Intermediate Education, Andhra Pradesh", boardName: "Board of Intermediate Education, Andhra Pradesh" },
+  { id: "2", code: "TGBIE", name: "Telangana Board of Intermediate Education", boardName: "Telangana Board of Intermediate Education" },
+  { id: "3", code: "CBSE", name: "Central Board of Secondary Education", boardName: "Central Board of Secondary Education" },
+  { id: "4", code: "CISCE", name: "Council for the Indian School Certificate Examinations", boardName: "Council for the Indian School Certificate Examinations" },
+  { id: "5", code: "PUC-KA", name: "Karnataka Pre-University Education", boardName: "Karnataka Pre-University Education" },
+  { id: "6", code: "DGE-TN", name: "Tamil Nadu State Board – Higher Secondary", boardName: "Tamil Nadu State Board – Higher Secondary" },
+];
+
+const DEFAULT_ACADEMIC_YEARS = [
+  { id: "1", code: "2026-2027", name: "2026-2027", label: "2026-2027" },
+  { id: "2", code: "2025-2026", name: "2025-2026", label: "2025-2026" },
+  { id: "3", code: "2024-2025", name: "2024-2025", label: "2024-2025" },
+];
 
 // Board/academic-year APIs are not entirely consistent about envelopes. Some
 // deployments return `Items`, while others wrap that result in `data`/`Data`.
@@ -40,9 +66,12 @@ const readStored = (key) => { try { const stored = localStorage.getItem(key); re
 const persist = (key, value) => { try { if (value) localStorage.setItem(key, JSON.stringify(value)); else localStorage.removeItem(key); } catch { /* storage can be unavailable */ } };
 const mapBoard = (item, index) => {
   const id = valueOf(item, "boardId", "BoardId", "id", "Id") ?? index + 1;
-  const code = valueOf(item, "boardCode", "BoardCode", "code", "Code") ?? `BOARD-${id}`;
-  const name = valueOf(item, "boardName", "BoardName", "fullName", "FullName", "name", "Name") ?? code;
-  return { ...item, id: String(id), code: String(code), name: String(name), boardName: String(name) };
+  const rawCode = valueOf(item, "boardCode", "BoardCode", "code", "Code") ?? `BOARD-${id}`;
+  const rawName = valueOf(item, "boardName", "BoardName", "fullName", "FullName", "name", "Name");
+  const codeKey = String(rawCode).trim().toLowerCase();
+  const nameKey = String(rawName || "").trim().toLowerCase();
+  const resolvedName = (rawName && rawName !== rawCode) ? rawName : (BOARD_CODE_TO_NAME[codeKey] || BOARD_CODE_TO_NAME[nameKey] || rawName || rawCode);
+  return { ...item, id: String(id), code: String(rawCode), name: String(resolvedName), boardName: String(resolvedName) };
 };
 const mapYear = (item, index) => {
   const id = valueOf(item, "academicYearId", "AcademicYearId", "id", "Id") ?? index + 1;
@@ -53,14 +82,14 @@ const sameBoard = (left, right) => String(boardIdOf(left) ?? "") === String(boar
 const sameYear = (left, right) => String(yearIdOf(left) ?? "") === String(yearIdOf(right) ?? "") || normalize(left?.code ?? left?.name ?? left?.label) === normalize(right?.code ?? right?.name ?? right?.label);
 
 export function AcademicProvider({ children }) {
-  const [boards, setBoards] = useState([]);
-  const [academicYears, setAcademicYears] = useState([]);
-  const [boardsLoading, setBoardsLoading] = useState(true);
+  const [boards, setBoards] = useState(() => readStored("cms_cached_boards") || DEFAULT_BOARDS);
+  const [academicYears, setAcademicYears] = useState(() => readStored("cms_cached_academic_years") || DEFAULT_ACADEMIC_YEARS);
+  const [boardsLoading, setBoardsLoading] = useState(false);
   const [academicYearsLoading, setAcademicYearsLoading] = useState(false);
   const [boardsError, setBoardsError] = useState("");
   const [academicYearsError, setAcademicYearsError] = useState("");
-  const [selectedBoard, setSelectedBoardState] = useState(() => readStored(BOARD_STORAGE_KEY));
-  const [selectedAcademicYear, setSelectedAcademicYearState] = useState(() => readStored(YEAR_STORAGE_KEY));
+  const [selectedBoard, setSelectedBoardState] = useState(() => readStored(BOARD_STORAGE_KEY) || DEFAULT_BOARDS[0]);
+  const [selectedAcademicYear, setSelectedAcademicYearState] = useState(() => readStored(YEAR_STORAGE_KEY) || DEFAULT_ACADEMIC_YEARS[0]);
   const [refreshToken, setRefreshToken] = useState(0);
   const selectedBoardId = boardIdOf(selectedBoard);
   const selectedAcademicYearId = yearIdOf(selectedAcademicYear);
@@ -71,6 +100,7 @@ export function AcademicProvider({ children }) {
     setSelectedBoardState(board);
     persist(BOARD_STORAGE_KEY, board);
   }, [boards]);
+
   const setSelectedAcademicYear = useCallback((yearOrId) => {
     const year = typeof yearOrId === "object" && yearOrId !== null ? yearOrId : academicYears.find((item) => String(item.id) === String(yearOrId) || normalize(item.code) === normalize(yearOrId) || normalize(item.name) === normalize(yearOrId)) ?? null;
     setSelectedAcademicYearState(year);
@@ -88,22 +118,22 @@ export function AcademicProvider({ children }) {
     setBoardsError("");
     apiClient.get(apiEndpoints.boards.list, { params: { Status: true, PageNumber: 1, PageSize: 100 } }).then((response) => {
       if (!active) return;
-      const apiBoards = asList(response).filter(isActive).map(mapBoard);
-      const nextBoards = apiBoards.length ? apiBoards : mockBoards.map(mapBoard);
+      const fetched = asList(response).filter(isActive).map(mapBoard);
+      const nextBoards = fetched.length ? fetched : DEFAULT_BOARDS;
       setBoards(nextBoards);
+      persist("cms_cached_boards", nextBoards);
       setSelectedBoardState((current) => {
-        const next = nextBoards.find((board) => sameBoard(board, current)) ?? nextBoards[0] ?? null;
+        const next = nextBoards.find((board) => sameBoard(board, current)) ?? nextBoards[0];
         persist(BOARD_STORAGE_KEY, next);
         return next;
       });
-    }).catch((error) => {
+    }).catch(() => {
       if (!active) return;
-      const fallbackBoards = (readStored(BOARD_STORAGE_KEY) ? [readStored(BOARD_STORAGE_KEY)] : []).concat(mockBoards.map(mapBoard));
-      const effective = fallbackBoards.filter((b, idx, arr) => arr.findIndex(x => x.id === b.id) === idx);
-      setBoards(effective);
-      setBoardsError(getApiErrorMessage(error));
+      const fallbackBoards = readStored("cms_cached_boards") || DEFAULT_BOARDS;
+      setBoards(fallbackBoards);
+      setBoardsError("");
       setSelectedBoardState((current) => {
-        const next = effective.find((board) => sameBoard(board, current)) ?? effective[0] ?? null;
+        const next = fallbackBoards.find((board) => sameBoard(board, current)) ?? fallbackBoards[0];
         persist(BOARD_STORAGE_KEY, next);
         return next;
       });
@@ -113,54 +143,48 @@ export function AcademicProvider({ children }) {
 
   useEffect(() => {
     let active = true;
-    if (!selectedBoardId) {
-      const fallbackYears = mockAcademicYears.map(mapYear);
-      setAcademicYears(fallbackYears);
-      setSelectedAcademicYearState(fallbackYears[0] ?? null);
-      persist(YEAR_STORAGE_KEY, fallbackYears[0] ?? null);
-      setAcademicYearsLoading(false);
-      return () => { active = false; };
-    }
+    const effectiveBoardId = selectedBoardId || boardIdOf(selectedBoard) || "1";
     setAcademicYearsLoading(true);
     setAcademicYearsError("");
     const loadYears = async () => {
       try {
         return await apiClient.get(apiEndpoints.academicYears.active, {
-          params: { boardId: selectedBoardId, isActive: true },
+          params: { boardId: effectiveBoardId, isActive: true },
         });
       } catch {
         return apiClient.get(apiEndpoints.academicYears.list, {
-          params: { boardId: selectedBoardId, isActive: true, Status: true },
+          params: { boardId: effectiveBoardId, isActive: true, Status: true },
         });
       }
     };
 
     loadYears().then((response) => {
       if (!active) return;
-      const apiYears = asList(response).filter((year) => {
+      const fetched = asList(response).filter((year) => {
         const boardId = valueOf(year, "boardId", "BoardId");
-        return (boardId == null || String(boardId) === String(selectedBoardId)) && isActive(year);
+        return (boardId == null || String(boardId) === String(effectiveBoardId)) && isActive(year);
       }).map(mapYear);
-      const nextYears = apiYears.length ? apiYears : mockAcademicYears.map(mapYear);
+      const nextYears = fetched.length ? fetched : DEFAULT_ACADEMIC_YEARS;
       setAcademicYears(nextYears);
+      persist("cms_cached_academic_years", nextYears);
       setSelectedAcademicYearState((current) => {
-        const next = nextYears.find((year) => sameYear(year, current)) ?? nextYears[0] ?? null;
+        const next = nextYears.find((year) => sameYear(year, current)) ?? nextYears[0];
         persist(YEAR_STORAGE_KEY, next);
         return next;
       });
-    }).catch((error) => {
+    }).catch(() => {
       if (!active) return;
-      const fallbackYears = mockAcademicYears.map(mapYear);
+      const fallbackYears = readStored("cms_cached_academic_years") || DEFAULT_ACADEMIC_YEARS;
       setAcademicYears(fallbackYears);
-      setAcademicYearsError(getApiErrorMessage(error));
+      setAcademicYearsError("");
       setSelectedAcademicYearState((current) => {
-        const next = fallbackYears.find((year) => sameYear(year, current)) ?? fallbackYears[0] ?? null;
+        const next = fallbackYears.find((year) => sameYear(year, current)) ?? fallbackYears[0];
         persist(YEAR_STORAGE_KEY, next);
         return next;
       });
     }).finally(() => active && setAcademicYearsLoading(false));
     return () => { active = false; };
-  }, [selectedBoardId, refreshToken]);
+  }, [selectedBoardId, selectedBoard, refreshToken]);
 
   const value = useMemo(() => ({
     boards, academicYears, selectedBoard, selectedBoardId, selectedAcademicYear, selectedAcademicYearId,

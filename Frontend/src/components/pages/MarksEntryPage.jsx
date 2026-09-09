@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import DashboardLayout from "../layout/DashboardLayout";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import * as XLSX from "xlsx";
 import "./MarksEntryPage.css";
 
@@ -207,6 +208,13 @@ const isLegalStatusTransition = (from, to) =>
 
 // Reusable Hook for Independent Academic Cascading Filters
 function useAcademicFilterState(allBoards = [], guard = (fn) => fn(), onReset = () => {}) {
+  const {
+    selectedBoard,
+    selectedBoardId,
+    selectedAcademicYear,
+    selectedAcademicYearId,
+  } = useAcademicContext();
+
   const [filters, setFilters] = useState({
     board: "",
     year: "",
@@ -223,15 +231,21 @@ function useAcademicFilterState(allBoards = [], guard = (fn) => fn(), onReset = 
   const [sections, setSections] = useState([]);
   const [exams, setExams] = useState([]);
 
-  // Auto-select board when allBoards loads
+  // Auto-select board when allBoards loads or navbar board changes
   useEffect(() => {
-    if (!filters.board && allBoards.length > 0) {
-      const activeBoard = allBoards.find((b) => b.isActive) || allBoards[0];
-      if (activeBoard) {
-        setFilters((prev) => ({ ...prev, board: activeBoard.id }));
+    if (allBoards.length > 0) {
+      const targetBoard = allBoards.find(
+        (b) =>
+          eq(b.id, selectedBoardId) ||
+          (selectedBoard?.code && String(b.code || "").trim().toLowerCase() === String(selectedBoard.code).trim().toLowerCase()) ||
+          (selectedBoard?.name && String(b.name || "").trim().toLowerCase() === String(selectedBoard.name).trim().toLowerCase())
+      ) || allBoards.find((b) => b.isActive) || allBoards[0];
+
+      if (targetBoard && !eq(filters.board, targetBoard.id)) {
+        setFilters((prev) => ({ ...prev, board: targetBoard.id }));
       }
     }
-  }, [allBoards, filters.board]);
+  }, [allBoards, selectedBoardId, selectedBoard, filters.board]);
 
   // Load Years, Levels, Groups when Board changes
   useEffect(() => {
@@ -266,12 +280,17 @@ function useAcademicFilterState(allBoards = [], guard = (fn) => fn(), onReset = 
 
         if (isMounted) {
           setYears(listYears);
-          setFilters((prev) => {
-            const hasValidYear = listYears.some((y) => eq(y.id, prev.year));
-            if (hasValidYear) return prev;
-            const currentYear = listYears.find((y) => y.isCurrent) || listYears[0];
-            return { ...prev, year: currentYear ? currentYear.id : "" };
-          });
+          const targetYear = listYears.find(
+            (y) =>
+              eq(y.id, selectedAcademicYearId) ||
+              (selectedAcademicYear?.name && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.name).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "")) ||
+              (selectedAcademicYear?.code && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.code).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, ""))
+          ) || listYears.find((y) => y.isCurrent) || listYears[0];
+
+          setFilters((prev) => ({
+            ...prev,
+            year: targetYear ? targetYear.id : "",
+          }));
         }
       } catch (err) {
         console.error("Error fetching academic years:", err);
@@ -507,6 +526,21 @@ function useAcademicFilterState(allBoards = [], guard = (fn) => fn(), onReset = 
       isMounted = false;
     };
   }, [filters.board, filters.year, filters.level, filters.group, filters.program]);
+
+  // Sync year when navbar selected academic year changes
+  useEffect(() => {
+    if (years.length > 0) {
+      const targetYear = years.find(
+        (y) =>
+          eq(y.id, selectedAcademicYearId) ||
+          (selectedAcademicYear?.name && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.name).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "")) ||
+          (selectedAcademicYear?.code && String(y.name || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "") === String(selectedAcademicYear.code).trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, ""))
+      );
+      if (targetYear && !eq(filters.year, targetYear.id)) {
+        setFilters((prev) => ({ ...prev, year: targetYear.id }));
+      }
+    }
+  }, [years, selectedAcademicYearId, selectedAcademicYear, filters.year]);
 
   // Change filter handler with cascading resets and invalidating applied state
   const changeFilter = (key, value) =>
@@ -2269,8 +2303,8 @@ function FilterCard({
   subtitle,
 }) {
   const fields = [
-    { key: "board", label: "Board", options: boards },
-    { key: "year", label: "Academic Year", options: years, disabled: !filters.board },
+    { key: "board", label: "Board", options: boards, disabled: true },
+    { key: "year", label: "Academic Year", options: years, disabled: true },
     { key: "level", label: "Academic Level", options: levels, disabled: !filters.board },
     { key: "group", label: "Group", options: groups, disabled: !filters.board },
     { key: "program", label: "Program", options: programs, disabled: !filters.group },

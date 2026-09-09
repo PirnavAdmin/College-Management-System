@@ -1148,7 +1148,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
   const overdueStudents = hasDueScheduleData ? overdueStudentCount : totals.overdueStudents || 0;
   const recent = dashboardData?.recent?.length ? dashboardData.recent : [];
   const collectedPercent = totals.collectedPercent ?? fallbackTotals.collectedPercent;
-  const groupOptions = chartData.map((row) => row.group).filter(Boolean);
+  const groupOptions = Array.from(new Set(chartData.map((row) => row.group).filter(Boolean))).sort();
   const selectedChartRows = selectedGroup ? chartData.filter((row) => row.group === selectedGroup) : chartData;
   const selectedChartTotals = selectedChartRows.reduce((sum, row) => ({
     expected: sum.expected + Number(row.expected || 0),
@@ -1216,7 +1216,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
             <span>Group</span>
             <select value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)}>
               <option value="">All Groups</option>
-              {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+              {groupOptions.map((group, index) => <option key={`${group}-${index}`} value={group}>{group}</option>)}
             </select>
           </label>
         </div>
@@ -1270,7 +1270,16 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
           <div className="cms-fee-overview-content">
             {overviewTab === "overdue" ? (
               <div className="cms-table-wrap">
-                <table className="cms-table">
+                <table className="cms-table cms-fee-schedule-list-table">
+                  <colgroup>
+                    <col className="cms-fee-schedule-student-col" />
+                    <col className="cms-fee-schedule-admission-col" />
+                    <col className="cms-fee-schedule-group-col" />
+                    <col className="cms-fee-schedule-label-col" />
+                    <col className="cms-fee-schedule-date-col" />
+                    <col className="cms-fee-schedule-money-col" />
+                    <col className="cms-fee-schedule-status-col" />
+                  </colgroup>
                   <thead>
                     <tr><th>Student</th><th>Admission No</th><th>Group / Section</th><th>Fee Schedule</th><th>Due Date</th><th className="num">Amount</th><th>Status</th></tr>
                   </thead>
@@ -1296,7 +1305,16 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
 
             {overviewTab === "upcoming" ? (
               <div className="cms-table-wrap">
-                <table className="cms-table">
+                <table className="cms-table cms-fee-schedule-list-table">
+                  <colgroup>
+                    <col className="cms-fee-schedule-student-col" />
+                    <col className="cms-fee-schedule-admission-col" />
+                    <col className="cms-fee-schedule-group-col" />
+                    <col className="cms-fee-schedule-label-col" />
+                    <col className="cms-fee-schedule-date-col" />
+                    <col className="cms-fee-schedule-money-col" />
+                    <col className="cms-fee-schedule-status-col" />
+                  </colgroup>
                   <thead>
                     <tr><th>Student</th><th>Admission No</th><th>Group / Section</th><th>Fee Schedule</th><th>Due Date</th><th className="num">Amount</th><th>Status</th></tr>
                   </thead>
@@ -1322,7 +1340,15 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
 
             {overviewTab === "recent" ? (
               <div className="cms-table-wrap">
-                <table className="cms-table">
+                <table className="cms-table cms-fee-recent-payments-table">
+                  <colgroup>
+                    <col className="cms-fee-recent-receipt-col" />
+                    <col className="cms-fee-recent-student-col" />
+                    <col className="cms-fee-recent-type-col" />
+                    <col className="cms-fee-recent-money-col" />
+                    <col className="cms-fee-recent-method-col" />
+                    <col className="cms-fee-recent-date-col" />
+                  </colgroup>
                   <thead>
                     <tr><th>Receipt No</th><th>Student</th><th>Payment Type</th><th className="num">Amount</th><th>Payment Method</th><th>Date</th></tr>
                   </thead>

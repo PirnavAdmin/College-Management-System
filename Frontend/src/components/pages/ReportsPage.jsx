@@ -22,6 +22,16 @@ import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
+import admissionsImage from "@/assets/reports-3d/admissions.png";
+import attendanceImage from "@/assets/reports-3d/attendance.png";
+import feeCollectionImage from "@/assets/reports-3d/fee-collection.png";
+import dueFeesImage from "@/assets/reports-3d/due-fees.png";
+import examinationsImage from "@/assets/reports-3d/examinations.png";
+import resultsImage from "@/assets/reports-3d/results.png";
+import facultyWorkloadImage from "@/assets/reports-3d/faculty-workload.png";
+import studentStrengthImage from "@/assets/reports-3d/student-strength.png";
+import passPercentageImage from "@/assets/reports-3d/pass-percentage.png";
+import toppersImage from "@/assets/reports-3d/toppers.png";
 
 const EMPTY_REPORTS = {
   dashboard: {},
@@ -104,16 +114,16 @@ const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
 const AUDIT_SEARCH_SAMPLES = ["Super Admin", "Student Management", "Login", "Export", "Success", "STU-1001"];
 
 const summaryCardConfig = [
-  { key: "admissions", sourceKey: "admissions", reportType: "admissions", label: "Admissions", icon: GraduationCap, tone: "blue" },
-  { key: "attendance", sourceKey: "attendance", reportType: "attendance", label: "Attendance", icon: CalendarCheck, tone: "green", suffix: "%" },
-  { key: "feeCollection", sourceKey: "feeCollection", reportType: "fee-collection", label: "Fee Collection", icon: WalletCards, tone: "violet", currency: true },
-  { key: "dueFees", sourceKey: "feeOutstanding", reportType: "due-fees", label: "Due Fees", icon: AlertCircle, tone: "amber", currency: true },
-  { key: "examinations", sourceKey: "examinations", reportType: "examinations", label: "Examinations", icon: FileSpreadsheet, tone: "blue" },
-  { key: "results", sourceKey: "results", reportType: "results", label: "Results Published", icon: Award, tone: "green" },
-  { key: "facultyWorkload", sourceKey: "facultyWorkload", reportType: "faculty-workload", label: "Faculty Workload", icon: BriefcaseBusiness, tone: "violet", suffix: " hrs/wk" },
-  { key: "studentStrength", sourceKey: "studentStrength", reportType: "student-strength", label: "Student Strength", icon: Users, tone: "blue" },
-  { key: "passPercentage", sourceKey: "passPercentage", reportType: "pass-percentage", label: "Pass Percentage", icon: Percent, tone: "green", suffix: "%" },
-  { key: "toppers", sourceKey: "toppers", reportType: "toppers", label: "Toppers Identified", icon: Trophy, tone: "amber" },
+  { key: "admissions", sourceKey: "admissions", reportType: "admissions", label: "Admissions", icon: GraduationCap, image: admissionsImage, tone: "blue" },
+  { key: "attendance", sourceKey: "attendance", reportType: "attendance", label: "Attendance", icon: CalendarCheck, image: attendanceImage, tone: "green", suffix: "%" },
+  { key: "feeCollection", sourceKey: "feeCollection", reportType: "fee-collection", label: "Fee Collection", icon: WalletCards, image: feeCollectionImage, tone: "violet", currency: true },
+  { key: "dueFees", sourceKey: "feeOutstanding", reportType: "due-fees", label: "Due Fees", icon: AlertCircle, image: dueFeesImage, tone: "amber", currency: true },
+  { key: "examinations", sourceKey: "examinations", reportType: "examinations", label: "Examinations", icon: FileSpreadsheet, image: examinationsImage, tone: "blue" },
+  { key: "results", sourceKey: "results", reportType: "results", label: "Results Published", icon: Award, image: resultsImage, tone: "green" },
+  { key: "facultyWorkload", sourceKey: "facultyWorkload", reportType: "faculty-workload", label: "Faculty Workload", icon: BriefcaseBusiness, image: facultyWorkloadImage, tone: "violet", suffix: " hrs/wk" },
+  { key: "studentStrength", sourceKey: "studentStrength", reportType: "student-strength", label: "Student Strength", icon: Users, image: studentStrengthImage, tone: "blue" },
+  { key: "passPercentage", sourceKey: "passPercentage", reportType: "pass-percentage", label: "Pass Percentage", icon: Percent, image: passPercentageImage, tone: "green", suffix: "%" },
+  { key: "toppers", sourceKey: "toppers", reportType: "toppers", label: "Toppers Identified", icon: Trophy, image: toppersImage, tone: "amber" },
 ];
 
 const DETAIL_LABELS = {
@@ -1310,7 +1320,7 @@ export default function ReportsPage() {
             </div>
             <div className="reports-summary-grid" aria-label="Report summary">
               {summaryCardConfig.map((card) => {
-                const { key, sourceKey, label, icon: Icon, tone, currency, suffix } = card;
+                const { key, sourceKey, label, icon: Icon, image, tone, currency, suffix } = card;
                 const format = { currency, suffix };
                 const source = reports[sourceKey];
                 const hasLiveData = hasReportData(source);
@@ -1321,7 +1331,7 @@ export default function ReportsPage() {
                 const displayValue = hasDisplayData ? formatMetric(summaryValues[key], format) : reportErrors[sourceKey] ? "Unavailable" : "—";
                 return <article className="reports-summary-card reports-summary-card-expanded" key={key}>
                   <div className="reports-summary-card-head">
-                    <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true"><Icon size={20} strokeWidth={2} /></span>
+                    <span className={`reports-summary-icon reports-summary-icon-${tone}`} aria-hidden="true">{image ? <img className="reports-summary-image" src={image} alt="" /> : <Icon size={20} strokeWidth={2} />}</span>
                     <div className="reports-summary-content"><span>{label}</span><strong>{displayValue}</strong></div>
                   </div>
                   {details.length || reportErrors[sourceKey] ? <dl className="reports-summary-details">

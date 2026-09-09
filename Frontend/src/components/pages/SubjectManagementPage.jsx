@@ -42,6 +42,8 @@ const displaySubjectName = (name = "") => {
 };
 const displayLanguageName = (name = "") => String(name).trim().replace(/\s*-\s*(?:I|II)$/i, "");
 const normalizeSubjectCode = (code = "") => String(code).trim().toUpperCase();
+const normalizeDuplicateName = (name = "") => String(name).trim().toLowerCase().replace(/\s+/g, " ");
+const SUBJECT_CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
 const normalizeSubjectName = (name = "") => displaySubjectName(name)
   .toLowerCase()
   .replace(/[^a-z0-9]+/g, " ")
@@ -99,10 +101,12 @@ export default function SubjectManagementPage() {
   const [subjectView, setSubjectView] = useState("subjects");
   const [levels, setLevels] = useState([]);
   const [levelsLoading, setLevelsLoading] = useState(false);
+  const [academicContextValid, setAcademicContextValid] = useState(false);
   const [groups, setGroups] = useState([]);
   const [master, setMaster] = useState(() => subjectMaster.map((item) => ({ ...item, marks: { ...item.marks } })));
   const [mapping, setMapping] = useState(cloneMap);
   const [contextSubjects, setContextSubjects] = useState([]);
+  const [contextSubjectsReady, setContextSubjectsReady] = useState(false);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [subjectBusy, setSubjectBusy] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
@@ -129,6 +133,7 @@ export default function SubjectManagementPage() {
   const [configuring, setConfiguring] = useState(null);
   const [allocationSearch, setAllocationSearch] = useState("");
   const [allocatedSearch, setAllocatedSearch] = useState("");
+  const contextRequestSequence = useRef(0);
   // Retain the full backend group object for future API operations. The
   // frontend-only subject map deliberately uses a normalized group name.
   const selectedGroup = useMemo(() => groups.find((group) => group.value === String(context.groupId))?.raw ?? null, [context.groupId, groups]);
@@ -148,7 +153,7 @@ export default function SubjectManagementPage() {
     ...secondLanguageSubjects.map(subjectKey),
   ].map((key) => String(key).trim().toUpperCase())), [commonSubjects, secondLanguageSubjects]);
   const isGroupSubject = useCallback((subject) => !hasLanguageType(subject) && !commonOrLanguageKeys.has(subjectKey(subject)), [commonOrLanguageKeys]);
-  const predefinedSubjectCodes = useMemo(() => academicLevelGroupSubjectMap[levelYear]?.[groupKey] || groupSubjectMap[groupKey] || [], [groupKey, levelYear]);
+  const predefinedSubjectCodes = useMemo(() => levelYear ? academicLevelGroupSubjectMap[levelYear]?.[groupKey] || [] : [], [groupKey, levelYear]);
   const predefinedGroupSubjects = useMemo(() => predefinedSubjectCodes
     .map((code) => master.find((subject) => String(subject.code ?? subject.subjectCode ?? subject.id).trim().toUpperCase() === String(code).trim().toUpperCase()))
     .filter(Boolean), [master, predefinedSubjectCodes]);
@@ -199,6 +204,7 @@ export default function SubjectManagementPage() {
   }, [context.groupId, context.levelId]);
   useEffect(() => {
     let active = true;
+    setAcademicContextValid(false);
     setContext({ levelId: "", groupId: "" });
     setLevels([]);
     setGroups([]);
@@ -207,8 +213,9 @@ export default function SubjectManagementPage() {
     apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId: navbarBoardId } }).then((response) => {
       if (!active) return;
       setLevels(asList(body(response)).map((item) => ({ ...option(item, ["academicLevelId", "AcademicLevelId", "id", "Id"], ["levelName", "LevelName", "academicLevelName", "AcademicLevelName", "name", "Name"]), raw: item })).filter((item) => item.value && item.label));
+      setAcademicContextValid(true);
       setLevelsLoading(false);
-    }).catch(() => { if (active) { setLevels([]); setLevelsLoading(false); } });
+    }).catch(() => { if (active) { setLevels([]); setAcademicContextValid(false); setLevelsLoading(false); setToast("Unable to load valid academic context."); } });
     return () => { active = false; };
   }, [navbarBoardId]);
   useEffect(() => {
@@ -241,19 +248,29 @@ export default function SubjectManagementPage() {
     return () => { active = false; };
   }, [context.levelId, navbarBoardId, navbarAcademicYearId]);
   const loadContextSubjects = useCallback(async () => {
+    const requestSequence = ++contextRequestSequence.current;
     if (!navbarBoardId || !context.levelId || !context.groupId) {
       setContextSubjects([]);
-      return;
+      setContextSubjectsReady(false);
+      setSubjectsLoading(false);
+      return false;
     }
     setSubjectsLoading(true);
+    setContextSubjectsReady(false);
     try {
       const response = await apiClient.get(apiEndpoints.subjects.context, { params: { boardId: navbarBoardId, groupId: context.groupId, academicLevelId: context.levelId } });
+      if (requestSequence !== contextRequestSequence.current) return false;
       setContextSubjects(asList(body(response)).map(subjectFromApi).filter((subject) => subject.id));
+      setContextSubjectsReady(true);
+      return true;
     } catch (error) {
+      if (requestSequence !== contextRequestSequence.current) return false;
       setContextSubjects([]);
+      setContextSubjectsReady(false);
       setToast(getApiErrorMessage(error) || "Unable to load subjects.");
+      return false;
     } finally {
-      setSubjectsLoading(false);
+      if (requestSequence === contextRequestSequence.current) setSubjectsLoading(false);
     }
   }, [context.groupId, context.levelId, navbarBoardId]);
   useEffect(() => { loadContextSubjects(); }, [loadContextSubjects]);
@@ -270,7 +287,7 @@ export default function SubjectManagementPage() {
   useEffect(() => {
     let active = true;
     if (!navbarBoardId || !context.levelId) { setActiveSubjects([]); return undefined; }
-    apiClient.get(apiEndpoints.subjects.active, { params: { boardId: navbarBoardId, academicYearId: navbarAcademicYearId, academicLevelId: context.levelId, isActive: true } }).then((response) => {
+    apiClient.get(apiEndpoints.subjects.active).then((response) => {
       if (active) setActiveSubjects(asList(body(response)).map(subjectFromApi).filter((subject) => subject.id));
     }).catch(() => { if (active) setActiveSubjects([]); });
     return () => { active = false; };
@@ -289,13 +306,18 @@ export default function SubjectManagementPage() {
   const valid = (newMaster) => {
     if (!draft.name.trim() || !draft.code.trim()) return "Subject name and subject code are required.";
     if (!draft.type.length) return "Select at least one subject type.";
+    if (!SUBJECT_CODE_PATTERN.test(draft.code.trim())) return "Subject code may contain only letters, numbers, underscores, and hyphens.";
+    const rawMarks = [draft.marks.theory, draft.marks.practical, draft.marks.internal, draft.marks.passing];
+    if (rawMarks.some((value) => String(value).trim() === "" || !Number.isFinite(Number(value)))) return "All marks must be numeric.";
+    if (rawMarks.some((value) => Number(value) < 0 || Number(value) > 1000)) return "Marks must be between 0 and 1000.";
+    if (total(draft.marks) <= 0) return "Total marks must be greater than zero.";
     if (Number(draft.marks.passing) > total(draft.marks)) return "Passing marks cannot exceed total marks.";
     if (newMaster && master.some((subject) => subject.name.toLowerCase() === draft.name.trim().toLowerCase())) return "Subject already exists. Please select it from the available subjects.";
     if (newMaster && master.some((subject) => subject.code.toLowerCase() === draft.code.trim().toLowerCase())) return "Subject code already exists.";
     return "";
   };
-  const subjectPayload = (configuration) => ({
-    boardId: Number(navbarBoardId), groupId: Number(context.groupId), academicLevelId: Number(context.levelId),
+  const subjectPayload = (configuration, academicContext = { boardId: navbarBoardId, groupId: context.groupId, academicLevelId: context.levelId }) => ({
+    boardId: Number(academicContext.boardId), groupId: Number(academicContext.groupId), academicLevelId: Number(academicContext.academicLevelId),
     subjectName: configuration.name, subjectCode: configuration.code, subjectType: configuration.type.join(" + "),
     theory: configuration.type.includes("Theory"), practical: configuration.type.includes("Practical"), language: configuration.type.includes("Language"), elective: false,
     externalMarks: configuration.marks.theory, practicalMarks: configuration.marks.practical, internalMarks: configuration.marks.internal,
@@ -306,6 +328,28 @@ export default function SubjectManagementPage() {
     code: subject.code,
     type: [...subject.type],
     marks: savedMarks(subject.marks),
+  };
+  const configurationError = (configuration) => {
+    if (!configuration.name.trim() || !configuration.code.trim()) return "Every selected subject needs a name and subject code.";
+    if (!configuration.type.length) return `Select at least one type for ${configuration.name}.`;
+    if (!SUBJECT_CODE_PATTERN.test(configuration.code.trim())) return `${configuration.code || "Subject code"} may contain only letters, numbers, underscores, and hyphens.`;
+    const marks = [configuration.marks.theory, configuration.marks.practical, configuration.marks.internal, configuration.marks.total, configuration.marks.passing];
+    if (marks.some((value) => !Number.isFinite(Number(value)))) return `All marks for ${configuration.name} must be numeric.`;
+    if (marks.some((value) => Number(value) < 0 || Number(value) > 1000)) return `Marks for ${configuration.name} must be between 0 and 1000.`;
+    if (Number(configuration.marks.total) <= 0) return `Total marks for ${configuration.name} must be greater than zero.`;
+    if (Number(configuration.marks.total) !== total(configuration.marks)) return `Total marks for ${configuration.name} must equal Theory + Practical + Internal marks.`;
+    if (Number(configuration.marks.passing) > Number(configuration.marks.total)) return `Passing marks for ${configuration.name} cannot exceed total marks.`;
+    return "";
+  };
+  const writeContextError = () => !academicContextValid || !contextSubjectsReady || !navbarBoardId || !context.levelId || !context.groupId
+    ? "Unable to load valid academic context."
+    : "";
+  const mutationErrorMessage = (error, fallback) => {
+    const backendMessage = getApiErrorMessage(error);
+    if (error?.response?.status === 400) return backendMessage || "Invalid subject input.";
+    if (error?.response?.status === 404) return backendMessage || "The Subject or academic context no longer exists.";
+    if (error?.response?.status === 409) return backendMessage || "The Subject conflicts with an existing record or dependency.";
+    return backendMessage || fallback;
   };
   const openConfigure = (subject) => {
     const configuration = configurationFor(subject);
@@ -337,40 +381,60 @@ export default function SubjectManagementPage() {
     setToast("Subject added to the allocation list. Save allocated subjects to persist it.");
   };
   const saveAllocatedSubjects = async () => {
+    if (subjectBusy) return;
     const selected = [...allocateSubjects.filter((subject) => selectedSubjectKeys.includes(subjectKey(subject))), ...selectedLanguages];
     if (!selected.length) return setToast("Select at least one subject to save.");
-    if (!navbarBoardId || !context.levelId || !context.groupId) return setToast("Select Academic Level and Group before saving subjects.");
+    const contextError = writeContextError();
+    if (contextError) return setToast(contextError);
+    const saveContext = { boardId: navbarBoardId, groupId: context.groupId, academicLevelId: context.levelId };
     const configurations = selected.map((subject) => ({ subject, configuration: configurationFor(subject) }));
     for (const { configuration } of configurations) {
-      const error = !configuration.name.trim() || !configuration.code.trim() || !configuration.type.length || Number(configuration.marks.passing) > total(configuration.marks)
-        ? "Every selected subject needs a valid configuration."
-        : "";
+      const error = configurationError(configuration);
       if (error) return setToast(error);
+    }
+    const selectedCodes = new Set();
+    const selectedNames = new Set();
+    for (const { configuration } of configurations) {
+      const code = normalizeSubjectCode(configuration.code);
+      const name = normalizeDuplicateName(configuration.name);
+      if (selectedCodes.has(code)) return setToast(`Duplicate subject code ${configuration.code} is selected.`);
+      if (selectedNames.has(name)) return setToast(`Duplicate subject name ${configuration.name} is selected.`);
+      selectedCodes.add(code);
+      selectedNames.add(name);
+      if (contextSubjects.some((subject) => normalizeDuplicateName(subject.name) === name)) return setToast(`${configuration.name} already exists in this academic context.`);
     }
     setSubjectBusy(true);
     const savedKeys = [];
+    let postAttempted = false;
     try {
+      const duplicateChecks = await Promise.all(configurations.map(({ configuration }) => apiClient.get(apiEndpoints.subjects.checkCode, { params: { subjectCode: configuration.code, boardId: saveContext.boardId, groupId: saveContext.groupId, academicLevelId: saveContext.academicLevelId } })));
+      const duplicateIndex = duplicateChecks.findIndex((result) => Boolean(body(result)?.exists));
+      if (duplicateIndex >= 0) throw new Error(`${configurations[duplicateIndex].configuration.code} already exists in this academic context.`);
       for (const { subject, configuration } of configurations) {
-        const codeCheck = await apiClient.get(apiEndpoints.subjects.checkCode, { params: { subjectCode: configuration.code, boardId: navbarBoardId, groupId: context.groupId, academicLevelId: context.levelId } });
-        if (body(codeCheck)?.exists) throw new Error(`${configuration.code} already exists in this academic context.`);
-        await apiClient.post(apiEndpoints.subjects.create, subjectPayload(configuration));
+        postAttempted = true;
+        await apiClient.post(apiEndpoints.subjects.create, subjectPayload(configuration, saveContext));
         savedKeys.push(subjectKey(subject));
       }
-      setToast(`${savedKeys.length} subject${savedKeys.length === 1 ? "" : "s"} saved successfully.`);
     } catch (requestError) {
-      setToast(getApiErrorMessage(requestError) || "Unable to save allocated subjects.");
+      const remaining = configurations.length - savedKeys.length;
+      setToast(savedKeys.length
+        ? `${savedKeys.length} of ${configurations.length} subjects saved. ${remaining} remaining subject${remaining === 1 ? " was" : "s were"} not saved. ${mutationErrorMessage(requestError, "")}`.trim()
+        : mutationErrorMessage(requestError, "Unable to save allocated subjects."));
     } finally {
       if (savedKeys.length) {
         setSelectedSubjectKeys((current) => current.filter((key) => !savedKeys.includes(key)));
         setSelectedLanguageKeys((current) => current.filter((key) => !savedKeys.includes(key)));
         setTemporarySubjects((current) => current.filter((subject) => !savedKeys.includes(subjectKey(subject))));
         setConfiguredSubjects((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !savedKeys.includes(key))));
-        await loadContextSubjects();
       }
+      const contextConfirmed = postAttempted ? await loadContextSubjects() : false;
+      if (savedKeys.length === configurations.length && contextConfirmed) setToast(`${savedKeys.length} subject${savedKeys.length === 1 ? "" : "s"} saved successfully.`);
+      else if (savedKeys.length === configurations.length) setToast(`${savedKeys.length} subject${savedKeys.length === 1 ? "" : "s"} saved, but the allocated list could not be refreshed.`);
       setSubjectBusy(false);
     }
   };
   const save = async () => {
+    if (subjectBusy) return;
     const error = valid(false);
     if (error) return setToast(error);
     const configuration = { name: draft.name.trim(), code: draft.code.trim().toUpperCase(), category: draft.category, type: [...draft.type], marks: savedMarks(draft.marks) };
@@ -397,16 +461,18 @@ export default function SubjectManagementPage() {
       setEditing(null); setToast("Common subject updated successfully.");
       return;
     }
+    const contextError = writeContextError();
+    if (contextError) return setToast(contextError);
+    const duplicateName = contextSubjects.some((subject) => subject.id !== editing.subject.id && normalizeDuplicateName(subject.name) === normalizeDuplicateName(configuration.name));
+    if (duplicateName) return setToast("Subject name already exists in this academic context.");
     setSubjectBusy(true);
     try {
-      if (configuration.code !== editing.subject.code) {
-        const codeCheck = await apiClient.get(apiEndpoints.subjects.checkCode, { params: { subjectCode: configuration.code, boardId: navbarBoardId, groupId: context.groupId, academicLevelId: context.levelId, excludeSubjectId: editing.subject.id } });
-        if (body(codeCheck)?.exists) return setToast("Subject code already exists in this academic context.");
-      }
+      const codeCheck = await apiClient.get(apiEndpoints.subjects.checkCode, { params: { subjectCode: configuration.code, boardId: navbarBoardId, groupId: context.groupId, academicLevelId: context.levelId, excludeSubjectId: editing.subject.id } });
+      if (body(codeCheck)?.exists) return setToast("Subject code already exists in this academic context.");
       await apiClient.put(apiEndpoints.subjects.update(editing.subject.id), subjectPayload(configuration));
       setEditing(null); setToast("Subject updated successfully.");
       await loadContextSubjects();
-    } catch (requestError) { setToast(getApiErrorMessage(requestError) || "Unable to update subject."); }
+    } catch (requestError) { setToast(mutationErrorMessage(requestError, "Unable to update subject.")); }
     finally { setSubjectBusy(false); }
   };
   const remove = async () => {
@@ -432,15 +498,22 @@ export default function SubjectManagementPage() {
       setToast(removing.name + " removed from Common Subjects."); setRemoving(null);
       return;
     }
+    if (subjectBusy) return;
+    const contextError = writeContextError();
+    if (contextError) return setToast(contextError);
     setSubjectBusy(true);
     try {
       await apiClient.delete(apiEndpoints.subjects.delete(removing.id));
-      setToast(removing.name + " deleted successfully."); setRemoving(null);
+      setToast(removing.name + " deleted/deactivated successfully."); setRemoving(null);
       await loadContextSubjects();
-    } catch (requestError) { setToast(getApiErrorMessage(requestError) || "Unable to delete subject."); }
+    } catch (requestError) {
+      setToast(mutationErrorMessage(requestError, "Unable to delete/deactivate subject."));
+      if (requestError?.response?.status === 409) await loadContextSubjects();
+    }
     finally { setSubjectBusy(false); }
   };
   const openEdit = async (subject, scope = "group") => {
+    if (subjectBusy) return;
     if (scope !== "group") { setEditing({ subject, scope }); setDraft({ ...subject, category: "Second Language", type: [...subject.type], marks: editableMarks(subject.marks) }); return; }
     setSubjectBusy(true);
     try {
@@ -504,7 +577,7 @@ export default function SubjectManagementPage() {
         <section className="subject-table-card subject-language-list"><header className="subject-table-head"><div><h2>Language Subjects</h2><p>Reusable language records for group-wise allocation.</p></div></header><div className="subject-table-scroll"><table className="subject-table subject-master-table"><thead><tr><th>Language</th><th>Code</th><th>Marks</th><th>Action</th></tr></thead><tbody>{languageSubjects.map((subject) => { const scope = /^english$/i.test(displayLanguageName(subject.name)) ? "common" : "secondLanguage"; return <tr key={subjectKey(subject)}><td>{displayLanguageName(subject.name)}</td><td><b>{subject.code}</b></td><td>{total(subject.marks)}</td><td><div className="subject-master-actions"><button className="cms-action-btn" title="Edit language" onClick={() => openConfiguredLanguageEdit(subject, scope)}><Pencil size={16} /></button><button className="cms-action-btn subject-remove-btn" title="Delete language" onClick={() => setRemoving({ ...subject, scope })}><Trash2 size={16} /></button></div></td></tr>; })}</tbody></table></div></section>
       </> : <>
       <div className="subject-management-language-action"><button className="cms-btn cms-btn-ghost" type="button" onClick={() => setSubjectView("languages")}>Manage Languages</button></div>
-      <section className="subject-master-context"><Select label="Academic Level" value={context.levelId} options={levels} disabled={levelsLoading || !navbarBoardId || !levels.length} onChange={(levelId) => setContext({ levelId, groupId: "" })} placeholder={levelsLoading ? "Loading academic levels..." : !navbarBoardId ? "No active boards available" : !levels.length ? "No academic levels available" : "Select Academic Level"} /><GroupCombobox value={context.groupId} options={groups} onChange={(groupId) => { setContextSubjects([]); setContext((current) => ({ ...current, groupId })); }} disabled={!context.levelId} /></section>
+      <section className="subject-master-context"><Select label="Academic Level" value={context.levelId} options={levels} disabled={subjectBusy || levelsLoading || !navbarBoardId || !levels.length} onChange={(levelId) => { setContextSubjects([]); setContextSubjectsReady(false); setContext({ levelId, groupId: "" }); }} placeholder={levelsLoading ? "Loading academic levels..." : !navbarBoardId ? "No active boards available" : !levels.length ? "No academic levels available" : "Select Academic Level"} /><GroupCombobox value={context.groupId} options={groups} onChange={(groupId) => { setContextSubjects([]); setContextSubjectsReady(false); setContext((current) => ({ ...current, groupId })); }} disabled={subjectBusy || !context.levelId} /></section>
       <section className="subject-allocation-columns" aria-label="Group subject allocation">
         <section className="subject-table-card subject-allocation-panel">
           <header className="subject-table-head"><div><h2>Allocate Subjects — {selectedGroupName}</h2><p>Available curriculum subjects not yet saved for this group.</p></div></header>
@@ -513,7 +586,7 @@ export default function SubjectManagementPage() {
             {!context.groupId ? <p className="subject-panel-empty">Select an Academic Level and Group to allocate subjects.</p> : subjectsLoading ? <p className="subject-panel-empty">Loading allocated subjects…</p> : filteredAllocateSubjects.length ? filteredAllocateSubjects.map((subject) => {
               const configuration = configurationFor(subject);
               return <article className="subject-allocation-row" key={subjectKey(subject)}><label className="subject-select-card"><input type="checkbox" checked={selectedSubjectKeys.includes(subjectKey(subject))} onChange={() => toggleSelectedSubject(subject)} /><span><b>{configuration.name}</b><small>{configuration.code} · {configuration.type.join(" + ")}</small><em>Total: {total(configuration.marks)} · Passing: {markValue(configuration.marks.passing)}</em></span></label><button className="cms-btn cms-btn-ghost" type="button" onClick={() => openConfigure(subject)}>Configure</button></article>;
-            }) : <p className="subject-panel-empty">No additional predefined subjects are available for this group.</p>}
+            }) : <p className="subject-panel-empty">{context.groupId && !levelYear ? "Curriculum mapping not configured for this academic level." : "No additional predefined subjects are available for this group."}</p>}
           </div>
           <div className="subject-language-picker"><label className="subject-master-field"><span>Language</span><select value="" disabled={!context.groupId || !languageCandidates.length} onChange={(event) => { const language = languageCandidates.find((item) => subjectKey(item) === event.target.value); if (language) setSelectedLanguageKeys((current) => [...current, subjectKey(language)]); }}><option value="">{!context.groupId ? "Select a group first" : languageCandidates.length ? "Select Language" : "No languages available"}</option>{languageCandidates.map((language) => <option key={subjectKey(language)} value={subjectKey(language)}>{displayLanguageName(language.name)}</option>)}</select></label>{selectedLanguages.length ? <div className="subject-selected-languages"><span>Selected Languages:</span><div>{selectedLanguages.map((language) => <button key={subjectKey(language)} className="language-chip" type="button" title={`Remove ${displayLanguageName(language.name)}`} onClick={() => setSelectedLanguageKeys((current) => current.filter((key) => key !== subjectKey(language)))}>{displayLanguageName(language.name)} <b aria-hidden="true">×</b></button>)}</div></div> : null}</div>
           <footer className="subject-allocation-footer"><button className="cms-btn cms-btn-ghost" type="button" disabled={!context.groupId} onClick={() => { setChoice("new"); setDraft(empty()); setAddOpen(true); }}><Plus size={16} /> Add Other Subject</button><span>{selectedSubjectKeys.length} Subject{selectedSubjectKeys.length === 1 ? "" : "s"}{selectedLanguageKeys.length ? ` + ${selectedLanguageKeys.length} Language${selectedLanguageKeys.length === 1 ? "" : "s"}` : ""} Selected</span><button className="cms-btn cms-btn-primary" type="button" disabled={(!selectedSubjectKeys.length && !selectedLanguageKeys.length) || subjectBusy} onClick={saveAllocatedSubjects}>{subjectBusy ? "Saving…" : "Save Allocated Subjects"}</button></footer>
@@ -521,7 +594,7 @@ export default function SubjectManagementPage() {
         <section className="subject-table-card subject-allocation-panel">
           <header className="subject-table-head"><div><h2>Allocated Subjects — {selectedGroupName}</h2><p>{allocatedGroupSubjects.length} Subject{allocatedGroupSubjects.length === 1 ? "" : "s"} Allocated</p></div></header>
           <div className="subject-panel-search"><Search size={17} aria-hidden="true" /><input value={allocatedSearch} onChange={(event) => setAllocatedSearch(event.target.value)} placeholder="Search allocated subjects..." disabled={!context.groupId} /></div>
-          <div className="subject-card-list">{!context.groupId ? <p className="subject-panel-empty">Select a group to view allocated subjects.</p> : subjectsLoading ? <p className="subject-panel-empty">Loading allocated subjects…</p> : filteredAllocatedSubjects.length ? filteredAllocatedSubjects.map((subject) => <article className="subject-allocation-row is-allocated" key={subject.id}><span><b>{displaySubjectName(subject.name)}</b><small>{subject.code} · {subject.type.join(" + ")}</small><em>Total: {total(subject.marks)} · Passing: {markValue(subject.marks.passing)}</em></span><div className="subject-master-actions"><button className="cms-action-btn" title="Edit subject" onClick={() => openEdit(subject)}><Pencil size={16} /></button><button className="cms-action-btn subject-remove-btn" title="Remove from group" onClick={() => setRemoving(subject)}><Trash2 size={16} /></button></div></article>) : <p className="subject-panel-empty">No subjects have been allocated for this group.</p>}</div>
+          <div className="subject-card-list">{!context.groupId ? <p className="subject-panel-empty">Select a group to view allocated subjects.</p> : subjectsLoading ? <p className="subject-panel-empty">Loading allocated subjects…</p> : filteredAllocatedSubjects.length ? filteredAllocatedSubjects.map((subject) => <article className="subject-allocation-row is-allocated" key={subject.id}><span><b>{displaySubjectName(subject.name)}</b><small>{subject.code} · {subject.type.join(" + ")}</small><em>Total: {total(subject.marks)} · Passing: {markValue(subject.marks.passing)}</em></span><div className="subject-master-actions"><button className="cms-action-btn" title="Edit subject" disabled={subjectBusy} onClick={() => openEdit(subject)}><Pencil size={16} /></button><button className="cms-action-btn subject-remove-btn" title="Delete/deactivate subject" disabled={subjectBusy} onClick={() => setRemoving(subject)}><Trash2 size={16} /></button></div></article>) : <p className="subject-panel-empty">No subjects have been allocated for this group.</p>}</div>
         </section>
       </section>
       </>}
@@ -530,7 +603,7 @@ export default function SubjectManagementPage() {
     {configuring && <Modal title={`Configure ${configuring.name}`} size="sm" onClose={() => setConfiguring(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setConfiguring(null)}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={applyConfiguration}>Apply Changes</button></>}><div className="subject-modal"><Form draft={draft} editDraft={editDraft} editMark={editMark} toggleType={toggleType} /></div></Modal>}
     {editing && <Modal title={(editing.scope === "group" ? "Edit Subject - " : "Edit Language - ") + displaySubjectName(editing.subject.name)} onClose={() => !subjectBusy && setEditing(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setEditing(null)} disabled={subjectBusy}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={save} disabled={subjectBusy}>{subjectBusy ? "Saving..." : "Save Changes"}</button></>}><div className="subject-modal">{editing.scope === "group" ? <Form draft={draft} editDraft={editDraft} editMark={editMark} toggleType={toggleType} /> : <LanguageForm draft={draft} editDraft={editDraft} editMark={editMark} />}</div></Modal>}
     {languageModalOpen && <Modal title="Add Language" className="subject-language-modal" onClose={() => { setLanguageModalOpen(false); setLanguageSelection(""); }} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => { setLanguageModalOpen(false); setLanguageSelection(""); }}>Cancel</button><button className="cms-btn cms-btn-primary" onClick={addSecondLanguage}>Save Language</button></>}><div className="subject-modal"><label className="subject-master-field"><span>Language *</span><select value={languageSelection} onChange={(event) => selectLanguage(event.target.value)}><option value="">Select Language</option><option value="ENG1">English</option>{languages.map((language) => <option key={language.code} value={language.code}>{language.name}</option>)}<option value="__other__">Other / Add New Language</option></select></label><LanguageForm draft={languageDraft} editDraft={(key, value) => setLanguageDraft((current) => ({ ...current, [key]: value }))} editMark={editLanguageDraftMark} includeName={languageSelection === "__other__"} /></div></Modal>}
-    {removing && <Modal title={removing.scope === "secondLanguage" ? "Delete Language" : removing.scope === "common" ? "Delete Common Subject" : "Remove Subject"} size="sm" onClose={() => !subjectBusy && setRemoving(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setRemoving(null)} disabled={subjectBusy}>Cancel</button><button className="cms-btn cms-btn-danger" onClick={remove} disabled={subjectBusy}>{subjectBusy ? "Removing..." : removing.scope === "common" || removing.scope === "secondLanguage" ? "Delete" : "Remove"}</button></>}>{removing.scope === "secondLanguage" ? <p>Remove <b>{removing.name}</b> from the Second Language options?</p> : removing.scope === "common" ? <p>Delete <b>{removing.name}</b> from Common Subjects?</p> : <p>Remove <b>{removing.name}</b> from {groupKey}? It will remain available in Subject Master and other groups.</p>}</Modal>}
+    {removing && <Modal title={removing.scope === "secondLanguage" ? "Delete Language" : removing.scope === "common" ? "Delete Common Subject" : "Delete/Deactivate Subject"} size="sm" onClose={() => !subjectBusy && setRemoving(null)} footer={<><button className="cms-btn cms-btn-ghost" onClick={() => setRemoving(null)} disabled={subjectBusy}>Cancel</button><button className="cms-btn cms-btn-danger" onClick={remove} disabled={subjectBusy}>{subjectBusy ? "Processing..." : removing.scope === "common" || removing.scope === "secondLanguage" ? "Delete" : "Delete/Deactivate"}</button></>}>{removing.scope === "secondLanguage" ? <p>Remove <b>{removing.name}</b> from the Second Language options?</p> : removing.scope === "common" ? <p>Delete <b>{removing.name}</b> from Common Subjects?</p> : <p>This action deletes or deactivates the backend Subject record for <b>{removing.name}</b>. If this subject is already used in Timetable, Examination, Marks, faculty allocation, or attendance-related mappings, the backend may reject the operation or existing references may be affected.</p>}</Modal>}
     <Toast message={toast} onClose={() => setToast("")} />
   </DashboardLayout>;
 }

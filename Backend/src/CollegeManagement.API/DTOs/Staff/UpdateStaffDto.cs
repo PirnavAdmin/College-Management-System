@@ -112,6 +112,9 @@ namespace CollegeManagement.API.DTOs.Staff
 
         public int? BoardId { get; set; }
 
+        [StringLength(50)]
+        public string? BoardCode { get; set; }
+
         [StringLength(100)]
         public string? BoardName { get; set; }
 

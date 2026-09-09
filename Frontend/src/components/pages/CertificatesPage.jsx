@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaMagnifyingGlass, FaPaperPlane, FaPlus, FaPrint, FaRotateLeft, FaTrash, FaUsers, FaXmark } from "react-icons/fa6";
+import { FaArrowsRotate, FaAward, FaBan, FaCheck, FaChevronDown, FaClipboardCheck, FaDownload, FaEraser, FaEye, FaFileCirclePlus, FaFileLines, FaFilter, FaPaperPlane, FaPlus, FaPrint, FaRotateLeft, FaTrash, FaUsers, FaXmark } from "react-icons/fa6";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Field, Loader, Toast, useConfirmDialog } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
+import { getStoredCertificateTemplates, DEFAULT_CERTIFICATE_TEMPLATES } from "@/components/pages/TemplatesPage.jsx";
 import "./CertificatesPage.css";
 
 export const pageConfig = {
@@ -478,7 +481,7 @@ function CertificateStudentSearch({ students, value, loading, error, onQueryChan
     }}>
       <label htmlFor="certificate-admissionNo">Admission No. <span className="req">*</span></label>
       <div className="cert-admission-search-control">
-        <FaMagnifyingGlass size={16} aria-hidden="true" />
+        <Search3DIcon size={16} />
         <input
           id="certificate-admissionNo"
           type="search"
@@ -671,9 +674,76 @@ function renderSignatureHtml(signature) {
     : "";
 }
 
+export function renderTemplateWithRecord(text, record = {}) {
+  if (!text) return "";
+  const merged = {
+    student_name: record.student || record.studentName || record.name || "Student Name",
+    father_name: record.fatherName || record.father_name || "Suresh Kumar",
+    mother_name: record.motherName || record.mother_name || "Anita Devi",
+    student_id: String(record.studentId || record.student_id || record.id || "518"),
+    admission_no: record.admissionNo || record.admission_no || "ADM-2026-0000",
+    roll_no: record.rollNo || record.roll_no || "-",
+    group_name: record.group || record.groupName || record.group_name || "MPC",
+    academic_level: record.level || record.academicLevel || record.academic_level || "I / II Year",
+    academic_year: record.academicYear || record.academic_year || "2026-2027",
+    board_name: record.board || record.boardName || record.board_name || "Board of Intermediate Education, Andhra Pradesh (BIEAP)",
+    course_name: record.courseName || record.course_name || "Intermediate (MPC)",
+    certificate_number: record.number || record.certificateNo || record.certificateNumber || "BC/2026/001",
+    issue_date: formatDateDdMmYyyy(record.issue || record.issueDate || todayIso()),
+    place: record.place || "Vijayawada",
+    purpose: record.purpose || "Higher Education",
+    principal_name: record.principalName || "Dr. S. K. Rao",
+    study_from: record.studyFrom || "June 2025",
+    study_to: record.studyTo || "May 2027",
+    conduct_rating: record.conductRating || "Good",
+  };
+
+  return text.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (match, key) => {
+    return merged[key] !== undefined ? merged[key] : `[${key}]`;
+  });
+}
+
 function getCertificateTemplate(type, record) {
   const presentation = resolveCertificatePresentation(type, record?.orientation);
-  if (!presentation) return null;
+  const rawType = presentation?.type || type || "";
+
+  // Load active customized templates from storage
+  let templatesList = DEFAULT_CERTIFICATE_TEMPLATES;
+  try {
+    const raw = getStoredCertificateTemplates();
+    if (Array.isArray(raw) && raw.length > 0) templatesList = raw;
+  } catch {}
+
+  // Find matching template by name or type
+  const matchedTemplate = templatesList.find(
+    (t) =>
+      t.name.toLowerCase() === rawType.toLowerCase() ||
+      t.id.toLowerCase().includes(rawType.toLowerCase().replace(/[^a-z0-9]/g, "")) ||
+      rawType.toLowerCase().includes(t.name.toLowerCase())
+  );
+
+  if (matchedTemplate && matchedTemplate.content) {
+    const interpolatedContent = renderTemplateWithRecord(matchedTemplate.content, record);
+    const interpolatedPurpose = matchedTemplate.purpose
+      ? renderTemplateWithRecord(matchedTemplate.purpose, record)
+      : (record.purpose || "Official Use");
+
+    return {
+      heading: matchedTemplate.name,
+      paragraphOne: interpolatedContent,
+      paragraphTwo: interpolatedPurpose ? `This certificate is issued for the purpose of ${interpolatedPurpose}.` : "",
+      isCustom: true,
+      borderColor: matchedTemplate.borderColor || "#1e3a8a",
+      badgeBgColor: matchedTemplate.badgeBgColor || matchedTemplate.borderColor || "#1e3a8a",
+      badgeTextColor: matchedTemplate.badgeTextColor || "#ffffff",
+      signatureType: matchedTemplate.signatureType || "Principal",
+      seal: matchedTemplate.seal || "Principal Seal",
+      qrEnabled: matchedTemplate.qrEnabled !== false,
+      templateObj: matchedTemplate,
+    };
+  }
+
+  // Fallback defaults
   const safePurpose = record.purpose || "official purpose";
   const institutionName = "Pirnav College";
   const admissionNo = record.admissionNo || "-";
@@ -683,49 +753,49 @@ function getCertificateTemplate(type, record) {
   const studyInfo = `with Admission No. ${admissionNo}, currently studying in ${year} (${group}) during the academic year ${academicYear}`;
   const studentRecord = `with Admission No. ${admissionNo}, in ${year} (${group}) during the academic year ${academicYear}`;
 
-  switch (presentation.template) {
+  switch (presentation?.template) {
     case "bonafide":
       return {
         heading: "Bonafide Certificate",
-        paragraphOne: `${studyInfo}, and is a bonafide student of ${institutionName}.`,
-        paragraphTwo: `This certificate is issued upon request to authenticate the student's status and is valid for the stated purpose of ${safePurpose}.`,
+        paragraphOne: `This is to certify that Mr./Ms. ${record.student || 'Student'} (S/o / D/o ${record.fatherName || 'Father Name'}) bearing Student ID ${record.studentId || '518'} is a bonafide student of Pirnav College (Intermediate / Junior College), Vijayawada. He/She is studying in ${group} Group, ${year} during the academic year ${academicYear}.`,
+        paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
       };
     case "study":
       return {
         heading: "Study Certificate",
-        paragraphOne: `${studyInfo}, and has pursued studies at ${institutionName} in accordance with the institution's academic records.`,
-        paragraphTwo: `This certificate is issued as an official record confirming the student's academic status and is valid for the purpose of ${safePurpose}.`,
+        paragraphOne: `This is to certify that Mr./Ms. ${record.student || 'Student'} (S/o / D/o ${record.fatherName || 'Father Name'}) bearing Student ID ${record.studentId || '518'} has studied in this college during the period in ${group} Group and appeared for the Intermediate Public Examination conducted by Board of Intermediate Education, Andhra Pradesh (BIEAP).`,
+        paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
       };
     case "transfer":
       return {
         heading: "Transfer Certificate",
-        paragraphOne: `The student ${studentRecord} has been relieved from ${institutionName} as per the institutional records and is eligible to continue studies at another recognized institution.`,
+        paragraphOne: `The student ${record.student || 'Student'} ${studentRecord} has been relieved from ${institutionName} as per the institutional records and is eligible to continue studies at another recognized institution.`,
         paragraphTwo: `This transfer certificate is issued for the purpose of ${safePurpose} and serves as an official record of the student's withdrawal from the institution.`,
       };
     case "conduct":
       return {
         heading: "Conduct Certificate",
-        paragraphOne: `${studyInfo}, and has maintained satisfactory conduct and discipline during the period of study at ${institutionName}.`,
-        paragraphTwo: `This conduct certificate is issued to certify the student's behavior and is valid for the purpose of ${safePurpose}.`,
-      };
-    case "other":
-      return {
-        heading: presentation.type,
-        paragraphOne: `${studentRecord}. The student's academic details have been verified against the official records of ${institutionName}.`,
-        paragraphTwo: `This certificate is issued as an official academic document for the purpose of ${safePurpose}.`,
+        paragraphOne: `This is to certify that Mr./Ms. ${record.student || 'Student'} (S/o / D/o ${record.fatherName || 'Father Name'}) bearing Student ID ${record.studentId || '518'} has been a student of this college during the academic year(s) ${academicYear}. To the best of our knowledge and records, his/her conduct and character have been Good.`,
+        paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
       };
     default:
-      return null;
+      return {
+        heading: rawType || "Certificate",
+        paragraphOne: `This is to certify that Mr./Ms. ${record.student || 'Student'} ${studentRecord}. The student's academic details have been verified against the official records of ${institutionName}.`,
+        paragraphTwo: `This certificate is issued for the purpose of ${safePurpose}.`,
+      };
   }
 }
 
 const CERTIFICATE_PRINT_CSS = `
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 landscape; margin: 0; }
   body {
     margin: 0;
-    font-family: "Times New Roman", Georgia, serif;
-    background: #f3f0e6;
-    color: #17170f;
+    font-family: Georgia, "Times New Roman", serif;
+    background: #f8fafc;
+    color: #1e293b;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   .page {
     min-height: 210mm;
@@ -734,194 +804,212 @@ const CERTIFICATE_PRINT_CSS = `
     box-sizing: border-box;
     padding: 8mm;
   }
-  .cert {
+  .visual-certificate-canvas {
     width: 100%;
-    max-width: 1120px;
-    min-height: 720px;
+    max-width: 980px;
+    min-height: 560px;
     box-sizing: border-box;
-    background-color: #fffdf4;
-    background-image:
-      radial-gradient(circle at 0 0, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px),
-      radial-gradient(circle at 100% 0, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px),
-      radial-gradient(circle at 0 100%, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px),
-      radial-gradient(circle at 100% 100%, transparent 0 25px, #b59a36 26px 28px, transparent 29px 36px, #b59a36 37px 39px, transparent 40px);
-    border: 4px double #9d8528;
-    border-radius: 2px;
-    box-shadow: 0 14px 36px rgba(83, 66, 12, 0.14);
-    padding: 48px 62px 42px;
+    background-color: #ffffff;
+    padding: 24px;
     position: relative;
-    overflow: hidden;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
   }
-  .watermark {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    pointer-events: none;
-    z-index: 0;
-    opacity: 0.06;
-    font-size: 120px;
-    letter-spacing: 4px;
-    font-weight: 700;
-    color: #8c7420;
-    text-transform: uppercase;
+  .visual-certificate-canvas.portrait {
+    max-width: 720px;
+    min-height: 840px;
   }
-  .cert::before,
-  .cert::after {
-    content: "";
-    position: absolute;
-    border: 2px solid #b59a36;
-    pointer-events: none;
+  .cert-inner-border {
+    border: 4px double #1e3a8a;
+    min-height: 500px;
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-sizing: border-box;
   }
-  .cert::before { inset: 10px; border-width: 2px; }
-  .cert::after { inset: 18px; border: 3px double #b59a36; }
-  .inner {
-    position: relative;
-    z-index: 1;
-  }
-  .head {
+  .cert-header {
     text-align: center;
+  }
+  .cert-header-grid {
+    display: grid;
+    grid-template-columns: 50px 1fr 160px;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid #e2e8f0;
     padding-bottom: 10px;
   }
-  body.certificate-portrait .page { min-height: 297mm; }
-  body.certificate-portrait .cert {
-    max-width: 760px;
-    min-height: 1040px;
-    padding: 58px 62px 50px;
-  }
-  body.certificate-portrait .certificate-title { margin-top: 62px; }
-  body.certificate-portrait .body { max-width: 610px; margin-top: 48px; }
-  body.certificate-portrait .footer { margin-top: 82px; }
-  .college-row {
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) 84px;
-    align-items: center;
+  .cert-header-left {
+    display: flex;
     justify-content: center;
-    gap: 18px;
-    margin: 0 auto;
   }
-  .seal {
-    width: 70px;
-    height: 70px;
-    margin: auto;
+  .cert-default-logo {
+    width: 42px;
+    height: 42px;
+    background: #1e3a8a;
+    color: #ffffff;
     border-radius: 50%;
-    border: 3px double #8c7420;
-    outline: 1px solid #bca34b;
-    outline-offset: 3px;
-    background: #fffdf4;
-    color: #6f5b16;
     display: grid;
     place-items: center;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.8px;
+    font-weight: 900;
+    font-size: 20px;
   }
-  .college-name {
+  .cert-header-center {
+    text-align: center;
+  }
+  .cert-institution-name {
     margin: 0;
-    font-size: 30px;
-    letter-spacing: 0.8px;
-    font-weight: 800;
-    color: #17170f;
-    text-transform: uppercase;
-    line-height: 1.05;
-  }
-  .college-copy p { margin: 6px 0 0; font-size: 12px; color: #302d20; font-weight: 700; }
-  .certificate-title {
-    margin: 46px 0 0;
-    font-size: 30px;
+    font-size: 24px;
+    font-weight: 900;
     letter-spacing: 1px;
+    color: #1e3a8a;
+    text-transform: uppercase;
+  }
+  .cert-tagline {
+    margin: 2px 0 0 0;
+    font-size: 12px;
+    font-weight: 700;
+    color: #b45309;
+  }
+  .cert-address {
+    margin: 2px 0 0 0;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .cert-header-right {
+    text-align: right;
+    font-size: 9.5px;
+    color: #64748b;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.35;
+  }
+  .cert-header-right strong {
+    color: #1e293b;
+    font-size: 10px;
+  }
+  .cert-ref-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: #475569;
+    padding-top: 8px;
+    border-bottom: 1px dashed #cbd5e1;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .cert-title-badge {
+    text-align: center;
+    margin: 14px 0;
+  }
+  .cert-title-badge h2 {
+    margin: 0;
+    display: inline-block;
+    background: #1e3a8a;
+    color: #ffffff;
+    padding: 6px 22px;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    border-radius: 4px;
+  }
+  .cert-body-area {
+    text-align: center;
+    line-height: 1.8;
+    margin: 16px 0;
+  }
+  .cert-content-text {
+    font-size: 15px;
+    margin: 0 0 10px 0;
+    color: #1e293b;
+    white-space: pre-line;
+  }
+  .cert-purpose-text {
+    font-size: 13px;
+    margin: 0;
+    color: #334155;
+  }
+  .cert-footer-area {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-top: 20px;
+  }
+  .cert-footer-col {
+    flex: 1;
+    font-size: 12px;
+    color: #334155;
+  }
+  .cert-footer-col p { margin: 2px 0; }
+  .cert-footer-col.center { text-align: center; }
+  .cert-footer-col.right { text-align: right; }
+  .cert-seal-stamp {
+    display: inline-block;
+    border: 2px dashed #1e3a8a;
+    color: #1e3a8a;
+    border-radius: 50%;
+    width: 72px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9.5px;
     font-weight: 800;
     text-transform: uppercase;
+    margin: 0 auto;
+    text-align: center;
   }
-  .meta {
+  .cert-qr-placeholder {
     display: flex;
-    justify-content: space-between;
-    margin-top: 6px;
-    font-size: 13px;
-    color: #5b5232;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    margin-top: 8px;
   }
-  .body {
-    max-width: 760px;
-    margin: 38px auto 0;
-    font-size: 18px;
-    line-height: 1.9;
-    text-align: center;
-    color: #1c1b15;
-  }
-  .subject {
-    margin-top: 22px;
-    text-align: center;
-    font-size: 14px;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    color: #304c7d;
-    font-weight: 700;
-  }
-  .body strong {
-    color: #111411;
-  }
-  .footer {
-    margin-top: 48px;
+  .qr-box {
+    width: 44px;
+    height: 44px;
+    background: #1e293b;
+    color: #ffffff;
+    font-size: 8px;
     display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: end;
-    column-gap: 24px;
-    text-align: left;
+    place-items: center;
+    font-weight: bold;
+    border-radius: 4px;
   }
-  .issue-note {
-    text-align: left;
+  .cert-sig-line {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .sig-handwritten {
+    font-family: 'Dancing Script', 'Brush Script MT', cursive;
+    font-size: 18px;
+    color: #1e40af;
+    margin-bottom: 2px;
+  }
+  .sig-title {
     font-size: 12px;
-    color: #242116;
-    line-height: 1.5;
-  }
-  .footer strong {
-    display: block;
-    margin-top: 42px;
-    border-top: 1px solid #5d563d;
-    padding-top: 10px;
-    min-width: 250px;
-    font-size: 15px;
+    color: #1e293b;
+    font-weight: 700;
   }
   .certificate-signature {
     display: block;
-    width: 180px;
+    width: 160px;
     height: auto;
-    max-height: 70px;
+    max-height: 60px;
     object-fit: contain;
-    margin: 0 auto 8px;
-  }
-  .certificate-signature-text {
-    display: block;
-    margin: 0 auto 8px;
-    font-family: "Segoe Script", "Brush Script MT", cursive;
-    font-size: 24px;
-    color: #17170f;
-  }
-  .authorized-signatory {
-    display: block;
-    margin-top: 4px;
-    font-size: 12px;
-    color: #4f6388;
+    margin: 0 0 4px auto;
   }
   @media print {
     body { background: #fff; }
     .page { padding: 0; min-height: 194mm; }
-    .cert {
+    .visual-certificate-canvas {
       max-width: none;
       min-height: 194mm;
-      border-radius: 0;
       box-shadow: none;
-      border-color: #9d8528;
-      padding: 12mm 16mm 10mm;
+      padding: 12mm 16mm;
       break-inside: avoid;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-    body.certificate-portrait .page { min-height: 281mm; }
-    body.certificate-portrait .cert {
-      max-width: 194mm;
-      min-height: 281mm;
-      padding: 14mm 16mm 12mm;
     }
   }
 `;
@@ -935,60 +1023,98 @@ function buildPrintHtml(record) {
   const templateParaOne = escapeHtml(template.paragraphOne);
   const templateParaTwo = escapeHtml(template.paragraphTwo);
   const issueDate = escapeHtml(formatDateDdMmYyyy(record.issue));
-  const status = escapeHtml(record.status || "Draft");
-  const signature = renderSignatureHtml(record.signature);
-  const remarks = record.remarks ? `<p><strong>Remarks:</strong> ${escapeHtml(record.remarks)}</p>` : "";
+  const place = escapeHtml(record.place || "Vijayawada");
+  const remarks = record.remarks ? `<p className="cert-remarks" style="margin-top:10px;font-size:13px;"><strong>Remarks:</strong> ${escapeHtml(record.remarks)}</p>` : "";
   const orientation = getCertificateOrientation(record.type, record.orientation);
   if (!orientation) throw new Error("Unsupported certificate type.");
+
+  const borderColor = template.borderColor || "#1e3a8a";
+  const badgeBgColor = template.badgeBgColor || borderColor;
+  const badgeTextColor = template.badgeTextColor || "#ffffff";
+  const signatureType = escapeHtml(template.signatureType || "Principal");
+  const signatureHtml = renderSignatureHtml(record.signature) || `<span class="sig-handwritten style-cursive-hand">${signatureType} Signature</span>`;
 
   return `<!doctype html>
 <html>
 <head>
 <meta charset="UTF-8" />
 <title>Certificate ${certificateNo}</title>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
 <style>${CERTIFICATE_PRINT_CSS}\n@page { size: A4 ${orientation}; margin: 8mm; }</style>
 </head>
 <body class="certificate-${orientation}">
   <div class="page">
-    <section class="cert">
-      <div class="watermark">PJC</div>
-      <div class="inner">
-      <header class="head">
-        <div class="college-row">
-          <div class="seal">PJC</div>
-          <div class="college-copy">
-            <div class="college-name">Pirnav College</div>
-            <p>Affiliated to Board of Intermediate Education, Andhra Pradesh</p>
-            <p>College Code: 12345 &nbsp; | &nbsp; Certificate No: ${certificateNo}</p>
+    <div class="visual-certificate-canvas ${orientation}">
+      <div class="cert-inner-border" style="border-color: ${borderColor}; border-style: double; border-width: 4px;">
+        <header class="cert-header">
+          <div class="cert-header-grid">
+            <div class="cert-header-left">
+              <div class="cert-default-logo" style="background-color: ${borderColor}">P</div>
+            </div>
+            <div class="cert-header-center">
+              <h1 class="cert-institution-name" style="color: ${borderColor}">PIRNAV COLLEGE</h1>
+              <p class="cert-tagline" style="color: ${borderColor}">(Intermediate / Junior College)</p>
+              <p class="cert-address">D.No. 12-3-45, College Road, Vijayawada - 520 001, Andhra Pradesh</p>
+            </div>
+            <div class="cert-header-right">
+              <small>Affiliated to</small>
+              <strong>Board of Intermediate Education</strong>
+              <small>Andhra Pradesh (BIEAP)</small>
+              <small>College Code: 12345</small>
+            </div>
           </div>
-          <div class="seal">ESTD<br />1990</div>
-        </div>
-        <h1 class="certificate-title">${templateHeading}</h1>
-      </header>
 
-      <div class="meta">
-        <span>Status: <strong>${status}</strong></span>
-      </div>
+          <div class="cert-ref-row">
+            <span>Ref No: <strong>${certificateNo}</strong></span>
+            <span>Date: <strong>${issueDate}</strong></span>
+          </div>
+        </header>
 
-      <div class="body">
-        This is to certify that <strong>${student}</strong> ${templateParaOne}
-        ${templateParaTwo}
-        ${remarks}
-      </div>
+        <div class="cert-title-badge">
+          <h2 style="background-color: ${badgeBgColor}; color: ${badgeTextColor};">
+            ${templateHeading.toUpperCase()}
+          </h2>
+        </div>
 
-      <footer class="footer">
-        <div class="issue-note">
-          <strong>Date:</strong> ${issueDate}<br />
-          <strong>Place:</strong> Pirnav
+        <div class="cert-body-area">
+          ${template.isCustom ? `
+            <p class="cert-content-text">${templateParaOne}</p>
+            ${templateParaTwo ? `<p class="cert-purpose-text">${templateParaTwo}</p>` : ''}
+          ` : `
+            <p class="cert-content-text">This is to certify that <strong>${student}</strong> ${templateParaOne}</p>
+            ${templateParaTwo ? `<p class="cert-purpose-text">${templateParaTwo}</p>` : ''}
+          `}
+          ${remarks}
         </div>
-        <div>
-          ${signature}
-          <span class="authorized-signatory">Principal</span>
-          <strong>Pirnav College</strong>
-        </div>
-      </footer>
+
+        <footer class="cert-footer-area">
+          <div class="cert-footer-col left">
+            <p>Place: <strong>${place}</strong></p>
+            <p>Date: <strong>${issueDate}</strong></p>
+            ${template.qrEnabled !== false ? `
+              <div class="cert-qr-placeholder">
+                <div class="qr-box">QR</div>
+                <span>Scan to verify</span>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="cert-footer-col center">
+            <div class="cert-seal-stamp" style="border-color: ${borderColor}; color: ${borderColor};">
+              <span>PIRNAV COLLEGE<br/>VIJAYAWADA</span>
+            </div>
+          </div>
+
+          <div class="cert-footer-col right">
+            <div class="cert-sig-line">
+              ${signatureHtml}
+              <strong class="sig-title">${signatureType}</strong>
+              <small>Pirnav College</small>
+            </div>
+          </div>
+        </footer>
       </div>
-    </section>
+    </div>
   </div>
 </body>
 </html>`;
@@ -996,6 +1122,10 @@ function buildPrintHtml(record) {
 
 export default function CertificatesPage() {
   const { confirm, confirmationDialog } = useConfirmDialog();
+  const { selectedBoard, selectedAcademicYear } = useAcademicContext();
+  const navbarBoardName = selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || "";
+  const navbarYearName = selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "";
+
   const [rows, setRows] = useState([]);
   const [studentRows, setStudentRows] = useState([]);
   const [bulkStudentRows, setBulkStudentRows] = useState([]);
@@ -1011,7 +1141,12 @@ export default function CertificatesPage() {
   const [generationMode, setGenerationMode] = useState("single");
   const [bulkStudentSearch, setBulkStudentSearch] = useState("");
   const [selectedBulkStudents, setSelectedBulkStudents] = useState([]);
-  const [bulkStudentFilters, setBulkStudentFilters] = useState({ academicYear: "", board: "", group: "", section: "" });
+  const [bulkStudentFilters, setBulkStudentFilters] = useState(() => ({
+    academicYear: navbarYearName || "",
+    board: navbarBoardName || "",
+    group: "",
+    section: "",
+  }));
 
   const [form, setForm] = useState({
     admissionNo: "",
@@ -1208,20 +1343,56 @@ export default function CertificatesPage() {
       .map((student) => String(student[key] || "").trim())
       .filter(Boolean)))
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" }));
+
+    const years = uniqueValues("academicYear");
+    if (navbarYearName && !years.some((y) => y.toLowerCase() === navbarYearName.toLowerCase())) {
+      years.unshift(navbarYearName);
+    }
+
+    const boards = uniqueValues("board");
+    if (navbarBoardName && !boards.some((b) => b.toLowerCase() === navbarBoardName.toLowerCase())) {
+      boards.unshift(navbarBoardName);
+    }
+
     return {
-      academicYears: uniqueValues("academicYear"),
-      boards: uniqueValues("board"),
+      academicYears: years,
+      boards: boards,
       groups: uniqueValues("group"),
       sections: uniqueValues("section"),
     };
-  }, [bulkStudentRows]);
+  }, [bulkStudentRows, navbarYearName, navbarBoardName]);
+
+  useEffect(() => {
+    if (!navbarBoardName && !navbarYearName) return;
+    setBulkStudentFilters((prev) => {
+      let nextBoard = prev.board;
+      let nextYear = prev.academicYear;
+
+      if (navbarBoardName) {
+        const matchedBoard = bulkStudentFilterOptions.boards.find(
+          (b) => String(b).trim().toLowerCase() === String(navbarBoardName).trim().toLowerCase()
+        ) || navbarBoardName;
+        nextBoard = matchedBoard;
+      }
+
+      if (navbarYearName) {
+        const matchedYear = bulkStudentFilterOptions.academicYears.find(
+          (y) => String(y).trim().toLowerCase() === String(navbarYearName).trim().toLowerCase()
+        ) || navbarYearName;
+        nextYear = matchedYear;
+      }
+
+      if (nextBoard === prev.board && nextYear === prev.academicYear) return prev;
+      return { ...prev, board: nextBoard, academicYear: nextYear };
+    });
+  }, [navbarBoardName, navbarYearName, bulkStudentFilterOptions.boards, bulkStudentFilterOptions.academicYears]);
 
   const visibleBulkStudents = useMemo(() => {
     const normalized = (value) => String(value || "").trim().toLocaleLowerCase();
     const search = normalized(bulkStudentSearch);
     return bulkStudentRows.filter((student) => (
-      (!bulkStudentFilters.academicYear || normalized(student.academicYear) === normalized(bulkStudentFilters.academicYear))
-      && (!bulkStudentFilters.board || normalized(student.board) === normalized(bulkStudentFilters.board))
+      (!bulkStudentFilters.academicYear || !student.academicYear || normalized(student.academicYear) === normalized(bulkStudentFilters.academicYear))
+      && (!bulkStudentFilters.board || !student.board || normalized(student.board) === normalized(bulkStudentFilters.board))
       && (!bulkStudentFilters.group || normalized(student.group) === normalized(bulkStudentFilters.group))
       && (!bulkStudentFilters.section || normalized(student.section) === normalized(bulkStudentFilters.section))
       && (!search || [student.admissionNo, student.name, student.rollNo, student.group, student.section]
@@ -1339,7 +1510,12 @@ export default function CertificatesPage() {
     });
     setSelectedBulkStudents([]);
     setBulkStudentSearch("");
-    setBulkStudentFilters({ academicYear: "", board: "", group: "", section: "" });
+    setBulkStudentFilters({
+      academicYear: navbarYearName || "",
+      board: navbarBoardName || "",
+      group: "",
+      section: "",
+    });
     setErrors({});
   };
 
@@ -1907,7 +2083,7 @@ export default function CertificatesPage() {
                   </div>
                   <div className="cert-bulk-filter-row">
                     <label className="cert-bulk-search">
-                      <FaMagnifyingGlass size={14} aria-hidden="true" />
+                      <Search3DIcon size={14} />
                       <input type="search" value={bulkStudentSearch} onChange={(event) => setBulkStudentSearch(event.target.value)} placeholder="Search admission no., student, roll no., group or section" />
                     </label>
                     <select aria-label="Filter students by academic year" value={bulkStudentFilters.academicYear} onChange={(event) => setBulkStudentFilters((current) => ({ ...current, academicYear: event.target.value }))}>
@@ -2128,7 +2304,7 @@ export default function CertificatesPage() {
         <div className="cert-records-toolbar">
           <div className="cert-records-toolbar-main">
             <label className="cms-search cert-search-box">
-              <FaMagnifyingGlass size={15} aria-hidden="true" />
+              <Search3DIcon size={15} />
               <input
                 value={query}
                 placeholder="Search by certificate no., admission no., or student name..."
@@ -2305,7 +2481,7 @@ export default function CertificatesPage() {
             </div>
             <div className="cert-workflow-toolbar">
               <label className="cert-search-box" htmlFor="certificate-workflow-search">
-                <FaMagnifyingGlass size={15} aria-hidden="true" />
+                <Search3DIcon size={15} />
                 <input
                   id="certificate-workflow-search"
                   type="search"
@@ -2439,66 +2615,100 @@ export default function CertificatesPage() {
             </div>
 
             <div className="cert-print-body">
-              <section className={`cert-preview-paper cert-print-paper certificate-${getCertificateOrientation(printPreview.type, printPreview.orientation)}`}>
-                <div className="watermark">PJC</div>
-                <header className="cert-doc-head">
-                  <div className="cert-doc-identity">
-                    <div className="cert-doc-seal cert-doc-seal-left" aria-hidden="true">
-                      <span>PJC</span><small>EXCELLENCE</small>
+              <div className={`visual-certificate-canvas ${getCertificateOrientation(printPreview.type, printPreview.orientation)}`} style={{ backgroundColor: "#ffffff" }}>
+                <div className="cert-inner-border" style={{ borderColor: printTemplate.borderColor || "#1e3a8a", borderStyle: "double", borderWidth: "4px" }}>
+                  <header className="cert-header">
+                    <div className="cert-header-grid">
+                      <div className="cert-header-left">
+                        <div className="cert-default-logo" style={{ backgroundColor: printTemplate.borderColor || "#1e3a8a" }}>P</div>
+                      </div>
+                      <div className="cert-header-center">
+                        <h1 className="cert-institution-name" style={{ color: printTemplate.borderColor || "#1e3a8a" }}>PIRNAV COLLEGE</h1>
+                        <p className="cert-tagline" style={{ color: printTemplate.borderColor || "#b45309" }}>(Intermediate / Junior College)</p>
+                        <p className="cert-address">D.No. 12-3-45, College Road, Vijayawada - 520 001, Andhra Pradesh</p>
+                      </div>
+                      <div className="cert-header-right">
+                        <small>Affiliated to</small>
+                        <strong>Board of Intermediate Education</strong>
+                        <small>Andhra Pradesh (BIEAP)</small>
+                        <small>College Code: 12345</small>
+                      </div>
                     </div>
-                    <div className="cert-doc-brand">
-                      <p className="cert-doc-college">Pirnav College</p>
-                      <p className="cert-doc-affiliation">Affiliated to Board of Intermediate Education, Andhra Pradesh</p>
-                      <p className="cert-doc-code">College Code: 12345 <span aria-hidden="true">|</span> Certificate No: {printPreview.number}</p>
-                    </div>
-                    <div className="cert-doc-seal cert-doc-seal-right" aria-hidden="true">
-                      <span>ESTD</span><small>1990</small>
-                    </div>
-                  </div>
-                  <h2 className="cert-doc-title">{printTemplate.heading}</h2>
-                </header>
 
-                <div className="cert-preview-meta">
-                  <span>Admission No: <strong>{printPreview.admissionNo || "—"}</strong></span>
-                  <span>Academic Year: <strong>{printPreview.academicYear || "—"}</strong></span>
+                    <div className="cert-ref-row">
+                      <span>Ref No: <strong>{printPreview.number}</strong></span>
+                      <span>Date: <strong>{formatDateDdMmYyyy(printPreview.issue)}</strong></span>
+                    </div>
+                  </header>
+
+                  <div className="cert-title-badge">
+                    <h2 style={{ backgroundColor: printTemplate.badgeBgColor || printTemplate.borderColor || "#1e3a8a", color: printTemplate.badgeTextColor || "#ffffff" }}>
+                      {printTemplate.heading.toUpperCase()}
+                    </h2>
+                  </div>
+
+                  <div className="cert-body-area">
+                    {printTemplate.isCustom ? (
+                      <>
+                        <p className="cert-content-text">{printTemplate.paragraphOne}</p>
+                        {printTemplate.paragraphTwo ? (
+                          <p className="cert-purpose-text">{printTemplate.paragraphTwo}</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <p className="cert-content-text">
+                          This is to certify that <strong>{printPreview.student}</strong> {printTemplate.paragraphOne}
+                        </p>
+                        {printTemplate.paragraphTwo ? (
+                          <p className="cert-purpose-text">{printTemplate.paragraphTwo}</p>
+                        ) : null}
+                      </>
+                    )}
+                    {printPreview.remarks ? <p className="cert-remarks" style={{ marginTop: "10px", fontSize: "13px" }}><strong>Remarks:</strong> {printPreview.remarks}</p> : null}
+                  </div>
+
+                  <footer className="cert-footer-area">
+                    <div className="cert-footer-col left">
+                      <p>Place: <strong>{printPreview.place || "Vijayawada"}</strong></p>
+                      <p>Date: <strong>{formatDateDdMmYyyy(printPreview.issue)}</strong></p>
+                      {printTemplate.qrEnabled !== false && (
+                        <div className="cert-qr-placeholder">
+                          <div className="qr-box">QR</div>
+                          <span>Scan to verify</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="cert-footer-col center">
+                      <div className="cert-seal-stamp" style={{ borderColor: printTemplate.borderColor || "#1e3a8a", color: printTemplate.borderColor || "#1e3a8a" }}>
+                        <span>PIRNAV COLLEGE<br/>VIJAYAWADA</span>
+                      </div>
+                    </div>
+
+                    <div className="cert-footer-col right">
+                      <div className="cert-sig-line">
+                        {previewSignature && previewSignatureIsImage ? (
+                          <img
+                            className="certificate-signature"
+                            src={previewSignature}
+                            alt="Authorized signature"
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <span className="sig-handwritten style-cursive-hand">
+                            {printTemplate.signatureType || "Principal"} Signature
+                          </span>
+                        )}
+                        <strong className="sig-title">{printTemplate.signatureType || "Principal"}</strong>
+                        <small>Pirnav College</small>
+                      </div>
+                    </div>
+                  </footer>
                 </div>
-
-                <div className="cert-doc-body">
-                  <p>
-                    This is to certify that <strong>{printPreview.student}</strong> {printTemplate.paragraphOne}
-                  </p>
-                  <p>
-                    {printTemplate.paragraphTwo}
-                  </p>
-                </div>
-
-                {printPreview.remarks ? <p className="cert-remarks"><strong>Remarks:</strong> {printPreview.remarks}</p> : null}
-
-                <p className="cert-issue-note">
-                  This is a system-generated institutional certificate and is valid without alteration.
-                </p>
-
-                <footer>
-                  <div className="cert-doc-date-block">
-                    <p><strong>Date:</strong> {formatDateDdMmYyyy(printPreview.issue)}</p>
-                    <p><strong>Place:</strong> Pirnav</p>
-                  </div>
-                  <div className="cert-doc-signature-block">
-                    {previewSignature && previewSignatureIsImage ? (
-                      <img
-                        className="certificate-signature"
-                        src={previewSignature}
-                        alt="Authorized signature"
-                        onError={(event) => {
-                          event.currentTarget.style.display = "none";
-                        }}
-                      />
-                    ) : null}
-                    <span>Principal</span>
-                    <strong>Pirnav College</strong>
-                  </div>
-                </footer>
-              </section>
+              </div>
             </div>
           </div>
         </div>

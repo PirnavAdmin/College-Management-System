@@ -22,6 +22,15 @@ import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./DepartmentManagementPage.css";
 
+// Helper: Check if staff type matches current tab (supports Teaching, Non-Teaching, Both, All)
+export const isStaffTypeMatch = (itemStaffType, currentTab) => {
+  if (!itemStaffType) return true;
+  const normItem = String(itemStaffType).trim().toLowerCase().replace(/[-_\s]/g, "");
+  const normTab = String(currentTab).trim().toLowerCase().replace(/[-_\s]/g, "");
+  if (normItem === "both" || normItem === "all") return true;
+  return normItem === normTab;
+};
+
 // Helper: Convert UI staffType label to backend API expected string
 export const toApiStaffType = (uiValue) => {
   if (!uiValue || uiValue === "Both" || uiValue === "All") return "";
@@ -121,6 +130,14 @@ function EmptyTable({ text, colSpan = 3 }) {
 const formDefinitions = {
   department: [
     ["departmentName", "Department Name", true, "Enter department name"],
+    [
+      "staffType",
+      "Staff Type",
+      true,
+      "Select staff type",
+      "select",
+      ["Teaching", "Non-Teaching", "Both"],
+    ],
     ["status", "Status", true, "Select status", "select", ["Active", "Inactive"]],
   ],
   designation: [
@@ -263,6 +280,7 @@ export default function DepartmentManagementPage() {
   const [staffType, setStaffType] = useState("Teaching");
   const [departmentsLoading, setDepartmentsLoading] = useState(false);
   const [designationsLoading, setDesignationsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [deptQuery, setDeptQuery] = useState("");
   const [designationQuery, setDesignationQuery] = useState("");
   const [deptPage, setDeptPage] = useState(1);
@@ -275,10 +293,11 @@ export default function DepartmentManagementPage() {
 
   const requestSeqRef = useRef(0);
 
-  const fetchMasterData = useCallback(async (targetStaffType, isManual = false) => {
+  const fetchMasterData = useCallback(async (isManual = false) => {
     const currentSeq = ++requestSeqRef.current;
-    const apiStaffType = toApiStaffType(targetStaffType);
-
+    if (isManual) {
+      setIsRefreshing(true);
+    }
     setDepartmentsLoading(true);
     setDesignationsLoading(true);
 
@@ -286,9 +305,8 @@ export default function DepartmentManagementPage() {
     let desigSuccess = false;
 
     try {
-      // 1. Fetch Departments (GET /api/v1/departments?staffType=...)
+      // 1. Fetch Departments (GET /api/v1/departments)
       const deptRes = await apiClient.get(apiEndpoints.departments.getAll, {
-        params: apiStaffType ? { staffType: apiStaffType } : {},
         skipGlobalLoader: true,
       });
       if (requestSeqRef.current === currentSeq) {
@@ -297,20 +315,15 @@ export default function DepartmentManagementPage() {
         deptSuccess = true;
       }
     } catch (err) {
-      if (requestSeqRef.current === currentSeq) {
-        setDepartments([]);
-      }
+      console.warn("Failed to load departments:", err);
     } finally {
       if (requestSeqRef.current === currentSeq) setDepartmentsLoading(false);
     }
 
     try {
-      // 2. Fetch Designations (GET /api/v1/designations?includeInactive=true&staffType=...)
+      // 2. Fetch Designations (GET /api/v1/designations?includeInactive=true)
       const desigRes = await apiClient.get(apiEndpoints.designations.getAll, {
-        params: {
-          includeInactive: true,
-          ...(apiStaffType ? { staffType: apiStaffType } : {}),
-        },
+        params: { includeInactive: true },
         skipGlobalLoader: true,
       });
       if (requestSeqRef.current === currentSeq) {
@@ -319,36 +332,35 @@ export default function DepartmentManagementPage() {
         desigSuccess = true;
       }
     } catch (err) {
-      if (requestSeqRef.current === currentSeq) {
-        setDesignations([]);
-      }
+      console.warn("Failed to load designations:", err);
     } finally {
-      if (requestSeqRef.current === currentSeq) setDesignationsLoading(false);
+      if (requestSeqRef.current === currentSeq) {
+        setDesignationsLoading(false);
+        setIsRefreshing(false);
+      }
     }
 
     if (isManual && requestSeqRef.current === currentSeq) {
-      if (deptSuccess && desigSuccess) {
-        setToast("Department and Designation data refreshed successfully.");
-      } else {
-        setToast("Refreshed master data from server.");
-      }
+      setToast("Department and Designation data refreshed successfully.");
     }
   }, []);
 
+  // Fetch initial data once on mount; admin can manually refresh on demand
   useEffect(() => {
-    fetchMasterData(staffType);
-  }, [staffType, fetchMasterData]);
+    fetchMasterData(false);
+  }, [fetchMasterData]);
 
   // Department Client-side Filtering
   const filteredDepartments = useMemo(() => {
+    const byStaff = departments.filter((item) => isStaffTypeMatch(item.staffType, staffType));
     const q = deptQuery.trim().toLowerCase();
-    if (!q) return departments;
-    return departments.filter((item) =>
+    if (!q) return byStaff;
+    return byStaff.filter((item) =>
       [item.name, item.code, item.description, item.staffType].some((val) =>
         String(val || "").toLowerCase().includes(q)
       )
     );
-  }, [departments, deptQuery]);
+  }, [departments, staffType, deptQuery]);
 
   const visibleDepartments = useMemo(() => {
     return filteredDepartments.slice((deptPage - 1) * PAGE_SIZE, deptPage * PAGE_SIZE);
@@ -360,14 +372,15 @@ export default function DepartmentManagementPage() {
 
   // Designation Client-side Filtering
   const filteredDesignations = useMemo(() => {
+    const byStaff = designations.filter((item) => isStaffTypeMatch(item.staffType, staffType));
     const q = designationQuery.trim().toLowerCase();
-    if (!q) return designations;
-    return designations.filter((item) =>
+    if (!q) return byStaff;
+    return byStaff.filter((item) =>
       [item.name, item.code, item.staffType].some((val) =>
         String(val || "").toLowerCase().includes(q)
       )
     );
-  }, [designations, designationQuery]);
+  }, [designations, staffType, designationQuery]);
 
   const visibleDesignations = useMemo(() => {
     return filteredDesignations.slice((desigPage - 1) * PAGE_SIZE, desigPage * PAGE_SIZE);
@@ -384,12 +397,12 @@ export default function DepartmentManagementPage() {
     try {
       await apiClient.delete(apiEndpoints.designations.delete(pendingDeleteDesig.id));
       setToast(`Designation "${pendingDeleteDesig.name}" deleted successfully.`);
-      fetchMasterData(staffType);
+      setDesignations((prev) => prev.filter((d) => d.id !== pendingDeleteDesig.id));
     } catch (error) {
       const status = error?.response?.status;
       if (status === 404) {
         setToast("Designation was not found on the server.");
-        fetchMasterData(staffType);
+        setDesignations((prev) => prev.filter((d) => d.id !== pendingDeleteDesig.id));
       } else {
         const msg = getApiErrorMessage(
           error,
@@ -421,11 +434,13 @@ export default function DepartmentManagementPage() {
       </article>
       <button
         type="button"
-        className="cms-btn cms-btn-ghost"
-        disabled={departmentsLoading || designationsLoading}
-        onClick={() => fetchMasterData(staffType, true)}
+        className="cms-btn cms-btn-ghost master-refresh-btn"
+        onClick={() => fetchMasterData(true)}
+        title="Click to refresh department and designation data"
+        aria-label="Refresh department and designation data"
       >
-        <RefreshCw className={departmentsLoading || designationsLoading ? "is-spinning" : ""} /> Refresh
+        <RefreshCw className={isRefreshing || departmentsLoading || designationsLoading ? "is-spinning" : ""} />
+        <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
       </button>
     </div>
   );
@@ -696,9 +711,15 @@ export default function DepartmentManagementPage() {
           kind={createKind}
           staffType={staffType}
           onClose={() => setCreateKind(null)}
-          onSaved={(msg) => {
+          onSaved={(msg, newItem) => {
             setToast(msg);
-            fetchMasterData(staffType);
+            if (newItem) {
+              if (createKind === "department") {
+                setDepartments((prev) => [newItem, ...prev]);
+              } else {
+                setDesignations((prev) => [newItem, ...prev]);
+              }
+            }
           }}
         />
       ) : null}

@@ -316,26 +316,19 @@ builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IStudyMaterialRepository, StudyMaterialRepository>();
 builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
-<<<<<<< HEAD
-builder.Services.AddScoped<INumberSeriesRepository, NumberSeriesRepository>();
-=======
 builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<INumberSeriesRepository, NumberSeriesRepository>();
 builder.Services.AddScoped<ITemplateRepository, TemplateRepository>();
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
 
 #endregion
 
 #region Services
-
-builder.Services.AddScoped<INumberSeriesService, NumberSeriesService>();
 
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
-
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<INumberSeriesService, NumberSeriesService>();
 builder.Services.AddScoped<ITemplateService, TemplateService>();

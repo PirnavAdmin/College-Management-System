@@ -67,6 +67,24 @@ if (args.Contains("--test-certificates-module"))
     return;
 }
 
+if (args.Contains("--inspect-dashboard-db"))
+{
+    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+    var inspector = new DashboardDbInspector(connStr!);
+    await inspector.InspectAsync();
+    Environment.Exit(0);
+    return;
+}
+
+if (args.Contains("--inspect-duplicates"))
+{
+    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+    var inspector = new DuplicateDataInspector(connStr!);
+    await inspector.InspectAsync();
+    Environment.Exit(0);
+    return;
+}
+
 if (args.Contains("--test-dashboard-module"))
 {
     var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -76,10 +94,28 @@ if (args.Contains("--test-dashboard-module"))
     return;
 }
 
+if (args.Contains("--test-master-data"))
+{
+    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+    var tester = new MasterDataBackendTester(connStr!);
+    var success = await tester.RunAllTestsAsync();
+    Environment.Exit(success ? 0 : 1);
+    return;
+}
+
 if (args.Contains("--test-reports-module"))
 {
     var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
     var tester = new ReportModuleBackendTester(connStr!);
+    var success = await tester.RunAllTestsAsync();
+    Environment.Exit(success ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-number-series"))
+{
+    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
+    var tester = new NumberSeriesBackendTester(connStr!);
     var success = await tester.RunAllTestsAsync();
     Environment.Exit(success ? 0 : 1);
     return;
@@ -280,7 +316,13 @@ builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IStudyMaterialRepository, StudyMaterialRepository>();
 builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
+<<<<<<< HEAD
 builder.Services.AddScoped<INumberSeriesRepository, NumberSeriesRepository>();
+=======
+builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
+builder.Services.AddScoped<INumberSeriesRepository, NumberSeriesRepository>();
+builder.Services.AddScoped<ITemplateRepository, TemplateRepository>();
+>>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
 
 #endregion
 
@@ -293,6 +335,10 @@ builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+
+builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<INumberSeriesService, NumberSeriesService>();
+builder.Services.AddScoped<ITemplateService, TemplateService>();
 
 builder.Services.AddScoped<IAcademicYearService, AcademicYearService>();
 
@@ -628,6 +674,22 @@ app.Use(async (context, next) =>
         context.Request.Path = "/api/v1" + path.Substring(4);
     }
     else if (path.StartsWith("/api/staff", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/v1/staff", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/staff-attendance", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Request.Path = "/api/v1" + path.Substring(4);
+    }
+    else if (path.StartsWith("/api/dashboard", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/v1/dashboard", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Request.Path = "/api/v1" + path.Substring(4);
+    }
+    else if (path.StartsWith("/api/departments", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/v1/departments", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Request.Path = "/api/v1" + path.Substring(4);
+    }
+    else if (path.StartsWith("/api/designations", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/v1/designations", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Request.Path = "/api/v1" + path.Substring(4);
+    }
+    else if (path.StartsWith("/api/certificates", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/v1/certificates", StringComparison.OrdinalIgnoreCase))
     {
         context.Request.Path = "/api/v1" + path.Substring(4);
     }

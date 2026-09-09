@@ -25,7 +25,7 @@ namespace CollegeManagement.API.Services.Interfaces
         Task<bool> DeleteExamScheduleAsync(int examScheduleId);
         Task<int> PublishExamSchedulesAsync(PublishExamScheduleRequest request);
         Task<IEnumerable<EligibleSubjectResponse>> GetEligibleSubjectsAsync(int examinationId);
-        Task<FinalizeScheduleResponse> FinalizeScheduleAsync(int examinationId);
+        Task<FinalizeScheduleResponse> FinalizeScheduleAsync(int examinationId, FinalizeScheduleRequest? request = null);
 
         // Availability & Batch Schedule Methods
         Task<SchedulingContextResponseDto> GetSchedulingContextAsync(int examinationId);

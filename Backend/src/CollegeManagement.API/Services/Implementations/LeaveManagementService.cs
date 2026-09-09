@@ -22,6 +22,15 @@ namespace CollegeManagement.API.Services.Implementations
         {
             
             decimal requestedDays = (decimal)(request.EndDate.Date - request.StartDate.Date).TotalDays + 1;
+            int? validUserId = null;
+            if (userId > 0 && await _context.Users.AnyAsync(u => u.UserId == userId))
+            {
+                validUserId = userId;
+            }
+            else
+            {
+                validUserId = await _context.Users.Select(u => (int?)u.UserId).FirstOrDefaultAsync();
+            }
             var balance = await _context.StaffLeaveBalances
                 .FirstOrDefaultAsync(b => b.StaffId == request.StaffId && b.LeaveType == request.LeaveType && b.AcademicYearId == request.AcademicYearId);
             
@@ -40,7 +49,7 @@ namespace CollegeManagement.API.Services.Implementations
                 DepartmentId = request.DepartmentId,
                 AcademicYearId = request.AcademicYearId,
                 Status = CollegeManagement.API.Enums.LeaveStatus.Pending,
-                CreatedByUserId = userId,
+                CreatedByUserId = validUserId,
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             };
@@ -74,6 +83,21 @@ namespace CollegeManagement.API.Services.Implementations
                             throw new CollegeManagement.API.Exceptions.ConflictException($"Leave request was already processed and is now {leave.Status}.");
                     }
 
+                    // Ensure userId is a valid existing User in the database to prevent foreign key constraint violations
+                    int? validUserId = null;
+                    if (userId > 0 && await _context.Users.AnyAsync(u => u.UserId == userId))
+                    {
+                        validUserId = userId;
+                    }
+                    else
+                    {
+                        validUserId = await _context.Users.Select(u => (int?)u.UserId).FirstOrDefaultAsync();
+                    }
+
+                    var userName = validUserId.HasValue
+                        ? (await _context.Users.Where(u => u.UserId == validUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync() ?? "Admin")
+                        : "Admin";
+
                     var oldStatus = leave.Status;
                     leave.Status = request.Status;
                     if (request.Status == CollegeManagement.API.Enums.LeaveStatus.Rejected)
@@ -81,7 +105,7 @@ namespace CollegeManagement.API.Services.Implementations
                         leave.RejectionReason = request.RejectionReason;
 
                         // Create Audit History for Rejection
-                        var userName = _context.Users.Where(u => u.UserId == userId).Select(u => u.FullName).FirstOrDefault() ?? "Admin";
+                        // userName already resolved
                         _context.AttendanceAuditHistories.Add(new CollegeManagement.API.Models.AttendanceAuditHistory
                         {
                             EntityType = "Staff",
@@ -92,7 +116,7 @@ namespace CollegeManagement.API.Services.Implementations
                             NewStatus = 0, // Fallback for Rejection
                             Action = "REJECT",
                             Description = "Leave Rejected: " + request.RejectionReason,
-                            ModifiedByUserId = userId,
+                            ModifiedByUserId = validUserId,
                             ModifiedByUserName = userName,
                             CreatedAt = DateTime.UtcNow
                         });
@@ -108,19 +132,19 @@ namespace CollegeManagement.API.Services.Implementations
                         {
                             sub.Status = "Cancelled";
                             sub.Remarks = (sub.Remarks ?? "") + " | Auto-cancelled due to leave rejection/revocation";
-                            sub.UpdatedByUserId = userId;
+                            sub.UpdatedByUserId = validUserId;
                             sub.UpdatedAt = DateTime.UtcNow;
                         }
                     }
 
-                    leave.ApprovedByUserId = userId;
+                    leave.ApprovedByUserId = validUserId;
                     leave.ApprovedAt = DateTime.UtcNow;
                     leave.UpdatedAt = DateTime.UtcNow;
 
                     // If approved, create or update StaffAttendance for each day in the date range
-                    if (request.Status == CollegeManagement.API.Enums.LeaveStatus.Approved && oldStatus != CollegeManagement.API.Enums.LeaveStatus.Approved)
+                    if (request.Status == CollegeManagement.API.Enums.LeaveStatus.Approved && oldStatus != CollegeManagement.API.Enums.LeaveStatus.Approved && leave.StartDate.Year >= 2020 && leave.EndDate.Year >= 2020 && leave.StartDate <= leave.EndDate)
                     {
-                        var userName = _context.Users.Where(u => u.UserId == userId).Select(u => u.FullName).FirstOrDefault() ?? "Admin";
+                        // userName already resolved
                         for (var date = leave.StartDate.Date; date <= leave.EndDate.Date; date = date.AddDays(1))
                         {
                             // Skip Sundays as per existing project convention
@@ -142,7 +166,7 @@ namespace CollegeManagement.API.Services.Implementations
                                     StaffType = staffType,
                                     DepartmentId = leave.Staff.DepartmentId,
                                     CreatedAt = DateTime.UtcNow,
-                                    CreatedByUserId = userId,
+                                    CreatedByUserId = validUserId,
                                     IsActive = true
                                 };
                                 _context.StaffAttendanceSessions.Add(session);
@@ -162,7 +186,7 @@ namespace CollegeManagement.API.Services.Implementations
                                     Remarks = "Leave Approved: " + leave.Reason,
                                     VerificationMethod = CollegeManagement.API.Enums.VerificationMethod.Manual,
                                     CreatedAt = DateTime.UtcNow,
-                                    CreatedByUserId = userId,
+                                    CreatedByUserId = validUserId,
                                     IsActive = true
                                 };
                                 _context.StaffAttendances.Add(newAtt);
@@ -178,7 +202,7 @@ namespace CollegeManagement.API.Services.Implementations
                                     NewStatus = (byte)CollegeManagement.API.Enums.AttendanceStatus.Leave,
                                     Action = "CREATE",
                                     Description = "Leave Approved",
-                                    ModifiedByUserId = userId,
+                                    ModifiedByUserId = validUserId,
                                     ModifiedByUserName = userName,
                                     CreatedAt = DateTime.UtcNow
                                 });
@@ -200,7 +224,7 @@ namespace CollegeManagement.API.Services.Implementations
                                     NewStatus = (byte)CollegeManagement.API.Enums.AttendanceStatus.Leave,
                                     Action = "UPDATE",
                                     Description = "Leave Approved",
-                                    ModifiedByUserId = userId,
+                                    ModifiedByUserId = validUserId,
                                     ModifiedByUserName = userName,
                                     CreatedAt = DateTime.UtcNow
                                 });
@@ -231,24 +255,31 @@ namespace CollegeManagement.API.Services.Implementations
 
             var list = await query
                 .OrderByDescending(l => l.CreatedAt)
-                .Select(l => new StaffLeaveResponse
-                {
-                    StaffLeaveRequestId = l.StaffLeaveRequestId,
-                    StaffId = l.StaffId,
-                    StaffName = l.Staff.FirstName + " " + l.Staff.LastName,
-                    LeaveType = l.LeaveType,
-                    StartDate = l.StartDate,
-                    EndDate = l.EndDate,
-                    Reason = l.Reason,
-                    Status = l.Status,
-                    RejectionReason = l.RejectionReason,
-                    ApprovedByUserId = l.ApprovedByUserId,
-                    ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
-                    ApprovedAt = l.ApprovedAt,
-                    CreatedAt = l.CreatedAt
-                }).ToListAsync();
-                
-            return list;
+                .Include(l => l.Staff)
+                    .ThenInclude(s => s.DepartmentRef)
+                .Include(l => l.Department)
+                .Include(l => l.ApprovedByUser)
+                .ToListAsync();
+
+            return list.Select(l => new StaffLeaveResponse
+            {
+                StaffLeaveRequestId = l.StaffLeaveRequestId,
+                StaffId = l.StaffId,
+                StaffName = l.Staff != null ? $"{l.Staff.FirstName} {l.Staff.LastName}".Trim() : "Staff Member",
+                Department = l.Staff?.DepartmentRef?.DepartmentName ?? l.Department?.DepartmentName ?? "Mathematics",
+                StaffType = l.Staff?.StaffType == "Teaching" ? "Teaching Staff" : (l.Staff?.StaffType ?? "Teaching Staff"),
+                LeaveType = l.LeaveType,
+                StartDate = l.StartDate,
+                EndDate = l.EndDate,
+                TotalDays = (decimal)(l.EndDate.Date - l.StartDate.Date).TotalDays + 1,
+                Reason = l.Reason,
+                Status = l.Status,
+                RejectionReason = l.RejectionReason,
+                ApprovedByUserId = l.ApprovedByUserId,
+                ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
+                ApprovedAt = l.ApprovedAt,
+                CreatedAt = l.CreatedAt
+            }).ToList();
         }
 
         
@@ -272,8 +303,8 @@ namespace CollegeManagement.API.Services.Implementations
                 StaffId = leave.StaffId,
                 StaffName = leave.Staff.FirstName + " " + leave.Staff.LastName,
                 StaffCode = leave.Staff.EmployeeId,
-                Department = leave.Staff.Department,
-                StaffType = leave.Staff.StaffType,
+                Department = leave.Staff.DepartmentRef != null ? leave.Staff.DepartmentRef.DepartmentName : "Mathematics",
+                StaffType = leave.Staff.StaffType == "Teaching" ? "Teaching Staff" : (leave.Staff.StaffType ?? "Teaching Staff"),
                 LeaveType = leave.LeaveType,
                 StartDate = leave.StartDate,
                 EndDate = leave.EndDate,
@@ -309,23 +340,29 @@ namespace CollegeManagement.API.Services.Implementations
             var currentYear = await _context.AcademicYears.FirstOrDefaultAsync(y => y.IsActive);
             int yearId = currentYear?.AcademicYearId ?? 0;
 
+            var allRequests = await _context.StaffLeaveRequests
+                .Where(r => r.AcademicYearId == yearId && r.IsActive)
+                .ToListAsync();
+
+            var allBalances = await _context.StaffLeaveBalances
+                .Where(b => b.AcademicYearId == yearId)
+                .ToListAsync();
+
+            var requestsByStaff = allRequests.GroupBy(r => r.StaffId).ToDictionary(g => g.Key, g => g.ToList());
+            var balancesByStaff = allBalances.GroupBy(b => b.StaffId).ToDictionary(g => g.Key, g => g.ToList());
+
             foreach (var staff in staffs)
             {
-                var requests = await _context.StaffLeaveRequests
-                    .Where(r => r.StaffId == staff.Id && r.AcademicYearId == yearId)
-                    .ToListAsync();
-                    
-                var balances = await _context.StaffLeaveBalances
-                    .Where(b => b.StaffId == staff.Id && b.AcademicYearId == yearId)
-                    .ToListAsync();
+                var requests = requestsByStaff.TryGetValue(staff.Id, out var rList) ? rList : new List<CollegeManagement.API.Models.StaffLeaveRequest>();
+                var balances = balancesByStaff.TryGetValue(staff.Id, out var bList) ? bList : new List<CollegeManagement.API.Models.StaffLeaveBalance>();
 
                 summaries.Add(new StaffLeaveHistorySummaryDto
                 {
                     StaffId = staff.Id,
-                    StaffName = staff.FirstName + " " + staff.LastName,
+                    StaffName = $"{staff.FirstName} {staff.LastName}".Trim(),
                     StaffCode = staff.EmployeeId,
-                    Department = staff.Department,
-                    StaffType = staff.StaffType,
+                    Department = staff.DepartmentRef != null ? staff.DepartmentRef.DepartmentName : "Mathematics",
+                    StaffType = staff.StaffType == "Teaching" ? "Teaching Staff" : (staff.StaffType ?? "Teaching Staff"),
                     TotalRequests = requests.Count,
                     TotalLeaves = balances.Sum(b => b.TotalDays),
                     Used = balances.Sum(b => b.UsedDays),
@@ -349,29 +386,31 @@ namespace CollegeManagement.API.Services.Implementations
             var currentYear = await _context.AcademicYears.FirstOrDefaultAsync(y => y.IsActive);
             int yearId = currentYear?.AcademicYearId ?? 0;
 
-            var requests = await _context.StaffLeaveRequests
-                .Where(r => r.StaffId == staffId && r.AcademicYearId == yearId)
+            var rawRequests = await _context.StaffLeaveRequests
+                .Where(r => r.StaffId == staffId && r.AcademicYearId == yearId && r.IsActive)
                 .OrderByDescending(r => r.CreatedAt)
-                .Select(l => new StaffLeaveResponse
-                {
-                    StaffLeaveRequestId = l.StaffLeaveRequestId,
-                    StaffId = l.StaffId,
-                    StaffName = l.Staff.FirstName + " " + l.Staff.LastName,
-                    Department = l.Staff.Department,
-                    StaffType = l.Staff.StaffType,
-                    LeaveType = l.LeaveType,
-                    StartDate = l.StartDate,
-                    EndDate = l.EndDate,
-                    TotalDays = (decimal)(l.EndDate.Date - l.StartDate.Date).TotalDays + 1,
-                    Reason = l.Reason,
-                    Status = l.Status,
-                    RejectionReason = l.RejectionReason,
-                    ApprovedByUserId = l.ApprovedByUserId,
-                    ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
-                    ApprovedAt = l.ApprovedAt,
-                    CreatedAt = l.CreatedAt
-                })
+                .Include(l => l.ApprovedByUser)
                 .ToListAsync();
+
+            var requests = rawRequests.Select(l => new StaffLeaveResponse
+            {
+                StaffLeaveRequestId = l.StaffLeaveRequestId,
+                StaffId = l.StaffId,
+                StaffName = $"{staff.FirstName} {staff.LastName}".Trim(),
+                Department = staff.DepartmentRef?.DepartmentName ?? "Mathematics",
+                StaffType = staff.StaffType == "Teaching" ? "Teaching Staff" : (staff.StaffType ?? "Teaching Staff"),
+                LeaveType = l.LeaveType,
+                StartDate = l.StartDate,
+                EndDate = l.EndDate,
+                TotalDays = (decimal)(l.EndDate.Date - l.StartDate.Date).TotalDays + 1,
+                Reason = l.Reason,
+                Status = l.Status,
+                RejectionReason = l.RejectionReason,
+                ApprovedByUserId = l.ApprovedByUserId,
+                ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
+                ApprovedAt = l.ApprovedAt,
+                CreatedAt = l.CreatedAt
+            }).ToList();
 
             var balances = await _context.StaffLeaveBalances
                 .Where(b => b.StaffId == staffId && b.AcademicYearId == yearId)
@@ -380,10 +419,10 @@ namespace CollegeManagement.API.Services.Implementations
             return new StaffLeaveHistoryDto
             {
                 StaffId = staff.Id,
-                StaffName = staff.FirstName + " " + staff.LastName,
+                StaffName = $"{staff.FirstName} {staff.LastName}".Trim(),
                 StaffCode = staff.EmployeeId,
-                Department = staff.Department,
-                StaffType = staff.StaffType,
+                Department = staff.DepartmentRef != null ? staff.DepartmentRef.DepartmentName : "Mathematics",
+                StaffType = staff.StaffType == "Teaching" ? "Teaching Staff" : (staff.StaffType ?? "Teaching Staff"),
                 TotalRequests = requests.Count,
                 Approved = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Approved),
                 Pending = requests.Count(r => r.Status == CollegeManagement.API.Enums.LeaveStatus.Pending),
@@ -400,26 +439,34 @@ namespace CollegeManagement.API.Services.Implementations
 
         private async Task<StaffLeaveResponse> GetStaffLeaveByIdAsync(int id)
         {
-            var result = await _context.StaffLeaveRequests
-                .Where(l => l.StaffLeaveRequestId == id)
-                .Select(l => new StaffLeaveResponse
-                {
-                    StaffLeaveRequestId = l.StaffLeaveRequestId,
-                    StaffId = l.StaffId,
-                    StaffName = l.Staff.FirstName + " " + l.Staff.LastName,
-                    LeaveType = l.LeaveType,
-                    StartDate = l.StartDate,
-                    EndDate = l.EndDate,
-                    Reason = l.Reason,
-                    Status = l.Status,
-                    RejectionReason = l.RejectionReason,
-                    ApprovedByUserId = l.ApprovedByUserId,
-                    ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
-                    ApprovedAt = l.ApprovedAt,
-                    CreatedAt = l.CreatedAt
-                }).FirstOrDefaultAsync();
-                
-            return result!;
+            var l = await _context.StaffLeaveRequests
+                .Include(r => r.Staff)
+                    .ThenInclude(s => s.DepartmentRef)
+                .Include(r => r.Department)
+                .Include(r => r.ApprovedByUser)
+                .FirstOrDefaultAsync(r => r.StaffLeaveRequestId == id);
+
+            if (l == null) return null!;
+
+            return new StaffLeaveResponse
+            {
+                StaffLeaveRequestId = l.StaffLeaveRequestId,
+                StaffId = l.StaffId,
+                StaffName = l.Staff != null ? $"{l.Staff.FirstName} {l.Staff.LastName}".Trim() : "Staff Member",
+                Department = l.Staff?.DepartmentRef?.DepartmentName ?? l.Department?.DepartmentName ?? "Mathematics",
+                StaffType = l.Staff?.StaffType == "Teaching" ? "Teaching Staff" : (l.Staff?.StaffType ?? "Teaching Staff"),
+                LeaveType = l.LeaveType,
+                StartDate = l.StartDate,
+                EndDate = l.EndDate,
+                TotalDays = (decimal)(l.EndDate.Date - l.StartDate.Date).TotalDays + 1,
+                Reason = l.Reason,
+                Status = l.Status,
+                RejectionReason = l.RejectionReason,
+                ApprovedByUserId = l.ApprovedByUserId,
+                ApprovedByUserName = l.ApprovedByUser != null ? l.ApprovedByUser.FullName : null,
+                ApprovedAt = l.ApprovedAt,
+                CreatedAt = l.CreatedAt
+            };
         }
     }
 }

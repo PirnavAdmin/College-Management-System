@@ -60,6 +60,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// Saves draft or corrected student marks for an evaluation.
         /// </summary>
         [HttpPut("{evaluationId}/marks")]
+        [HttpPost("{evaluationId}/marks")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> SaveDraftMarks(
@@ -76,6 +77,8 @@ namespace CollegeManagement.API.Controllers.V1
         /// Submits an evaluation for administrative verification (transitions DRAFT -> SUBMITTED).
         /// </summary>
         [HttpPost("{evaluationId}/submit")]
+        [HttpPut("{evaluationId}/submit")]
+        [HttpPatch("{evaluationId}/submit")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> SubmitEvaluation([FromRoute] string evaluationId)
@@ -90,13 +93,43 @@ namespace CollegeManagement.API.Controllers.V1
         /// Resubmits a previously rejected evaluation with correction notes (transitions REJECTED -> SUBMITTED).
         /// </summary>
         [HttpPost("{evaluationId}/resubmit")]
+        [HttpPut("{evaluationId}/resubmit")]
+        [HttpPatch("{evaluationId}/resubmit")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> ResubmitEvaluation(
             [FromRoute] string evaluationId,
-            [FromBody] ResubmitEvaluationRequestDto request)
+            [FromQuery] string? resubmissionMessage = null)
         {
             var facultyId = GetCurrentUserId();
+            ResubmitEvaluationRequestDto? request = null;
+
+            if (Request.ContentLength > 0 || (Request.ContentType != null && Request.ContentType.Contains("json", StringComparison.OrdinalIgnoreCase)))
+            {
+                try
+                {
+                    using var reader = new System.IO.StreamReader(Request.Body);
+                    var bodyText = await reader.ReadToEndAsync();
+                    if (!string.IsNullOrWhiteSpace(bodyText))
+                    {
+                        request = System.Text.Json.JsonSerializer.Deserialize<ResubmitEvaluationRequestDto>(bodyText, new System.Text.Json.JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse resubmit body as JSON for evaluationId {EvaluationId}", evaluationId);
+                }
+            }
+
+            request ??= new ResubmitEvaluationRequestDto();
+            if (!string.IsNullOrWhiteSpace(resubmissionMessage) && string.IsNullOrWhiteSpace(request.ResubmissionMessage))
+            {
+                request.ResubmissionMessage = resubmissionMessage;
+            }
+
             var success = await _evaluationService.ResubmitFacultyEvaluationAsync(evaluationId, request, facultyId);
             if (!success) return BadRequest(new { message = "Failed to resubmit evaluation." });
             return Ok(new { success = true, message = "Evaluation resubmitted successfully for verification." });

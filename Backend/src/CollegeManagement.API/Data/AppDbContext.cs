@@ -1,6 +1,7 @@
 using CollegeManagement.API.Models;
 using CollegeManagement.API.Models.Faculty;
 using CollegeManagement.API.Models.Staff;
+using CollegeManagement.API.Models.Settings;
 using CollegeManagement.API.Data.Configurations;
 using Microsoft.EntityFrameworkCore;
 using CollegeManagement.API.Models.Fee;
@@ -107,6 +108,8 @@ namespace CollegeManagement.API.Data
         public DbSet<TimetableSubstitution> TimetableSubstitutions { get; set; }
         public DbSet<Certificate> Certificates { get; set; }
         public DbSet<AuditLog> AuditLogs { get; set; }
+        public DbSet<Template> Templates { get; set; }
+        public DbSet<NumberSeriesConfiguration> NumberSeriesConfigurations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -954,12 +957,13 @@ namespace CollegeManagement.API.Data
             #region Certificate
             modelBuilder.Entity<Certificate>(entity =>
             {
+                entity.ToTable("certificates");
                 entity.HasKey(x => x.CertificateId);
-                entity.Property(x => x.CertificateNumber).IsRequired().HasMaxLength(40);
+                entity.Property(x => x.CertificateId).HasColumnName("Id");
+                entity.Property(x => x.CertificateNumber).HasColumnName("CertificateNo").IsRequired().HasMaxLength(40);
                 entity.Property(x => x.CertificateType).IsRequired().HasMaxLength(100);
                 entity.Property(x => x.Purpose).IsRequired().HasMaxLength(250);
                 entity.Property(x => x.Status).IsRequired().HasMaxLength(30);
-                entity.Property(x => x.GeneratedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
                 entity.Property(x => x.IsActive).HasDefaultValue(true);
                 entity.HasIndex(x => x.CertificateNumber).IsUnique();
                 entity.HasIndex(x => x.StudentId);
@@ -1131,6 +1135,24 @@ namespace CollegeManagement.API.Data
             {
                 entity.HasKey(e => e.AcademicYear);
                 entity.Property(e => e.AcademicYear).HasMaxLength(20);
+            });
+            #endregion
+
+            #region Settings Templates & Number Series
+            modelBuilder.Entity<Template>(entity =>
+            {
+                entity.ToTable("templates");
+                entity.HasKey(t => t.Id);
+                entity.HasIndex(t => t.TemplateCode).IsUnique();
+                entity.HasIndex(t => t.Category);
+                entity.HasIndex(t => t.IsActive);
+            });
+
+            modelBuilder.Entity<NumberSeriesConfiguration>(entity =>
+            {
+                entity.ToTable("NumberSeriesConfigurations");
+                entity.HasKey(n => n.Id);
+                entity.HasIndex(n => n.SeriesCode).IsUnique();
             });
             #endregion
         }

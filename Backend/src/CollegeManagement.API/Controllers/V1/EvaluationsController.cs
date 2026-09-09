@@ -106,7 +106,7 @@ namespace CollegeManagement.API.Controllers
         [HttpPost("api/v1/evaluations/{evaluationId}/verify")]
         public async Task<IActionResult> VerifyEvaluation(
             [FromRoute] string evaluationId,
-            [FromBody] VerifyEvaluationRequestDto? requestDto = null,
+            [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] VerifyEvaluationRequestDto? requestDto = null,
             [FromQuery] string? message = null)
         {
             var effectiveMessage = !string.IsNullOrWhiteSpace(requestDto?.Message)
@@ -142,7 +142,7 @@ namespace CollegeManagement.API.Controllers
         public async Task<IActionResult> RejectEvaluation(
             [FromRoute] string evaluationId,
             [FromQuery] string? remarks,
-            [FromBody] RejectEvaluationRequestDto? requestDto = null)
+            [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RejectEvaluationRequestDto? requestDto = null)
         {
             var effectiveRemarks = !string.IsNullOrWhiteSpace(requestDto?.Reason)
                 ? requestDto.Reason

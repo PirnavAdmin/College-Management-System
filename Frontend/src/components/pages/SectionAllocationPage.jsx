@@ -4,7 +4,6 @@ import {
   Pencil,
   Search,
   X,
-  Plus,
   ChevronDown,
   CheckSquare,
   Users,
@@ -16,7 +15,8 @@ import * as XLSX from "xlsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
-import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { apiEndpoints } from "@/api/apiEndpoints.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import "./StudentManagementPage.css";
 import "./SectionAllocationPage.css";
 const list = (d) => {
@@ -34,31 +34,133 @@ const programIdOf = (program) => valueOf(program, "programId", "ProgramId", "pro
 const programNameOf = (program) => valueOf(program, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "name", "Name");
 const sectionIdOf = (section) => valueOf(section, "sectionId", "SectionId", "id", "Id");
 const sectionNameOf = (section) => valueOf(section, "sectionName", "SectionName", "name", "Name");
+const levelIdOf = (level) => valueOf(level, "academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id");
+const levelNameOf = (level) => valueOf(level, "academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name");
+const asValues = (value) => Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+const normalizedValue = (value) => String(value ?? "").trim().toLowerCase();
+const admissionIdOf = (student) => valueOf(student, "admissionId", "AdmissionId", "studentAdmissionId", "StudentAdmissionId");
+const studentIdOf = (student) => valueOf(student, "studentId", "StudentId", "id", "Id");
+const admissionNumberOf = (student) => String(valueOf(student, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber") ?? "").trim().toLowerCase();
+const studentSectionIdOf = (student) => valueOf(student, "sectionId", "SectionId", "allocatedSectionId", "AllocatedSectionId", "assignedSectionId", "AssignedSectionId")
+  ?? valueOf(student?.section, "sectionId", "SectionId", "id", "Id")
+  ?? valueOf(student?.Section, "sectionId", "SectionId", "id", "Id")
+  ?? (typeof student?.section === "number" ? student.section : undefined);
+const studentSectionNameOf = (student) => valueOf(student, "sectionName", "SectionName", "allocatedSectionName", "AllocatedSectionName", "assignedSectionName", "AssignedSectionName")
+  ?? valueOf(student?.section, "sectionName", "SectionName", "name", "Name")
+  ?? valueOf(student?.Section, "sectionName", "SectionName", "name", "Name")
+  ?? (typeof student?.section === "string" ? student.section : undefined);
+const studentRollOf = (student) => valueOf(student, "rollNumber", "RollNumber", "rollNo", "RollNo", "roll", "Roll");
+const hasRollNumber = (student) => {
+  const roll = String(studentRollOf(student) ?? "").trim();
+  return Boolean(roll && !/^(?:pending|[-—])$/i.test(roll));
+};
+const findBackendStudent = (backendStudents, student) => {
+  const admissionNumber = admissionNumberOf(student);
+  const studentId = String(studentIdOf(student) ?? "");
+  const admissionId = String(admissionIdOf(student) ?? "");
+  return backendStudents.find((candidate) =>
+    (admissionNumber && admissionNumberOf(candidate) === admissionNumber) ||
+    (studentId && String(studentIdOf(candidate) ?? "") === studentId) ||
+    (admissionId && String(admissionIdOf(candidate) ?? "") === admissionId)
+  );
+};
+const buildRollPlan = ({ sectionId, backendStudents, candidates }) => {
+  const sectionStudents = backendStudents.filter((student) => String(studentSectionIdOf(student) ?? "") === String(sectionId));
+  const existingRolls = sectionStudents.filter(hasRollNumber).map((student) => String(studentRollOf(student)).trim());
+  if (existingRolls.some((roll) => !/^\d+$/.test(roll))) {
+    throw new Error("Automatic roll generation is unavailable because this section contains formatted roll numbers.");
+  }
+  const highestExistingRoll = existingRolls.reduce((highest, roll) => Math.max(highest, Number(roll)), 0);
+  const admissionIds = candidates.flatMap((student) => {
+    const admissionId = Number(admissionIdOf(student));
+    if (!Number.isFinite(admissionId) || admissionId <= 0 || student.isApproved === false) return [];
+    const backendStudent = findBackendStudent(backendStudents, student);
+    if (!backendStudent || String(studentSectionIdOf(backendStudent) ?? "") !== String(sectionId) || hasRollNumber(backendStudent)) return [];
+    return [admissionId];
+  });
+  return { startingRollNumber: highestExistingRoll + 1, admissionIds: [...new Set(admissionIds)] };
+};
+const mergeBackendStudents = (currentStudents, backendStudents) => currentStudents.map((student) => {
+  const backendStudent = findBackendStudent(backendStudents, student);
+  if (!backendStudent) return student;
+  const sectionId = studentSectionIdOf(backendStudent);
+  const sectionName = studentSectionNameOf(backendStudent);
+  const roll = studentRollOf(backendStudent);
+  return {
+    ...student,
+    ...(sectionId != null ? { sectionId } : {}),
+    ...(sectionName != null ? { section: sectionName } : {}),
+    ...(roll != null ? { roll } : {}),
+  };
+});
+const matchesScope = (selectedId, options, rowId, rowName, idKeys, nameKeys) => {
+  if (!selectedId) return true;
+  const selected = String(selectedId);
+  const option = (options || []).find((item) => String(valueOf(item, ...idKeys) ?? "") === selected);
+  const selectedName = normalizedValue(option ? valueOf(option, ...nameKeys) : "");
+  const candidates = [rowId, rowName].map(normalizedValue).filter(Boolean);
+  return candidates.includes(normalizedValue(selected)) || Boolean(selectedName && candidates.includes(selectedName));
+};
 
-const changeStudentAllocation = async ({ admissionId, studentId, currentProgramId, programId, sectionId }) => {
+const levelsForBoard = (allLevels, boardId, boardRows) => {
+  const board = boardRows.find((item) => String(item?.boardId ?? item?.BoardId ?? item?.id ?? item?.Id) === String(boardId));
+  const embedded = list(board?.academicLevels ?? board?.AcademicLevels ?? board?.levels ?? board?.Levels);
+  if (embedded.length) {
+    const embeddedIds = new Set(embedded.map(levelIdOf).filter((id) => id != null).map(String));
+    return embeddedIds.size ? allLevels.filter((level) => embeddedIds.has(String(levelIdOf(level)))) : embedded;
+  }
+
+  const levelIds = new Set([
+    ...asValues(board?.academicLevelIds),
+    ...asValues(board?.AcademicLevelIds),
+    ...asValues(board?.levelIds),
+    ...asValues(board?.LevelIds),
+  ].map(String).filter(Boolean));
+  if (levelIds.size) return allLevels.filter((level) => levelIds.has(String(levelIdOf(level))));
+
+  const directLevels = allLevels.filter((level) => {
+    const levelBoardId = level?.boardId ?? level?.BoardId;
+    return levelBoardId != null && String(levelBoardId) === String(boardId);
+  });
+  return directLevels.length ? directLevels : allLevels;
+};
+
+const changeStudentAllocation = async ({ admissionId, studentId, currentProgramId, programId, sectionId, student }) => {
   if (String(programId) !== String(currentProgramId)) {
     throw new Error("Changing program is not supported by the current backend API contract.");
   }
   const response = await apiClient.put(apiEndpoints.students.updateSection(studentId), { sectionId });
-  await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
-    sectionId,
-    startingRollNumber: 1,
-    admissionIds: [admissionId],
-  });
-  const refreshed = await Promise.allSettled([
-    admissionId ? apiClient.get(apiEndpoints.studentAdmissions.getById(admissionId)) : Promise.resolve({ data: {} }),
-    apiClient.get(apiEndpoints.students.getById(studentId)),
-  ]);
-  return {
-    ...response,
-    data: {
-      ...objectFrom(response.data),
-      ...(refreshed[0].status === "fulfilled" ? objectFrom(refreshed[0].value.data) : {}),
-      ...(refreshed[1].status === "fulfilled" ? objectFrom(refreshed[1].value.data) : {}),
-    },
-  };
+  try {
+    const afterSectionResponse = await apiClient.get(apiEndpoints.students.getAll);
+    const afterSectionStudents = list(afterSectionResponse.data);
+    const rollPlan = buildRollPlan({ sectionId, backendStudents: afterSectionStudents, candidates: [{ ...student, admissionId, studentId }] });
+    if (rollPlan.admissionIds.length) {
+      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, { sectionId, ...rollPlan });
+    }
+    const refreshed = await Promise.allSettled([
+      admissionId ? apiClient.get(apiEndpoints.studentAdmissions.getById(admissionId)) : Promise.resolve({ data: {} }),
+      apiClient.get(apiEndpoints.students.getById(studentId)),
+      apiClient.get(apiEndpoints.students.getAll),
+    ]);
+    const refreshedStudent = refreshed[2].status === "fulfilled"
+      ? findBackendStudent(list(refreshed[2].value.data), { ...student, admissionId, studentId }) ?? {}
+      : {};
+    return {
+      ...response,
+      data: {
+        ...objectFrom(response.data),
+        ...(refreshed[0].status === "fulfilled" ? objectFrom(refreshed[0].value.data) : {}),
+        ...(refreshed[1].status === "fulfilled" ? objectFrom(refreshed[1].value.data) : {}),
+        ...refreshedStudent,
+      },
+    };
+  } catch (error) {
+    error.sectionAllocationSucceeded = true;
+    throw error;
+  }
 };
 export default function SectionAllocationPage() {
+  const { selectedBoardId, selectedAcademicYearId } = useAcademicContext();
   const [studentsLoading, setStudentsLoading] = useState(true);
   const [ctx, setCtx] = useState({
     board: "",
@@ -105,6 +207,31 @@ export default function SectionAllocationPage() {
 
   const fileInputRef = useRef(null);
   const masterCheckboxRef = useRef(null);
+  const boardRequestRef = useRef(0);
+  const groupRequestRef = useRef(0);
+  const programRequestRef = useRef(0);
+  const sectionRequestRef = useRef(0);
+
+  useEffect(() => {
+    const board = String(selectedBoardId ?? "");
+    const year = String(selectedAcademicYearId ?? "");
+    setCtx((current) => {
+      if (current.board === board && current.year === year) return current;
+      return {
+        ...current,
+        board,
+        year,
+        ...(current.board !== board ? { level: "", group: "", program: "", section: "" } : {}),
+      };
+    });
+  }, [selectedAcademicYearId, selectedBoardId]);
+
+  const refreshStudentsFromBackend = async () => {
+    const response = await apiClient.get(apiEndpoints.students.getAll);
+    const backendStudents = list(response.data);
+    setStudents((current) => mergeBackendStudents(current, backendStudents));
+    return backendStudents;
+  };
 
   useEffect(() => {
     Promise.all([
@@ -241,6 +368,7 @@ export default function SectionAllocationPage() {
 
   // Cascading dependency: Board -> Academic Years, Academic Levels, Groups
   useEffect(() => {
+    const requestSequence = ++boardRequestRef.current;
     if (!ctx.board) {
       setYears([]);
       setLevels([]);
@@ -255,6 +383,7 @@ export default function SectionAllocationPage() {
       .get(apiEndpoints.academicYears.active, { params: { boardId: ctx.board } })
       .catch(() => apiClient.get(apiEndpoints.academicYears.active))
       .then((r) => {
+        if (requestSequence !== boardRequestRef.current) return;
         const rawYears = list(r.data);
         const boardYears = rawYears.filter((y) => {
           const bId = y.boardId ?? y.BoardId;
@@ -262,29 +391,58 @@ export default function SectionAllocationPage() {
         });
         const finalYears = boardYears.length ? boardYears : rawYears;
         setYears(finalYears);
-        const active = finalYears.find((y) => y.isActive);
-        if (active) setCtx((c) => ({ ...c, year: String(active.academicYearId ?? active.id) }));
+        if (!selectedAcademicYearId) {
+          const active = finalYears.find((y) => y.isActive);
+          if (active) setCtx((c) => ({ ...c, year: String(active.academicYearId ?? active.id) }));
+        }
       })
-      .catch((e) => setMessage(getApiErrorMessage(e)));
+      .catch((e) => { if (requestSequence === boardRequestRef.current) setMessage(getApiErrorMessage(e)); });
 
     // 2. Fetch Academic Levels for selected board
     apiClient
-      .get(`/api/v1/boards/${encodeURIComponent(ctx.board)}/academic-levels`)
+      .get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } })
+      .catch(() => apiClient.get(`/api/v1/boards/${encodeURIComponent(ctx.board)}/academic-levels`))
       .catch(() => apiClient.get(apiEndpoints.academicLevels.list, { params: { boardId: ctx.board } }))
-      .catch(() => apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId: ctx.board } }))
-      .then((r) => setLevels(list(r.data)))
-      .catch((e) => setMessage(getApiErrorMessage(e)));
+      .then((r) => { if (requestSequence === boardRequestRef.current) setLevels(levelsForBoard(list(r.data), ctx.board, boards)); })
+      .catch((e) => { if (requestSequence === boardRequestRef.current) setMessage(getApiErrorMessage(e)); });
 
-    // 3. Fetch Groups for selected board
+  }, [ctx.board, boards, selectedAcademicYearId]);
+
+  // Cascading dependency: navbar academic context + Academic Level -> Groups
+  useEffect(() => {
+    const requestSequence = ++groupRequestRef.current;
+    if (!ctx.board || !ctx.year || !ctx.level) {
+      setGroups([]);
+      setPrograms([]);
+      setSections([]);
+      return;
+    }
     apiClient
-      .get(apiEndpoints.groups.list, { params: { boardId: ctx.board } })
-      .catch(() => apiClient.get(`/api/v1/groups/board/${encodeURIComponent(ctx.board)}`))
-      .then((r) => setGroups(list(r.data)))
-      .catch((e) => setMessage(getApiErrorMessage(e)));
-  }, [ctx.board]);
+      .get(apiEndpoints.groups.list, {
+        params: {
+          boardId: Number(ctx.board),
+          academicYearId: Number(ctx.year),
+        },
+      })
+      .then((response) => {
+        if (requestSequence !== groupRequestRef.current) return;
+        const scopedGroups = list(response.data).filter((group) =>
+          matchesScope(ctx.board, boards, valueOf(group, "boardId", "BoardId"), valueOf(group, "boardName", "BoardName"), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]) &&
+          matchesScope(ctx.year, years, valueOf(group, "academicYearId", "AcademicYearId", "yearId", "YearId"), valueOf(group, "academicYearName", "AcademicYearName", "yearName", "YearName"), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]) &&
+          matchesScope(ctx.level, levels, valueOf(group, "academicLevelId", "AcademicLevelId", "levelId", "LevelId"), valueOf(group, "academicLevelName", "AcademicLevelName", "levelName", "LevelName"), ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"]),
+        );
+        setGroups(scopedGroups);
+      })
+      .catch((error) => {
+        if (requestSequence !== groupRequestRef.current) return;
+        setGroups([]);
+        setMessage(getApiErrorMessage(error));
+      });
+  }, [boards, ctx.board, ctx.level, ctx.year, levels, years]);
 
   // Cascading dependency: Group -> Programs
   useEffect(() => {
+    const requestSequence = ++programRequestRef.current;
     if (!ctx.group) {
       setPrograms([]);
       setSections([]);
@@ -293,17 +451,18 @@ export default function SectionAllocationPage() {
     const g = groups.find((x) => String(x.groupId ?? x.id) === String(ctx.group));
     const embedded = g?.programs || g?.programmes;
     if (embedded?.length) {
-      setPrograms(embedded);
+      if (requestSequence === programRequestRef.current) setPrograms(embedded);
       return;
     }
     apiClient
       .get(apiEndpoints.groups.programs(ctx.group))
-      .then((r) => setPrograms(list(r.data)))
-      .catch((e) => setMessage(getApiErrorMessage(e)));
+      .then((r) => { if (requestSequence === programRequestRef.current) setPrograms(list(r.data)); })
+      .catch((e) => { if (requestSequence === programRequestRef.current) setMessage(getApiErrorMessage(e)); });
   }, [ctx.group, groups]);
 
   // Cascading dependency: Program -> Sections
   useEffect(() => {
+    const requestSequence = ++sectionRequestRef.current;
     if (!ctx.program) {
       setSections([]);
       return;
@@ -320,15 +479,21 @@ export default function SectionAllocationPage() {
       selectedProgram?.programmeName ??
       selectedProgram?.programme ??
       selectedProgram?.name;
+    const numericLevelId = Number(ctx.level);
     apiClient
       .get(apiEndpoints.sections.list, {
         params: {
+          BoardId: ctx.board,
+          AcademicYearId: ctx.year,
+          ...(Number.isFinite(numericLevelId) && numericLevelId > 0 ? { AcademicLevelId: numericLevelId } : {}),
+          GroupId: ctx.group,
           ProgramId: programId,
           ...(programme ? { Programme: programme } : {}),
           IsActive: true,
         },
       })
       .then((r) => {
+        if (requestSequence !== sectionRequestRef.current) return;
         const programmeName = String(programme ?? "").trim().toLowerCase();
         const programmeSections = list(r.data).filter((section) => {
           const sectionProgramId = section?.programId ?? section?.ProgramId ?? section?.programmeId ?? section?.ProgrammeId;
@@ -343,15 +508,20 @@ export default function SectionAllocationPage() {
           );
         });
         const groupSections = programmeSections.filter(
-          (section) => String(section?.groupId ?? section?.GroupId ?? "") === String(ctx.group),
+          (section) =>
+            matchesScope(ctx.board, boards, valueOf(section, "boardId", "BoardId"), valueOf(section, "boardName", "BoardName"), ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]) &&
+            matchesScope(ctx.year, years, valueOf(section, "academicYearId", "AcademicYearId", "yearId", "YearId"), valueOf(section, "academicYearName", "AcademicYearName", "yearName", "YearName"), ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]) &&
+            matchesScope(ctx.level, levels, valueOf(section, "academicLevelId", "AcademicLevelId", "levelId", "LevelId"), valueOf(section, "academicLevelName", "AcademicLevelName", "levelName", "LevelName"), ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"]) &&
+            matchesScope(ctx.group, groups, valueOf(section, "groupId", "GroupId"), valueOf(section, "groupName", "GroupName"), ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name"]),
         );
-        setSections(groupSections.length ? groupSections : programmeSections);
+        setSections(groupSections);
       })
       .catch((e) => {
+        if (requestSequence !== sectionRequestRef.current) return;
         setSections([]);
         setMessage(getApiErrorMessage(e));
       });
-  }, [ctx.group, ctx.program, groups, programs]);
+  }, [boards, ctx.board, ctx.group, ctx.level, ctx.program, ctx.year, groups, levels, programs, years]);
 
   // Academic scope filtering:
   // Fields 1-5 (board, year, level, group, program) act as FILTERS.
@@ -360,13 +530,14 @@ export default function SectionAllocationPage() {
     () =>
       students.filter(
         (s) =>
-          (!ctx.board || String(s.boardId ?? "") === String(ctx.board)) &&
-          (!ctx.year || String(s.academicYearId ?? "") === String(ctx.year)) &&
-          (!ctx.level || String(s.academicLevelId ?? "") === String(ctx.level)) &&
-          (!ctx.group || String(s.groupId ?? s.group) === String(ctx.group)) &&
-          (!ctx.program || String(s.programId ?? s.programme) === String(ctx.program)),
+          s.isApproved &&
+          matchesScope(ctx.board, boards, s.boardId, s.boardName, ["boardId", "BoardId", "id", "Id"], ["boardName", "BoardName", "name", "Name"]) &&
+          matchesScope(ctx.year, years, s.academicYearId, s.academicYearName, ["academicYearId", "AcademicYearId", "id", "Id"], ["academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"]) &&
+          matchesScope(ctx.level, levels, s.academicLevelId, s.academicLevelName, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"], ["academicLevelName", "AcademicLevelName", "levelName", "LevelName", "name", "Name"]) &&
+          matchesScope(ctx.group, groups, s.groupId, s.group, ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name"]) &&
+          matchesScope(ctx.program, programs, s.programId, s.programme, ["programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId", "id", "Id"], ["programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "name", "Name"]),
       ).sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: "base" })),
-    [students, ctx.board, ctx.year, ctx.level, ctx.group, ctx.program],
+    [boards, ctx.board, ctx.group, ctx.level, ctx.program, ctx.year, groups, levels, programs, students, years],
   );
 
   // Table toolbar instant search & filters
@@ -413,10 +584,9 @@ export default function SectionAllocationPage() {
 
   // Section options for toolbar filter and modals
   const tableSectionOptions = useMemo(() => {
-    const listToUse = sections.length ? sections : sectionDirectory;
     const seen = new Set();
     const result = [];
-    listToUse.forEach((sec) => {
+    sections.forEach((sec) => {
       const id = String(sec.sectionId ?? sec.id ?? "");
       const name = sec.sectionName ?? sec.name;
       if (id && name && !seen.has(id)) {
@@ -425,7 +595,7 @@ export default function SectionAllocationPage() {
       }
     });
     return result;
-  }, [sections, sectionDirectory]);
+  }, [sections]);
 
   // Program options for toolbar filter: gathers options from master programs & all student records
   const tableProgramOptions = useMemo(() => {
@@ -478,16 +648,17 @@ export default function SectionAllocationPage() {
 
   // Bulk Change Section Handler
   const executeBulkChangeSection = async () => {
+    if (bulkLoading || busy || isAllocating) return;
     const sectionIdNum = Number(bulkTargetSection);
     if (!sectionIdNum) return;
-    const selectedStudents = students.filter((s) => selectedIds.includes(s.id));
+    const selectedStudents = students.filter((s) => selectedIds.includes(s.id) && s.isApproved);
     const targetSectionObj =
       sections.find((sec) => String(sec.sectionId ?? sec.id) === String(sectionIdNum)) ||
       sectionDirectory.find((sec) => String(sec.sectionId ?? sec.id) === String(sectionIdNum));
 
     const admissionIds = selectedStudents
       .map((s) => Number(s.admissionId))
-      .filter(Number.isFinite);
+      .filter((id) => Number.isFinite(id) && id > 0);
 
     if (!admissionIds.length) {
       setMessage("Selected students do not have valid admission records.");
@@ -496,42 +667,21 @@ export default function SectionAllocationPage() {
     }
 
     setBulkLoading(true);
+    let sectionAllocationSucceeded = false;
     try {
       await apiClient.post(apiEndpoints.studentAdmissions.bulkSection, {
         sectionId: sectionIdNum,
         admissionIds,
       });
-
-      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
-        sectionId: sectionIdNum,
-        startingRollNumber: 1,
-        admissionIds,
-      }).catch(() => null);
-
-      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll).catch(() => null);
-      const refreshedRolls = new Map(
-        refreshedStudentsResponse
-          ? list(refreshedStudentsResponse.data).map((student) => [
-            String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
-            student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
-          ])
-          : []
-      );
+      sectionAllocationSucceeded = true;
+      const afterSectionStudents = await refreshStudentsFromBackend();
+      const rollPlan = buildRollPlan({ sectionId: sectionIdNum, backendStudents: afterSectionStudents, candidates: selectedStudents });
+      if (rollPlan.admissionIds.length) {
+        await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, { sectionId: sectionIdNum, ...rollPlan });
+      }
+      await refreshStudentsFromBackend();
 
       const sectionName = targetSectionObj?.sectionName || targetSectionObj?.name || `Section ${sectionIdNum}`;
-      setStudents((current) =>
-        current.map((student) =>
-          selectedIds.includes(student.id)
-            ? {
-              ...student,
-              sectionId: sectionIdNum,
-              section: sectionName,
-              roll: refreshedRolls.get(String(student.admissionNo).trim()) || student.roll,
-            }
-            : student
-        )
-      );
-
       setMessageType("success");
       setMessage(`Successfully allocated ${selectedStudents.length} student(s) to ${sectionName}.`);
       setSelectedIds([]);
@@ -539,7 +689,15 @@ export default function SectionAllocationPage() {
       setBulkTargetSection("");
     } catch (err) {
       setMessageType("error");
-      setMessage(getApiErrorMessage(err));
+      if (sectionAllocationSucceeded) {
+        await refreshStudentsFromBackend().catch(() => null);
+        setMessage("Section allocation succeeded, but roll number generation failed. Please retry roll number generation.");
+        setSelectedIds([]);
+        setBulkActionModal(null);
+        setBulkTargetSection("");
+      } else {
+        setMessage(getApiErrorMessage(err));
+      }
     } finally {
       setBulkLoading(false);
     }
@@ -638,6 +796,7 @@ export default function SectionAllocationPage() {
             groupId: match?.groupId || "",
             currentSection: match?.section || "Pending",
             currentSectionId: match?.sectionId || "",
+            isApproved: match?.isApproved === true,
           };
         });
 
@@ -667,6 +826,16 @@ export default function SectionAllocationPage() {
         const overflow = [];
 
         matchedList.forEach((st) => {
+          if (!st.isApproved) {
+            overflow.push({
+              ...st,
+              proposedSectionId: "",
+              proposedSectionName: "Approval Required",
+              status: "Admission Approval Required",
+              reason: "Only verified and approved admissions can be allocated.",
+            });
+            return;
+          }
           let targetSec = null;
 
           const matchingSections = Object.values(sectionStatsMap).filter((sec) => {
@@ -748,24 +917,22 @@ export default function SectionAllocationPage() {
 
   // Confirm and save auto-allocation
   const handleConfirmSaveAllocation = async () => {
-    if (!allocationPreview?.allocated?.length) return;
+    if (isAllocating || bulkLoading || busy || !allocationPreview?.allocated?.length) return;
     setIsAllocating(true);
+    let rollGenerationFailed = false;
     try {
       const groupsBySection = {};
       allocationPreview.allocated.forEach((st) => {
         if (!st.proposedSectionId) return;
         const admId = Number(st.admissionId);
-        if (Number.isFinite(admId) && admId > 0) {
+        if (st.isApproved && Number.isFinite(admId) && admId > 0) {
           if (!groupsBySection[st.proposedSectionId]) {
             groupsBySection[st.proposedSectionId] = [];
           }
-          groupsBySection[st.proposedSectionId].push({
-            admissionId: admId,
-            studentId: st.studentId,
-            studentObj: st,
-          });
+          groupsBySection[st.proposedSectionId].push({ ...st, admissionId: admId });
         }
       });
+      if (!Object.keys(groupsBySection).length) throw new Error("No approved students with valid admission records are available for allocation.");
 
       let totalSaved = 0;
       for (const [secId, studentGroup] of Object.entries(groupsBySection)) {
@@ -776,53 +943,33 @@ export default function SectionAllocationPage() {
             sectionId: sectionIdNum,
             admissionIds,
           });
-          await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
-            sectionId: sectionIdNum,
-            startingRollNumber: 1,
-            admissionIds,
-          }).catch(() => null);
+          try {
+            const afterSectionStudents = await refreshStudentsFromBackend();
+            const rollPlan = buildRollPlan({ sectionId: sectionIdNum, backendStudents: afterSectionStudents, candidates: studentGroup });
+            if (rollPlan.admissionIds.length) {
+              await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, { sectionId: sectionIdNum, ...rollPlan });
+            }
+          } catch (rollError) {
+            rollGenerationFailed = true;
+            throw rollError;
+          }
           totalSaved += admissionIds.length;
         }
       }
 
-      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll).catch(() => null);
-      const refreshedRolls = new Map(
-        refreshedStudentsResponse
-          ? list(refreshedStudentsResponse.data).map((student) => [
-            String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
-            student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
-          ])
-          : []
-      );
-
-      const allocatedMap = new Map();
-      allocationPreview.allocated.forEach((st) => {
-        if (st.admissionNo) allocatedMap.set(String(st.admissionNo).trim().toLowerCase(), st);
-        if (st.id) allocatedMap.set(String(st.id), st);
-      });
-
-      setStudents((current) =>
-        current.map((student) => {
-          const admKey = String(student.admissionNo ?? "").trim().toLowerCase();
-          const match = allocatedMap.get(admKey) || allocatedMap.get(String(student.id));
-          if (match && match.proposedSectionId) {
-            return {
-              ...student,
-              sectionId: Number(match.proposedSectionId),
-              section: match.proposedSectionName,
-              roll: refreshedRolls.get(String(student.admissionNo).trim()) || student.roll,
-            };
-          }
-          return student;
-        })
-      );
+      await refreshStudentsFromBackend();
 
       setMessageType("success");
       setMessage(`Successfully allocated ${totalSaved} student(s) across sections.`);
       setAllocationPreview(null);
     } catch (err) {
       setMessageType("error");
-      setMessage(getApiErrorMessage(err));
+      await refreshStudentsFromBackend().catch(() => null);
+      if (rollGenerationFailed) {
+        setMessage("Section allocation succeeded, but roll number generation failed. Please retry roll number generation.");
+      } else {
+        setMessage(getApiErrorMessage(err));
+      }
     } finally {
       setIsAllocating(false);
     }
@@ -833,7 +980,9 @@ export default function SectionAllocationPage() {
     if (!allocationPreview?.overflow?.length || !allocationPreview?.sectionStats?.length) return;
     const sectionsList = allocationPreview.sectionStats;
     let secIdx = 0;
-    const newlyAllocated = allocationPreview.overflow.map((st) => {
+    const eligibleOverflow = allocationPreview.overflow.filter((student) => student.isApproved);
+    const ineligibleOverflow = allocationPreview.overflow.filter((student) => !student.isApproved);
+    const newlyAllocated = eligibleOverflow.map((st) => {
       const chosenSection = sectionsList[secIdx % sectionsList.length];
       secIdx++;
       return {
@@ -847,121 +996,98 @@ export default function SectionAllocationPage() {
     setAllocationPreview((prev) => ({
       ...prev,
       allocated: [...prev.allocated, ...newlyAllocated],
-      overflow: [],
+      overflow: ineligibleOverflow,
     }));
-    setPreviewTab("allocated");
-    setMessage("All overflow students approved and assigned to sections.");
+    setPreviewTab(ineligibleOverflow.length ? "overflow" : "allocated");
+    setMessage(ineligibleOverflow.length
+      ? "Approved overflow students were assigned. Unapproved admissions remain blocked."
+      : "All overflow students approved and assigned to sections.");
     setMessageType("success");
   };
-
-  const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
-    years.filter((year) => {
-      const boardId = year.boardId ?? year.BoardId;
-      return !ctx.board || boardId == null || String(boardId) === String(ctx.board);
-    }),
-    (year) => year.academicYearName ?? year.AcademicYearName ?? year.yearName ?? year.YearName,
-  ), [ctx.board, years]);
 
   const update = (k, v) =>
     setCtx((c) => ({
       ...c,
       [k]: v,
       ...(k === "board" ? { year: "", level: "", group: "", program: "", section: "" } : {}),
+      ...(k === "level" ? { group: "", program: "", section: "" } : {}),
       ...(k === "group" ? { program: "", section: "" } : {}),
       ...(k === "program" ? { section: "" } : {}),
     }));
 
   const save = async () => {
-    const ids = rows
-      .filter((student) => student.isApproved)
+    if (busy || bulkLoading || isAllocating) return;
+    const selectedStudents = rows.filter((student) => student.isApproved);
+    const ids = selectedStudents
       .map((student) => Number(student.admissionId))
-      .filter(Number.isFinite),
+      .filter((id) => Number.isFinite(id) && id > 0),
       sectionId = Number(ctx.section);
     if (!sectionId)
       return setMessage("Please select a Target Section from the dropdown above to allocate students.");
     if (!ids.length)
       return setMessage("Only verified and approved admissions can be allocated to a section.");
     setBusy("save");
+    let sectionAllocationSucceeded = false;
     try {
       await apiClient.post(apiEndpoints.studentAdmissions.bulkSection, {
         sectionId,
         admissionIds: ids,
       });
-      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
-        sectionId,
-        startingRollNumber: 1,
-        admissionIds: ids,
-      });
-      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll);
-      const refreshedRolls = new Map(
-        list(refreshedStudentsResponse.data).map((student) => [
-          String(student.admissionNo ?? student.admissionNumber ?? "").trim(),
-          student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
-        ]),
-      );
-      const sectionName = sections.find(
-        (section) => String(section.sectionId ?? section.id) === String(sectionId),
-      )?.sectionName;
-      setStudents((current) =>
-        current.map((student) =>
-          ids.includes(Number(student.admissionId))
-            ? {
-              ...student,
-              sectionId,
-              section: sectionName ?? student.section,
-              roll: refreshedRolls.get(String(student.admissionNo).trim()) || "",
-            }
-            : student,
-        ),
-      );
+      sectionAllocationSucceeded = true;
+      const afterSectionStudents = await refreshStudentsFromBackend();
+      const rollPlan = buildRollPlan({ sectionId, backendStudents: afterSectionStudents, candidates: selectedStudents });
+      if (rollPlan.admissionIds.length) {
+        await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, { sectionId, ...rollPlan });
+      }
+      await refreshStudentsFromBackend();
       setMessageType("success");
       setMessage("Section allocation and roll numbers saved successfully.");
     } catch (e) {
-      setMessage(getApiErrorMessage(e));
+      setMessageType("error");
+      if (sectionAllocationSucceeded) {
+        await refreshStudentsFromBackend().catch(() => null);
+        setMessage("Section allocation succeeded, but roll number generation failed. Please retry roll number generation.");
+      } else {
+        setMessage(getApiErrorMessage(e));
+      }
     } finally {
       setBusy("");
     }
   };
 
   const rolls = async () => {
+    if (busy || bulkLoading || isAllocating) return;
     const sectionId = Number(ctx.section);
     const selectedSectionName = sections.find(
       (section) => String(section.sectionId ?? section.id) === String(sectionId),
     )?.sectionName;
-    const admissionIds = rows
+    if (!sectionId) return setMessage("Please select a Target Section before generating roll numbers.");
+    const sectionCandidates = students
       .filter(
         (student) =>
-          Number(student.sectionId) === sectionId ||
-          (!student.sectionId &&
-            String(student.section).trim().toLowerCase() ===
-            String(selectedSectionName ?? "").trim().toLowerCase()),
-      )
-      .map((student) => Number(student.admissionId))
-      .filter(Number.isFinite);
-    if (!admissionIds.length)
+          student.isApproved &&
+          (Number(student.sectionId) === sectionId ||
+            (!student.sectionId &&
+              String(student.section).trim().toLowerCase() ===
+              String(selectedSectionName ?? "").trim().toLowerCase())),
+      );
+    if (!sectionCandidates.length)
       return setMessage("Allocate students to a section before generating roll numbers.");
     setBusy("roll");
     try {
-      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, {
-        sectionId,
-        startingRollNumber: 1,
-        admissionIds,
-      });
-      const refreshedStudentsResponse = await apiClient.get(apiEndpoints.students.getAll);
-      const refreshedRolls = new Map(
-        list(refreshedStudentsResponse.data).map((student) => [
-          String(student.studentId ?? student.StudentId ?? student.id ?? student.Id ?? ""),
-          student.rollNumber ?? student.RollNumber ?? student.rollNo ?? student.RollNo ?? student.roll ?? "",
-        ]),
-      );
-      setStudents((current) =>
-        current.map((student) => ({
-          ...student,
-          roll: refreshedRolls.get(String(student.studentId)) ?? student.roll,
-        })),
-      );
+      const backendStudents = await refreshStudentsFromBackend();
+      const rollPlan = buildRollPlan({ sectionId, backendStudents, candidates: sectionCandidates });
+      if (!rollPlan.admissionIds.length) {
+        setMessageType("success");
+        setMessage("All allocated students in this section already have roll numbers.");
+        return;
+      }
+      await apiClient.post(apiEndpoints.studentAdmissions.bulkRollNumbers, { sectionId, ...rollPlan });
+      await refreshStudentsFromBackend();
+      setMessageType("success");
       setMessage("Roll numbers generated successfully.");
     } catch (e) {
+      setMessageType("error");
       setMessage(getApiErrorMessage(e));
     } finally {
       setBusy("");
@@ -1011,8 +1137,6 @@ export default function SectionAllocationPage() {
       <section className="cms-card">
         <div className="cms-card-body student-management-filters">
           {[
-            ["Board", "board", boards, "boardId", "boardName"],
-            ["Academic Year", "year", academicYearOptions, "academicYearId", "academicYearName"],
             ["Academic Level", "level", levels, "academicLevelId", "levelName"],
             ["Group", "group", groups, "groupId", "groupName"],
             ["Program", "program", programs, "programId", "programName"],
@@ -1112,21 +1236,6 @@ export default function SectionAllocationPage() {
           </div>
 
           <div className="allocation-toolbar-spacer" />
-
-          {/* Right action button */}
-          <button
-            type="button"
-            className="allocation-import-btn"
-            onClick={() => {
-              setSelectedExcelFile(null);
-              setExcelVerificationResult(null);
-              setIsImportModalOpen(true);
-            }}
-            title="Import Excel file to auto-allocate students by section capacity"
-          >
-            <Plus size={16} />
-            Import Excel & Auto-Allocate
-          </button>
         </div>
 
         {/* Dynamic Bulk Action Bar */}
@@ -1827,7 +1936,7 @@ function ChangeAllocationModal({ student, onClose, onChanged }) {
     if (unchanged) return setError("Please select a different program or section.");
     setSaving(true); setError("");
     try {
-      const response = await changeStudentAllocation({ admissionId: admissionId || undefined, studentId, currentProgramId: Number(currentProgramId), programId: nextProgramId, sectionId: nextSectionId });
+      const response = await changeStudentAllocation({ admissionId: admissionId || undefined, studentId, currentProgramId: Number(currentProgramId), programId: nextProgramId, sectionId: nextSectionId, student });
       const result = objectFrom(response.data);
       onChanged(student, {
         programId: nextProgramId,
@@ -1836,7 +1945,11 @@ function ChangeAllocationModal({ student, onClose, onChanged }) {
         section: valueOf(result, "sectionName", "SectionName") ?? sectionNameOf(selectedSection),
         roll: valueOf(result, "rollNumber", "RollNumber", "rollNo", "RollNo") ?? "",
       });
-    } catch (requestError) { setError(getApiErrorMessage(requestError)); }
+    } catch (requestError) {
+      setError(requestError.sectionAllocationSucceeded
+        ? "Section allocation succeeded, but roll number generation failed. Please retry roll number generation."
+        : getApiErrorMessage(requestError));
+    }
     finally { setSaving(false); }
   };
 

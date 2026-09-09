@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { env } from "@/config/env.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
@@ -40,7 +41,7 @@ const formatAmount = (value) => {
   const amount = Number(value || 0);
   return `\u20b9${(Number.isFinite(amount) ? amount : 0).toLocaleString("en-IN")}`;
 };
-const MOBILE_FIELDS = new Set(["mobile", "fatherMobile", "motherMobile", "guardianMobile"]);
+const MOBILE_FIELDS = new Set(["studentMobileNumber", "mobile", "fatherMobile", "motherMobile", "guardianMobile"]);
 const DIGIT_LIMITS = { aadhaar: 12, pincode: 6, passYear: 4 };
 const AMOUNT_FIELDS = new Set(["feeAmount", "totalFee", "discount", "fine", "netPayable", "amountPaid", "balanceAmount"]);
 const ALPHA_FIELDS = new Set([
@@ -117,10 +118,10 @@ const readId = (item, ...keys) => {
 const studentMobileValue = (values = {}) => {
   const value = read(
     values,
-    "mobile",
-    "studentMobile",
     "studentMobileNumber",
     "StudentMobileNumber",
+    "studentMobile",
+    "mobile",
     "mobileNumber",
     "MobileNumber",
     "StudentMobile",
@@ -130,7 +131,14 @@ const studentMobileValue = (values = {}) => {
 
 const normalizeAdmissionMobileState = (values = {}) => {
   const mobile = studentMobileValue(values);
-  return mobile && mobile !== values.mobile ? { ...values, mobile } : { ...values };
+  const houseDoorNumber = values.houseDoorNumber ?? values.HouseDoorNumber ?? values.address1;
+  const streetVillage = values.streetVillage ?? values.StreetVillage ?? values.address2;
+  return {
+    ...values,
+    ...(mobile ? { studentMobileNumber: mobile, mobile } : {}),
+    ...(houseDoorNumber !== undefined && houseDoorNumber !== null ? { houseDoorNumber, address1: houseDoorNumber } : {}),
+    ...(streetVillage !== undefined && streetVillage !== null ? { streetVillage, address2: streetVillage } : {}),
+  };
 };
 
 const isRenderableImageSource = (value) => {
@@ -139,21 +147,32 @@ const isRenderableImageSource = (value) => {
     text.startsWith("blob:")
     || text.startsWith("data:image/")
     || /^https?:\/\//i.test(text)
-    || text.startsWith("/")
   );
 };
 
-const normalizeImageSource = (value) => {
+const getBackendOrigin = () => {
+  const configuredBaseUrl = String(env.apiBaseUrl || "").trim();
+  if (!configuredBaseUrl) return "";
+  try {
+    return new URL(configuredBaseUrl).origin;
+  } catch {
+    return configuredBaseUrl.replace(/\/+$/, "");
+  }
+};
+
+const resolveStudentPhotoUrl = (value) => {
   const text = String(value || "").trim();
   if (!text || isSchemaPlaceholder(text)) return "";
   if (isRenderableImageSource(text)) return text;
   if (/[\\/]/.test(text) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(text)) {
-    const baseUrl = String(import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+    const baseUrl = getBackendOrigin();
     const path = text.replace(/\\/g, "/").replace(/^\/?/, "/");
     return baseUrl ? `${baseUrl}${path}` : path;
   }
   return "";
 };
+
+const normalizeImageSource = resolveStudentPhotoUrl;
 
 const isLooseId = (value) => {
   const text = String(value ?? "").trim();
@@ -546,7 +565,7 @@ const steps = [
       { name: "dob", label: "Date of Birth", type: "date", required: true },
       { name: "bloodGroup", label: "Blood Group", type: "select", options: [], required: true },
       { name: "aadhaar", label: "Aadhaar Number", required: true },
-      { name: "mobile", label: "StudentMobile" },
+      { name: "studentMobileNumber", label: "Student Mobile", type: "tel" },
       { name: "email", label: "Email", type: "email" },
       { name: "religion", label: "Religion" },
       { name: "caste", label: "Caste Category", type: "select", options: ["General", "OBC", "SC", "ST", "EWS"] },
@@ -569,8 +588,8 @@ const steps = [
   {
     title: "Address",
     fields: [
-      { name: "address1", label: "House / Door Number", required: true },
-      { name: "address2", label: "Street / Village" },
+      { name: "houseDoorNumber", label: "House / Door Number", required: true },
+      { name: "streetVillage", label: "Street / Village" },
       { name: "city", label: "Town", required: true },
       { name: "district", label: "District", required: true },
       { name: "state", label: "State", type: "select", options: ["Andhra Pradesh", "Telangana", "Karnataka", "Maharashtra", "Delhi"], required: true },
@@ -633,6 +652,8 @@ const stepIcons = {
 
 const buildAdmissionFormData = (values) => {
   const formData = new FormData();
+  const houseDoorNumber = values.houseDoorNumber ?? values.address1 ?? "";
+  const streetVillage = values.streetVillage ?? values.address2 ?? "";
   appendIfPresent(formData, "AdmissionNo", values.admissionNo);
   appendIfPresent(formData, "AdmissionDate", toDateTime(values.admissionDate));
   appendIfPresent(formData, "AdmissionQuota", values.quota === "Other" ? values.quotaOther : values.quota);
@@ -645,7 +666,7 @@ const buildAdmissionFormData = (values) => {
     formData.append("StudentPhoto", values.photo);
   }
   appendIfPresent(formData, "Email", values.email);
-  appendIfPresent(formData, "StudentMobileNumber", studentMobileValue(values));
+  appendIfPresent(formData, "Student Mobile", studentMobileValue(values));
   appendIfPresent(formData, "HallTicketNumber", values.hallTicket);
   appendIfPresent(formData, "AadhaarNumber", values.aadhaar);
   appendIfPresent(formData, "Nationality", values.nationality);
@@ -663,9 +684,9 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "GuardianMobile", values.guardianMobile);
   appendIfPresent(formData, "GuardianEmail", values.guardianEmail);
   appendIfPresent(formData, "AnnualIncome", values.annualIncome);
-  appendIfPresent(formData, "Address", [values.address1, values.address2, values.city, values.district, values.state, values.pincode].filter(Boolean).join(", "));
-  appendIfPresent(formData, "AddressLine1", values.address1);
-  appendIfPresent(formData, "AddressLine2", values.address2);
+  appendIfPresent(formData, "Address", [houseDoorNumber, streetVillage, values.city, values.district, values.state, values.pincode].filter(Boolean).join(", "));
+  appendIfPresent(formData, "HouseDoorNumber", houseDoorNumber);
+  appendIfPresent(formData, "StreetVillage", streetVillage);
   appendIfPresent(formData, "City", values.city);
   appendIfPresent(formData, "District", values.district);
   appendIfPresent(formData, "State", values.state);
@@ -690,20 +711,16 @@ const buildAdmissionFormData = (values) => {
 
 const debugAdmissionSubmitPayload = ({ endpoint, method, formData, values }) => {
   if (!import.meta.env.DEV) return;
-  const entries = Array.from(formData.entries()).map(([key, value]) => [
-    key,
-    typeof File !== "undefined" && value instanceof File
-      ? `[File: ${value.name || "unnamed"}, ${value.size} bytes]`
-      : value,
-  ]);
+  const keys = Array.from(formData.keys());
   console.log("Student Admission submit payload", {
     endpoint,
     method,
-    stateMobile: values.mobile,
-    normalizedStudentMobileNumber: studentMobileValue(values),
-    hasStudentMobileNumber: formData.has("StudentMobileNumber"),
-    studentMobileNumberEntry: formData.get("StudentMobileNumber"),
-    formDataEntries: Object.fromEntries(entries),
+    keys,
+    hasStudentMobileNumber: formData.has("Student Mobile"),
+    hasHouseDoorNumber: formData.has("HouseDoorNumber"),
+    hasStreetVillage: formData.has("StreetVillage"),
+    hasExistingStudentPhoto: Boolean(values.studentPhoto),
+    hasNewStudentPhoto: typeof File !== "undefined" && values.photo instanceof File,
   });
 };
 
@@ -914,7 +931,8 @@ const normalizeAdmissionRow = (item) => {
   const quotaValue = readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota");
   const standardQuota = steps[0].fields.find((field) => field.name === "quota")?.options || [];
   const isStandardQuota = standardQuota.some((option) => String(option).toLowerCase() === quotaValue.toLowerCase());
-  const photoUrl = normalizeImageSource(readPhotoUrl(item, student));
+  const studentPhoto = readPhotoUrl(item, student);
+  const photoUrl = resolveStudentPhotoUrl(studentPhoto);
   const feeStructureId = readFeeStructureId(item);
   const savedFeeItems = readAdmissionFeeItems(item, feeStructureId);
   const savedInstallments = readAdmissionInstallments(item);
@@ -924,8 +942,8 @@ const normalizeAdmissionRow = (item) => {
   );
   const combinedAddress = readText(item, "address", "Address");
   const combinedAddressParts = combinedAddress.split(",").map((part) => part.trim()).filter(Boolean);
-  const addressLine1 = readText(item, "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
-  const addressLine2 = readText(item, "addressLine2", "AddressLine2") || combinedAddressParts[1] || "";
+  const houseDoorNumber = readText(item, "houseDoorNumber", "HouseDoorNumber", "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
+  const streetVillage = readText(item, "streetVillage", "StreetVillage", "addressLine2", "AddressLine2") || combinedAddressParts[1] || "";
   const city = readText(item, "city", "City") || combinedAddressParts[2] || "";
   const district = readText(item, "district", "District") || combinedAddressParts[3] || "";
   const state = readText(item, "state", "State") || combinedAddressParts[4] || "";
@@ -942,6 +960,8 @@ const normalizeAdmissionRow = (item) => {
     board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id") || readText(item, "boardName", "BoardName"),
     group: !isRawIdDisplay(groupName, groupId) ? groupName : groupId,
     program: !isRawIdDisplay(programName, programId) ? programName : programId,
+    studentPhoto,
+    photoUrl,
     status,
     currentStep: 0,
     source: "api",
@@ -959,10 +979,12 @@ const normalizeAdmissionRow = (item) => {
       gender: readText(item, "gender", "Gender"),
       dob: readText(item, "dateOfBirth", "DateOfBirth", "dob", "DOB").slice(0, 10),
       bloodGroup: readText(item, "bloodGroup", "BloodGroup"),
+      studentPhoto,
       photoUrl,
       aadhaar: readText(item, "aadhaarNumber", "AadhaarNumber", "aadhaar", "Aadhaar"),
+      studentMobileNumber: readText(item, "studentMobileNumber", "StudentMobileNumber", "mobileNumber", "MobileNumber", "mobile", "Mobile"),
       mobile: readText(item, "studentMobileNumber", "StudentMobileNumber", "mobileNumber", "MobileNumber", "mobile", "Mobile"),
-      email: readText(item, "email", "Email"),
+      email: readText(item, "studentEmail", "StudentEmail", "email", "Email"),
       religion: readText(item, "religion", "Religion"),
       caste: readText(item, "category", "Category", "caste", "Caste"),
       fatherName: readText(item, "fatherName", "FatherName"),
@@ -977,8 +999,10 @@ const normalizeAdmissionRow = (item) => {
       guardianMobile: readText(item, "guardianMobile", "GuardianMobile"),
       guardianEmail: readText(item, "guardianEmail", "GuardianEmail"),
       annualIncome: readText(item, "annualIncome", "AnnualIncome"),
-      address1: addressLine1,
-      address2: addressLine2,
+      houseDoorNumber,
+      streetVillage,
+      address1: houseDoorNumber,
+      address2: streetVillage,
       city,
       district,
       state,
@@ -1047,14 +1071,6 @@ const readStudentFeeAssignmentId = (payload) => {
   }
   return "";
 };
-
-const readPaymentPlanId = (payload) => readId(
-  getObject(payload),
-  "paymentPlanId",
-  "PaymentPlanId",
-  "id",
-  "Id",
-);
 
 const resolveApprovedStudentId = (...sources) => {
   for (const source of sources) {
@@ -1304,14 +1320,23 @@ const previewFieldValue = (field, values) => {
 };
 
 function StudentPhotoPreview({ src, label = "Student photo", emptyLabel = "Upload Photo" }) {
-  const normalizedSrc = normalizeImageSource(src);
+  const normalizedSrc = resolveStudentPhotoUrl(src);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
   }, [normalizedSrc]);
   return (
     <div className={`cms-admission-photo-preview ${!normalizedSrc || failed ? "is-empty" : ""}`}>
-      {normalizedSrc && !failed ? <img src={normalizedSrc} alt={label} onError={() => setFailed(true)} /> : <span>{emptyLabel}</span>}
+      {normalizedSrc && !failed ? (
+        <img
+          src={normalizedSrc}
+          alt={label}
+          onError={() => {
+            setFailed(true);
+            if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
+          }}
+        />
+      ) : <span>{emptyLabel}</span>}
     </div>
   );
 }
@@ -1339,7 +1364,7 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPrev
               return (
                 <div key={field.name} className={`cms-preview-item ${isPhoto ? "cms-preview-photo-item" : ""} ${missingRequired ? "is-missing" : ""}`}>
                   <span>{field.label}</span>
-                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
+                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl || values.studentPhoto} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
                   {errors[field.name] || missingRequired ? <small>{errors[field.name] || `${field.label} is required`}</small> : null}
                 </div>
               );
@@ -1374,7 +1399,7 @@ function AdmissionFormSections({ sections, values, errors, onChange, onFileChang
                   onFileChange={onFileChange}
                   onFileRemove={onFileRemove}
                   inputRef={(element) => { inputRefs.current[field.name] = element; }}
-                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
+                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
                   extraValue={field.name === "quota" ? values.quotaOther : ""}
                 />
               ))}
@@ -3147,10 +3172,19 @@ export default function AdmissionPage() {
       throw new Error("Fee account was not created because the selected Fee Structure ID was not available.");
     }
 
+    const fee = deriveAdmissionFee(detailRow.values);
+    const planName = normalizeCoursePaymentPlan(fee.paymentPlan || detailRow.values.paymentPlan) || "Full Payment";
+    const selectedInstallmentCount = Number(detailRow.values.installmentCount);
+    const numberOfInstallments = planName === "Installment Payment"
+      ? Math.max(Number.isInteger(selectedInstallmentCount) && selectedInstallmentCount > 0
+        ? selectedInstallmentCount
+        : Number(fee.courseSchedules.length || DEFAULT_INSTALLMENT_COUNT), 1)
+      : 1;
     const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
       studentId: Number(studentId),
       feeStructureId,
-      FeeStructureId: feeStructureId,
+      planName,
+      numberOfInstallments,
     });
     const studentFeeId = readStudentFeeAssignmentId(assignResponse.data);
     if (!studentFeeId) throw new Error("Fee structure was assigned, but the student fee assignment ID was not returned.");
@@ -3165,24 +3199,6 @@ export default function AdmissionPage() {
         discountValue: Number(detailRow.values.concessionValue || 0),
         reason: "Applied during admission approval",
       });
-    }
-
-    const fee = deriveAdmissionFee(detailRow.values);
-    if (fee.paymentPlan) {
-      const planResponse = await apiClient.post(apiEndpoints.fee.createPaymentPlan, {
-        studentFeeId: Number(studentFeeId),
-        planName: fee.paymentPlan,
-        numberOfInstallments: fee.paymentPlan === "Installment Payment" ? Math.max(fee.courseSchedules.length, 1) : 1,
-        installments: null,
-      });
-      const paymentPlanId = readPaymentPlanId(planResponse.data);
-      if (paymentPlanId && fee.paymentPlan === "Installment Payment") {
-        await Promise.all(fee.courseSchedules.map((item, index) => apiClient.post(apiEndpoints.fee.addPaymentPlanInstallment(paymentPlanId), {
-          installmentNumber: Number(item.no || index + 1),
-          amount: Number(item.amount || 0),
-          dueDate: toDateTime(item.dueDate || detailRow.values.admissionDate || todayISO()),
-        })));
-      }
     }
 
     return { studentId, studentFeeId, reused: false };
@@ -3308,11 +3324,11 @@ export default function AdmissionPage() {
     const submitAdmissionId = editingAdmissionId || committedAdmissionId;
     const isUpdate = Boolean(submitAdmissionId);
     const visibleMobile = typeof document !== "undefined"
-      ? studentMobileValue({ mobile: document.getElementById("f-mobile")?.value || "" })
+      ? studentMobileValue({ studentMobileNumber: document.getElementById("f-studentMobileNumber")?.value || "" })
       : "";
     const submitValues = normalizeAdmissionMobileState({
       ...values,
-      mobile: studentMobileValue(values) || visibleMobile,
+      studentMobileNumber: studentMobileValue(values) || visibleMobile,
     });
 
     submitInFlightRef.current = true;
@@ -3677,7 +3693,7 @@ export default function AdmissionPage() {
                   onFileChange={setFileValue}
                   onFileRemove={removeFileValue}
                   inputRef={(element) => { fileInputRefs.current[f.name] = element; }}
-                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl : ""}
+                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
                   extraValue={f.name === "quota" ? values.quotaOther : ""}
                 />
               ))}

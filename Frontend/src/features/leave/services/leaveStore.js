@@ -16,11 +16,17 @@ const mapLeaveType = (type) => {
     }
 };
 
+export const LEAVE_STATUS = {
+    PENDING: 1,
+    APPROVED: 2,
+    REJECTED: 3
+};
+
 const mapLeaveStatus = (status) => {
     switch(status) {
-        case 1: return "Pending";
-        case 2: return "Approved";
-        case 3: return "Rejected";
+        case LEAVE_STATUS.PENDING: return "Pending";
+        case LEAVE_STATUS.APPROVED: return "Approved";
+        case LEAVE_STATUS.REJECTED: return "Rejected";
         default: return status;
     }
 };
@@ -109,28 +115,79 @@ export const getLeaveHistorySummary = async (departmentId = null, staffType = nu
 export const getLeaveHistory = async (staffId) => {
     try {
         const response = await apiClient.get(`/api/v1/staff-attendance/leave/history/staff/${staffId}`);
-        return response.data?.data || response.data?.Data;
+        const data = response.data?.data || response.data?.Data;
+        if (data) {
+            const rawList = data.history || data.History || [];
+            return {
+                ...data,
+                history: rawList.map(mapLeaveRequest)
+            };
+        }
+        return data;
     } catch (error) {
         console.error(`Error fetching leave history for staff ID ${staffId}:`, error);
         throw error;
     }
 };
 
+const mapAffectedClass = (ac) => {
+    if (!ac) return ac;
+    const formatTime = (timeSpan) => {
+        if (!timeSpan) return "";
+        const [h, m] = timeSpan.split(':');
+        const d = new Date(); d.setHours(h, m);
+        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    };
+    return {
+        id: ac.timetableId,
+        date: ac.substitutionDate ? ac.substitutionDate.split('T')[0] : null,
+        period: ac.periodName || `P${ac.periodNumber}`,
+        time: `${formatTime(ac.startTime)} - ${formatTime(ac.endTime)}`,
+        program: ac.programName || ac.groupName,
+        group: ac.groupName,
+        section: ac.sectionName,
+        subject: ac.subjectName,
+        originalFaculty: ac.originalStaffName,
+        substitution: ac.existingSubstitutionId ? {
+            id: ac.existingSubstitutionId,
+            substituteName: ac.existingSubstituteStaffName,
+            substituteId: ac.existingSubstituteStaffEmployeeId,
+            status: ac.currentSubstitutionStatus
+        } : null
+    };
+};
+
 export const getAffectedClasses = async (leaveRequestId) => {
     try {
         const response = await apiClient.get(`/api/v1/staff-leaves/${leaveRequestId}/affected-classes`);
-        return response.data?.data || response.data?.Data || [];
+        const data = response.data?.data || response.data?.Data || [];
+        return data.map(mapAffectedClass);
     } catch (error) {
         console.error(`Error fetching affected classes for leave ID ${leaveRequestId}:`, error);
         throw error;
     }
 };
 
+const mapSubstitute = (sub) => {
+    if (!sub) return sub;
+    return {
+        id: sub.employeeId,
+        staffId: sub.staffId,
+        name: sub.staffName,
+        department: sub.departmentName,
+        subjects: [], // Can map if backend provides
+        classes: sub.weeklyLoadCount,
+        active: true,
+        busy: sub.dateSubstitutionCount > 0 ? ["busy"] : []
+    };
+};
+
 export const getEligibleSubstitutes = async (leaveRequestId, timetableId, date) => {
     try {
         const params = new URLSearchParams({ date });
         const response = await apiClient.get(`/api/v1/staff-leaves/${leaveRequestId}/slots/${timetableId}/eligible-substitutes?${params.toString()}`);
-        return response.data?.data || response.data?.Data || [];
+        const data = response.data?.data || response.data?.Data || [];
+        return data.map(mapSubstitute);
     } catch (error) {
         console.error('Error fetching eligible substitutes:', error);
         throw error;

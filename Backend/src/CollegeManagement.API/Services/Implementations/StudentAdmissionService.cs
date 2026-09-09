@@ -37,9 +37,14 @@ namespace CollegeManagement.API.Services.Implementations
             // Save only Student Photo
             // ---------------------------------------------
 
-            var photoPath = await SaveStudentPhotoAsync(
-                request.StudentPhoto);
+            string? photoPath = null;
 
+            if (request.StudentPhoto != null &&
+                request.StudentPhoto.Length > 0)
+            {
+                photoPath = await SaveStudentPhotoAsync(
+                    request.StudentPhoto);
+            }
             // ---------------------------------------------
             // Create Admission
             // ---------------------------------------------
@@ -336,19 +341,9 @@ namespace CollegeManagement.API.Services.Implementations
                 throw new ArgumentException(
                     "Date of birth is required.");
 
-            if (string.IsNullOrWhiteSpace(
-                    request.StudentMobileNumber))
-            {
-                throw new ArgumentException(
-                    "Student mobile number is required.");
-            }
+            
 
-            if (request.StudentPhoto == null ||
-                request.StudentPhoto.Length == 0)
-            {
-                throw new ArgumentException(
-                    "Student photo is required.");
-            }
+            
         }
 
 
@@ -386,7 +381,24 @@ namespace CollegeManagement.API.Services.Implementations
                     "First name is required.");
             }
         }
+        //optional check box//
+        public async Task<int> SaveAdmissionFeeSelectionsAsync(
+      int admissionId,
+      SaveAdmissionFeeSelectionsRequest request)
+        {
+            if (admissionId <= 0)
+                throw new ArgumentException("Invalid AdmissionId.");
 
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            request.SelectedFeeStructureComponentIds ??=
+                new List<int>();
+
+            return await _repository.SaveAdmissionFeeSelectionsAsync(
+                admissionId,
+                request);
+        }
 
         // =====================================================
         // SAVE STUDENT PHOTO

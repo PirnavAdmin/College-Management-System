@@ -26,10 +26,13 @@ namespace CollegeManagement.API.Controllers.V1
 
         private int GetCurrentUserId()
         {
-            var userIdClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User?.FindFirst("sub")?.Value;
+            var userIdClaim = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value 
+                ?? User?.FindFirst("sub")?.Value
+                ?? User?.FindFirst("id")?.Value
+                ?? User?.FindFirst("UserId")?.Value;
             if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
             {
-                return 1;
+                return 0;
             }
             return userId;
         }

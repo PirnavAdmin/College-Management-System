@@ -44,6 +44,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="200">Boards searched successfully.</response>
         /// <response code="500">Internal server error.</response>
         [HttpGet]
+        [AllowAnonymous]
         [ProducesResponseType(typeof(PagedResult<BoardListResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PagedResult<BoardListResponse>>> SearchBoards([FromQuery] BoardSearchRequest request)
@@ -54,6 +55,29 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
+        /// Retrieves all active academic boards.
+        /// </summary>
+        /// <returns>A list of active academic boards.</returns>
+        /// <response code="200">Active boards retrieved successfully.</response>
+        /// <response code="500">Internal server error.</response>
+        [HttpGet("active")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(IEnumerable<BoardListResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<IEnumerable<BoardListResponse>>> GetActiveBoards()
+        {
+            _logger.LogInformation("Retrieving all active boards.");
+            var searchRequest = new BoardSearchRequest
+            {
+                Status = true,
+                PageNumber = 1,
+                PageSize = 100
+            };
+            var results = await _boardService.SearchBoardsAsync(searchRequest);
+            return Ok(results.Items);
+        }
+
+        /// <summary>
         /// Retrieves an academic board details by its identifier.
         /// </summary>
         /// <param name="boardId">The unique identifier of the board.</param>
@@ -61,7 +85,8 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="200">Board retrieved successfully.</response>
         /// <response code="404">Board not found.</response>
         /// <response code="500">Internal server error.</response>
-        [HttpGet("{boardId}")]
+        [HttpGet("{boardId:int}")]
+        [AllowAnonymous]
         [ProducesResponseType(typeof(BoardResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -115,7 +140,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="400">Invalid board update data.</response>
         /// <response code="404">Board not found.</response>
         /// <response code="500">Internal server error.</response>
-        [HttpPut("{boardId}")]
+        [HttpPut("{boardId:int}")]
         [ProducesResponseType(typeof(BoardResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -139,7 +164,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="404">Board not found.</response>
         /// <response code="409">Board concurrency conflict.</response>
         /// <response code="500">Internal server error.</response>
-        [HttpDelete("{boardId}")]
+        [HttpDelete("{boardId:int}")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -162,7 +187,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="404">Board not found.</response>
         /// <response code="409">Board concurrency conflict.</response>
         /// <response code="500">Internal server error.</response>
-        [HttpPatch("{boardId}/status")]
+        [HttpPatch("{boardId:int}/status")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -296,7 +321,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="400">Invalid country identifier.</response>
         /// <response code="404">Country or states not found.</response>
         /// <response code="500">Internal server error.</response>
-        [HttpGet("states/{countryId}")]
+        [HttpGet("states/{countryId:int}")]
         [ProducesResponseType(typeof(IEnumerable<StateResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -320,11 +345,11 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="200">Academic levels retrieved successfully.</response>
         /// <response code="500">Internal server error.</response>
         [HttpGet("academic-levels")]
-        [HttpGet("{boardId}/academic-levels")]
+        [HttpGet("{boardId:int}/academic-levels")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(IEnumerable<AcademicLevelResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<IEnumerable<AcademicLevelResponse>>> GetAcademicLevels([FromQuery] int? boardId = null, [FromRoute] int? boardIdRoute = null)
+        public async Task<ActionResult<IEnumerable<AcademicLevelResponse>>> GetAcademicLevels([FromQuery] int? boardId = null, [FromRoute(Name = "boardId")] int? boardIdRoute = null)
         {
             int? filterBoardId = boardIdRoute ?? boardId;
             var levels = await _boardService.GetAcademicLevelsAsync(filterBoardId);
@@ -375,7 +400,7 @@ namespace CollegeManagement.API.Controllers.V1
         /// <response code="400">Invalid validation parameters.</response>
         /// <response code="404">Board not found.</response>
         /// <response code="500">Internal server error.</response>
-        [HttpGet("{boardId}/history")]
+        [HttpGet("{boardId:int}/history")]
         [ProducesResponseType(typeof(PagedResult<BoardHistoryResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]

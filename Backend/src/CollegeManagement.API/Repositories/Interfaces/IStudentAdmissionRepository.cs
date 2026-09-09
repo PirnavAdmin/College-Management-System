@@ -21,7 +21,10 @@ namespace CollegeManagement.API.Repositories.Interfaces
             int admissionId,
             UpdateStudentAdmissionRequest request,
             string? studentPhoto);
-
+        //optional check box//
+        Task<int> SaveAdmissionFeeSelectionsAsync(
+     int admissionId,
+     SaveAdmissionFeeSelectionsRequest request);
         // Blood groups
         public Task<IEnumerable<string>> GetBloodGroupsAsync()
         {

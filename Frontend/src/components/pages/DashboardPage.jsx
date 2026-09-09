@@ -1076,8 +1076,8 @@ export default function DashboardPage() {
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-info-list">
-                  {certRequests.map((item) => (
-                    <div key={item.id} className="dashboard-info-item">
+                  {certRequests.map((item, idx) => (
+                    <div key={`cert-req-${item.id || idx}-${idx}`} className="dashboard-info-item">
                       <span className={`dashboard-list-icon tone-${item.tone}`}>
                         <FileText size={15} />
                       </span>
@@ -1110,8 +1110,8 @@ export default function DashboardPage() {
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-info-list">
-                  {examsList.map((item) => (
-                    <div key={item.id} className="dashboard-info-item">
+                  {examsList.map((item, idx) => (
+                    <div key={`upcoming-exam-${item.id || idx}-${idx}`} className="dashboard-info-item">
                       <span className="dashboard-activity-marker">
                         <CalendarDays size={15} />
                       </span>

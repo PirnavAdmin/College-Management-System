@@ -1197,24 +1197,55 @@ function StaffList({ records = [], setRecords, forced }) {
   const currentTab = forced || tab;
 
   const rows = useMemo(() => {
-    let combined = list;
+    const itemMap = new Map();
+
+    list.forEach((r) => {
+      if (!r) return;
+      const key = String(r.id ?? r.employeeId ?? "");
+      if (key) itemMap.set(key, r);
+      if (r.employeeId) itemMap.set(String(r.employeeId).trim().toLowerCase(), r);
+    });
+
+    const mergedList = [];
+    const seenKeys = new Set();
+
     if (apiItems && Array.isArray(apiItems) && apiItems.length > 0) {
-      const localMap = new Map();
-      list.forEach((r) => {
-        if (r && r.id !== undefined && r.id !== null) localMap.set(String(r.id), r);
-        if (r && r.employeeId) localMap.set(String(r.employeeId).trim().toLowerCase(), r);
+      apiItems.forEach((apiItem) => {
+        if (!apiItem) return;
+        const idKey = apiItem.id !== undefined && apiItem.id !== null ? String(apiItem.id) : "";
+        const empKey = apiItem.employeeId ? String(apiItem.employeeId).trim().toLowerCase() : "";
+
+        const localMatch = (idKey && itemMap.get(idKey)) || (empKey && itemMap.get(empKey));
+        const finalItem = localMatch ? { ...localMatch, ...apiItem } : apiItem;
+
+        const uniqueKey = idKey || empKey || String(finalItem.id ?? finalItem.employeeId ?? "");
+        if (!uniqueKey || !seenKeys.has(uniqueKey)) {
+          if (uniqueKey) seenKeys.add(uniqueKey);
+          if (idKey) seenKeys.add(idKey);
+          if (empKey) seenKeys.add(empKey);
+          mergedList.push(finalItem);
+        }
       });
-      combined = apiItems.map((apiItem) => {
-        const match = (apiItem.id && localMap.get(String(apiItem.id))) ||
-          (apiItem.employeeId && localMap.get(String(apiItem.employeeId).trim().toLowerCase()));
-        return match ? { ...apiItem, ...match } : apiItem;
-      });
-      const apiKeys = new Set(apiItems.map((a) => String(a.id ?? a.employeeId ?? "")));
-      const extras = list.filter((r) => !apiKeys.has(String(r.id)) && !apiKeys.has(String(r.employeeId)));
-      combined = [...extras, ...combined];
     }
 
-    return combined.filter(
+    list.forEach((r) => {
+      if (!r) return;
+      const idKey = r.id !== undefined && r.id !== null ? String(r.id) : "";
+      const empKey = r.employeeId ? String(r.employeeId).trim().toLowerCase() : "";
+
+      const isAlreadyIncluded = (idKey && seenKeys.has(idKey)) || (empKey && seenKeys.has(empKey));
+      if (!isAlreadyIncluded) {
+        const uniqueKey = idKey || empKey || String(r.id ?? r.employeeId ?? "");
+        if (!uniqueKey || !seenKeys.has(uniqueKey)) {
+          if (uniqueKey) seenKeys.add(uniqueKey);
+          if (idKey) seenKeys.add(idKey);
+          if (empKey) seenKeys.add(empKey);
+          mergedList.push(r);
+        }
+      }
+    });
+
+    return mergedList.filter(
       (r) =>
         r &&
         (currentTab === "All" ||
@@ -1402,8 +1433,8 @@ function StaffList({ records = [], setRecords, forced }) {
                     </td>
                   </tr>
                 ) : shown.length > 0 ? (
-                  shown.map((r) => (
-                    <tr key={r.id}>
+                  shown.map((r, idx) => (
+                    <tr key={`staff-item-${r.id || r.employeeId || idx}`}>
                       <td>{r.employeeId}</td>
                       <td>
                         <strong>{r.fullName || `${r.firstName || ""} ${r.lastName || ""}`}</strong>
@@ -2367,7 +2398,18 @@ function Pending({ records = [], setRecords, activity }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const requestedTab = searchParams.get("tab");
   const tab = tabs.includes(requestedTab) ? requestedTab : "Link Sent";
-  const rows = list.filter((r) => r && r.staffType === "Teaching" && r.profileStatus === tab);
+  const rows = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const r of list) {
+      if (!r || r.staffType !== "Teaching" || r.profileStatus !== tab) continue;
+      const key = String(r.id ?? r.employeeId ?? "");
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      out.push(r);
+    }
+    return out;
+  }, [list, tab]);
   const pageSize = 5;
   const shown = rows.slice((page - 1) * pageSize, page * pageSize);
 
@@ -2465,8 +2507,8 @@ function Pending({ records = [], setRecords, activity }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r) => (
-                  <tr key={r.id}>
+                {shown.map((r, idx) => (
+                  <tr key={`pending-item-${r.id || r.employeeId || idx}`}>
                     {tab !== "Submitted" ? (
                       <td style={{ textAlign: "center" }}>
                         <input
@@ -3028,7 +3070,16 @@ export default function StaffManagementPage() {
   }, [records]);
 
   const setRecords = (next) => {
-    const list = Array.isArray(next) && next.length > 0 ? next : seed;
+    const rawList = Array.isArray(next) && next.length > 0 ? next : seed;
+    const seen = new Set();
+    const list = [];
+    for (const item of rawList) {
+      if (!item) continue;
+      const key = String(item.id ?? item.employeeId ?? "");
+      if (key && seen.has(key)) continue;
+      if (key) seen.add(key);
+      list.push(item);
+    }
     setRaw(list);
     write(STORE, list);
   };

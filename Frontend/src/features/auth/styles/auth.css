@@ -270,16 +270,21 @@
   }
 }
 .cms-auth .cms-landing-brand {
+  display: flex;
   align-items: center;
   gap: 14px;
 }
 
 .cms-auth .logo-mark {
-  flex: 0 0 48px;
-  width: 28px;
-  height: 28px;
-  border-radius: 14px;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
 }
 
 .cms-auth-aside .logo-mark img,
@@ -299,11 +304,6 @@
   padding: 0 18px;
   border-radius: 8px;
   width: min(100px, 100%);
-}
-.cms-auth .logo-mark {
-  width: 20px;
-  height: 35px;
-  border-radius: 10px;
 }
 .cms-auth-card {
   max-width: 460px;

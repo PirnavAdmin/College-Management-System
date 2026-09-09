@@ -155,6 +155,21 @@
   background: var(--cms-subtle);
 }
 
+.field-error {
+  color: #ef4444;
+  font-size: 11.5px;
+  font-weight: 500;
+  display: block;
+  margin-top: 4px;
+}
+.has-field-error input,
+.has-field-error select,
+.has-field-error textarea,
+.has-field-error .staff-search-input-wrap {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 1px #ef4444 !important;
+}
+
 @media(max-width:1180px){.staff-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.portal-sections{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:1050px){.teaching-basic-form .staff-form-grid,.non-teaching-form .staff-form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:850px){.staff-dashboard-grid,.send-grid,.staff-type-grid{grid-template-columns:1fr}.staff-form-grid,.teaching-basic-form .staff-form-grid,.non-teaching-form .staff-form-grid,.staff-summary{grid-template-columns:1fr}.staff-form-grid label.is-wide{grid-column:auto}.portal-shell{grid-template-columns:1fr}.portal-shell>aside{display:none}.portal-shell>main{padding:13px}.staff-donut-wrap{min-height:170px}}

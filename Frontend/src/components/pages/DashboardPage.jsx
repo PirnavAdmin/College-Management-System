@@ -297,7 +297,7 @@ export default function DashboardPage() {
       }
     } catch (err) {
       if (overviewSeq.current === seq) {
-        setOverviewState({ loading: false, error: getApiErrorMessage(err, "Failed to load students overview"), data: null });
+        setOverviewState({ loading: false, error: getApiErrorMessage(err, "Failed to load students admissions overview"), data: null });
       }
     }
   }, [boardId, academicYearId, todayDate]);
@@ -564,14 +564,29 @@ export default function DashboardPage() {
   // Staff Attendance Normalized Values
   const staffAttData = useMemo(() => {
     const data = staffAttState.data || {};
-    const total = metric(data, ["total", "totalStaff", "totalCount"]);
+    const teachingCountRaw = metric(data, ["teachingCount", "teachingStaffCount"]);
+    const nonTeachingCountRaw = metric(data, ["nonTeachingCount", "nonTeachingStaffCount"]);
+    const totalRaw = metric(data, ["total", "totalStaff", "totalCount"]);
+
+    const teachingCount = typeof teachingCountRaw === "number" ? teachingCountRaw : (typeof teachingStaffVal === "number" ? teachingStaffVal : 0);
+    const nonTeachingCount = typeof nonTeachingCountRaw === "number" && (nonTeachingCountRaw > 0 || typeof teachingStaffVal !== "number")
+      ? nonTeachingCountRaw
+      : (typeof nonTeachingStaffVal === "number" ? nonTeachingStaffVal : 0);
+
+    let total = totalRaw;
+    if (staffType === "all" || staffType === "All Staff") {
+      total = teachingCount + nonTeachingCount;
+    } else if (staffType === "teaching" || staffType === "Teaching" || staffType === "Teaching Staff") {
+      total = teachingCount;
+    } else if (staffType === "non-teaching" || staffType === "Non-Teaching" || staffType === "Non-Teaching Staff") {
+      total = nonTeachingCount;
+    }
+
     const present = metric(data, ["present", "presentCount"]);
     const absent = metric(data, ["absent", "absentCount"]);
     const late = metric(data, ["late", "lateCount"]);
     const onLeave = metric(data, ["onLeave", "onLeaveCount", "leaveCount"]);
     const percentage = metric(data, ["percentage", "attendancePercentage"]);
-    const teachingCount = metric(data, ["teachingCount", "teachingStaffCount"]);
-    const nonTeachingCount = metric(data, ["nonTeachingCount", "nonTeachingStaffCount"]);
 
     const chartData = data.chartData || [
       { name: "Present", value: present ?? 0, color: "#22a447" },
@@ -581,7 +596,7 @@ export default function DashboardPage() {
     ];
 
     return { total, present, absent, late, onLeave, percentage, teachingCount, nonTeachingCount, chartData };
-  }, [staffAttState.data]);
+  }, [staffAttState.data, staffType, teachingStaffVal, nonTeachingStaffVal]);
 
   // Certificate Requests Normalized List
   const certRequests = useMemo(() => {
@@ -670,17 +685,17 @@ export default function DashboardPage() {
           </div>
         </nav>
 
-        {/* Second Row Grid: Students Overview | Students by Group | Student Attendance Today */}
+        {/* Second Row Grid: Students Admissions Overview | Students by Group | Student Attendance Today */}
         <section className="dashboard-grid-row dashboard-row-three" aria-label="Main Analytics">
-          {/* Card 1: Students Overview */}
+          {/* Card 1: Students Admissions Overview */}
           <article className="dashboard-card dashboard-students-overview-card">
-            <CardHeader title="Students Overview" action={<Link to="/dashboard/students" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>} />
+            <CardHeader title="Students Admissions Overview" action={<Link to="/dashboard/students" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>} />
             {overviewState.loading ? (
-              <LoadingState label="Loading overview..." />
+              <LoadingState label="Loading admissions overview..." />
             ) : overviewState.error ? (
               <ErrorState message={overviewState.error} onRetry={fetchStudentsOverview} />
             ) : overviewChartData.length === 0 ? (
-              <EmptyState message="No students overview data available." />
+              <EmptyState message="No students admissions overview data available." />
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-chart dashboard-area-chart-wrap">

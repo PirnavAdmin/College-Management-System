@@ -54,16 +54,11 @@ namespace CollegeManagement.API.Profiles
             CreateMap<Staff, StaffResponseDto>()
                 .ForMember(dest => dest.Department, opt => opt.MapFrom(src => src.DepartmentRef != null ? src.DepartmentRef.DepartmentName : src.Department))
                 .ForMember(dest => dest.BoardName, opt => opt.MapFrom(src => src.BoardRef != null ? src.BoardRef.BoardName : src.BoardName))
-<<<<<<< HEAD
                 .ForMember(dest => dest.BoardCode, opt => opt.MapFrom(src => src.BoardRef != null ? src.BoardRef.BoardCode : (src.BoardName ?? string.Empty)))
-                .ForMember(dest => dest.Designation, opt => opt.MapFrom(src => src.DesignationRef != null ? src.DesignationRef.Name : src.Designation));
-=======
-                .ForMember(dest => dest.BoardCode, opt => opt.MapFrom(src => src.BoardRef != null ? src.BoardRef.BoardCode : src.BoardName))
                 .ForMember(dest => dest.Designation, opt => opt.MapFrom(src => src.DesignationRef != null ? src.DesignationRef.Name : src.Designation))
                 .ForMember(dest => dest.AllocatedSubjects, opt => opt.MapFrom(src => src.StaffSubjectAllocations != null
                     ? src.StaffSubjectAllocations.Select(a => a.Subject != null ? a.Subject.SubjectName : string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList()
                     : new List<string>()));
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
 
             // Staff Entity -> StaffProfileFullDto
             CreateMap<Staff, StaffProfileFullDto>()

@@ -119,13 +119,8 @@ export function AcademicProvider({ children }) {
     setBoardsError("");
     apiClient.get(apiEndpoints.boards.list, { params: { Status: true, PageNumber: 1, PageSize: 100 } }).then((response) => {
       if (!active) return;
-<<<<<<< HEAD
       const fetched = asList(response).filter(isActive).map(mapBoard);
-      const nextBoards = fetched.length ? fetched : DEFAULT_BOARDS;
-=======
-      const apiBoards = asList(response).filter(isActive).map(mapBoard);
-      const nextBoards = apiBoards.length ? apiBoards : mockBoards.map(mapBoard);
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
+      const nextBoards = fetched.length ? fetched : (mockBoards?.length ? mockBoards.map(mapBoard) : DEFAULT_BOARDS);
       setBoards(nextBoards);
       persist("cms_cached_boards", nextBoards);
       setSelectedBoardState((current) => {
@@ -135,20 +130,11 @@ export function AcademicProvider({ children }) {
       });
     }).catch((error) => {
       if (!active) return;
-<<<<<<< HEAD
-      const fallbackBoards = readStored("cms_cached_boards") || DEFAULT_BOARDS;
+      const fallbackBoards = readStored("cms_cached_boards") || (mockBoards?.length ? mockBoards.map(mapBoard) : DEFAULT_BOARDS);
       setBoards(fallbackBoards);
-      setBoardsError("");
+      setBoardsError(getApiErrorMessage(error) || "");
       setSelectedBoardState((current) => {
-        const next = fallbackBoards.find((board) => sameBoard(board, current)) ?? fallbackBoards[0];
-=======
-      const fallbackBoards = (readStored(BOARD_STORAGE_KEY) ? [readStored(BOARD_STORAGE_KEY)] : []).concat(mockBoards.map(mapBoard));
-      const effective = fallbackBoards.filter((b, idx, arr) => arr.findIndex(x => x.id === b.id) === idx);
-      setBoards(effective);
-      setBoardsError(getApiErrorMessage(error));
-      setSelectedBoardState((current) => {
-        const next = effective.find((board) => sameBoard(board, current)) ?? effective[0] ?? null;
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
+        const next = fallbackBoards.find((board) => sameBoard(board, current)) ?? fallbackBoards[0] ?? null;
         persist(BOARD_STORAGE_KEY, next);
         return next;
       });
@@ -158,48 +144,28 @@ export function AcademicProvider({ children }) {
 
   useEffect(() => {
     let active = true;
-<<<<<<< HEAD
     const effectiveBoardId = selectedBoardId || boardIdOf(selectedBoard) || "1";
-    setAcademicYearsLoading(true);
-    setAcademicYearsError("");
-    apiClient.get(apiEndpoints.academicYears.active, { params: { boardId: effectiveBoardId, isActive: true } }).then((response) => {
-      if (!active) return;
-      const fetched = asList(response).filter((year) => {
-=======
-    if (!selectedBoardId) {
-      const fallbackYears = mockAcademicYears.map(mapYear);
-      setAcademicYears(fallbackYears);
-      setSelectedAcademicYearState(fallbackYears[0] ?? null);
-      persist(YEAR_STORAGE_KEY, fallbackYears[0] ?? null);
-      setAcademicYearsLoading(false);
-      return () => { active = false; };
-    }
     setAcademicYearsLoading(true);
     setAcademicYearsError("");
     const loadYears = async () => {
       try {
         return await apiClient.get(apiEndpoints.academicYears.active, {
-          params: { boardId: selectedBoardId, isActive: true },
+          params: { boardId: effectiveBoardId, isActive: true },
         });
       } catch {
         return apiClient.get(apiEndpoints.academicYears.list, {
-          params: { boardId: selectedBoardId, isActive: true, Status: true },
+          params: { boardId: effectiveBoardId, isActive: true, Status: true },
         });
       }
     };
 
     loadYears().then((response) => {
       if (!active) return;
-      const apiYears = asList(response).filter((year) => {
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
+      const fetched = asList(response).filter((year) => {
         const boardId = valueOf(year, "boardId", "BoardId");
         return (boardId == null || String(boardId) === String(effectiveBoardId)) && isActive(year);
       }).map(mapYear);
-<<<<<<< HEAD
-      const nextYears = fetched.length ? fetched : DEFAULT_ACADEMIC_YEARS;
-=======
-      const nextYears = apiYears.length ? apiYears : mockAcademicYears.map(mapYear);
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
+      const nextYears = fetched.length ? fetched : (mockAcademicYears?.length ? mockAcademicYears.map(mapYear) : DEFAULT_ACADEMIC_YEARS);
       setAcademicYears(nextYears);
       persist("cms_cached_academic_years", nextYears);
       setSelectedAcademicYearState((current) => {
@@ -209,19 +175,11 @@ export function AcademicProvider({ children }) {
       });
     }).catch((error) => {
       if (!active) return;
-<<<<<<< HEAD
-      const fallbackYears = readStored("cms_cached_academic_years") || DEFAULT_ACADEMIC_YEARS;
+      const fallbackYears = readStored("cms_cached_academic_years") || (mockAcademicYears?.length ? mockAcademicYears.map(mapYear) : DEFAULT_ACADEMIC_YEARS);
       setAcademicYears(fallbackYears);
-      setAcademicYearsError("");
-      setSelectedAcademicYearState((current) => {
-        const next = fallbackYears.find((year) => sameYear(year, current)) ?? fallbackYears[0];
-=======
-      const fallbackYears = mockAcademicYears.map(mapYear);
-      setAcademicYears(fallbackYears);
-      setAcademicYearsError(getApiErrorMessage(error));
+      setAcademicYearsError(getApiErrorMessage(error) || "");
       setSelectedAcademicYearState((current) => {
         const next = fallbackYears.find((year) => sameYear(year, current)) ?? fallbackYears[0] ?? null;
->>>>>>> 7ac09dd247fbe6236b709f052f14108caccb39f8
         persist(YEAR_STORAGE_KEY, next);
         return next;
       });

@@ -527,20 +527,21 @@ BEGIN
     SET v_TargetDate = COALESCE(p_TargetDate, CURDATE());
     SET v_StaffType = COALESCE(p_StaffType, 'All Staff');
 
-    SELECT COUNT(*) INTO v_TotalStaff
-    FROM `Staff` st
-    WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
-      AND (st.Status = 'Active' OR st.Status IS NULL)
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId);
-
     SELECT COUNT(*) INTO v_TeachingCount
     FROM `Staff` st
     WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
       AND (st.Status = 'Active' OR st.Status IS NULL)
       AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching')
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId);
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
 
-    SET v_NonTeachingCount = GREATEST(0, v_TotalStaff - v_TeachingCount);
+    SELECT COUNT(*) INTO v_NonTeachingCount
+    FROM `Staff` st
+    WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
+      AND (st.Status = 'Active' OR st.Status IS NULL)
+      AND (st.StaffType = 'Non-Teaching' OR (st.StaffType != 'Teaching' AND st.FacultyType != 'Teaching'))
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
+
+    SET v_TotalStaff = v_TeachingCount + v_NonTeachingCount;
 
     IF LOWER(v_StaffType) IN ('teaching staff', 'teaching') THEN
         SET v_FilteredTotal = v_TeachingCount;

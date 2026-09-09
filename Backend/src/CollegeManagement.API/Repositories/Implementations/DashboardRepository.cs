@@ -1032,6 +1032,45 @@ public class DashboardRepository : IDashboardRepository
 
             if (staffAtt != null)
             {
+                // Ensure teachingCount and nonTeachingCount align with KPI counts
+                int spTeaching = await conn.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(*) FROM `Staff`
+                    WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+                      AND (Status = 'Active' OR Status IS NULL)
+                      AND (StaffType = 'Teaching' OR FacultyType = 'Teaching')
+                      AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
+                    new { boardId });
+
+                int spNonTeaching = await conn.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(*) FROM `Staff`
+                    WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+                      AND (Status = 'Active' OR Status IS NULL)
+                      AND (StaffType = 'Non-Teaching' OR (StaffType != 'Teaching' AND FacultyType != 'Teaching'))
+                      AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
+                    new { boardId });
+
+                staffAtt.TeachingCount = spTeaching;
+                staffAtt.NonTeachingCount = spNonTeaching;
+
+                if (string.Equals(selectedType, "Teaching Staff", StringComparison.OrdinalIgnoreCase))
+                {
+                    staffAtt.TotalStaff = spTeaching;
+                }
+                else if (string.Equals(selectedType, "Non-Teaching Staff", StringComparison.OrdinalIgnoreCase))
+                {
+                    staffAtt.TotalStaff = spNonTeaching;
+                }
+                else
+                {
+                    staffAtt.TotalStaff = spTeaching + spNonTeaching;
+                }
+
+                if (staffAtt.TotalStaff > 0 && staffAtt.Present > 0)
+                {
+                    staffAtt.AttendancePercentage = Math.Round((decimal)staffAtt.Present * 100m / staffAtt.TotalStaff, 1);
+                    staffAtt.PresentPercentage = staffAtt.AttendancePercentage;
+                }
+
                 return staffAtt;
             }
         }
@@ -1042,22 +1081,23 @@ public class DashboardRepository : IDashboardRepository
 
         var todayStr = dateVal.ToString("yyyy-MM-dd");
 
-        int totalStaff = await conn.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(*) FROM Staff
-            WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
-              AND (Status = 'Active' OR Status IS NULL)
-              AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
-            new { boardId });
-
         int teachingCount = await conn.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(*) FROM Staff
+            SELECT COUNT(*) FROM `Staff`
             WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
               AND (Status = 'Active' OR Status IS NULL)
               AND (StaffType = 'Teaching' OR FacultyType = 'Teaching')
               AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
             new { boardId });
 
-        int nonTeachingCount = Math.Max(0, totalStaff - teachingCount);
+        int nonTeachingCount = await conn.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(*) FROM `Staff`
+            WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+              AND (Status = 'Active' OR Status IS NULL)
+              AND (StaffType = 'Non-Teaching' OR (StaffType != 'Teaching' AND FacultyType != 'Teaching'))
+              AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
+            new { boardId });
+
+        int totalStaff = teachingCount + nonTeachingCount;
         int present = 0, absent = 0, late = 0, onLeave = 0;
 
         try

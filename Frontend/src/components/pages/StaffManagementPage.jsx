@@ -175,7 +175,7 @@ const teachingFields = [
 
 const nonTeachingSteps = [
   [
-    ["board", "Board Name", "select", boardOptions, false],
+    ["board", "Board Name", "select", boardOptions, true],
     ["employeeId", "Employee ID"],
     ["firstName", "First Name"],
     ["middleName", "Middle Name", "text", [], false],
@@ -183,11 +183,11 @@ const nonTeachingSteps = [
     ["guardianName", "Father's / Husband's Name"],
     ["gender", "Gender", "select", ["Male", "Female", "Other"]],
     ["dateOfBirth", "Date of Birth", "date"],
-    ["maritalStatus", "Marital Status"],
+    ["maritalStatus", "Marital Status", "text", [], false],
     ["bloodGroup", "Blood Group", "select", ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"], false],
     ["nationality", "Nationality"],
     ["aadhaar", "Aadhaar Number"],
-    ["pan", "PAN Number"],
+    ["pan", "PAN Number", "text", [], false],
     ["profilePhoto", "Profile Photo", "file", [], false],
   ],
   [
@@ -199,45 +199,45 @@ const nonTeachingSteps = [
     ["district", "District"],
     ["city", "City"],
     ["currentAddress", "Current Address", "textarea"],
-    ["permanentAddress", "Permanent Address", "textarea"],
+    ["permanentAddress", "Permanent Address", "textarea", [], false],
   ],
   [
     ["department", "Department", "search-select", defaultDepartments.slice(5)],
     ["designation", "Designation", "search-select", []],
     ["dateOfJoining", "Date of Joining", "date"],
     ["qualification", "Qualification"],
-    ["experience", "Experience"],
+    ["experience", "Experience", "text", [], false],
     ["status", "Status", "select", ["Active", "Inactive"], true, "start-new-row"],
   ],
   [
-    ["salaryStructure", "Salary Structure"],
-    ["basicSalary", "Basic Salary", "number"],
-    ["grossSalary", "Gross Salary", "number"],
-    ["bankName", "Bank Name"],
-    ["accountHolder", "Account Holder Name"],
-    ["accountNumber", "Account Number"],
-    ["ifsc", "IFSC"],
-    ["branch", "Branch"],
-    ["pfNumber", "PF Number"],
-    ["esiNumber", "ESI Number"],
-    ["uanNumber", "UAN Number"],
+    ["salaryStructure", "Salary Structure", "text", [], false],
+    ["basicSalary", "Basic Salary", "number", [], false],
+    ["grossSalary", "Gross Salary", "number", [], false],
+    ["bankName", "Bank Name", "text", [], false],
+    ["accountHolder", "Account Holder Name", "text", [], false],
+    ["accountNumber", "Account Number", "text", [], false],
+    ["ifsc", "IFSC", "text", [], false],
+    ["branch", "Branch", "text", [], false],
+    ["pfNumber", "PF Number", "text", [], false],
+    ["esiNumber", "ESI Number", "text", [], false],
+    ["uanNumber", "UAN Number", "text", [], false],
   ],
   [
-    ["aadhaarDocument", "Aadhaar", "file"],
-    ["panDocument", "PAN", "file"],
-    ["qualificationCertificate", "Qualification Certificate", "file"],
-    ["experienceCertificate", "Experience Certificate", "file"],
-    ["resume", "Resume", "file"],
-    ["bankProof", "Bank Passbook / Cancelled Cheque", "file"],
-    ["drivingLicence", "Driving Licence", "file"],
-    ["otherDocuments", "Other Documents", "file"],
+    ["aadhaarDocument", "Aadhaar", "file", [], false],
+    ["panDocument", "PAN", "file", [], false],
+    ["qualificationCertificate", "Qualification Certificate", "file", [], false],
+    ["experienceCertificate", "Experience Certificate", "file", [], false],
+    ["resume", "Resume", "file", [], false],
+    ["bankProof", "Bank Passbook / Cancelled Cheque", "file", [], false],
+    ["drivingLicence", "Driving Licence", "file", [], false],
+    ["otherDocuments", "Other Documents", "file", [], false],
   ],
   [
-    ["emergencyName", "Contact Name"],
-    ["emergencyRelationship", "Relationship"],
-    ["emergencyMobile", "Mobile"],
-    ["emergencyAlternate", "Alternate Mobile"],
-    ["emergencyAddress", "Address", "textarea"],
+    ["emergencyName", "Contact Name", "text", [], false],
+    ["emergencyRelationship", "Relationship", "text", [], false],
+    ["emergencyMobile", "Mobile", "text", [], false],
+    ["emergencyAlternate", "Alternate Mobile", "text", [], false],
+    ["emergencyAddress", "Address", "textarea", [], false],
   ],
 ];
 
@@ -310,7 +310,7 @@ const portalFields = [
   ],
 ];
 
-function SearchSelectInput({ label = "", opts = [], value = "", onChange }) {
+function SearchSelectInput({ label = "", opts = [], value = "", onChange, hasError = false }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState(value || "");
   const ref = useRef(null);
@@ -354,8 +354,8 @@ function SearchSelectInput({ label = "", opts = [], value = "", onChange }) {
   };
 
   return (
-    <div className="staff-custom-search-select" ref={ref}>
-      <div className="staff-search-input-wrap">
+    <div className={`staff-custom-search-select ${hasError ? "has-error" : ""}`} ref={ref}>
+      <div className="staff-search-input-wrap" style={hasError ? { borderColor: "#ef4444" } : undefined}>
         <Search className="staff-search-icon" aria-hidden="true" size={14} />
         <input
           type="text"
@@ -680,7 +680,68 @@ function useStaffTypeOptions(staffType) {
   return { departments, designations, loading };
 }
 
-function Field({ item = [], values = {}, setValues, error = "", forceOptional = false, departmentOptions = null, designationOptions = null }) {
+function validateStepFields(fieldsList = [], values = {}, activeBoardName = "") {
+  const newErrors = {};
+  for (const f of fieldsList) {
+    if (!Array.isArray(f) || f.length < 2) continue;
+    const name = f[0];
+    const label = f[1] || name;
+    const type = f[2] || "text";
+    const isRequired = f[4] !== false;
+
+    let val = values?.[name];
+    if (name === "board" && (val === undefined || val === "")) {
+      val = values?.boardName || activeBoardName;
+    }
+    if (name === "allocatedSubjects" && (val === undefined || val === "")) {
+      val = values?.subjects;
+    }
+
+    if (isRequired) {
+      if (
+        val === undefined ||
+        val === null ||
+        (typeof val === "string" && val.trim() === "") ||
+        (Array.isArray(val) && val.length === 0)
+      ) {
+        newErrors[name] = `${label} is required`;
+        continue;
+      }
+    }
+
+    if (val !== undefined && val !== null && String(val).trim() !== "") {
+      const strVal = String(val).trim();
+      if (name === "mobile" || name === "emergencyMobile") {
+        const cleanMobile = strVal.replace(/\D/g, "");
+        if (cleanMobile.length !== 10) {
+          newErrors[name] = "Mobile number must be 10 digits";
+        }
+      } else if (name === "alternateMobile" || name === "emergencyAlternate") {
+        const cleanAlt = strVal.replace(/\D/g, "");
+        if (cleanAlt.length > 0 && cleanAlt.length !== 10) {
+          newErrors[name] = "Alternate mobile must be 10 digits";
+        }
+      } else if (name === "email" || type === "email") {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(strVal)) {
+          newErrors[name] = "Please enter a valid email address";
+        }
+      } else if (name === "aadhaar") {
+        const cleanAadhaar = strVal.replace(/\s|-/g, "");
+        if (!/^\d{12}$/.test(cleanAadhaar)) {
+          newErrors[name] = "Aadhaar number must be 12 digits";
+        }
+      } else if (name === "pin") {
+        const cleanPin = strVal.replace(/\D/g, "");
+        if (cleanPin.length !== 6) {
+          newErrors[name] = "PINCODE must be 6 digits";
+        }
+      }
+    }
+  }
+  return newErrors;
+}
+
+function Field({ item = [], values = {}, setValues, setErrors = null, error = "", forceOptional = false, departmentOptions = null, designationOptions = null }) {
   const { boards, selectedBoard, setSelectedBoard } = useAcademicContext();
   if (!Array.isArray(item) || item.length < 2) return null;
   const name = item[0] || "";
@@ -732,6 +793,15 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
       }
     }
 
+    if (typeof setErrors === "function" && error) {
+      setErrors((prev) => {
+        if (!prev || !prev[name]) return prev;
+        const copy = { ...prev };
+        delete copy[name];
+        return copy;
+      });
+    }
+
     if (typeof setValues === "function") {
       setValues((v) => {
         const prev = v && typeof v === "object" ? v : {};
@@ -759,13 +829,16 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
     ? safeValues[name]
     : (name === "board" ? activeBoardName : (name === "allocatedSubjects" ? (safeValues.subjects || []) : ""));
 
+  const hasError = Boolean(error);
+  const errorStyle = hasError ? { borderColor: "#ef4444", boxShadow: "0 0 0 1px #ef4444" } : undefined;
+
   return (
-    <label className={[type === "textarea" ? "is-wide" : "", layoutClass].filter(Boolean).join(" ")}>
+    <label className={[type === "textarea" ? "is-wide" : "", layoutClass, hasError ? "has-field-error" : ""].filter(Boolean).join(" ")}>
       <span>
         {label} {required ? <b className="required-star" style={{ color: "#ef4444", marginLeft: "2px", fontWeight: "bold" }}>*</b> : null}
       </span>
       {type === "select" ? (
-        <select value={val} onChange={(e) => change(e.target.value)}>
+        <select value={val} onChange={(e) => change(e.target.value)} style={errorStyle}>
           <option value="">Select {label}</option>
           {opts.map((o) => (
             <option key={o} value={o}>{o}</option>
@@ -777,6 +850,7 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
           opts={opts}
           value={val}
           onChange={(v) => change(v)}
+          hasError={hasError}
         />
       ) : type === "multi-subject-select" ? (
         <SubjectAllocationInput
@@ -786,7 +860,7 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
           onChange={(v) => change(v)}
         />
       ) : type === "textarea" ? (
-        <textarea value={val} onChange={(e) => change(e.target.value)} />
+        <textarea value={val} onChange={(e) => change(e.target.value)} style={errorStyle} />
       ) : (
         <input
           type={type}
@@ -795,6 +869,7 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
           onChange={(e) =>
             change(type === "file" ? e.target.files?.[0]?.name || "" : e.target.value)
           }
+          style={errorStyle}
         />
       )}{" "}
       {name === "employeeId" ? (
@@ -805,7 +880,7 @@ function Field({ item = [], values = {}, setValues, error = "", forceOptional = 
           </Link>
         </small>
       ) : error ? (
-        <small>{error}</small>
+        <small className="field-error" style={{ color: "#ef4444", fontSize: 11, display: "block", marginTop: 4, fontWeight: 500 }}>{error}</small>
       ) : null}
     </label>
   );
@@ -1491,6 +1566,12 @@ function TeachingForm({ records, setRecords, existing }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    const formErrors = validateStepFields(teachingFields, values, activeBoardName);
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors);
+      setToast("Please fill in all mandatory fields marked with an asterisk (*).");
+      return;
+    }
     setErrors({});
     const fullName = [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" ") || values.employeeId || "Teaching Staff";
     const resolvedCode = values.boardCode || resolveBoardCode({ board: values.board, boardName: values.boardName }, boards);
@@ -1587,6 +1668,7 @@ function TeachingForm({ records, setRecords, existing }) {
                 item={f}
                 values={values}
                 setValues={setValues}
+                setErrors={setErrors}
                 error={errors[f[0]]}
                 forceOptional={false}
                 departmentOptions={apiDepts}
@@ -1713,6 +1795,15 @@ function NonTeachingForm({ records, setRecords, existing }) {
   }, [values.pin]);
 
   const next = () => {
+    const currentFields = nonTeachingSteps[step] || [];
+    const stepErrors = validateStepFields(currentFields, values, activeBoardName);
+
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors(stepErrors);
+      setToast("Please fill in all mandatory fields marked with an asterisk (*).");
+      return;
+    }
+
     setErrors({});
     if (editingFromReview) {
       setEditingFromReview(false);
@@ -1723,6 +1814,17 @@ function NonTeachingForm({ records, setRecords, existing }) {
   };
 
   const save = async () => {
+    for (let i = 0; i < 6; i++) {
+      const stepFields = nonTeachingSteps[i] || [];
+      const stepErrors = validateStepFields(stepFields, values, activeBoardName);
+      if (Object.keys(stepErrors).length > 0) {
+        setErrors(stepErrors);
+        setToast(`Please fill in all mandatory fields in ${labels[i]}.`);
+        setStep(i);
+        return;
+      }
+    }
+
     const fullName = [values.firstName, values.middleName, values.lastName].filter(Boolean).join(" ") || values.employeeId;
     const resolvedCode = values.boardCode || resolveBoardCode({ board: values.board, boardName: values.boardName }, boards);
     const payload = {
@@ -1817,8 +1919,9 @@ function NonTeachingForm({ records, setRecords, existing }) {
                   item={f}
                   values={values}
                   setValues={setValues}
+                  setErrors={setErrors}
                   error={errors[f[0]] || (f[0] === "pin" ? pincodeError : "")}
-                  forceOptional
+                  forceOptional={false}
                   departmentOptions={apiDepts}
                   designationOptions={apiDesigs}
                 />
@@ -2424,30 +2527,71 @@ function Pending({ records = [], setRecords, activity }) {
 }
 
 // ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
 // STAFF DETAILS (GET /api/v1/staff/{id} & GET /api/v1/staff/{id}/print-pdf)
 // ----------------------------------------------------------------------
-function Details({ record, records, setRecords }) {
+function Details({ record, records, setRecords, id }) {
   const n = useNavigate();
   const [toast, setToast] = useState(null);
-  const [apiDetail, setApiDetail] = useState(null);
+  const [apiDetail, setApiDetail] = useState(record || null);
+  const [loading, setLoading] = useState(!record);
+
+  const targetId = id || record?.id;
 
   // GET /api/v1/staff/{id}
   useEffect(() => {
     let isMounted = true;
     async function fetchDetail() {
-      if (!record?.id) return;
+      if (!targetId) return;
       try {
-        const res = await apiClient.get(apiEndpoints.faculty.getById(record.id));
-        if (isMounted && res.data) setApiDetail(res.data);
+        setLoading(true);
+        const res = await apiClient.get(apiEndpoints.faculty.getById(targetId));
+        if (isMounted && res.data) {
+          const fetched = res.data.data || res.data;
+          setApiDetail(fetched);
+          if (typeof setRecords === "function" && fetched) {
+            setRecords((prev) => {
+              const list = Array.isArray(prev) ? prev : [];
+              const exists = list.some((r) => String(r.id) === String(fetched.id));
+              if (!exists) return [fetched, ...list];
+              return list.map((r) => (String(r.id) === String(fetched.id) ? { ...r, ...fetched } : r));
+            });
+          }
+        }
       } catch (err) {
         console.warn("GET /api/v1/staff/{id} API offline, using local detail record");
+      } finally {
+        if (isMounted) setLoading(false);
       }
     }
     fetchDetail();
     return () => { isMounted = false; };
-  }, [record?.id]);
+  }, [targetId]);
 
   const activeRecord = apiDetail || record;
+
+  if (loading && !activeRecord) {
+    return (
+      <DashboardLayout title="Staff Details" breadcrumb={["People", "Staff Management"]}>
+        <main className="staff-mock-page">
+          <p style={{ margin: "40px 0", textAlign: "center", color: "var(--cms-muted)" }}>
+            Loading staff details...
+          </p>
+        </main>
+      </DashboardLayout>
+    );
+  }
+
+  if (!activeRecord) {
+    return (
+      <DashboardLayout title="Staff Record Not Found" breadcrumb={["People", "Staff Management"]}>
+        <main className="staff-mock-page">
+          <p style={{ margin: "20px 0" }}>The requested staff record could not be found.</p>
+          <button className="cms-btn cms-btn-primary" onClick={() => n("/dashboard/staff/list")}>Back to Staff List</button>
+        </main>
+      </DashboardLayout>
+    );
+  }
 
   const handleSaveCard = async (updatedRecord) => {
     if (updatedRecord.firstName || updatedRecord.lastName) {
@@ -2482,7 +2626,7 @@ function Details({ record, records, setRecords }) {
         <section className="staff-detail-head">
           <UserRound />
           <div>
-            <h2>{activeRecord.fullName}</h2>
+            <h2>{activeRecord.fullName || `${activeRecord.firstName || ""} ${activeRecord.lastName || ""}`.trim() || activeRecord.employeeId}</h2>
             <p>{activeRecord.employeeId} · {activeRecord.designation} · {activeRecord.department}</p>
             {activeRecord.staffType === "Teaching" && Array.isArray(activeRecord.allocatedSubjects || activeRecord.subjects) && (activeRecord.allocatedSubjects || activeRecord.subjects).length > 0 ? (
               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px", marginBottom: "4px", flexWrap: "wrap" }}>
@@ -2876,6 +3020,8 @@ export default function StaffManagementPage() {
   });
   const [activities, setActivityRaw] = useState(() => read(ACTIVITY_STORE, initialActivities));
   const [toast, setToast] = useState("");
+  const [loadedStaff, setLoadedStaff] = useState(null);
+  const [loadingStaff, setLoadingStaff] = useState(false);
 
   const safeRecords = useMemo(() => {
     return Array.isArray(records) && records.length > 0 ? records : seed;
@@ -2898,7 +3044,37 @@ export default function StaffManagementPage() {
     write(ACTIVITY_STORE, next);
   };
 
-  const record = safeRecords.find((r) => String(r.id) === String(id));
+  // Fetch staff record from API whenever id changes
+  useEffect(() => {
+    if (!id) {
+      setLoadedStaff(null);
+      setLoadingStaff(false);
+      return;
+    }
+
+    let isMounted = true;
+    async function loadStaff() {
+      try {
+        setLoadingStaff(true);
+        const res = await apiClient.get(apiEndpoints.faculty.getById(id));
+        if (isMounted && res.data) {
+          const item = res.data.data || res.data;
+          setLoadedStaff(item);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch staff record by id from API:", err);
+      } finally {
+        if (isMounted) setLoadingStaff(false);
+      }
+    }
+    loadStaff();
+    return () => { isMounted = false; };
+  }, [id]);
+
+  const localRecord = safeRecords.find(
+    (r) => String(r.id) === String(id) || (r.employeeId && String(r.employeeId).trim().toLowerCase() === String(id).trim().toLowerCase())
+  );
+  const record = loadedStaff || localRecord;
   const p = loc.pathname.replace(/\/$/, "");
 
   let page;
@@ -2919,6 +3095,16 @@ export default function StaffManagementPage() {
     page = <StaffList records={safeRecords} setRecords={setRecords} forced="Completed" />;
   else if (p === "/dashboard/staff/pending" || p.startsWith("/dashboard/staff/pending"))
     page = <Pending records={safeRecords} setRecords={setRecords} activity={activity} />;
+  else if (loadingStaff && !record)
+    page = (
+      <DashboardLayout title="Staff Details" breadcrumb={["People", "Staff Management"]}>
+        <main className="staff-mock-page">
+          <p style={{ margin: "40px 0", textAlign: "center", color: "var(--cms-muted)" }}>
+            Loading staff details...
+          </p>
+        </main>
+      </DashboardLayout>
+    );
   else if (p.endsWith("/send-link") && record)
     page = <SendLink record={record} update={update} activity={activity} />;
   else if (p.endsWith("/review") && record)
@@ -2936,8 +3122,8 @@ export default function StaffManagementPage() {
   )
     page = <PortalForm record={record} update={update} activity={activity} />;
   else if (p.startsWith("/mock-staff-portal/")) page = <PortalHome record={record} />;
-  else if (record)
-    page = <Details record={record} records={safeRecords} setRecords={setRecords} />;
+  else if (id || record)
+    page = <Details record={record} id={id} records={safeRecords} setRecords={setRecords} />;
   else
     page = (
       <DashboardLayout title="Staff Record Not Found" breadcrumb={["People", "Staff Management"]}>

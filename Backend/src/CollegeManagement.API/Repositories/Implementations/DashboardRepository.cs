@@ -1119,7 +1119,7 @@ public class DashboardRepository : IDashboardRepository
             LEFT JOIN Departments d ON st.DepartmentId = d.DepartmentId
             WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
               AND (st.Status = 'Active' OR st.Status IS NULL)
-              AND (@boardId IS NULL OR st.BoardId = @boardId OR d.BoardId = @boardId OR st.BoardId IS NULL OR st.BoardId = 0);",
+              AND (@boardId IS NULL OR st.BoardId = @boardId OR st.BoardId IS NULL OR st.BoardId = 0);",
             new { boardId });
 
         int teachingCount = await conn.ExecuteScalarAsync<int>(@"
@@ -1128,7 +1128,7 @@ public class DashboardRepository : IDashboardRepository
             WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
               AND (st.Status = 'Active' OR st.Status IS NULL)
               AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching' OR st.StaffType IS NULL)
-              AND (@boardId IS NULL OR st.BoardId = @boardId OR d.BoardId = @boardId OR st.BoardId IS NULL OR st.BoardId = 0);",
+              AND (@boardId IS NULL OR st.BoardId = @boardId OR st.BoardId IS NULL OR st.BoardId = 0);",
             new { boardId });
 
         int nonTeachingCount = Math.Max(0, totalStaff - teachingCount);

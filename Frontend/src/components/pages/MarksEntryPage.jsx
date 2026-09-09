@@ -482,29 +482,31 @@ function useAcademicFilterState(allBoards = [], guard = (fn) => fn(), onReset = 
         });
         const rawExams = unwrapRecords(examsRes);
         const examList = (rawExams.length ? rawExams : [])
-          .map((e) => ({
-            id: normalizeId(e.examinationId ?? e.id),
-            code: e.examCode ?? "",
-            name: e.examName ?? e.name ?? "Examination",
-            status: e.status ?? "COMPLETED",
-            boardId: normalizeId(e.boardId),
-            academicYearId: normalizeId(e.academicYearId),
-            academicLevelId: normalizeId(e.academicLevelId),
-            groupId: normalizeId(e.groupId),
-            programId: normalizeId(e.programId),
-            schedules: e.schedules || [],
-            isActive: e.isActive !== false,
-            isCompleted: Boolean(e.isCompleted),
-          }))
+          .map((e) => {
+            const rawStatus = String(e.status ?? e.examStatus ?? e.examinationStatus ?? "").trim().toUpperCase();
+            return {
+              id: normalizeId(e.examinationId ?? e.id),
+              code: e.examCode ?? "",
+              name: e.examName ?? e.name ?? "Examination",
+              status: rawStatus || (e.isCompleted ? "COMPLETED" : "DRAFT"),
+              boardId: normalizeId(e.boardId),
+              academicYearId: normalizeId(e.academicYearId),
+              academicLevelId: normalizeId(e.academicLevelId),
+              groupId: normalizeId(e.groupId),
+              programId: normalizeId(e.programId),
+              schedules: e.schedules || [],
+              isActive: e.isActive !== false,
+              isCompleted: Boolean(e.isCompleted),
+            };
+          })
           .filter(
             (e) =>
               e.isActive &&
               (e.status === "COMPLETED" ||
-                e.status === "SCHEDULED" ||
-                e.status === "APPROVED" ||
                 e.status === "FINISHED" ||
                 e.status === "PUBLISHED" ||
                 e.isCompleted === true) &&
+              e.status !== "SCHEDULED" &&
               (!e.programId || eq(e.programId, filters.program))
           );
 
@@ -573,6 +575,7 @@ function useAcademicFilterState(allBoards = [], guard = (fn) => fn(), onReset = 
     programs,
     sections,
     exams,
+    setExams,
     changeFilter,
   };
 }
@@ -773,29 +776,31 @@ export default function MarksEntryPage() {
       });
       const rawExams = unwrapRecords(examsRes);
       const examList = (rawExams || [])
-        .map((e) => ({
-          id: normalizeId(e.examinationId ?? e.id),
-          code: e.examCode ?? "",
-          name: e.examName ?? e.name ?? "Examination",
-          status: e.status ?? "COMPLETED",
-          boardId: normalizeId(e.boardId),
-          academicYearId: normalizeId(e.academicYearId),
-          academicLevelId: normalizeId(e.academicLevelId),
-          groupId: normalizeId(e.groupId),
-          programId: normalizeId(e.programId),
-          schedules: e.schedules || [],
-          isActive: e.isActive !== false,
-          isCompleted: Boolean(e.isCompleted),
-        }))
+        .map((e) => {
+          const rawStatus = String(e.status ?? e.examStatus ?? e.examinationStatus ?? "").trim().toUpperCase();
+          return {
+            id: normalizeId(e.examinationId ?? e.id),
+            code: e.examCode ?? "",
+            name: e.examName ?? e.name ?? "Examination",
+            status: rawStatus || (e.isCompleted ? "COMPLETED" : "DRAFT"),
+            boardId: normalizeId(e.boardId),
+            academicYearId: normalizeId(e.academicYearId),
+            academicLevelId: normalizeId(e.academicLevelId),
+            groupId: normalizeId(e.groupId),
+            programId: normalizeId(e.programId),
+            schedules: e.schedules || [],
+            isActive: e.isActive !== false,
+            isCompleted: Boolean(e.isCompleted),
+          };
+        })
         .filter(
           (e) =>
             e.isActive &&
             (e.status === "COMPLETED" ||
-              e.status === "SCHEDULED" ||
-              e.status === "APPROVED" ||
               e.status === "FINISHED" ||
               e.status === "PUBLISHED" ||
               e.isCompleted === true) &&
+            e.status !== "SCHEDULED" &&
             (!e.programId || eq(e.programId, entry.filters.program))
         );
 
@@ -803,6 +808,7 @@ export default function MarksEntryPage() {
         ? entryExamId
         : examList[0]?.id || "";
       setEntryExamId(chosenExamId);
+      if (entry.setExams) entry.setExams(examList);
 
       // 3. Load configs and search evaluations
       if (chosenExamId) {

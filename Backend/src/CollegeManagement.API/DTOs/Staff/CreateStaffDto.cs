@@ -120,8 +120,6 @@ namespace CollegeManagement.API.DTOs.Staff
         [StringLength(100)]
         public string? BoardName { get; set; }
 
-        public string? BoardCode { get; set; }
-
         public string? Board
         {
             get => !string.IsNullOrWhiteSpace(BoardCode) ? BoardCode : BoardName;

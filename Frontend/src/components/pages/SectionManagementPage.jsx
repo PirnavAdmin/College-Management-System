@@ -854,7 +854,11 @@ export default function SectionManagementPage() {
       if (staffResult.status === "fulfilled") {
         const staffData = unwrapList(staffResult.value).map(normalizeTeacher);
         const teachingStaff = staffData.filter(
-          (item) => item.isActive && String(item.staffType || "Teaching").toLowerCase() === "teaching"
+          (item) =>
+            item.isActive &&
+            String(item.staffType || "Teaching")
+              .trim()
+              .toLowerCase() === "teaching"
         );
         setTeachersList(teachingStaff.filter((item) => item.id));
       }
@@ -994,9 +998,23 @@ export default function SectionManagementPage() {
   const roomAllowed = (room, row, otherRows = []) => Boolean(room?.id && room.isActive && room.roomType === "Classroom" &&
     (row.status !== "Active" || (![...sections.filter((section) => normalizeId(section.id) !== normalizeId(selectedSectionId)), ...otherRows]
       .some((section) => section.status === "Active" && normalizeId(section.roomId) === normalizeId(room.id)))));
-  const teacherAllowed = (teacher, row, otherRows = []) => isTeachingStaff(teacher) &&
-    (row.status !== "Active" || ![...sections.filter((section) => normalizeId(section.id) !== normalizeId(selectedSectionId)), ...otherRows]
-      .some((section) => section.status === "Active" && normalizeId(section.classTeacherId) === normalizeId(teacher.id)));
+  const teacherAssignmentConflict = (teacherId, row, otherRows = []) =>
+    row.status === "Active" &&
+    [
+      ...sections.filter(
+        (section) =>
+          normalizeId(section.id) !== normalizeId(selectedSectionId)
+      ),
+      ...otherRows,
+    ].some(
+      (section) =>
+        section.status === "Active" &&
+        normalizeId(section.classTeacherId) === normalizeId(teacherId)
+    );
+
+  const teacherAllowed = (teacher, row, otherRows = []) =>
+    isTeachingStaff(teacher) &&
+    !teacherAssignmentConflict(teacher.id, row, otherRows);
   const roomOptionsFor = (row, others = []) => rooms.filter((room) => roomAllowed(room, row, others))
     .map((room) => ({ value: normalizeId(room.id), label: room.roomNo + " (Cap: " + room.capacity + ")" }));
   const teacherOptionsFor = (row, others = []) => teachersList.filter((teacher) => teacherAllowed(teacher, row, others))
@@ -1306,8 +1324,20 @@ export default function SectionManagementPage() {
       const roomObj = roomsById.get(String(sectionForm.roomId));
       const strengthNum = Number(sectionForm.strength);
       if (!roomAllowed(roomObj, sectionForm)) errs.roomId = "Room is not available for Section allocation";
-      if (!sectionForm.classTeacherId) errs.classTeacherId = "Incharge is required";
-      else if (!teacherAllowed(teachersById.get(normalizeId(sectionForm.classTeacherId)), sectionForm)) errs.classTeacherId = "Select an available active Teaching Incharge";
+      const selectedTeacher = teachersById.get(
+        normalizeId(sectionForm.classTeacherId)
+      );
+
+      if (!sectionForm.classTeacherId) {
+        errs.classTeacherId = "Incharge is required";
+      } else if (!isTeachingStaff(selectedTeacher)) {
+        errs.classTeacherId = "Select an active Teaching Staff member";
+      } else if (
+        teacherAssignmentConflict(selectedTeacher.id, sectionForm)
+      ) {
+        errs.classTeacherId =
+          "This faculty member is already assigned to another active section";
+      }
       if (sections.some((item) => normalizeId(item.id) !== normalizeId(selectedSectionId) && sameText(item.name, sectionForm.name) && normalizeId(item.boardId) === normalizeId(boardId) && normalizeId(item.academicYearId) === normalizeId(academicYearId) && normalizeId(item.groupId) === normalizeId(groupId) && normalizeId(item.programId) === normalizeId(programId) && normalizeId(item.academicLevelId) === normalizeId(academicLevelId))) errs.name = "Section Name already exists for this academic scope";
 
       if (!String(sectionForm.strength).trim()) {
@@ -1361,8 +1391,21 @@ export default function SectionManagementPage() {
         const roomObj = roomsById.get(normalizeId(sec.roomId));
         const others = bulkSections.filter((_, index) => index !== i);
         if (!roomAllowed(roomObj, sec, others)) errs[`room_${i}`] = "Room is not available for Section allocation";
-        if (!sec.classTeacherId) errs[`teacher_${i}`] = "Incharge is required";
-        else if (!teacherAllowed(teachersById.get(normalizeId(sec.classTeacherId)), sec, others)) errs[`teacher_${i}`] = "Select an available active Teaching Incharge";
+
+        const selectedTeacher = teachersById.get(
+          normalizeId(sec.classTeacherId)
+        );
+
+        if (!sec.classTeacherId) {
+          errs[`teacher_${i}`] = "Incharge is required";
+        } else if (!isTeachingStaff(selectedTeacher)) {
+          errs[`teacher_${i}`] = "Select an active Teaching Staff member";
+        } else if (
+          teacherAssignmentConflict(selectedTeacher.id, sec, others)
+        ) {
+          errs[`teacher_${i}`] =
+            "This faculty member is already assigned to another active section";
+        }
         const strengthNum = Number(sec.strength);
         if (!String(sec.strength).trim() || !Number.isInteger(strengthNum) || strengthNum <= 0 || strengthNum > 150) {
           errs[`strength_${i}`] = "Section capacity must be an integer from 1 to 150";
@@ -2053,12 +2096,6 @@ export default function SectionManagementPage() {
                   </div>
                   <div className="cms-sec-toolbar-filters">
                     <div className="cms-field">
-                    <SearchableSelect value={filters.boardId} onChange={(boardId) => setFilters((current) => ({ ...current, boardId, academicYearId: "", academicLevelId: "", groupId: "", programId: "" }))} options={sectionBoardFilterOptions} placeholder="All Boards" showSearch={true} />
-                  </div>
-                  <div className="cms-field">
-                    <SearchableSelect value={filters.academicYearId} onChange={(academicYearId) => setFilters((current) => ({ ...current, academicYearId }))} options={sectionYearFilterOptions} placeholder="All Academic Years" showSearch={true} />
-                  </div>
-                  <div className="cms-field">
                       <SearchableSelect
                         value={filters.groupId}
                         onChange={(groupId) => {

@@ -185,7 +185,12 @@ export default function StudentEnrollmentPage({ id }) {
       if (photoFile) {
         const photoData = new FormData();
         photoData.append("file", photoFile);
-        await apiClient.post(apiEndpoints.students.uploadPhoto(id), photoData, { headers: { "Content-Type": "multipart/form-data" } });
+        const photoResponse = await apiClient.post(apiEndpoints.students.uploadPhoto(id), photoData, { headers: { "Content-Type": "multipart/form-data" } });
+        const photoResult = unwrapStudent(photoResponse.data);
+        const uploadedPhotoUrl = stringValue(valueOf(photoResult, "photoUrl", "PhotoUrl", "photo", "Photo", "photoPath", "PhotoPath")).trim();
+        if (uploadedPhotoUrl) {
+          try { sessionStorage.setItem(`cms_student_photo_${id}`, uploadedPhotoUrl); } catch { /* Storage may be unavailable. */ }
+        }
       }
       saved = true;
       setMessage(photoFile ? "Student profile and photo updated successfully." : "Student profile updated successfully.");

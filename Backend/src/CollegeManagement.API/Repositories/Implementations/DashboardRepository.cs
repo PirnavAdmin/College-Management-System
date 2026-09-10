@@ -170,48 +170,12 @@ public class DashboardRepository : IDashboardRepository
         // Inline direct calculation
         var targetDateStr = dateVal.ToString("yyyy-MM-dd");
 
-        // Dynamic Effective & Prior Academic Year Determination
-        int? effectiveAcademicYearId = academicYearId;
-        int? priorAcademicYearId = null;
-        DateTime? priorYearEndDate = null;
-        CollegeManagement.API.Models.AcademicYear? currentYear = null;
-
-        if (academicYearId.HasValue && academicYearId.Value > 0)
-        {
-            currentYear = await _db.AcademicYears.AsNoTracking().FirstOrDefaultAsync(y => y.AcademicYearId == academicYearId.Value, ct);
-        }
-        else
-        {
-            var today = DateOnly.FromDateTime(dateVal);
-            currentYear = await _db.AcademicYears.AsNoTracking()
-                .Where(y => y.IsActive && (!boardId.HasValue || y.BoardId == boardId.Value) && (y.StartDate <= today && y.EndDate >= today))
-                .FirstOrDefaultAsync(ct);
-
-            if (currentYear == null)
-            {
-                currentYear = await _db.AcademicYears.AsNoTracking()
-                    .Where(y => y.IsActive && (!boardId.HasValue || y.BoardId == boardId.Value) && y.StartDate <= today)
-                    .OrderByDescending(y => y.StartDate)
-                    .FirstOrDefaultAsync(ct);
-            }
-
-            if (currentYear == null)
-            {
-                currentYear = await _db.AcademicYears.AsNoTracking()
-                    .Where(y => y.IsActive && (!boardId.HasValue || y.BoardId == boardId.Value))
-                    .OrderBy(y => y.StartDate)
-                    .FirstOrDefaultAsync(ct);
-            }
-
-            effectiveAcademicYearId = currentYear?.AcademicYearId;
-        }
-
         int studentCount = await conn.ExecuteScalarAsync<int>(@"
             SELECT COUNT(*) FROM Students
             WHERE (IsActive = 1 OR IsActive IS NULL)
-              AND (@effectiveAcademicYearId IS NULL OR AcademicYearId = @effectiveAcademicYearId)
+              AND (@academicYearId IS NULL OR AcademicYearId = @academicYearId)
               AND (@boardId IS NULL OR BoardId = @boardId);",
-            new { effectiveAcademicYearId, boardId });
+            new { academicYearId, boardId });
 
         int teachingStaff = await conn.ExecuteScalarAsync<int>(@"
             SELECT COUNT(*) FROM `Staff`
@@ -232,16 +196,33 @@ public class DashboardRepository : IDashboardRepository
         int totalGroups = await conn.ExecuteScalarAsync<int>(@"
             SELECT COUNT(*) FROM `Groups`
             WHERE (IsActive = 1 OR IsActive IS NULL)
-              AND (@effectiveAcademicYearId IS NULL OR AcademicYearId = @effectiveAcademicYearId)
+              AND (@academicYearId IS NULL OR AcademicYearId = @academicYearId)
               AND (@boardId IS NULL OR BoardId = @boardId);",
-            new { effectiveAcademicYearId, boardId });
+            new { academicYearId, boardId });
 
         int totalSections = await conn.ExecuteScalarAsync<int>(@"
             SELECT COUNT(*) FROM `Sections`
             WHERE (IsActive = 1 OR IsActive IS NULL)
-              AND (@effectiveAcademicYearId IS NULL OR AcademicYearId = @effectiveAcademicYearId)
+              AND (@academicYearId IS NULL OR AcademicYearId = @academicYearId)
               AND (@boardId IS NULL OR BoardId = @boardId);",
-            new { effectiveAcademicYearId, boardId });
+            new { academicYearId, boardId });
+
+        // Dynamic Prior Academic Year Determination
+        int? priorAcademicYearId = null;
+        DateTime? priorYearEndDate = null;
+        CollegeManagement.API.Models.AcademicYear? currentYear = null;
+
+        if (academicYearId.HasValue && academicYearId.Value > 0)
+        {
+            currentYear = await _db.AcademicYears.AsNoTracking().FirstOrDefaultAsync(y => y.AcademicYearId == academicYearId.Value, ct);
+        }
+        else
+        {
+            currentYear = await _db.AcademicYears.AsNoTracking()
+                .Where(y => y.IsActive && (!boardId.HasValue || y.BoardId == boardId.Value))
+                .OrderByDescending(y => y.StartDate)
+                .FirstOrDefaultAsync(ct);
+        }
 
         if (currentYear != null)
         {
@@ -256,20 +237,19 @@ public class DashboardRepository : IDashboardRepository
                 }
             }
 
-            int? effectiveBoardId = boardId ?? currentYear.BoardId;
             CollegeManagement.API.Models.AcademicYear? priorYear = null;
             if (!string.IsNullOrEmpty(expectedPriorName))
             {
                 priorYear = await _db.AcademicYears.AsNoTracking()
-                    .Where(y => y.IsActive && (y.AcademicYearName == expectedPriorName || y.AcademicYearName.Contains(expectedPriorName)) && (!effectiveBoardId.HasValue || y.BoardId == effectiveBoardId.Value))
+                    .Where(y => y.IsActive && (y.AcademicYearName == expectedPriorName || y.AcademicYearName.Contains(expectedPriorName)) && (!boardId.HasValue || y.BoardId == boardId.Value))
                     .FirstOrDefaultAsync(ct);
             }
 
-            // 2. Fallback: by EndDate < currentYear.StartDate AND distinct year name
+            // 2. Fallback: by StartDate < currentYear.StartDate
             if (priorYear == null)
             {
                 priorYear = await _db.AcademicYears.AsNoTracking()
-                    .Where(y => y.IsActive && y.AcademicYearName != currentYear.AcademicYearName && y.EndDate < currentYear.StartDate && (!effectiveBoardId.HasValue || y.BoardId == effectiveBoardId.Value))
+                    .Where(y => y.IsActive && y.StartDate < currentYear.StartDate && (!boardId.HasValue || y.BoardId == boardId.Value))
                     .OrderByDescending(y => y.StartDate)
                     .FirstOrDefaultAsync(ct);
             }
@@ -388,8 +368,7 @@ public class DashboardRepository : IDashboardRepository
         var upcomingExamsCount = await conn.ExecuteScalarAsync<int>(@"
             SELECT COUNT(*) FROM `Examinations`
             WHERE (IsActive = 1 OR IsActive IS NULL)
-              AND DATE(EndDate) >= @targetDateStr
-              AND LOWER(COALESCE(Status, '')) NOT IN ('completed', 'cancelled', 'deleted')
+              AND (DATE(EndDate) >= @targetDateStr OR DATE(StartDate) >= @targetDateStr OR Status = 'Scheduled' OR Status = 'DRAFT')
               AND (@academicYearId IS NULL OR AcademicYearId = @academicYearId)
               AND (@boardId IS NULL OR BoardId = @boardId);",
             new { targetDateStr, academicYearId, boardId });
@@ -849,27 +828,20 @@ public class DashboardRepository : IDashboardRepository
         var todayStr = dateVal.ToString("yyyy-MM-dd");
 
         int total = await conn.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(DISTINCT StudentId) FROM Students
+            SELECT COUNT(*) FROM Students
             WHERE (IsActive = 1 OR IsActive IS NULL)
               AND (@academicYearId IS NULL OR AcademicYearId = @academicYearId)
               AND (@boardId IS NULL OR BoardId = @boardId);",
             new { academicYearId, boardId });
 
-        int pCount = 0, abCount = 0, lCount = 0, totalMarked = 0, presentMarked = 0;
+        int pCount = 0, abCount = 0, lCount = 0;
         if (total > 0)
         {
             var attCounts = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT 
-                    COUNT(DISTINCT CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN a.StudentId END) AS PresentStudents,
-                    COUNT(DISTINCT CASE WHEN (a.Status = 2 OR a.Status = 'Absent') 
-                                         AND a.StudentId NOT IN (
-                                             SELECT a2.StudentId FROM `Attendances` a2 
-                                             WHERE DATE(a2.AttendanceDate) = @todayStr 
-                                               AND (a2.Status = 1 OR a2.Status = 'Present' OR a2.Status = 3 OR a2.Status = 'Late')
-                                         ) THEN a.StudentId END) AS AbsentStudents,
-                    COUNT(DISTINCT CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN a.StudentId END) AS LateStudents,
-                    COUNT(a.AttendanceId) AS TotalSessionsMarked,
-                    COALESCE(SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END), 0) AS PresentSessionsMarked
+                    SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' THEN 1 ELSE 0 END) AS PresentCount,
+                    SUM(CASE WHEN a.Status = 2 OR a.Status = 'Absent' THEN 1 ELSE 0 END) AS AbsentCount,
+                    SUM(CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END) AS LateCount
                 FROM `Attendances` a
                 INNER JOIN `Students` s ON a.StudentId = s.StudentId
                 WHERE DATE(a.AttendanceDate) = @todayStr
@@ -881,19 +853,15 @@ public class DashboardRepository : IDashboardRepository
             if (attCounts != null)
             {
                 var dict = (IDictionary<string, object>)attCounts;
-                if (dict.TryGetValue("PresentStudents", out var p) && p != null) pCount = Convert.ToInt32(p);
-                if (dict.TryGetValue("AbsentStudents", out var a) && a != null) abCount = Convert.ToInt32(a);
-                if (dict.TryGetValue("LateStudents", out var l) && l != null) lCount = Convert.ToInt32(l);
-                if (dict.TryGetValue("TotalSessionsMarked", out var tm) && tm != null) totalMarked = Convert.ToInt32(tm);
-                if (dict.TryGetValue("PresentSessionsMarked", out var pm) && pm != null) presentMarked = Convert.ToInt32(pm);
+                if (dict.TryGetValue("PresentCount", out var p) && p != null) pCount = Convert.ToInt32(p);
+                if (dict.TryGetValue("AbsentCount", out var a) && a != null) abCount = Convert.ToInt32(a);
+                if (dict.TryGetValue("LateCount", out var l) && l != null) lCount = Convert.ToInt32(l);
             }
         }
 
-        decimal pPct = totalMarked > 0 
-            ? Math.Min(100.0m, Math.Round((decimal)presentMarked * 100m / totalMarked, 1))
-            : (total > 0 ? Math.Min(100.0m, Math.Round((decimal)pCount * 100m / total, 1)) : 0m);
-        decimal abPct = total > 0 ? Math.Min(100.0m, Math.Round((decimal)abCount * 100m / total, 1)) : 0m;
-        decimal lPct = total > 0 ? Math.Min(100.0m, Math.Round((decimal)lCount * 100m / total, 1)) : 0m;
+        decimal pPct = total > 0 ? Math.Round((decimal)pCount * 100m / total, 1) : 0m;
+        decimal abPct = total > 0 ? Math.Round((decimal)abCount * 100m / total, 1) : 0m;
+        decimal lPct = total > 0 ? Math.Round((decimal)lCount * 100m / total, 1) : 0m;
 
         var bkList = new List<AttendanceCategoryBreakdownDto>();
         int colorIndex = 0;
@@ -902,17 +870,10 @@ public class DashboardRepository : IDashboardRepository
             var levelRows = (await conn.QueryAsync<dynamic>(@"
                 SELECT 
                     COALESCE(al.LevelName, 'General') AS CategoryName,
-                    COUNT(DISTINCT s.StudentId) AS TotalStudents,
-                    COUNT(DISTINCT CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN s.StudentId END) AS Present,
-                    COUNT(DISTINCT CASE WHEN (a.Status = 2 OR a.Status = 'Absent') 
-                                         AND a.StudentId NOT IN (
-                                             SELECT a2.StudentId FROM `Attendances` a2 
-                                             WHERE DATE(a2.AttendanceDate) = @todayStr 
-                                               AND (a2.Status = 1 OR a2.Status = 'Present' OR a2.Status = 3 OR a2.Status = 'Late')
-                                         ) THEN s.StudentId END) AS Absent,
-                    COUNT(DISTINCT CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN s.StudentId END) AS Late,
-                    COUNT(a.AttendanceId) AS TotalSessions,
-                    COALESCE(SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END), 0) AS PresentSessions
+                    COUNT(s.StudentId) AS TotalStudents,
+                    SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' THEN 1 ELSE 0 END) AS Present,
+                    SUM(CASE WHEN a.Status = 2 OR a.Status = 'Absent' THEN 1 ELSE 0 END) AS Absent,
+                    SUM(CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END) AS Late
                 FROM `Students` s
                 LEFT JOIN `AcademicLevels` al ON s.AcademicLevelId = al.AcademicLevelId
                 LEFT JOIN `Attendances` a ON a.StudentId = s.StudentId AND DATE(a.AttendanceDate) = @todayStr AND (a.IsActive = 1 OR a.IsActive IS NULL)
@@ -927,12 +888,6 @@ public class DashboardRepository : IDashboardRepository
             {
                 int t = Convert.ToInt32(r.TotalStudents);
                 int pr = Convert.ToInt32(r.Present);
-                int tSessions = Convert.ToInt32(r.TotalSessions);
-                int prSessions = Convert.ToInt32(r.PresentSessions);
-                decimal pct = tSessions > 0 
-                    ? Math.Min(100.0m, Math.Round((decimal)prSessions * 100m / tSessions, 1))
-                    : (t > 0 ? Math.Min(100.0m, Math.Round((decimal)pr * 100m / t, 1)) : 0m);
-
                 bkList.Add(new AttendanceCategoryBreakdownDto
                 {
                     CategoryName = (string)r.CategoryName,
@@ -940,7 +895,7 @@ public class DashboardRepository : IDashboardRepository
                     Present = pr,
                     Absent = Convert.ToInt32(r.Absent),
                     Late = Convert.ToInt32(r.Late),
-                    AttendancePercentage = pct,
+                    AttendancePercentage = t > 0 ? Math.Round((decimal)pr * 100m / t, 1) : 0m,
                     Color = colors[colorIndex % colors.Length]
                 });
                 colorIndex++;
@@ -951,17 +906,10 @@ public class DashboardRepository : IDashboardRepository
             var groupAttRows = (await conn.QueryAsync<dynamic>(@"
                 SELECT 
                     COALESCE(g.GroupName, 'General') AS CategoryName,
-                    COUNT(DISTINCT s.StudentId) AS TotalStudents,
-                    COUNT(DISTINCT CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN s.StudentId END) AS Present,
-                    COUNT(DISTINCT CASE WHEN (a.Status = 2 OR a.Status = 'Absent') 
-                                         AND a.StudentId NOT IN (
-                                             SELECT a2.StudentId FROM `Attendances` a2 
-                                             WHERE DATE(a2.AttendanceDate) = @todayStr 
-                                               AND (a2.Status = 1 OR a2.Status = 'Present' OR a2.Status = 3 OR a2.Status = 'Late')
-                                         ) THEN s.StudentId END) AS Absent,
-                    COUNT(DISTINCT CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN s.StudentId END) AS Late,
-                    COUNT(a.AttendanceId) AS TotalSessions,
-                    COALESCE(SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END), 0) AS PresentSessions
+                    COUNT(s.StudentId) AS TotalStudents,
+                    SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' THEN 1 ELSE 0 END) AS Present,
+                    SUM(CASE WHEN a.Status = 2 OR a.Status = 'Absent' THEN 1 ELSE 0 END) AS Absent,
+                    SUM(CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END) AS Late
                 FROM `Students` s
                 LEFT JOIN `Groups` g ON s.GroupId = g.GroupId
                 LEFT JOIN `Attendances` a ON a.StudentId = s.StudentId AND DATE(a.AttendanceDate) = @todayStr AND (a.IsActive = 1 OR a.IsActive IS NULL)
@@ -976,12 +924,6 @@ public class DashboardRepository : IDashboardRepository
             {
                 int t = Convert.ToInt32(r.TotalStudents);
                 int pr = Convert.ToInt32(r.Present);
-                int tSessions = Convert.ToInt32(r.TotalSessions);
-                int prSessions = Convert.ToInt32(r.PresentSessions);
-                decimal pct = tSessions > 0 
-                    ? Math.Min(100.0m, Math.Round((decimal)prSessions * 100m / tSessions, 1))
-                    : (t > 0 ? Math.Min(100.0m, Math.Round((decimal)pr * 100m / t, 1)) : 0m);
-
                 bkList.Add(new AttendanceCategoryBreakdownDto
                 {
                     CategoryName = (string)r.CategoryName,
@@ -989,7 +931,7 @@ public class DashboardRepository : IDashboardRepository
                     Present = pr,
                     Absent = Convert.ToInt32(r.Absent),
                     Late = Convert.ToInt32(r.Late),
-                    AttendancePercentage = pct,
+                    AttendancePercentage = t > 0 ? Math.Round((decimal)pr * 100m / t, 1) : 0m,
                     Color = colors[colorIndex % colors.Length]
                 });
                 colorIndex++;
@@ -1000,17 +942,10 @@ public class DashboardRepository : IDashboardRepository
             var secAttRows = (await conn.QueryAsync<dynamic>(@"
                 SELECT 
                     COALESCE(sec.SectionName, 'General') AS CategoryName,
-                    COUNT(DISTINCT s.StudentId) AS TotalStudents,
-                    COUNT(DISTINCT CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN s.StudentId END) AS Present,
-                    COUNT(DISTINCT CASE WHEN (a.Status = 2 OR a.Status = 'Absent') 
-                                         AND a.StudentId NOT IN (
-                                             SELECT a2.StudentId FROM `Attendances` a2 
-                                             WHERE DATE(a2.AttendanceDate) = @todayStr 
-                                               AND (a2.Status = 1 OR a2.Status = 'Present' OR a2.Status = 3 OR a2.Status = 'Late')
-                                         ) THEN s.StudentId END) AS Absent,
-                    COUNT(DISTINCT CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN s.StudentId END) AS Late,
-                    COUNT(a.AttendanceId) AS TotalSessions,
-                    COALESCE(SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' OR a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END), 0) AS PresentSessions
+                    COUNT(s.StudentId) AS TotalStudents,
+                    SUM(CASE WHEN a.Status = 1 OR a.Status = 'Present' THEN 1 ELSE 0 END) AS Present,
+                    SUM(CASE WHEN a.Status = 2 OR a.Status = 'Absent' THEN 1 ELSE 0 END) AS Absent,
+                    SUM(CASE WHEN a.Status = 3 OR a.Status = 'Late' THEN 1 ELSE 0 END) AS Late
                 FROM `Students` s
                 LEFT JOIN `Sections` sec ON s.SectionId = sec.SectionId
                 LEFT JOIN `Attendances` a ON a.StudentId = s.StudentId AND DATE(a.AttendanceDate) = @todayStr AND (a.IsActive = 1 OR a.IsActive IS NULL)
@@ -1025,12 +960,6 @@ public class DashboardRepository : IDashboardRepository
             {
                 int t = Convert.ToInt32(r.TotalStudents);
                 int pr = Convert.ToInt32(r.Present);
-                int tSessions = Convert.ToInt32(r.TotalSessions);
-                int prSessions = Convert.ToInt32(r.PresentSessions);
-                decimal pct = tSessions > 0 
-                    ? Math.Min(100.0m, Math.Round((decimal)prSessions * 100m / tSessions, 1))
-                    : (t > 0 ? Math.Min(100.0m, Math.Round((decimal)pr * 100m / t, 1)) : 0m);
-
                 bkList.Add(new AttendanceCategoryBreakdownDto
                 {
                     CategoryName = (string)r.CategoryName,
@@ -1038,7 +967,7 @@ public class DashboardRepository : IDashboardRepository
                     Present = pr,
                     Absent = Convert.ToInt32(r.Absent),
                     Late = Convert.ToInt32(r.Late),
-                    AttendancePercentage = pct,
+                    AttendancePercentage = t > 0 ? Math.Round((decimal)pr * 100m / t, 1) : 0m,
                     Color = colors[colorIndex % colors.Length]
                 });
                 colorIndex++;
@@ -1093,7 +1022,6 @@ public class DashboardRepository : IDashboardRepository
         {
             var parameters = new DynamicParameters();
             parameters.Add("p_BoardId", boardId, DbType.Int32);
-            parameters.Add("p_AcademicYearId", null, DbType.Int32);
             parameters.Add("p_TargetDate", dateVal, DbType.Date);
             parameters.Add("p_StaffType", selectedType, DbType.String);
 
@@ -1104,6 +1032,45 @@ public class DashboardRepository : IDashboardRepository
 
             if (staffAtt != null)
             {
+                // Ensure teachingCount and nonTeachingCount align with KPI counts
+                int spTeaching = await conn.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(*) FROM `Staff`
+                    WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+                      AND (Status = 'Active' OR Status IS NULL)
+                      AND (StaffType = 'Teaching' OR FacultyType = 'Teaching')
+                      AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
+                    new { boardId });
+
+                int spNonTeaching = await conn.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(*) FROM `Staff`
+                    WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+                      AND (Status = 'Active' OR Status IS NULL)
+                      AND (StaffType = 'Non-Teaching' OR (StaffType != 'Teaching' AND FacultyType != 'Teaching'))
+                      AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
+                    new { boardId });
+
+                staffAtt.TeachingCount = spTeaching;
+                staffAtt.NonTeachingCount = spNonTeaching;
+
+                if (string.Equals(selectedType, "Teaching Staff", StringComparison.OrdinalIgnoreCase))
+                {
+                    staffAtt.TotalStaff = spTeaching;
+                }
+                else if (string.Equals(selectedType, "Non-Teaching Staff", StringComparison.OrdinalIgnoreCase))
+                {
+                    staffAtt.TotalStaff = spNonTeaching;
+                }
+                else
+                {
+                    staffAtt.TotalStaff = spTeaching + spNonTeaching;
+                }
+
+                if (staffAtt.TotalStaff > 0 && staffAtt.Present > 0)
+                {
+                    staffAtt.AttendancePercentage = Math.Round((decimal)staffAtt.Present * 100m / staffAtt.TotalStaff, 1);
+                    staffAtt.PresentPercentage = staffAtt.AttendancePercentage;
+                }
+
                 return staffAtt;
             }
         }
@@ -1114,41 +1081,37 @@ public class DashboardRepository : IDashboardRepository
 
         var todayStr = dateVal.ToString("yyyy-MM-dd");
 
-        int totalStaff = await conn.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(*) FROM Staff st
-            WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
-              AND (st.Status = 'Active' OR st.Status IS NULL)
-              AND (@boardId IS NULL OR st.BoardId = @boardId OR st.BoardId IS NULL OR st.BoardId = 0);",
-            new { boardId });
-
         int teachingCount = await conn.ExecuteScalarAsync<int>(@"
-            SELECT COUNT(*) FROM Staff st
-            WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
-              AND (st.Status = 'Active' OR st.Status IS NULL)
-              AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching' OR st.StaffType IS NULL)
-              AND (@boardId IS NULL OR st.BoardId = @boardId OR st.BoardId IS NULL OR st.BoardId = 0);",
+            SELECT COUNT(*) FROM `Staff`
+            WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+              AND (Status = 'Active' OR Status IS NULL)
+              AND (StaffType = 'Teaching' OR FacultyType = 'Teaching')
+              AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
             new { boardId });
 
-        int nonTeachingCount = Math.Max(0, totalStaff - teachingCount);
+        int nonTeachingCount = await conn.ExecuteScalarAsync<int>(@"
+            SELECT COUNT(*) FROM `Staff`
+            WHERE (IsDeleted = 0 OR IsDeleted IS NULL)
+              AND (Status = 'Active' OR Status IS NULL)
+              AND (StaffType = 'Non-Teaching' OR (StaffType != 'Teaching' AND FacultyType != 'Teaching'))
+              AND (@boardId IS NULL OR BoardId = @boardId OR BoardId IS NULL OR BoardId = 0);",
+            new { boardId });
+
+        int totalStaff = teachingCount + nonTeachingCount;
         int present = 0, absent = 0, late = 0, onLeave = 0;
 
         try
         {
             var attSession = await conn.QueryFirstOrDefaultAsync<dynamic>(@"
                 SELECT 
-                    COALESCE(SUM(sas.PresentCount), 0) AS PresentCount,
-                    COALESCE(SUM(sas.AbsentCount), 0) AS AbsentCount,
-                    COALESCE(SUM(sas.LateCount), 0) AS LateCount,
-                    COALESCE(SUM(sas.LeaveCount), 0) AS LeaveCount
-                FROM `StaffAttendanceSessions` sas
-                WHERE DATE(sas.AttendanceDate) = @todayStr
-                  AND (sas.IsActive = 1 OR sas.IsActive IS NULL)
-                  AND (
-                      LOWER(@selectedType) IN ('all', 'all staff')
-                      OR (LOWER(@selectedType) IN ('teaching', 'teaching staff') AND (sas.StaffType = 1 OR sas.StaffType = 'Teaching' OR sas.StaffType = '1'))
-                      OR (LOWER(@selectedType) IN ('non-teaching', 'non-teaching staff', 'nonteaching', 'nonteaching staff') AND (sas.StaffType = 2 OR sas.StaffType = 'Non-Teaching' OR sas.StaffType = '2'))
-                  );",
-                new { todayStr, selectedType });
+                    SUM(PresentCount) AS PresentCount,
+                    SUM(AbsentCount) AS AbsentCount,
+                    SUM(LateCount) AS LateCount,
+                    SUM(LeaveCount) AS LeaveCount
+                FROM `StaffAttendanceSessions`
+                WHERE DATE(AttendanceDate) = @todayStr
+                  AND (IsActive = 1 OR IsActive IS NULL);",
+                new { todayStr });
 
             if (attSession != null)
             {
@@ -1184,34 +1147,19 @@ public class DashboardRepository : IDashboardRepository
             filteredTotal = nonTeachingCount;
         }
 
-        int totalSessionMarks = present + absent + late + onLeave;
-        int normalizedPresent = filteredTotal > 0 ? Math.Min(present, filteredTotal) : present;
-        int normalizedAbsent = filteredTotal > 0 ? Math.Min(absent, filteredTotal) : absent;
-        int normalizedLate = filteredTotal > 0 ? Math.Min(late, filteredTotal) : late;
-        int normalizedOnLeave = filteredTotal > 0 ? Math.Min(onLeave, filteredTotal) : onLeave;
-
-        decimal presentPct = 0.0m;
-        if (totalSessionMarks > 0)
-        {
-            presentPct = Math.Min(100.0m, Math.Round((decimal)present * 100m / totalSessionMarks, 1));
-        }
-        else if (filteredTotal > 0 && present > 0)
-        {
-            presentPct = Math.Min(100.0m, Math.Round((decimal)normalizedPresent * 100m / filteredTotal, 1));
-        }
-
-        decimal absentPct = totalSessionMarks > 0 ? Math.Round((decimal)absent * 100m / totalSessionMarks, 1) : (filteredTotal > 0 ? Math.Round((decimal)normalizedAbsent * 100m / filteredTotal, 1) : 0m);
-        decimal latePct = totalSessionMarks > 0 ? Math.Round((decimal)late * 100m / totalSessionMarks, 1) : (filteredTotal > 0 ? Math.Round((decimal)normalizedLate * 100m / filteredTotal, 1) : 0m);
-        decimal leavePct = totalSessionMarks > 0 ? Math.Round((decimal)onLeave * 100m / totalSessionMarks, 1) : (filteredTotal > 0 ? Math.Round((decimal)normalizedOnLeave * 100m / filteredTotal, 1) : 0m);
+        decimal presentPct = filteredTotal > 0 ? Math.Round((decimal)present * 100m / filteredTotal, 1) : 0m;
+        decimal absentPct = filteredTotal > 0 ? Math.Round((decimal)absent * 100m / filteredTotal, 1) : 0m;
+        decimal latePct = filteredTotal > 0 ? Math.Round((decimal)late * 100m / filteredTotal, 1) : 0m;
+        decimal leavePct = filteredTotal > 0 ? Math.Round((decimal)onLeave * 100m / filteredTotal, 1) : 0m;
 
         return new StaffAttendanceTodayResponseDto
         {
             StaffType = selectedType,
             TotalStaff = filteredTotal,
-            Present = normalizedPresent,
-            Absent = normalizedAbsent,
-            Late = normalizedLate,
-            OnLeave = normalizedOnLeave,
+            Present = present,
+            Absent = absent,
+            Late = late,
+            OnLeave = onLeave,
             AttendancePercentage = presentPct,
             PresentPercentage = presentPct,
             AbsentPercentage = absentPct,
@@ -1465,12 +1413,14 @@ public class DashboardRepository : IDashboardRepository
                 .ToListAsync(ct);
 
             var activeExams = dbExams
-                .Where(e => !string.Equals(e.Status, "Completed", StringComparison.OrdinalIgnoreCase) 
-                         && !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase)
-                         && !string.Equals(e.Status, "Deleted", StringComparison.OrdinalIgnoreCase)
-                         && e.EndDate >= today)
+                .Where(e => !string.Equals(e.Status, "Completed", StringComparison.OrdinalIgnoreCase) && !string.Equals(e.Status, "Cancelled", StringComparison.OrdinalIgnoreCase) || e.EndDate >= today)
                 .Take(limit)
                 .ToList();
+
+            if (!activeExams.Any() && dbExams.Any())
+            {
+                activeExams = dbExams.Take(limit).ToList();
+            }
 
             foreach (var e in activeExams)
             {

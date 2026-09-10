@@ -1,13 +1,11 @@
 ﻿using CollegeManagement.API.DTOs.Program;
 using CollegeManagement.API.Services;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CollegeManagement.API.Controllers
 {
     [ApiController]
     [Route("api/v1/programs")]
-    [Authorize]
     public class ProgramController : ControllerBase
     {
         private readonly IProgramService _programService;

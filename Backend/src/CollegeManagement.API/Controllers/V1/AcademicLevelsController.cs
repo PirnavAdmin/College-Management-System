@@ -17,7 +17,6 @@ namespace CollegeManagement.API.Controllers.V1
     [Route("api/v{version:apiVersion}/academic-levels")]
     [AllowAnonymous]
     [Produces("application/json")]
-    [Authorize]
     public class AcademicLevelsController : ControllerBase
     {
         private readonly IBoardService _boardService;

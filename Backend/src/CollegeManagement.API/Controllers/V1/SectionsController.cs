@@ -11,7 +11,7 @@ namespace CollegeManagement.API.Controllers.V1
     [ApiController]
     [Route("api/v1/[controller]")]
     [Produces("application/json")]
-    [Authorize]
+    [AllowAnonymous]
     public class SectionsController : ControllerBase
     {
         private readonly ISectionService _sectionService;

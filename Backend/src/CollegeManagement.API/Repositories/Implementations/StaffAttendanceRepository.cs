@@ -60,24 +60,18 @@ namespace CollegeManagement.API.Repositories.Implementations
                 .ThenBy(f => f.LastName)
                 .ToListAsync();
 
-            // Find existing attendances for today across sessions
-            var attendancesForDate = await _context.StaffAttendances
-                .Include(a => a.StaffAttendanceSession)
-                .Where(a => a.StaffAttendanceSession.AttendanceDate.Date == targetDate
-                            && a.StaffAttendanceSession.StaffType == request.StaffType
-                            && a.IsActive)
-                .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
-                .ToListAsync();
-
-            var attendanceByFaculty = attendancesForDate
-                .GroupBy(a => a.FacultyId)
-                .ToDictionary(g => g.Key, g => g.First());
+            // Find existing session for today if any
+            var existingSession = await _context.StaffAttendanceSessions
+                .Include(s => s.StaffAttendances)
+                .FirstOrDefaultAsync(s => s.AttendanceDate.Date == targetDate
+                                          && s.StaffType == request.StaffType
+                                          && (request.DepartmentId == null || s.DepartmentId == request.DepartmentId));
 
             var result = new List<StaffAttendanceItemResponse>();
 
             foreach (var f in facultyList)
             {
-                attendanceByFaculty.TryGetValue(f.FacultyId, out var markedEntry);
+                var markedEntry = existingSession?.StaffAttendances.FirstOrDefault(a => a.FacultyId == f.FacultyId && a.IsActive);
 
                 result.Add(new StaffAttendanceItemResponse
                 {
@@ -194,92 +188,61 @@ namespace CollegeManagement.API.Repositories.Implementations
         {
             var targetDate = request.AttendanceDate.Date;
 
-            // Locate any existing attendance record for this faculty on this date directly
-            var existingAttendance = await _context.StaffAttendances
-                .Include(a => a.StaffAttendanceSession)
-                    .ThenInclude(s => s.StaffAttendances)
-                .Where(a => a.FacultyId == request.FacultyId
-                            && a.StaffAttendanceSession.AttendanceDate.Date == targetDate
-                            && a.StaffAttendanceSession.StaffType == request.StaffType
-                            && a.IsActive)
-                .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
-                .FirstOrDefaultAsync();
+            var session = await _context.StaffAttendanceSessions
+                .Include(s => s.StaffAttendances)
+                .FirstOrDefaultAsync(s => s.AttendanceDate.Date == targetDate
+                                          && s.StaffType == request.StaffType
+                                          && (request.DepartmentId == null || s.DepartmentId == request.DepartmentId));
 
-            StaffAttendanceSession session;
-            AttendanceStatus? oldStatus = null;
-
-            if (existingAttendance != null)
+            if (session != null && session.IsLocked)
             {
-                session = existingAttendance.StaffAttendanceSession;
-                if (session.IsLocked)
+                throw new InvalidOperationException("Attendance session is locked and cannot be modified.");
+            }
+
+            if (session == null)
+            {
+                var query = _context.Staffs.Where(f => !f.IsDeleted && f.Status == "Active");
+                if (request.StaffType == StaffType.Teaching)
                 {
-                    throw new InvalidOperationException("Attendance session is locked and cannot be modified.");
+                    query = query.Where(f => f.StaffType == null || f.StaffType.ToLower() == "teaching");
+                }
+                else
+                {
+                    query = query.Where(f => f.StaffType != null && f.StaffType.ToLower() != "teaching");
+                }
+                if (request.DepartmentId.HasValue && request.DepartmentId.Value > 0)
+                {
+                    query = query.Where(f => f.DepartmentId == request.DepartmentId.Value);
                 }
 
-                oldStatus = existingAttendance.Status;
+                session = new StaffAttendanceSession
+                {
+                    AttendanceDate = targetDate,
+                    DepartmentId = request.DepartmentId > 0 ? request.DepartmentId : null,
+                    StaffType = request.StaffType,
+                    TotalStaffCount = await query.CountAsync(),
+                    CreatedByUserId = currentUserId,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                await _context.StaffAttendanceSessions.AddAsync(session);
+                await _context.SaveChangesAsync();
+            }
+
+            var existingAttendance = session.StaffAttendances.FirstOrDefault(a => a.FacultyId == request.FacultyId);
+            
+            var oldStatus = existingAttendance?.Status;
+            
+            if (existingAttendance != null)
+            {
                 existingAttendance.Status = request.Status;
                 existingAttendance.InTime = request.InTime;
                 existingAttendance.OutTime = request.OutTime;
                 existingAttendance.Remarks = request.Remarks;
                 existingAttendance.UpdatedAt = DateTime.UtcNow;
-
-                // Deactivate any duplicate records for this faculty on the same date across other sessions
-                var duplicateRecords = await _context.StaffAttendances
-                    .Include(a => a.StaffAttendanceSession)
-                    .Where(a => a.FacultyId == request.FacultyId
-                                && a.StaffAttendanceSession.AttendanceDate.Date == targetDate
-                                && a.StaffAttendanceId != existingAttendance.StaffAttendanceId)
-                    .ToListAsync();
-                foreach (var dup in duplicateRecords)
-                {
-                    dup.IsActive = false;
-                    dup.UpdatedAt = DateTime.UtcNow;
-                }
             }
             else
             {
-                // Find existing session for date and staff type (matching department or college-wide departmentId == null)
-                session = await _context.StaffAttendanceSessions
-                    .Include(s => s.StaffAttendances)
-                    .FirstOrDefaultAsync(s => s.AttendanceDate.Date == targetDate
-                                              && s.StaffType == request.StaffType
-                                              && (s.DepartmentId == null || (request.DepartmentId.HasValue && s.DepartmentId == request.DepartmentId.Value)));
-
-                if (session != null && session.IsLocked)
-                {
-                    throw new InvalidOperationException("Attendance session is locked and cannot be modified.");
-                }
-
-                if (session == null)
-                {
-                    var query = _context.Staffs.Where(f => !f.IsDeleted && f.Status == "Active");
-                    if (request.StaffType == StaffType.Teaching)
-                    {
-                        query = query.Where(f => f.StaffType == null || f.StaffType.ToLower() == "teaching");
-                    }
-                    else
-                    {
-                        query = query.Where(f => f.StaffType != null && f.StaffType.ToLower() != "teaching");
-                    }
-                    if (request.DepartmentId.HasValue && request.DepartmentId.Value > 0)
-                    {
-                        query = query.Where(f => f.DepartmentId == request.DepartmentId.Value);
-                    }
-
-                    session = new StaffAttendanceSession
-                    {
-                        AttendanceDate = targetDate,
-                        DepartmentId = request.DepartmentId > 0 ? request.DepartmentId : null,
-                        StaffType = request.StaffType,
-                        TotalStaffCount = await query.CountAsync(),
-                        CreatedByUserId = currentUserId,
-                        CreatedAt = DateTime.UtcNow
-                    };
-
-                    await _context.StaffAttendanceSessions.AddAsync(session);
-                    await _context.SaveChangesAsync();
-                }
-
                 var newAttendance = new StaffAttendance
                 {
                     StaffSessionId = session.StaffSessionId,
@@ -294,21 +257,12 @@ namespace CollegeManagement.API.Repositories.Implementations
                 session.StaffAttendances.Add(newAttendance);
             }
 
-            session.PresentCount = session.StaffAttendances.Count(a => a.IsActive && a.Status == AttendanceStatus.Present);
-            session.AbsentCount = session.StaffAttendances.Count(a => a.IsActive && a.Status == AttendanceStatus.Absent);
-            session.LateCount = session.StaffAttendances.Count(a => a.IsActive && a.Status == AttendanceStatus.Late);
-            session.LeaveCount = session.StaffAttendances.Count(a => a.IsActive && a.Status == AttendanceStatus.Leave);
+            session.PresentCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Present);
+            session.AbsentCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Absent);
+            session.LateCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Late);
+            session.LeaveCount = session.StaffAttendances.Count(a => a.Status == AttendanceStatus.Leave);
             session.UpdatedAt = DateTime.UtcNow;
             
-            if (currentUserId.HasValue)
-            {
-                var userExists = await _context.Users.AnyAsync(u => u.UserId == currentUserId.Value);
-                if (!userExists)
-                {
-                    currentUserId = null;
-                }
-            }
-
             var audit = new AttendanceAuditHistory
             {
                 EntityType = "Staff",
@@ -425,7 +379,6 @@ namespace CollegeManagement.API.Repositories.Implementations
                             && a.StaffAttendanceSession.AttendanceDate.Date <= endDate
                             && a.StaffAttendanceSession.StaffType == request.StaffType
                             && a.IsActive)
-                .OrderByDescending(a => a.UpdatedAt ?? a.CreatedAt)
                 .ToListAsync();
 
             var staffRows = new List<StaffMonthlyGridRowDto>();

@@ -104,6 +104,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<bool> IsEmployeeIdUniqueAsync(string employeeId, int? excludeId = null)
         {
+            if (string.IsNullOrWhiteSpace(employeeId)) return true;
             var query = _context.Staffs.Where(s => s.EmployeeId == employeeId.Trim() && !s.IsDeleted);
             if (excludeId.HasValue)
             {
@@ -114,6 +115,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<bool> IsEmailUniqueAsync(string email, int? excludeId = null)
         {
+            if (string.IsNullOrWhiteSpace(email)) return true;
             var query = _context.Staffs.Where(s => s.Email == email.Trim() && !s.IsDeleted);
             if (excludeId.HasValue)
             {
@@ -124,6 +126,7 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<bool> IsMobileUniqueAsync(string mobile, int? excludeId = null)
         {
+            if (string.IsNullOrWhiteSpace(mobile)) return true;
             var query = _context.Staffs.Where(s => s.Mobile == mobile.Trim() && !s.IsDeleted);
             if (excludeId.HasValue)
             {

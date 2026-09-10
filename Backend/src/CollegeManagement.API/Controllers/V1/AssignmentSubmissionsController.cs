@@ -1,6 +1,5 @@
 ﻿using CollegeManagement.API.DTOs.AssignmentSubmission;
 using CollegeManagement.API.Services.Interfaces;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CollegeManagement.API.Controllers.V1
@@ -8,7 +7,6 @@ namespace CollegeManagement.API.Controllers.V1
     [ApiController]
     [Route("api/v1/assignment-submissions")]
     [Produces("application/json")]
-    [Authorize]
     public class AssignmentSubmissionsController : ControllerBase
     {
         private readonly IAssignmentSubmissionService _service;

@@ -1,15 +1,14 @@
-using Asp.Versioning;
-using CollegeManagement.API.DTOs.Examination.Requests;
-using CollegeManagement.API.DTOs.Examination.Responses;
-using CollegeManagement.API.Services.Interfaces;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Asp.Versioning;
+using CollegeManagement.API.DTOs.Examination.Requests;
+using CollegeManagement.API.DTOs.Examination.Responses;
+using CollegeManagement.API.Services.Interfaces;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace CollegeManagement.API.Controllers.V1
 {
@@ -20,7 +19,6 @@ namespace CollegeManagement.API.Controllers.V1
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/examinations")]
     [Produces("application/json")]
-    [Authorize]
     public class ExaminationController : ControllerBase
     {
         private readonly IExaminationService _examinationService;

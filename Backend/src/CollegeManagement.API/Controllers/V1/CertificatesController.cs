@@ -22,7 +22,6 @@ namespace CollegeManagement.API.Controllers.V1;
 [EnableCors("AllowFrontend")]
 [AllowAnonymous]
 [Produces("application/json")]
-[Authorize]
 public class CertificatesController : ControllerBase
 {
     private readonly ICertificateService _service;

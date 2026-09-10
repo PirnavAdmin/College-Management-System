@@ -178,9 +178,10 @@ function EmptyState({ message = "No data available." }) {
   );
 }
 
-function KpiCard({ label, value, icon, tone, loading, changeLabel = "vs last year", changePct = "↑ 5%", previousValue }) {
+function KpiCard({ label, value, icon, tone, loading, changeLabel = "vs last year", changePct = "→ 0%", previousValue = 0 }) {
   const isAvailable = value !== undefined && value !== null && value !== "";
-  const formattedPrev = isAvailable && previousValue !== undefined && previousValue !== null ? formatNumber(previousValue) : "Unavailable";
+  const prevVal = previousValue !== undefined && previousValue !== null ? previousValue : 0;
+  const formattedPrev = formatNumber(prevVal);
   return (
     <article className={`dashboard-kpi dashboard-kpi-${tone}`}>
       <div className="dashboard-kpi-pop" role="tooltip">
@@ -297,7 +298,7 @@ export default function DashboardPage() {
       }
     } catch (err) {
       if (overviewSeq.current === seq) {
-        setOverviewState({ loading: false, error: getApiErrorMessage(err, "Failed to load students overview"), data: null });
+        setOverviewState({ loading: false, error: getApiErrorMessage(err, "Failed to load students admissions overview"), data: null });
       }
     }
   }, [boardId, academicYearId, todayDate]);
@@ -403,7 +404,7 @@ export default function DashboardPage() {
       }
     } catch (err) {
       if (certSeq.current === seq) {
-        setCertState({ loading: false, error: getApiErrorMessage(err, "Failed to load certificate requests"), data: null });
+        setCertState({ loading: false, error: getApiErrorMessage(err, "Failed to load certificates history"), data: null });
       }
     }
   }, [boardId, academicYearId, todayDate]);
@@ -477,25 +478,25 @@ export default function DashboardPage() {
     {
       label: "Total Students",
       value: totalStudentsVal,
-      previousValue: typeof totalStudentsVal === "number" ? Math.round(totalStudentsVal / 1.05) : null,
+      previousValue: 0,
       icon: totalStudentsIcon,
       tone: "green",
       changeLabel: "vs last year",
-      changePct: "↑ 5%",
+      changePct: "→ 0%",
     },
     {
       label: "Teaching Staff",
       value: teachingStaffVal,
-      previousValue: typeof teachingStaffVal === "number" ? Math.round(teachingStaffVal / 1.02) : null,
+      previousValue: 0,
       icon: teachingStaffIcon,
       tone: "blue",
       changeLabel: "vs last year",
-      changePct: "↑ 2%",
+      changePct: "→ 0%",
     },
     {
       label: "Non-Teaching Staff",
       value: nonTeachingStaffVal,
-      previousValue: typeof nonTeachingStaffVal === "number" ? nonTeachingStaffVal : null,
+      previousValue: 0,
       icon: nonTeachingStaffIcon,
       tone: "orange",
       changeLabel: "vs last year",
@@ -504,7 +505,7 @@ export default function DashboardPage() {
     {
       label: "Total Groups",
       value: totalGroupsVal,
-      previousValue: typeof totalGroupsVal === "number" ? totalGroupsVal : null,
+      previousValue: 0,
       icon: totalGroupsIcon,
       tone: "violet",
       changeLabel: "vs last year",
@@ -513,11 +514,11 @@ export default function DashboardPage() {
     {
       label: "Total Sections",
       value: totalSectionsVal,
-      previousValue: typeof totalSectionsVal === "number" ? Math.round(totalSectionsVal / 1.04) : null,
+      previousValue: 0,
       icon: totalSectionsIcon,
       tone: "cyan",
       changeLabel: "vs last year",
-      changePct: "↑ 4%",
+      changePct: "→ 0%",
     },
   ];
 
@@ -548,7 +549,13 @@ export default function DashboardPage() {
     const present = metric(data, ["present", "presentCount"]);
     const absent = metric(data, ["absent", "absentCount"]);
     const late = metric(data, ["late", "lateCount"]);
-    const percentage = metric(data, ["percentage", "attendancePercentage"]);
+    const rawPct = metric(data, ["percentage", "attendancePercentage"]);
+    let percentage = rawPct;
+    if (typeof percentage === "number") {
+      percentage = Math.min(100, Math.max(0, percentage));
+    } else if (typeof present === "number" && typeof total === "number" && total > 0) {
+      percentage = Math.min(100, Math.max(0, Math.round((present / total) * 100)));
+    }
 
     const chartData = data.chartData || [
       { name: "Present", value: present ?? 0, color: "#22a447" },
@@ -564,14 +571,35 @@ export default function DashboardPage() {
   // Staff Attendance Normalized Values
   const staffAttData = useMemo(() => {
     const data = staffAttState.data || {};
-    const total = metric(data, ["total", "totalStaff", "totalCount"]);
+    const teachingCountRaw = metric(data, ["teachingCount", "teachingStaffCount"]);
+    const nonTeachingCountRaw = metric(data, ["nonTeachingCount", "nonTeachingStaffCount"]);
+    const totalRaw = metric(data, ["total", "totalStaff", "totalCount"]);
+
+    const teachingCount = typeof teachingCountRaw === "number" ? teachingCountRaw : (typeof teachingStaffVal === "number" ? teachingStaffVal : 0);
+    const nonTeachingCount = typeof nonTeachingCountRaw === "number" && (nonTeachingCountRaw > 0 || typeof teachingStaffVal !== "number")
+      ? nonTeachingCountRaw
+      : (typeof nonTeachingStaffVal === "number" ? nonTeachingStaffVal : 0);
+
+    let total = totalRaw;
+    if (staffType === "all" || staffType === "All Staff") {
+      total = teachingCount + nonTeachingCount;
+    } else if (staffType === "teaching" || staffType === "Teaching" || staffType === "Teaching Staff") {
+      total = teachingCount;
+    } else if (staffType === "non-teaching" || staffType === "Non-Teaching" || staffType === "Non-Teaching Staff") {
+      total = nonTeachingCount;
+    }
+
     const present = metric(data, ["present", "presentCount"]);
     const absent = metric(data, ["absent", "absentCount"]);
     const late = metric(data, ["late", "lateCount"]);
     const onLeave = metric(data, ["onLeave", "onLeaveCount", "leaveCount"]);
-    const percentage = metric(data, ["percentage", "attendancePercentage"]);
-    const teachingCount = metric(data, ["teachingCount", "teachingStaffCount"]);
-    const nonTeachingCount = metric(data, ["nonTeachingCount", "nonTeachingStaffCount"]);
+    const rawPct = metric(data, ["percentage", "attendancePercentage"]);
+    let percentage = rawPct;
+    if (typeof percentage === "number") {
+      percentage = Math.min(100, Math.max(0, percentage));
+    } else if (typeof present === "number" && typeof total === "number" && total > 0) {
+      percentage = Math.min(100, Math.max(0, Math.round((present / total) * 100)));
+    }
 
     const chartData = data.chartData || [
       { name: "Present", value: present ?? 0, color: "#22a447" },
@@ -581,7 +609,7 @@ export default function DashboardPage() {
     ];
 
     return { total, present, absent, late, onLeave, percentage, teachingCount, nonTeachingCount, chartData };
-  }, [staffAttState.data]);
+  }, [staffAttState.data, staffType, teachingStaffVal, nonTeachingStaffVal]);
 
   // Certificate Requests Normalized List
   const certRequests = useMemo(() => {
@@ -670,21 +698,21 @@ export default function DashboardPage() {
           </div>
         </nav>
 
-        {/* Second Row Grid: Students Overview | Students by Group | Student Attendance Today */}
+        {/* Second Row Grid: Students Admissions Overview | Students by Group | Student Attendance Today */}
         <section className="dashboard-grid-row dashboard-row-three" aria-label="Main Analytics">
-          {/* Card 1: Students Overview */}
+          {/* Card 1: Students Admissions Overview */}
           <article className="dashboard-card dashboard-students-overview-card">
-            <CardHeader title="Students Overview" action={<Link to="/dashboard/students" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>} />
+            <CardHeader title="Students Admissions Overview" action={<Link to="/dashboard/students" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>} />
             {overviewState.loading ? (
-              <LoadingState label="Loading overview..." />
+              <LoadingState label="Loading admissions overview..." />
             ) : overviewState.error ? (
               <ErrorState message={overviewState.error} onRetry={fetchStudentsOverview} />
             ) : overviewChartData.length === 0 ? (
-              <EmptyState message="No students overview data available." />
+              <EmptyState message="No students admissions overview data available." />
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-chart dashboard-area-chart-wrap">
-                  <ResponsiveContainer width="100%" height={135}>
+                  <ResponsiveContainer width="100%" height={135} minWidth={0} minHeight={0} debounce={50}>
                     <AreaChart data={overviewChartData} margin={{ top: 10, right: 10, left: -24, bottom: 0 }}>
                       <defs>
                         <linearGradient id="admissionGradient" x1="0" y1="0" x2="0" y2="1">
@@ -696,7 +724,7 @@ export default function DashboardPage() {
                       <XAxis dataKey="period" tickLine={false} axisLine={false} height={20} tick={{ fontSize: 10 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
                       <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
-                      <Area type="monotone" dataKey="studentsJoined" stroke="#22a447" strokeWidth={2.5} fill="url(#admissionGradient)" dot={{ r: 3, fill: "#22a447" }} />
+                      <Area type="monotone" dataKey="studentsJoined" stroke="#22a447" strokeWidth={2.5} fill="url(#admissionGradient)" dot={{ r: 3, fill: "#22a447" }} isAnimationActive={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
@@ -739,13 +767,13 @@ export default function DashboardPage() {
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-chart dashboard-bar-chart-wrap">
-                  <ResponsiveContainer width="100%" height={175}>
+                  <ResponsiveContainer width="100%" height={175} minWidth={0} minHeight={0} debounce={50}>
                     <BarChart data={groupChartData} margin={{ top: 15, right: 5, left: -22, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--cms-border)" />
                       <XAxis dataKey="name" tickLine={false} axisLine={false} height={20} tick={{ fontSize: 10, fontWeight: 700 }} />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
                       <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                         {groupChartData.map((entry, index) => (
                           <Cell key={entry.name || index} fill={GROUP_COLORS[index % GROUP_COLORS.length]} />
                         ))}
@@ -790,7 +818,7 @@ export default function DashboardPage() {
                       {/* Donut Chart & Legend */}
                       <div className="dashboard-attendance-donut-row">
                         <div className="dashboard-donut-chart-wrap">
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
                             <PieChart>
                               <Pie
                                 data={studentAttData.chartData}
@@ -801,6 +829,7 @@ export default function DashboardPage() {
                                 paddingAngle={3}
                                 stroke="var(--cms-surface)"
                                 strokeWidth={2}
+                                isAnimationActive={false}
                               >
                                 {studentAttData.chartData.map((entry) => (
                                   <Cell key={entry.name} fill={entry.color} />
@@ -938,7 +967,7 @@ export default function DashboardPage() {
                 {/* Donut Chart & Legend */}
                 <div className="dashboard-attendance-donut-row">
                   <div className="dashboard-donut-chart-wrap">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
                       <PieChart>
                         <Pie
                           data={staffAttData.chartData}
@@ -949,6 +978,7 @@ export default function DashboardPage() {
                           paddingAngle={3}
                           stroke="var(--cms-surface)"
                           strokeWidth={2}
+                          isAnimationActive={false}
                         >
                           {staffAttData.chartData.map((entry) => (
                             <Cell key={entry.name} fill={entry.color} />
@@ -1046,23 +1076,23 @@ export default function DashboardPage() {
             )}
           </article>
 
-          {/* Card 2: Certificate Requests */}
+          {/* Card 2: Certificates History */}
           <article className="dashboard-card dashboard-certificate-card">
             <CardHeader
-              title="Certificate Requests"
+              title="Certificates history"
               action={<Link to="/dashboard/certificates" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>}
             />
             {certState.loading ? (
-              <LoadingState label="Loading requests..." />
+              <LoadingState label="Loading history..." />
             ) : certState.error ? (
               <ErrorState message={certState.error} onRetry={fetchCertificateRequests} />
             ) : certRequests.length === 0 ? (
-              <EmptyState message="No certificate requests found." />
+              <EmptyState message="No certificates history found." />
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-info-list">
-                  {certRequests.map((item) => (
-                    <div key={item.id} className="dashboard-info-item">
+                  {certRequests.map((item, idx) => (
+                    <div key={`cert-req-${item.id || idx}-${idx}`} className="dashboard-info-item">
                       <span className={`dashboard-list-icon tone-${item.tone}`}>
                         <FileText size={15} />
                       </span>
@@ -1095,8 +1125,8 @@ export default function DashboardPage() {
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-info-list">
-                  {examsList.map((item) => (
-                    <div key={item.id} className="dashboard-info-item">
+                  {examsList.map((item, idx) => (
+                    <div key={`upcoming-exam-${item.id || idx}-${idx}`} className="dashboard-info-item">
                       <span className="dashboard-activity-marker">
                         <CalendarDays size={15} />
                       </span>

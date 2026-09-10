@@ -217,46 +217,46 @@ const getScheduleInvigilatorIds = (schedule) =>
     .map(normalizeId)
     .filter((id) => id && id !== "0" && id !== "undefined" && id !== "null");
 
-const getRoomAllocatedCount = (schedules, roomId, date, startTime, endTime, editingId = null) => {
-  return schedules
+const getRoomAllocatedCount = (schedules = [], roomId, date, startTime, endTime, editingId = null) => {
+  return (Array.isArray(schedules) ? schedules : [])
     .filter(
       (s) =>
-        normalizeId(s.id) !== normalizeId(editingId) &&
-        s.date === date &&
-        hasTimeOverlap(startTime, endTime, s.startTime, s.endTime),
+        normalizeId(s?.id) !== normalizeId(editingId) &&
+        s?.date === date &&
+        hasTimeOverlap(startTime, endTime, s?.startTime, s?.endTime),
     )
-    .flatMap((s) => s.hallAssignments || [])
-    .filter((a) => normalizeId(a.hallId) === normalizeId(roomId))
-    .reduce((sum, a) => sum + (Number(a.candidateCount) || 0), 0);
+    .flatMap((s) => s?.hallAssignments || [])
+    .filter((a) => normalizeId(a?.hallId) === normalizeId(roomId))
+    .reduce((sum, a) => sum + (Number(a?.candidateCount) || 0), 0);
 };
 
-const getEligibleRooms = (schedules, entry, editingId = null, exam = null, roomsList = []) => {
+const getEligibleRooms = (schedules = [], entry = {}, editingId = null, exam = null, roomsList = []) => {
   const selectedLevels = (exam?.levelIds || [exam?.levelId]).filter(Boolean).map(normalizeId);
-  return roomsList.filter((room) => {
-    if (room.status !== "Active" && room.isActive === false) return false;
+  return (Array.isArray(roomsList) ? roomsList : []).filter((room) => {
+    if (room?.status !== "Active" && room?.isActive === false) return false;
     // Level filtering: If room is level specific (e.g. 1st year / 2nd year classroom), exam must include that level
-    if (room.levelId && room.levelId !== "ALL") {
+    if (room?.levelId && room?.levelId !== "ALL") {
       if (selectedLevels.length > 0 && !selectedLevels.includes(normalizeId(room.levelId))) {
         return false;
       }
     }
     // Room capacity check
-    const allocated = getRoomAllocatedCount(schedules, room.id, entry.date, entry.startTime, entry.endTime, editingId);
-    return allocated < (Number(room.capacity) || 60);
+    const allocated = getRoomAllocatedCount(schedules, room?.id, entry?.date, entry?.startTime, entry?.endTime, editingId);
+    return allocated < (Number(room?.capacity) || 60);
   });
 };
 
-const getEligibleInvigilators = (schedules, entry, editingId = null, facultyList = []) =>
-  facultyList.filter(
+const getEligibleInvigilators = (schedules = [], entry = {}, editingId = null, facultyList = []) =>
+  (Array.isArray(facultyList) ? facultyList : []).filter(
     (f) =>
-      f.isActive !== false &&
-      f.status !== "Inactive" &&
-      !schedules.some(
+      f?.isActive !== false &&
+      f?.status !== "Inactive" &&
+      !(Array.isArray(schedules) ? schedules : []).some(
         (s) =>
-          normalizeId(s.id) !== normalizeId(editingId) &&
-          s.date === entry.date &&
-          hasTimeOverlap(entry.startTime, entry.endTime, s.startTime, s.endTime) &&
-          getScheduleInvigilatorIds(s).includes(normalizeId(f.id)),
+          normalizeId(s?.id) !== normalizeId(editingId) &&
+          s?.date === entry?.date &&
+          hasTimeOverlap(entry?.startTime, entry?.endTime, s?.startTime, s?.endTime) &&
+          getScheduleInvigilatorIds(s).includes(normalizeId(f?.id)),
       ),
   );
 

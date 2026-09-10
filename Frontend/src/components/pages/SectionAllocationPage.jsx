@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Pencil,
   Search,
@@ -1127,6 +1128,11 @@ export default function SectionAllocationPage() {
       subtitle="Allocate admitted students by admission order before generating roll numbers."
       breadcrumb={["People", "Section Allocation"]}
       excludeNotificationSources={EXCLUDED_NOTIFICATION_SOURCES}
+      actions={
+        <Link className="cms-btn cms-btn-ghost" to="/dashboard/students">
+          Student Management
+        </Link>
+      }
     >
       <section className="cms-card">
         <div className="cms-card-body student-management-filters">

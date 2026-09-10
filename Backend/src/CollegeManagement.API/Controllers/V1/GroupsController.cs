@@ -10,7 +10,6 @@ namespace CollegeManagement.API.Controllers
     [ApiController]
     [Route("api/v1/groups")]
     [AllowAnonymous]
-    [Authorize]
     public class GroupsController : ControllerBase
     {
         private readonly IGroupRepository _groupRepository;

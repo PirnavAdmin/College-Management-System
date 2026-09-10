@@ -149,6 +149,8 @@ export default function ResultProcessingPage() {
   const [toast, setToast] = useState("");
   const [generatingResults, setGeneratingResults] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
 
   const [apiAnalytics, setApiAnalytics] = useState(null);
   const [apiFailedStudents, setApiFailedStudents] = useState([]);
@@ -739,7 +741,7 @@ export default function ResultProcessingPage() {
 
   const confirmActionPublish = async () => {
     if (!confirmPublish) return;
-    setActionLoading("PUBLISH");
+    setActionLoading(confirmPublish.type === "section" ? `PUBLISH_SECTION_${confirmPublish.data?.sectionId}` : "PUBLISH_GROUP");
     try {
       if (confirmPublish.type === "section") {
         const section = confirmPublish.data;
@@ -1097,9 +1099,10 @@ export default function ResultProcessingPage() {
   };
 
   const handleDownloadStudentMemo = async (student) => {
-    if (!student) return;
+    if (!student || downloadingPdf) return;
     const studentId = student.studentId || student.id;
     const examId = student.examinationId || student.examId || applied.exam || filters.exam;
+    setDownloadingPdf(true);
     try {
       showToast("Downloading student marks memo PDF...");
       const res = await apiClient.get("/api/v1/results/students/memo", {
@@ -1119,6 +1122,8 @@ export default function ResultProcessingPage() {
     } catch (err) {
       console.error("Download memo error:", err);
       showToast(getApiErrorMessage(err) || "Failed to download student memo PDF.", "error");
+    } finally {
+      setDownloadingPdf(false);
     }
   };
 
@@ -1329,6 +1334,8 @@ export default function ResultProcessingPage() {
      TAB 6: REPORTS & FILE EXPORTS
      ============================================================ */
   const exportExcel = async (rows, filename) => {
+    if (exportingExcel) return;
+    setExportingExcel(true);
     const examId = applied.exam || filters.exam;
     const boardId = applied.board || filters.board;
     const academicYearId = applied.year || filters.year;
@@ -1351,34 +1358,41 @@ export default function ResultProcessingPage() {
     }
 
     // Client XLSX Fallback
-    if (!rows || !rows.length) return showToast("No records available to export.", "error");
-
-    const sorted = [...rows].sort((a, b) => {
-      const rankA = Number(a.rank ?? a.sectionRank ?? a.groupRank ?? 0);
-      const rankB = Number(b.rank ?? b.sectionRank ?? b.groupRank ?? 0);
-      if (rankA > 0 && rankB > 0 && rankA !== rankB) {
-        return rankA - rankB;
+    try {
+      if (!rows || !rows.length) {
+        showToast("No records available to export.", "error");
+        return;
       }
-      return (Number(b.total) || 0) - (Number(a.total) || 0);
-    });
 
-    const exportData = sorted.map((item, idx) => ({
-      Rank: item.rank || item.sectionRank || item.groupRank || idx + 1,
-      RollNo: item.rollNo || "—",
-      StudentName: item.studentName || "—",
-      Group: item.groupName || "—",
-      Section: item.sectionName || "—",
-      TotalMarks: item.total ?? 0,
-      Percentage: `${item.percentage}%`,
-      Grade: item.grade || "—",
-      Result: item.result || "—"
-    }));
+      const sorted = [...rows].sort((a, b) => {
+        const rankA = Number(a.rank ?? a.sectionRank ?? a.groupRank ?? 0);
+        const rankB = Number(b.rank ?? b.sectionRank ?? b.groupRank ?? 0);
+        if (rankA > 0 && rankB > 0 && rankA !== rankB) {
+          return rankA - rankB;
+        }
+        return (Number(b.total) || 0) - (Number(a.total) || 0);
+      });
 
-    const sheet = XLSX.utils.json_to_sheet(exportData);
-    const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, sheet, "Results");
-    XLSX.writeFile(book, `${filename || "Results"}.xlsx`);
-    showToast(`Exported ${sorted.length} records to ${filename || "Results"}.xlsx`);
+      const exportData = sorted.map((item, idx) => ({
+        Rank: item.rank || item.sectionRank || item.groupRank || idx + 1,
+        RollNo: item.rollNo || "—",
+        StudentName: item.studentName || "—",
+        Group: item.groupName || "—",
+        Section: item.sectionName || "—",
+        TotalMarks: item.total ?? 0,
+        Percentage: `${item.percentage}%`,
+        Grade: item.grade || "—",
+        Result: item.result || "—"
+      }));
+
+      const sheet = XLSX.utils.json_to_sheet(exportData);
+      const book = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(book, sheet, "Results");
+      XLSX.writeFile(book, `${filename || "Results"}.xlsx`);
+      showToast(`Exported ${sorted.length} records to ${filename || "Results"}.xlsx`);
+    } finally {
+      setExportingExcel(false);
+    }
   };
 
   /* ============================================================
@@ -1668,6 +1682,8 @@ export default function ResultProcessingPage() {
                   onViewSection={(sec) => handleViewSection(sec, false)}
                   onPublishSection={handlePublishSection}
                   onPublishGroup={handlePublishGroup}
+                  actionLoading={actionLoading}
+                  exportingExcel={exportingExcel}
                   onExcel={() =>
                     exportExcel(
                       sectionSummaries.flatMap((s) => s.studentRows || []),
@@ -1680,6 +1696,7 @@ export default function ResultProcessingPage() {
               <SectionStudentsView
                 section={selectedSectionDetails}
                 exam={currentExamObj}
+                exportingExcel={exportingExcel}
                 onBack={() => setSelectedSectionDetails(null)}
                 onViewStudent={(student) => handleViewStudentMemo(student)}
                 onExcel={(rowsToExport) =>
@@ -1724,6 +1741,7 @@ export default function ResultProcessingPage() {
                 section={selectedPublishedSection}
                 exam={{ name: selectedPublishedGroup.examName }}
                 isPublishedView
+                exportingExcel={exportingExcel}
                 onBack={() => setSelectedPublishedSection(null)}
                 onViewStudent={(student) => handleViewStudentMemo(student)}
                 onExcel={(rowsToExport) =>
@@ -1779,6 +1797,7 @@ export default function ResultProcessingPage() {
             onBack={() => setSelectedStudentMemo(null)}
             onDownloadPdf={handleDownloadStudentMemo}
             onRevaluation={handleRevaluationSubmit}
+            downloadingPdf={downloadingPdf}
           />
         )}
 
@@ -1955,6 +1974,8 @@ function SectionsTable({
   onPublishSection,
   onPublishGroup,
   onExcel,
+  actionLoading = "",
+  exportingExcel = false,
 }) {
   const filtered = summaries.filter((item) =>
     (item.sectionName || "").toLowerCase().includes(query.toLowerCase())
@@ -1989,16 +2010,16 @@ function SectionsTable({
             />
           </div>
           <div className="results-table-actions">
-            <button className="cms-btn cms-btn-ghost" onClick={onExcel}>
-              <Download size={14} /> Export Excel
+            <button className="cms-btn cms-btn-ghost" onClick={onExcel} disabled={exportingExcel}>
+              <Download size={14} /> {exportingExcel ? "Exporting..." : "Export Excel"}
             </button>
             {summaries.length > 0 && (
               <button
                 className="cms-btn cms-btn-primary"
-                disabled={allPublished}
+                disabled={allPublished || Boolean(actionLoading)}
                 onClick={onPublishGroup}
               >
-                <Globe size={14} /> {allPublished ? "Group Published" : "Publish Group Results"}
+                <Globe size={14} /> {actionLoading === "PUBLISH_GROUP" ? "Publishing Group..." : allPublished ? "Group Published" : "Publish Group Results"}
               </button>
             )}
           </div>
@@ -2053,10 +2074,16 @@ function SectionsTable({
                             className={`results-action-btn ${isSecPublished ? "results-action-btn-published" : "results-action-btn-publish"}`}
                             title={isSecPublished ? "Section Already Published" : "Publish Section Results"}
                             aria-label="Publish Section Results"
-                            disabled={isSecPublished}
+                            disabled={isSecPublished || Boolean(actionLoading)}
                             onClick={() => onPublishSection(item)}
                           >
-                            {isSecPublished ? <Check size={15} /> : <Send size={15} />}
+                            {actionLoading === `PUBLISH_SECTION_${item.sectionId}` ? (
+                              <span style={{ fontSize: 13, display: "inline-block" }}>⏳</span>
+                            ) : isSecPublished ? (
+                              <Check size={15} />
+                            ) : (
+                              <Send size={15} />
+                            )}
                           </button>
                         </div>
                       </td>
@@ -2352,6 +2379,7 @@ function SectionStudentsView({
   onBack,
   onViewStudent,
   onExcel,
+  exportingExcel = false,
 }) {
   const [query, setQuery] = useState("");
   const [resultFilter, setResultFilter] = useState("all");
@@ -2447,8 +2475,8 @@ function SectionStudentsView({
               <option value="PASS">Pass</option>
               <option value="FAIL">Fail</option>
             </select>
-            <button className="cms-btn cms-btn-ghost" onClick={() => onExcel(filtered)}>
-              <Download size={14} /> Export Excel
+            <button className="cms-btn cms-btn-ghost" onClick={() => onExcel(filtered)} disabled={exportingExcel}>
+              <Download size={14} /> {exportingExcel ? "Exporting..." : "Export Excel"}
             </button>
           </div>
         </div>
@@ -2764,7 +2792,7 @@ function AnalyticsView({ data, examName, onOpenModal }) {
 }
 
 /* Student Marks Memo View */
-function StudentMemoView({ student, onBack, onDownloadPdf, onRevaluation }) {
+function StudentMemoView({ student, onBack, onDownloadPdf, onRevaluation, downloadingPdf = false }) {
   const subjects = student?.subjects ?? [];
   return (
     <div className="cms-card">
@@ -2785,9 +2813,10 @@ function StudentMemoView({ student, onBack, onDownloadPdf, onRevaluation }) {
               <button
                 className="cms-btn cms-btn-ghost"
                 style={{ height: 30, padding: "0 10px", fontSize: 12 }}
+                disabled={downloadingPdf}
                 onClick={() => onDownloadPdf(student)}
               >
-                <Download size={14} /> Download PDF Memo
+                <Download size={14} /> {downloadingPdf ? "Generating PDF..." : "Download PDF Memo"}
               </button>
             )}
             <Badge value={student?.publicationStatus || "PUBLISHED"} />
@@ -2937,6 +2966,7 @@ function AnalyticsStudentsModal({ type, rows, onClose, onViewStudent }) {
 /* Rank List Export Preview Modal */
 function RankPreviewModal({ rows, examName, onClose, onDownload }) {
   const [modalPage, setModalPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
   const modalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pagedRows = rows.slice((modalPage - 1) * PAGE_SIZE, modalPage * PAGE_SIZE);
 
@@ -2950,7 +2980,7 @@ function RankPreviewModal({ rows, examName, onClose, onDownload }) {
               {rows.length} records ready for download · {examName}
             </span>
           </div>
-          <button className="cms-modal-close" onClick={onClose}>×</button>
+          <button className="cms-modal-close" onClick={onClose} disabled={exporting}>×</button>
         </div>
 
         <div className="cms-modal-body">
@@ -2992,17 +3022,23 @@ function RankPreviewModal({ rows, examName, onClose, onDownload }) {
         </div>
 
         <div className="cms-modal-footer">
-          <button className="cms-btn cms-btn-secondary" onClick={onClose}>
+          <button className="cms-btn cms-btn-secondary" onClick={onClose} disabled={exporting}>
             Cancel
           </button>
           <button
             className="cms-btn cms-btn-primary"
-            onClick={() => {
-              onDownload();
-              onClose();
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await onDownload();
+                onClose();
+              } finally {
+                setExporting(false);
+              }
             }}
           >
-            Download Excel File
+            {exporting ? "Exporting..." : "Download Excel File"}
           </button>
         </div>
       </div>

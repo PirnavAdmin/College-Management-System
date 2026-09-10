@@ -12,6 +12,7 @@ import {
   Building2,
   Layers,
   Download,
+  Loader2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -669,7 +670,7 @@ export default function SectionManagementPage() {
       onSuccess();
     } catch (error) {
       console.error(label + " failed", error);
-      say((saved ? "The request succeeded, but backend synchronization could not be confirmed. Reload before retrying. " : "") + getApiErrorMessage(error));
+      say((saved ? "The request succeeded, but backend synchronization could not be confirmed. Reload before retrying. " : "") + getApiErrorMessage(error), "error");
     } finally {
       operationRef.current = false;
       setOperation("");
@@ -778,13 +779,14 @@ export default function SectionManagementPage() {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
-  const say = useCallback((message) => {
+  const say = useCallback((message, type = "success") => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    setToast(message);
+    const toastObj = typeof message === "object" && message !== null ? message : { text: message, type };
+    setToast(toastObj);
     toastTimer.current = setTimeout(() => {
       setToast(null);
       toastTimer.current = null;
-    }, 3200);
+    }, 3500);
   }, []);
 
   const loadRooms = useCallback(async () => {
@@ -1688,7 +1690,11 @@ export default function SectionManagementPage() {
                                   disabled={Boolean(operation)}
                                   onClick={() => deleteRoom(room)}
                                 >
-                                  <Trash2 size={14} />
+                                  {operation === `DELETE_ROOM:${room.id}` ? (
+                                    <Loader2 size={14} className="cms-spin" />
+                                  ) : (
+                                    <Trash2 size={14} />
+                                  )}
                                 </button>
                               </div>
                             </td>
@@ -2057,6 +2063,7 @@ export default function SectionManagementPage() {
                       type="button"
                       className="cms-btn cms-btn-ghost"
                       onClick={() => setRoomView("list")}
+                      disabled={Boolean(operation)}
                     >
                       {roomFormMode === "preview" ? "Close" : "Cancel"}
                     </button>
@@ -2212,7 +2219,11 @@ export default function SectionManagementPage() {
                                     disabled={Boolean(operation)}
                                     onClick={() => deleteSection(sec)}
                                   >
-                                    <Trash2 size={14} />
+                                    {operation === `DELETE_SECTION:${sec.id}` ? (
+                                      <Loader2 size={14} className="cms-spin" />
+                                    ) : (
+                                      <Trash2 size={14} />
+                                    )}
                                   </button>
                                 </div>
                               </td>
@@ -2661,6 +2672,7 @@ export default function SectionManagementPage() {
                       type="button"
                       className="cms-btn cms-btn-ghost"
                       onClick={() => setSectionView("list")}
+                      disabled={Boolean(operation)}
                     >
                       {sectionFormMode === "preview" ? "Close" : "Cancel"}
                     </button>
@@ -2678,9 +2690,16 @@ export default function SectionManagementPage() {
 
         {/* Global Toast Notification */}
         {toast && (
-          <div className="cms-toast">
-            <CheckCircle2 size={18} />
-            <span>{toast}</span>
+          <div
+            className={`cms-toast ${typeof toast === "object" && toast?.type === "error" ? "cms-toast-error" : "cms-toast-success"}`}
+            role="status"
+          >
+            {typeof toast === "object" && toast?.type === "error" ? (
+              <X size={18} />
+            ) : (
+              <CheckCircle2 size={18} />
+            )}
+            <span>{typeof toast === "object" ? toast.text : toast}</span>
           </div>
         )}
       </div>

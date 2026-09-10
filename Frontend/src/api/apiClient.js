@@ -1,4 +1,4 @@
-﻿import axios from "axios";
+import axios from "axios";
 import { env } from "@/config/env.js";
 
 let activeApiRequests = 0;
@@ -124,7 +124,8 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     finishApiLoading(error.config);
-    if (import.meta.env.DEV) {
+    const isAborted = error?.name === "CanceledError" || error?.code === "ERR_CANCELED";
+    if (import.meta.env.DEV && error.response && !isAborted && !error.config?.silent) {
       console.error("API response error:", {
         url: error.config?.url,
         method: error.config?.method,

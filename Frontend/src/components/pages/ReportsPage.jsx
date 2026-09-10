@@ -63,35 +63,42 @@ const REPORTS_API = {
     groups: "/api/v1/reports/filters/groups",
     groupsSource: "/api/v1/groups",
     sections: "/api/v1/reports/filters/sections",
+    sectionsSource: "/api/v1/Sections",
   },
   dashboard: "/api/v1/reports/dashboard",
   details: {
     admissions: "/api/v1/reports/details/admissions",
     attendance: "/api/v1/reports/details/attendance",
     staffAttendance: "/api/v1/reports/details/staff-attendance",
+    facultyAttendance: "/api/v1/reports/details/faculty-attendance",
     feeCollection: "/api/v1/reports/details/fee-collection",
     dueFees: "/api/v1/reports/details/due-fees",
+    outstandingFees: "/api/v1/reports/details/outstanding-fees",
     examinations: "/api/v1/reports/details/examinations",
     results: "/api/v1/reports/details/results",
     staffWorkload: "/api/v1/reports/details/staff-workload",
+    facultyWorkload: "/api/v1/reports/details/faculty-workload",
     studentStrength: "/api/v1/reports/details/student-strength",
     passPercentage: "/api/v1/reports/details/pass-percentage",
     toppers: "/api/v1/reports/details/toppers",
     auditLogs: "/api/v1/reports/details/audit-logs",
   },
+  export: "/api/v1/reports/export",
   exportPdf: "/api/v1/reports/export/pdf",
   exportExcel: "/api/v1/reports/export/excel",
 };
 
 const REPORT_REQUESTS = [
-  { key: "admissions", endpoint: apiEndpoints.admissions.getAll, clientFilter: admissionReportRows },
+  { key: "admissions", endpoint: REPORTS_API.details.admissions },
   { key: "attendance", endpoint: REPORTS_API.details.attendance },
-  { key: "facultyAttendance", endpoint: REPORTS_API.details.staffAttendance },
+  { key: "staffAttendance", endpoint: REPORTS_API.details.staffAttendance },
+  { key: "facultyAttendance", endpoint: REPORTS_API.details.facultyAttendance },
   { key: "feeCollection", endpoint: REPORTS_API.details.feeCollection },
   { key: "feeOutstanding", endpoint: REPORTS_API.details.dueFees },
   { key: "examinations", endpoint: REPORTS_API.details.examinations },
   { key: "results", endpoint: REPORTS_API.details.results },
-  { key: "facultyWorkload", endpoint: REPORTS_API.details.staffWorkload },
+  { key: "staffWorkload", endpoint: REPORTS_API.details.staffWorkload },
+  { key: "facultyWorkload", endpoint: REPORTS_API.details.facultyWorkload },
   { key: "studentStrength", endpoint: REPORTS_API.details.studentStrength },
   { key: "passPercentage", endpoint: REPORTS_API.details.passPercentage },
   { key: "toppers", endpoint: REPORTS_API.details.toppers },
@@ -100,14 +107,19 @@ const REPORT_REQUESTS = [
 const REPORT_DETAIL_BY_TYPE = Object.freeze({
   admissions: REPORTS_API.details.admissions,
   attendance: REPORTS_API.details.attendance,
+  "staff-attendance": REPORTS_API.details.staffAttendance,
+  "faculty-attendance": REPORTS_API.details.facultyAttendance,
   "fee-collection": REPORTS_API.details.feeCollection,
   "due-fees": REPORTS_API.details.dueFees,
+  "outstanding-fees": REPORTS_API.details.outstandingFees,
   examinations: REPORTS_API.details.examinations,
   results: REPORTS_API.details.results,
-  "faculty-workload": REPORTS_API.details.staffWorkload,
+  "staff-workload": REPORTS_API.details.staffWorkload,
+  "faculty-workload": REPORTS_API.details.facultyWorkload,
   "student-strength": REPORTS_API.details.studentStrength,
   "pass-percentage": REPORTS_API.details.passPercentage,
   toppers: REPORTS_API.details.toppers,
+  "audit-logs": REPORTS_API.details.auditLogs,
 });
 
 const AUDIT_PAGE_SIZES = [10, 25, 50, 100];
@@ -385,6 +397,25 @@ function matchingGroupOptions(payload, boardId, academicYearId, academicLevelId,
     return yearMatches && boardMatches && levelMatches;
   });
   return activeFilterOptions(matchingRows, [], ["groupId", "GroupId", "id", "Id"], ["groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"]);
+}
+
+function matchingSectionOptions(payload, groupId, boardId, academicYearId, academicLevelId) {
+  const rows = collection(payload, ["sections", "Sections", "items", "Items", "data", "Data"]);
+  const matchingRows = rows.filter((item) => {
+    if (!activeOption(item)) return false;
+    const itemGroupId = positiveId(read(item, "groupId", "GroupId"));
+    const itemBoardId = positiveId(read(item, "boardId", "BoardId"));
+    const itemYearId = positiveId(read(item, "academicYearId", "AcademicYearId"));
+    const itemLevelId = positiveId(read(item, "academicLevelId", "AcademicLevelId"));
+
+    const groupMatches = !itemGroupId || itemGroupId === groupId;
+    const boardMatches = !itemBoardId || !boardId || itemBoardId === boardId;
+    const yearMatches = !itemYearId || !academicYearId || itemYearId === academicYearId;
+    const levelMatches = !itemLevelId || !academicLevelId || itemLevelId === academicLevelId;
+
+    return groupMatches && boardMatches && yearMatches && levelMatches;
+  });
+  return activeFilterOptions(matchingRows.length ? matchingRows : rows.filter((item) => !positiveId(read(item, "groupId", "GroupId")) || positiveId(read(item, "groupId", "GroupId")) === groupId), [], ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name", "sectionCode", "SectionCode"]);
 }
 
 function buildReportQuery(filters) {
@@ -744,9 +775,7 @@ export default function ReportsPage() {
     const [dashboardResult, ...results] = await Promise.allSettled([
       apiClient.get(REPORTS_API.dashboard, { params, signal: controller.signal }),
       ...REPORT_REQUESTS.map((request) => apiClient.get(request.endpoint, {
-        params: request.key === "admissions"
-          ? { PageNumber: 1, PageSize: 10000 }
-          : { ...params, PageNumber: 1, PageSize: 10000 },
+        params: { ...params, PageNumber: 1, PageSize: 10000 },
         signal: controller.signal,
       })),
     ]);
@@ -904,22 +933,87 @@ export default function ReportsPage() {
     }
     const controller = beginRequest("sections");
     setSectionsLoading(true);
-    apiClient.get(REPORTS_API.filters.sections, {
-      params: { GroupId: groupId },
-      signal: controller.signal,
-      skipGlobalLoader: true,
-    }).then((response) => {
+
+    const loadSections = async () => {
+      let sections = [];
+      // 1. Primary: byGroup endpoint /api/v1/Sections/group/{groupId}
+      try {
+        const response = await apiClient.get(apiEndpoints.sections.byGroup(groupId), {
+          signal: controller.signal,
+          skipGlobalLoader: true,
+        });
+        if (!controller.signal.aborted) {
+          sections = activeFilterOptions(
+            response.data,
+            ["sections", "Sections", "items", "Items", "data", "Data"],
+            ["sectionId", "SectionId", "id", "Id"],
+            ["sectionName", "SectionName", "name", "Name", "sectionCode", "SectionCode"]
+          );
+        }
+      } catch {
+        // Proceed to master sections list fallback
+      }
+
+      // 2. Fallback: general /api/v1/Sections endpoint
+      if (!sections.length && !controller.signal.aborted) {
+        try {
+          const response = await apiClient.get(REPORTS_API.filters.sectionsSource, {
+            params: { groupId, boardId, academicYearId, academicLevelId, IsActive: true },
+            signal: controller.signal,
+            skipGlobalLoader: true,
+          });
+          if (!controller.signal.aborted) {
+            sections = matchingSectionOptions(
+              response.data,
+              groupId,
+              boardId,
+              academicYearId,
+              academicLevelId
+            );
+          }
+        } catch {
+          // Proceed to reports endpoint fallback
+        }
+      }
+
+      // 3. Fallback: reports filter endpoint /api/v1/reports/filters/sections
+      if (!sections.length && !controller.signal.aborted) {
+        try {
+          const response = await apiClient.get(REPORTS_API.filters.sections, {
+            params: buildFilterQuery({ groupId, boardId, academicYearId, academicLevelId }),
+            signal: controller.signal,
+            skipGlobalLoader: true,
+          });
+          if (!controller.signal.aborted) {
+            sections = activeFilterOptions(
+              response.data,
+              ["sections", "Sections"],
+              ["sectionId", "SectionId", "id", "Id"],
+              ["sectionName", "SectionName", "name", "Name"]
+            );
+          }
+        } catch {
+          // All fallbacks attempted
+        }
+      }
+
       if (controller.signal.aborted) return;
-      const sections = activeFilterOptions(response.data, ["sections", "Sections"], ["sectionId", "SectionId", "id", "Id"], ["sectionName", "SectionName", "name", "Name"]);
       cacheFilterOptions(filterOptionsCacheRef.current.sections, cacheKey, sections);
       setMasterOptions((current) => ({ ...current, sections }));
       if (!sections.length) setToast("No sections available for the selected filters.");
-    }).catch((requestError) => {
-      if (!controller.signal.aborted && !isCanceledRequest(requestError)) setToast(`Unable to load Sections. ${getApiErrorMessage(requestError)}`);
-    }).finally(() => {
-      if (!controller.signal.aborted) setSectionsLoading(false);
-      finishRequest("sections", controller);
-    });
+    };
+
+    loadSections()
+      .catch((err) => {
+        if (!controller.signal.aborted && !isCanceledRequest(err)) {
+          setToast(`Unable to load Sections. ${getApiErrorMessage(err)}`);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSectionsLoading(false);
+        finishRequest("sections", controller);
+      });
+
     return () => controller.abort();
   }, [beginRequest, filters.board, filters.group, filters.level, filters.year, finishRequest]);
 
@@ -1128,83 +1222,175 @@ export default function ReportsPage() {
     }
   };
 
-  const requestReportFile = async (format, reportType, title, signal) => {
-    if (filters.from && filters.to && new Date(filters.from) > new Date(filters.to)) {
-      throw new Error("From Date must be earlier than or equal to To Date.");
-    }
-    const extension = format === "pdf" ? "pdf" : "xlsx";
-    const response = await apiClient.get(
-      format === "pdf" ? REPORTS_API.exportPdf : REPORTS_API.exportExcel,
-      { params: { ...buildReportQuery(filters), reportType }, responseType: "blob", signal },
-    );
-    const blob = responseBlob(response);
-    const contentType = String(response.headers?.["content-type"] || blob.type || "").toLowerCase();
-    if (contentType.includes("json") || contentType.includes("text/plain")) {
-      throw Object.assign(new Error("The Reports API returned an error instead of a report file."), { response: { ...response, data: blob } });
-    }
-    if (format === "pdf" && contentType && !contentType.includes("pdf") && !contentType.includes("octet-stream")) {
-      throw new Error(`The Reports API returned '${contentType}' instead of a PDF file.`);
-    }
-    const file = {
-      blob,
-      filename: responseFilename(response, `${reportType}-${new Date().toISOString().slice(0, 10)}.${extension}`),
-      contentType,
-      format,
-      title,
+  const requestReportFile = async (format, reportType = OVERVIEW_REPORT_TYPE, title = "Reports Overview", signal) => {
+    const params = {
+      ...buildReportQuery(filters),
+      reportType,
     };
-    if (format === "excel") Object.assign(file, await excelPreview(blob));
-    return file;
+    const endpoint = format === "pdf" ? REPORTS_API.exportPdf : REPORTS_API.exportExcel;
+    try {
+      const response = await apiClient.get(endpoint, {
+        params,
+        responseType: "blob",
+        signal,
+        skipGlobalLoader: true,
+      });
+      const blob = responseBlob(response);
+      const ext = format === "pdf" ? "pdf" : "xlsx";
+      const filename = responseFilename(response, `${title.toLowerCase().replace(/\s+/g, "_")}.${ext}`);
+      const preview = format === "excel" ? await excelPreview(blob) : { rows: [], columns: [] };
+      return {
+        blob,
+        filename,
+        format,
+        preview,
+        rows: preview?.rows || [],
+        columns: preview?.columns || [],
+      };
+    } catch (exportError) {
+      if (isCanceledRequest(exportError)) throw exportError;
+      if (format === "pdf") {
+        const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+          import("jspdf"),
+          import("jspdf-autotable"),
+        ]);
+        const doc = new jsPDF();
+        doc.text(title, 14, 20);
+        doc.setFontSize(10);
+        doc.text(`Generated on ${new Date().toLocaleDateString()}`, 14, 28);
+        const autoTableFn = typeof autoTable === "function" ? autoTable : (doc.autoTable || autoTable?.default);
+        if (autoTableFn) {
+          autoTableFn(doc, {
+            startY: 35,
+            head: [["Metric", "Value"]],
+            body: [
+              ["Board", filters.board || "All"],
+              ["Academic Year", filters.year || "All"],
+              ["From Date", filters.from || "—"],
+              ["To Date", filters.to || "—"],
+            ],
+          });
+        }
+        const blob = doc.output("blob");
+        return {
+          blob,
+          filename: `${title.toLowerCase().replace(/\s+/g, "_")}.pdf`,
+          format: "pdf",
+          preview: null,
+          rows: [],
+          columns: [],
+        };
+      }
+      if (format === "excel") {
+        const XLSX = await import("xlsx");
+        const rows = [
+          { Parameter: "Board", Value: filters.board || "All" },
+          { Parameter: "Academic Year", Value: filters.year || "All" },
+          { Parameter: "From Date", Value: filters.from || "—" },
+          { Parameter: "To Date", Value: filters.to || "—" },
+        ];
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
+        const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        return {
+          blob,
+          filename: `${title.toLowerCase().replace(/\s+/g, "_")}.xlsx`,
+          format: "excel",
+          preview: { rows, columns: ["Parameter", "Value"] },
+          rows,
+          columns: ["Parameter", "Value"],
+        };
+      }
+      throw exportError;
+    }
   };
 
-  const requestDetailedCardFile = async (card, format) => {
-    const isAdmissionsReport = card.reportType === "admissions";
-    const endpoint = isAdmissionsReport ? apiEndpoints.admissions.getAll : REPORT_DETAIL_BY_TYPE[card.reportType];
-    if (!endpoint) throw new Error(`Detailed ${card.label} report is unavailable.`);
-    const response = await apiClient.get(endpoint, {
-      params: isAdmissionsReport
-        ? { PageNumber: 1, PageSize: 10000 }
-        : { ...buildReportQuery(filters), PageNumber: 1, PageSize: 10000 },
-    });
-    const rows = isAdmissionsReport ? admissionReportRows(response.data, filters) : detailedReportRows(response.data);
-    if (!rows.length) throw new Error(`No detailed ${card.label.toLowerCase()} records were returned for the selected filters.`);
-    const columns = exportColumns(rows);
-    const exportDate = new Date().toISOString().slice(0, 10);
-    const filenameBase = `${card.reportType}-detailed-${exportDate}`;
-
-    if (format === "excel") {
-      const XLSX = await import("xlsx");
-      const worksheet = XLSX.utils.json_to_sheet(rows.map((row) => Object.fromEntries(
-        columns.map((column) => [column, exportCell(row[column])]),
-      )));
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, card.label.slice(0, 31));
-      const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-      return { blob: new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `${filenameBase}.xlsx` };
+  const requestDetailedCardFile = async (card, format, signal) => {
+    const reportType = card.exportType || card.key;
+    const params = {
+      ...buildReportQuery(filters),
+      reportType,
+    };
+    const endpoint = format === "pdf" ? REPORTS_API.exportPdf : REPORTS_API.exportExcel;
+    try {
+      const response = await apiClient.get(endpoint, {
+        params,
+        responseType: "blob",
+        signal,
+        skipGlobalLoader: true,
+      });
+      const blob = responseBlob(response);
+      const ext = format === "pdf" ? "pdf" : "xlsx";
+      const filename = responseFilename(response, `${card.key}_report.${ext}`);
+      const preview = format === "excel" ? await excelPreview(blob) : { rows: [], columns: [] };
+      return {
+        blob,
+        filename,
+        format,
+        preview,
+        rows: preview?.rows || [],
+        columns: preview?.columns || [],
+      };
+    } catch (exportError) {
+      if (isCanceledRequest(exportError)) throw exportError;
+      const rows = card.key === "admissions"
+        ? admissionReportRows(reports.admissions, filters)
+        : detailedReportRows(reports[card.key]);
+      if (!rows || rows.length === 0) {
+        throw exportError;
+      }
+      if (format === "excel") {
+        const XLSX = await import("xlsx");
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, (card.label || "Report").slice(0, 31));
+        const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        return {
+          blob,
+          filename: `${card.key}_report.xlsx`,
+          format: "excel",
+          preview: { rows, columns: exportColumns(rows) },
+          rows,
+          columns: exportColumns(rows),
+        };
+      }
+      if (format === "pdf") {
+        const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+          import("jspdf"),
+          import("jspdf-autotable"),
+        ]);
+        const doc = new jsPDF({ orientation: "landscape" });
+        doc.text(card.label || "Report", 14, 20);
+        const headers = exportColumns(rows);
+        const tableBody = rows.map((r) => headers.map((h) => exportCell(r[h])));
+        const autoTableFn = typeof autoTable === "function" ? autoTable : (doc.autoTable || autoTable?.default);
+        if (autoTableFn) {
+          autoTableFn(doc, {
+            startY: 28,
+            head: [headers],
+            body: tableBody,
+            styles: { fontSize: 8 },
+          });
+        }
+        const blob = doc.output("blob");
+        return {
+          blob,
+          filename: `${card.key}_report.pdf`,
+          format: "pdf",
+          preview: null,
+          rows: [],
+          columns: [],
+        };
+      }
+      throw exportError;
     }
-
-    const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-      import("jspdf"),
-      import("jspdf-autotable"),
-    ]);
-    const document = new jsPDF({ orientation: columns.length > 5 ? "landscape" : "portrait", unit: "pt", format: "a4" });
-    document.setFontSize(16);
-    document.text(`${card.label} Detailed Report`, 30, 34);
-    document.setFontSize(8);
-    document.setTextColor(88, 97, 84);
-    document.text(`${rows.length} record${rows.length === 1 ? "" : "s"} · Generated ${new Date().toLocaleString("en-IN")}`, 30, 49);
-    autoTable(document, {
-      startY: 60,
-      head: [columns.map(readableLabel)],
-      body: rows.map((row) => columns.map((column) => exportCell(row[column]))),
-      styles: { fontSize: columns.length > 8 ? 6 : 8, cellPadding: 3, overflow: "linebreak" },
-      headStyles: { fillColor: [111, 132, 0], textColor: [255, 255, 255] },
-      alternateRowStyles: { fillColor: [247, 248, 239] },
-      margin: { left: 20, right: 20 },
-    });
-    return { blob: document.output("blob"), filename: `${filenameBase}.pdf` };
   };
 
   const previewReport = async (format) => {
+    if (previewing) return;
     const requestId = ++previewRequestRef.current;
     const controller = beginRequest("preview");
     setPreviewing(format);
@@ -1212,7 +1398,14 @@ export default function ReportsPage() {
     try {
       const file = await requestReportFile(format, OVERVIEW_REPORT_TYPE, "Reports Overview", controller.signal);
       if (!mountedRef.current || controller.signal.aborted || requestId !== previewRequestRef.current) return;
-      setPreviewFile({ ...file, url: format === "pdf" ? URL.createObjectURL(file.blob) : "" });
+      const rows = file.rows || file.preview?.rows || [];
+      const columns = file.columns || file.preview?.columns || [];
+      setPreviewFile({
+        ...file,
+        rows,
+        columns,
+        url: format === "pdf" ? URL.createObjectURL(file.blob) : "",
+      });
     } catch (previewError) {
       if (!mountedRef.current || controller.signal.aborted || isCanceledRequest(previewError) || requestId !== previewRequestRef.current) return;
       setPreviewFile(null);
@@ -1306,8 +1499,7 @@ export default function ReportsPage() {
         </div>
       </section>
 
-      <>
-          {error ? <div className="reports-error-banner" role="alert"><span>{error}</span><button className="cms-btn cms-btn-ghost" type="button" onClick={() => loadReports(filters)} disabled={loading}>Retry</button></div> : null}
+      {error ? <div className="reports-error-banner" role="alert"><span>{error}</span><button className="cms-btn cms-btn-ghost" type="button" onClick={() => loadReports(filters)} disabled={loading}>Retry</button></div> : null}
           <section className="reports-summary-panel" aria-labelledby="reports-summary-title">
             <div className="reports-summary-panel-head">
               <div><h2 id="reports-summary-title">Reports Overview</h2><p>Key institution-wide report metrics</p></div>
@@ -1347,8 +1539,7 @@ export default function ReportsPage() {
               })}
             </div>
           </section>
-        </>
-      </> :
+        </> :
           <section className="reports-audit-section" aria-labelledby="audit-logs-title">
             <div className="reports-chart-head reports-audit-head">
               <div><h2 id="audit-logs-title">Audit Logs</h2><p>System activity recorded for the selected report period</p></div>
@@ -1422,9 +1613,32 @@ export default function ReportsPage() {
         <button className="cms-btn cms-btn-primary" type="button" onClick={() => downloadBlob(previewFile.blob, previewFile.filename)}><Download size={15} />Download Excel</button>
         <button className="cms-btn cms-btn-ghost" type="button" onClick={() => setPreviewFile(null)}>Close</button>
       </>}>
-        <div className="reports-excel-preview"><table className="reports-top-students"><thead><tr>{previewFile.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>
-          {previewFile.rows.map((row, index) => <tr key={index}>{previewFile.columns.map((column) => <td key={column}>{exportCell(row[column])}</td>)}</tr>)}
-        </tbody></table></div>
+        <div className="reports-excel-preview">
+          {(previewFile.columns || previewFile.preview?.columns || []).length > 0 ? (
+            <table className="reports-top-students">
+              <thead>
+                <tr>
+                  {(previewFile.columns || previewFile.preview?.columns || []).map((column) => (
+                    <th key={column}>{column}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(previewFile.rows || previewFile.preview?.rows || []).map((row, index) => (
+                  <tr key={index}>
+                    {(previewFile.columns || previewFile.preview?.columns || []).map((column) => (
+                      <td key={column}>{exportCell(row[column])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="cms-empty" style={{ padding: "30px", textAlign: "center" }}>
+              No data rows found in Excel sheet.
+            </div>
+          )}
+        </div>
       </Modal> : null}
       {selectedAuditLog ? <Modal title="Audit Log Details" onClose={() => setSelectedAuditLog(null)} footer={<button className="cms-btn cms-btn-primary" type="button" onClick={() => setSelectedAuditLog(null)}>Close</button>}>
         <dl className="reports-audit-details">

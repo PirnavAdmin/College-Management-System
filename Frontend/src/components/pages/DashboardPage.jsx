@@ -404,7 +404,7 @@ export default function DashboardPage() {
       }
     } catch (err) {
       if (certSeq.current === seq) {
-        setCertState({ loading: false, error: getApiErrorMessage(err, "Failed to load certificate requests"), data: null });
+        setCertState({ loading: false, error: getApiErrorMessage(err, "Failed to load certificates history"), data: null });
       }
     }
   }, [boardId, academicYearId, todayDate]);
@@ -1076,18 +1076,18 @@ export default function DashboardPage() {
             )}
           </article>
 
-          {/* Card 2: Certificate Requests */}
+          {/* Card 2: Certificates History */}
           <article className="dashboard-card dashboard-certificate-card">
             <CardHeader
-              title="Certificate Requests"
+              title="Certificates history"
               action={<Link to="/dashboard/certificates" className="dashboard-view-link">View All <ChevronRight size={14} /></Link>}
             />
             {certState.loading ? (
-              <LoadingState label="Loading requests..." />
+              <LoadingState label="Loading history..." />
             ) : certState.error ? (
               <ErrorState message={certState.error} onRetry={fetchCertificateRequests} />
             ) : certRequests.length === 0 ? (
-              <EmptyState message="No certificate requests found." />
+              <EmptyState message="No certificates history found." />
             ) : (
               <div className="dashboard-card-body">
                 <div className="dashboard-info-list">

@@ -1488,19 +1488,46 @@ const previewFieldValue = (field, values) => {
 
 function StudentPhotoPreview({ src, label = "Student photo", emptyLabel = "Upload Photo" }) {
   const normalizedSrc = resolveStudentPhotoUrl(src);
+  const [displaySrc, setDisplaySrc] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    let active = true;
+    let objectUrl = "";
     setFailed(false);
+    setDisplaySrc("");
+    if (!normalizedSrc) return () => { active = false; };
+    if (/^(?:blob:|data:image\/)/i.test(normalizedSrc)) {
+      setDisplaySrc(normalizedSrc);
+      return () => { active = false; };
+    }
+    apiClient.get(normalizedSrc, {
+      responseType: "blob",
+      headers: { Accept: "image/*" },
+      skipGlobalLoader: true,
+    }).then((response) => {
+      if (!active) return;
+      const contentType = String(response.headers?.["content-type"] ?? response.data?.type ?? "").toLowerCase();
+      if (!contentType.startsWith("image/")) throw new Error("The photo endpoint did not return an image.");
+      objectUrl = URL.createObjectURL(response.data);
+      setDisplaySrc(objectUrl);
+    }).catch(() => {
+      if (!active) return;
+      setFailed(true);
+      if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
+    });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [normalizedSrc]);
   return (
-    <div className={`cms-admission-photo-preview ${!normalizedSrc || failed ? "is-empty" : ""}`}>
-      {normalizedSrc && !failed ? (
+    <div className={`cms-admission-photo-preview ${!displaySrc || failed ? "is-empty" : ""}`}>
+      {displaySrc && !failed ? (
         <img
-          src={normalizedSrc}
+          src={displaySrc}
           alt={label}
           onError={() => {
             setFailed(true);
-            if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
           }}
         />
       ) : <span>{emptyLabel}</span>}
@@ -2782,6 +2809,8 @@ export default function AdmissionPage() {
     }
     setMasterStatus((current) => ({ ...current, programsLoading: true }));
     apiClient.get(apiEndpoints.programs.byGroup(groupId))
+      .catch(() => apiClient.get(apiEndpoints.programs.mappedByGroup(groupId)))
+      .catch(() => apiClient.get(apiEndpoints.programs.list, { params: { groupId, GroupId: groupId, isActive: true } }))
       .then((response) => {
         if (programRequestRef.current !== requestId) return;
         const programs = getCollection(response.data)

@@ -916,13 +916,16 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
   };
 });
 
-const printFeeTarget = (target) => {
+const printFeeTarget = (target, title = "") => {
   const className = `cms-fee-print-${target}`;
+  const previousTitle = document.title;
   const cleanup = () => {
     document.body.classList.remove(className);
+    if (title) document.title = previousTitle;
     window.removeEventListener("afterprint", cleanup);
   };
 
+  if (title) document.title = title;
   document.body.classList.add(className);
   window.addEventListener("afterprint", cleanup);
   window.setTimeout(() => {
@@ -1717,7 +1720,7 @@ function StudentFeeAccountScreen({ account, onClose, onCollect, onReceipt, allow
             <span>{account.admissionNo} &middot; {account.group} / {account.section}</span>
           </div>
           <div className="cms-fee-drawer-actions">
-            <button className="cms-btn cms-btn-ghost" onClick={() => printFeeTarget("student")}>
+            <button className="cms-btn cms-btn-ghost" onClick={() => printFeeTarget("student", `Fee Statement - ${account.admissionNo || account.studentName || "Student"}`)}>
               <Printer size={14} /> Print
             </button>
             {allowCollect ? (
@@ -1730,6 +1733,11 @@ function StudentFeeAccountScreen({ account, onClose, onCollect, onReceipt, allow
         </div>
 
         <div className="cms-card-body cms-fee-drawer-body cms-fee-student-print">
+          <div className="cms-fee-statement-print-head">
+            <strong>{COLLEGE_NAME}</strong>
+            <span>Student Fee Statement / Fee Details</span>
+            <p>Student: {account.studentName || "-"} &nbsp; | &nbsp; Admission No: {account.admissionNo || "-"}</p>
+          </div>
           <section className="cms-fee-block">
             <h3>Student Information</h3>
             <div className="cms-fee-kv">
@@ -3350,7 +3358,8 @@ export default function FeeManagementPage() {
   const printStudentStatement = (id) => {
     setSelectedId(id);
     setSelectedSource("ledger");
-    window.setTimeout(() => printFeeTarget("student"), 80);
+    const account = ledgerAccounts.find((item) => item.id === id);
+    window.setTimeout(() => printFeeTarget("student", `Fee Statement - ${account?.admissionNo || account?.studentName || "Student"}`), 80);
   };
 
   useEffect(() => {

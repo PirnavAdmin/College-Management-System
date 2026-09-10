@@ -522,15 +522,116 @@ export default function DashboardPage() {
     },
   ];
 
-  // Students Overview Normalized Trend Data
+  // Helper to normalize and fill missing intermediate months in admissions trend sequence
+  const normalizeMonthlyTrend = (raw) => {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+
+    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const parsedMap = new Map();
+
+    raw.forEach((item) => {
+      const periodStr = String(item.period || item.Period || item.month || item.label || "").trim();
+      const count = Number(item.studentsJoined ?? item.StudentsJoined ?? item.value ?? item.count ?? 0);
+      if (!periodStr) return;
+
+      let year = null;
+      let monthIdx = null;
+
+      const tokens = periodStr.split(/[\s,/-]+/);
+      for (const t of tokens) {
+        if (/^\d{4}$/.test(t)) {
+          year = parseInt(t, 10);
+        } else {
+          const clean = t.toLowerCase();
+          const mIdx = MONTH_NAMES.findIndex((m) => m.toLowerCase() === clean.slice(0, 3));
+          if (mIdx !== -1) monthIdx = mIdx;
+        }
+      }
+
+      if (year === null || monthIdx === null) {
+        const match = periodStr.match(/^(\d{4})[-/](\d{1,2})$/);
+        if (match) {
+          year = parseInt(match[1], 10);
+          monthIdx = parseInt(match[2], 10) - 1;
+        }
+      }
+
+      if (year !== null && monthIdx !== null && monthIdx >= 0 && monthIdx < 12) {
+        const key = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+        parsedMap.set(key, {
+          year,
+          monthIdx,
+          count: (parsedMap.get(key)?.count || 0) + count,
+        });
+      }
+    });
+
+    if (parsedMap.size === 0) {
+      return raw.map((item) => ({
+        period: item.period || item.Period || item.month || item.label || "",
+        studentsJoined: Number(item.studentsJoined ?? item.StudentsJoined ?? item.value ?? item.count ?? 0),
+      }));
+    }
+
+    const sortedKeys = Array.from(parsedMap.keys()).sort();
+    const first = parsedMap.get(sortedKeys[0]);
+    const last = parsedMap.get(sortedKeys[sortedKeys.length - 1]);
+
+    let startYear = first.year;
+    let startMonth = first.monthIdx;
+    const endYear = last.year;
+    const endMonth = last.monthIdx;
+
+    // Ensure minimum sequence of 5 months for clean chart representation if range is very small
+    const totalMonthsDiff = (endYear - startYear) * 12 + (endMonth - startMonth) + 1;
+    if (totalMonthsDiff < 5) {
+      const needed = 5 - totalMonthsDiff;
+      for (let k = 0; k < needed; k++) {
+        startMonth--;
+        if (startMonth < 0) {
+          startMonth = 11;
+          startYear--;
+        }
+      }
+    }
+
+    const result = [];
+    let curYear = startYear;
+    let curMonth = startMonth;
+
+    while (curYear < endYear || (curYear === endYear && curMonth <= endMonth)) {
+      const key = `${curYear}-${String(curMonth + 1).padStart(2, "0")}`;
+      const periodLabel = `${MONTH_NAMES[curMonth]} ${curYear}`;
+      const existing = parsedMap.get(key);
+
+      result.push({
+        period: periodLabel,
+        monthName: MONTH_NAMES[curMonth],
+        year: curYear,
+        studentsJoined: existing ? existing.count : 0,
+      });
+
+      curMonth++;
+      if (curMonth > 11) {
+        curMonth = 0;
+        curYear++;
+      }
+    }
+
+    return result;
+  };
+
+  // Students Overview Normalized Trend Data (with all contiguous months filled)
   const overviewChartData = useMemo(() => {
-    const raw = overviewState.data?.trend || overviewState.data?.admissionTrend || overviewState.data?.items || (Array.isArray(overviewState.data) ? overviewState.data : []);
-    if (!Array.isArray(raw)) return [];
-    return raw.map((item) => ({
-      period: item.period || item.month || item.label || "",
-      studentsJoined: Number(item.studentsJoined ?? item.value ?? item.count ?? 0),
-    }));
+    const raw = overviewState.data?.monthlyTrend || overviewState.data?.MonthlyTrend || overviewState.data?.trend || overviewState.data?.admissionTrend || overviewState.data?.items || (Array.isArray(overviewState.data) ? overviewState.data : []);
+    return normalizeMonthlyTrend(raw);
   }, [overviewState.data]);
+
+  const hasMultipleOverviewYears = useMemo(() => {
+    if (!overviewChartData.length) return false;
+    const years = new Set(overviewChartData.map((d) => d.year).filter(Boolean));
+    return years.size > 1;
+  }, [overviewChartData]);
 
   // Group Distribution Normalized Data
   const groupChartData = useMemo(() => {
@@ -721,9 +822,26 @@ export default function DashboardPage() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--cms-border)" />
-                      <XAxis dataKey="period" tickLine={false} axisLine={false} height={20} tick={{ fontSize: 10 }} />
+                      <XAxis
+                        dataKey="period"
+                        tickLine={false}
+                        axisLine={false}
+                        height={22}
+                        interval={0}
+                        tickFormatter={(val) => {
+                          const parts = String(val).split(" ");
+                          if (parts.length >= 2) {
+                            return hasMultipleOverviewYears ? `${parts[0]} '${parts[1].slice(2)}` : parts[0];
+                          }
+                          return val;
+                        }}
+                        tick={{ fontSize: 9.5, fill: "var(--cms-muted, #64748b)" }}
+                      />
                       <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 10 }} />
-                      <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
+                      <Tooltip
+                        formatter={(val) => [formatNumber(val), "Students"]}
+                        labelFormatter={(label) => label}
+                      />
                       <Area type="monotone" dataKey="studentsJoined" stroke="#22a447" strokeWidth={2.5} fill="url(#admissionGradient)" dot={{ r: 3, fill: "#22a447" }} isAnimationActive={false} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -838,10 +956,6 @@ export default function DashboardPage() {
                               <Tooltip formatter={(val) => [formatNumber(val), "Students"]} />
                             </PieChart>
                           </ResponsiveContainer>
-                          <div className="dashboard-donut-center">
-                            <strong>{studentAttData.percentage ?? 0}%</strong>
-                            <span>Attendance</span>
-                          </div>
                         </div>
 
                         <div className="dashboard-attendance-legend-vertical">
@@ -850,7 +964,7 @@ export default function DashboardPage() {
                               <span className="dot dot-present" /> Present
                             </span>
                             <span className="legend-val">
-                              <strong>{formatNumber(studentAttData.present)}</strong> <small>({studentAttData.percentage ?? 0}%)</small>
+                              <strong>{formatNumber(studentAttData.present)}</strong>
                             </span>
                           </div>
                           <div className="legend-item">
@@ -872,7 +986,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      {/* 5 Summary KPI Chips */}
+                      {/* Summary KPI Chips */}
                       <div className="dashboard-attendance-kpi-row">
                         <div className="att-kpi-chip">
                           <small>Total Students</small>
@@ -889,10 +1003,6 @@ export default function DashboardPage() {
                         <div className="att-kpi-chip text-late">
                           <small>Late</small>
                           <strong>{formatNumber(studentAttData.late)}</strong>
-                        </div>
-                        <div className="att-kpi-chip text-primary">
-                          <small>Attendance</small>
-                          <strong>{formatNumber(studentAttData.percentage)}%</strong>
                         </div>
                       </div>
                     </>
@@ -987,10 +1097,6 @@ export default function DashboardPage() {
                         <Tooltip formatter={(val) => [formatNumber(val), "Staff"]} />
                       </PieChart>
                     </ResponsiveContainer>
-                    <div className="dashboard-donut-center">
-                      <strong>{staffAttData.percentage ?? 0}%</strong>
-                      <span>Attendance</span>
-                    </div>
                   </div>
 
                   <div className="dashboard-attendance-legend-vertical">

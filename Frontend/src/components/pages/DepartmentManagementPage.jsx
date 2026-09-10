@@ -289,6 +289,7 @@ export default function DepartmentManagementPage() {
   const [pendingDeleteDept, setPendingDeleteDept] = useState(null);
   const [pendingDeleteDesig, setPendingDeleteDesig] = useState(null);
   const [createKind, setCreateKind] = useState(null);
+  const [deletingDept, setDeletingDept] = useState(false);
   const [deletingDesig, setDeletingDesig] = useState(false);
 
   const requestSeqRef = useRef(0);
@@ -389,6 +390,32 @@ export default function DepartmentManagementPage() {
   const activeDesignationsCount = useMemo(() => {
     return filteredDesignations.filter((d) => d.status === "Active").length;
   }, [filteredDesignations]);
+
+  // Delete Department Handler (DELETE /api/v1/departments/{id})
+  const handleDeleteDepartment = async () => {
+    if (!pendingDeleteDept?.id) return;
+    setDeletingDept(true);
+    try {
+      await apiClient.delete(apiEndpoints.departments.delete(pendingDeleteDept.id));
+      setToast(`Department "${pendingDeleteDept.name}" deleted successfully.`);
+      setDepartments((prev) => prev.filter((d) => d.id !== pendingDeleteDept.id));
+    } catch (error) {
+      const status = error?.response?.status;
+      if (status === 404) {
+        setToast("Department was not found on the server.");
+        setDepartments((prev) => prev.filter((d) => d.id !== pendingDeleteDept.id));
+      } else {
+        const msg = getApiErrorMessage(
+          error,
+          "This department cannot be deleted because it is currently assigned to designations or staff."
+        );
+        setToast(msg);
+      }
+    } finally {
+      setDeletingDept(false);
+      setPendingDeleteDept(null);
+    }
+  };
 
   // Delete Designation Handler (DELETE /api/v1/designations/{id})
   const handleDeleteDesignation = async () => {
@@ -683,14 +710,14 @@ export default function DepartmentManagementPage() {
         </aside>
       </main>
 
-      {/* DEPARTMENT DELETE NOTICE DIALOG (No Backend Delete API) */}
+      {/* DEPARTMENT DELETE CONFIRM DIALOG (DELETE /api/v1/departments/{id}) */}
       {pendingDeleteDept ? (
         <ConfirmDialog
           title="Delete department?"
-          message={`Department deletion is not available because the backend DELETE endpoint has not been provided.`}
-          confirmLabel="OK"
+          message={`Are you sure you want to delete department "${pendingDeleteDept.name}"? This action cannot be undone.`}
+          confirmLabel={deletingDept ? "Deleting..." : "Delete"}
           onCancel={() => setPendingDeleteDept(null)}
-          onConfirm={() => setPendingDeleteDept(null)}
+          onConfirm={handleDeleteDepartment}
         />
       ) : null}
 

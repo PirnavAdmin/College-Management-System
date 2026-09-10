@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Field, Loader, Modal, Toast } from "@/components/common/Ui.jsx";
 import admissionsImage from "@/assets/reports-3d/admissions.png";
@@ -670,6 +671,15 @@ function admissionReportRows(payload, filters = {}) {
 }
 
 export default function ReportsPage() {
+  const {
+    selectedBoard,
+    selectedAcademicYear,
+    selectedBoardId,
+    selectedAcademicYearId,
+    boards: contextBoards = [],
+    academicYears: contextAcademicYears = [],
+  } = useAcademicContext();
+
   const [activeTab, setActiveTab] = useState("reports");
   const [filters, setFilters] = useState({});
   const [masterOptions, setMasterOptions] = useState({ boards: [], years: [], levels: [], groups: [], sections: [] });
@@ -1017,24 +1027,97 @@ export default function ReportsPage() {
     return () => controller.abort();
   }, [beginRequest, filters.board, filters.group, filters.level, filters.year, finishRequest]);
 
+  const availableBoards = useMemo(() => {
+    if (masterOptions.boards.length > 0) return masterOptions.boards;
+    return contextBoards.map((b) => ({
+      value: String(b.id || b.boardId),
+      label: String(b.name || b.boardName || b.code),
+    }));
+  }, [masterOptions.boards, contextBoards]);
+
+  const availableYears = useMemo(() => {
+    if (masterOptions.years.length > 0) return masterOptions.years;
+    return contextAcademicYears.map((y) => ({
+      value: String(y.id || y.academicYearId),
+      label: String(y.name || y.label || y.code),
+      boardId: y.boardId ? String(y.boardId) : "",
+    }));
+  }, [masterOptions.years, contextAcademicYears]);
+
+  const matchedBoardId = useMemo(() => {
+    if (!selectedBoard && !selectedBoardId) return "";
+    const targetId = String(selectedBoardId || selectedBoard?.id || "");
+    const targetCode = String(selectedBoard?.code || "").toLowerCase();
+    const targetName = String(selectedBoard?.name || selectedBoard?.boardName || "").toLowerCase();
+
+    const found = availableBoards.find((b) => {
+      const bVal = String(b.value);
+      const bLabel = String(b.label || "").toLowerCase();
+      return (
+        (targetId && bVal === targetId) ||
+        (targetName && (bLabel === targetName || bLabel.includes(targetName) || targetName.includes(bLabel))) ||
+        (targetCode && bLabel.includes(targetCode))
+      );
+    });
+
+    return found ? found.value : (targetId || "");
+  }, [availableBoards, selectedBoard, selectedBoardId]);
+
+  const matchedYearId = useMemo(() => {
+    if (!selectedAcademicYear && !selectedAcademicYearId) return "";
+    const targetId = String(selectedAcademicYearId || selectedAcademicYear?.id || "");
+    const targetName = String(selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "").toLowerCase();
+
+    const found = availableYears.find((y) => {
+      const yVal = String(y.value);
+      const yLabel = String(y.label || "").toLowerCase();
+      return (
+        (targetId && yVal === targetId) ||
+        (targetName && (yLabel === targetName || yLabel.includes(targetName) || targetName.includes(yLabel)))
+      );
+    });
+
+    return found ? found.value : (targetId || "");
+  }, [availableYears, selectedAcademicYear, selectedAcademicYearId]);
+
+  // Automatically fetch / pre-select active Board & Academic Year from header context into dropdowns
+  useEffect(() => {
+    if (!matchedBoardId && !matchedYearId) return;
+    setFilters((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      if (matchedBoardId && current.board !== matchedBoardId) {
+        next.board = matchedBoardId;
+        changed = true;
+      }
+      if (matchedYearId && current.year !== matchedYearId) {
+        next.year = matchedYearId;
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  }, [matchedBoardId, matchedYearId]);
+
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
-    masterOptions.years.filter((item) => (
+    availableYears.filter((item) => (
       !filters.board || !item.boardId || item.boardId === String(filters.board)
     )),
     (item) => item.label,
-  ), [filters.board, masterOptions.years]);
+  ), [availableYears, filters.board]);
 
   const filterFields = useMemo(() => {
     return [
-      { name: "board", label: boardsLoading ? "Board (Loading...)" : "Board", type: "select", options: masterOptions.boards, disabled: boardsLoading, required: true },
-      { name: "year", label: yearsLoading ? "Academic Year (Loading...)" : "Academic Year", type: "select", options: academicYearOptions, disabled: yearsLoading, required: true },
+      { name: "board", label: boardsLoading && !availableBoards.length ? "Board (Loading...)" : "Board", type: "select", options: availableBoards, disabled: boardsLoading && !availableBoards.length, required: true },
+      { name: "year", label: yearsLoading && !availableYears.length ? "Academic Year (Loading...)" : "Academic Year", type: "select", options: academicYearOptions, disabled: yearsLoading && !availableYears.length, required: true },
       { name: "level", label: levelLoading ? "Academic Level (Loading...)" : "Academic Level", type: "select", options: masterOptions.levels, disabled: !positiveId(filters.board) || levelLoading, required: true },
       { name: "group", label: groupsLoading ? "Group (Loading...)" : "Group", type: "select", options: masterOptions.groups, disabled: !positiveId(filters.board) || !positiveId(filters.year) || !positiveId(filters.level) || groupsLoading, required: true },
       { name: "section", label: sectionsLoading ? "Section (Loading...)" : "Section", type: "select", options: masterOptions.sections, disabled: !positiveId(filters.board) || !positiveId(filters.year) || !positiveId(filters.level) || !positiveId(filters.group) || sectionsLoading, required: true },
       { name: "from", label: "From Date", type: "date", required: true },
       { name: "to", label: "To Date", type: "date", required: true },
     ];
-  }, [academicYearOptions, boardsLoading, filters.board, filters.group, filters.level, filters.year, groupsLoading, levelLoading, masterOptions, sectionsLoading, yearsLoading]);
+  }, [academicYearOptions, availableBoards, availableYears, boardsLoading, filters.board, filters.group, filters.level, filters.year, groupsLoading, levelLoading, masterOptions.groups, masterOptions.levels, masterOptions.sections, sectionsLoading, yearsLoading]);
 
   const workloadData = useMemo(() => mapFacultyWorkload(reports.facultyWorkload), [reports.facultyWorkload]);
   const topperRows = useMemo(() => mapToppers(reports.toppers), [reports.toppers]);
@@ -1163,7 +1246,10 @@ export default function ReportsPage() {
     auditRequestRef.current += 1;
     previewRequestRef.current += 1;
     abortAllRequests();
-    setFilters({});
+    setFilters({
+      board: matchedBoardId || "",
+      year: matchedYearId || "",
+    });
     setMasterOptions((options) => ({ ...options, levels: [], groups: [], sections: [] }));
     setReports(EMPTY_REPORTS);
     setReportErrors({});

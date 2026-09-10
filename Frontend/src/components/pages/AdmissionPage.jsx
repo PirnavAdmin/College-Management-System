@@ -58,6 +58,7 @@ const ALPHA_FIELDS = new Set([
   "prevSchool",
 ]);
 const ADMISSION_GENDER_OPTIONS = ["Male", "Female", "Other"];
+const DEFAULT_BLOOD_GROUP_OPTIONS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((group) => ({ value: group, label: group }));
 const newAdmissionValues = (values = {}) => {
   const next = normalizeAdmissionMobileState(values);
   if (!next.admissionDate) next.admissionDate = todayISO();
@@ -254,6 +255,19 @@ const lookupLabel = (options = [], value, currentLabel = "") => {
   const label = String(currentLabel || "").trim();
   if (label && !isRawIdDisplay(label, value)) return label;
   return optionLabel(options, value) || (label && !isRawIdDisplay(label) ? label : "");
+};
+
+const resolveOptionValue = (options = [], value, label = "") => {
+  const valueText = String(value ?? "").trim();
+  const labelText = String(label ?? "").trim();
+  const normalizedLabel = normalizeMatchText(labelText);
+  if (normalizedLabel) {
+    const byLabel = options.find((option) => normalizeMatchText(option.label) === normalizedLabel);
+    if (byLabel) return String(byLabel.value);
+  }
+  const byValue = valueText ? options.find((option) => String(option.value) === valueText) : null;
+  if (byValue) return String(byValue.value);
+  return valueText;
 };
 
 const formatFeeDate = (value) => {
@@ -458,6 +472,13 @@ const toOption = (item, idKeys, labelKeys) => {
   return { value: String(value), label: String(label) };
 };
 
+const normalizeBloodGroupOption = (item) => {
+  if (typeof item === "string") return item.trim() ? { value: item, label: item } : null;
+  const label = readText(item, "bloodGroupName", "BloodGroupName", "bloodGroup", "BloodGroup", "name", "Name", "value", "Value", "label", "Label", "code", "Code");
+  if (!label) return null;
+  return { value: label, label };
+};
+
 const compactIds = (values = []) => (
   Array.isArray(values)
     ? values.map((value) => String(value ?? "").trim()).filter(Boolean)
@@ -526,13 +547,38 @@ const COURSE_PAYMENT_PLAN_LABELS = {
   "Full Payment": "Full Course Payment",
   "Installment Payment": "Course Fee Schedule",
 };
-const normalizeCoursePaymentPlan = (value, hasInstallments = false) => {
-  const text = String(value || "").trim();
+const normalizeCoursePaymentPlan = (source, hasInstallments = false) => {
+  const value = typeof source === "object" && source !== null
+    ? read(
+      source,
+      "planName",
+      "PlanName",
+      "name",
+      "Name",
+      "paymentPlanName",
+      "PaymentPlanName",
+      "paymentPlan",
+      "PaymentPlan",
+    )
+    : source;
+  const text = typeof value === "object" ? "" : String(value || "").trim();
   const normalized = text.toLowerCase();
   if (normalized.includes("installment") || normalized.includes("schedule")) return "Installment Payment";
   if (normalized.includes("full")) return "Full Payment";
   if (COURSE_PAYMENT_PLANS.includes(text)) return text;
-  return hasInstallments ? "Installment Payment" : text;
+  return hasInstallments ? "Installment Payment" : "";
+};
+const toAdmissionPaymentPlan = (plan) => {
+  const normalized = normalizeCoursePaymentPlan(plan);
+  if (normalized === "Full Payment") return "Full Payment";
+  if (normalized === "Installment Payment") return "Schedule Payment";
+  return "";
+};
+const toFeeAssignmentPlanName = (plan) => {
+  const normalized = normalizeCoursePaymentPlan(plan);
+  if (normalized === "Full Payment") return "Full Payment";
+  if (normalized === "Installment Payment") return "Installment Payment";
+  return "";
 };
 const PAGE_SIZE = 6;
 const ADMISSION_EXPORT_COLUMNS = [
@@ -712,6 +758,14 @@ const buildAdmissionFormData = (values) => {
   appendIfPresent(formData, "GroupId", values.group);
   appendIfPresent(formData, "ProgramId", values.program);
   appendIfPresent(formData, "FeeStructureId", numericId(values.feeStructureId));
+  const admissionPaymentPlan = toAdmissionPaymentPlan(values.paymentPlan);
+  appendIfPresent(formData, "PaymentPlan", admissionPaymentPlan);
+  if (import.meta.env.DEV) {
+    console.log("Student Admission payment plan payload:", {
+      uiPaymentPlan: values.paymentPlan,
+      admissionPaymentPlan,
+    });
+  }
   appendIfPresent(formData, "Medium", values.medium);
   appendIfPresent(formData, "SecondLanguage", values.secondLanguage);
   appendIfPresent(formData, "AdmissionType", values.admissionType);
@@ -924,6 +978,88 @@ const readAdmissionInstallments = (item) => getNestedRows(
   dueDate: readText(row, "dueDate", "DueDate", "date", "Date").slice(0, 10),
 }));
 
+const persistedFeeSources = (payload) => {
+  const root = getObject(payload);
+  return [
+    root,
+    read(
+      root,
+      "studentFee",
+      "StudentFee",
+      "feeDetails",
+      "FeeDetails",
+      "feeAccount",
+      "FeeAccount",
+      "admissionFeeSelection",
+      "AdmissionFeeSelection",
+      "feeSelection",
+      "FeeSelection",
+      "assignment",
+      "Assignment",
+    ),
+  ].filter((source) => source && typeof source === "object");
+};
+
+const readPersistedFeeState = (payload, currentValues = {}) => {
+  const sources = persistedFeeSources(payload);
+  const planSource = sources
+    .map((source) => read(
+      source,
+      "paymentPlan",
+      "PaymentPlan",
+      "planName",
+      "PlanName",
+      "paymentPlanName",
+      "PaymentPlanName",
+      "feePaymentPlan",
+      "FeePaymentPlan",
+      "plan",
+      "Plan",
+    ))
+    .find((source) => source !== undefined && source !== null && source !== "");
+  const planObject = planSource && typeof planSource === "object" ? planSource : {};
+  const schedules = [planObject, ...sources].map(readAdmissionInstallments).find((rows) => rows.length) || [];
+  const explicitCount = sources.map((source) => readNumber(
+    source,
+    "numberOfInstallments",
+    "NumberOfInstallments",
+    "installmentCount",
+    "InstallmentCount",
+    "scheduleCount",
+    "ScheduleCount",
+  )).find((count) => count !== null) ?? readNumber(
+    planObject,
+    "numberOfInstallments",
+    "NumberOfInstallments",
+    "installmentCount",
+    "InstallmentCount",
+    "scheduleCount",
+    "ScheduleCount",
+  );
+  const paymentPlan = normalizeCoursePaymentPlan(planSource, schedules.length > 0);
+  const installmentCount = paymentPlan === "Installment Payment"
+    ? explicitCount || schedules.length || Number(currentValues.installmentCount) || DEFAULT_INSTALLMENT_COUNT
+    : paymentPlan === "Full Payment" ? 1 : currentValues.installmentCount || "";
+
+  return {
+    paymentPlan,
+    installmentCount,
+    installments: schedules.length ? schedules : (currentValues.installments || []),
+    rawPaymentPlan: planSource,
+  };
+};
+
+const hydratePersistedFeeState = (currentValues, payload) => {
+  const persisted = readPersistedFeeState(payload, currentValues);
+  if (!persisted.paymentPlan) return currentValues;
+  return {
+    ...currentValues,
+    paymentPlan: persisted.paymentPlan,
+    installmentCount: persisted.installmentCount,
+    installments: persisted.paymentPlan === "Installment Payment" ? persisted.installments : [],
+  };
+};
+
 const normalizeAdmissionRow = (item) => {
   const admissionId = readId(item, "admissionId", "AdmissionId", "id", "Id");
   const student = read(item, "student", "Student", "studentDetails", "StudentDetails", "approvedStudent", "ApprovedStudent", "createdStudent", "CreatedStudent");
@@ -941,6 +1077,14 @@ const normalizeAdmissionRow = (item) => {
   const status = normalizeAdmissionStatus(readText(item, "status", "Status", "admissionStatus", "AdmissionStatus"));
   const programName = readText(item, "programName", "ProgramName")
     || (typeof program === "string" ? program : readText(program, "programName", "ProgramName", "name", "Name", "programCode", "ProgramCode"));
+  const boardId = readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id");
+  const rawBoardName = readText(item, "boardName", "BoardName")
+    || (typeof board === "string" ? board : readText(board, "boardName", "BoardName", "name", "Name", "boardCode", "BoardCode"));
+  const boardName = !isRawIdDisplay(rawBoardName, boardId) ? rawBoardName : "";
+  const academicYearId = readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id");
+  const rawAcademicYearName = readText(item, "academicYearName", "AcademicYearName")
+    || (typeof academicYear === "string" ? academicYear : readText(academicYear, "academicYearName", "AcademicYearName", "yearName", "YearName", "name", "Name"));
+  const academicYearName = !isRawIdDisplay(rawAcademicYearName, academicYearId) ? rawAcademicYearName : "";
   const groupId = readId(item, "groupId", "GroupId") || readId(group, "groupId", "GroupId", "id", "Id");
   const groupName = readText(item, "groupName", "GroupName") || (typeof group === "string" ? group : readText(group, "groupName", "GroupName", "name", "Name", "groupCode", "GroupCode"));
   const programId = readId(item, "programId", "ProgramId") || readId(program, "programId", "ProgramId", "id", "Id");
@@ -952,10 +1096,8 @@ const normalizeAdmissionRow = (item) => {
   const feeStructureId = readFeeStructureId(item);
   const savedFeeItems = readAdmissionFeeItems(item, feeStructureId);
   const savedInstallments = readAdmissionInstallments(item);
-  const paymentPlan = normalizeCoursePaymentPlan(
-    readText(item, "paymentPlan", "PaymentPlan", "paymentPlanName", "PaymentPlanName", "feePaymentPlan", "FeePaymentPlan", "planName", "PlanName"),
-    savedInstallments.length > 0,
-  );
+  const persistedFee = readPersistedFeeState(item, { installments: savedInstallments });
+  const paymentPlan = persistedFee.paymentPlan;
   const combinedAddress = readText(item, "address", "Address");
   const combinedAddressParts = combinedAddress.split(",").map((part) => part.trim()).filter(Boolean);
   const houseDoorNumber = readText(item, "houseDoorNumber", "HouseDoorNumber", "addressLine1", "AddressLine1") || combinedAddressParts[0] || "";
@@ -972,8 +1114,10 @@ const normalizeAdmissionRow = (item) => {
     admissionNo,
     studentName,
     admissionDate: readText(item, "admissionDate", "AdmissionDate", "date", "Date"),
-    academicYear: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id") || readText(item, "academicYearName", "AcademicYearName"),
-    board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id") || readText(item, "boardName", "BoardName"),
+    academicYear: academicYearId || academicYearName,
+    academicYearName,
+    board: boardId || boardName,
+    boardName,
     group: !isRawIdDisplay(groupName, groupId) ? groupName : groupId,
     program: !isRawIdDisplay(programName, programId) ? programName : programId,
     studentPhoto,
@@ -988,8 +1132,8 @@ const normalizeAdmissionRow = (item) => {
       admissionType: readText(item, "admissionType", "AdmissionType"),
       quota: quotaValue && !isStandardQuota ? "Other" : quotaValue,
       quotaOther: quotaValue && !isStandardQuota ? quotaValue : "",
-      board: readId(item, "boardId", "BoardId") || readId(board, "boardId", "BoardId", "id", "Id"),
-      year: readId(item, "academicYearId", "AcademicYearId") || readId(academicYear, "academicYearId", "AcademicYearId", "id", "Id"),
+      board: boardId,
+      year: academicYearId,
       firstName,
       lastName,
       gender: readText(item, "gender", "Gender"),
@@ -1035,8 +1179,8 @@ const normalizeAdmissionRow = (item) => {
       feeStructureId,
       feeItems: savedFeeItems,
       paymentPlan,
-      installmentCount: savedInstallments.length ? savedInstallments.length : "",
-      installments: savedInstallments,
+      installmentCount: persistedFee.installmentCount,
+      installments: persistedFee.installments,
       status,
       level: readId(item, "academicLevelId", "AcademicLevelId") || readId(academicLevel, "academicLevelId", "AcademicLevelId", "id", "Id"),
       levelName: readText(item, "academicLevelName", "AcademicLevelName") || (typeof academicLevel === "string" ? academicLevel : readText(academicLevel, "academicLevelName", "AcademicLevelName", "name", "Name")),
@@ -1279,6 +1423,11 @@ const saveAdmissionFeeSelections = async (admissionId, values) => {
     throw new Error("Selected fee components could not be saved because their backend component IDs were not available.");
   }
 
+  const payload = {
+    admissionId: numericAdmissionId,
+    selectedFeeStructureComponentIds: componentIds,
+  };
+
   if (import.meta.env.DEV) {
     console.log("Student Admission fee selections payload", {
       endpoint: apiEndpoints.studentAdmissions.feeSelections(numericAdmissionId),
@@ -1287,10 +1436,7 @@ const saveAdmissionFeeSelections = async (admissionId, values) => {
     });
   }
 
-  await apiClient.post(apiEndpoints.studentAdmissions.feeSelections(numericAdmissionId), {
-    admissionId: numericAdmissionId,
-    selectedFeeStructureComponentIds: componentIds,
-  });
+  await apiClient.post(apiEndpoints.studentAdmissions.feeSelections(numericAdmissionId), payload);
 };
 
 const feeStepErrors = (values) => {
@@ -1876,7 +2022,9 @@ export default function AdmissionPage() {
   const {
     boards: contextBoards,
     academicYears: contextAcademicYears,
+    selectedBoard,
     selectedBoardId,
+    selectedAcademicYear,
     selectedAcademicYearId,
   } = useAcademicContext();
   const [initialDraft] = useState(readAdmissionDraft);
@@ -1949,6 +2097,42 @@ export default function AdmissionPage() {
       return option ? { ...option, boardId: readId(item, "boardId", "BoardId") } : null;
     }).filter(Boolean)
   ), [contextAcademicYears]);
+  const boardOptions = useMemo(() => uniqueOptionsByValue([
+    ...contextBoardOptions,
+    ...(masterOptions.boards || []),
+  ]), [contextBoardOptions, masterOptions.boards]);
+  const yearOptions = useMemo(() => uniqueOptionsByValue([
+    ...contextYearOptions,
+    ...(masterOptions.years || []),
+  ]), [contextYearOptions, masterOptions.years]);
+  const contextBoardLookupOptions = useMemo(() => uniqueOptionsByValue([
+    ...(masterOptions.boards || []),
+    ...contextBoardOptions,
+  ]), [contextBoardOptions, masterOptions.boards]);
+  const contextYearLookupOptions = useMemo(() => uniqueOptionsByValue([
+    ...(masterOptions.years || []),
+    ...contextYearOptions,
+  ]), [contextYearOptions, masterOptions.years]);
+  const selectedContextBoardLabel = selectedBoard?.boardName || selectedBoard?.name || selectedBoard?.label || selectedBoard?.code || "";
+  const selectedContextYearLabel = selectedAcademicYear?.academicYearName || selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "";
+  const selectedContextBoardValue = useMemo(() => resolveOptionValue(
+    contextBoardLookupOptions,
+    selectedBoardId,
+    selectedContextBoardLabel,
+  ), [contextBoardLookupOptions, selectedBoardId, selectedContextBoardLabel]);
+  const selectedContextYearValue = useMemo(() => resolveOptionValue(
+    contextYearLookupOptions,
+    selectedAcademicYearId,
+    selectedContextYearLabel,
+  ), [contextYearLookupOptions, selectedAcademicYearId, selectedContextYearLabel]);
+  const admissionYearDisplay = useCallback((row) => (
+    lookupLabel(yearOptions, row.academicYear, row.academicYearName)
+    || (!isRawIdDisplay(row.academicYear) ? row.academicYear : "-")
+  ), [yearOptions]);
+  const admissionBoardDisplay = useCallback((row) => (
+    lookupLabel(boardOptions, row.board, row.boardName)
+    || (!isRawIdDisplay(row.board) ? row.board : "-")
+  ), [boardOptions]);
   const groupOptions = useMemo(() => {
     const rows = masterOptions.groups || [];
     return rows.filter((item) => (
@@ -1971,23 +2155,31 @@ export default function AdmissionPage() {
   }, [masterOptions.boards, masterOptions.groups, masterOptions.levels, masterOptions.sections, values.board, values.group, values.groupName, values.level, values.levelName, values.year]);
   const programOptions = useMemo(() => masterOptions.programs || [], [masterOptions.programs]);
   const groupFilterOptions = useMemo(() => masterOptions.groups || [], [masterOptions.groups]);
+  const bloodGroupOptions = useMemo(() => (
+    masterOptions.bloodGroups?.length ? masterOptions.bloodGroups : DEFAULT_BLOOD_GROUP_OPTIONS
+  ), [masterOptions.bloodGroups]);
   const academicYearOptions = useMemo(() => uniqueAcademicYearsByName(
-    (masterOptions.years || []).filter((item) => (
+    (yearOptions || []).filter((item) => (
       !values.board || !item.boardId || String(item.boardId) === String(values.board)
     )),
     (item) => item.label,
-  ), [masterOptions.years, values.board]);
+  ), [values.board, yearOptions]);
   const levelOptions = useMemo(() => {
     if (!values.board) return [];
     const levels = masterOptions.levels || [];
-    const selectedBoard = (masterOptions.boards || []).find((item) => String(item.value) === String(values.board));
+    const selectedBoard = (boardOptions || []).find((item) => String(item.value) === String(values.board));
     if (!selectedBoard) return [];
     const mappedIds = new Set((selectedBoard.academicLevelIds || []).map(String));
     if (mappedIds.size) return levels.filter((item) => mappedIds.has(String(item.value)));
     const mappedNames = new Set((selectedBoard.academicLevelNames || []).map((name) => String(name).trim().toLowerCase()));
     if (mappedNames.size) return levels.filter((item) => mappedNames.has(String(item.label).trim().toLowerCase()));
-    return levels.filter((item) => item.boardId && String(item.boardId) === String(values.board));
-  }, [masterOptions.boards, masterOptions.levels, values.board]);
+    const boardScopedLevels = levels.filter((item) => item.boardId && String(item.boardId) === String(values.board));
+    if (boardScopedLevels.length) return boardScopedLevels;
+    const yearScopedLevels = levels.filter((item) => item.academicYearId && String(item.academicYearId) === String(values.year));
+    if (yearScopedLevels.length) return yearScopedLevels;
+    const unscopedLevels = levels.filter((item) => !item.boardId && !item.academicYearId);
+    return unscopedLevels.length ? unscopedLevels : levels;
+  }, [boardOptions, masterOptions.levels, values.board, values.year]);
   const enhanceField = (field) => {
     if (field.name === "admissionNo" && !editingAdmissionId) {
       return {
@@ -1997,8 +2189,8 @@ export default function AdmissionPage() {
       };
     }
     if (field.name === "dob") return { ...field, max: yesterdayISO() };
-    if (field.name === "board" && masterOptions.boards?.length) return { ...field, options: masterOptions.boards };
-    if (field.name === "year" && masterOptions.years?.length) return { ...field, options: academicYearOptions };
+    if (field.name === "board" && boardOptions?.length) return { ...field, options: boardOptions };
+    if (field.name === "year" && yearOptions?.length) return { ...field, options: academicYearOptions };
     if (field.name === "level") {
       if (!values.board) return { ...field, options: [], selectPlaceholder: "Select Board first", disabled: true };
       return {
@@ -2026,7 +2218,7 @@ export default function AdmissionPage() {
       if (masterStatus.programsError) return { ...field, options: [{ value: "__programs_error", label: "Unable to load programs. Please try again.", disabled: true }] };
       return { ...field, options: programOptions.length ? programOptions : [{ value: "__no_programs", label: "No programs available", disabled: true }] };
     }
-    if (field.name === "bloodGroup" && masterOptions.bloodGroups?.length) return { ...field, options: masterOptions.bloodGroups };
+    if (field.name === "bloodGroup") return { ...field, options: bloodGroupOptions };
     return field;
   };
   const currentFields = current.fields.map(enhanceField);
@@ -2044,14 +2236,17 @@ export default function AdmissionPage() {
       const matchesSearch = !term
         || String(row.studentName || "").toLowerCase().includes(term)
         || String(row.admissionNo || "").toLowerCase().includes(term);
-      const matchesYear = !filters.year || String(row.academicYear) === String(filters.year);
+      const rowYearLabel = admissionYearDisplay(row);
+      const matchesYear = !filters.year
+        || String(row.academicYear) === String(filters.year)
+        || normalizeMatchText(rowYearLabel) === normalizeMatchText(filters.year);
       const matchesGroup = !filters.group
         || String(row.values?.group || "") === String(filters.group)
         || String(row.group || "").trim().toLowerCase() === String(optionLabel(groupFilterOptions, filters.group) || filters.group).trim().toLowerCase();
       const matchesStatus = !filters.status || normalizeAdmissionStatus(row.status) === filters.status;
       return matchesSearch && matchesYear && matchesGroup && matchesStatus;
     });
-  }, [admissions, filters.group, filters.status, filters.year, groupFilterOptions, search]);
+  }, [admissionYearDisplay, admissions, filters.group, filters.status, filters.year, groupFilterOptions, search]);
   const totalPages = Math.max(1, Math.ceil(displayedAdmissions.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedAdmissions = displayedAdmissions.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -2059,12 +2254,12 @@ export default function AdmissionPage() {
     "Admission No": cleanExportValue(row.admissionNo),
     "Student Name": cleanExportValue(row.studentName),
     "Admission Date": cleanExportValue(formatDate(row.admissionDate) || "-"),
-    "Academic Year": cleanExportValue(optionLabel(masterOptions.years, row.academicYear) || row.academicYear),
-    Board: cleanExportValue(optionLabel(masterOptions.boards, row.board) || row.board),
+    "Academic Year": cleanExportValue(admissionYearDisplay(row)),
+    Board: cleanExportValue(admissionBoardDisplay(row)),
     Group: cleanExportValue(row.group),
     Program: cleanExportValue(row.program),
     Status: cleanExportValue(row.status),
-  })), [displayedAdmissions, masterOptions.boards, masterOptions.years]);
+  })), [admissionBoardDisplay, admissionYearDisplay, displayedAdmissions]);
 
   const exportAdmissionsExcel = async () => {
     if (!admissionExportRows.length) {
@@ -2241,18 +2436,14 @@ export default function AdmissionPage() {
   const installmentCount = values.installmentCount;
   const admissionDate = values.admissionDate;
 
-  // Keeps the fee step consistent: default plan, and an installment schedule
-  // that always matches the applicable course fee.
+  // Keeps an explicitly selected installment schedule aligned with the course fee.
   useEffect(() => {
+    if (editingAdmissionId) return;
     if (!feeStructureId || !feeItems?.length) return;
     setValues((current) => {
       const courseFeePayable = deriveAdmissionFee(current).courseFeePayable;
       const next = { ...current };
       let changed = false;
-      if (!next.paymentPlan) {
-        next.paymentPlan = "Full Payment";
-        changed = true;
-      }
       if (next.paymentPlan === "Installment Payment") {
         const count = Number(next.installmentCount) || DEFAULT_INSTALLMENT_COUNT;
         const schedule = Array.isArray(next.installments) ? next.installments : [];
@@ -2265,7 +2456,7 @@ export default function AdmissionPage() {
       }
       return changed ? next : current;
     });
-  }, [admissionDate, feeItems, feeStructureId, installmentCount, paymentPlan]);
+  }, [admissionDate, editingAdmissionId, feeItems, feeStructureId, installmentCount, paymentPlan]);
 
   useEffect(() => {
     if (!isFeeStep) return;
@@ -2319,13 +2510,8 @@ export default function AdmissionPage() {
           .filter(Boolean)
         : [];
       
-      const defaultBloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((bg) => ({ value: bg, label: bg }));
       const loadedBloodGroups = bloodGroupsResult.status === "fulfilled"
-        ? getCollection(bloodGroupsResult.value.data).map((item) => (
-          typeof item === "string"
-            ? { value: item, label: item }
-            : toOption(item, ["bloodGroupId", "BloodGroupId", "id", "Id", "name", "Name", "value", "Value"], ["bloodGroupName", "BloodGroupName", "name", "Name", "value", "Value"])
-        )).filter(Boolean)
+        ? getCollection(bloodGroupsResult.value.data).map(normalizeBloodGroupOption).filter(Boolean)
         : [];
       if (levelsResult.status === "fulfilled" && selectedBoardForLevels) {
         loadedAcademicLevelsRef.current.add(String(selectedBoardForLevels));
@@ -2373,7 +2559,7 @@ export default function AdmissionPage() {
             })
             .filter((item) => item?.value)
           : (current.sections || []),
-        bloodGroups: loadedBloodGroups.length ? loadedBloodGroups : defaultBloodGroups,
+        bloodGroups: loadedBloodGroups.length ? loadedBloodGroups : DEFAULT_BLOOD_GROUP_OPTIONS,
       }));
       setMasterStatus((current) => ({
         ...current,
@@ -2418,17 +2604,18 @@ export default function AdmissionPage() {
 
   useEffect(() => {
     if (viewMode !== "form" || editingAdmissionId) return;
-    if (!selectedBoardId && !selectedAcademicYearId) return;
+    if (!selectedContextBoardValue && !selectedContextYearValue) return;
     setValues((current) => {
-      const nextBoard = selectedBoardId ? String(selectedBoardId) : current.board || "";
-      const nextYear = selectedAcademicYearId ? String(selectedAcademicYearId) : current.year || "";
-      if (String(current.board || "") === nextBoard && String(current.year || "") === nextYear) return current;
+      const nextBoard = selectedContextBoardValue ? String(selectedContextBoardValue) : current.board || "";
+      const nextYear = selectedContextYearValue ? String(selectedContextYearValue) : current.year || "";
+      const boardChanged = String(current.board || "") !== nextBoard;
+      const yearChanged = String(current.year || "") !== nextYear;
+      if (!boardChanged && !yearChanged) return current;
       return {
         ...current,
         board: nextBoard,
         year: nextYear,
-        level: "",
-        levelName: "",
+        ...(boardChanged ? { level: "", levelName: "" } : {}),
         group: "",
         groupName: "",
         program: "",
@@ -2441,7 +2628,7 @@ export default function AdmissionPage() {
         collectFirstInstallment: false,
       };
     });
-  }, [editingAdmissionId, selectedAcademicYearId, selectedBoardId, viewMode]);
+  }, [editingAdmissionId, selectedContextBoardValue, selectedContextYearValue, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
@@ -2669,8 +2856,7 @@ export default function AdmissionPage() {
         ...current,
         feeStructureId: "",
         feeItems: [],
-        installments: [],
-        paymentPlan: "",
+        ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
         collectFirstInstallment: false,
       }));
       return undefined;
@@ -2708,8 +2894,7 @@ export default function AdmissionPage() {
               ...current,
               feeStructureId: "",
               feeItems: [],
-              installments: [],
-              paymentPlan: "",
+              ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
               collectFirstInstallment: false,
             }));
             setFeeStructureError("No fee structure is configured for the selected Academic Year, Group and Program.");
@@ -2737,8 +2922,7 @@ export default function AdmissionPage() {
             ...current,
             feeStructureId: "",
             feeItems: [],
-            installments: [],
-            paymentPlan: "",
+            ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
             collectFirstInstallment: false,
           }));
           setFeeStructureError("The matched fee structure has no configured fee items.");
@@ -2750,18 +2934,26 @@ export default function AdmissionPage() {
           const selectedByKey = new Map(previousItems.map((item) => [String(item.feeStructureItemId || item.structureItemId || item.feeTypeId || item.id), item]));
           const hydratedFeeItems = feeItems.map((item) => {
             const previous = selectedByKey.get(String(item.feeStructureItemId || item.structureItemId || item.feeTypeId || item.id));
+            const componentId = String(item.feeStructureItemId || item.structureItemId || item.id || "");
+            if (!previous && feeSelectionInitializedRef.current) {
+              return {
+                ...item,
+                selected: item.required || feeSelection.includes(componentId),
+              };
+            }
             if (!previous) return item;
             return {
               ...item,
               selected: item.required || previous.selected !== false,
             };
           });
+          const nextPlan = normalizeCoursePaymentPlan(current.paymentPlan, current.installments?.length > 0);
           return {
             ...current,
             feeStructureId: matching.id,
             feeItems: hydratedFeeItems,
-            paymentPlan: current.paymentPlan || "Full Payment",
-            installments: current.paymentPlan === "Installment Payment" ? current.installments : [],
+            paymentPlan: nextPlan,
+            installments: nextPlan === "Installment Payment" ? current.installments : [],
             collectFirstInstallment: false,
           };
         });
@@ -2772,8 +2964,7 @@ export default function AdmissionPage() {
           ...current,
           feeStructureId: "",
           feeItems: [],
-          installments: [],
-          paymentPlan: "",
+          ...(editingAdmissionId ? {} : { installments: [], paymentPlan: "" }),
           collectFirstInstallment: false,
         }));
         setFeeStructureError(getApiErrorMessage(err));
@@ -2782,7 +2973,7 @@ export default function AdmissionPage() {
         if (!ignore) setFeeStructureLoading(false);
       });
     return () => { ignore = true; };
-  }, [editingAdmissionId, masterOptions.boards, masterOptions.groups, masterOptions.programs, masterOptions.years, values.board, values.group, values.program, values.year, viewMode]);
+  }, [boardOptions, editingAdmissionId, feeSelection, groupOptions, programOptions, values.board, values.group, values.program, values.year, viewMode, yearOptions]);
 
   useEffect(() => {
     if (viewMode !== "form") return undefined;
@@ -2890,6 +3081,17 @@ export default function AdmissionPage() {
     { label: "Group", value: values.groupName || optionLabel(masterOptions.groups, values.group) || values.group },
     { label: "Program", value: values.programName || optionLabel(programOptions, values.program) || values.program },
   ];
+
+  const applyNewAdmissionAcademicDefaults = useCallback((formValues = {}) => {
+    const next = { ...formValues };
+    if (!String(next.board ?? "").trim() && selectedContextBoardValue) {
+      next.board = String(selectedContextBoardValue);
+    }
+    if (!String(next.year ?? "").trim() && selectedContextYearValue) {
+      next.year = String(selectedContextYearValue);
+    }
+    return next;
+  }, [selectedContextBoardValue, selectedContextYearValue]);
 
   const setValue = (name, val) => {
     const field = fieldByName[name] || {};
@@ -3156,8 +3358,9 @@ export default function AdmissionPage() {
       ? { admissionId: String(admissionId), admissionNo: formValues.admissionNo || "" }
       : null;
     setValues(admissionId ? formValues : newAdmissionValues(formValues));
-    setFeeSelection(Array.isArray(selection) ? selection : []);
-    feeSelectionInitializedRef.current = Array.isArray(selection);
+    const hasPersistedSelection = Array.isArray(selection);
+    setFeeSelection(hasPersistedSelection ? selection : []);
+    feeSelectionInitializedRef.current = hasPersistedSelection;
     setErrors({});
     setStep(safeStepIndex(targetStep));
     setViewMode("form");
@@ -3165,7 +3368,7 @@ export default function AdmissionPage() {
 
   const addNewAdmission = () => {
     const draft = readAdmissionDraft();
-    const draftValues = { ...(draft.values || {}), admissionNo: "" };
+    const draftValues = applyNewAdmissionAcademicDefaults({ ...(draft.values || {}), admissionNo: "" });
     openAdmissionForm({
       formValues: draftValues,
       targetStep: draft.step || 0,
@@ -3182,11 +3385,61 @@ export default function AdmissionPage() {
     setActionBusy(`Load-${record.id}`);
     try {
       const response = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
-      const detailRow = normalizeAdmissionRow(getObject(response.data));
+      const detail = getObject(response.data);
+      const detailRow = normalizeAdmissionRow(detail);
+      let formValues = detailRow.values || {};
+      const persistedSelection = null;
+
+      let studentId = resolveApprovedStudentId(detail, detailRow.raw, detailRow, record.raw, record);
+      let studentFeeId = readStudentFeeAssignmentId(detail) || readStudentFeeAssignmentId(record.raw || record);
+      if (!studentId && !studentFeeId && detailRow.admissionNo) {
+        try {
+          const ledgerResponse = await apiClient.get(apiEndpoints.fee.ledger);
+          const matchingAccount = getCollection(ledgerResponse.data).find((account) => {
+            const admission = read(account, "admission", "Admission", "studentAdmission", "StudentAdmission");
+            const accountAdmissionNo = readText(account, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber")
+              || readText(admission, "admissionNo", "AdmissionNo", "admissionNumber", "AdmissionNumber");
+            return accountAdmissionNo.trim().toLowerCase() === detailRow.admissionNo.trim().toLowerCase();
+          });
+          studentId = resolveApprovedStudentId(matchingAccount);
+          studentFeeId = readStudentFeeAssignmentId(matchingAccount);
+        } catch (ledgerError) {
+          if (import.meta.env.DEV) {
+            console.warn("Fee account lookup by admission number was unavailable.", {
+              status: ledgerError?.response?.status,
+            });
+          }
+        }
+      }
+      const feeDetailsEndpoint = studentId
+        ? apiEndpoints.fee.studentFeeDetailsByStudent(studentId)
+        : studentFeeId ? apiEndpoints.fee.studentFeeDetails(studentFeeId) : "";
+
+      if (feeDetailsEndpoint) {
+        try {
+          const feeDetailsResponse = await apiClient.get(feeDetailsEndpoint);
+          const persistedFee = readPersistedFeeState(feeDetailsResponse.data, formValues);
+          formValues = hydratePersistedFeeState(formValues, feeDetailsResponse.data);
+          if (import.meta.env.DEV) {
+            console.log("Payment plan hydration:", {
+              rawBackendPaymentPlan: persistedFee.rawPaymentPlan,
+              normalizedPaymentPlan: persistedFee.paymentPlan,
+              scheduleCount: persistedFee.installments.length,
+              currentMode: "edit",
+            });
+          }
+        } catch (feeDetailsError) {
+          if (feeDetailsError?.response?.status !== 404 && import.meta.env.DEV) {
+            console.warn("Persisted student fee details could not be loaded.", {
+              status: feeDetailsError?.response?.status,
+            });
+          }
+        }
+      }
       openAdmissionForm({
-        formValues: detailRow.values || {},
+        formValues,
         targetStep,
-        selection: [],
+        selection: persistedSelection,
         admissionId,
       });
     } catch (err) {
@@ -3225,7 +3478,7 @@ export default function AdmissionPage() {
     return resolveApprovedStudentId(matchingStudent);
   }, []);
 
-  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload, selectedFeeStructureId = "" }) => {
+  const ensureApprovedStudentFeeAccount = useCallback(async ({ admissionId, approvedPayload, selectedFeeStructureId = "", selectedFeeValues = {} }) => {
     const detailResponse = await apiClient.get(apiEndpoints.admissions.getById(admissionId));
     const detail = getObject(detailResponse.data);
     const detailRow = normalizeAdmissionRow(detail);
@@ -3237,35 +3490,58 @@ export default function AdmissionPage() {
     try {
       const existingResponse = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(studentId));
       const existingStudentFeeId = readStudentFeeAssignmentId(existingResponse.data);
-      if (existingStudentFeeId) return { studentId, studentFeeId: existingStudentFeeId, reused: true };
+      if (existingStudentFeeId) {
+        return {
+          studentId,
+          studentFeeId: existingStudentFeeId,
+          reused: true,
+          persistedFeeValues: hydratePersistedFeeState(selectedFeeValues, existingResponse.data),
+        };
+      }
     } catch (err) {
       if (err?.response?.status && err.response.status !== 404) throw err;
     }
 
-    const selectedStructureId = numericId(selectedFeeStructureId || detailRow.values.feeStructureId)
-      ? String(selectedFeeStructureId || detailRow.values.feeStructureId)
+    const selectedValues = selectedFeeValues && typeof selectedFeeValues === "object" ? selectedFeeValues : {};
+    const feeValues = {
+      ...detailRow.values,
+      ...selectedValues,
+      feeItems: selectedValues.feeItems?.length ? selectedValues.feeItems : detailRow.values.feeItems,
+      installments: selectedValues.installments?.length ? selectedValues.installments : detailRow.values.installments,
+    };
+    const selectedStructureId = numericId(selectedFeeStructureId || feeValues.feeStructureId)
+      ? String(selectedFeeStructureId || feeValues.feeStructureId)
       : "";
     const feeStructure = selectedStructureId
       ? { id: selectedStructureId }
       : await findApplicableFeeStructure({
-        boardId: detailRow.values.board,
-        academicYearId: detailRow.values.year,
-        groupId: detailRow.values.group,
-        programId: detailRow.values.program,
+        boardId: feeValues.board,
+        academicYearId: feeValues.year,
+        groupId: feeValues.group,
+        programId: feeValues.program,
       });
     const feeStructureId = numericId(feeStructure?.id);
     if (!feeStructureId) {
       throw new Error("Fee account was not created because the selected Fee Structure ID was not available.");
     }
 
-    const fee = deriveAdmissionFee(detailRow.values);
-    const planName = normalizeCoursePaymentPlan(fee.paymentPlan || detailRow.values.paymentPlan) || "Full Payment";
-    const selectedInstallmentCount = Number(detailRow.values.installmentCount);
+    const fee = deriveAdmissionFee(feeValues);
+    const planName = toFeeAssignmentPlanName(fee.paymentPlan || feeValues.paymentPlan);
+    if (!planName) {
+      throw new Error("Course fee payment plan is missing. Please select and save a payment plan before fee assignment.");
+    }
+    const selectedInstallmentCount = Number(feeValues.installmentCount);
     const numberOfInstallments = planName === "Installment Payment"
       ? Math.max(Number.isInteger(selectedInstallmentCount) && selectedInstallmentCount > 0
         ? selectedInstallmentCount
         : Number(fee.courseSchedules.length || DEFAULT_INSTALLMENT_COUNT), 1)
       : 1;
+    if (import.meta.env.DEV) {
+      console.log("FINAL fee assignment request", {
+        planName,
+        numberOfInstallments,
+      });
+    }
     const assignResponse = await apiClient.post(apiEndpoints.fee.assignStudentFee, {
       studentId: Number(studentId),
       feeStructureId,
@@ -3287,7 +3563,19 @@ export default function AdmissionPage() {
       });
     }
 
-    return { studentId, studentFeeId, reused: false };
+    let persistedFeeValues = null;
+    try {
+      const persistedResponse = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(studentId));
+      persistedFeeValues = hydratePersistedFeeState(feeValues, persistedResponse.data);
+    } catch (readbackError) {
+      if (import.meta.env.DEV) {
+        console.warn("Assigned student fee readback was unavailable.", {
+          status: readbackError?.response?.status,
+        });
+      }
+    }
+
+    return { studentId, studentFeeId, reused: false, persistedFeeValues };
   }, [resolveApprovedStudentIdFromBackend]);
 
   const updateAdmissionStatus = async (record, status) => {
@@ -3333,11 +3621,15 @@ export default function AdmissionPage() {
         setApproveTarget(null);
         await refreshAdmissions();
         try {
-          await ensureApprovedStudentFeeAccount({
+          const feeAccount = await ensureApprovedStudentFeeAccount({
             admissionId,
             approvedPayload: getObject(response.data),
             selectedFeeStructureId: record.feeStructureId || record.values?.feeStructureId || values.feeStructureId,
+            selectedFeeValues: record.values || values,
           });
+          if (feeAccount.persistedFeeValues && String(editingAdmissionId) === String(admissionId)) {
+            setValues((current) => ({ ...current, ...feeAccount.persistedFeeValues }));
+          }
         } catch (feeErr) {
           setToast(`Admission ${record.admissionNo} was approved, but fee account creation failed: ${getApiErrorMessage(feeErr)}`);
           return;
@@ -3602,8 +3894,8 @@ export default function AdmissionPage() {
                     <td className="cms-strong">{row.admissionNo}</td>
                     <td>{row.studentName}</td>
                     <td>{formatDate(row.admissionDate) || "-"}</td>
-                    <td>{optionLabel(masterOptions.years, row.academicYear) || row.academicYear || "-"}</td>
-                    <td>{optionLabel(masterOptions.boards, row.board) || row.board || "-"}</td>
+                    <td>{admissionYearDisplay(row)}</td>
+                    <td>{admissionBoardDisplay(row)}</td>
                     <td>{row.group || "-"}</td>
                     <td>{row.program || "-"}</td>
                     <td><span className={`cms-badge ${admissionStatusClass(row.status)}`}>{row.status}</span></td>

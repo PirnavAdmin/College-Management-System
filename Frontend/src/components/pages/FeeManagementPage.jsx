@@ -1046,6 +1046,7 @@ const normalizeDueRows = (rows) => rows
     const status = textValue(item, "status", "Status", "feeStatus", "FeeStatus") || "Due";
     return {
       key: String(read(item, "feeInstallmentId", "FeeInstallmentId", "studentFeeId", "StudentFeeId", "id", "Id") ?? `due-${index + 1}`),
+      studentFeeId: textValue(item, "studentFeeId", "StudentFeeId", "studentFeeAssignmentId", "StudentFeeAssignmentId", "feeAccountId", "FeeAccountId"),
       studentId: textValue(item, "studentId", "StudentId") || textValue(student, "studentId", "StudentId", "id", "Id") || textValue(admission, "studentId", "StudentId"),
       studentName: textValue(item, "studentName", "StudentName", "name", "Name")
         || textValue(student, "studentName", "StudentName", "name", "Name", "fullName", "FullName")
@@ -1074,6 +1075,15 @@ const normalizeDueRows = (rows) => rows
 
 const dueDateKey = (value) => cleanDateValue(value).slice(0, 10);
 
+const compareDueRows = (left, right) => {
+  const leftDate = dueDateKey(left?.dueDate);
+  const rightDate = dueDateKey(right?.dueDate);
+  if (leftDate && rightDate && leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+  if (leftDate && !rightDate) return -1;
+  if (!leftDate && rightDate) return 1;
+  return compareAdmissionNumbersDesc(left, right);
+};
+
 const splitDueRows = (rows = []) => {
   const today = todayISO();
   const unique = new Map();
@@ -1082,14 +1092,14 @@ const splitDueRows = (rows = []) => {
     const key = row.key || `${row.admissionNo}-${row.scheduleLabel}-${row.dueDate}-${row.amount}`;
     if (!unique.has(key)) unique.set(key, row);
   });
-  const all = Array.from(unique.values());
+  const all = Array.from(unique.values()).sort(compareDueRows);
   return {
     overdue: all.filter((row) => dueDateKey(row.dueDate) && dueDateKey(row.dueDate) < today),
     upcoming: all.filter((row) => !dueDateKey(row.dueDate) || dueDateKey(row.dueDate) >= today),
   };
 };
 
-const dueStudentKey = (row) => normalizeKey(row.studentId || row.admissionNo || row.studentName);
+const dueStudentKey = (row) => normalizeKey(row.studentId || row.studentFeeId || row.admissionNo || row.studentName);
 
 const uniqueDueStudentCount = (rows = []) => {
   const students = new Set();
@@ -1098,6 +1108,35 @@ const uniqueDueStudentCount = (rows = []) => {
     if (key) students.add(key);
   });
   return students.size;
+};
+
+const uniqueDueStudentRows = (rows = []) => {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const key = dueStudentKey(row);
+    if (!key) return;
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, { ...row, key: `student-due-${key}`, scheduleCount: 1 });
+      return;
+    }
+    const earliest = compareDueRows(row, current) < 0 ? row : current;
+    const scheduleLabels = new Set([
+      ...(current.scheduleLabels || [current.scheduleLabel].filter(Boolean)),
+      row.scheduleLabel,
+    ].filter(Boolean));
+    grouped.set(key, {
+      ...current,
+      ...earliest,
+      key: `student-due-${key}`,
+      amount: Number(current.amount || 0) + Number(row.amount || 0),
+      scheduleCount: Number(current.scheduleCount || 1) + 1,
+      scheduleLabels: Array.from(scheduleLabels),
+      scheduleLabel: scheduleLabels.size > 1 ? `${scheduleLabels.size} overdue schedules` : Array.from(scheduleLabels)[0] || current.scheduleLabel,
+      status: "Overdue",
+    });
+  });
+  return Array.from(grouped.values()).sort(compareDueRows);
 };
 
 const normalizeDashboard = (payload) => {
@@ -1140,8 +1179,9 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
   const chartData = hasUsefulChartData(dashboardChart) ? dashboardChart : dashboardLoaded && hasAccountData && hasUsefulChartData(accountChart) ? accountChart : [];
   const sourceDueRows = dueRows.length ? dueRows : dashboardData?.upcoming?.length ? dashboardData.upcoming : [];
   const { overdue, upcoming } = splitDueRows(sourceDueRows);
+  const overdueStudentRows = uniqueDueStudentRows(overdue);
   const pendingDueStudentCount = uniqueDueStudentCount([...overdue, ...upcoming]);
-  const overdueStudentCount = uniqueDueStudentCount(overdue);
+  const overdueStudentCount = overdueStudentRows.length;
   const hasDueScheduleData = dashboardLoaded || sourceDueRows.length > 0;
   const pendingOverdueStudents = hasDueScheduleData ? pendingDueStudentCount : totals.pendingStudents;
   const overdueStudents = hasDueScheduleData ? overdueStudentCount : totals.overdueStudents || 0;
@@ -1159,10 +1199,10 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
     { name: "Collected", value: selectedChartTotals.collected },
     { name: "Outstanding", value: selectedChartTotals.outstanding },
   ].filter((item) => item.value > 0);
-  const paginatedOverdue = pageItems(overdue, overduePage);
+  const paginatedOverdue = pageItems(overdueStudentRows, overduePage);
   const paginatedUpcoming = pageItems(upcoming, upcomingPage);
   const paginatedRecent = pageItems(recent, recentPage);
-  const overdueSignature = overdue.map((row) => `${row.key}-${row.amount}-${row.status}-${row.dueDate}`).join("|");
+  const overdueSignature = overdueStudentRows.map((row) => `${row.key}-${row.amount}-${row.status}-${row.dueDate}-${row.scheduleLabel}`).join("|");
   const upcomingSignature = upcoming.map((row) => `${row.key}-${row.amount}-${row.status}-${row.dueDate}`).join("|");
   const recentSignature = recent.map((row) => `${row.id}-${row.amount}-${row.date}-${row.receiptNo}`).join("|");
   const dueColumns = [
@@ -1182,6 +1222,11 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
     { label: "Payment Method", value: (row) => row.method },
     { label: "Date", value: (row) => formatFeeDate(row.date) },
   ];
+  const overviewPrint = {
+    overdue: { title: "Overdue Fees", columns: dueColumns, rows: overdueStudentRows },
+    upcoming: { title: "Upcoming Fee Schedules", columns: dueColumns, rows: upcoming },
+    recent: { title: "Recent Payments", columns: recentColumns, rows: recent },
+  }[overviewTab];
   const openOverviewTab = (tabId) => {
     setOverviewTab(tabId);
     window.requestAnimationFrame(() => overviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -1246,8 +1291,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
       <div className="cms-card cms-fee-overview-card" ref={overviewRef}>
         <div className="cms-card-head">
           <h2>Fee Management Overview</h2>
-          {overviewTab === "overdue" ? <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Overdue Fees", dueColumns, overdue)}><Printer size={14} /> Print List</button> : null}
-          {overviewTab === "upcoming" ? <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Upcoming Fee Schedules", dueColumns, upcoming)}><Printer size={14} /> Print List</button> : null}
+          {overviewPrint ? <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList(overviewPrint.title, overviewPrint.columns, overviewPrint.rows)}><Printer size={14} /> Print List</button> : null}
         </div>
         <div className="cms-card-body cms-fee-overview-shell">
           <div className="cms-fee-overview-tabs" role="tablist" aria-label="Fee Management Overview">
@@ -1274,7 +1318,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
                     <tr><th>Student</th><th>Admission No</th><th>Group / Section</th><th>Fee Schedule</th><th>Due Date</th><th className="num">Amount</th><th>Status</th></tr>
                   </thead>
                   <tbody>
-                    {overdue.length === 0 ? (
+                    {overdueStudentRows.length === 0 ? (
                       <tr><td colSpan={7} className="cms-fee-empty-row">No overdue fee schedules.</td></tr>
                     ) : paginatedOverdue.map((row) => (
                       <tr key={row.key}>
@@ -1289,7 +1333,7 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
                     ))}
                   </tbody>
                 </table>
-                <TablePagination page={overduePage} totalItems={overdue.length} onPageChange={setOverduePage} />
+                <TablePagination page={overduePage} totalItems={overdueStudentRows.length} onPageChange={setOverduePage} />
               </div>
             ) : null}
 
@@ -1340,9 +1384,6 @@ function OverviewTab({ accounts, dashboard = null, dueRows = [], dashboardLoaded
                     ))}
                   </tbody>
                 </table>
-                <div className="cms-fee-print-row">
-                  <button className="cms-btn cms-btn-ghost cms-fee-mini-btn" type="button" onClick={() => printFeeList("Recent Payments", recentColumns, recent)}><Printer size={14} /> Print List</button>
-                </div>
                 <TablePagination page={recentPage} totalItems={recent.length} onPageChange={setRecentPage} />
               </div>
             ) : null}

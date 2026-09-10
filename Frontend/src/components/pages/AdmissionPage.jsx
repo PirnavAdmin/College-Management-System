@@ -141,15 +141,6 @@ const normalizeAdmissionMobileState = (values = {}) => {
   };
 };
 
-const isRenderableImageSource = (value) => {
-  const text = String(value || "").trim();
-  return Boolean(text) && (
-    text.startsWith("blob:")
-    || text.startsWith("data:image/")
-    || /^https?:\/\//i.test(text)
-  );
-};
-
 const getBackendOrigin = () => {
   const configuredBaseUrl = String(env.apiBaseUrl || "").trim();
   if (!configuredBaseUrl) return "";
@@ -163,16 +154,38 @@ const getBackendOrigin = () => {
 const resolveStudentPhotoUrl = (value) => {
   const text = String(value || "").trim();
   if (!text || isSchemaPlaceholder(text)) return "";
-  if (isRenderableImageSource(text)) return text;
-  if (/[\\/]/.test(text) || /\.(png|jpe?g|gif|webp|bmp)$/i.test(text)) {
+  const cleanText = text.replace(/\\/g, "/");
+  if (/^https?:\/\//i.test(cleanText)) {
+    try {
+      const url = new URL(cleanText);
+      const baseUrl = getBackendOrigin();
+      if (baseUrl && url.pathname.includes("/uploads/")) {
+        return `${baseUrl}${url.pathname}${url.search}`;
+      }
+    } catch {
+      return cleanText;
+    }
+    return cleanText;
+  }
+  if (cleanText.startsWith("blob:") || cleanText.startsWith("data:image/")) return cleanText;
+  if (cleanText.startsWith("~") || cleanText.includes("/uploads/") || /\.(png|jpe?g|gif|webp|bmp)$/i.test(cleanText)) {
     const baseUrl = getBackendOrigin();
-    const path = text.replace(/\\/g, "/").replace(/^\/?/, "/");
+    const normalizedPath = cleanText.replace(/^~?\/?/, "/").replace(/^\/?wwwroot\//i, "/");
+    const path = normalizedPath.startsWith("/student-photos/")
+      ? `/uploads${normalizedPath}`
+      : !normalizedPath.includes("/") && /\.(png|jpe?g|gif|webp|bmp)$/i.test(normalizedPath)
+        ? `/uploads/student-photos/${normalizedPath}`
+        : normalizedPath;
     return baseUrl ? `${baseUrl}${path}` : path;
   }
   return "";
 };
 
 const normalizeImageSource = resolveStudentPhotoUrl;
+
+const studentPhotoSource = (values = {}, previewUrl = "") => (
+  previewUrl || values.photoUrl || values.studentPhoto || ""
+);
 
 const isLooseId = (value) => {
   const text = String(value ?? "").trim();
@@ -472,6 +485,7 @@ const normalizeLevelOption = (item) => {
   return option ? {
     ...option,
     boardId: readId(item, "boardId", "BoardId"),
+    academicYearId: readId(item, "academicYearId", "AcademicYearId"),
   } : null;
 };
 
@@ -829,27 +843,28 @@ const normalizeAdmissionStatus = (value, fallback = "Pending") => {
   return fallback;
 };
 
-const readPhotoUrl = (item, student) => readText(
-  item,
-  "studentPhotoUrl",
-  "StudentPhotoUrl",
-  "photoUrl",
-  "PhotoUrl",
-  "studentPhoto",
-  "StudentPhoto",
-  "photo",
-  "Photo",
-) || readText(
-  student,
-  "studentPhotoUrl",
-  "StudentPhotoUrl",
-  "photoUrl",
-  "PhotoUrl",
-  "studentPhoto",
-  "StudentPhoto",
-  "photo",
-  "Photo",
-);
+const readPhotoUrl = (...sources) => {
+  const keys = [
+    "studentPhotoUrl",
+    "StudentPhotoUrl",
+    "photoUrl",
+    "PhotoUrl",
+    "studentPhoto",
+    "StudentPhoto",
+    "photo",
+    "Photo",
+    "photoPath",
+    "PhotoPath",
+    "profilePhoto",
+    "ProfilePhoto",
+    "passportPhoto",
+    "PassportPhoto",
+  ];
+  return sources
+    .filter((source) => source && typeof source === "object")
+    .map((source) => readText(source, ...keys))
+    .find(Boolean) || "";
+};
 
 const readFeeStructureId = (item) => {
   const feeStructure = read(item, "feeStructure", "FeeStructure", "structure", "Structure");
@@ -911,7 +926,8 @@ const readAdmissionInstallments = (item) => getNestedRows(
 
 const normalizeAdmissionRow = (item) => {
   const admissionId = readId(item, "admissionId", "AdmissionId", "id", "Id");
-  const student = read(item, "student", "Student");
+  const student = read(item, "student", "Student", "studentDetails", "StudentDetails", "approvedStudent", "ApprovedStudent", "createdStudent", "CreatedStudent");
+  const admission = read(item, "admission", "Admission", "studentAdmission", "StudentAdmission", "admissionDetails", "AdmissionDetails");
   const firstName = readText(item, "firstName", "FirstName");
   const lastName = readText(item, "lastName", "LastName");
   const board = read(item, "board", "Board");
@@ -931,7 +947,7 @@ const normalizeAdmissionRow = (item) => {
   const quotaValue = readText(item, "admissionQuota", "AdmissionQuota", "quota", "Quota");
   const standardQuota = steps[0].fields.find((field) => field.name === "quota")?.options || [];
   const isStandardQuota = standardQuota.some((option) => String(option).toLowerCase() === quotaValue.toLowerCase());
-  const studentPhoto = readPhotoUrl(item, student);
+  const studentPhoto = readPhotoUrl(item, student, admission);
   const photoUrl = resolveStudentPhotoUrl(studentPhoto);
   const feeStructureId = readFeeStructureId(item);
   const savedFeeItems = readAdmissionFeeItems(item, feeStructureId);
@@ -1118,12 +1134,17 @@ const findApplicableFeeStructure = async ({ boardId, academicYearId, groupId, pr
     throw new Error("Fee account was not created because Board, Academic Year and Group are required to find a fee structure.");
   }
   const response = await apiClient.get(apiEndpoints.fee.getStructures);
-  const summaries = getCollection(response.data)
+  const structureRows = getCollection(response.data);
+  const summaries = structureRows
+    .map(normalizeFeeStructureSummary)
+    .filter(Boolean)
+    .filter((item) => item.status.toLowerCase() !== "inactive");
+  const expandedSummaries = summaries.length ? summaries : structureRows
     .flatMap(expandFeeStructureItems)
     .map(normalizeFeeStructureSummary)
     .filter(Boolean)
     .filter((item) => item.status.toLowerCase() !== "inactive");
-  const matching = summaries.find((item) => feeStructureMatchesSelection(item, { boardId, academicYearId, groupId, programId }));
+  const matching = expandedSummaries.find((item) => feeStructureMatchesSelection(item, { boardId, academicYearId, groupId, programId }));
   if (!matching) throw new Error("No active fee structure is configured for the approved student's academic combination.");
   return matching;
 };
@@ -1321,19 +1342,46 @@ const previewFieldValue = (field, values) => {
 
 function StudentPhotoPreview({ src, label = "Student photo", emptyLabel = "Upload Photo" }) {
   const normalizedSrc = resolveStudentPhotoUrl(src);
+  const [displaySrc, setDisplaySrc] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    let active = true;
+    let objectUrl = "";
     setFailed(false);
+    setDisplaySrc("");
+    if (!normalizedSrc) return () => { active = false; };
+    if (/^(?:blob:|data:image\/)/i.test(normalizedSrc)) {
+      setDisplaySrc(normalizedSrc);
+      return () => { active = false; };
+    }
+    apiClient.get(normalizedSrc, {
+      responseType: "blob",
+      headers: { Accept: "image/*" },
+      skipGlobalLoader: true,
+    }).then((response) => {
+      if (!active) return;
+      const contentType = String(response.headers?.["content-type"] ?? response.data?.type ?? "").toLowerCase();
+      if (!contentType.startsWith("image/")) throw new Error("The photo endpoint did not return an image.");
+      objectUrl = URL.createObjectURL(response.data);
+      setDisplaySrc(objectUrl);
+    }).catch(() => {
+      if (!active) return;
+      setFailed(true);
+      if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
+    });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
   }, [normalizedSrc]);
   return (
-    <div className={`cms-admission-photo-preview ${!normalizedSrc || failed ? "is-empty" : ""}`}>
-      {normalizedSrc && !failed ? (
+    <div className={`cms-admission-photo-preview ${!displaySrc || failed ? "is-empty" : ""}`}>
+      {displaySrc && !failed ? (
         <img
-          src={normalizedSrc}
+          src={displaySrc}
           alt={label}
           onError={() => {
             setFailed(true);
-            if (import.meta.env.DEV) console.error("Student photo failed to load:", normalizedSrc);
           }}
         />
       ) : <span>{emptyLabel}</span>}
@@ -1364,7 +1412,7 @@ function AdmissionPreview({ sections, values, errors, onEdit, feeNode, photoPrev
               return (
                 <div key={field.name} className={`cms-preview-item ${isPhoto ? "cms-preview-photo-item" : ""} ${missingRequired ? "is-missing" : ""}`}>
                   <span>{field.label}</span>
-                  {isPhoto ? <StudentPhotoPreview src={photoPreviewUrl || values.photoUrl || values.studentPhoto} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
+                  {isPhoto ? <StudentPhotoPreview src={studentPhotoSource(values, photoPreviewUrl)} emptyLabel="No Photo" /> : <strong>{formatPreviewValue(field, value)}</strong>}
                   {errors[field.name] || missingRequired ? <small>{errors[field.name] || `${field.label} is required`}</small> : null}
                 </div>
               );
@@ -1399,7 +1447,7 @@ function AdmissionFormSections({ sections, values, errors, onChange, onFileChang
                   onFileChange={onFileChange}
                   onFileRemove={onFileRemove}
                   inputRef={(element) => { inputRefs.current[field.name] = element; }}
-                  previewUrl={field.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
+                  previewUrl={field.name === "photo" ? studentPhotoSource(values, photoPreviewUrl) : ""}
                   extraValue={field.name === "quota" ? values.quotaOther : ""}
                 />
               ))}
@@ -1868,6 +1916,7 @@ export default function AdmissionPage() {
   const feeSelectionInitializedRef = useRef(initialDraft.hasFeeSelection);
   const admissionNumberInFlightRef = useRef(false);
   const pincodeRequestRef = useRef(0);
+  const academicLevelRequestRef = useRef(0);
   const programRequestRef = useRef(0);
   const boardMappingRequestRef = useRef(0);
   const approveInFlightRef = useRef(new Set());
@@ -2154,9 +2203,9 @@ export default function AdmissionPage() {
       setPhotoPreviewUrl(objectUrl);
       return () => URL.revokeObjectURL(objectUrl);
     }
-    setPhotoPreviewUrl(values.photoUrl || "");
+    setPhotoPreviewUrl(values.photoUrl || values.studentPhoto || "");
     return undefined;
-  }, [values.photo, values.photoUrl]);
+  }, [values.photo, values.photoUrl, values.studentPhoto]);
 
   useEffect(() => {
     const container = stepNavRef.current;
@@ -2226,6 +2275,7 @@ export default function AdmissionPage() {
   }, [isFeeStep]);
 
   const mastersLoadedRef = useRef(false);
+  const loadedAcademicLevelsRef = useRef(new Set());
   const loadedBoardLevelsRef = useRef(new Set());
 
   useEffect(() => {
@@ -2242,9 +2292,10 @@ export default function AdmissionPage() {
           console.error("Unable to load group dropdown endpoint, falling back to groups list", dropdownError);
           return apiClient.get(apiEndpoints.groups.getAll, { params: { isActive: true } });
         });
+      const selectedBoardForLevels = selectedContextBoardValue || values.board;
       const [yearsResult, levelsResult, groupsResult, sectionsResult, bloodGroupsResult, scholarshipsResult] = await Promise.allSettled([
         apiClient.get(apiEndpoints.academicYears.getAll),
-        apiClient.get(apiEndpoints.boards.getAcademicLevels),
+        apiClient.get(apiEndpoints.boards.getAcademicLevels, selectedBoardForLevels ? { params: { boardId: selectedBoardForLevels } } : undefined),
         fetchGroups(),
         apiClient.get(apiEndpoints.sections.getAll),
         apiClient.get(apiEndpoints.admissions.bloodGroups),
@@ -2276,6 +2327,9 @@ export default function AdmissionPage() {
             : toOption(item, ["bloodGroupId", "BloodGroupId", "id", "Id", "name", "Name", "value", "Value"], ["bloodGroupName", "BloodGroupName", "name", "Name", "value", "Value"])
         )).filter(Boolean)
         : [];
+      if (levelsResult.status === "fulfilled" && selectedBoardForLevels) {
+        loadedAcademicLevelsRef.current.add(String(selectedBoardForLevels));
+      }
 
       setMasterOptions((current) => ({
         ...current,
@@ -2335,6 +2389,32 @@ export default function AdmissionPage() {
       setMasterStatus((current) => ({ ...current, groupsLoading: false }));
     };
   }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "form" || !values.board) return undefined;
+    const boardId = String(values.board);
+    if (loadedAcademicLevelsRef.current.has(boardId)) return undefined;
+
+    const requestId = academicLevelRequestRef.current + 1;
+    academicLevelRequestRef.current = requestId;
+    apiClient.get(apiEndpoints.boards.getAcademicLevels, { params: { boardId } })
+      .then((response) => {
+        if (academicLevelRequestRef.current !== requestId) return;
+        const levels = getCollection(response.data).map(normalizeLevelOption).filter(Boolean);
+        if (!levels.length) return;
+        loadedAcademicLevelsRef.current.add(boardId);
+        setMasterOptions((current) => ({
+          ...current,
+          levels,
+        }));
+      })
+      .catch((err) => {
+        if (academicLevelRequestRef.current === requestId) {
+          console.error("Unable to load academic levels for selected board", err);
+        }
+      });
+    return undefined;
+  }, [values.board, viewMode]);
 
   useEffect(() => {
     if (viewMode !== "form" || editingAdmissionId) return;
@@ -2542,6 +2622,8 @@ export default function AdmissionPage() {
     }
     setMasterStatus((current) => ({ ...current, programsLoading: true }));
     apiClient.get(apiEndpoints.programs.byGroup(groupId))
+      .catch(() => apiClient.get(apiEndpoints.programs.mappedByGroup(groupId)))
+      .catch(() => apiClient.get(apiEndpoints.programs.list, { params: { groupId, GroupId: groupId, isActive: true } }))
       .then((response) => {
         if (programRequestRef.current !== requestId) return;
         const programs = getCollection(response.data)
@@ -2599,21 +2681,26 @@ export default function AdmissionPage() {
     apiClient.get(apiEndpoints.fee.getStructures)
       .then(async (response) => {
         if (ignore) return;
-        const summaries = getCollection(response.data)
+        const structureRows = getCollection(response.data);
+        const summaries = structureRows
+          .map(normalizeFeeStructureSummary)
+          .filter(Boolean)
+          .filter((item) => item.status.toLowerCase() !== "inactive");
+        const expandedSummaries = summaries.length ? summaries : structureRows
           .flatMap(expandFeeStructureItems)
           .map(normalizeFeeStructureSummary)
           .filter(Boolean)
           .filter((item) => item.status.toLowerCase() !== "inactive");
-        const matching = summaries.find((item) => feeStructureMatchesSelection(item, {
+        const matching = expandedSummaries.find((item) => feeStructureMatchesSelection(item, {
           boardId,
           academicYearId,
           groupId,
           programId,
         }, {
-          boards: masterOptions.boards,
-          years: masterOptions.years,
-          groups: masterOptions.groups,
-          programs: masterOptions.programs,
+          boards: boardOptions,
+          years: yearOptions,
+          groups: groupOptions,
+          programs: programOptions,
         }));
         if (!matching) {
           if (!ignore) {
@@ -2640,7 +2727,7 @@ export default function AdmissionPage() {
           ? getCollection(itemsResult.value.data)
           : [
             ...expandFeeStructureItems(detail),
-            ...summaries.filter((item) => item.id === matching.id).map((item) => item.raw),
+            ...expandedSummaries.filter((item) => item.id === matching.id).map((item) => item.raw),
           ];
         const feeItems = itemSource
           .map((item) => normalizeFeeStructureItem({ ...detail, ...item }, { ...matching.raw, ...detail, feeStructureId: matching.id }))
@@ -2798,7 +2885,7 @@ export default function AdmissionPage() {
   const feeContext = [
     { label: "Student", value: [values.firstName, values.lastName].filter(Boolean).join(" ") },
     { label: "Admission No", value: values.admissionNo },
-    { label: "Academic Year", value: optionLabel(masterOptions.years, values.year) || values.year },
+    { label: "Academic Year", value: lookupLabel(yearOptions, values.year) || values.year },
     { label: "Academic Level", value: optionLabel(masterOptions.levels, values.level) || values.levelName || values.level },
     { label: "Group", value: values.groupName || optionLabel(masterOptions.groups, values.group) || values.group },
     { label: "Program", value: values.programName || optionLabel(programOptions, values.program) || values.program },
@@ -2926,7 +3013,7 @@ export default function AdmissionPage() {
       setErrors((e) => ({ ...e, [field.name]: "File size must not exceed 2 MB." }));
       return;
     }
-    setValues((v) => ({ ...v, [field.name]: file, ...(field.name === "photo" ? { photoUrl: "" } : {}) }));
+    setValues((v) => ({ ...v, [field.name]: file }));
     setErrors((e) => ({ ...e, [field.name]: undefined }));
   };
 
@@ -2935,7 +3022,6 @@ export default function AdmissionPage() {
     setValues((v) => {
       const next = { ...v };
       delete next[name];
-      if (name === "photo") delete next.photoUrl;
       return next;
     });
     setErrors((e) => ({ ...e, [name]: undefined }));
@@ -3350,8 +3436,19 @@ export default function AdmissionPage() {
         }],
       });
       admissionWriteCompleted = true;
+      const savedRow = normalizeAdmissionRow(getObject(response.data));
+      if (savedRow.values?.studentPhoto || savedRow.values?.photoUrl) {
+        setValues((current) => {
+          const next = {
+            ...current,
+            studentPhoto: savedRow.values.studentPhoto || current.studentPhoto || "",
+            photoUrl: savedRow.values.photoUrl || current.photoUrl || "",
+          };
+          delete next.photo;
+          return next;
+        });
+      }
       if (!isUpdate) {
-        const savedRow = normalizeAdmissionRow(getObject(response.data));
         savedAdmissionId = savedRow.admissionId || readId(getObject(response.data), "admissionId", "AdmissionId", "id", "Id");
         if (savedRow.admissionId) {
           committedAdmissionRef.current = {
@@ -3693,7 +3790,7 @@ export default function AdmissionPage() {
                   onFileChange={setFileValue}
                   onFileRemove={removeFileValue}
                   inputRef={(element) => { fileInputRefs.current[f.name] = element; }}
-                  previewUrl={f.name === "photo" ? photoPreviewUrl || values.photoUrl || values.studentPhoto : ""}
+                  previewUrl={f.name === "photo" ? studentPhotoSource(values, photoPreviewUrl) : ""}
                   extraValue={f.name === "quota" ? values.quotaOther : ""}
                 />
               ))}

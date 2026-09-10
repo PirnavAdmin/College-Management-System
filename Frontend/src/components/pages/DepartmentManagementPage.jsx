@@ -666,19 +666,19 @@ export default function DepartmentManagementPage() {
     setDeletingDept(true);
     try {
       await apiClient.delete(apiEndpoints.departments.delete(pendingDeleteDept.id));
-      setToast({ message: `Department "${pendingDeleteDept.name}" deleted successfully.`, type: "success" });
+      setToast(`Department "${pendingDeleteDept.name}" deleted successfully.`);
       setDepartments((prev) => prev.filter((d) => d.id !== pendingDeleteDept.id));
     } catch (error) {
       const status = error?.response?.status;
       if (status === 404) {
-        setToast({ message: "Department was not found on the server.", type: "warning" });
+        setToast("Department was not found on the server.");
         setDepartments((prev) => prev.filter((d) => d.id !== pendingDeleteDept.id));
       } else {
         const msg = getApiErrorMessage(
           error,
           "This department cannot be deleted because it is currently assigned to designations or staff."
         );
-        setToast({ message: msg, type: "error" });
+        setToast(msg);
       }
     } finally {
       setDeletingDept(false);

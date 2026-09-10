@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "@/layouts/AuthLayout.jsx";
 import { Field, useForm } from "@/components/common/Ui.jsx";
+import { getApiErrorMessage } from "@/api/axios.js";
 import { clearPasswordResetContext, loginUser } from "@/features/auth/services/authService.js";
 
 const fields = [
@@ -10,6 +11,11 @@ const fields = [
 ];
 
 const REMEMBER_KEY = "pirnav-remember-email";
+const clearStoredAuthentication = () => {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  localStorage.removeItem("role");
+};
 
 export default function Login() {
   const { values, errors, setValue, validate } = useForm(fields, {});
@@ -44,54 +50,28 @@ export default function Login() {
     }
 
     setBusy(true);
+    // A login attempt must not inherit authorization from an older session.
+    clearStoredAuthentication();
     try {
-      const emailLower = String(values.email || "").toLowerCase().trim();
+      const result = await loginUser({ emailOrMobile: String(values.email || "").trim(), password: values.password });
+      localStorage.setItem("token", result.token);
+      localStorage.setItem("user", JSON.stringify(result.user));
+      localStorage.setItem("role", result.user.role);
 
-      // Quick Login fallbacks for Demo / Offline API mode
-      if (emailLower.includes("faculty") || emailLower.includes("ravi") || emailLower.includes("kumar")) {
-        localStorage.setItem("token", "mock-faculty-token-12345");
-        localStorage.setItem("user", JSON.stringify({ name: "Ravi Kumar", role: "Faculty", email: values.email }));
-        localStorage.setItem("role", "Faculty");
+      const userRole = String(result.user.role || "").toLowerCase();
+      if (userRole === "faculty" || userRole === "teacher") {
         navigate("/faculty-dashboard", { replace: true });
-        return;
+      } else {
+        navigate(result.user.isAdmin ? "/dashboard" : "/student-dashboard", { replace: true });
       }
-
-      try {
-        const result = await loginUser({ emailOrMobile: String(values.email || "").trim(), password: values.password });
-        if (result.token) {
-          localStorage.setItem("token", result.token);
-          localStorage.setItem("user", JSON.stringify(result.user));
-          localStorage.setItem("role", result.user.role);
-
-          const userRole = (result.user.role || "").toLowerCase();
-          if (userRole === "faculty" || userRole === "teacher") {
-            navigate("/faculty-dashboard", { replace: true });
-          } else {
-            navigate(result.user.isAdmin ? "/dashboard" : "/student-dashboard", { replace: true });
-          }
-          return;
-        }
-      } catch (apiError) {
-        console.warn("Backend API login failed, attempting fallback:", apiError);
-      }
-
-      // Offline / API 404 Fallbacks for Admin & Demo users
-      if (emailLower.includes("admin")) {
-        localStorage.setItem("token", "mock-admin-token-12345");
-        localStorage.setItem("user", JSON.stringify({ name: "Admin User", role: "Admin", isAdmin: true, email: values.email }));
-        localStorage.setItem("role", "Admin");
-        navigate("/dashboard", { replace: true });
-        return;
-      }
-
-      // Default Admin / Dashboard navigation
-      localStorage.setItem("token", "mock-user-token-12345");
-      localStorage.setItem("user", JSON.stringify({ name: "CMS User", role: "Admin", isAdmin: true, email: values.email }));
-      localStorage.setItem("role", "Admin");
-      navigate("/dashboard", { replace: true });
-    } catch (error) {
-      console.error("Login process error:", error);
-      setError("Unable to sign in right now. Please try again.");
+    } catch (loginError) {
+      clearStoredAuthentication();
+      const status = Number(loginError?.response?.status || 0);
+      setError(
+        [400, 401, 403].includes(status) || loginError?.code === "INVALID_CREDENTIALS"
+          ? "Invalid email or password."
+          : getApiErrorMessage(loginError) || "Unable to sign in right now. Please try again.",
+      );
     } finally {
       setBusy(false);
     }

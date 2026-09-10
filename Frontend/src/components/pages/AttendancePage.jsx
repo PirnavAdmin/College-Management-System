@@ -33,10 +33,72 @@ function useOptions(staff) { const [o, setO] = useState({}); useEffect(() => { i
 
 function useStudentOptions(boardId, academicYearId, levelId, groupId, programId) {
   const [options, setOptions] = useState({ levels: [], groups: [], programs: [], sections: [], loadingLevels: false, loadingGroups: false, loadingPrograms: false, loadingSections: false });
-  useEffect(() => { if (!boardId) return; let active = true; setOptions((value) => ({ ...value, levels: [], loadingLevels: true })); apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId } }).then((response) => active && setOptions((value) => ({ ...value, levels: asList(body(response)), loadingLevels: false }))).catch(() => active && setOptions((value) => ({ ...value, levels: [], loadingLevels: false }))); return () => { active = false; }; }, [boardId]);
-  useEffect(() => { if (!boardId || !levelId) { setOptions((value) => ({ ...value, groups: [], programs: [], sections: [], loadingGroups: false })); return undefined; } let active = true; setOptions((value) => ({ ...value, groups: [], programs: [], sections: [], loadingGroups: true })); apiClient.get(apiEndpoints.groups.getByBoard(boardId), { params: { academicYearId, academicLevelId: levelId, isActive: true } }).then((response) => { if (!active) return; const payload = body(response); const wrappers = asList(payload); const groupRows = Array.isArray(payload?.groups) ? payload.groups : Array.isArray(payload?.Groups) ? payload.Groups : wrappers.flatMap((item) => Array.isArray(item?.groups) ? item.groups : Array.isArray(item?.Groups) ? item.Groups : Array.isArray(item?.groupList) ? item.groupList : Array.isArray(item?.data) ? item.data : get(item, "groupId", "GroupId", "id", "Id") != null ? [item] : []); setOptions((value) => ({ ...value, groups: groupRows.filter((item) => get(item, "groupId", "GroupId", "id", "Id") != null && item?.isActive !== false && item?.IsActive !== false), loadingGroups: false })); }).catch(() => active && setOptions((value) => ({ ...value, groups: [], loadingGroups: false }))); return () => { active = false; }; }, [boardId, academicYearId, levelId]);
-  useEffect(() => { if (!groupId) { setOptions((value) => ({ ...value, programs: [], sections: [], loadingPrograms: false })); return undefined; } let active = true; setOptions((value) => ({ ...value, programs: [], sections: [], loadingPrograms: true })); apiClient.get(apiEndpoints.groups.programs(groupId)).then((response) => active && setOptions((value) => ({ ...value, programs: asList(body(response)), loadingPrograms: false }))).catch(() => active && setOptions((value) => ({ ...value, programs: [], loadingPrograms: false }))); return () => { active = false; }; }, [groupId]);
-  useEffect(() => { if (!programId) { setOptions((value) => ({ ...value, sections: [], loadingSections: false })); return undefined; } let active = true; setOptions((value) => ({ ...value, sections: [], loadingSections: true })); apiClient.get(apiEndpoints.sections.list, { params: { boardId, academicYearId, academicLevelId: levelId, groupId, programId, ProgramId: programId, isActive: true, IsActive: true } }).then((response) => active && setOptions((value) => ({ ...value, sections: asList(body(response)), loadingSections: false }))).catch(() => active && setOptions((value) => ({ ...value, sections: [], loadingSections: false }))); return () => { active = false; }; }, [boardId, academicYearId, levelId, groupId, programId]);
+  const scoped = (rows, selected, keys) => rows.filter((row) => {
+    const rowValue = get(row, ...keys);
+    return rowValue == null || rowValue === "" || String(rowValue) === String(selected);
+  });
+  const unique = (rows, keys) => {
+    const seen = new Set();
+    return rows.filter((row) => {
+      const id = String(get(row, ...keys) ?? "");
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  };
+  useEffect(() => {
+    if (!boardId) { setOptions((value) => ({ ...value, levels: [], groups: [], programs: [], sections: [] })); return undefined; }
+    let active = true;
+    setOptions((value) => ({ ...value, levels: [], loadingLevels: true }));
+    apiClient.get(apiEndpoints.boards.academicLevels, { params: { boardId } })
+      .then((response) => active && setOptions((value) => ({ ...value, levels: unique(scoped(asList(body(response)), boardId, ["boardId", "BoardId"]), ["academicLevelId", "AcademicLevelId", "levelId", "LevelId", "id", "Id"]), loadingLevels: false })))
+      .catch(() => active && setOptions((value) => ({ ...value, levels: [], loadingLevels: false })));
+    return () => { active = false; };
+  }, [boardId]);
+  useEffect(() => {
+    if (!boardId || !levelId) { setOptions((value) => ({ ...value, groups: [], programs: [], sections: [], loadingGroups: false })); return undefined; }
+    let active = true;
+    setOptions((value) => ({ ...value, groups: [], programs: [], sections: [], loadingGroups: true }));
+    apiClient.get(apiEndpoints.groups.getByBoard(boardId), { params: { academicYearId, academicLevelId: levelId, isActive: true } }).then((response) => {
+      if (!active) return;
+      const payload = body(response);
+      const wrappers = asList(payload);
+      let groupRows = Array.isArray(payload?.groups) ? payload.groups : Array.isArray(payload?.Groups) ? payload.Groups : wrappers.flatMap((item) => Array.isArray(item?.groups) ? item.groups : Array.isArray(item?.Groups) ? item.Groups : Array.isArray(item?.groupList) ? item.groupList : Array.isArray(item?.data) ? item.data : get(item, "groupId", "GroupId", "id", "Id") != null ? [item] : []);
+      groupRows = scoped(scoped(scoped(groupRows, boardId, ["boardId", "BoardId"]), academicYearId, ["academicYearId", "AcademicYearId"]), levelId, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"]);
+      setOptions((value) => ({ ...value, groups: unique(groupRows.filter((item) => item?.isActive !== false && item?.IsActive !== false), ["groupId", "GroupId", "id", "Id"]), loadingGroups: false }));
+    }).catch(() => active && setOptions((value) => ({ ...value, groups: [], loadingGroups: false })));
+    return () => { active = false; };
+  }, [boardId, academicYearId, levelId]);
+  useEffect(() => {
+    if (!groupId) { setOptions((value) => ({ ...value, programs: [], sections: [], loadingPrograms: false })); return undefined; }
+    let active = true;
+    setOptions((value) => ({ ...value, programs: [], sections: [], loadingPrograms: true }));
+    apiClient.get(apiEndpoints.groups.programs(groupId))
+      .then((response) => active && setOptions((value) => ({ ...value, programs: unique(scoped(asList(body(response)), groupId, ["groupId", "GroupId"]), ["programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId", "id", "Id"]), loadingPrograms: false })))
+      .catch(() => active && setOptions((value) => ({ ...value, programs: [], loadingPrograms: false })));
+    return () => { active = false; };
+  }, [groupId]);
+  useEffect(() => {
+    if (!programId) { setOptions((value) => ({ ...value, sections: [], loadingSections: false })); return undefined; }
+    let active = true;
+    const selectedProgram = options.programs.find((program) => String(get(program, "id", "Id", "programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId")) === String(programId));
+    const validProgramIds = new Set([programId, get(selectedProgram, "programId", "ProgramId", "programmeId", "ProgrammeId"), get(selectedProgram, "groupProgramId", "GroupProgramId")].filter((id) => id != null && id !== "").map(String));
+    const selectedProgramName = String(get(selectedProgram, "programName", "ProgramName", "programmeName", "ProgrammeName", "name", "Name") ?? "").trim().toLowerCase();
+    setOptions((value) => ({ ...value, sections: [], loadingSections: true }));
+    apiClient.get(apiEndpoints.sections.list, { params: { boardId, academicYearId, academicLevelId: levelId, groupId, programId, ProgramId: programId, isActive: true, IsActive: true } }).then((response) => {
+      if (!active) return;
+      let sectionRows = asList(body(response));
+      sectionRows = scoped(scoped(scoped(scoped(sectionRows, boardId, ["boardId", "BoardId"]), academicYearId, ["academicYearId", "AcademicYearId"]), levelId, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"]), groupId, ["groupId", "GroupId"]);
+      sectionRows = sectionRows.filter((section) => {
+        const sectionProgramIds = [get(section, "programId", "ProgramId", "programmeId", "ProgrammeId"), get(section, "groupProgramId", "GroupProgramId")].filter((id) => id != null && id !== "").map(String);
+        if (sectionProgramIds.length) return sectionProgramIds.some((id) => validProgramIds.has(id));
+        const sectionProgramName = String(get(section, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "program", "Program") ?? "").trim().toLowerCase();
+        return Boolean(selectedProgramName && sectionProgramName === selectedProgramName);
+      });
+      setOptions((value) => ({ ...value, sections: unique(sectionRows.filter((section) => section?.isActive !== false && section?.IsActive !== false), ["sectionId", "SectionId", "id", "Id"]), loadingSections: false }));
+    }).catch(() => active && setOptions((value) => ({ ...value, sections: [], loadingSections: false })));
+    return () => { active = false; };
+  }, [boardId, academicYearId, levelId, groupId, programId, options.programs]);
   return options;
 }
 

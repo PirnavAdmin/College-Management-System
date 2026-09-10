@@ -325,6 +325,14 @@ const feeDetailScheduleRows = (detail) => getCollection(read(detail, "schedules"
 
 const feeDetailPaymentRows = (detail) => getCollection(read(detail, "paymentHistory", "PaymentHistory", "payments", "Payments", "transactions", "Transactions", "history", "History"));
 
+const readStudentFeeId = (...items) => {
+  for (const item of items) {
+    const id = read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId");
+    if (id !== undefined && id !== null && id !== "") return id;
+  }
+  return undefined;
+};
+
 const feePaymentRows = (item, detail) => {
   const sources = [
     feeDetailPaymentRows(detail),
@@ -332,8 +340,6 @@ const feePaymentRows = (item, detail) => {
   ];
   return sources.find((rows) => rows.length) || [];
 };
-
-const mergeFeeDetailPayloads = (...payloads) => Object.assign({}, ...payloads.filter(Boolean).map(getObject));
 
 const toSelectOptions = (rows, idKeys, labelKeys) => rows
   .map((item) => {
@@ -458,6 +464,49 @@ const feeItemsWithMasterRows = (feeTypes = [], configuredItems = []) => {
 const hasBackendFeeTypeIds = (feeTypes) => feeTypes.some((item) => Number(item.id) > 0);
 
 const pageItems = (items, page, pageSize = PAGE_SIZE) => items.slice((page - 1) * pageSize, page * pageSize);
+
+const feeAccountKey = (account = {}) => {
+  const studentFeeId = account.studentFeeId || account.studentFeeAssignmentId || account.assignmentId;
+  if (studentFeeId) return `student-fee:${studentFeeId}`;
+  if (account.studentId) return `student:${account.studentId}`;
+  if (account.admissionNo && account.admissionNo !== "-") return `admission:${normalizeKey(account.admissionNo)}`;
+  return "";
+};
+
+const admissionNumberParts = (value) => {
+  const text = String(value || "").trim();
+  const match = text.match(/^(.*?)(\d+)\D*$/);
+  return match ? { prefix: normalizeKey(match[1]), number: Number(match[2]) } : { prefix: normalizeKey(text), number: null };
+};
+
+const compareAdmissionNumbersDesc = (left, right) => {
+  const a = admissionNumberParts(left?.admissionNo);
+  const b = admissionNumberParts(right?.admissionNo);
+  if (a.number !== null && b.number !== null && a.prefix === b.prefix && a.number !== b.number) {
+    return b.number - a.number;
+  }
+  return 0;
+};
+
+const normalizeFeeAccountDataset = (accounts = []) => {
+  const keyed = new Map();
+  const ordered = [];
+  accounts.forEach((account) => {
+    const key = feeAccountKey(account);
+    if (!key) {
+      ordered.push(account);
+      return;
+    }
+    if (!keyed.has(key)) ordered.push(account);
+    keyed.set(key, { ...keyed.get(key), ...account });
+  });
+  return ordered
+    .map((account) => {
+      const key = feeAccountKey(account);
+      return key ? keyed.get(key) : account;
+    })
+    .sort(compareAdmissionNumbersDesc);
+};
 
 const scholarshipValueLabel = (item) => (
   item.discountType === "Percentage" ? `${Number(item.discountValue || 0)}%` : formatCurrency(item.discountValue || 0)
@@ -600,6 +649,22 @@ const normalizeTransactionRows = (rows, account = {}) => rows.map((item, index) 
     balance: optionalNumberValue(item, "balance", "Balance", "remainingBalance", "RemainingBalance", "outstandingBalance", "OutstandingBalance"),
   };
 });
+
+const paymentHistoryIdentity = (row = {}) => {
+  const paymentId = row.feePaymentId || row.paymentId;
+  if (paymentId) return `payment-${paymentId}`;
+  if (row.receiptNo && row.receiptNo !== "-") return `receipt-${row.receiptNo}`;
+  return [
+    "transaction",
+    row.studentId,
+    row.admissionNo,
+    row.date,
+    row.amount,
+    row.method,
+    row.reference,
+    row.type,
+  ].map((value) => String(value ?? "").trim()).join("|");
+};
 
 const normalizeReceiptBreakdownRows = (rows) => rows
   .map((item, index) => {
@@ -758,9 +823,7 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
   const section = read(item, "section", "Section");
   const program = read(item, "program", "Program");
   const academicYear = read(item, "academicYear", "AcademicYear", "year", "Year");
-  const assignmentId = read(item, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
-    ?? read(studentFee, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "assignmentId", "AssignmentId", "id", "Id")
-    ?? read(detail, "studentFeeAssignmentId", "StudentFeeAssignmentId", "studentFeeId", "StudentFeeId", "feeAccountId", "FeeAccountId", "id", "Id");
+  const assignmentId = readStudentFeeId(item, studentFee, detail);
   const feeItems = feeDetailPayloadRows(detail).length ? feeDetailPayloadRows(detail) : getCollection(read(item, "feeItems", "FeeItems", "items", "Items", "breakdown", "Breakdown"));
   const normalizedItems = feeItems.map((feeItem, feeIndex) => {
     const originalAmount = numberValue(feeItem, "originalAmount", "OriginalAmount", "amount", "Amount", "feeAmount", "FeeAmount", "baseAmount", "BaseAmount");
@@ -798,7 +861,7 @@ const normalizeFeeAccountRows = (rows, context = {}) => rows.map((item, index) =
     ? rawBalance
     : Math.max(totalPayable - totalPaid, 0);
   const account = {
-    id: String(assignmentId ?? read(item, "studentId", "StudentId") ?? `fee-account-${index + 1}`),
+    id: String(assignmentId ?? read(item, "studentId", "StudentId") ?? read(item, "id", "Id") ?? `fee-account-${index + 1}`),
     assignmentId,
     studentFeeAssignmentId: assignmentId,
     studentFeeId: assignmentId,
@@ -1781,7 +1844,7 @@ function LedgerTab({ accounts, onView, onPrint, masters, loading = false, error 
     && matchesAnyNormalized(filters.group, selectedGroupLabel, item.groupId, item.groupName)
   ));
   const paymentPlanOptions = PAYMENT_PLANS.map((plan) => ({ value: plan, label: feeScheduleLabel(plan) }));
-  const rows = accounts.filter((item) => {
+  const rows = normalizeFeeAccountDataset(accounts.filter((item) => {
     const term = search.trim().toLowerCase();
     const selectedSectionLabel = optionLabel(sectionOptions, filters.section);
     const matchesSearch = !term
@@ -1793,7 +1856,7 @@ function LedgerTab({ accounts, onView, onPrint, masters, loading = false, error 
       && matchesAnyNormalized(filters.section, selectedSectionLabel, item.sectionId, item.section, `${item.group || ""} / ${item.section || ""}`)
       && matchesAnyNormalized(filters.paymentPlan, feeScheduleLabel(filters.paymentPlan), item.paymentPlan, feeScheduleLabel(item.paymentPlan))
       && matchesAnyNormalized(filters.feeStatus, filters.feeStatus, item.feeStatus);
-  });
+  }));
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
   useEffect(() => {
@@ -1874,12 +1937,12 @@ function FeeCollectionTab({ accounts, onCollect, loading = false, error = "" }) 
     setSearch(value);
     setPage(1);
   };
-  const rows = accounts.filter((item) => {
+  const rows = normalizeFeeAccountDataset(accounts.filter((item) => {
     const term = search.trim().toLowerCase();
     return !term
       || item.studentName.toLowerCase().includes(term)
       || item.admissionNo.toLowerCase().includes(term);
-  });
+  }));
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const paginatedRows = pageItems(rows, page);
 
@@ -2844,7 +2907,14 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
       || String(row.receiptNo || "").toLowerCase().includes(term);
   });
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const paginatedRows = pageItems(rows, page);
+  const keyedRows = rows.map((row) => ({ ...row, reactKey: paymentHistoryIdentity(row) }))
+    .reduce((items, row) => {
+      const count = items.counts.get(row.reactKey) || 0;
+      items.counts.set(row.reactKey, count + 1);
+      items.rows.push({ ...row, reactKey: count ? `${row.reactKey}-${count + 1}` : row.reactKey });
+      return items;
+    }, { counts: new Map(), rows: [] }).rows;
+  const paginatedRows = pageItems(keyedRows, page);
   const historyColumns = [
     { label: "Receipt Number", value: (row) => row.receiptNo },
     { label: "Date", value: (row) => formatFeeDate(row.date) },
@@ -2915,7 +2985,7 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
             ) : rows.length === 0 ? (
               <tr><td colSpan={11} className="cms-fee-empty-row">No payments match the current search and filters.</td></tr>
             ) : paginatedRows.map((row) => (
-              <tr key={row.id}>
+              <tr key={row.reactKey}>
                 <td><strong>{row.receiptNo}</strong></td>
                 <td>{formatDate(row.date)}</td>
                 <td>{row.admissionNo}</td>
@@ -3247,16 +3317,12 @@ export default function FeeManagementPage() {
     setSelectedDetail(null);
     if (!selectedId || !selectedBase?.studentId) return undefined;
     const loadSelectedDetail = async () => {
-      const [studentDetailResult, feeDetailResult] = await Promise.allSettled([
-        apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId)),
-        selectedBase.studentFeeId || selectedBase.studentFeeAssignmentId || selectedBase.assignmentId
-          ? apiClient.get(apiEndpoints.fee.studentFeeDetails(selectedBase.studentFeeId || selectedBase.studentFeeAssignmentId || selectedBase.assignmentId))
-          : Promise.resolve(null),
-      ]);
+      const studentDetailResult = await apiClient.get(apiEndpoints.fee.studentFeeDetailsByStudent(selectedBase.studentId)).then(
+        (response) => ({ status: "fulfilled", response }),
+        (error) => ({ status: "rejected", error }),
+      );
       if (ignore) return;
-      const studentDetail = studentDetailResult.status === "fulfilled" ? getObject(studentDetailResult.value?.data) : {};
-      const feeDetail = feeDetailResult.status === "fulfilled" && feeDetailResult.value ? getObject(feeDetailResult.value.data) : {};
-      let detail = mergeFeeDetailPayloads(studentDetail, feeDetail);
+      let detail = studentDetailResult.status === "fulfilled" ? getObject(studentDetailResult.response?.data) : {};
       const hasPayments = feeDetailPaymentRows(detail).length > 0;
       if (!hasPayments && Number(selectedBase.totalPaid || 0) > 0) {
         const historyResult = await apiClient.get(apiEndpoints.fee.getHistory(selectedBase.studentId)).then(
@@ -3277,8 +3343,8 @@ export default function FeeManagementPage() {
         });
         setSelectedDetail(normalized || selectedBase);
       }
-      const primaryError = studentDetailResult.status === "rejected" ? studentDetailResult.reason : null;
-      if (primaryError && feeDetailResult.status === "rejected") {
+      const primaryError = studentDetailResult.status === "rejected" ? studentDetailResult.error : null;
+      if (primaryError) {
         setAccountErrors((current) => ({ ...current, ledger: current.ledger || getApiErrorMessage(primaryError) }));
       }
     };

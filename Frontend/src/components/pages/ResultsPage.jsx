@@ -184,14 +184,70 @@ export default function ResultProcessingPage() {
     if (!item) return false;
     const itemId = String(item.academicYearId || item.id || "");
     const itemName = String(item.academicYearName || item.name || item.code || item.label || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
-    if (targetId && itemId === String(targetId)) return true;
-    if (targetYear) {
-      const tgtId = String(targetYear.id || targetYear.academicYearId || "");
-      const tgtName = String(targetYear.name || targetYear.code || targetYear.label || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
-      if (tgtId && itemId === tgtId) return true;
-      if (tgtName && itemName && tgtName === itemName) return true;
+
+    const tgtName = String(targetYear?.academicYearName || targetYear?.name || targetYear?.code || targetYear?.label || "").trim().toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, "");
+    const tgtId = String(targetId || targetYear?.academicYearId || targetYear?.id || "");
+
+    // Prioritize name match because academicYearId can differ across boards for the same academic year
+    if (tgtName && itemName) {
+      if (tgtName === itemName) return true;
+      return false;
     }
+
+    // Fallback to ID match if name is not available
+    if (tgtId && itemId === tgtId) return true;
+
     return false;
+  }, []);
+
+  const isYearForBoard = useCallback((y, targetBoardId, boardObj) => {
+    if (!y || !targetBoardId) return true;
+
+    // 1. Direct boardId / BoardId check
+    const yBoardId = y.boardId ?? y.BoardId ?? (typeof y.board === "object" ? (y.board?.boardId || y.board?.id) : null);
+    if (yBoardId !== undefined && yBoardId !== null && String(yBoardId).trim() !== "") {
+      return String(yBoardId).trim() === String(targetBoardId).trim();
+    }
+
+    // 2. Check boardIds array if present
+    const yBoardIds = y.boardIds || y.BoardIds || (Array.isArray(y.boards) ? y.boards : null);
+    if (Array.isArray(yBoardIds) && yBoardIds.length > 0) {
+      return yBoardIds.some((id) => {
+        const val = typeof id === "object" ? (id?.boardId ?? id?.id) : id;
+        return String(val).trim() === String(targetBoardId).trim();
+      });
+    }
+
+    // 3. Check boardCode / boardName match against board object
+    if (boardObj) {
+      const targetCode = String(boardObj.boardCode || boardObj.code || "").trim().toLowerCase();
+      const targetName = String(boardObj.boardName || boardObj.name || "").trim().toLowerCase();
+
+      const yCode = String(y.boardCode || y.BoardCode || (typeof y.board === "object" ? y.board?.code : "")).trim().toLowerCase();
+      if (targetCode && yCode && targetCode === yCode) return true;
+
+      const yName = String(y.boardName || y.BoardName || (typeof y.board === "string" ? y.board : y.board?.name || "")).trim().toLowerCase();
+      if (targetName && yName && targetName === yName) return true;
+
+      if (Array.isArray(y.boardNames) && targetName) {
+        if (y.boardNames.some((n) => String(n).trim().toLowerCase() === targetName)) return true;
+      }
+    }
+
+    // Fallback: If year object has no board properties at all, allow it
+    const hasAnyBoardProp = (
+      (y.boardId !== undefined && y.boardId !== null) ||
+      (y.BoardId !== undefined && y.BoardId !== null) ||
+      Boolean(y.boardCode) ||
+      Boolean(y.BoardCode) ||
+      Boolean(y.boardName) ||
+      Boolean(y.BoardName) ||
+      (Array.isArray(y.boardNames) && y.boardNames.length > 0) ||
+      (Array.isArray(y.boardIds) && y.boardIds.length > 0) ||
+      (y.board !== undefined && y.board !== null)
+    );
+
+    return !hasAnyBoardProp;
   }, []);
 
   /* ============================================================
@@ -233,18 +289,23 @@ export default function ResultProcessingPage() {
     if (!filters.board) return;
     const fetchBoardDependencies = async () => {
       try {
+        const targetBoardObj = boards.find((b) => String(b.boardId || b.id) === String(filters.board)) || selectedBoard;
         const [yearsRes, levelsRes, groupsRes] = await Promise.all([
-          apiClient.get(`/api/v1/academic-years`, { params: { boardId: filters.board } }),
-          apiClient.get(`/api/v1/academic-levels`, { params: { boardId: filters.board } }),
-          apiClient.get(`/api/v1/groups`, { params: { boardId: filters.board } }),
+          apiClient.get(`/api/v1/academic-years`, { params: { boardId: filters.board, BoardId: filters.board } }),
+          apiClient.get(`/api/v1/academic-levels`, { params: { boardId: filters.board, BoardId: filters.board } }),
+          apiClient.get(`/api/v1/groups`, { params: { boardId: filters.board, BoardId: filters.board } }),
         ]);
 
         const yearsData = yearsRes.data?.data || yearsRes.data?.items || yearsRes.data || [];
         const levelsData = levelsRes.data?.data || levelsRes.data?.items || levelsRes.data || [];
         const groupsData = groupsRes.data?.items || groupsRes.data || [];
 
-        // Filter active years
-        const activeYears = yearsData.filter((y) => y.isActive === true || y.status === "Active" || y.status === true);
+        // STRICT FILTER: Filter active years belonging strictly to the selected board
+        const rawYearsList = Array.isArray(yearsData) ? yearsData : [];
+        const activeYears = rawYearsList
+          .filter((y) => y.isActive === true || y.status === "Active" || y.status === true)
+          .filter((y) => isYearForBoard(y, filters.board, targetBoardObj));
+
         setAcademicYears(activeYears);
         setAcademicLevels(levelsData);
         setGroups(groupsData.filter((g) => g.isActive === true || g.status === "Active"));
@@ -253,18 +314,20 @@ export default function ResultProcessingPage() {
         const matchedYear = activeYears.find((y) => matchesYear(y, selectedAcademicYearId, selectedAcademicYear)) || activeYears[0];
         if (matchedYear) {
           setFilters((f) => ({ ...f, year: String(matchedYear.academicYearId || matchedYear.id) }));
+        } else {
+          setFilters((f) => ({ ...f, year: "" }));
         }
       } catch (err) {
         showToast("Failed to load board academic hierarchy.", "error");
       }
     };
     fetchBoardDependencies();
-  }, [filters.board, showToast, selectedAcademicYearId, selectedAcademicYear, matchesYear]);
+  }, [filters.board, boards, selectedBoard, showToast, selectedAcademicYearId, selectedAcademicYear, matchesYear, isYearForBoard]);
 
-  // Sync year when navbar selected academic year changes
+  // Sync year when navbar selected academic year changes or when academicYears changes
   useEffect(() => {
     if (!academicYears.length) return;
-    const matched = academicYears.find((y) => matchesYear(y, selectedAcademicYearId, selectedAcademicYear));
+    const matched = academicYears.find((y) => matchesYear(y, selectedAcademicYearId, selectedAcademicYear)) || academicYears[0];
     if (matched) {
       const yId = String(matched.academicYearId || matched.id);
       setFilters((f) => (f.year === yId ? f : { ...f, year: yId }));
@@ -309,6 +372,13 @@ export default function ResultProcessingPage() {
 
   // Auto-sync child filter selections if they no longer exist in updated parent data lists
   useEffect(() => {
+    if (filters.year && academicYears.length > 0 && !academicYears.some((y) => String(y.academicYearId || y.id) === String(filters.year))) {
+      const fallback = academicYears.find((y) => matchesYear(y, selectedAcademicYearId, selectedAcademicYear)) || academicYears[0];
+      setFilters((f) => ({ ...f, year: fallback ? String(fallback.academicYearId || fallback.id) : "", exam: "" }));
+    }
+  }, [academicYears, filters.year, selectedAcademicYearId, selectedAcademicYear, matchesYear]);
+
+  useEffect(() => {
     if (filters.group && groups.length > 0 && !groups.some((g) => String(g.groupId || g.id) === String(filters.group))) {
       setFilters((f) => ({ ...f, group: "", program: "", exam: "" }));
     }
@@ -345,12 +415,19 @@ export default function ResultProcessingPage() {
         });
         const raw = unwrap(res);
         const items = Array.isArray(raw) ? raw : (res.data?.items || res.data || []);
+        const matchingItems = items.filter((e) => {
+          const examBoardId = e.boardId ?? e.BoardId;
+          if (examBoardId && String(examBoardId) !== String(filters.board)) return false;
+          const examYearId = e.academicYearId ?? e.AcademicYearId ?? e.yearId;
+          if (examYearId && String(examYearId) !== String(filters.year)) return false;
+          return true;
+        });
         // STRICT FILTER: Completed Examinations
-        const completedOnly = items.filter((e) => {
+        const completedOnly = matchingItems.filter((e) => {
           const s = String(e.status ?? e.examStatus ?? e.examinationStatus ?? "").trim().toUpperCase();
           return s === "COMPLETED" || s === "FINISHED" || s === "PUBLISHED" || e.isCompleted === true;
         });
-        const finalExams = (completedOnly.length > 0 ? completedOnly : items).map((e) => ({
+        const finalExams = (completedOnly.length > 0 ? completedOnly : matchingItems).map((e) => ({
           ...e,
           id: e.examinationId ?? e.id ?? e.examId,
           examinationId: e.examinationId ?? e.id ?? e.examId,

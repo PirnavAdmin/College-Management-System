@@ -1424,7 +1424,7 @@ export default function MarksEntryPage() {
         return { ...all, [workspaceKey]: next };
       });
 
-      notify("Subject draft saved.");
+      notify("Subject draft saved successfully.");
     } catch (err) {
       console.error("Save draft error:", err);
       notify(getApiErrorMessage(err), "error");
@@ -1494,7 +1494,7 @@ export default function MarksEntryPage() {
         return { ...all, [workspaceKey]: next };
       });
 
-      notify("Subject marks submitted.");
+      notify("Subject marks submitted successfully.");
     } catch (err) {
       console.error("Submit subject error:", err);
       notify(getApiErrorMessage(err), "error");
@@ -1851,7 +1851,7 @@ export default function MarksEntryPage() {
       }));
       setModal(null);
       setMessage("");
-      notify(`Evaluation ${nextStatus.toLowerCase()}.`);
+      notify(`Evaluation ${nextStatus.toLowerCase()} successfully.`);
     } catch (err) {
       console.error("Evaluation transition error:", err);
       notify(getApiErrorMessage(err), "error");
@@ -1898,7 +1898,7 @@ export default function MarksEntryPage() {
         return next;
       });
       setModal(null);
-      notify(`${keys.length} evaluation(s) ${to.toLowerCase()}.`);
+      notify(`${keys.length} evaluation(s) ${to.toLowerCase()} successfully.`);
     } catch (err) {
       notify(getApiErrorMessage(err), "error");
     } finally {
@@ -2382,6 +2382,7 @@ export default function MarksEntryPage() {
                 )
               );
               setPending(null);
+              notify("Unsaved marks discarded.", "info");
               action();
             }}
           />
@@ -2394,6 +2395,7 @@ export default function MarksEntryPage() {
             setValue={setMessage}
             onCancel={() => setModal(null)}
             onConfirm={() => transition(modal)}
+            processing={Boolean(processing)}
           />
         )}
 
@@ -2403,6 +2405,7 @@ export default function MarksEntryPage() {
             text="Verify all submitted evaluations for this section?"
             onCancel={() => setModal(null)}
             onConfirm={() => bulkTransition("SUBMITTED", "VERIFIED")}
+            processing={Boolean(processing)}
           />
         )}
 
@@ -2412,6 +2415,7 @@ export default function MarksEntryPage() {
             text="Approve all verified evaluations for this section?"
             onCancel={() => setModal(null)}
             onConfirm={() => bulkTransition("VERIFIED", "APPROVED")}
+            processing={Boolean(processing)}
           />
         )}
       </div>
@@ -2889,7 +2893,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
               disabled={Boolean(processing)}
               onClick={() => onAction("VERIFY")}
             >
-              Verify Evaluation
+              {processing === "VERIFY" ? "Verifying..." : "Verify Evaluation"}
             </button>
             <button
               type="button"
@@ -2897,7 +2901,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
               disabled={Boolean(processing)}
               onClick={() => onAction("REJECT")}
             >
-              Reject Evaluation
+              {processing === "REJECT" ? "Rejecting..." : "Reject Evaluation"}
             </button>
           </>
         )}
@@ -2909,7 +2913,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
               disabled={Boolean(processing)}
               onClick={() => onAction("APPROVE")}
             >
-              Approve Evaluation
+              {processing === "APPROVE" ? "Approving..." : "Approve Evaluation"}
             </button>
             <button
               type="button"
@@ -2917,7 +2921,7 @@ function EvaluationDetails({ item, page, setPage, onBack, onAction, processing }
               disabled={Boolean(processing)}
               onClick={() => onAction("REJECT")}
             >
-              Reject Evaluation
+              {processing === "REJECT" ? "Rejecting..." : "Reject Evaluation"}
             </button>
           </>
         )}
@@ -3288,7 +3292,7 @@ function Pagination({ page, total, setPage, summaryText }) {
   );
 }
 
-const Confirm = ({ title, text, onCancel, onConfirm }) => (
+const Confirm = ({ title, text, onCancel, onConfirm, processing = false }) => (
   <div className="cms-overlay">
     <div className="cms-modal">
       <div className="cms-modal-head">
@@ -3296,18 +3300,18 @@ const Confirm = ({ title, text, onCancel, onConfirm }) => (
       </div>
       <div className="cms-modal-body">{text}</div>
       <div className="cms-modal-foot">
-        <button type="button" className="cms-btn cms-btn-secondary" onClick={onCancel}>
+        <button type="button" className="cms-btn cms-btn-secondary" onClick={onCancel} disabled={processing}>
           Cancel
         </button>
-        <button type="button" className="cms-btn cms-btn-primary" onClick={onConfirm}>
-          Confirm
+        <button type="button" className="cms-btn cms-btn-primary" onClick={onConfirm} disabled={processing}>
+          {processing ? "Processing..." : "Confirm"}
         </button>
       </div>
     </div>
   </div>
 );
 
-const Message = ({ action, value, setValue, onCancel, onConfirm }) => (
+const Message = ({ action, value, setValue, onCancel, onConfirm, processing = false }) => (
   <div className="cms-overlay">
     <div className="cms-modal">
       <div className="cms-modal-head">
@@ -3321,19 +3325,20 @@ const Message = ({ action, value, setValue, onCancel, onConfirm }) => (
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder={action === "REJECT" ? "Rejection reason" : "Optional verification note"}
+          disabled={processing}
         />
       </div>
       <div className="cms-modal-foot">
-        <button type="button" className="cms-btn cms-btn-secondary" onClick={onCancel}>
+        <button type="button" className="cms-btn cms-btn-secondary" onClick={onCancel} disabled={processing}>
           Cancel
         </button>
         <button
           type="button"
           className="cms-btn cms-btn-primary"
-          disabled={action === "REJECT" && !value.trim()}
+          disabled={processing || (action === "REJECT" && !value.trim())}
           onClick={onConfirm}
         >
-          Confirm
+          {processing ? (action === "REJECT" ? "Rejecting..." : "Verifying...") : "Confirm"}
         </button>
       </div>
     </div>

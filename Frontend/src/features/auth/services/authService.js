@@ -195,19 +195,30 @@ function isAccountNotFound(error) {
   return status === 404 || isAccountNotFoundMessage(responseErrorMessage(error), "user");
 }
 
-function normalizeLoginResponse(payload = {}, enteredEmail, fallbackRole = "student") {
+function normalizeLoginResponse(payload = {}, enteredEmail, expectedAccountType = "user") {
   const data = getData(payload);
   assertSuccessful(payload, data);
 
   const token = normalizeToken(getToken(payload, data));
-  const role = data.Role || data.role || payload.Role || payload.role || fallbackRole;
+  if (!token) {
+    throw new Error("Authentication failed because the server did not return an access token.");
+  }
+
+  const role = data.Role || data.role || payload.Role || payload.role;
+  if (!role) {
+    throw new Error("Authentication failed because the server returned an invalid user response.");
+  }
   const normalizedRole = String(role).trim().toLowerCase();
+  const isAdmin = normalizedRole === "admin" || normalizedRole === "super admin";
+  if (expectedAccountType === "admin" && !isAdmin) {
+    throw new Error("Authentication failed because the server returned an invalid admin response.");
+  }
   const user = {
     id: data.AdminId || data.adminId || data.UserId || data.userId || data.id || data.Id || payload.AdminId || payload.adminId || payload.UserId || payload.userId || payload.id || payload.Id,
     name: data.Name || data.name || data.fullName || payload.Name || payload.name || payload.fullName || "CMS User",
     email: data.email || data.Email || payload.email || payload.Email || enteredEmail,
     role,
-    isAdmin: normalizedRole === "admin" || normalizedRole === "super admin",
+    isAdmin,
   };
 
   return {
@@ -228,9 +239,16 @@ function getMessage(payload, data, fallback) {
 
 function assertSuccessful(payload, data) {
   const status = payload?.status ?? payload?.Status ?? data?.status ?? data?.Status;
-  if (status === false) {
-    throw new Error(getMessage(payload, data, "Invalid login credentials."));
+  const success = payload?.success ?? payload?.Success ?? data?.success ?? data?.Success;
+  if (isFalseResponseFlag(status) || isFalseResponseFlag(success)) {
+    const error = new Error(getMessage(payload, data, "Invalid login credentials."));
+    error.code = "INVALID_CREDENTIALS";
+    throw error;
   }
+}
+
+function isFalseResponseFlag(value) {
+  return value === false || value === 0 || String(value).trim().toLowerCase() === "false";
 }
 
 function getToken(payload, data) {

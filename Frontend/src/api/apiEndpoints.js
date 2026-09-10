@@ -208,7 +208,16 @@ export const apiEndpoints = {
   },
   departments: {
     getAll: "/api/v1/departments",
+    getById: (id) => `/api/v1/departments/${id}`,
     create: "/api/v1/departments",
+    update: (id) => `/api/v1/departments/${id}`,
+    delete: (id) => `/api/v1/departments/${id}`,
+    validateCode: "/api/v1/departments/validate-code",
+    validateName: "/api/v1/departments/validate-name",
+    summary: "/api/v1/departments/summary",
+    importExcel: "/api/v1/departments/import-excel",
+    exportExcel: "/api/v1/departments/export-excel",
+    template: "/api/v1/departments/template",
   },
   designations: {
     getAll: "/api/v1/designations",

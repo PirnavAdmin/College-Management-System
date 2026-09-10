@@ -1,19 +1,21 @@
+using Asp.Versioning;
+using CollegeManagement.API.DTOs.Result;
+using CollegeManagement.API.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using Asp.Versioning;
-using CollegeManagement.API.DTOs.Result;
-using CollegeManagement.API.Services.Interfaces;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 
 namespace CollegeManagement.API.Controllers.V1
 {
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/students/me/results")]
+    [Authorize]
     public class StudentResultsController : ControllerBase
     {
         private readonly IResultService _resultService;

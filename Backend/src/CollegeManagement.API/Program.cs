@@ -348,6 +348,15 @@ builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 builder.Services.AddScoped<IFeeRepository, FeeRepository>();
 builder.Services.AddScoped<IFeeService, FeeService>();
 
+//SECTION ALLOCATION//
+builder.Services.AddScoped<ISectionRepository, SectionRepository>();
+builder.Services.AddScoped<
+    ISectionRollAllocationRepository,
+    SectionRollAllocationRepository>();
+
+builder.Services.AddScoped<ISectionRollAllocationRepository, SectionRollAllocationRepository>();
+builder.Services.AddScoped<ISectionRollAllocationService, SectionRollAllocationService>();
+
 // Group, Section & Subject
 builder.Services.AddScoped<IGroupService, GroupService>();
 builder.Services.AddScoped<CollegeManagement.API.Services.IProgramService, CollegeManagement.API.Services.ProgramService>();

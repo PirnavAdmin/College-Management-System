@@ -507,64 +507,65 @@ namespace CollegeManagement.API.Repositories.Implementations
         }
 
 
-        // =========================================================
-        // SINGLE SECTION ALLOCATION
-        // =========================================================
-        public async Task<bool> AllocateSectionAsync(
-            AllocateSectionRequest request)
-        {
-            var connection = _context.Database.GetDbConnection();
+        //   // =========================================================
+        //   // SINGLE SECTION ALLOCATION
+        //   // =========================================================
+        //   public async Task<bool> AllocateSectionAsync(
+        //       AllocateSectionRequest request)
+        //   {
+        //       var connection = _context.Database.GetDbConnection();
+        //
+        //       var result =
+        //           await connection.QuerySingleOrDefaultAsync<int>(
+        //               "sp_AllocateStudentSection",
+        //               new
+        //               {
+        //                   p_AdmissionId =
+        //                       request.AdmissionId,
+        //
+        //                   p_SectionId =
+        //                       request.SectionId
+        //               },
+        //               commandType: CommandType.StoredProcedure);
+        //
+        //       return result > 0;
+        //   }
+        //         // =========================================================
+        //         // BULK SECTION ALLOCATION
+        //         // =========================================================
+        //         public async Task<int> BulkAllocateSectionAsync(
+        //             BulkSectionAllocationRequest request)
+        //         {
+        //             var connection = _context.Database.GetDbConnection();
+        //
+        //             var totalAllocated = 0;
+        //
+        //             foreach (var admissionId in request.AdmissionIds)
+        //             {
+        //                 var result =
+        //                     await connection.QuerySingleOrDefaultAsync<int>(
+        //                         "sp_AllocateStudentSection",
+        //                         new
+        //                         {
+        //                             p_AdmissionId =
+        //                                 admissionId,
+        //
+        //                             p_SectionId =
+        //                                 request.SectionId
+        //                         },
+        //                         commandType: CommandType.StoredProcedure);
+        //
+        //                 if (result > 0)
+        //                 {
+        //                     totalAllocated++;
+        //                 }
+        //             }
+        //
+        //             return totalAllocated;
+        //  }
 
-            var result =
-                await connection.QuerySingleOrDefaultAsync<int>(
-                    "sp_AllocateStudentSection",
-                    new
-                    {
-                        p_AdmissionId =
-                            request.AdmissionId,
-
-                        p_SectionId =
-                            request.SectionId
-                    },
-                    commandType: CommandType.StoredProcedure);
-
-            return result > 0;
-        }
 
 
-        // =========================================================
-        // BULK SECTION ALLOCATION
-        // =========================================================
-        public async Task<int> BulkAllocateSectionAsync(
-            BulkSectionAllocationRequest request)
-        {
-            var connection = _context.Database.GetDbConnection();
-
-            var totalAllocated = 0;
-
-            foreach (var admissionId in request.AdmissionIds)
-            {
-                var result =
-                    await connection.QuerySingleOrDefaultAsync<int>(
-                        "sp_AllocateStudentSection",
-                        new
-                        {
-                            p_AdmissionId =
-                                admissionId,
-
-                            p_SectionId =
-                                request.SectionId
-                        },
-                        commandType: CommandType.StoredProcedure);
-
-                if (result > 0)
-                {
-                    totalAllocated++;
-                }
-            }
-
-            return totalAllocated;
-        }
         //options check box//
         public async Task<int> SaveAdmissionFeeSelectionsAsync(
     int admissionId,
@@ -595,43 +596,36 @@ namespace CollegeManagement.API.Repositories.Implementations
         // =========================================================
         // BULK ROLL NUMBER ALLOCATION
         // =========================================================
-        public async Task<int> BulkAllocateRollNumbersAsync(
-            BulkRollNumberAllocationRequest request)
-        {
-            var connection = _context.Database.GetDbConnection();
-
-            var totalAllocated = 0;
-
-            var rollNumber =
-                request.StartingRollNumber;
-
-            foreach (var admissionId in request.AdmissionIds)
-            {
-                var result =
-                    await connection.QuerySingleOrDefaultAsync<int>(
-                        "sp_AllocateStudentRollNumber",
-                        new
-                        {
-                            p_AdmissionId =
-                                admissionId,
-
-                            p_SectionId =
-                                request.SectionId,
-
-                            p_RollNo =
-                                rollNumber.ToString()
-                        },
-                        commandType: CommandType.StoredProcedure);
-
-                if (result > 0)
-                {
-                    totalAllocated++;
-                }
-
-                rollNumber++;
-            }
-
-            return totalAllocated;
-        }
+        // public async Task<int> BulkAllocateRollNumbersAsync(
+        //     BulkRollNumberAllocationRequest request)
+        // {
+        //     var connection = _context.Database.GetDbConnection();
+        //
+        //     var totalAllocated = 0;
+        //
+        //     var rollNumber = request.StartingRollNumber;
+        //
+        //     foreach (var admissionId in request.AdmissionIds)
+        //     {
+        //         var result = await connection.QuerySingleOrDefaultAsync<int>(
+        //             "sp_AllocateStudentRollNumber",
+        //             new
+        //             {
+        //                 p_AdmissionId = admissionId,
+        //                 p_SectionId = request.SectionId,
+        //                 p_RollNo = rollNumber.ToString()
+        //             },
+        //             commandType: CommandType.StoredProcedure);
+        //
+        //         if (result > 0)
+        //         {
+        //             totalAllocated++;
+        //         }
+        //
+        //         rollNumber++;
+        //     }
+        //
+        //     return totalAllocated;
+        // }
     }
 }

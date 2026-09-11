@@ -16,6 +16,7 @@ import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/
 import SectionAllocationPage from "@/components/pages/SectionAllocationPage.jsx";
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
 import AttendancePage from "@/components/pages/AttendancePage.jsx";
+import AttendanceOverviewPage from "@/components/pages/AttendanceOverviewPage.jsx";
 import LeaveManagementPage from "@/components/pages/LeaveManagementPage.jsx";
 import ExaminationPage, { pageConfig as examinationConfig } from "@/components/pages/ExaminationPage.jsx";
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
@@ -137,6 +138,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/timetable/generate" element={<TimetablePage screen="generate" />} />
         <Route path="/dashboard/timetable/faculty" element={<Navigate to="/dashboard/timetable/generate" replace />} />
         <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
+        <Route path="/dashboard/attendance/student/:studentId/overview" element={<AttendanceOverviewPage />} />
+        <Route path="/dashboard/attendance/staff/:staffId/overview" element={<AttendanceOverviewPage />} />
         <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
         <Route path="/dashboard/leave-management" element={<LeaveManagementPage />} />
         <Route path="/dashboard/examinations" element={<ExaminationPage />} />

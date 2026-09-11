@@ -402,6 +402,8 @@ export const apiEndpoints = {
     approveSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/approve`,
     validateSection: (sectionId) => `/api/v1/timetable/section/${sectionId}/validate`,
     generate: "/api/v1/timetable/generate",
+    substitutions: "/api/v1/timetable/substitutions",
+    effective: "/api/v1/timetable/effective",
     exportSectionPdf: "/api/v1/timetable/export/section-pdf",
     exportGroupExcel: "/api/v1/timetable/export/group-excel",
   },

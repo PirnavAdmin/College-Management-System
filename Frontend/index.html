@@ -10,47 +10,130 @@
     <link rel="shortcut icon" type="image/png" href="/favicon.png?v=pirnav-crest-2026" />
     <link rel="apple-touch-icon" href="/favicon.png?v=pirnav-crest-2026" />
     <script>
-      // Global safety handler to prevent third-party extension/content-script crashes (e.g., reportAllChanges, startTime errors)
-      window.addEventListener('error', function (event) {
-        try {
-          var msg = (event && event.message) ? String(event.message).toLowerCase() : '';
-          var filename = (event && event.filename) ? String(event.filename) : '';
-          var stack = (event && event.error && event.error.stack) ? String(event.error.stack).toLowerCase() : '';
+      (function () {
+        var isReportError = function (str) {
+          if (!str) return false;
+          var text = String(str).toLowerCase();
+          return (
+            (text.indexOf('starttime') !== -1 && (text.indexOf('undefined') !== -1 || text.indexOf('reading') !== -1 || text.indexOf('null') !== -1)) ||
+            text.indexOf('reportallchanges') !== -1 ||
+            (text.indexOf('starttime') !== -1 && text.indexOf('anonymous') !== -1)
+          );
+        };
 
-          var isExtensionError =
-            (msg.indexOf('starttime') !== -1 && (msg.indexOf('undefined') !== -1 || msg.indexOf('null') !== -1)) ||
-            msg.indexOf('reportallchanges') !== -1 ||
-            stack.indexOf('reportallchanges') !== -1 ||
-            filename.indexOf('extensions::') !== -1 ||
-            filename.indexOf('chrome-extension://') !== -1 ||
-            filename.indexOf('moz-extension://') !== -1;
-
-          if (isExtensionError) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            return true;
+        // 1. Intercept window.onerror
+        var originalOnError = window.onerror;
+        window.onerror = function (message, source, lineno, colno, error) {
+          var stack = error && error.stack ? error.stack : '';
+          var fullMsg = message + ' ' + stack + ' ' + (source || '');
+          if (isReportError(fullMsg)) {
+            return true; // suppresses uncaught error in console
           }
-        } catch (e) {}
-      }, true);
-
-      window.addEventListener('unhandledrejection', function (event) {
-        try {
-          var reason = event && event.reason;
-          var msg = reason ? (reason.message || String(reason)).toLowerCase() : '';
-          if (msg.indexOf('starttime') !== -1 || msg.indexOf('reportallchanges') !== -1) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
+          if (typeof originalOnError === 'function') {
+            return originalOnError.apply(this, arguments);
           }
-        } catch (e) {}
-      });
+          return false;
+        };
 
-      try {
-        var theme = localStorage.getItem('pirnav-theme') || 'light';
-        document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
-        document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#161916' : '#6F8400');
-      } catch (error) {
-        document.documentElement.setAttribute('data-theme', 'light');
-      }
+        // 2. Intercept error events in capture phase
+        window.addEventListener(
+          'error',
+          function (event) {
+            try {
+              var msg = (event && event.message) ? String(event.message) : '';
+              var filename = (event && event.filename) ? String(event.filename) : '';
+              var stack = (event && event.error && event.error.stack) ? String(event.error.stack) : '';
+              var fullMsg = msg + ' ' + filename + ' ' + stack;
+
+              if (isReportError(fullMsg) || filename.indexOf('extension') !== -1) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return true;
+              }
+            } catch (e) {}
+          },
+          true
+        );
+
+        // 3. Intercept unhandled promise rejections
+        window.addEventListener(
+          'unhandledrejection',
+          function (event) {
+            try {
+              var reason = event && event.reason;
+              var msg = reason ? (reason.message || reason.stack || String(reason)) : '';
+              if (isReportError(msg)) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+              }
+            } catch (e) {}
+          },
+          true
+        );
+
+        // 4. Filter console.error logs
+        var originalConsoleError = console.error;
+        console.error = function () {
+          try {
+            var args = Array.prototype.slice.call(arguments);
+            var combined = args
+              .map(function (a) {
+                return a instanceof Error ? (a.message + ' ' + (a.stack || '')) : String(a);
+              })
+              .join(' ');
+            if (isReportError(combined)) {
+              return;
+            }
+          } catch (e) {}
+          return originalConsoleError.apply(console, arguments);
+        };
+
+        // 5. Wrap PerformanceObserver to safeguard entries from missing startTime
+        if (typeof window.PerformanceObserver !== 'undefined') {
+          var NativePerformanceObserver = window.PerformanceObserver;
+          function SafePerformanceObserver(callback) {
+            var safeCallback = function (entryList, observer, options) {
+              try {
+                if (entryList && typeof entryList.getEntries === 'function') {
+                  var origGetEntries = entryList.getEntries;
+                  entryList.getEntries = function () {
+                    var entries = origGetEntries.call(entryList) || [];
+                    for (var i = 0; i < entries.length; i++) {
+                      if (entries[i] && typeof entries[i].startTime === 'undefined') {
+                        try {
+                          Object.defineProperty(entries[i], 'startTime', { value: performance.now ? performance.now() : 0, configurable: true });
+                        } catch (_) {}
+                      }
+                    }
+                    return entries;
+                  };
+                }
+                return callback.call(this, entryList, observer, options);
+              } catch (err) {
+                if (isReportError(err && (err.message || err.stack || err))) {
+                  return; // suppress error
+                }
+                throw err;
+              }
+            };
+            return new NativePerformanceObserver(safeCallback);
+          }
+          SafePerformanceObserver.prototype = NativePerformanceObserver.prototype;
+          SafePerformanceObserver.supportedEntryTypes = NativePerformanceObserver.supportedEntryTypes;
+          try {
+            window.PerformanceObserver = SafePerformanceObserver;
+          } catch (_) {}
+        }
+
+        // Theme init
+        try {
+          var theme = localStorage.getItem('pirnav-theme') || 'light';
+          document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#161916' : '#6F8400');
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
     </script>
   </head>
   <body>

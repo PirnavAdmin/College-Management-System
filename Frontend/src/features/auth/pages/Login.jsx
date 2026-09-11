@@ -59,7 +59,8 @@ export default function Login() {
       localStorage.setItem("role", result.user.role);
 
       const userRole = String(result.user.role || "").toLowerCase();
-      if (userRole === "faculty" || userRole === "teacher") {
+      const isFaculty = ["faculty", "teacher", "teaching", "teaching staff", "staff"].includes(userRole) || result.roleType === "faculty";
+      if (isFaculty) {
         navigate("/faculty-dashboard", { replace: true });
       } else {
         navigate(result.user.isAdmin ? "/dashboard" : "/student-dashboard", { replace: true });

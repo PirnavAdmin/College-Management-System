@@ -5,11 +5,8 @@ import {
   Building2,
   Download,
   Eye,
-  FileSpreadsheet,
   Info,
   Pencil,
-  Plus,
-  RefreshCw,
   Search,
   Trash2,
   Upload,
@@ -21,6 +18,12 @@ import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./DepartmentManagementPage.css";
+import departmentsIcon from "@/assets/dashboard-3d/total-sections.png";
+import designationsIcon from "@/assets/dashboard-3d/total-staff.png";
+import refreshIcon from "@/assets/dashboard-3d/refresh.png";
+import importExcelIcon from "@/assets/dashboard-3d/import-excel.png";
+import addDepartmentIcon from "@/assets/dashboard-3d/create-section.png";
+import addDesignationIcon from "@/assets/dashboard-3d/add-staff.png";
 
 // Helper: Check if staff type matches current tab (supports Teaching, Non-Teaching, Both, All)
 export const isStaffTypeMatch = (itemStaffType, currentTab) => {
@@ -715,14 +718,14 @@ export default function DepartmentManagementPage() {
   const pageActions = (
     <div className="master-page-actions master-summary-actions">
       <article>
-        <Building2 />
+        <img className="master-summary-icon" src={departmentsIcon} alt="" aria-hidden="true" width={28} height={28} />
         <span>
           Total Departments<strong>{filteredDepartments.length}</strong>
           <small>{activeDepartmentsCount} Active Departments</small>
         </span>
       </article>
       <article>
-        <Users />
+        <img className="master-summary-icon" src={designationsIcon} alt="" aria-hidden="true" width={28} height={28} />
         <span>
           Total Designations<strong>{filteredDesignations.length}</strong>
           <small>{activeDesignationsCount} Active Designations</small>
@@ -735,7 +738,7 @@ export default function DepartmentManagementPage() {
         title="Click to refresh department and designation data"
         aria-label="Refresh department and designation data"
       >
-        <RefreshCw className={isRefreshing || departmentsLoading || designationsLoading ? "is-spinning" : ""} />
+        <img className={`master-summary-icon${isRefreshing || departmentsLoading || designationsLoading ? " is-spinning" : ""}`} src={refreshIcon} alt="" aria-hidden="true" width={28} height={28} />
         <span>{isRefreshing ? "Refreshing..." : "Refresh"}</span>
       </button>
     </div>
@@ -783,13 +786,13 @@ export default function DepartmentManagementPage() {
                   className="cms-btn secondary"
                   onClick={() => navigate("/dashboard/departments/import")}
                 >
-                  <FileSpreadsheet /> Import Excel
+                  <img className="master-action-icon" src={importExcelIcon} alt="" aria-hidden="true" width={24} height={24} /> Import Excel
                 </button>
                 <button
                   className="cms-btn primary"
                   onClick={() => setCreateKind("department")}
                 >
-                  <Plus /> Add Department
+                  <img className="master-action-icon" src={addDepartmentIcon} alt="" aria-hidden="true" width={24} height={24} /> Add Department
                 </button>
               </div>
             </header>
@@ -882,13 +885,13 @@ export default function DepartmentManagementPage() {
                   className="cms-btn secondary"
                   onClick={() => navigate("/dashboard/designations/import")}
                 >
-                  <FileSpreadsheet /> Import Excel
+                  <img className="master-action-icon" src={importExcelIcon} alt="" aria-hidden="true" width={24} height={24} /> Import Excel
                 </button>
                 <button
                   className="cms-btn primary"
                   onClick={() => setCreateKind("designation")}
                 >
-                  <Plus /> Add Designation
+                  <img className="master-action-icon" src={addDesignationIcon} alt="" aria-hidden="true" width={24} height={24} /> Add Designation
                 </button>
               </div>
             </header>

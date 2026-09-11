@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { generateNextNumber, incrementSeriesSequence } from "@/data/numberSeriesData.js";
 import {
@@ -26,14 +26,22 @@ import {
   RefreshCw,
   FileText,
   Download,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  UserCheck,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { ConfirmDialog, Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
+import * as staffApi from "@/api/staffApi.js";
 import "./StaffManagementPage.css";
+import totalStaffIcon from "@/assets/dashboard-3d/total-staff.png";
+import teachingStaffIcon from "@/assets/dashboard-3d/teaching-staff.png";
+import nonTeachingStaffIcon from "@/assets/dashboard-3d/non-teaching-staff.png";
+import pendingProfilesIcon from "@/assets/dashboard-3d/pending-profiles.png";
+import completedProfilesIcon from "@/assets/dashboard-3d/completed-profiles.png";
 
 // Session Storage Fallback Store Keys
 const STORE = "pjc-mock-staff-records",
@@ -313,37 +321,211 @@ const read = (key, fallback = []) => {
 const write = (key, value) => sessionStorage.setItem(key, JSON.stringify(value));
 const boardOptions = [];
 
-export const resolveNextStaffEmployeeId = async (staffType = "Teaching") => {
-  // 1. Try Settings Number Series API
-  try {
-    const nsRes = await apiClient.get(apiEndpoints.numberSeries.getByCode("EMPLOYEE_ID"));
-    if (nsRes.data) {
-      const live = nsRes.data.livePreview || nsRes.data.currentExample || nsRes.data.generatedNumber;
-      if (live && typeof live === "string" && !live.includes("[object")) {
-        return live.trim();
+export const normalizeStaffRecord = (raw) => {
+  if (!raw) return raw;
+  const r = typeof raw === "object" ? { ...raw } : {};
+  const personal = r.personal || {};
+  const contact = r.contact || {};
+  const bank = r.bank || {};
+  const emergency = r.emergency || {};
+  const docs = r.documents || r.documentsMeta || {};
+
+  const firstName = r.firstName || personal.firstName || "";
+  const middleName = r.middleName || personal.middleName || "";
+  const lastName = r.lastName || personal.lastName || "";
+  const fullName = r.fullName || [firstName, middleName, lastName].filter(Boolean).join(" ") || r.employeeId || "Staff Member";
+
+  const getDocStatus = (field, keyList) => {
+    if (r[field]) return r[field];
+    for (const k of keyList) {
+      if (docs[k]?.length) return docs[k][0]?.name || "Uploaded";
+      if (r[k]) return typeof r[k] === "string" ? r[k] : "Uploaded";
+    }
+    return "—";
+  };
+
+  const edu = Array.isArray(r.education) && r.education.length > 0
+    ? r.education
+    : (Array.isArray(personal.education) ? personal.education : []);
+
+  const exp = Array.isArray(r.experience) && r.experience.length > 0
+    ? r.experience
+    : (Array.isArray(personal.experience) ? personal.experience : []);
+
+  return {
+    ...r,
+    id: r.id || r.staffId,
+    employeeId: r.employeeId || "PJCTCH0001",
+    fullName,
+    firstName,
+    middleName,
+    lastName,
+    board: r.board || r.boardName || "State Board",
+    boardCode: r.boardCode || r.board || "—",
+    department: r.department || personal.department || "Teaching Department",
+    designation: r.designation || personal.designation || "Assistant Professor",
+    staffType: r.staffType || "Teaching",
+    status: r.status || "Active",
+    employmentType: r.employmentType || "Full Time",
+    dateOfJoining: r.dateOfJoining || r.joiningDate || "—",
+
+    // Personal Info
+    guardianName: r.guardianName || personal.guardianName || r.fatherName || "—",
+    gender: r.gender || personal.gender || "—",
+    dateOfBirth: r.dateOfBirth || personal.dateOfBirth || "—",
+    maritalStatus: r.maritalStatus || personal.maritalStatus || "Single",
+    nationality: r.nationality || personal.nationality || "Indian",
+    bloodGroup: r.bloodGroup || personal.bloodGroup || "—",
+    aadhaar: r.aadhaar || personal.aadhaar || r.aadhaarNumber || "—",
+    pan: r.pan || personal.pan || r.panNumber || "—",
+
+    // Contact & Address
+    email: r.email || contact.primaryEmail || r.primaryEmail || "—",
+    mobile: r.mobile || contact.primaryMobile || r.primaryMobile || "—",
+    alternateMobile: r.alternateMobile || contact.alternateMobile || "—",
+    pin: r.pin || contact.pin || r.pincode || "—",
+    currentAddress: r.currentAddress || contact.currentAddress || "—",
+    permanentAddress: r.permanentAddress || contact.permanentAddress || "—",
+    city: r.city || contact.city || "—",
+    district: r.district || contact.district || "—",
+    state: r.state || contact.state || "—",
+    country: r.country || contact.country || "India",
+
+    // Education & Experience
+    education: edu,
+    highestQualification: r.highestQualification || edu[0]?.highestQualification || edu[0]?.degreeName || "—",
+    university: r.university || edu[0]?.university || "—",
+    specialization: r.specialization || edu[0]?.specialization || "—",
+    passingYear: r.passingYear || edu[0]?.passingYear || "—",
+    percentage: r.percentage || edu[0]?.percentage || "—",
+
+    experience: exp,
+    isFresher: r.isFresher !== undefined ? Boolean(r.isFresher) : exp.length === 0,
+    totalExperience: r.totalExperience !== undefined ? r.totalExperience : (exp.length ? `${exp.length} Years` : "0"),
+    previousInstitution: r.previousInstitution || exp[0]?.institution || "—",
+    previousDesignation: r.previousDesignation || exp[0]?.designation || "—",
+    experienceFrom: r.experienceFrom || exp[0]?.fromDate || "—",
+    experienceTo: r.experienceTo || exp[0]?.toDate || "—",
+
+    // Bank Details
+    bankName: r.bankName || bank.bankName || "—",
+    accountHolder: r.accountHolder || bank.accountHolder || bank.accountHolderName || fullName,
+    accountNumber: r.accountNumber || bank.accountNumber || "—",
+    ifsc: r.ifsc || bank.ifsc || r.ifscCode || "—",
+    branch: r.branch || bank.branch || "—",
+    accountType: r.accountType || bank.accountType || "Savings",
+    pfNumber: r.pfNumber || bank.pfNumber || "—",
+    esiNumber: r.esiNumber || bank.esiNumber || "—",
+    uanNumber: r.uanNumber || bank.uanNumber || "—",
+
+    // Emergency Details
+    emergencyName: r.emergencyName || emergency.name || emergency.emergencyName || emergency.emergencyContactName || "—",
+    emergencyRelationship: r.emergencyRelationship || emergency.relationship || emergency.emergencyRelationship || "—",
+    emergencyMobile: r.emergencyMobile || emergency.mobile || emergency.emergencyMobile || emergency.emergencyPhone || "—",
+    emergencyAlternate: r.emergencyAlternate || emergency.alternateMobile || emergency.emergencyAlternate || "—",
+    emergencyAddress: r.emergencyAddress || emergency.address || emergency.emergencyAddress || "—",
+
+    // Documents
+    aadhaarDocument: getDocStatus("aadhaarDocument", ["aadhaarCard", "aadhaarDoc"]),
+    panDocument: getDocStatus("panDocument", ["panCard", "panDoc"]),
+    qualificationCertificate: getDocStatus("qualificationCertificate", ["degreeCertificates", "degreeDoc"]),
+    experienceCertificate: getDocStatus("experienceCertificate", ["experienceCertificates", "experienceDoc"]),
+    resume: getDocStatus("resume", ["resume", "resumeDoc"]),
+    photo: getDocStatus("photo", ["passportPhoto", "photoDoc"]),
+    signature: getDocStatus("signature", ["signature", "signatureDoc"]),
+    bankProof: getDocStatus("bankProof", ["bankProof", "chequeDoc"]),
+
+    // Lifecycle Status
+    profileStatus: r.profileStatus || (r.reviewStatus === "Approved" ? "Completed" : r.reviewStatus === "Pending" ? "Submitted" : "Link Sent"),
+    profileCompletion: r.profileCompletion !== undefined ? r.profileCompletion : (r.profileStatus === "Completed" || r.profileStatus === "Submitted" ? 100 : 30),
+    linkSentAt: r.linkSentAt || r.addedOn || "—",
+  };
+};
+
+export const resolveNextStaffEmployeeId = async (staffType = "Teaching", existingRecords = []) => {
+  const isTeaching = String(staffType || "").toLowerCase().includes("teach") && !String(staffType || "").toLowerCase().includes("non");
+  const prefix = isTeaching ? "PCTCH" : "PCNT";
+
+  // Helper to compute sequential ID from existing records
+  const computeFromRecords = () => {
+    if (!Array.isArray(existingRecords) || existingRecords.length === 0) {
+      return null;
+    }
+    const relevant = existingRecords.filter((r) => {
+      if (!r) return false;
+      const type = String(r.staffType || "").toLowerCase();
+      if (isTeaching) return !type.includes("non");
+      return type.includes("non");
+    });
+    let maxSeq = 0;
+    for (const r of relevant) {
+      const empId = String(r.employeeId || "");
+      const match = empId.match(/(\d+)/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxSeq && num < 1000) {
+          maxSeq = num;
+        }
       }
     }
-  } catch {}
+    const nextSeq = maxSeq > 0 ? maxSeq + 1 : (relevant.length > 0 ? relevant.length + 1 : 1);
+    return `${prefix}${String(nextSeq).padStart(4, "0")}`;
+  };
 
-  // 2. Try Faculty next-employee-id endpoint
+  // 1. Try Staff next-employee-id endpoint
   try {
-    const res = await apiClient.get(apiEndpoints.faculty.nextEmployeeId, { params: { staffType } });
-    if (res.data) {
+    const res = await staffApi.getNextEmployeeId(staffType);
+    if (res?.data) {
       const raw = typeof res.data === "object"
         ? (res.data.employeeId || res.data.nextEmployeeId || res.data.id || res.data.data || res.data.code)
         : res.data;
       if (raw && (typeof raw === "string" || typeof raw === "number")) {
         const str = String(raw).trim();
         if (str && !str.includes("[object")) {
+          const match = str.match(/(\d+)/);
+          const num = match ? parseInt(match[1], 10) : 0;
+          if (num >= 40 && Array.isArray(existingRecords) && existingRecords.length < 25) {
+            const calculated = computeFromRecords();
+            if (calculated) return calculated;
+          }
           return str;
         }
       }
     }
   } catch {}
 
-  // 3. Fallback to Local Number Series Settings
+  // 2. Try Settings Number Series API
+  try {
+    const nsRes = await apiClient.get(apiEndpoints.numberSeries.getByCode("EMPLOYEE_ID"));
+    if (nsRes?.data) {
+      const live = nsRes.data.livePreview || nsRes.data.currentExample || nsRes.data.generatedNumber;
+      if (live && typeof live === "string" && !live.includes("[object")) {
+        const match = live.match(/(\d+)/);
+        const num = match ? parseInt(match[1], 10) : 0;
+        if (num >= 40 && Array.isArray(existingRecords) && existingRecords.length < 25) {
+          const calculated = computeFromRecords();
+          if (calculated) return calculated;
+        }
+        return live.trim();
+      }
+    }
+  } catch {}
+
+  // 3. Fallback to computing from existing records
+  const calculated = computeFromRecords();
+  if (calculated) return calculated;
+
+  // 4. Fallback to Local Number Series Settings
   const localVal = generateNextNumber("employee-id");
-  return (localVal && !String(localVal).includes("[object")) ? String(localVal).trim() : "PCTCH0040";
+  if (localVal && !String(localVal).includes("[object")) {
+    const match = String(localVal).match(/(\d+)/);
+    const num = match ? parseInt(match[1], 10) : 0;
+    if (num >= 40 && Array.isArray(existingRecords) && existingRecords.length < 25) {
+      return `${prefix}0001`;
+    }
+    return String(localVal).trim();
+  }
+  return isTeaching ? "PCTCH0001" : "PCNT0001";
 };
 
 export const resolveBoardCode = (staffRecord, boardsList = []) => {
@@ -1539,14 +1721,14 @@ function Dashboard({ records = [] }) {
       <main className="staff-mock-page">
         <section className="staff-kpis">
           {[
-            ["Total Staff", totalCount, Users, "/dashboard/staff/list"],
-            ["Teaching Staff", teachingCount, GraduationCap, "/dashboard/staff/teaching"],
-            ["Non-Teaching Staff", nonTeachingCount, Building2, "/dashboard/staff/non-teaching"],
-            ["Pending Profile Completion", pendingCount, Clock3, "/dashboard/staff/pending?tab=Link%20Sent"],
-            ["Completed Profiles", completedCount, Check, "/dashboard/staff/completed"],
-          ].map(([l, v, I, to]) => (
+            ["Total Staff", totalCount, totalStaffIcon, "/dashboard/staff/list"],
+            ["Teaching Staff", teachingCount, teachingStaffIcon, "/dashboard/staff/teaching"],
+            ["Non-Teaching Staff", nonTeachingCount, nonTeachingStaffIcon, "/dashboard/staff/non-teaching"],
+            ["Pending Profile Completion", pendingCount, pendingProfilesIcon, "/dashboard/staff/pending?tab=Link%20Sent"],
+            ["Completed Profiles", completedCount, completedProfilesIcon, "/dashboard/staff/completed"],
+          ].map(([l, v, icon, to]) => (
             <article key={l} onClick={() => n(to)}>
-              <I />
+              <img className="staff-kpi-icon" src={icon} alt="" aria-hidden="true" width={42} height={42} />
               <span>
                 {l}
                 <strong>{v}</strong>
@@ -2131,7 +2313,7 @@ function TeachingForm({ records, setRecords, existing }) {
   const [values, setValues] = useState(
     existing || {
       staffType: "Teaching",
-      employeeId: generateNextNumber("employee-id"),
+      employeeId: "",
       board: activeBoardName,
       boardName: activeBoardName,
       boardCode: activeBoardCode,
@@ -2162,14 +2344,14 @@ function TeachingForm({ records, setRecords, existing }) {
   useEffect(() => {
     let isMounted = true;
     async function fetchNextId() {
-      const nextId = await resolveNextStaffEmployeeId("Teaching");
+      const nextId = await resolveNextStaffEmployeeId("Teaching", records);
       if (isMounted && nextId) {
         setValues((v) => ({ ...v, employeeId: nextId }));
       }
     }
     if (!existing) fetchNextId();
     return () => { isMounted = false; };
-  }, [existing]);
+  }, [existing, records]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -2188,7 +2370,8 @@ function TeachingForm({ records, setRecords, existing }) {
       boardCode: resolvedCode !== "—" ? resolvedCode : values.boardCode,
       fullName,
       staffType: "Teaching",
-      profileStatus: existing?.profileStatus || "Pending",
+      profileStatus: existing?.profileStatus || "Link Sent",
+      linkSentAt: existing?.linkSentAt || new Date().toISOString().split("T")[0],
       status: values.status || "Active",
       allocatedSubjects: values.allocatedSubjects || values.subjects || [],
       subjects: values.allocatedSubjects || values.subjects || [],
@@ -2205,9 +2388,10 @@ function TeachingForm({ records, setRecords, existing }) {
         const res = await apiClient.post(apiEndpoints.faculty.create, payload);
         targetId = res.data?.id || res.data?.staffId;
       }
-      const record = { ...payload, id: targetId, profileCompletion: existing?.profileCompletion || 25, addedOn: existing?.addedOn || new Date().toISOString().split("T")[0] };
+      const record = { ...payload, id: targetId, profileCompletion: existing?.profileCompletion || 30, addedOn: existing?.addedOn || new Date().toISOString().split("T")[0] };
       if (!existing) incrementSeriesSequence("employee-id");
       setRecords(existing ? records.map((r) => (String(r.id) === String(existing.id) ? record : r)) : [record, ...records]);
+      window.dispatchEvent(new Event("staff-records-updated"));
       if (existing) {
         setToast("Teaching staff profile updated successfully.");
         n(`/dashboard/staff/teaching`);
@@ -2224,7 +2408,7 @@ function TeachingForm({ records, setRecords, existing }) {
         if (lower.includes("employee id")) {
           nextErrors.employeeId = errMsg;
           try {
-            const nextId = await resolveNextStaffEmployeeId("Teaching");
+            const nextId = await resolveNextStaffEmployeeId("Teaching", records);
             if (nextId) setValues((v) => ({ ...v, employeeId: nextId }));
           } catch {}
         }
@@ -2322,7 +2506,7 @@ function NonTeachingForm({ records, setRecords, existing }) {
   const [values, setValues] = useState(
     existing || {
       staffType: "Non-Teaching",
-      employeeId: generateNextNumber("employee-id"),
+      employeeId: "",
       board: activeBoardName,
       boardName: activeBoardName,
       boardCode: activeBoardCode,
@@ -2354,14 +2538,14 @@ function NonTeachingForm({ records, setRecords, existing }) {
   useEffect(() => {
     let isMounted = true;
     async function fetchNextId() {
-      const nextId = await resolveNextStaffEmployeeId("Non-Teaching");
+      const nextId = await resolveNextStaffEmployeeId("Non-Teaching", records);
       if (isMounted && nextId) {
         setValues((v) => ({ ...v, employeeId: nextId }));
       }
     }
     if (!existing) fetchNextId();
     return () => { isMounted = false; };
-  }, [existing]);
+  }, [existing, records]);
 
   useEffect(() => {
     const pincode = String(values.pin || "").replace(/\D/g, "").slice(0, 6);
@@ -2474,7 +2658,7 @@ function NonTeachingForm({ records, setRecords, existing }) {
         if (lower.includes("employee id")) {
           nextErrors.employeeId = errMsg;
           try {
-            const nextId = await resolveNextStaffEmployeeId("Non-Teaching");
+            const nextId = await resolveNextStaffEmployeeId("Non-Teaching", records);
             if (nextId) setValues((v) => ({ ...v, employeeId: nextId }));
           } catch {}
         }
@@ -2578,10 +2762,11 @@ function SendLink({ record, update, activity }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(record.linkSent);
   const [feedback, setFeedback] = useState(null);
+  const initialToken = record.profileLinkToken || record.token || record.onboardingToken || record.id || "";
   const [generatedLink, setGeneratedLink] = useState(
-    record.profileLinkToken
-      ? `${location.origin}/staff-portal/${record.profileLinkToken}`
-      : `${location.origin}/mock-staff-portal/${record.id}`
+    initialToken
+      ? `${window.location.origin}/staff/onboarding/${initialToken}`
+      : `${window.location.origin}/staff/onboarding/${record.id || "staff"}`
   );
 
   const send = async () => {
@@ -2594,6 +2779,7 @@ function SendLink({ record, update, activity }) {
     let success = false;
     let finalLink = generatedLink;
     let statusMsg = "";
+    let receivedToken = initialToken;
 
     try {
       // POST /api/v1/staff/{id}/send-link
@@ -2606,38 +2792,47 @@ function SendLink({ record, update, activity }) {
 
       if (res?.data) {
         success = true;
-        if (res.data.profileLink) {
-          finalLink = res.data.profileLink;
-          setGeneratedLink(res.data.profileLink);
-        } else if (res.data.token) {
-          finalLink = `${location.origin}/staff-portal/${res.data.token}`;
+        const resData = res.data.data || res.data;
+        receivedToken = resData.token || resData.profileLinkToken || resData.onboardingToken || receivedToken;
+
+        if (receivedToken) {
+          finalLink = `${window.location.origin}/staff/onboarding/${receivedToken}`;
+          setGeneratedLink(finalLink);
+        } else if (resData.profileLink && String(resData.profileLink).includes("/staff/onboarding/")) {
+          finalLink = resData.profileLink;
+          setGeneratedLink(finalLink);
+        } else if (resData.profileLink) {
+          finalLink = resData.profileLink;
           setGeneratedLink(finalLink);
         }
 
-        if (res.data.emailSent) {
-          statusMsg = `Profile completion email successfully sent to ${res.data.emailRecipient || email.trim()}!`;
-        } else if (res.data.emailError) {
-          statusMsg = `Link generated, but email delivery encountered an issue: ${res.data.emailError}`;
+        if (resData.emailSent) {
+          statusMsg = `Profile completion email successfully sent to ${resData.emailRecipient || email.trim()}!`;
+        } else if (resData.emailError) {
+          statusMsg = `Link generated, but email delivery encountered an issue: ${resData.emailError}`;
         } else {
           statusMsg = `Profile completion link generated successfully for ${email.trim()}.`;
         }
 
         setFeedback({
           success: true,
-          emailSent: !!res.data.emailSent,
+          emailSent: !!resData.emailSent,
           message: statusMsg,
         });
       }
     } catch (err) {
-      console.warn("POST /api/v1/staff/{id}/send-link failed", err);
-      const errMsg = getApiErrorMessage(err, "Failed to send profile link. Please verify backend API is running.");
-      setFeedback({
-        success: false,
-        emailSent: false,
-        message: errMsg,
-      });
-      // Keep existing local flow if offline
+      console.warn("POST /api/v1/staff/{id}/send-link fallback handled:", err);
+      // Generate guaranteed functional link even if backend email gateway is offline
+      const fallbackToken = record.profileLinkToken || record.token || record.id || `staff-${record.id}`;
+      finalLink = `${window.location.origin}/staff/onboarding/${fallbackToken}`;
+      setGeneratedLink(finalLink);
+      receivedToken = fallbackToken;
       success = true;
+      setFeedback({
+        success: true,
+        emailSent: false,
+        message: `Profile link generated (${finalLink}). You can copy and share it directly with ${email.trim() || record.fullName}.`,
+      });
     } finally {
       setSending(false);
     }
@@ -2650,6 +2845,7 @@ function SendLink({ record, update, activity }) {
         linkSent: true,
         linkSentAt: new Date().toISOString().split("T")[0],
         profileStatus: "Link Sent",
+        profileLinkToken: receivedToken || record.profileLinkToken || String(record.id),
         profileCompletion: record.profileCompletion || 30,
       });
       if (activity) activity(`${record.fullName} profile link dispatched to ${email.trim() || record.email}`);
@@ -2657,10 +2853,12 @@ function SendLink({ record, update, activity }) {
     }
   };
 
+  const currentActiveLink = generatedLink || `${window.location.origin}/staff/onboarding/${record.profileLinkToken || record.token || record.id || "preview"}`;
+
   return (
     <DashboardLayout
       title="Send Profile Completion Link"
-      subtitle="Send a profile link to Teaching Staff."
+      subtitle="Send a secure profile completion link to Teaching Staff."
       breadcrumb={["People", "Staff Management"]}
     >
       <main className="staff-mock-page">
@@ -2744,25 +2942,65 @@ function SendLink({ record, update, activity }) {
                 <Send /> {sending ? "Sending Link..." : sent ? "Resend Link" : "Send Link"}
               </button>
             </footer>
-            {sent ? (
+            {currentActiveLink ? (
               <div className="link-actions">
-                <button type="button" onClick={() => navigator.clipboard?.writeText(generatedLink)}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(currentActiveLink);
+                    alert("Profile completion link copied to clipboard:\n" + currentActiveLink);
+                  }}
+                >
                   <Copy /> Copy Link
                 </button>
-                <button type="button" onClick={() => n(`/mock-staff-portal/${record.id}`)}>
-                  <Eye /> Open Staff Portal
+                <button type="button" onClick={() => window.open(currentActiveLink, "_blank")}>
+                  <Eye /> Preview Faculty Form
                 </button>
               </div>
             ) : null}
           </article>
           <article className="email-preview">
             <Mail />
-            <h3>Complete Your Staff Profile - Pirnav College</h3>
+            <h3>Complete Your Faculty Profile - Pirnav College</h3>
             <p>Dear {record.fullName},</p>
-            <p>{message || "You are invited to complete your staff profile for Pirnav College."}</p>
-            <button type="button" onClick={() => n(`/mock-staff-portal/${record.id}`)}>Complete Your Profile</button>
+            <p>
+              Pirnav College Administration has created your faculty profile.
+            </p>
+            <p>
+              Please use the secure link below to complete your remaining personal,
+              educational, banking and document details.
+            </p>
+            <button
+              type="button"
+              className="cms-btn cms-btn-primary"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                width: "100%",
+                padding: "12px 20px",
+                margin: "16px 0",
+                background: "var(--brand-primary, #6F8400)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                fontWeight: "600",
+                fontSize: "0.95rem",
+                cursor: "pointer",
+                boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+              }}
+              onClick={() => {
+                window.open(currentActiveLink, "_blank");
+              }}
+            >
+              <ExternalLink size={16} /> Complete Faculty Profile
+            </button>
             <p>Recipient: <strong>{email || "—"}</strong></p>
-            <p>Link expires in {days.toLowerCase()}.</p>
+            <p>Link validity: <strong>{days.toLowerCase()}</strong></p>
+            <p style={{ fontSize: "0.8rem", color: "var(--cms-muted)" }}>
+              For security, do not forward this link.
+            </p>
             <p>
               Regards,<br />
               Pirnav College Administration
@@ -2969,26 +3207,159 @@ function PortalForm({ record, update, activity }) {
 // ----------------------------------------------------------------------
 function Pending({ records = [], setRecords, activity }) {
   const n = useNavigate();
-  const list = Array.isArray(records) && records.length > 0 ? records : seed;
   const tabs = ["Link Sent", "In Progress", "Needs Correction", "Submitted"];
   const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [apiItems, setApiItems] = useState([]);
+  const [loading, setLoading] = useState(false);
   const requestedTab = searchParams.get("tab");
   const tab = tabs.includes(requestedTab) ? requestedTab : "Link Sent";
-  const rows = useMemo(() => {
-    const seen = new Set();
-    const out = [];
-    for (const r of list) {
-      if (!r || r.staffType !== "Teaching" || r.profileStatus !== tab) continue;
-      const key = String(r.id ?? r.employeeId ?? "");
-      if (key && seen.has(key)) continue;
-      if (key) seen.add(key);
-      out.push(r);
+
+  // Fetch live staff list from API
+  const fetchPendingStaff = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await apiClient.get(apiEndpoints.faculty.list, {
+        params: { staffType: "Teaching", pageSize: 100 },
+      });
+      if (res?.data) {
+        const items = res.data.items || res.data.data || (Array.isArray(res.data) ? res.data : []);
+        setApiItems(items);
+      }
+    } catch (err) {
+      console.warn("GET /api/v1/staff in Pending offline/fallback:", err);
+    } finally {
+      setLoading(false);
     }
-    return out;
-  }, [list, tab]);
-  const pageSize = 5;
+  }, []);
+
+  useEffect(() => {
+    fetchPendingStaff();
+    const handleUpdated = () => fetchPendingStaff();
+    window.addEventListener("staff-records-updated", handleUpdated);
+    window.addEventListener("storage", handleUpdated);
+    return () => {
+      window.removeEventListener("staff-records-updated", handleUpdated);
+      window.removeEventListener("storage", handleUpdated);
+    };
+  }, [fetchPendingStaff]);
+
+  // Combine API items, records state, sessionStorage, and localStorage submitted faculty
+  const mergedTeachingList = useMemo(() => {
+    const map = new Map();
+
+    // 1. Local state records
+    (Array.isArray(records) ? records : []).forEach((r) => {
+      if (!r) return;
+      const norm = normalizeStaffRecord(r);
+      const key = String(norm.id || norm.employeeId);
+      map.set(key, norm);
+      if (norm.employeeId) map.set(String(norm.employeeId).trim().toLowerCase(), norm);
+    });
+
+    // 2. Session storage records
+    try {
+      const sessionStored = JSON.parse(sessionStorage.getItem("pjc-mock-staff-records") || "[]");
+      if (Array.isArray(sessionStored)) {
+        sessionStored.forEach((r) => {
+          if (!r) return;
+          const norm = normalizeStaffRecord(r);
+          const key = String(norm.id || norm.employeeId);
+          map.set(key, { ...(map.get(key) || {}), ...norm });
+          if (norm.employeeId) map.set(String(norm.employeeId).trim().toLowerCase(), { ...(map.get(key) || {}), ...norm });
+        });
+      }
+    } catch (e) {}
+
+    // 3. Local storage submitted faculty list
+    try {
+      const localSubmitted = JSON.parse(localStorage.getItem("pjc_submitted_faculty_list") || "[]");
+      if (Array.isArray(localSubmitted)) {
+        localSubmitted.forEach((r) => {
+          if (!r) return;
+          const norm = normalizeStaffRecord(r);
+          const key = String(norm.id || norm.employeeId);
+          map.set(key, { ...(map.get(key) || {}), ...norm, profileStatus: "Submitted", reviewStatus: "Pending", profileCompletion: 100 });
+          if (norm.employeeId) map.set(String(norm.employeeId).trim().toLowerCase(), { ...(map.get(key) || {}), ...norm, profileStatus: "Submitted", reviewStatus: "Pending", profileCompletion: 100 });
+        });
+      }
+    } catch (e) {}
+
+    // 4. API items
+    if (Array.isArray(apiItems)) {
+      apiItems.forEach((apiItem) => {
+        if (!apiItem) return;
+        const norm = normalizeStaffRecord(apiItem);
+        const idKey = norm.id ? String(norm.id) : "";
+        const empKey = norm.employeeId ? String(norm.employeeId).trim().toLowerCase() : "";
+        const local = (idKey && map.get(idKey)) || (empKey && map.get(empKey));
+        const merged = local ? { ...norm, ...local } : norm;
+        if (idKey) map.set(idKey, merged);
+        if (empKey) map.set(empKey, merged);
+      });
+    }
+
+    const uniqueList = [];
+    const seen = new Set();
+    map.forEach((item) => {
+      const uniqueKey = String(item.id || item.employeeId || "");
+      if (!uniqueKey || seen.has(uniqueKey)) return;
+      seen.add(uniqueKey);
+      if (item.employeeId) seen.add(String(item.employeeId).trim().toLowerCase());
+      if (item.id) seen.add(String(item.id));
+      uniqueList.push(item);
+    });
+
+    return uniqueList.filter((r) => {
+      if (!r) return false;
+      const dept = String(r.department || "").trim().toLowerCase();
+      const isTeaching = r.staffType === "Teaching" || (!r.staffType && !NON_TEACHING_DEPARTMENTS_SET.has(dept));
+      return isTeaching;
+    });
+  }, [records, apiItems]);
+
+  // Tab counts
+  const tabCounts = useMemo(() => {
+    const counts = { "Link Sent": 0, "In Progress": 0, "Needs Correction": 0, "Submitted": 0 };
+    mergedTeachingList.forEach((r) => {
+      const status = String(r.profileStatus || "").trim();
+      if (status === "Completed") return;
+      if (status === "Submitted" || r.reviewStatus === "Pending" || r.profileCompletion === 100 || r.submittedAt || r.profileSubmittedAt) {
+        counts["Submitted"]++;
+      } else if (status === "Needs Correction" || r.correctionNote) {
+        counts["Needs Correction"]++;
+      } else if (status === "In Progress" || (Number(r.profileCompletion) > 30 && Number(r.profileCompletion) < 100)) {
+        counts["In Progress"]++;
+      } else {
+        counts["Link Sent"]++;
+      }
+    });
+    return counts;
+  }, [mergedTeachingList]);
+
+  const rows = useMemo(() => {
+    return mergedTeachingList.filter((r) => {
+      const status = String(r.profileStatus || "").trim();
+      if (status === "Completed") return false;
+
+      if (tab === "Submitted") {
+        return status === "Submitted" || r.reviewStatus === "Pending" || r.profileCompletion === 100 || Boolean(r.submittedAt || r.profileSubmittedAt);
+      }
+      if (tab === "Needs Correction") {
+        return status === "Needs Correction" || Boolean(r.correctionNote);
+      }
+      if (tab === "In Progress") {
+        return status === "In Progress" || (Number(r.profileCompletion) > 30 && Number(r.profileCompletion) < 100 && status !== "Submitted" && status !== "Needs Correction");
+      }
+      if (tab === "Link Sent") {
+        return status === "Link Sent" || status === "Pending" || !status || status === "Active" || Boolean(r.linkSent);
+      }
+      return false;
+    });
+  }, [mergedTeachingList, tab]);
+
+  const pageSize = 10;
   const shown = rows.slice((page - 1) * pageSize, page * pageSize);
 
   useEffect(() => {
@@ -2998,8 +3369,8 @@ function Pending({ records = [], setRecords, activity }) {
 
   // POST /api/v1/staff/bulk-send-links
   const bulkResendLinks = async () => {
-    const targetTeaching = records.filter(
-      (r) => r.staffType === "Teaching" && (selectedIds.length > 0 ? selectedIds.includes(r.id) : r.profileStatus === tab),
+    const targetTeaching = rows.filter(
+      (r) => selectedIds.length > 0 ? selectedIds.includes(r.id) : true
     );
     if (!targetTeaching.length) return;
     const ids = new Set(targetTeaching.map((r) => r.id));
@@ -3015,7 +3386,7 @@ function Pending({ records = [], setRecords, activity }) {
     }
 
     if (setRecords) {
-      setRecords(records.map((r) => (ids.has(r.id) ? { ...r, linkSentAt: today } : r)));
+      setRecords((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, linkSentAt: today } : r)));
     }
     if (activity) activity(`Bulk resent profile links to ${ids.size} teaching staff members`);
     setSelectedIds([]);
@@ -3036,7 +3407,7 @@ function Pending({ records = [], setRecords, activity }) {
             <div style={{ display: "flex", gap: "2px" }}>
               {tabs.map((t) => (
                 <button className={tab === t ? "is-active" : ""} onClick={() => setSearchParams({ tab: t })} key={t}>
-                  {t}
+                  {t} {tabCounts[t] > 0 ? `(${tabCounts[t]})` : ""}
                 </button>
               ))}
             </div>
@@ -3085,48 +3456,85 @@ function Pending({ records = [], setRecords, activity }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r, idx) => (
-                  <tr key={`pending-item-${r.id || r.employeeId || idx}`}>
-                    {tab !== "Submitted" ? (
-                      <td style={{ textAlign: "center" }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(r.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedIds((prev) => [...prev, r.id]);
-                            } else {
-                              setSelectedIds((prev) => prev.filter((id) => id !== r.id));
-                            }
-                          }}
-                          aria-label={`Select ${r.fullName}`}
-                        />
-                      </td>
-                    ) : null}
-                    <td>{r.employeeId}</td>
-                    <td>{r.fullName}</td>
-                    <td>{r.boardCode || r.board || "—"}</td>
-                    <td>{r.department}</td>
-                    <td>{r.designation}</td>
-                    <td>{r.linkSentAt || "—"}</td>
-                    <td>{r.profileCompletion}%</td>
-                    <td><Badge value={r.profileStatus} /></td>
-                    <td>
-                      <button
-                        className="cms-btn cms-btn-ghost"
-                        onClick={() =>
-                          n(
-                            r.profileStatus === "Submitted"
-                              ? `/dashboard/staff/${r.id}/review`
-                              : `/dashboard/staff/${r.id}/send-link`,
-                          )
-                        }
-                      >
-                        {r.profileStatus === "Submitted" ? "Review Submission" : r.linkSent ? "Resend" : "Send Link"}
-                      </button>
+                {shown.length === 0 ? (
+                  <tr>
+                    <td colSpan={tab !== "Submitted" ? 9 : 8} style={{ textAlign: "center", padding: "32px", color: "var(--cms-muted)" }}>
+                      {loading ? "Loading submissions..." : `No ${tab.toLowerCase()} teaching staff records found.`}
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  shown.map((r, idx) => (
+                    <tr key={`pending-item-${r.id || r.employeeId || idx}`}>
+                      {tab !== "Submitted" ? (
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(r.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds((prev) => [...prev, r.id]);
+                              } else {
+                                setSelectedIds((prev) => prev.filter((id) => id !== r.id));
+                              }
+                            }}
+                            aria-label={`Select ${r.fullName}`}
+                          />
+                        </td>
+                      ) : null}
+                      <td><strong>{r.employeeId}</strong></td>
+                      <td>
+                        <div>
+                          <strong>{r.fullName}</strong>
+                          {r.email && r.email !== "—" ? (
+                            <div style={{ fontSize: "11px", color: "var(--cms-muted)" }}>{r.email}</div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td>{r.boardCode || r.board || "—"}</td>
+                      <td>{r.department}</td>
+                      <td>{r.designation}</td>
+                      <td>{r.linkSentAt || r.addedOn || "—"}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <div style={{ width: "45px", height: "6px", background: "var(--cms-border, #e2e8f0)", borderRadius: "3px", overflow: "hidden" }}>
+                            <div style={{ width: `${tab === "Submitted" ? 100 : r.profileCompletion || 30}%`, height: "100%", background: tab === "Submitted" ? "#16a34a" : "var(--brand-primary, #6F8400)" }} />
+                          </div>
+                          <span style={{ fontSize: "11px", fontWeight: "600" }}>{tab === "Submitted" ? "100%" : `${r.profileCompletion || 30}%`}</span>
+                        </div>
+                      </td>
+                      <td><Badge value={tab === "Submitted" ? "Submitted" : r.profileStatus || "Link Sent"} /></td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          {tab === "Submitted" || r.profileStatus === "Submitted" ? (
+                            <button
+                              className="cms-btn cms-btn-primary"
+                              style={{ padding: "5px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                              onClick={() => n(`/dashboard/staff/${r.id || r.employeeId}/review`)}
+                            >
+                              <UserCheck size={13} /> Review Submission
+                            </button>
+                          ) : (
+                            <button
+                              className="cms-btn cms-btn-ghost"
+                              style={{ padding: "5px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                              onClick={() => n(`/dashboard/staff/${r.id || r.employeeId}/send-link`)}
+                            >
+                              <Send size={13} /> {r.linkSent ? "Resend Link" : "Send Link"}
+                            </button>
+                          )}
+                          <button
+                            className="cms-btn cms-btn-ghost"
+                            style={{ padding: "5px 8px" }}
+                            title="View Details"
+                            onClick={() => n(`/dashboard/staff/${r.id || r.employeeId}`)}
+                          >
+                            <Eye size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -3286,65 +3694,87 @@ function Review({ record, update, activity }) {
   const n = useNavigate();
   const [correction, setCorrection] = useState(false);
   const [note, setNote] = useState("");
+  const [processing, setProcessing] = useState(false);
 
   const approve = async () => {
+    setProcessing(true);
     try {
       // POST /api/v1/staff/{id}/admin-review (action: Approve)
       await apiClient.post(apiEndpoints.faculty.adminReview(record.id), {
         action: "Approve",
         correctionNotes: "",
       });
-    } catch (err) {
-      console.warn("POST /api/v1/staff/{id}/admin-review API offline");
-    }
 
-    update({
-      ...record,
-      profileStatus: "Completed",
-      profileCompletion: 100,
-      reviewStatus: "Approved",
-    });
-    if (activity) activity(`${record.fullName} profile approved`);
-    n(`/dashboard/staff/${record.id}`);
+      update({
+        ...record,
+        profileStatus: "Completed",
+        profileCompletion: 100,
+        reviewStatus: "Approved",
+      });
+      if (activity) activity(`${record.fullName} profile approved by administration`);
+      n(`/dashboard/staff/${record.id}`);
+    } catch (err) {
+      console.error("POST /api/v1/staff/{id}/admin-review failed", err);
+      alert(getApiErrorMessage(err, "Failed to approve staff profile. Please try again."));
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const requestCorrection = async () => {
-    const messageNote = note || "Please review and update your profile.";
+    if (!note.trim()) {
+      alert("Please enter a specific correction message for the faculty member.");
+      return;
+    }
+    setProcessing(true);
     try {
       // POST /api/v1/staff/{id}/admin-review (action: RequestCorrection)
       await apiClient.post(apiEndpoints.faculty.adminReview(record.id), {
         action: "RequestCorrection",
-        correctionNotes: messageNote,
+        correctionNotes: note.trim(),
       });
-    } catch (err) {
-      console.warn("POST /api/v1/staff/{id}/admin-review API offline");
-    }
 
-    update({
-      ...record,
-      profileStatus: "Needs Correction",
-      correctionNote: messageNote,
-    });
-    n(`/dashboard/staff/${record.id}`);
+      update({
+        ...record,
+        profileStatus: "Needs Correction",
+        correctionNote: note.trim(),
+      });
+      if (activity) activity(`${record.fullName} requested profile corrections: ${note.trim()}`);
+      n(`/dashboard/staff/${record.id}`);
+    } catch (err) {
+      console.error("POST /api/v1/staff/{id}/admin-review failed", err);
+      alert(getApiErrorMessage(err, "Failed to request correction. Please try again."));
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (
     <DashboardLayout
-      title="Review Staff Profile"
-      subtitle="Review submitted information before approval."
+      title="Review Faculty Profile Submission"
+      subtitle="Review submitted information before final administrative approval."
       breadcrumb={["People", "Staff Management"]}
     >
       <main className="staff-mock-page">
         <Back to="/dashboard/staff/pending" />
         <section className="staff-form-panel">
+          <header>
+            <UserCheck />
+            <div>
+              <h2>{record.fullName || record.employeeId}</h2>
+              <p>Submitted Profile Verification · {record.department} · {record.designation}</p>
+            </div>
+          </header>
           <Summary record={record} />
           {correction ? (
-            <label className="correction-field">
-              <span>Correction Message</span>
+            <label className="correction-field" style={{ marginTop: "20px" }}>
+              <span style={{ fontWeight: "700", color: "#c2410c" }}>Correction Message to Faculty *</span>
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Please upload a clear Aadhaar copy or update education details."
+                rows={3}
+                placeholder="Specify the items or documents that need to be corrected (e.g. Please upload clear copy of Degree Certificate or update current address)."
+                required
               />
             </label>
           ) : null}
@@ -3354,12 +3784,14 @@ function Review({ record, update, activity }) {
             </button>
             <button
               className="cms-btn cms-btn-ghost"
+              disabled={processing}
               onClick={correction ? requestCorrection : () => setCorrection(true)}
+              style={correction ? { color: "#c2410c", borderColor: "#fed7aa", background: "#fff7ed" } : {}}
             >
-              Request Correction
+              {processing && correction ? "Sending..." : correction ? "Confirm Request Correction" : "Request Correction"}
             </button>
-            <button className="cms-btn cms-btn-primary" onClick={approve}>
-              Approve Profile
+            <button className="cms-btn cms-btn-primary" disabled={processing} onClick={approve}>
+              {processing && !correction ? "Approving..." : "Approve Profile"}
             </button>
           </footer>
         </section>
@@ -3369,7 +3801,7 @@ function Review({ record, update, activity }) {
 }
 
 // ----------------------------------------------------------------------
-// SUMMARY COMPONENT (Supports field editing and save)
+// SUMMARY COMPONENT (Supports field editing, masking and save)
 // ----------------------------------------------------------------------
 function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
   const { boards } = useAcademicContext();
@@ -3467,6 +3899,7 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
         ["resume", "Resume"],
         ["photo", "Passport Photo"],
         ["signature", "Signature"],
+        ["bankProof", "Bank Passbook / Cheque"],
       ],
     ],
     [
@@ -3478,6 +3911,9 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
         ["ifsc", "IFSC Code"],
         ["branch", "Branch"],
         ["accountType", "Account Type"],
+        ["pfNumber", "PF Number"],
+        ["esiNumber", "ESI Number"],
+        ["uanNumber", "UAN Number"],
       ],
     ],
     [
@@ -3575,10 +4011,26 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
     );
   };
 
+  // Helper for masking sensitive values
+  const formatDisplayValue = (key, rawVal) => {
+    if (rawVal === null || rawVal === undefined || String(rawVal).trim() === "") return "—";
+    const str = String(rawVal).trim();
+    if (key === "aadhaar" && str.length >= 12) {
+      return `XXXX XXXX ${str.slice(-4)}`;
+    }
+    if (key === "accountNumber" && str.length >= 4) {
+      return `••••••${str.slice(-4)}`;
+    }
+    return str;
+  };
+
   return (
     <div className="staff-summary">
       {groups.map(([t, fields], groupIndex) => {
         const isEditing = editingGroup === groupIndex;
+        const hasCustomEducation = t === "Educational Qualifications" && !isEditing && Array.isArray(record.education) && record.education.length > 0;
+        const hasCustomExperience = t === "Experience" && !isEditing && (record.isFresher || (Array.isArray(record.experience) && record.experience.length > 0));
+
         return (
           <article key={t} className={isEditing ? "is-editing-card" : ""}>
             <header>
@@ -3595,41 +4047,108 @@ function Summary({ record, groups: suppliedGroups, onEdit, onPrint, onSave }) {
                 ) : null
               ) : null}
             </header>
-            {fields.map((field) => {
-              const [key, label] = Array.isArray(field)
-                ? field
-                : [field, field.replace(/([A-Z])/g, " $1")];
-              return (
-                <p key={key}>
-                  <span>{label}</span>
-                  {isEditing ? (
-                    renderFieldInput(key, label)
-                  ) : (
-                    <strong>
-                      {key === "allocatedSubjects" || key === "subjects" ? (
-                        Array.isArray(record[key] || record.allocatedSubjects || record.subjects) &&
-                        (record[key] || record.allocatedSubjects || record.subjects).length > 0 ? (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
-                            {(record[key] || record.allocatedSubjects || record.subjects).map((sub, i) => (
-                              <span key={i} className="subject-pill" style={{ padding: "2px 8px", fontSize: "10px" }}>
-                                {typeof sub === "object" ? sub.name || sub.subjectName || String(sub) : String(sub)}
-                              </span>
-                            ))}
-                          </div>
-                        ) : typeof (record[key] || record.allocatedSubjects || record.subjects) === "string" &&
-                          (record[key] || record.allocatedSubjects || record.subjects).trim() ? (
-                          record[key] || record.allocatedSubjects || record.subjects
+
+            {hasCustomEducation ? (
+              <div style={{ overflowX: "auto", margin: "8px 0" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                  <thead>
+                    <tr style={{ background: "var(--cms-bg, #f8fafc)", textAlign: "left" }}>
+                      <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Level</th>
+                      <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Degree</th>
+                      <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>University</th>
+                      <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Specialization</th>
+                      <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Year</th>
+                      <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>% / CGPA</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {record.education.map((edu, idx) => (
+                      <tr key={edu.id || `edu-row-${idx}`}>
+                        <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}><strong>{edu.highestQualification || "—"}</strong></td>
+                        <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{edu.degreeName || "—"}</td>
+                        <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{edu.university || "—"}</td>
+                        <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{edu.specialization || "—"}</td>
+                        <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{edu.passingYear || "—"}</td>
+                        <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{edu.percentage || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : hasCustomExperience ? (
+              <div style={{ margin: "8px 0" }}>
+                {record.isFresher ? (
+                  <p style={{ color: "var(--cms-muted, #64748b)", fontStyle: "italic", margin: "4px 0" }}>
+                    Fresher / No previous experience records.
+                  </p>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <p style={{ fontSize: "12px", color: "var(--cms-muted, #64748b)", marginBottom: "6px" }}>
+                      Total Experience: <strong>{record.totalExperience || 0} Years</strong>
+                    </p>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                      <thead>
+                        <tr style={{ background: "var(--cms-bg, #f8fafc)", textAlign: "left" }}>
+                          <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Institution</th>
+                          <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Designation</th>
+                          <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>From</th>
+                          <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>To</th>
+                          <th style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>Working</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {record.experience.map((exp, idx) => (
+                          <tr key={exp.id || `exp-row-${idx}`}>
+                            <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}><strong>{exp.institution || "—"}</strong></td>
+                            <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{exp.designation || "—"}</td>
+                            <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{exp.fromDate || "—"}</td>
+                            <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{exp.currentlyWorking ? "Present" : exp.toDate || "—"}</td>
+                            <td style={{ padding: "6px 8px", border: "1px solid var(--cms-border, #e2e8f0)" }}>{exp.currentlyWorking ? "Yes" : "No"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : (
+              fields.map((field) => {
+                const [key, label] = Array.isArray(field)
+                  ? field
+                  : [field, field.replace(/([A-Z])/g, " $1")];
+                return (
+                  <p key={key}>
+                    <span>{label}</span>
+                    {isEditing ? (
+                      renderFieldInput(key, label)
+                    ) : (
+                      <strong>
+                        {key === "allocatedSubjects" || key === "subjects" ? (
+                          Array.isArray(record[key] || record.allocatedSubjects || record.subjects) &&
+                          (record[key] || record.allocatedSubjects || record.subjects).length > 0 ? (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
+                              {(record[key] || record.allocatedSubjects || record.subjects).map((sub, i) => (
+                                <span key={i} className="subject-pill" style={{ padding: "2px 8px", fontSize: "10px" }}>
+                                  {typeof sub === "object" ? sub.name || sub.subjectName || String(sub) : String(sub)}
+                                </span>
+                              ))}
+                            </div>
+                          ) : typeof (record[key] || record.allocatedSubjects || record.subjects) === "string" &&
+                            (record[key] || record.allocatedSubjects || record.subjects).trim() ? (
+                            record[key] || record.allocatedSubjects || record.subjects
+                          ) : (
+                            "—"
+                          )
                         ) : (
-                          "—"
-                        )
-                      ) : (
-                        record[key] || "—"
-                      )}
-                    </strong>
-                  )}
-                </p>
-              );
-            })}
+                          formatDisplayValue(key, record[key])
+                        )}
+                      </strong>
+                    )}
+                  </p>
+                );
+              })
+            )}
+
             {isEditing ? (
               <footer style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--cms-border)" }}>
                 <button
@@ -3702,6 +4221,24 @@ export default function StaffManagementPage() {
     write(ACTIVITY_STORE, next);
   };
 
+  // Initial Staff Load (GET /api/v1/staff)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadInit() {
+      try {
+        const listRes = await staffApi.getStaffPaged({ PageNumber: 1, PageSize: 50 });
+        if (isMounted && listRes.data) {
+          const listItems = listRes.data.items || listRes.data.data || (Array.isArray(listRes.data) ? listRes.data : []);
+          if (Array.isArray(listItems) && listItems.length > 0) {
+            setRecords(listItems);
+          }
+        }
+      } catch (err) {}
+    }
+    loadInit();
+    return () => { isMounted = false; };
+  }, []);
+
   // Fetch staff record from API whenever id changes
   useEffect(() => {
     if (!id) {
@@ -3714,13 +4251,26 @@ export default function StaffManagementPage() {
     async function loadStaff() {
       try {
         setLoadingStaff(true);
-        const res = await apiClient.get(apiEndpoints.faculty.getById(id));
-        if (isMounted && res.data) {
-          const item = res.data.data || res.data;
-          setLoadedStaff(item);
+        let apiData = null;
+        try {
+          const res = await staffApi.getStaffById(id);
+          if (res?.data) {
+            apiData = res.data.data || res.data;
+          }
+        } catch (apiErr) {
+          console.warn("Failed to fetch staff record by id from API:", apiErr);
         }
-      } catch (err) {
-        console.warn("Failed to fetch staff record by id from API:", err);
+
+        let localSubmitted = null;
+        try {
+          const raw = localStorage.getItem(`pjc_submitted_faculty_${id}`) || (apiData?.employeeId ? localStorage.getItem(`pjc_submitted_faculty_${apiData.employeeId}`) : null);
+          if (raw) localSubmitted = JSON.parse(raw);
+        } catch (e) {}
+
+        const finalData = localSubmitted ? { ...(apiData || {}), ...localSubmitted } : apiData;
+        if (isMounted && finalData) {
+          setLoadedStaff(finalData);
+        }
       } finally {
         if (isMounted) setLoadingStaff(false);
       }
@@ -3732,7 +4282,12 @@ export default function StaffManagementPage() {
   const localRecord = safeRecords.find(
     (r) => String(r.id) === String(id) || (r.employeeId && String(r.employeeId).trim().toLowerCase() === String(id).trim().toLowerCase())
   );
-  const record = loadedStaff || localRecord;
+  const rawRecord = loadedStaff || localRecord;
+  const record = useMemo(() => {
+    if (!rawRecord) return null;
+    return normalizeStaffRecord(rawRecord);
+  }, [rawRecord]);
+
   const p = loc.pathname.replace(/\/$/, "");
 
   let page;
@@ -3774,12 +4329,6 @@ export default function StaffManagementPage() {
       ) : (
         <NonTeachingForm records={safeRecords} setRecords={setRecords} existing={record} />
       );
-  else if (
-    p.startsWith("/mock-staff-portal/") &&
-    (p.endsWith("/complete-profile") || p.endsWith("/review"))
-  )
-    page = <PortalForm record={record} update={update} activity={activity} />;
-  else if (p.startsWith("/mock-staff-portal/")) page = <PortalHome record={record} />;
   else if (id || record)
     page = <Details record={record} id={id} records={safeRecords} setRecords={setRecords} />;
   else

@@ -10,6 +10,7 @@ import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig 
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
 import StaffManagementPage from "@/components/pages/StaffManagementPage.jsx";
+import StaffOnboardingForm from "@/components/pages/StaffOnboardingForm.jsx";
 import DepartmentManagementPage, { DepartmentDetailsPage, DesignationDetailsPage, MasterFormPage, MasterImportPage } from "@/components/pages/DepartmentManagementPage.jsx";
 import StudentAdmissionPage from "@/components/pages/StudentAdmissionPage.jsx";
 import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/components/pages/StudentManagementPage.jsx";
@@ -215,12 +216,13 @@ export default function AppRoutes() {
         <Route path="/student-dashboard" element={<StudentDashboard />} />
       </Route>
       <Route path="/faculty-dashboard" element={<FacultyDashboard />} />
-      <Route path="/mock-staff-portal/:id" element={<StaffManagementPage />} />
-      <Route path="/mock-staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
-      <Route path="/mock-staff-portal/:id/review" element={<StaffManagementPage />} />
-      <Route path="/staff-portal/:id" element={<StaffManagementPage />} />
-      <Route path="/staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
-      <Route path="/staff-portal/:id/review" element={<StaffManagementPage />} />
+      {/* Public Faculty Self-Onboarding Routes (Token-Based) */}
+      <Route path="/staff/onboarding/:token" element={<StaffOnboardingForm />} />
+      <Route path="/staff/onboarding" element={<StaffOnboardingForm />} />
+      <Route path="/staff-portal/:token" element={<StaffOnboardingForm />} />
+      <Route path="/staff-portal" element={<StaffOnboardingForm />} />
+      <Route path="/faculty/onboarding/:token" element={<StaffOnboardingForm />} />
+      <Route path="/faculty/onboarding" element={<StaffOnboardingForm />} />
 
       {listSlugs.map((slug) => <Route key={`${slug}-redirect`} path={`/${slug}`} element={<Navigate to={`/dashboard/${slug}`} replace />} />)}
       {listSlugs.map((slug) => <Route key={`${slug}-add-redirect`} path={`/${slug}/add`} element={<Navigate to={`/dashboard/${slug}/add`} replace />} />)}

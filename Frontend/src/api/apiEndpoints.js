@@ -11,6 +11,7 @@ export const apiEndpoints = {
     updateStatus: (adminId) => `/api/Admin/${adminId}/status`,
   },
   faculty: {
+    init: "/api/v1/staff/init",
     dashboardStats: "/api/v1/staff/dashboard-stats",
     list: "/api/v1/staff",
     getAll: "/api/v1/staff",
@@ -161,15 +162,15 @@ export const apiEndpoints = {
     monthlyReport: "/api/v1/fees/reports/monthly",
     outstandingReport: "/api/fees/report/outstanding",
   },
-  // auth: {
-  //   login: "/api/Auth/login",
-  //   register: "/api/Auth/register",
-  //   forgotPassword: "/api/Auth/forgot-password",
-  //   verifyOtp: "/api/Auth/verify-otp",
-  //   resetPassword: "/api/Auth/reset-password",
-  //   users: "/api/Auth/users",
-  //   userById: (id) => `/api/Auth/user/${id}`,
-  // },
+  auth: {
+    login: "/api/Auth/login",
+    register: "/api/Auth/register",
+    forgotPassword: "/api/Auth/forgot-password",
+    verifyOtp: "/api/Auth/verify-otp",
+    resetPassword: "/api/Auth/reset-password",
+    users: "/api/Auth/users",
+    userById: (id) => `/api/Auth/user/${id}`,
+  },
   results: {
     list: "/api/v1/results",
     process: "/api/v1/results/process",
@@ -486,7 +487,36 @@ export const apiEndpoints = {
     generateNext: (code) => `/api/v1/settings/number-series/${encodeURIComponent(code)}/generate-next`,
     preview: (code) => `/api/v1/settings/number-series/${encodeURIComponent(code)}/preview`,
   },
+  settingsTemplates: {
+    list: "/api/v1/settings/templates",
+    categories: "/api/v1/settings/templates/categories",
+    getById: (id) => `/api/v1/settings/templates/${id}`,
+    getByCode: (templateCode) => `/api/v1/settings/templates/by-code/${encodeURIComponent(templateCode)}`,
+    create: "/api/v1/settings/templates",
+    update: (id) => `/api/v1/settings/templates/${id}`,
+    delete: (id) => `/api/v1/settings/templates/${id}`,
+    toggleActive: (id) => `/api/v1/settings/templates/${id}/toggle-active`,
+    preview: "/api/v1/settings/templates/preview",
+  },
+  dashboard: {
+    overview: "/api/v1/dashboard/overview",
+    filters: "/api/v1/dashboard/filters",
+    summary: "/api/v1/dashboard/summary",
+    studentsOverview: "/api/v1/dashboard/students-overview",
+    admissionTrend: "/api/v1/dashboard/admission-trend",
+    groupDistribution: "/api/v1/dashboard/group-distribution",
+    studentsAttendanceToday: "/api/v1/dashboard/students-attendance-today",
+    staffAttendanceToday: "/api/v1/dashboard/staff-attendance-today",
+    certificateRequests: "/api/v1/dashboard/certificate-requests",
+    upcomingExaminations: "/api/v1/dashboard/upcoming-examinations",
+    todaysHighlights: "/api/v1/dashboard/todays-highlights",
+    weeklyAttendance: "/api/v1/dashboard/weekly-attendance",
+    recentActivity: "/api/v1/dashboard/recent-activity",
+    facultyWorkload: "/api/v1/dashboard/faculty-workload",
+  },
 };
+
+apiEndpoints.staff = apiEndpoints.faculty;
 
 export const uniqueAcademicYearsByName = (items = [], getName = (item) => (
   item?.label

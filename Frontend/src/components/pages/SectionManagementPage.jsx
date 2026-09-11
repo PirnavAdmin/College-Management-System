@@ -755,6 +755,12 @@ export default function SectionManagementPage() {
     studentCount: null,
   });
 
+  // Room Delete Modal state (Unconstrained, matches Section Delete confirmation modal)
+  const [deleteRoomModalState, setDeleteRoomModalState] = useState({
+    isOpen: false,
+    room: null,
+  });
+
   // Screen View state replacing modals
   const [sectionView, setSectionView] = useState("list");
   const [sectionFormMode, setSectionFormMode] = useState("add");
@@ -1877,18 +1883,38 @@ export default function SectionManagementPage() {
     );
   };
 
-  const deleteRoom = async (room) => {
+  const openDeleteRoomModal = (room) => {
     if (operationRef.current || initialLoading) return;
-    const assigned = sections.find((section) => section.status === "Active" && normalizeId(section.roomId) === normalizeId(room.id));
-    if (assigned) return say('Cannot delete room "' + room.roomNo + '" because it is assigned to active section "' + assigned.name + '".');
-    if (!window.confirm('Are you sure you want to delete room "' + room.roomNo + '"?')) return;
-    await runMutation("DELETE_ROOM:" + room.id,
-      () => apiClient.delete(ROOM_ENDPOINTS.delete(room.id)),
+    setDeleteRoomModalState({
+      isOpen: true,
+      room,
+    });
+  };
+
+  const closeDeleteRoomModal = () => {
+    if (operationRef.current) return;
+    setDeleteRoomModalState({
+      isOpen: false,
+      room: null,
+    });
+  };
+
+  const confirmDeleteRoom = async () => {
+    const rm = deleteRoomModalState.room;
+    if (!rm || operationRef.current) return;
+    await runMutation(
+      "DELETE_ROOM:" + rm.id,
+      () => apiClient.delete(ROOM_ENDPOINTS.delete(rm.id)),
       async () => {
         const next = await loadRooms();
-        if (next.some((item) => item.id === room.id)) throw new Error("The Room is still present in the backend data.");
+        closeDeleteRoomModal();
+        if (next.some((item) => item.id === rm.id)) throw new Error("The Room is still present in the backend data.");
       },
-      () => say('Room "' + room.roomNo + '" deleted successfully.'));
+      () => {
+        closeDeleteRoomModal();
+        say('Room "' + rm.roomNo + '" deleted successfully.');
+      }
+    );
   };
 
   const exportAllocationExcel = () => {
@@ -2023,7 +2049,7 @@ export default function SectionManagementPage() {
                     <thead>
                       <tr>
                         <th>Room No</th>
-                        <th>Block Name</th>
+                        <th className="cms-cell-center">Block Name</th>
                         <th className="cms-cell-center">Floor</th>
                         <th>Room Type</th>
                         <th className="cms-cell-center">Capacity</th>
@@ -2036,7 +2062,7 @@ export default function SectionManagementPage() {
                         shownRooms.map((room) => (
                           <tr key={room.id}>
                             <td className="cms-sec-name-cell">{room.roomNo}</td>
-                            <td>{room.building}</td>
+                            <td className="cms-cell-center">{room.building}</td>
                             <td className="cms-cell-center">{room.floor}</td>
                             <td>{room.roomType}</td>
                             <td className="cms-cell-center">{room.capacity}</td>
@@ -2069,15 +2095,11 @@ export default function SectionManagementPage() {
                                 <button
                                   type="button"
                                   className="cms-sec-action-btn cms-sec-delete-action"
-                                  title={operation === `DELETE_ROOM:${room.id}` ? "Deleting..." : "Delete Room"}
+                                  title="Delete Room"
                                   disabled={Boolean(operation)}
-                                  onClick={() => deleteRoom(room)}
+                                  onClick={() => openDeleteRoomModal(room)}
                                 >
-                                  {operation === `DELETE_ROOM:${room.id}` ? (
-                                    <Loader2 size={14} className="cms-spin" />
-                                  ) : (
-                                    <Trash2 size={14} />
-                                  )}
+                                  <Trash2 size={14} />
                                 </button>
                               </div>
                             </td>
@@ -3468,6 +3490,66 @@ export default function SectionManagementPage() {
                     )}
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Room Delete Confirmation Modal (Theme-Based Clean Dialog) */}
+        {deleteRoomModalState.isOpen && (
+          <div className="cms-overlay" onClick={closeDeleteRoomModal}>
+            <div
+              className="cms-modal cms-delete-modal"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-room-title"
+            >
+              <div className="cms-delete-modal-content">
+                <div className="cms-delete-modal-icon confirm">
+                  <Trash2 size={24} />
+                </div>
+
+                <h3 id="delete-room-title" className="cms-delete-modal-title">
+                  Delete Room "{deleteRoomModalState.room?.roomNo}"?
+                </h3>
+
+                <p className="cms-delete-modal-desc">
+                  This action will remove the room from institutional records. This cannot be undone.
+                </p>
+              </div>
+
+              <div className="cms-modal-foot">
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-ghost"
+                  onClick={closeDeleteRoomModal}
+                  disabled={operation === `DELETE_ROOM:${deleteRoomModalState.room?.id}`}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  className="cms-btn cms-btn-danger"
+                  onClick={confirmDeleteRoom}
+                  disabled={operation === `DELETE_ROOM:${deleteRoomModalState.room?.id}`}
+                  style={{
+                    background: "var(--cms-red, #d93636)",
+                    borderColor: "var(--cms-red, #d93636)",
+                    color: "#ffffff",
+                  }}
+                >
+                  {operation === `DELETE_ROOM:${deleteRoomModalState.room?.id}` ? (
+                    <>
+                      <Loader2 size={14} className="cms-spin" /> Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} /> Delete Room
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>

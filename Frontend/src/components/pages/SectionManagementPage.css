@@ -405,7 +405,8 @@
 .cms-section-table th:nth-child(11) { width: 6%; }
 
 .cms-room-table th:nth-child(1) { width: 15%; }
-.cms-room-table th:nth-child(2) { width: 15%; }
+.cms-room-table th:nth-child(2) { width: 15%; text-align: center; }
+.cms-room-table td:nth-child(2) { text-align: center; }
 .cms-room-table th:nth-child(3) { width: 10%; }
 .cms-room-table th:nth-child(4) { width: 20%; }
 .cms-room-table th:nth-child(5) { width: 12%; }

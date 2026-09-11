@@ -266,9 +266,9 @@
 .timetable-module .ttm-grid th, .timetable-module .ttm-grid td { border-right: 1px solid var(--cms-border); border-bottom: 1px solid var(--cms-border); vertical-align: middle; }
 .timetable-module .ttm-grid tr > :last-child { border-right: 0; }
 .timetable-module .ttm-grid thead th { height: 62px; padding: 10px; background: var(--cms-subtle); color: var(--cms-text); font-size: 12px; text-align: center; }
-.timetable-module .ttm-grid thead th:first-child, .timetable-module .ttm-grid tbody > tr > th { width: 88px; padding-left: 8px; text-align: left; }
+.timetable-module .ttm-grid thead th:first-child, .timetable-module .ttm-grid tbody > tr > th { width: 110px; text-align: left; }
 .timetable-module .ttm-grid thead small { display: block; margin-top: 4px; color: var(--cms-muted); font-size: 10px; font-weight: 500; }
-.timetable-module .ttm-grid tbody > tr > th { padding: 12px 8px; background: var(--cms-subtle); font-size: 12px; }
+.timetable-module .ttm-grid tbody > tr > th { padding: 12px; background: var(--cms-subtle); font-size: 12px; }
 .timetable-module .ttm-grid td { height: 98px; padding: 8px; }
 .timetable-module .ttm-grid td.break { background: var(--cms-amber-soft); color: var(--cms-amber); font-size: 12px; font-weight: 700; text-align: center; }
 .timetable-module .ttm-grid td.slot > button { position: relative; display: block; width: 100%; min-height: 80px; overflow: hidden; padding: 10px; border: 1px solid var(--cms-primary-border); border-left: 3px solid var(--cms-primary); border-radius: 7px; background: var(--cms-primary-soft); color: var(--cms-text); text-align: left; cursor: pointer; }

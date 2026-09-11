@@ -1338,28 +1338,28 @@
   margin: 2px 0;
 }
 .att-summary-card { min-height: 102px; padding: 16px; border: 1px solid var(--cms-border); border-radius: 12px; display: flex; flex-direction: column; justify-content: space-between; }
-.att-summary-card span { color: var(--cms-muted); font-size: 12px; font-weight: 500; }
-.att-summary-card b { color: var(--cms-muted); font-size: 22px; font-weight: 600; line-height: 1; }
+.att-summary-card span { color: var(--cms-muted); font-size: 13px; font-weight: 700; }
+.att-summary-card b { color: var(--cms-text); font-size: 28px; line-height: 1; }
 .att-student-summary { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 14px; min-width: 0; }
 .att-student-summary .att-summary-card { min-width: 0; min-height: 82px; padding: 13px 16px; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px; box-shadow: 0 8px 16px rgb(42 74 35 / 9%); }
 .att-summary-icon { width: 42px; height: 42px; flex: 0 0 42px; display: grid; place-items: center; border-radius: 12px; }
 .att-summary-copy { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
-.att-student-summary .att-summary-copy > span { color: var(--cms-muted); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.att-student-summary .att-summary-copy > b { color: #52606d; font-size: 22px; font-weight: 600; }
-.att-summary-total-students, .att-summary-total-staff { background: #f7fbf7; border-color: #dcebdd; }
-.att-summary-present { background: #f7fbff; border-color: #dbeafb; }
-.att-summary-absent { background: #fff9f9; border-color: #f5dddd; }
-.att-summary-leave { background: #faf8ff; border-color: #e8e0f8; }
-.att-summary-attendance { background: #f5fcfc; border-color: #d8eeee; }
-.att-summary-late { background: #fffbf3; border-color: #f2e5ca; }
+.att-student-summary .att-summary-copy > span { color: #17211b; font-size: 13px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-student-summary .att-summary-copy > b { color: #101827; font-size: 27px; font-weight: 800; }
+.att-summary-total-students, .att-summary-total-staff { background: #edf8ed; border-color: #b9dfbe; }
+.att-summary-present { background: #e7f8f1; border-color: #b7e5d5; }
+.att-summary-absent { background: #fff0e9; border-color: #f2cbb8; }
+.att-summary-leave { background: #f1edff; border-color: #d5c8f5; }
+.att-summary-attendance { background: #e7f7fb; border-color: #b9dfe8; }
+.att-summary-late { background: #fff4dd; border-color: #efd59e; }
 .att-summary-total-students .att-summary-icon { background: #d9f5d7; color: #2d9843; }
-.att-summary-present { background: #f7fbff; border-color: #dbeafb; }
+.att-summary-present { background: #eaf5ff; border-color: #b8d9ff; }
 .att-summary-present .att-summary-icon { background: #d3eaff; color: #1682ed; }
-.att-summary-absent { background: #fff9f9; border-color: #f5dddd; }
+.att-summary-absent { background: #fff0f0; border-color: #ffbebe; }
 .att-summary-absent .att-summary-icon { background: #ffe0e0; color: #ef4444; }
-.att-summary-leave { background: #faf8ff; border-color: #e8e0f8; }
+.att-summary-leave { background: #f4efff; border-color: #d7c5ff; }
 .att-summary-leave .att-summary-icon { background: #e5dbff; color: #7441d7; }
-.att-summary-attendance { background: #f5fcfc; border-color: #d8eeee; }
+.att-summary-attendance { background: #e7fbfc; border-color: #9fe5e9; }
 .att-summary-attendance .att-summary-icon { background: #cdf5f5; color: #05aeb4; }
 .att-summary-late .att-summary-icon { background: #fff0d4; color: #d97706; }
 .att-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 14px 0 0; color: var(--cms-text); font-weight: 700; font-size: 13px; }

@@ -489,10 +489,7 @@ function useLookups(initial = {}) {
           academicLevelId: value.academicLevelId,
         },
       }),
-      // This endpoint returns the periods from the structure assigned to the
-      // selected academic context. The generic periods list can mix periods
-      // from other structures and makes generation fail or use the wrong grid.
-      apiClient.get(apiEndpoints.periodStructures.context, {
+      apiClient.get(apiEndpoints.periods.getAll, {
         params: {
           boardId: value.boardId,
           academicYearId: value.academicYearId,
@@ -1219,10 +1216,6 @@ function Generate({ goDraft, notify, initial }) {
     const sectionIds = data.sections
       .map((section) => Number(pick(section.raw, "sectionId", "SectionId", "id", "Id", section.id)))
       .filter((sectionId) => Number.isInteger(sectionId) && sectionId > 0);
-    const periodStructureId = Number(
-      value.periodStructureId
-      ?? pick(data.periods[0]?.raw, "periodStructureId", "PeriodStructureId"),
-    );
     if (!Number.isInteger(programId) || programId <= 0) {
       notify("Please select a valid program.");
       return;
@@ -1263,38 +1256,27 @@ function Generate({ goDraft, notify, initial }) {
           academicLevelId: Number(value.academicLevelId),
           groupId: Number(value.groupId),
           programId,
-          ...(Number.isInteger(periodStructureId) && periodStructureId > 0
-            ? { periodStructureId }
-            : {}),
+          p_ProgramId: programId,
           sectionIds,
           workingDays,
           subjectRequirements,
         },
+        {
+          // The live endpoint reports this exact parameter name. Include it
+          // in the query collection as well as the JSON command body.
+          params: { p_ProgramId: programId },
+        },
       );
       const result = response.data?.data ?? response.data ?? {};
-      let generatedSlots = list(result.generatedSlots ?? result.GeneratedSlots ?? result.slots ?? result.Slots ?? result);
-      const successFlag = pick(result, "isSuccess", "IsSuccess", "success", "Success");
-      const generatedCountValue = pick(result, "totalSlotsGenerated", "TotalSlotsGenerated", "generatedCount", "GeneratedCount");
-      const generatedCount = generatedCountValue == null ? null : Number(generatedCountValue);
-      const responseMessage = String(pick(result, "message", "Message") ?? "").trim();
-      const targetSectionId = Number(selectedSection?.id ?? sectionIds[0]);
-      const verificationResponse = await apiClient.get(apiEndpoints.timetable.getBySection(targetSectionId), {
-        params: { academicYearId: Number(value.academicYearId) },
-      }).catch(() => null);
-      const verifiedSlots = verificationResponse ? list(verificationResponse.data) : [];
-      if (verifiedSlots.length) generatedSlots = verifiedSlots;
-      const explicitFailure = successFlag === false || String(successFlag ?? "").trim().toLowerCase() === "false";
-      const generationFailed = !generatedSlots.length && (
-        explicitFailure
-        || (generatedCount != null && (!Number.isFinite(generatedCount) || generatedCount <= 0))
-        || (successFlag == null && generatedCount == null)
-      );
-      if (generationFailed) {
-        notify(responseMessage || "The timetable generator did not create any slots. Check the subject requirements and faculty assignments, then try again.");
+      const generatedSlots = list(result.generatedSlots);
+      if (result.isSuccess === false || Number(result.totalSlotsGenerated ?? generatedSlots.length) <= 0) {
+        notify(result.message ?? "The timetable generator did not create any slots. Check the subject requirements and faculty assignments, then try again.");
         return;
       }
-      notify(responseMessage || "Timetable generated successfully.");
-      goDraft({ ...value, sectionId: targetSectionId, workingDays, generatedSlots });
+      notify(result.message ?? "Timetable generated.");
+      // Draft chooses the newest section returned by the existing Section
+      // API, while the generator still receives every programme section.
+      goDraft({ ...value, sectionId: "", workingDays, generatedSlots });
     } catch (e) {
       const message = `${getApiErrorMessage(e)} ${e?.response?.data?.details ?? ""}`;
       notify(
@@ -1512,7 +1494,6 @@ function Draft({ initial, notify }) {
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [staffChoices, setStaffChoices] = useState([]);
   const [selectedStaffId, setSelectedStaffId] = useState("");
-  const [staffSearch, setStaffSearch] = useState("");
   const [publishedFilter, setPublishedFilter] = useState(
     initial?.isPublished === undefined ? "" : String(Boolean(initial.isPublished)),
   );
@@ -1590,7 +1571,6 @@ function Draft({ initial, notify }) {
       setStaffChoices([]);
       setSelectedStudentId("");
       setSelectedStaffId("");
-      setStaffSearch("");
       return undefined;
     }
     let cancelled = false;
@@ -1617,7 +1597,6 @@ function Draft({ initial, notify }) {
         : []);
       setSelectedStudentId("");
       setSelectedStaffId("");
-      setStaffSearch("");
     });
     return () => { cancelled = true; };
   }, [published, value.sectionId]);
@@ -1871,33 +1850,20 @@ function Draft({ initial, notify }) {
                 {published && (
                   <>
                     <label className="ttm-inline-filter ttm-staff-select">
-                      <input
-                        type="search"
-                        list="ttm-staff-options"
+                      <select
                         aria-label="Select staff"
-                        placeholder="Search staff"
-                        autoComplete="off"
-                        value={staffSearch}
+                        value={selectedStaffId}
                         disabled={actionBusy || !staffChoices.length}
                         onChange={(event) => {
-                          const search = event.target.value;
-                          setStaffSearch(search);
-                          const staff = staffChoices.find(
-                            (entry) => entry.name.toLowerCase() === search.trim().toLowerCase(),
-                          );
-                          if (staff) {
-                            setSelectedStaffId(staff.id);
-                            setSelectedStudentId("");
-                            viewPublished("faculty", staff.id);
-                          } else if (!search) {
-                            setSelectedStaffId("");
-                            load();
-                          }
+                          const staffId = event.target.value;
+                          setSelectedStaffId(staffId);
+                          if (staffId) viewPublished("faculty", staffId);
+                          else load();
                         }}
-                      />
-                      <datalist id="ttm-staff-options">
-                        {staffChoices.map((staff) => <option key={staff.id} value={staff.name} />)}
-                      </datalist>
+                      >
+                        <option value="">Select staff</option>
+                        {staffChoices.map((staff) => <option key={staff.id} value={staff.id}>{staff.name}</option>)}
+                      </select>
                     </label>
                     <label className="ttm-inline-filter ttm-person-select">
                       <select
@@ -1960,11 +1926,7 @@ function Draft({ initial, notify }) {
                                   <i className="ttm-slot-edit">Edit</i>
                                 </>
                               ) : (
-                                slotsLoading
-                                  ? "Loading…"
-                                  : selectedStaffId
-                                    ? <span className="ttm-empty-slot" aria-label="No class assigned">—</span>
-                                    : "No generated subject"
+                                slotsLoading ? "Loading…" : "No generated subject"
                               )}
                             </button>
                           </td>

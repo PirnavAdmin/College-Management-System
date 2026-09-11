@@ -19,7 +19,6 @@ namespace CollegeManagement.API.Controllers.V1
     [Route("api/v{version:apiVersion}/staff")]
     [EnableCors("AllowFrontend")]
     [Produces("application/json")]
-    [Authorize]
     public class StaffSubjectAllocationController : ControllerBase
     {
         private readonly IStaffService _staffService;

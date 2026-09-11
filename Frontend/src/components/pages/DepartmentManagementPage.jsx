@@ -39,6 +39,221 @@ export const toApiStaffType = (uiValue) => {
   return uiValue;
 };
 
+export const NON_TEACHING_DEPARTMENTS_SET = new Set([
+  "administration",
+  "accounts",
+  "accounts & finance",
+  "accounts and finance",
+  "finance",
+  "library",
+  "maintenance",
+  "maintenance & facilities",
+  "transport",
+  "transportation",
+  "security",
+  "human resources",
+  "hr",
+  "admissions",
+  "campus operations",
+  "operations",
+  "student affairs",
+  "hostel",
+  "hostel management",
+  "housekeeping",
+  "estate",
+  "facilities",
+  "it support",
+  "it & systems support",
+  "examinations",
+  "examinations cell",
+]);
+
+export const NON_TEACHING_DESIGNATIONS_SET = new Set([
+  "account",
+  "administrator",
+  "administrative officer",
+  "office administrator",
+  "accountant",
+  "senior accountant",
+  "junior accountant",
+  "accounts executive",
+  "finance executive",
+  "cashier",
+  "office assistant",
+  "attender",
+  "peon",
+  "attender / peon",
+  "clerk",
+  "data entry operator",
+  "deo",
+  "driver",
+  "bus driver",
+  "electrician",
+  "plumber",
+  "carpenter",
+  "hr executive",
+  "hr manager",
+  "librarian",
+  "library assistant",
+  "assistant librarian",
+  "maintenance supervisor",
+  "maintenance staff",
+  "receptionist",
+  "front desk executive",
+  "security guard",
+  "security supervisor",
+  "security officer",
+  "transport coordinator",
+  "transport incharge",
+  "warden",
+  "hostel warden",
+  "assistant warden",
+  "cleaner",
+  "watchman",
+  "lab assistant",
+  "store keeper",
+  "gardener",
+  "operations manager",
+  "facility supervisor",
+]);
+
+export const isOther = (name) => {
+  if (!name) return false;
+  const s = String(typeof name === "object" ? name.name || name.designationName || name.departmentName || name.label || name.value || "" : name).trim().toLowerCase();
+  return s === "other" || s === "others";
+};
+
+export const isNonTeachingDeptName = (name) => {
+  if (!name) return false;
+  const norm = String(typeof name === "object" ? name.name || name.departmentName || "" : name).trim().toLowerCase();
+  return (
+    norm === "other" ||
+    norm === "others" ||
+    NON_TEACHING_DEPARTMENTS_SET.has(norm) ||
+    norm.includes("admin") ||
+    norm.includes("account") ||
+    norm.includes("librar") ||
+    norm.includes("maint") ||
+    norm.includes("transp") ||
+    norm.includes("secur") ||
+    norm.includes("hostel") ||
+    norm.includes("operation") ||
+    norm.includes("human resource") ||
+    norm.includes("admission") ||
+    norm.includes("facility")
+  );
+};
+
+export const isNonTeachingDesigName = (name) => {
+  if (!name) return false;
+  const norm = String(typeof name === "object" ? name.name || name.designationName || "" : name).trim().toLowerCase();
+  return (
+    norm === "other" ||
+    norm === "others" ||
+    norm === "account" ||
+    NON_TEACHING_DESIGNATIONS_SET.has(norm) ||
+    norm.includes("account") ||
+    norm.includes("driver") ||
+    norm.includes("peon") ||
+    norm.includes("attender") ||
+    norm.includes("clerk") ||
+    norm.includes("librar") ||
+    norm.includes("reception") ||
+    norm.includes("guard") ||
+    norm.includes("electrician") ||
+    norm.includes("plumber") ||
+    norm.includes("warden") ||
+    norm.includes("office assistant") ||
+    norm.includes("data entry")
+  );
+};
+
+export const DEFAULT_TEACHING_DEPARTMENTS = [
+  { id: "td-1", name: "Accountancy", code: "ACC", staffType: "Teaching", status: "Active" },
+  { id: "td-2", name: "Biology", code: "BIO", staffType: "Teaching", status: "Active" },
+  { id: "td-3", name: "Biotechnology", code: "BT", staffType: "Teaching", status: "Active" },
+  { id: "td-4", name: "Botany", code: "BOT", staffType: "Teaching", status: "Active" },
+  { id: "td-5", name: "Business Studies", code: "BST", staffType: "Teaching", status: "Active" },
+  { id: "td-6", name: "Chemistry", code: "CHE", staffType: "Teaching", status: "Active" },
+  { id: "td-7", name: "Civics", code: "CIV", staffType: "Teaching", status: "Active" },
+  { id: "td-8", name: "Commerce", code: "COM", staffType: "Teaching", status: "Active" },
+  { id: "td-9", name: "Computer Science", code: "CSC", staffType: "Teaching", status: "Active" },
+  { id: "td-10", name: "Economics", code: "ECO", staffType: "Teaching", status: "Active" },
+  { id: "td-11", name: "Electronics", code: "ELE", staffType: "Teaching", status: "Active" },
+  { id: "td-12", name: "English", code: "ENG", staffType: "Teaching", status: "Active" },
+  { id: "td-13", name: "Geography", code: "GEO", staffType: "Teaching", status: "Active" },
+  { id: "td-14", name: "Hindi", code: "HIN", staffType: "Teaching", status: "Active" },
+  { id: "td-15", name: "History", code: "HIS", staffType: "Teaching", status: "Active" },
+  { id: "td-16", name: "Information Technology", code: "IT", staffType: "Teaching", status: "Active" },
+  { id: "td-17", name: "Languages", code: "LANG", staffType: "Teaching", status: "Active" },
+  { id: "td-18", name: "Mathematics", code: "MAT", staffType: "Teaching", status: "Active" },
+  { id: "td-19", name: "Physics", code: "PHY", staffType: "Teaching", status: "Active" },
+  { id: "td-20", name: "Political Science", code: "POL", staffType: "Teaching", status: "Active" },
+  { id: "td-21", name: "Sanskrit", code: "SAN", staffType: "Teaching", status: "Active" },
+  { id: "td-22", name: "Sociology", code: "SOC", staffType: "Teaching", status: "Active" },
+  { id: "td-23", name: "Statistics", code: "STA", staffType: "Teaching", status: "Active" },
+  { id: "td-24", name: "Telugu", code: "TEL", staffType: "Teaching", status: "Active" },
+  { id: "td-25", name: "Zoology", code: "ZOO", staffType: "Teaching", status: "Active" },
+];
+
+export const DEFAULT_NON_TEACHING_DEPARTMENTS = [
+  { id: "ntd-1", name: "Accounts & Finance", code: "ACC_FIN", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-2", name: "Administration", code: "ADMIN", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-3", name: "Admissions", code: "ADM", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-4", name: "Campus Operations", code: "OPS", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-5", name: "Examinations Cell", code: "EXAM", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-6", name: "Hostel Management", code: "HSTL", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-7", name: "Human Resources", code: "HR", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-8", name: "IT & Systems Support", code: "IT_SYS", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-9", name: "Library", code: "LIB", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-10", name: "Maintenance & Facilities", code: "MAINT", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-11", name: "Security", code: "SEC", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-12", name: "Student Affairs", code: "SA", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntd-13", name: "Transport", code: "TPT", staffType: "Non-Teaching", status: "Active" },
+];
+
+export const DEFAULT_TEACHING_DESIGNATIONS = [
+  { id: "tdes-1", name: "Principal", code: "PRN", staffType: "Teaching", status: "Active" },
+  { id: "tdes-2", name: "Vice Principal", code: "VPRN", staffType: "Teaching", status: "Active" },
+  { id: "tdes-3", name: "Dean", code: "DEAN", staffType: "Teaching", status: "Active" },
+  { id: "tdes-4", name: "Head of Department (HOD)", code: "HOD", staffType: "Teaching", status: "Active" },
+  { id: "tdes-5", name: "Professor", code: "PROF", staffType: "Teaching", status: "Active" },
+  { id: "tdes-6", name: "Associate Professor", code: "ASSO_PROF", staffType: "Teaching", status: "Active" },
+  { id: "tdes-7", name: "Assistant Professor", code: "ASST_PROF", staffType: "Teaching", status: "Active" },
+  { id: "tdes-8", name: "Senior Lecturer", code: "SR_LEC", staffType: "Teaching", status: "Active" },
+  { id: "tdes-9", name: "Lecturer", code: "LEC", staffType: "Teaching", status: "Active" },
+  { id: "tdes-10", name: "Junior Lecturer", code: "JR_LEC", staffType: "Teaching", status: "Active" },
+  { id: "tdes-11", name: "Academic Coordinator", code: "ACAD_COORD", staffType: "Teaching", status: "Active" },
+  { id: "tdes-12", name: "Subject Expert", code: "SUB_EXP", staffType: "Teaching", status: "Active" },
+  { id: "tdes-13", name: "Lab Incharge", code: "LAB_INC", staffType: "Teaching", status: "Active" },
+  { id: "tdes-14", name: "Guest Faculty", code: "GST_FAC", staffType: "Teaching", status: "Active" },
+  { id: "tdes-15", name: "Visiting Faculty", code: "VIS_FAC", staffType: "Teaching", status: "Active" },
+];
+
+export const DEFAULT_NON_TEACHING_DESIGNATIONS = [
+  { id: "ntdes-1", name: "Administrative Officer", code: "AO", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-2", name: "Office Administrator", code: "OFF_ADM", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-3", name: "Office Assistant", code: "OFF_AST", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-4", name: "Accountant", code: "ACCT", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-5", name: "Senior Accountant", code: "SR_ACCT", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-6", name: "Finance Executive", code: "FIN_EXEC", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-7", name: "Cashier", code: "CSH", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-8", name: "Librarian", code: "LIBN", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-9", name: "Assistant Librarian", code: "AST_LIB", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-10", name: "Library Assistant", code: "LIB_AST", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-11", name: "Maintenance Supervisor", code: "MAINT_SUP", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-12", name: "Electrician", code: "ELEC", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-13", name: "Plumber", code: "PLMB", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-14", name: "Attender / Peon", code: "ATTN", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-15", name: "Clerk", code: "CLRK", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-16", name: "Data Entry Operator", code: "DEO", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-17", name: "Driver", code: "DRV", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-18", name: "Receptionist", code: "RECP", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-19", name: "Security Guard", code: "SEC_GRD", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-20", name: "Transport Coordinator", code: "TPT_COORD", staffType: "Non-Teaching", status: "Active" },
+  { id: "ntdes-21", name: "Hostel Warden", code: "HSTL_WDN", staffType: "Non-Teaching", status: "Active" },
+];
+
 const unwrapRows = (payload) => {
   const value = payload?.data ?? payload?.Data ?? payload;
   if (Array.isArray(value)) return value;
@@ -53,35 +268,47 @@ const pick = (row, ...keys) =>
     .map((key) => row?.[key])
     .find((value) => value !== undefined && value !== null && value !== "");
 
-export const normalizeDepartment = (row) => ({
-  id: pick(row, "departmentId", "DepartmentId", "id", "Id"),
-  departmentId: pick(row, "departmentId", "DepartmentId", "id", "Id"),
-  name: String(pick(row, "departmentName", "DepartmentName", "name", "Name") || "").trim(),
-  departmentName: String(pick(row, "departmentName", "DepartmentName", "name", "Name") || "").trim(),
-  code: String(pick(row, "departmentCode", "DepartmentCode", "code", "Code") || "—").trim(),
-  departmentCode: String(pick(row, "departmentCode", "DepartmentCode", "code", "Code") || "—").trim(),
-  staffType: String(pick(row, "staffType", "StaffType") || "Teaching").trim(),
-  description: String(pick(row, "description", "Description") || "—").trim(),
-  isActive: Boolean(pick(row, "isActive", "IsActive") ?? true),
-  status:
-    pick(row, "isActive", "IsActive") === false ||
-    String(pick(row, "status", "Status") || "").toLowerCase() === "inactive"
-      ? "Inactive"
-      : "Active",
-  createdAt: pick(row, "createdAt", "CreatedAt") || null,
-  updatedAt: pick(row, "updatedAt", "UpdatedAt") || null,
-});
+export const normalizeDepartment = (row) => {
+  const name = String(pick(row, "departmentName", "DepartmentName", "name", "Name") || "").trim();
+  const rawStaffType = pick(row, "staffType", "StaffType");
+  const staffType = rawStaffType
+    ? String(rawStaffType).trim()
+    : (isNonTeachingDeptName(name) ? "Non-Teaching" : "Teaching");
+  return {
+    id: pick(row, "departmentId", "DepartmentId", "id", "Id"),
+    departmentId: pick(row, "departmentId", "DepartmentId", "id", "Id"),
+    name,
+    departmentName: name,
+    code: String(pick(row, "departmentCode", "DepartmentCode", "code", "Code") || "—").trim(),
+    departmentCode: String(pick(row, "departmentCode", "DepartmentCode", "code", "Code") || "—").trim(),
+    staffType,
+    description: String(pick(row, "description", "Description") || "—").trim(),
+    isActive: Boolean(pick(row, "isActive", "IsActive") ?? true),
+    status:
+      pick(row, "isActive", "IsActive") === false ||
+      String(pick(row, "status", "Status") || "").toLowerCase() === "inactive"
+        ? "Inactive"
+        : "Active",
+    createdAt: pick(row, "createdAt", "CreatedAt") || null,
+    updatedAt: pick(row, "updatedAt", "UpdatedAt") || null,
+  };
+};
 
 export const normalizeDesignation = (row) => {
   const idVal = pick(row, "id", "Id", "designationId", "DesignationId");
+  const name = String(pick(row, "designationName", "DesignationName", "name", "Name") || "").trim();
+  const rawStaffType = pick(row, "staffType", "StaffType");
+  const staffType = rawStaffType
+    ? String(rawStaffType).trim()
+    : (isNonTeachingDesigName(name) ? "Non-Teaching" : "Teaching");
   return {
     id: idVal,
     designationId: idVal,
-    name: String(pick(row, "designationName", "DesignationName", "name", "Name") || "").trim(),
-    designationName: String(pick(row, "designationName", "DesignationName", "name", "Name") || "").trim(),
+    name,
+    designationName: name,
     code: String(pick(row, "designationCode", "DesignationCode", "code", "Code") || "—").trim(),
     designationCode: String(pick(row, "designationCode", "DesignationCode", "code", "Code") || "—").trim(),
-    staffType: String(pick(row, "staffType", "StaffType") || "Teaching").trim(),
+    staffType,
     isActive: Boolean(pick(row, "isActive", "IsActive") ?? true),
     status:
       pick(row, "isActive", "IsActive") === false ||
@@ -353,10 +580,31 @@ export default function DepartmentManagementPage() {
 
   // Department Client-side Filtering
   const filteredDepartments = useMemo(() => {
-    const byStaff = departments.filter((item) => isStaffTypeMatch(item.staffType, staffType));
+    const isTeaching = staffType === "Teaching";
+    const seen = new Set();
+    const result = [];
+
+    const sourceList = departments.length > 0 ? departments : (isTeaching ? DEFAULT_TEACHING_DEPARTMENTS : DEFAULT_NON_TEACHING_DEPARTMENTS);
+
+    for (const item of sourceList) {
+      if (!item || !item.name) continue;
+      const dName = item.name.trim();
+      const norm = dName.toLowerCase();
+      if (isOther(norm)) continue;
+
+      const isNonTeaching = isNonTeachingDeptName(norm);
+      if (isTeaching && isNonTeaching) continue;
+      if (!isTeaching && !isNonTeaching) continue;
+
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        result.push(item);
+      }
+    }
+
     const q = deptQuery.trim().toLowerCase();
-    if (!q) return byStaff;
-    return byStaff.filter((item) =>
+    if (!q) return result;
+    return result.filter((item) =>
       [item.name, item.code, item.description, item.staffType].some((val) =>
         String(val || "").toLowerCase().includes(q)
       )
@@ -373,10 +621,31 @@ export default function DepartmentManagementPage() {
 
   // Designation Client-side Filtering
   const filteredDesignations = useMemo(() => {
-    const byStaff = designations.filter((item) => isStaffTypeMatch(item.staffType, staffType));
+    const isTeaching = staffType === "Teaching";
+    const seen = new Set();
+    const result = [];
+
+    const sourceList = designations.length > 0 ? designations : (isTeaching ? DEFAULT_TEACHING_DESIGNATIONS : DEFAULT_NON_TEACHING_DESIGNATIONS);
+
+    for (const item of sourceList) {
+      if (!item || !item.name) continue;
+      const dName = item.name.trim();
+      const norm = dName.toLowerCase();
+      if (isOther(norm)) continue;
+
+      const isNonTeaching = isNonTeachingDesigName(norm);
+      if (isTeaching && isNonTeaching) continue;
+      if (!isTeaching && !isNonTeaching) continue;
+
+      if (!seen.has(norm)) {
+        seen.add(norm);
+        result.push(item);
+      }
+    }
+
     const q = designationQuery.trim().toLowerCase();
-    if (!q) return byStaff;
-    return byStaff.filter((item) =>
+    if (!q) return result;
+    return result.filter((item) =>
       [item.name, item.code, item.staffType].some((val) =>
         String(val || "").toLowerCase().includes(q)
       )
@@ -423,19 +692,19 @@ export default function DepartmentManagementPage() {
     setDeletingDesig(true);
     try {
       await apiClient.delete(apiEndpoints.designations.delete(pendingDeleteDesig.id));
-      setToast(`Designation "${pendingDeleteDesig.name}" deleted successfully.`);
+      setToast({ message: `Designation "${pendingDeleteDesig.name}" deleted successfully.`, type: "success" });
       setDesignations((prev) => prev.filter((d) => d.id !== pendingDeleteDesig.id));
     } catch (error) {
       const status = error?.response?.status;
       if (status === 404) {
-        setToast("Designation was not found on the server.");
+        setToast({ message: "Designation was not found on the server.", type: "warning" });
         setDesignations((prev) => prev.filter((d) => d.id !== pendingDeleteDesig.id));
       } else {
         const msg = getApiErrorMessage(
           error,
           "This designation cannot be deleted because it is currently assigned to staff."
         );
-        setToast(msg);
+        setToast({ message: msg, type: "error" });
       }
     } finally {
       setDeletingDesig(false);
@@ -563,7 +832,7 @@ export default function DepartmentManagementPage() {
                             <button
                               className="master-icon-button"
                               aria-label={`View ${item.name}`}
-                              onClick={() => navigate(`/dashboard/departments/${item.id}/view`)}
+                              onClick={() => navigate(`/dashboard/departments/${item.id}/view`, { state: { department: item } })}
                             >
                               <Eye />
                             </button>
@@ -751,47 +1020,69 @@ export default function DepartmentManagementPage() {
         />
       ) : null}
 
-      {toast ? <Toast message={toast} onClose={() => setToast("")} /> : null}
+      {toast ? (
+        <Toast
+          message={typeof toast === "object" ? toast.message : toast}
+          type={typeof toast === "object" ? toast.type || "success" : "success"}
+          onClose={() => setToast(null)}
+        />
+      ) : null}
     </DashboardLayout>
   );
 }
 
 // ----------------------------------------------------------------------
-// DEPARTMENT DETAILS PAGE
+// DEPARTMENT DETAILS PAGE (GET /api/v1/departments/{id})
 // ----------------------------------------------------------------------
 export function DepartmentDetailsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
-  const [department, setDepartment] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [department, setDepartment] = useState(location.state?.department || null);
+  const [loading, setLoading] = useState(!department);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (department) return;
     let active = true;
-    apiClient
-      .get(apiEndpoints.departments.getAll, { skipGlobalLoader: true })
-      .then((response) => {
+    setLoading(true);
+
+    const loadDept = async () => {
+      try {
+        if (apiEndpoints.departments.getById) {
+          const res = await apiClient.get(apiEndpoints.departments.getById(id), { skipGlobalLoader: true });
+          if (!active) return;
+          setDepartment(normalizeDepartment(res.data));
+          return;
+        }
+      } catch (err) {
+        console.warn("Direct department fetch failed, falling back to list:", err);
+      }
+
+      try {
+        const res = await apiClient.get(apiEndpoints.departments.getAll, { skipGlobalLoader: true });
         if (!active) return;
-        const list = unwrapRows(response.data).map(normalizeDepartment);
+        const list = unwrapRows(res.data).map(normalizeDepartment);
         const match = list.find((item) => String(item.id) === String(id));
         if (match) {
           setDepartment(match);
         } else {
           setError("Department details were not found.");
         }
-      })
-      .catch((requestError) => {
+      } catch (requestError) {
         if (!active) return;
         setError(getApiErrorMessage(requestError, "Department details could not be loaded."));
-      })
-      .finally(() => {
+      } finally {
         if (active) setLoading(false);
-      });
+      }
+    };
+
+    loadDept();
 
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, department]);
 
   return (
     <DashboardLayout
@@ -825,11 +1116,19 @@ export function DepartmentDetailsPage() {
             <p className="master-details-state">Loading department details...</p>
           ) : error ? (
             <p className="master-details-state">{error}</p>
-          ) : (
+          ) : department ? (
             <dl>
               <div>
                 <dt>Department Name</dt>
                 <dd>{department.name}</dd>
+              </div>
+              <div>
+                <dt>Department Code</dt>
+                <dd><code>{department.code}</code></dd>
+              </div>
+              <div>
+                <dt>Staff Type</dt>
+                <dd>{department.staffType}</dd>
               </div>
               <div>
                 <dt>Status</dt>
@@ -837,7 +1136,15 @@ export function DepartmentDetailsPage() {
                   <StatusBadge value={department.status} />
                 </dd>
               </div>
+              {department.description && department.description !== "—" ? (
+                <div className="is-wide">
+                  <dt>Description</dt>
+                  <dd>{department.description}</dd>
+                </div>
+              ) : null}
             </dl>
+          ) : (
+            <p className="master-details-state">Department details could not be found.</p>
           )}
         </section>
       </main>
@@ -960,7 +1267,6 @@ export function MasterFormPage({ kind }) {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(edit);
   const [submitting, setSubmitting] = useState(false);
-  const [apiNotice, setApiNotice] = useState("");
 
   const fields = formDefinitions[kind];
 
@@ -970,25 +1276,41 @@ export function MasterFormPage({ kind }) {
     setLoading(true);
 
     if (kind === "department") {
-      setApiNotice("Department update API is not available in the current backend contract.");
-      apiClient
-        .get(apiEndpoints.departments.getAll, { skipGlobalLoader: true })
-        .then((res) => {
+      const loadDept = async () => {
+        try {
+          const res = await apiClient.get(apiEndpoints.departments.getById(id), { skipGlobalLoader: true });
           if (!active) return;
-          const match = unwrapRows(res.data).map(normalizeDepartment).find((d) => String(d.id) === String(id));
-          if (match) {
-            setValues({
-              departmentName: match.name,
-              departmentCode: match.code,
-              description: match.description !== "—" ? match.description : "",
-              status: match.status,
-              staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : "Teaching",
-            });
+          const match = normalizeDepartment(res.data);
+          setValues({
+            departmentName: match.name,
+            departmentCode: match.code !== "—" ? match.code : "",
+            description: match.description !== "—" ? match.description : "",
+            status: match.status,
+            staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : match.staffType,
+          });
+        } catch {
+          try {
+            const res = await apiClient.get(apiEndpoints.departments.getAll, { skipGlobalLoader: true });
+            if (!active) return;
+            const match = unwrapRows(res.data).map(normalizeDepartment).find((d) => String(d.id) === String(id));
+            if (match) {
+              setValues({
+                departmentName: match.name,
+                departmentCode: match.code !== "—" ? match.code : "",
+                description: match.description !== "—" ? match.description : "",
+                status: match.status,
+                staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : match.staffType,
+              });
+            }
+          } catch (err) {
+            if (!active) return;
+            setErrors({ apiError: getApiErrorMessage(err, "Failed to load department details.") });
           }
-        })
-        .finally(() => {
+        } finally {
           if (active) setLoading(false);
-        });
+        }
+      };
+      loadDept();
     } else {
       // Edit Designation: GET /api/v1/designations/{id}
       apiClient
@@ -999,7 +1321,7 @@ export function MasterFormPage({ kind }) {
           setValues({
             designationName: match.name,
             status: match.status,
-            staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : "Teaching",
+            staffType: match.staffType === "NonTeaching" ? "Non-Teaching" : match.staffType,
           });
         })
         .catch((err) => {
@@ -1019,11 +1341,6 @@ export function MasterFormPage({ kind }) {
   const submit = async (event) => {
     event.preventDefault();
 
-    if (kind === "department" && edit) {
-      setErrors({ apiError: "Department update API is not supported by the backend." });
-      return;
-    }
-
     const nextErrors = {};
     fields.forEach(([name, fieldLabel, required]) => {
       if (required && !String(values[name] ?? "").trim()) {
@@ -1037,16 +1354,20 @@ export function MasterFormPage({ kind }) {
     setSubmitting(true);
     try {
       if (kind === "department") {
-        const deptCode = values.departmentCode?.trim() || values.departmentName.trim().toUpperCase().replace(/\s+/g, "_").slice(0, 10);
+        const deptCode = values.departmentCode?.trim() || values.departmentName.trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").slice(0, 10);
         const payload = {
-          departmentId: 0,
+          departmentId: Number(id) || 0,
           departmentName: values.departmentName.trim(),
           departmentCode: deptCode,
           staffType: toApiStaffType(values.staffType || "Teaching"),
           description: values.description ? values.description.trim() : "",
           isActive: values.status === "Active",
         };
-        await apiClient.post(apiEndpoints.departments.create, payload);
+        if (edit) {
+          await apiClient.put(apiEndpoints.departments.update(id), payload);
+        } else {
+          await apiClient.post(apiEndpoints.departments.create, payload);
+        }
         navigate("/dashboard/departments");
       } else {
         const payload = {
@@ -1099,12 +1420,6 @@ export function MasterFormPage({ kind }) {
               </div>
             </header>
 
-            {apiNotice && (
-              <div className="master-contract-note" style={{ marginBottom: 16 }}>
-                <Info /> <span>{apiNotice}</span>
-              </div>
-            )}
-
             {errors.apiError && (
               <div className="master-form-error-alert" style={{ marginBottom: 16, color: "#dc2626" }}>
                 <Info /> <span>{errors.apiError}</span>
@@ -1121,7 +1436,6 @@ export function MasterFormPage({ kind }) {
                     </span>
                     {type === "select" ? (
                       <select
-                        disabled={kind === "department" && edit}
                         value={values[name] ?? ""}
                         onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
                       >
@@ -1132,7 +1446,6 @@ export function MasterFormPage({ kind }) {
                       </select>
                     ) : type === "textarea" ? (
                       <textarea
-                        readOnly={kind === "department" && edit}
                         value={values[name] ?? ""}
                         placeholder={placeholder}
                         onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
@@ -1140,7 +1453,6 @@ export function MasterFormPage({ kind }) {
                     ) : (
                       <input
                         type={type}
-                        readOnly={kind === "department" && edit}
                         value={values[name] ?? ""}
                         placeholder={placeholder}
                         onChange={(e) => setValues((v) => ({ ...v, [name]: e.target.value }))}
@@ -1164,7 +1476,7 @@ export function MasterFormPage({ kind }) {
               <button
                 type="submit"
                 className="cms-btn primary"
-                disabled={submitting || (kind === "department" && edit)}
+                disabled={submitting}
               >
                 {submitting ? "Saving..." : `Save ${label}`}
               </button>
@@ -1177,7 +1489,7 @@ export function MasterFormPage({ kind }) {
 }
 
 // ----------------------------------------------------------------------
-// EXCEL IMPORT PAGE (VALIDATION PREVIEW ONLY, NO BACKEND BULK UPLOAD API)
+// EXCEL IMPORT PAGE (EXCEL IMPORT API INTEGRATION & PREVIEW)
 // ----------------------------------------------------------------------
 const importColumns = {
   department: [
@@ -1198,10 +1510,35 @@ export function MasterImportPage({ kind }) {
   const navigate = useNavigate();
   const label = kind === "department" ? "Departments" : "Designations";
   const [rows, setRows] = useState([]);
+  const [rawFile, setRawFile] = useState(null);
   const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [fileName, setFileName] = useState("");
+  const [importError, setImportError] = useState("");
 
-  const download = () => {
+  const download = async () => {
+    try {
+      const endpoint = kind === "department"
+        ? apiEndpoints.departments.exportTemplate
+        : apiEndpoints.designations.exportTemplate;
+      if (endpoint) {
+        const res = await apiClient.get(endpoint, { responseType: "blob" });
+        const blob = new Blob([res.data], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${kind}-import-template.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        return;
+      }
+    } catch {
+      // Fallback to client-side XLSX generation
+    }
     const sheet = XLSX.utils.aoa_to_sheet([importColumns[kind]]);
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, label);
@@ -1210,8 +1547,10 @@ export function MasterImportPage({ kind }) {
 
   const parse = async (file) => {
     if (!file) return;
+    setRawFile(file);
     setParsing(true);
     setFileName(file.name);
+    setImportError("");
     try {
       const data = await file.arrayBuffer();
       const book = XLSX.read(data);
@@ -1244,6 +1583,28 @@ export function MasterImportPage({ kind }) {
     }
   };
 
+  const handleImport = async () => {
+    if (!rawFile) return;
+    setImporting(true);
+    setImportError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", rawFile);
+      formData.append("DefaultStaffType", "Teaching");
+      const endpoint = kind === "department"
+        ? apiEndpoints.departments.importExcel
+        : apiEndpoints.designations.importExcel;
+      await apiClient.post(endpoint, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      navigate("/dashboard/departments");
+    } catch (err) {
+      setImportError(getApiErrorMessage(err, `Failed to import ${label.toLowerCase()}.`));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const valid = rows.filter((row) => !row.problems.length).length;
   const duplicates = rows.filter((row) =>
     row.problems.some((problem) => problem.startsWith("Duplicate"))
@@ -1252,7 +1613,7 @@ export function MasterImportPage({ kind }) {
   return (
     <DashboardLayout
       title={`Import ${label}`}
-      subtitle={`Validate ${label.toLowerCase()} before importing.`}
+      subtitle={`Validate and import ${label.toLowerCase()}.`}
       breadcrumb={["Administration", "Department Management"]}
     >
       <main className="master-import">
@@ -1269,6 +1630,13 @@ export function MasterImportPage({ kind }) {
               <Download /> Download Template
             </button>
           </header>
+
+          {importError && (
+            <div className="master-form-error-alert" style={{ marginBottom: 16, color: "#dc2626" }}>
+              <Info /> <span>{importError}</span>
+            </div>
+          )}
+
           <label className="master-drop">
             <Upload />
             <strong>
@@ -1278,7 +1646,7 @@ export function MasterImportPage({ kind }) {
             <input
               type="file"
               accept=".xlsx,.xls"
-              disabled={parsing}
+              disabled={parsing || importing}
               onChange={(event) => parse(event.target.files?.[0])}
             />
           </label>
@@ -1322,12 +1690,14 @@ export function MasterImportPage({ kind }) {
                   </tbody>
                 </table>
               </div>
-              <aside className="master-contract-note">
-                <Info /> Preview is complete. Bulk import API is not available in the current backend contract.
-              </aside>
               <footer>
-                <button className="cms-btn primary" disabled>
-                  Import {label}
+                <button
+                  type="button"
+                  className="cms-btn primary"
+                  disabled={importing || parsing || !rawFile}
+                  onClick={handleImport}
+                >
+                  {importing ? "Importing..." : `Import ${label}`}
                 </button>
               </footer>
             </>

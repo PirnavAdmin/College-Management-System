@@ -16,7 +16,6 @@ namespace CollegeManagement.API.Controllers.V1
     [Route("api/v{version:apiVersion}/timetable")]
     [EnableCors("AllowFrontend")]
     [Produces("application/json")]
-    [Authorize]
     public class TimetableSubstitutionController : ControllerBase
     {
         private readonly ITimetableSubstitutionService _substitutionService;

@@ -8,7 +8,6 @@ import apiClient from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import { useSidebar } from "@/hooks/useSidebar.js";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
-import { clearAuthSession, getAuthUser } from "@/features/authStorage.js";
 import pirnavCollegesLogo from "@/assets/pirnav-colleges-logo.png";
 import dashboardIcon from "@/assets/sidebar-3d/dashboard.png";
 import boardAcademicYearIcon from "@/assets/sidebar-3d/board-academic-year.png";
@@ -274,7 +273,11 @@ const uniqueBreadcrumbLabels = (labels, currentTitle) => {
 };
 
 function readUser() {
-  return getAuthUser();
+  try {
+    return JSON.parse(localStorage.getItem("user") || "null");
+  } catch {
+    return null;
+  }
 }
 
 function initials(name = "CMS Admin") {
@@ -423,7 +426,9 @@ export default function DashboardLayout({
   };
 
   const logout = () => {
-    clearAuthSession();
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("role");
     setProfileOpen(false);
     navigate("/login", { replace: true });
   };

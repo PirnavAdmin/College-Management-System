@@ -217,46 +217,46 @@ const getScheduleInvigilatorIds = (schedule) =>
     .map(normalizeId)
     .filter((id) => id && id !== "0" && id !== "undefined" && id !== "null");
 
-const getRoomAllocatedCount = (schedules, roomId, date, startTime, endTime, editingId = null) => {
-  return schedules
+const getRoomAllocatedCount = (schedules = [], roomId, date, startTime, endTime, editingId = null) => {
+  return (Array.isArray(schedules) ? schedules : [])
     .filter(
       (s) =>
-        normalizeId(s.id) !== normalizeId(editingId) &&
-        s.date === date &&
-        hasTimeOverlap(startTime, endTime, s.startTime, s.endTime),
+        normalizeId(s?.id) !== normalizeId(editingId) &&
+        s?.date === date &&
+        hasTimeOverlap(startTime, endTime, s?.startTime, s?.endTime),
     )
-    .flatMap((s) => s.hallAssignments || [])
-    .filter((a) => normalizeId(a.hallId) === normalizeId(roomId))
-    .reduce((sum, a) => sum + (Number(a.candidateCount) || 0), 0);
+    .flatMap((s) => s?.hallAssignments || [])
+    .filter((a) => normalizeId(a?.hallId) === normalizeId(roomId))
+    .reduce((sum, a) => sum + (Number(a?.candidateCount) || 0), 0);
 };
 
-const getEligibleRooms = (schedules, entry, editingId = null, exam = null, roomsList = []) => {
+const getEligibleRooms = (schedules = [], entry = {}, editingId = null, exam = null, roomsList = []) => {
   const selectedLevels = (exam?.levelIds || [exam?.levelId]).filter(Boolean).map(normalizeId);
-  return roomsList.filter((room) => {
-    if (room.status !== "Active" && room.isActive === false) return false;
+  return (Array.isArray(roomsList) ? roomsList : []).filter((room) => {
+    if (room?.status !== "Active" && room?.isActive === false) return false;
     // Level filtering: If room is level specific (e.g. 1st year / 2nd year classroom), exam must include that level
-    if (room.levelId && room.levelId !== "ALL") {
+    if (room?.levelId && room?.levelId !== "ALL") {
       if (selectedLevels.length > 0 && !selectedLevels.includes(normalizeId(room.levelId))) {
         return false;
       }
     }
     // Room capacity check
-    const allocated = getRoomAllocatedCount(schedules, room.id, entry.date, entry.startTime, entry.endTime, editingId);
-    return allocated < (Number(room.capacity) || 60);
+    const allocated = getRoomAllocatedCount(schedules, room?.id, entry?.date, entry?.startTime, entry?.endTime, editingId);
+    return allocated < (Number(room?.capacity) || 60);
   });
 };
 
-const getEligibleInvigilators = (schedules, entry, editingId = null, facultyList = []) =>
-  facultyList.filter(
+const getEligibleInvigilators = (schedules = [], entry = {}, editingId = null, facultyList = []) =>
+  (Array.isArray(facultyList) ? facultyList : []).filter(
     (f) =>
-      f.isActive !== false &&
-      f.status !== "Inactive" &&
-      !schedules.some(
+      f?.isActive !== false &&
+      f?.status !== "Inactive" &&
+      !(Array.isArray(schedules) ? schedules : []).some(
         (s) =>
-          normalizeId(s.id) !== normalizeId(editingId) &&
-          s.date === entry.date &&
-          hasTimeOverlap(entry.startTime, entry.endTime, s.startTime, s.endTime) &&
-          getScheduleInvigilatorIds(s).includes(normalizeId(f.id)),
+          normalizeId(s?.id) !== normalizeId(editingId) &&
+          s?.date === entry?.date &&
+          hasTimeOverlap(entry?.startTime, entry?.endTime, s?.startTime, s?.endTime) &&
+          getScheduleInvigilatorIds(s).includes(normalizeId(f?.id)),
       ),
   );
 
@@ -830,6 +830,7 @@ export default function ExaminationPage() {
   const [filters, setFilters] = useState({ groupId: "", programId: "", levelId: "" });
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const showToast = useCallback((message, type = "success") => {
     setToast({ message, type });
@@ -1143,15 +1144,17 @@ export default function ExaminationPage() {
       setRemove(null);
       return;
     }
+    setActionLoading(true);
     try {
       await apiClient.delete(`/api/v1/examinations/${remove.id}`);
       setExams((prev) => prev.filter((item) => String(item.id) !== String(remove.id)));
       setSchedules((prev) => prev.filter((item) => String(item.examId) !== String(remove.id)));
-      showToast(remove.status === "CANCELLED" ? "Cancelled examination deleted." : "Draft examination deleted.", "success");
+      showToast(remove.status === "CANCELLED" ? "Cancelled examination deleted successfully." : "Draft examination deleted successfully.", "success");
     } catch (err) {
       const errMsg = getApiErrorMessage(err) || "Failed to delete examination.";
       showToast(errMsg, "error");
     } finally {
+      setActionLoading(false);
       setRemove(null);
     }
   };
@@ -1159,6 +1162,7 @@ export default function ExaminationPage() {
   // Cancel Examination API Call (PATCH /api/v1/examinations/{examinationId}/cancel)
   const handleCancelExam = async () => {
     if (!cancelExamTarget) return;
+    setActionLoading(true);
     try {
       await apiClient.patch(`/api/v1/examinations/${cancelExamTarget.id}/cancel`);
       setExams((prev) =>
@@ -1169,6 +1173,7 @@ export default function ExaminationPage() {
       const errMsg = getApiErrorMessage(err) || `Failed to cancel examination "${cancelExamTarget.name}".`;
       showToast(errMsg, "error");
     } finally {
+      setActionLoading(false);
       setCancelExamTarget(null);
     }
   };
@@ -1389,10 +1394,10 @@ export default function ExaminationPage() {
     try {
       await updateScheduleInBackend(targetExamId, updatedSchedule.id, updatedSchedule);
       setSchedules((prev) => prev.map((s) => (String(s.id) === String(updatedSchedule.id) ? updatedSchedule : s)));
-      showToast("Halls and invigilator faculty updated in database.", "success");
+      showToast("Hall and invigilator assignments updated successfully.", "success");
     } catch (err) {
       setSchedules((prev) => prev.map((s) => (String(s.id) === String(updatedSchedule.id) ? updatedSchedule : s)));
-      showToast(err.message || "Halls and invigilator faculty updated.", "info");
+      showToast(err.message || "Hall and invigilator assignments updated successfully.", "info");
     }
   };
 
@@ -1400,14 +1405,16 @@ export default function ExaminationPage() {
   const handleDeleteSchedule = async () => {
     if (!removeSchedule) return;
     const targetExamId = removeSchedule.examId || examId;
+    setActionLoading(true);
     try {
       await deleteScheduleFromBackend(targetExamId, removeSchedule.id);
       setSchedules((prev) => prev.filter((item) => String(item.id) !== String(removeSchedule.id)));
-      showToast("Schedule removed from database.", "success");
+      showToast("Schedule removed successfully.", "success");
     } catch (err) {
       setSchedules((prev) => prev.filter((item) => String(item.id) !== String(removeSchedule.id)));
-      showToast("Schedule removed.", "info");
+      showToast("Schedule removed successfully.", "info");
     } finally {
+      setActionLoading(false);
       setRemoveSchedule(null);
     }
   };
@@ -1815,8 +1822,12 @@ export default function ExaminationPage() {
         <ConfirmDialog
           title={remove.status === "CANCELLED" ? "Delete cancelled examination" : "Delete draft examination"}
           message={`Delete ${remove.name}? All associated schedules will be removed.`}
-          onCancel={() => setRemove(null)}
+          onCancel={() => !actionLoading && setRemove(null)}
           onConfirm={handleDeleteExam}
+          loading={actionLoading}
+          loadingLabel="Deleting..."
+          confirmLabel="Delete"
+          danger
         />
       )}
 
@@ -1824,8 +1835,12 @@ export default function ExaminationPage() {
         <ConfirmDialog
           title="Cancel Examination"
           message={`Are you sure you want to cancel "${cancelExamTarget.name}"? This examination will be marked as CANCELLED and will become read-only.`}
-          onCancel={() => setCancelExamTarget(null)}
+          onCancel={() => !actionLoading && setCancelExamTarget(null)}
           onConfirm={handleCancelExam}
+          loading={actionLoading}
+          loadingLabel="Cancelling..."
+          confirmLabel="Cancel Exam"
+          danger
         />
       )}
 
@@ -1833,8 +1848,12 @@ export default function ExaminationPage() {
         <ConfirmDialog
           title="Remove schedule"
           message={`Remove the schedule for ${removeSchedule.subjectName}?`}
-          onCancel={() => setRemoveSchedule(null)}
+          onCancel={() => !actionLoading && setRemoveSchedule(null)}
           onConfirm={handleDeleteSchedule}
+          loading={actionLoading}
+          loadingLabel="Removing..."
+          confirmLabel="Remove"
+          danger
         />
       )}
 
@@ -3037,7 +3056,7 @@ function ExamForm({
             </section>
 
             <div className="cms-form-actions">
-              <button type="button" className="cms-btn cms-btn-ghost" onClick={onCancel}>
+              <button type="button" className="cms-btn cms-btn-ghost" onClick={onCancel} disabled={saving}>
                 Cancel
               </button>
               {!existing ? (
@@ -3049,7 +3068,7 @@ function ExamForm({
                     disabled={saving}
                     onClick={(e) => save(e, false)}
                   >
-                    Save as Draft & View List
+                    {saving ? "Saving..." : "Save as Draft & View List"}
                   </button>
                   <button
                     type="button"
@@ -3905,10 +3924,15 @@ function ScheduleSection({
                     type="button"
                     className="cms-btn cms-btn-primary"
                     style={{ marginLeft: "auto" }}
-                    onClick={() => finalize(exam)}
+                    disabled={processing}
+                    onClick={async () => {
+                      setProcessing(true);
+                      await finalize(exam);
+                      setProcessing(false);
+                    }}
                   >
                     <Check size={15} style={{ marginRight: "4px" }} />
-                    Finalize Schedule
+                    {processing ? "Finalizing Schedule..." : "Finalize Schedule"}
                   </button>
                 )}
               </div>
@@ -4181,6 +4205,7 @@ function ScheduleTable({ entries, groups = [], canEdit, edit, remove, onEditHall
 function EditHallsModal({ schedule, exam, schedules, rooms = [], faculty = [], programs = [], onClose, onSave }) {
   const [assignments, setAssignments] = useState(() => (schedule.hallAssignments || []).map((a) => ({ ...a })));
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const eligibleRooms = getEligibleRooms(schedules, schedule, schedule.id, exam, rooms);
   const eligibleFaculty = getEligibleInvigilators(schedules, schedule, schedule.id, faculty);
@@ -4203,8 +4228,9 @@ function EditHallsModal({ schedule, exam, schedules, rooms = [], faculty = [], p
     setError("");
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
+    if (saving) return;
     const valErrors = validateHallAssignments(
       assignments,
       exam,
@@ -4232,7 +4258,12 @@ function EditHallsModal({ schedule, exam, schedules, rooms = [], faculty = [], p
       roomName: hallNames,
       invigilatorName: invigilatorNames,
     };
-    onSave(updated);
+    setSaving(true);
+    try {
+      await onSave(updated);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -4257,6 +4288,7 @@ function EditHallsModal({ schedule, exam, schedules, rooms = [], faculty = [], p
             className="cms-btn cms-btn-ghost"
             onClick={handleAutoAssign}
             style={{ fontSize: "12px", padding: "4px 10px" }}
+            disabled={saving}
           >
             <Wand2 size={13} style={{ marginRight: "4px" }} /> Auto-Assign Halls & Invigilators
           </button>
@@ -4280,11 +4312,11 @@ function EditHallsModal({ schedule, exam, schedules, rooms = [], faculty = [], p
         )}
 
         <div className="cms-form-actions" style={{ marginTop: "18px" }}>
-          <button type="button" className="cms-btn cms-btn-ghost" onClick={onClose}>
+          <button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button type="submit" className="cms-btn cms-btn-primary">
-            Save Hall & Invigilator Assignments
+          <button type="submit" className="cms-btn cms-btn-primary" disabled={saving}>
+            {saving ? "Saving..." : "Save Hall & Invigilator Assignments"}
           </button>
         </div>
       </form>

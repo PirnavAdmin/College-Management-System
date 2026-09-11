@@ -1,6 +1,5 @@
-﻿import axios from "axios";
+import axios from "axios";
 import { env } from "@/config/env.js";
-import { clearAuthSession, getAuthToken } from "@/features/authStorage.js";
 
 let activeApiRequests = 0;
 const apiLoadingListeners = new Set();
@@ -34,7 +33,7 @@ const isHtmlResponse = (data) =>
   typeof data === "string" && /^\s*(<!doctype html|<html)/i.test(data);
 
 const getStoredAccessToken = () => {
-  const stored = getAuthToken();
+  const stored = localStorage.getItem("token");
   if (!stored) return "";
   return stored.replace(/^Bearer\s+/i, "").trim();
 };
@@ -125,7 +124,8 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     finishApiLoading(error.config);
-    if (import.meta.env.DEV) {
+    const isAborted = error?.name === "CanceledError" || error?.code === "ERR_CANCELED";
+    if (import.meta.env.DEV && error.response && !isAborted && !error.config?.silent) {
       console.error("API response error:", {
         url: error.config?.url,
         method: error.config?.method,
@@ -139,7 +139,9 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       const expiry = getJwtExpiryState(getStoredAccessToken());
       if (expiry.isJwt && expiry.isExpired) {
-        clearAuthSession();
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        localStorage.removeItem("role");
         if (window.location.pathname !== "/login") window.location.assign("/login");
       }
     }

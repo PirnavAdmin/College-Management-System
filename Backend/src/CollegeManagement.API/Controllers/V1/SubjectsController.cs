@@ -18,7 +18,7 @@ namespace CollegeManagement.API.Controllers
     [ApiController]
     [Route("api/v1/[controller]")]
     [EnableCors("AllowFrontend")]
-    [Authorize]
+    [AllowAnonymous]
     public class SubjectsController : ControllerBase
     {
         private readonly ISubjectService _service;

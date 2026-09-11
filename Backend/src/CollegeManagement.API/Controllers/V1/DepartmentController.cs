@@ -16,7 +16,6 @@ namespace CollegeManagement.API.Controllers.V1
     [EnableCors("AllowFrontend")]
     [AllowAnonymous]
     [Produces("application/json")]
-    [Authorize]
     public class DepartmentController : ControllerBase
     {
         private readonly IDepartmentService _departmentService;
@@ -233,7 +232,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// 11. POST /api/v1/departments/bulk and /api/v1/departments/bulk-import
+        /// 11. POST /api/v1/departments/bulk & /api/v1/departments/bulk-import
         /// Bulk create or update departments from JSON array.
         /// </summary>
         [HttpPost("bulk")]
@@ -250,7 +249,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// 12. GET /api/v1/departments/export-template and /api/v1/departments/template
+        /// 12. GET /api/v1/departments/export-template & /api/v1/departments/template
         /// Download sample Excel template for Department bulk import.
         /// </summary>
         [HttpGet("export-template")]
@@ -263,7 +262,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// 13. GET /api/v1/departments/export-excel and /api/v1/departments/export
+        /// 13. GET /api/v1/departments/export-excel & /api/v1/departments/export
         /// Export all or filtered departments to Excel workbook (.xlsx).
         /// </summary>
         [HttpGet("export-excel")]

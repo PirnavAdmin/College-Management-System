@@ -11,7 +11,6 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis
 import { useNavigate } from "react-router-dom";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import { getLeaveRequests, submitLeaveRequest } from "@/features/leave/services/leaveStore.js";
-import { clearAuthSession } from "@/features/authStorage.js";
 import "./facultydashboard.css";
 
 // ==========================================================================
@@ -283,7 +282,9 @@ function FacultyDashboard() {
   // Logout Handler
   const handleLogout = () => {
     try {
-      clearAuthSession();
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("role");
     } catch {
       /* storage unavailable */
     }

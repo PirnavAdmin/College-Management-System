@@ -360,15 +360,27 @@ namespace CollegeManagement.API.Services.Implementations
             if (existingStaff == null)
                 throw new NotFoundException($"Staff record with ID {id} not found.");
 
-            // Uniqueness Validations
-            if (!await _staffRepository.IsEmailUniqueAsync(dto.Email, id))
+            // Uniqueness Validations (only if provided and changed from current staff values)
+            if (!string.IsNullOrWhiteSpace(dto.Email) &&
+                !string.Equals(dto.Email.Trim(), existingStaff.Email?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                !await _staffRepository.IsEmailUniqueAsync(dto.Email.Trim(), id))
+            {
                 throw new ConflictException($"Email address '{dto.Email}' is already registered to another staff member.");
+            }
 
-            if (!await _staffRepository.IsMobileUniqueAsync(dto.Mobile, id))
+            if (!string.IsNullOrWhiteSpace(dto.Mobile) &&
+                !string.Equals(dto.Mobile.Trim(), existingStaff.Mobile?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                !await _staffRepository.IsMobileUniqueAsync(dto.Mobile.Trim(), id))
+            {
                 throw new ConflictException($"Mobile number '{dto.Mobile}' is already registered to another staff member.");
+            }
 
-            if (!string.IsNullOrWhiteSpace(dto.Aadhaar) && !await _staffRepository.IsAadhaarUniqueAsync(dto.Aadhaar, id))
+            if (!string.IsNullOrWhiteSpace(dto.Aadhaar) &&
+                !string.Equals(dto.Aadhaar.Trim(), existingStaff.Aadhaar?.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                !await _staffRepository.IsAadhaarUniqueAsync(dto.Aadhaar.Trim(), id))
+            {
                 throw new ConflictException($"Aadhaar number '{dto.Aadhaar}' is already registered to another staff member.");
+            }
 
             var staffType = string.IsNullOrWhiteSpace(dto.StaffType) ? existingStaff.StaffType : dto.StaffType.Trim();
 

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import "./Reports.css";
+import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import {
   getReportBoards,
   getReportAcademicYears,
@@ -23,6 +24,15 @@ import {
 } from "../../api/reportApi";
 
 const Reports = () => {
+  const {
+    selectedBoard,
+    selectedAcademicYear,
+    selectedBoardId,
+    selectedAcademicYearId,
+    boards: contextBoards = [],
+    academicYears: contextAcademicYears = [],
+  } = useAcademicContext();
+
   // Active Tab: "reports" | "audit"
   const [activeTab, setActiveTab] = useState("reports");
 
@@ -43,6 +53,65 @@ const Reports = () => {
     fromDate: "",
     toDate: ""
   });
+
+  const availableBoards = useMemo(() => {
+    if (boards.length > 0) return boards;
+    return contextBoards.map((b) => ({
+      boardId: b.id || b.boardId,
+      boardName: b.name || b.boardName || b.code,
+    }));
+  }, [boards, contextBoards]);
+
+  const availableYears = useMemo(() => {
+    if (academicYears.length > 0) return academicYears;
+    return contextAcademicYears.map((y) => ({
+      academicYearId: y.id || y.academicYearId,
+      academicYearName: y.name || y.label || y.code,
+      boardId: y.boardId,
+    }));
+  }, [academicYears, contextAcademicYears]);
+
+  const matchedBoardId = useMemo(() => {
+    if (!selectedBoard && !selectedBoardId) return "";
+    const targetId = String(selectedBoardId || selectedBoard?.id || "");
+    const targetName = String(selectedBoard?.name || selectedBoard?.boardName || selectedBoard?.code || "").toLowerCase();
+    const found = availableBoards.find((b) => {
+      const bId = String(b.boardId || b.id || "");
+      const bName = String(b.boardName || b.name || b.code || "").toLowerCase();
+      return (targetId && bId === targetId) || (targetName && (bName === targetName || bName.includes(targetName)));
+    });
+    return found ? String(found.boardId || found.id) : (targetId || "");
+  }, [availableBoards, selectedBoard, selectedBoardId]);
+
+  const matchedYearId = useMemo(() => {
+    if (!selectedAcademicYear && !selectedAcademicYearId) return "";
+    const targetId = String(selectedAcademicYearId || selectedAcademicYear?.id || "");
+    const targetName = String(selectedAcademicYear?.name || selectedAcademicYear?.label || selectedAcademicYear?.code || "").toLowerCase();
+    const found = availableYears.find((y) => {
+      const yId = String(y.academicYearId || y.id || "");
+      const yName = String(y.academicYearName || y.name || y.label || y.code || "").toLowerCase();
+      return (targetId && yId === targetId) || (targetName && (yName === targetName || yName.includes(targetName)));
+    });
+    return found ? String(found.academicYearId || found.id) : (targetId || "");
+  }, [availableYears, selectedAcademicYear, selectedAcademicYearId]);
+
+  useEffect(() => {
+    if (!matchedBoardId && !matchedYearId) return;
+    setFilters((current) => {
+      let changed = false;
+      const next = { ...current };
+      if (matchedBoardId && current.boardId !== matchedBoardId) {
+        next.boardId = matchedBoardId;
+        changed = true;
+      }
+      if (matchedYearId && current.academicYearId !== matchedYearId) {
+        next.academicYearId = matchedYearId;
+        changed = true;
+      }
+      if (changed) loadDependentFilters(next);
+      return changed ? next : current;
+    });
+  }, [matchedBoardId, matchedYearId]);
 
   // Overview 10 Metrics Data
   const [overview, setOverview] = useState({

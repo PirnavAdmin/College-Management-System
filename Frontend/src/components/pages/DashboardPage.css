@@ -621,10 +621,10 @@
   font-size: 9.5px;
 }
 
-/* Student Attendance 5 KPI Chips */
+/* Student Attendance KPI Chips */
 .dashboard-attendance-kpi-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
   padding-top: 6px;
   border-top: 1px solid var(--cms-border);

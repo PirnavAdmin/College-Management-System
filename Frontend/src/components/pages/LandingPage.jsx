@@ -9,6 +9,7 @@ const quickLinks = [
   { label: "Home", to: "/" },
   { label: "Login", to: "/login" },
   { label: "Register", to: "/register" },
+  { label: "Dashboard", to: "/dashboard" },
 ];
 
 const modules = ["Admissions", "Attendance", "Exams", "Fees", "Reports"];

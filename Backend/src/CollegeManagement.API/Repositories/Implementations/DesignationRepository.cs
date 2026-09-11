@@ -25,12 +25,7 @@ namespace CollegeManagement.API.Repositories.Implementations
         private async Task<DbConnection> GetOpenConnectionAsync()
         {
             var conn = _context.Database.GetDbConnection();
-            if (conn.State == ConnectionState.Broken || conn.State == ConnectionState.Closed)
-            {
-                try { await conn.CloseAsync(); } catch { }
-                await _context.Database.OpenConnectionAsync();
-            }
-            else if (conn.State != ConnectionState.Open)
+            if (conn.State != ConnectionState.Open)
             {
                 await _context.Database.OpenConnectionAsync();
             }
@@ -54,9 +49,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<IEnumerable<DesignationResponseDto>> GetAllDtosAsync(bool includeInactive = false, string? staffType = null, int? departmentId = null)
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 var designations = await conn.QueryAsync<DesignationResponseDto>(
                     "sp_GetDesignations",
                     new
@@ -120,8 +116,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                     des.UpdatedAt
                 ORDER BY des.Name ASC;";
 
-            var fallbackConn = await GetOpenConnectionAsync();
-            var results = await fallbackConn.QueryAsync<DesignationResponseDto>(
+            var results = await conn.QueryAsync<DesignationResponseDto>(
                 fallbackSql,
                 new
                 {
@@ -152,9 +147,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<DesignationResponseDto?> GetDtoByIdAsync(int id)
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 var desig = await conn.QueryFirstOrDefaultAsync<DesignationResponseDto>(
                     "sp_GetDesignationById",
                     new { p_DesignationId = id },
@@ -192,8 +188,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                     des.UpdatedAt
                 LIMIT 1;";
 
-            var fallbackConn = await GetOpenConnectionAsync();
-            return await fallbackConn.QueryFirstOrDefaultAsync<DesignationResponseDto>(fallbackSql, new { DesignationId = id });
+            return await conn.QueryFirstOrDefaultAsync<DesignationResponseDto>(fallbackSql, new { DesignationId = id });
         }
 
         public async Task<Designation?> GetByNameAsync(string name)
@@ -244,9 +239,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<int> GetAssignedStaffCountAsync(int designationId)
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 const string sql = "SELECT COUNT(*) FROM `Staff` WHERE DesignationId = @DesignationId AND IsDeleted = 0;";
                 return await conn.ExecuteScalarAsync<int>(sql, new { DesignationId = designationId });
             }
@@ -258,9 +254,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<Designation> AddAsync(Designation designation)
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 const string insertSql = @"
                     INSERT INTO `Designations` 
                         (`Name`, `DepartmentId`, `StaffType`, `IsActive`, `CreatedAt`)
@@ -292,9 +289,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task UpdateAsync(Designation designation)
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 const string updateSql = @"
                     UPDATE `Designations`
                     SET `Name` = @Name,
@@ -334,9 +332,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task DeleteAsync(int id)
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 await conn.ExecuteAsync("DELETE FROM `Designations` WHERE `Id` = @Id;", new { Id = id });
             }
             catch
@@ -352,9 +351,10 @@ namespace CollegeManagement.API.Repositories.Implementations
 
         public async Task<DesignationSummaryDto> GetSummaryAsync()
         {
+            var conn = await GetOpenConnectionAsync();
+
             try
             {
-                var conn = await GetOpenConnectionAsync();
                 var summary = await conn.QueryFirstOrDefaultAsync<DesignationSummaryDto>(
                     "sp_GetDesignationSummary",
                     commandType: CommandType.StoredProcedure);
@@ -371,8 +371,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                     (SELECT COUNT(DISTINCT Id) FROM `Staff` WHERE DesignationId IS NOT NULL AND DesignationId > 0 AND IsDeleted = 0) AS AssignedStaffCount
                 FROM `Designations`;";
 
-            var fallbackConn = await GetOpenConnectionAsync();
-            var result = await fallbackConn.QueryFirstOrDefaultAsync<DesignationSummaryDto>(sql);
+            var result = await conn.QueryFirstOrDefaultAsync<DesignationSummaryDto>(sql);
             return result ?? new DesignationSummaryDto();
         }
     }

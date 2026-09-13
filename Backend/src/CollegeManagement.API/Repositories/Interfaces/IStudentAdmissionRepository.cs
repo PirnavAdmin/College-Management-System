@@ -63,17 +63,17 @@ namespace CollegeManagement.API.Repositories.Interfaces
         // SECTION ALLOCATION
         // =====================================================
 
-      //  Task<bool> AllocateSectionAsync(
-          //  AllocateSectionRequest request);
+        Task<bool> AllocateSectionAsync(
+            AllocateSectionRequest request);
 
-        //Task<int> BulkAllocateSectionAsync(
-          //  BulkSectionAllocationRequest request);
+        Task<int> BulkAllocateSectionAsync(
+            BulkSectionAllocationRequest request);
 
         // =====================================================
         // ROLL NUMBER ALLOCATION
         // =====================================================
 
-       // Task<int> BulkAllocateRollNumbersAsync(
-         //   BulkRollNumberAllocationRequest request);
+        Task<int> BulkAllocateRollNumbersAsync(
+            BulkRollNumberAllocationRequest request);
     }
 }

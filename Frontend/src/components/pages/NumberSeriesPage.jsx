@@ -285,7 +285,7 @@ function NumberSeriesDashboardView({ seriesList, loading, onRefresh, toast, setT
 
                 <div className="ns-card-example-box">
                   <span className="ns-card-example-lbl">Current / Next Example:</span>
-                  <div className="ns-card-example-val">{getNextNumberPreview(series) || series.livePreview || series.currentExample}</div>
+                  <div className="ns-card-example-val">{series.currentExample || nextVal}</div>
                 </div>
 
                 <p className="ns-card-desc">{series.description}</p>

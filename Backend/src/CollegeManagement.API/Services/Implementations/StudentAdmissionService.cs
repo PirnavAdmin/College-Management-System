@@ -217,78 +217,80 @@ namespace CollegeManagement.API.Services.Implementations
         // SINGLE SECTION ALLOCATION
         // =====================================================
 
-      //  public async Task<bool> AllocateSectionAsync(
-          //  AllocateSectionRequest request)
-        //  {
-        //      if (request == null)
-        //          throw new ArgumentNullException(nameof(request));
+        public async Task<bool> AllocateSectionAsync(
+            AllocateSectionRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
 
-            //if (request.AdmissionId <= 0)
-             //   throw new ArgumentException(
-                  //  "Invalid AdmissionId.");
+            if (request.AdmissionId <= 0)
+                throw new ArgumentException(
+                    "Invalid AdmissionId.");
 
-           // if (request.SectionId <= 0)
-              //  throw new ArgumentException(
-                   // "Invalid SectionId.");
-        //
-          //  return await _repository
-              //  .AllocateSectionAsync(request);
-      //  }
+            if (request.SectionId <= 0)
+                throw new ArgumentException(
+                    "Invalid SectionId.");
 
-        //         // =====================================================
-        //         // BULK SECTION ALLOCATION
-        //         // =====================================================
-        //
-        //         public async Task<int> BulkAllocateSectionAsync(
-        //             BulkSectionAllocationRequest request)
-        //         {
-        //             if (request == null)
-        //                 throw new ArgumentNullException(nameof(request));
-        //
-        //             if (request.SectionId <= 0)
-        //                 throw new ArgumentException(
-        //                     "Invalid SectionId.");
-        //
-        //             if (request.AdmissionIds == null ||
-        //                 request.AdmissionIds.Count == 0)
-        //             {
-        //                 throw new ArgumentException(
-        //                     "At least one admission must be selected.");
-        //             }
-        //
-        //             return await _repository
-        //                 .BulkAllocateSectionAsync(request);
-        //         }
+            return await _repository
+                .AllocateSectionAsync(request);
+        }
 
 
-        // // =====================================================
-        // // BULK ROLL NUMBER ALLOCATION
-        // // =====================================================
-        //
-        // public async Task<int> BulkAllocateRollNumbersAsync(
-        // //     BulkRollNumberAllocationRequest request)
-        // // {
-        // //     if (request == null)
-        // //         throw new ArgumentNullException(nameof(request));
-        //
-        // //     if (request.SectionId <= 0)
-        // //         throw new ArgumentException(
-        // //             "Invalid SectionId.");
-        //
-        // //     if (request.StartingRollNumber <= 0)
-        // //         throw new ArgumentException(
-        // //             "Starting roll number must be greater than zero.");
-        //
-        // //     if (request.AdmissionIds == null ||
-        // //         request.AdmissionIds.Count == 0)
-        // //     {
-        // //         throw new ArgumentException(
-        // //             "At least one admission must be selected.");
-        // //     }
-        //
-        // //     return await _repository
-        // //         .BulkAllocateRollNumbersAsync(request);
-        // // }
+        // =====================================================
+        // BULK SECTION ALLOCATION
+        // =====================================================
+
+        public async Task<int> BulkAllocateSectionAsync(
+            BulkSectionAllocationRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            if (request.SectionId <= 0)
+                throw new ArgumentException(
+                    "Invalid SectionId.");
+
+            if (request.AdmissionIds == null ||
+                request.AdmissionIds.Count == 0)
+            {
+                throw new ArgumentException(
+                    "At least one admission must be selected.");
+            }
+
+            return await _repository
+                .BulkAllocateSectionAsync(request);
+        }
+
+
+        // =====================================================
+        // BULK ROLL NUMBER ALLOCATION
+        // =====================================================
+
+        public async Task<int> BulkAllocateRollNumbersAsync(
+            BulkRollNumberAllocationRequest request)
+        {
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+
+            if (request.SectionId <= 0)
+                throw new ArgumentException(
+                    "Invalid SectionId.");
+
+            if (request.StartingRollNumber <= 0)
+                throw new ArgumentException(
+                    "Starting roll number must be greater than zero.");
+
+            if (request.AdmissionIds == null ||
+                request.AdmissionIds.Count == 0)
+            {
+                throw new ArgumentException(
+                    "At least one admission must be selected.");
+            }
+
+            return await _repository
+                .BulkAllocateRollNumbersAsync(request);
+        }
+
 
         // =====================================================
         // CREATE VALIDATION

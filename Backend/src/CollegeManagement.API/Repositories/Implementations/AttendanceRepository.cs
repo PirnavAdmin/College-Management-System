@@ -658,6 +658,26 @@ namespace CollegeManagement.API.Repositories.Implementations
                 .Include(s => s.SectionNavigation)
                 .Where(s => s.IsActive);
 
+            if (request.BoardId.HasValue && request.BoardId.Value > 0)
+            {
+                studentQuery = studentQuery.Where(s => s.BoardId == request.BoardId.Value);
+            }
+
+            if (request.AcademicYearId.HasValue && request.AcademicYearId.Value > 0)
+            {
+                studentQuery = studentQuery.Where(s => s.AcademicYearId == request.AcademicYearId.Value);
+            }
+
+            if (request.AcademicLevelId.HasValue && request.AcademicLevelId.Value > 0)
+            {
+                studentQuery = studentQuery.Where(s => s.AcademicLevelId == request.AcademicLevelId.Value);
+            }
+
+            if (request.ProgramId.HasValue && request.ProgramId.Value > 0)
+            {
+                studentQuery = studentQuery.Where(s => s.ProgramId == request.ProgramId.Value);
+            }
+
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
             {
                 studentQuery = studentQuery.Where(s => s.GroupId == request.GroupId.Value);
@@ -678,11 +698,14 @@ namespace CollegeManagement.API.Repositories.Implementations
             var startDate = new DateTime(targetYear, targetMonth, 1);
             var endDate = new DateTime(targetYear, targetMonth, daysInMonth);
 
-            // Fetch attendance records for this month
+            var studentIds = studentList.Select(s => s.StudentId).ToList();
+
+            // Fetch attendance records for this month for the selected students
             var monthAttendancesQuery = _context.Attendances
                 .Where(a => a.AttendanceDate.Date >= startDate
                             && a.AttendanceDate.Date <= endDate
-                            && a.IsActive);
+                            && a.IsActive
+                            && studentIds.Contains(a.StudentId));
 
             if (request.GroupId.HasValue && request.GroupId.Value > 0)
             {

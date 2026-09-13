@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
 import HeroSlider from "@/components/common/HeroSlider.jsx";
 import { heroCopy } from "@/data/heroSlides.js";
-import logo from "@/assets/pirnav-college-crest.png";
+import logo from "@/assets/P_LOGO.png";
 import "@/features/auth/styles/auth.css";
 
 export default function AuthLayout({ title, subtitle, children, cardClass = "" }) {

@@ -5,19 +5,18 @@ import {
   Bell, Moon, Sun, Search, Menu, ChevronRight, ChevronDown, Download, Printer,
   Eye, CheckCircle, AlertCircle, Plus, Send, Paperclip, LogOut, Building2,
   Users, Check, X, ShieldAlert, Award, Clock, DollarSign, TrendingUp, Sparkles,
-  HelpCircle, ArrowLeft, Layers, Briefcase, FileSpreadsheet, RefreshCw,
-  Upload, Trash2, Edit3, ShieldCheck, AlertTriangle, FileCheck, Phone, Mail,
-  MapPin, CreditCard, Lock, Info, Save, File, ArrowRight
+  HelpCircle, ArrowLeft, Layers, Briefcase, FileSpreadsheet, RefreshCw
 } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, BarChart, Bar, XAxis, YAxis } from "recharts";
 import { useNavigate } from "react-router-dom";
 import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import { getLeaveRequests, submitLeaveRequest } from "@/features/leave/services/leaveStore.js";
+import { clearAuthSession } from "@/features/authStorage.js";
 import "./facultydashboard.css";
 
 // ==========================================================================
-// MOCK DATA STRUCTURES & PROFILE HELPERS — PIRNAV FACULTY PORTAL
+// MOCK DATA STRUCTURES — PIRNAV FACULTY PORTAL
 // ==========================================================================
 
 const mockFaculty = {
@@ -53,293 +52,6 @@ const mockFaculty = {
   uan: "100982341234",
   pfNumber: "AP/HYD/0098234/000/00027",
 };
-
-// Masking helpers
-const maskAadhaar = (val) => {
-  if (!val) return "—";
-  const clean = String(val).replace(/\D/g, "");
-  if (clean.length < 4) return clean;
-  return `XXXX-XXXX-${clean.slice(-4)}`;
-};
-
-const maskPan = (val) => {
-  if (!val) return "—";
-  const clean = String(val).trim().toUpperCase();
-  if (clean.length < 5) return clean;
-  return `${clean.slice(0, 5)}****${clean.slice(-1)}`;
-};
-
-const maskAccount = (val) => {
-  if (!val) return "—";
-  const clean = String(val).trim();
-  if (clean.length < 4) return clean;
-  return `XXXXXX${clean.slice(-4)}`;
-};
-
-// Dynamic helper to resolve the currently logged-in faculty user
-const getCurrentFacultyUser = () => {
-  try {
-    const rawUser = localStorage.getItem("user");
-    if (rawUser) {
-      const user = JSON.parse(rawUser);
-      if (user) {
-        const submitted = JSON.parse(localStorage.getItem("pjc_submitted_faculty_list") || "[]");
-        const storedRecords = JSON.parse(sessionStorage.getItem("pjc-mock-staff-records") || "[]");
-        const empId = user.employeeId || user.id || "";
-        const email = (user.email || "").toLowerCase().trim();
-        const found = [...submitted, ...storedRecords].find(r => 
-          (empId && (String(r.id) === String(empId) || String(r.employeeId).toLowerCase() === String(empId).toLowerCase())) ||
-          (email && String(r.email || "").toLowerCase() === email)
-        );
-        return { ...mockFaculty, ...user, ...(found || {}) };
-      }
-    }
-  } catch (e) {
-    console.warn("Could not load user from localStorage", e);
-  }
-  return mockFaculty;
-};
-
-// Calculate profile completion percentage accurately across all sections
-const calculateProfileCompletion = (profile) => {
-  if (!profile) return 0;
-  let score = 0;
-  let total = 0;
-
-  // Personal (20 pts)
-  total += 20;
-  let personalScore = 0;
-  if (profile.personal?.guardianName?.trim()) personalScore += 3;
-  if (profile.personal?.gender) personalScore += 3;
-  if (profile.personal?.dob) personalScore += 3;
-  if (profile.personal?.bloodGroup) personalScore += 2;
-  if (profile.personal?.maritalStatus) personalScore += 2;
-  if (profile.personal?.aadhaar && profile.personal?.aadhaar.length >= 12) personalScore += 4;
-  if (profile.personal?.pan && profile.personal?.pan.length >= 10) personalScore += 3;
-  score += personalScore;
-
-  // Contact (15 pts)
-  total += 15;
-  let contactScore = 0;
-  if (profile.contact?.currentAddress?.trim()) contactScore += 4;
-  if (profile.contact?.city?.trim()) contactScore += 3;
-  if (profile.contact?.state?.trim()) contactScore += 3;
-  if (profile.contact?.pincode?.trim()?.length >= 6) contactScore += 3;
-  if (profile.contact?.personalEmail?.trim()) contactScore += 2;
-  score += contactScore;
-
-  // Professional (10 pts)
-  total += 10;
-  let profScore = 0;
-  if (profile.professional?.specialization?.trim()) profScore += 5;
-  if (profile.professional?.researchInterests?.trim() || profile.professional?.memberships?.trim()) profScore += 5;
-  score += profScore;
-
-  // Education (20 pts)
-  total += 20;
-  if (Array.isArray(profile.education) && profile.education.length > 0) {
-    const hasValid = profile.education.some(e => e.degree && e.institution && e.passingYear);
-    if (hasValid) score += 20;
-    else score += 10;
-  }
-
-  // Experience (10 pts)
-  total += 10;
-  if (profile.experience?.isFresher) {
-    score += 10;
-  } else if (Array.isArray(profile.experience?.records) && profile.experience.records.length > 0) {
-    score += 10;
-  }
-
-  // Bank (15 pts)
-  total += 15;
-  let bankScore = 0;
-  if (profile.bank?.bankName?.trim()) bankScore += 3;
-  if (profile.bank?.accountHolder?.trim()) bankScore += 3;
-  if (profile.bank?.accountNumber?.trim()) bankScore += 3;
-  if (profile.bank?.ifsc?.trim()) bankScore += 3;
-  if (profile.bank?.branch?.trim()) bankScore += 3;
-  score += bankScore;
-
-  // Emergency (5 pts)
-  total += 5;
-  if (profile.emergency?.name?.trim() && profile.emergency?.mobile?.trim()) {
-    score += 5;
-  }
-
-  // Documents (5 pts)
-  total += 5;
-  let docCount = 0;
-  if (profile.documents?.photo?.name) docCount++;
-  if (profile.documents?.signature?.name) docCount++;
-  if (profile.documents?.aadhaar?.name) docCount++;
-  if (profile.documents?.pan?.name) docCount++;
-  if (docCount >= 2) score += 5;
-  else if (docCount >= 1) score += 2;
-
-  const pct = Math.round((score / total) * 100);
-  return Math.min(100, Math.max(0, pct));
-};
-
-const getInitialProfileState = (facultyUser) => {
-  const empId = facultyUser?.employeeId || facultyUser?.id || "PJCTCH0027";
-  try {
-    const saved = localStorage.getItem("pjc_faculty_profile_" + empId);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed) return parsed;
-    }
-  } catch (e) {}
-
-  return {
-    baseline: {
-      employeeId: facultyUser?.employeeId || "PJCTCH0027",
-      fullName: facultyUser?.fullName || facultyUser?.name || "Ravi Kumar",
-      staffType: facultyUser?.staffType || "Teaching Staff",
-      department: facultyUser?.department || "Mathematics",
-      designation: facultyUser?.designation || "Junior Lecturer",
-      board: facultyUser?.board || "BIEAP",
-      academicYear: facultyUser?.academicYear || "2025-2026",
-      dateOfJoining: facultyUser?.dateOfJoining || facultyUser?.joiningDate || "2024-06-10",
-      employmentType: facultyUser?.employmentType || "Permanent Full-Time",
-      primaryEmail: facultyUser?.email || "Faculty@CMS.com",
-      primaryMobile: facultyUser?.mobile || facultyUser?.phone || "9876543210",
-      allocatedSubjects: facultyUser?.allocatedSubjects || ["Mathematics I-A", "Mathematics II-A"],
-      status: facultyUser?.status || "Active",
-      profileStatus: facultyUser?.profileStatus || "Draft",
-      reviewStatus: facultyUser?.reviewStatus || "Pending",
-      correctionRemarks: facultyUser?.correctionRemarks || "",
-    },
-    personal: {
-      guardianName: facultyUser?.guardianName || facultyUser?.fatherName || "S. Narayana Murthy",
-      gender: facultyUser?.gender || "Male",
-      dob: facultyUser?.dob || facultyUser?.dateOfBirth || "1990-08-14",
-      bloodGroup: facultyUser?.bloodGroup || "O+",
-      maritalStatus: facultyUser?.maritalStatus || "Married",
-      nationality: facultyUser?.nationality || "Indian",
-      aadhaar: facultyUser?.aadhaar || facultyUser?.aadhaarNumber || "482910394829",
-      pan: facultyUser?.pan || facultyUser?.panNumber || "ABCPS1234F",
-      photoUrl: facultyUser?.photoUrl || facultyUser?.profilePhoto || null,
-    },
-    contact: {
-      primaryMobile: facultyUser?.mobile || "9876543210",
-      primaryEmail: facultyUser?.email || "Faculty@CMS.com",
-      altMobile: facultyUser?.altMobile || "9876543211",
-      personalEmail: facultyUser?.personalEmail || "ravikumar.maths@gmail.com",
-      currentAddress: facultyUser?.currentAddress || facultyUser?.address || "Flat 302, Sri Sai Nilayam, Road No. 12, Banjara Hills",
-      city: facultyUser?.city || "Hyderabad",
-      district: facultyUser?.district || "Hyderabad",
-      state: facultyUser?.state || "Telangana",
-      pincode: facultyUser?.pincode || "500034",
-      country: facultyUser?.country || "India",
-      sameAsCurrent: facultyUser?.sameAsCurrent ?? true,
-      permAddress: facultyUser?.permAddress || "Flat 302, Sri Sai Nilayam, Road No. 12, Banjara Hills",
-      permCity: facultyUser?.permCity || "Hyderabad",
-      permDistrict: facultyUser?.permDistrict || "Hyderabad",
-      permState: facultyUser?.permState || "Telangana",
-      permPincode: facultyUser?.permPincode || "500034",
-      permCountry: facultyUser?.permCountry || "India",
-    },
-    professional: {
-      specialization: facultyUser?.specialization || "Pure & Applied Mathematics, Real Analysis, Calculus",
-      primaryTeachingDomain: facultyUser?.primaryTeachingDomain || "Senior Secondary & Intermediate Mathematics",
-      researchInterests: facultyUser?.researchInterests || "Differential Equations, Numerical Methods & Pedagogy",
-      memberships: facultyUser?.memberships || "AMTI (Association of Mathematics Teachers of India), IMS Life Member",
-      languages: facultyUser?.languages || ["English", "Telugu", "Hindi"],
-      maxWorkload: facultyUser?.maxWorkload || "20 Hours / Week",
-    },
-    education: facultyUser?.education || [
-      {
-        id: "edu-1",
-        level: "Post Graduation",
-        degree: "M.Sc Mathematics",
-        institution: "University College of Science",
-        university: "Osmania University",
-        specialization: "Pure & Applied Mathematics",
-        passingYear: "2018",
-        percentage: "88.5% (8.85 CGPA)",
-        studyMode: "Full-Time",
-        docName: "MSc_Mathematics_Degree.pdf",
-      },
-      {
-        id: "edu-2",
-        level: "B.Ed",
-        degree: "Bachelor of Education (B.Ed)",
-        institution: "Kakatiya University College of Education",
-        university: "Kakatiya University",
-        specialization: "Mathematics Pedagogy & Physical Sciences",
-        passingYear: "2019",
-        percentage: "82.4%",
-        studyMode: "Full-Time",
-        docName: "BEd_Certificate.pdf",
-      },
-      {
-        id: "edu-3",
-        level: "NET / SET",
-        degree: "CSIR-UGC NET Qualified (JRF & LS)",
-        institution: "National Testing Agency (NTA)",
-        university: "CSIR-HRDG",
-        specialization: "Mathematical Sciences",
-        passingYear: "2020",
-        percentage: "AIR 142 (99.2 Percentile)",
-        studyMode: "Full-Time",
-        docName: "CSIR_NET_Scorecard.pdf",
-      },
-    ],
-    experience: {
-      isFresher: facultyUser?.experience?.isFresher || false,
-      totalExperienceYears: facultyUser?.experience?.totalExperienceYears || "3.5 Years",
-      records: facultyUser?.experience?.records || [
-        {
-          id: "exp-1",
-          institution: "Sri Chaitanya Junior College",
-          designation: "Lecturer in Mathematics",
-          department: "Intermediate Sciences (MPC)",
-          fromDate: "2021-07",
-          toDate: "2024-05",
-          isCurrent: false,
-          responsibilities: "Curriculum delivery for senior intermediate calculus, algebra, and coordinate geometry. Mentored students for state board exams.",
-          reasonForLeaving: "Joined PIRNAV College for academic growth.",
-          docName: "Relieving_Experience_Letter_SCJC.pdf",
-        },
-      ],
-    },
-    bank: {
-      bankName: facultyUser?.bankName || "State Bank of India",
-      accountHolder: facultyUser?.accountHolder || facultyUser?.fullName || "Ravi Kumar",
-      accountNumber: facultyUser?.accountNumber || "30982341298",
-      confirmAccountNumber: facultyUser?.confirmAccountNumber || facultyUser?.accountNumber || "30982341298",
-      ifsc: facultyUser?.ifsc || "SBIN0001234",
-      branch: facultyUser?.branch || "Jubilee Hills Main Campus Branch",
-      accountType: facultyUser?.accountType || "Savings",
-      pfNumber: facultyUser?.pfNumber || "AP/HYD/0098234/000/00027",
-      esiNumber: facultyUser?.esiNumber || "31000982340001",
-      uanNumber: facultyUser?.uanNumber || "100982341234",
-      cancelledChequeDoc: "SBI_Cancelled_Cheque.pdf",
-    },
-    emergency: {
-      name: facultyUser?.emergency?.name || "Mrs. Sumathi Kumar",
-      relationship: facultyUser?.emergency?.relationship || "Spouse",
-      mobile: facultyUser?.emergency?.mobile || "9876543299",
-      altMobile: facultyUser?.emergency?.altMobile || "9876543298",
-      address: facultyUser?.emergency?.address || "Flat 302, Sri Sai Nilayam, Road No. 12, Banjara Hills, Hyderabad",
-    },
-    documents: facultyUser?.documents || {
-      photo: { name: "Passport_Photo_RaviKumar.jpg", size: "245 KB", uploadedAt: "2024-06-11", status: "Verified" },
-      signature: { name: "Signature_RaviKumar.png", size: "110 KB", uploadedAt: "2024-06-11", status: "Verified" },
-      aadhaar: { name: "Aadhaar_Card_Verified.pdf", size: "890 KB", uploadedAt: "2024-06-11", status: "Verified" },
-      pan: { name: "PAN_Card_Copy.pdf", size: "640 KB", uploadedAt: "2024-06-11", status: "Verified" },
-      degreeCertificate: { name: "MSc_Degree_Certificate.pdf", size: "1.4 MB", uploadedAt: "2024-06-11", status: "Verified" },
-      experienceLetter: { name: "Experience_Relieving_Letter.pdf", size: "1.1 MB", uploadedAt: "2024-06-11", status: "Verified" },
-      resume: { name: "Ravi_Kumar_Curriculum_Vitae.pdf", size: "480 KB", uploadedAt: "2024-06-11", status: "Verified" },
-      bankProof: { name: "Bank_Passbook_Cheque.pdf", size: "750 KB", uploadedAt: "2024-06-11", status: "Verified" },
-    },
-    isDeclared: facultyUser?.isDeclared ?? true,
-    declaredAt: facultyUser?.declaredAt || "2024-06-11 11:30 AM",
-    submittedAt: facultyUser?.submittedAt || "2024-06-11 11:30 AM",
-  };
-};
-
 
 const mockSalaryData = {
   month: "May 2025",
@@ -495,313 +207,7 @@ function FacultyDashboard() {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [toastMessage, setToastMessage] = useState(null);
-
-  // Auto Toast helper
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
-
-  // Faculty User Identity & Profile State
-  const currentFacultyUser = useMemo(() => getCurrentFacultyUser(), []);
-  const [facultyProfile, setFacultyProfile] = useState(() => getInitialProfileState(currentFacultyUser));
-  const completionPercentage = useMemo(() => calculateProfileCompletion(facultyProfile), [facultyProfile]);
-
-  // Profile Active Sub-Tab
-  const [profileTab, setProfileTab] = useState("overview");
-
-  // Add / Edit Qualification Modal State
-  const [showQualModal, setShowQualModal] = useState(false);
-  const [editingQualId, setEditingQualId] = useState(null);
-  const [qualForm, setQualForm] = useState({
-    level: "Graduation",
-    degree: "",
-    institution: "",
-    university: "",
-    specialization: "",
-    passingYear: "",
-    percentage: "",
-    studyMode: "Full-Time",
-    docName: "",
-  });
-
-  // Add / Edit Experience Modal State
-  const [showExpModal, setShowExpModal] = useState(false);
-  const [editingExpId, setEditingExpId] = useState(null);
-  const [expForm, setExpForm] = useState({
-    institution: "",
-    designation: "",
-    department: "",
-    fromDate: "",
-    toDate: "",
-    isCurrent: false,
-    responsibilities: "",
-    reasonForLeaving: "",
-    docName: "",
-  });
-
-  // Document Preview Modal State
-  const [previewDoc, setPreviewDoc] = useState(null);
-  const [uploadingKey, setUploadingKey] = useState(null);
-
-  // Profile Field Mutators
-  const updateProfileSection = (section, field, value) => {
-    setFacultyProfile((prev) => ({
-      ...prev,
-      [section]: {
-        ...(prev[section] || {}),
-        [field]: value,
-      },
-    }));
-  };
-
-  // Save Draft to Local Storage
-  const handleSaveProfileDraft = () => {
-    const empId = facultyProfile.baseline?.employeeId || "PJCTCH0027";
-    const updated = {
-      ...facultyProfile,
-      baseline: {
-        ...facultyProfile.baseline,
-        profileStatus: facultyProfile.baseline.profileStatus === "Submitted" ? "Submitted" : "Draft",
-      },
-    };
-    setFacultyProfile(updated);
-    try {
-      localStorage.setItem("pjc_faculty_profile_" + empId, JSON.stringify(updated));
-    } catch (e) {
-      console.warn("Error saving profile draft:", e);
-    }
-    showToast("Profile draft saved successfully!");
-  };
-
-  // Submit Profile for Admin Verification
-  const handleSubmitProfile = () => {
-    if (!facultyProfile.isDeclared) {
-      showToast("Please acknowledge the legal declaration before submitting.");
-      return;
-    }
-    const empId = facultyProfile.baseline?.employeeId || "PJCTCH0027";
-    const pct = calculateProfileCompletion(facultyProfile);
-    if (pct < 70) {
-      showToast(`Please complete more profile sections before submitting (currently ${pct}%).`);
-      return;
-    }
-
-    const updated = {
-      ...facultyProfile,
-      baseline: {
-        ...facultyProfile.baseline,
-        profileStatus: "Submitted",
-        reviewStatus: "Pending",
-      },
-      isDeclared: true,
-      declaredAt: new Date().toLocaleString("en-IN"),
-      submittedAt: new Date().toLocaleString("en-IN"),
-    };
-    setFacultyProfile(updated);
-
-    try {
-      localStorage.setItem("pjc_faculty_profile_" + empId, JSON.stringify(updated));
-
-      // Sync with submitted list for Admin Review
-      const list = JSON.parse(localStorage.getItem("pjc_submitted_faculty_list") || "[]");
-      const submittedRecord = {
-        id: empId,
-        employeeId: empId,
-        fullName: updated.baseline.fullName,
-        email: updated.baseline.primaryEmail,
-        mobile: updated.baseline.primaryMobile,
-        department: updated.baseline.department,
-        designation: updated.baseline.designation,
-        board: updated.baseline.board,
-        dateOfJoining: updated.baseline.dateOfJoining,
-        staffType: updated.baseline.staffType,
-        employmentType: updated.baseline.employmentType,
-        profileStatus: "Submitted",
-        reviewStatus: "Pending",
-        profileCompletion: 100,
-        submittedAt: new Date().toISOString(),
-        personal: updated.personal,
-        contact: updated.contact,
-        education: updated.education,
-        experience: updated.experience,
-        bank: updated.bank,
-        emergency: updated.emergency,
-        documents: updated.documents,
-      };
-      const filtered = list.filter((r) => r && String(r.id || r.employeeId) !== String(empId));
-      localStorage.setItem("pjc_submitted_faculty_list", JSON.stringify([submittedRecord, ...filtered]));
-
-      // Update mock staff records session store
-      const sessionRecords = JSON.parse(sessionStorage.getItem("pjc-mock-staff-records") || "[]");
-      const updatedSession = sessionRecords.map((r) => {
-        if (r && String(r.id || r.employeeId) === String(empId)) {
-          return { ...r, ...submittedRecord };
-        }
-        return r;
-      });
-      sessionStorage.setItem("pjc-mock-staff-records", JSON.stringify(updatedSession));
-
-      window.dispatchEvent(new Event("staff-records-updated"));
-    } catch (e) {
-      console.error("Storage sync error:", e);
-    }
-
-    showToast("Profile submitted successfully for Administrative Review!");
-    setProfileTab("overview");
-  };
-
-  // Qualification Actions
-  const handleOpenAddQual = () => {
-    setEditingQualId(null);
-    setQualForm({
-      level: "Graduation",
-      degree: "",
-      institution: "",
-      university: "",
-      specialization: "",
-      passingYear: "",
-      percentage: "",
-      studyMode: "Full-Time",
-      docName: "",
-    });
-    setShowQualModal(true);
-  };
-
-  const handleOpenEditQual = (item) => {
-    setEditingQualId(item.id);
-    setQualForm({ ...item });
-    setShowQualModal(true);
-  };
-
-  const handleSaveQual = (e) => {
-    e?.preventDefault();
-    if (!qualForm.degree.trim() || !qualForm.institution.trim() || !qualForm.passingYear.trim()) {
-      showToast("Please provide Degree, Institution, and Passing Year.");
-      return;
-    }
-    const currentList = facultyProfile.education || [];
-    let updatedList;
-    if (editingQualId) {
-      updatedList = currentList.map((q) => (q.id === editingQualId ? { ...qualForm, id: editingQualId } : q));
-    } else {
-      updatedList = [...currentList, { ...qualForm, id: `edu-${Date.now()}` }];
-    }
-    setFacultyProfile((prev) => ({ ...prev, education: updatedList }));
-    setShowQualModal(false);
-    showToast(editingQualId ? "Qualification updated!" : "Qualification added!");
-  };
-
-  const handleDeleteQual = (id) => {
-    const updated = (facultyProfile.education || []).filter((q) => q.id !== id);
-    setFacultyProfile((prev) => ({ ...prev, education: updated }));
-    showToast("Qualification removed.");
-  };
-
-  // Experience Actions
-  const handleOpenAddExp = () => {
-    setEditingExpId(null);
-    setExpForm({
-      institution: "",
-      designation: "",
-      department: "",
-      fromDate: "",
-      toDate: "",
-      isCurrent: false,
-      responsibilities: "",
-      reasonForLeaving: "",
-      docName: "",
-    });
-    setShowExpModal(true);
-  };
-
-  const handleOpenEditExp = (item) => {
-    setEditingExpId(item.id);
-    setExpForm({ ...item });
-    setShowExpModal(true);
-  };
-
-  const handleSaveExp = (e) => {
-    e?.preventDefault();
-    if (!expForm.institution.trim() || !expForm.designation.trim()) {
-      showToast("Please provide Institution and Designation.");
-      return;
-    }
-    const currentList = facultyProfile.experience?.records || [];
-    let updatedList;
-    if (editingExpId) {
-      updatedList = currentList.map((item) => (item.id === editingExpId ? { ...expForm, id: editingExpId } : item));
-    } else {
-      updatedList = [...currentList, { ...expForm, id: `exp-${Date.now()}` }];
-    }
-    setFacultyProfile((prev) => ({
-      ...prev,
-      experience: {
-        ...(prev.experience || {}),
-        isFresher: false,
-        records: updatedList,
-      },
-    }));
-    setShowExpModal(false);
-    showToast(editingExpId ? "Experience record updated!" : "Experience record added!");
-  };
-
-  const handleDeleteExp = (id) => {
-    const updated = (facultyProfile.experience?.records || []).filter((item) => item.id !== id);
-    setFacultyProfile((prev) => ({
-      ...prev,
-      experience: {
-        ...(prev.experience || {}),
-        records: updated,
-      },
-    }));
-    showToast("Experience record removed.");
-  };
-
-  const handleFresherToggle = (checked) => {
-    setFacultyProfile((prev) => ({
-      ...prev,
-      experience: {
-        ...(prev.experience || {}),
-        isFresher: checked,
-        totalExperienceYears: checked ? "0 Years (Fresher)" : prev.experience?.totalExperienceYears || "1 Year",
-        records: checked ? [] : prev.experience?.records || [],
-      },
-    }));
-  };
-
-  // Document Upload Action (Simulated real upload + file meta)
-  const handleDocFileUpload = (key, file) => {
-    if (!file) return;
-    setUploadingKey(key);
-    setTimeout(() => {
-      const docItem = {
-        name: file.name,
-        size: `${(file.size / 1024).toFixed(0)} KB`,
-        uploadedAt: new Date().toISOString().split("T")[0],
-        status: "Uploaded",
-        type: file.type || "application/pdf",
-      };
-      setFacultyProfile((prev) => ({
-        ...prev,
-        documents: {
-          ...(prev.documents || {}),
-          [key]: docItem,
-        },
-      }));
-      setUploadingKey(null);
-      showToast(`${file.name} uploaded successfully!`);
-    }, 600);
-  };
-
-  const handleRemoveDoc = (key) => {
-    setFacultyProfile((prev) => {
-      const updatedDocs = { ...(prev.documents || {}) };
-      delete updatedDocs[key];
-      return { ...prev, documents: updatedDocs };
-    });
-    showToast("Document removed.");
-  };
+  const [profileTab, setProfileTab] = useState("basic");
 
   // Detail Modal States
   const [selectedPayslip, setSelectedPayslip] = useState(null);
@@ -840,7 +246,7 @@ function FacultyDashboard() {
   }, [activeModule, attendanceDate, attendanceSection]);
   const [marksState, setMarksState] = useState(mockStudentsList);
   const [examDutiesState, setExamDutiesState] = useState(mockExamDutiesList);
-  const [leavesState, setLeavesState] = useState([]);
+  const [leavesState, setLeavesState] = useState(() => getLeaveRequests().filter((leave) => leave.staffId === mockFaculty.employeeId));
   const [reimbursementsState, setReimbursementsState] = useState(mockReimbursementsList);
   const [messagesState, setMessagesState] = useState(mockMessagesHistory);
   const [newMessageText, setNewMessageText] = useState("");
@@ -861,22 +267,24 @@ function FacultyDashboard() {
     desc: "",
   });
 
+  // Auto Toast helper
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
   useEffect(() => {
     let isMounted = true;
     getLeaveRequests().then((data) => {
-      if (isMounted && Array.isArray(data)) {
-        setLeavesState(data.filter((leave) => leave && leave.staffId === mockFaculty.employeeId));
-      }
-    }).catch(err => console.warn("Leave requests offline/error:", err));
+      if (isMounted) setLeavesState(data.filter((leave) => leave.staffId === mockFaculty.employeeId));
+    }).catch(err => console.error(err));
     return () => { isMounted = false; };
   }, []);
 
   // Logout Handler
   const handleLogout = () => {
     try {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      localStorage.removeItem("role");
+      clearAuthSession();
     } catch {
       /* storage unavailable */
     }
@@ -931,146 +339,12 @@ function FacultyDashboard() {
     <div>
       {renderHeader(
         "Faculty Dashboard",
-        `Welcome back, ${facultyProfile.baseline?.fullName || mockFaculty.fullName}! Have a great day.`,
+        `Welcome back, ${mockFaculty.fullName}! Have a great day.`,
         <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--faculty-card-bg)", padding: "6px 12px", borderRadius: "10px", border: "1px solid var(--faculty-border)", fontSize: "12px", fontWeight: 700 }}>
           <Calendar size={14} style={{ color: "var(--faculty-primary)" }} />
           <span>Today: 16 May 2025, Friday</span>
         </div>
       )}
-
-      {/* PROFILE STATUS ALERT / BANNER */}
-      {facultyProfile.baseline?.profileStatus === "Draft" || completionPercentage < 100 ? (
-        <div className="faculty-profile-banner warning">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1, minWidth: "260px" }}>
-            <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "var(--faculty-warning)", color: "#ffffff", display: "grid", placeItems: "center", flexShrink: 0 }}>
-              <AlertTriangle size={20} />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: "14px", color: "var(--faculty-text)" }}>
-                Faculty Profile Incomplete ({completionPercentage}%)
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "2px" }}>
-                Complete your educational qualifications, previous experience, bank, and statutory details for official employment verification and payroll processing.
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="faculty-btn faculty-btn-primary"
-            style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px" }}
-            onClick={() => {
-              setProfileTab("overview");
-              handleNavClick("profile");
-            }}
-          >
-            Complete My Profile <ArrowRight size={14} />
-          </button>
-        </div>
-      ) : facultyProfile.baseline?.profileStatus === "Submitted" ? (
-        <div className="faculty-profile-banner info">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
-            <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "var(--faculty-info)", color: "#ffffff", display: "grid", placeItems: "center", flexShrink: 0 }}>
-              <Clock size={20} />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: "14px", color: "var(--faculty-text)" }}>
-                Profile Submitted & Under Administrative Review
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "2px" }}>
-                Your complete faculty profile was submitted on {facultyProfile.submittedAt || "recently"}. Baseline details are verified and active for teaching duties.
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="faculty-btn faculty-btn-ghost"
-            style={{ fontSize: "12px" }}
-            onClick={() => {
-              setProfileTab("overview");
-              handleNavClick("profile");
-            }}
-          >
-            View Profile <Eye size={14} />
-          </button>
-        </div>
-      ) : facultyProfile.baseline?.profileStatus === "Correction Required" ? (
-        <div className="faculty-profile-banner danger">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flex: 1 }}>
-            <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "var(--faculty-danger)", color: "#ffffff", display: "grid", placeItems: "center", flexShrink: 0 }}>
-              <AlertCircle size={20} />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: "14px", color: "var(--faculty-danger)" }}>
-                Profile Correction Requested by Administration
-              </div>
-              <div style={{ fontSize: "12px", color: "var(--faculty-text)", marginTop: "2px" }}>
-                Remarks: {facultyProfile.baseline?.correctionRemarks || "Please verify your uploaded certificates and resubmit."}
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="faculty-btn faculty-btn-primary"
-            style={{ fontSize: "12px" }}
-            onClick={() => {
-              setProfileTab("review");
-              handleNavClick("profile");
-            }}
-          >
-            Review & Edit <Edit3 size={14} />
-          </button>
-        </div>
-      ) : null}
-
-      {/* VERIFIED EMPLOYMENT DETAILS SUMMARY CARD */}
-      <div className="faculty-card" style={{ marginBottom: "20px" }}>
-        <div className="faculty-card-header">
-          <h3 className="faculty-card-title"><Building2 size={16} /> Official Employment Profile (Verified by Administration)</h3>
-          <span className="faculty-pill-tag" style={{ background: "var(--faculty-success-soft)", color: "var(--faculty-success)", borderColor: "#bbf7d0" }}>
-            <ShieldCheck size={12} /> {facultyProfile.baseline?.status || "Active"}
-          </span>
-        </div>
-        <div className="faculty-form-grid-3" style={{ marginTop: "10px" }}>
-          <div>
-            <span style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Employee ID</span>
-            <div style={{ fontSize: "14px", fontWeight: 800, color: "var(--faculty-primary-dark)", marginTop: "2px" }}>
-              {facultyProfile.baseline?.employeeId || mockFaculty.employeeId}
-            </div>
-          </div>
-          <div>
-            <span style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Designation & Dept</span>
-            <div style={{ fontSize: "13px", fontWeight: 700, marginTop: "2px" }}>
-              {facultyProfile.baseline?.designation} • {facultyProfile.baseline?.department}
-            </div>
-          </div>
-          <div>
-            <span style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Board & Category</span>
-            <div style={{ fontSize: "13px", fontWeight: 700, marginTop: "2px" }}>
-              {facultyProfile.baseline?.board || "BIEAP"} • {facultyProfile.baseline?.staffType || "Teaching Staff"}
-            </div>
-          </div>
-          <div>
-            <span style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Date of Joining</span>
-            <div style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
-              {facultyProfile.baseline?.dateOfJoining}
-            </div>
-          </div>
-          <div>
-            <span style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Employment Type</span>
-            <div style={{ fontSize: "13px", fontWeight: 600, marginTop: "2px" }}>
-              {facultyProfile.baseline?.employmentType || "Permanent Full-Time"}
-            </div>
-          </div>
-          <div>
-            <span style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Allocated Subjects</span>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
-              {(facultyProfile.baseline?.allocatedSubjects || ["Mathematics I-A", "Mathematics II-A"]).map((sub, i) => (
-                <span key={i} className="faculty-pill-tag">{sub}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* TOP 4 SALARY KPI CARDS */}
       <div className="faculty-kpi-grid">
@@ -1386,1410 +660,210 @@ function FacultyDashboard() {
   );
 
   // ------------------------------------------------------------------------
-  // ------------------------------------------------------------------------
-  // SCREEN 2 — MY PROFILE VIEW (PIRNAV FACULTY PROFILE COMPLETION SYSTEM)
+  // SCREEN 2 — MY PROFILE VIEW
   // ------------------------------------------------------------------------
   const renderProfileView = () => {
-    const isSubmitted = facultyProfile.baseline?.profileStatus === "Submitted";
-    const isApproved = facultyProfile.baseline?.profileStatus === "Approved" || facultyProfile.baseline?.reviewStatus === "Approved";
-
     return (
       <div>
-        {renderHeader(
-          "My Profile",
-          "Complete and manage your official faculty credentials, qualifications, and records.",
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              type="button"
-              className="faculty-btn faculty-btn-ghost"
-              onClick={handleSaveProfileDraft}
-            >
-              <Save size={14} /> Save Draft
-            </button>
-            {profileTab !== "review" && (
-              <button
-                type="button"
-                className="faculty-btn faculty-btn-primary"
-                onClick={() => setProfileTab("review")}
-              >
-                <FileCheck size={14} /> Review & Submit
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* TOP STATUS NOTIFICATION IF SUBMITTED OR CORRECTION */}
-        {isSubmitted && (
-          <div className="faculty-profile-banner info">
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <Clock size={18} />
-              <div>
-                <strong>Profile Submitted for Administrative Review</strong>
-                <div style={{ fontSize: "12px", opacity: 0.9 }}>
-                  Submitted on {facultyProfile.submittedAt || "recently"}. Your profile is locked for editing while under review by the Principal & HR Office.
-                </div>
-              </div>
-            </div>
-            <span className="faculty-badge pending">Under Review</span>
-          </div>
-        )}
-
-        {facultyProfile.baseline?.profileStatus === "Correction Required" && (
-          <div className="faculty-profile-banner danger">
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <AlertCircle size={18} />
-              <div>
-                <strong>Correction Requested by Admin</strong>
-                <div style={{ fontSize: "12px" }}>
-                  Remarks: {facultyProfile.baseline?.correctionRemarks || "Please update your documents."}
-                </div>
-              </div>
-            </div>
-            <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("documents")}>
-              Update Documents
-            </button>
-          </div>
-        )}
+        {renderHeader("My Profile", "View and manage your faculty profile information.")}
 
         {/* HEADER PROFILE CARD */}
-        <div className="faculty-card" style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap", marginBottom: "16px" }}>
-          <div className="faculty-avatar" style={{ width: "70px", height: "70px", fontSize: "24px", position: "relative" }}>
-            {facultyProfile.personal?.photoUrl ? (
-              <img
-                src={facultyProfile.personal.photoUrl}
-                alt="Profile"
-                style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover" }}
-              />
-            ) : (
-              (facultyProfile.baseline?.fullName || "Ravi Kumar")
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .substring(0, 2)
-                .toUpperCase()
-            )}
+        <div className="faculty-card" style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
+          <div className="faculty-avatar" style={{ width: "70px", height: "70px", fontSize: "24px" }}>
+            RK
           </div>
-          <div style={{ flex: 1, minWidth: "240px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800 }}>
-                {facultyProfile.baseline?.fullName || mockFaculty.fullName}
-              </h2>
-              {renderStatusBadge(facultyProfile.baseline?.profileStatus === "Submitted" ? "Submitted" : facultyProfile.baseline?.status || "Active")}
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800 }}>{mockFaculty.fullName}</h2>
+              {renderStatusBadge("Active")}
             </div>
             <div style={{ fontSize: "13px", color: "var(--faculty-muted)", marginTop: "4px" }}>
-              Employee ID: <strong style={{ color: "var(--faculty-primary-dark)" }}>{facultyProfile.baseline?.employeeId}</strong> • {facultyProfile.baseline?.designation} ({facultyProfile.baseline?.department})
+              Employee ID: <strong>{mockFaculty.employeeId}</strong> • {mockFaculty.designation} ({mockFaculty.department} Dept)
             </div>
             <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "2px" }}>
-              Board: <strong>{facultyProfile.baseline?.board || "BIEAP"}</strong> • Joined: {facultyProfile.baseline?.dateOfJoining} • Email: {facultyProfile.baseline?.primaryEmail}
+              Joined: {mockFaculty.dateOfJoining} • Email: {mockFaculty.email}
             </div>
           </div>
-          <div style={{ background: "var(--faculty-subtle)", padding: "12px 20px", borderRadius: "12px", textAlign: "center", border: "1px solid var(--faculty-border)", minWidth: "150px" }}>
-            <div style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700, textTransform: "uppercase" }}>Profile Completion</div>
-            <div style={{ fontSize: "24px", fontWeight: 800, color: completionPercentage === 100 ? "var(--faculty-success)" : "var(--faculty-primary)", margin: "2px 0" }}>
-              {completionPercentage}%
-            </div>
-            <div className="faculty-progress-container" style={{ width: "100px", margin: "4px auto 0 auto" }}>
-              <div className="faculty-progress-bar" style={{ width: `${completionPercentage}%`, background: completionPercentage === 100 ? "var(--faculty-success)" : "var(--faculty-primary)" }} />
-            </div>
+          <div style={{ background: "var(--faculty-subtle)", padding: "12px 18px", borderRadius: "12px", textAlign: "center" }}>
+            <div style={{ fontSize: "11px", color: "var(--faculty-muted)", fontWeight: 700 }}>PROFILE COMPLETION</div>
+            <div style={{ fontSize: "22px", fontWeight: 800, color: "var(--faculty-primary)" }}>{mockFaculty.profileCompletion}%</div>
           </div>
         </div>
 
         {/* PROFILE TABS NAVBAR */}
-        <div className="faculty-profile-tabs">
+        <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "8px", marginBottom: "16px" }}>
           {[
-            { id: "overview", label: "Overview & Verified", icon: <Building2 size={14} /> },
-            { id: "personal", label: "Personal Info", icon: <User size={14} /> },
-            { id: "contact", label: "Contact & Address", icon: <MapPin size={14} /> },
-            { id: "academic", label: "Academic & Domains", icon: <BookOpen size={14} /> },
-            { id: "qual", label: "Qualifications", icon: <GraduationCap size={14} /> },
-            { id: "exp", label: "Experience", icon: <Briefcase size={14} /> },
-            { id: "bank", label: "Bank & Statutory", icon: <CreditCard size={14} /> },
-            { id: "emergency", label: "Emergency Contact", icon: <Phone size={14} /> },
-            { id: "docs", label: "Documents", icon: <FileText size={14} /> },
-            { id: "review", label: "Review & Submit", icon: <ShieldCheck size={14} /> },
+            { id: "basic", label: "Basic Info" },
+            { id: "contact", label: "Contact Details" },
+            { id: "pro", label: "Professional Details" },
+            { id: "qual", label: "Qualifications" },
+            { id: "exp", label: "Experience" },
+            { id: "docs", label: "Documents" },
+            { id: "bank", label: "Bank Details" },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
-              className={`faculty-profile-tab-btn ${profileTab === tab.id ? "active" : ""}`}
+              className={`faculty-btn ${profileTab === tab.id ? "faculty-btn-primary" : "faculty-btn-ghost"}`}
+              style={{ padding: "6px 14px", fontSize: "12px" }}
               onClick={() => setProfileTab(tab.id)}
             >
-              {tab.icon} {tab.label}
+              {tab.label}
             </button>
           ))}
         </div>
 
         {/* TAB CONTENT PANELS */}
         <div className="faculty-card">
-          {/* TAB 1: OVERVIEW & VERIFIED BASELINE */}
-          {profileTab === "overview" && (
-            <div>
-              <div className="faculty-section-title">
-                <ShieldCheck size={18} style={{ color: "var(--faculty-primary)" }} /> Official Baseline Employment Details (Verified by College Administration)
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--faculty-muted)", marginBottom: "16px" }}>
-                These official baseline details are provisioned and verified by College Administration. To request changes in department, designation, or subject allocation, please contact the Principal Office.
-              </p>
-
-              <div className="faculty-form-grid-3">
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Employee ID (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.employeeId}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Full Name (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.fullName}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Staff Category (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.staffType || "Teaching Staff"}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Department (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.department}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Designation (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.designation}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Board / Curriculum (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.board || "BIEAP"}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Date of Joining (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.dateOfJoining}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Employment Type (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.employmentType || "Permanent Full-Time"}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Official College Email (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.primaryEmail}</div>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Official Mobile Number (Read-Only)</label>
-                  <div className="faculty-field-readonly">+91 {facultyProfile.baseline?.primaryMobile}</div>
-                </div>
-                <div style={{ gridColumn: "span 2" }}>
-                  <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--faculty-muted)" }}>Allocated Teaching Subjects (Read-Only)</label>
-                  <div className="faculty-field-readonly" style={{ gap: "6px", flexWrap: "wrap" }}>
-                    {(facultyProfile.baseline?.allocatedSubjects || ["Mathematics I-A", "Mathematics II-A"]).map((sub, i) => (
-                      <span key={i} className="faculty-pill-tag">{sub}</span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-                <span style={{ fontSize: "12px", color: "var(--faculty-muted)" }}>
-                  Next step: Complete personal, contact, qualification, and banking records.
-                </span>
-                <button
-                  type="button"
-                  className="faculty-btn faculty-btn-primary"
-                  onClick={() => setProfileTab("personal")}
-                >
-                  Edit Personal Details <ArrowRight size={14} />
-                </button>
-              </div>
+          {profileTab === "basic" && (
+            <div className="faculty-form-grid-3">
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Employee ID</span><div><strong>{mockFaculty.employeeId}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Full Name</span><div><strong>{mockFaculty.fullName}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Gender</span><div><strong>{mockFaculty.gender}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Date of Birth</span><div><strong>{mockFaculty.dob}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Blood Group</span><div><strong>{mockFaculty.bloodGroup}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Department</span><div><strong>{mockFaculty.department}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Designation</span><div><strong>{mockFaculty.designation}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Date of Joining</span><div><strong>{mockFaculty.dateOfJoining}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Aadhaar Number</span><div><strong>{mockFaculty.aadhaarMasked}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>PAN Card</span><div><strong>{mockFaculty.panMasked}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Employment Type</span><div><strong>Permanent Full-Time</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Status</span><div>{renderStatusBadge("Active")}</div></div>
             </div>
           )}
 
-          {/* TAB 2: PERSONAL INFO */}
-          {profileTab === "personal" && (
-            <div>
-              <div className="faculty-section-title">
-                <User size={18} style={{ color: "var(--faculty-primary)" }} /> Personal Information
-              </div>
-
-              <div className="faculty-form-grid-3">
-                <div className="faculty-form-group">
-                  <label>Full Name</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.fullName}</div>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Father's / Guardian's Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.personal?.guardianName || ""}
-                    placeholder="Enter Father / Guardian Name"
-                    onChange={(e) => updateProfileSection("personal", "guardianName", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Gender <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <select
-                    value={facultyProfile.personal?.gender || "Male"}
-                    onChange={(e) => updateProfileSection("personal", "gender", e.target.value)}
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Date of Birth <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="date"
-                    max={new Date().toISOString().split("T")[0]}
-                    value={facultyProfile.personal?.dob || ""}
-                    onChange={(e) => updateProfileSection("personal", "dob", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Blood Group <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <select
-                    value={facultyProfile.personal?.bloodGroup || "O+"}
-                    onChange={(e) => updateProfileSection("personal", "bloodGroup", e.target.value)}
-                  >
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                  </select>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Marital Status</label>
-                  <select
-                    value={facultyProfile.personal?.maritalStatus || "Single"}
-                    onChange={(e) => updateProfileSection("personal", "maritalStatus", e.target.value)}
-                  >
-                    <option value="Single">Single</option>
-                    <option value="Married">Married</option>
-                    <option value="Divorced">Divorced</option>
-                    <option value="Widowed">Widowed</option>
-                  </select>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Nationality</label>
-                  <input
-                    type="text"
-                    value={facultyProfile.personal?.nationality || "Indian"}
-                    onChange={(e) => updateProfileSection("personal", "nationality", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Aadhaar Number (12 Digits) <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    maxLength={12}
-                    value={facultyProfile.personal?.aadhaar || ""}
-                    placeholder="Enter 12 Digit Aadhaar"
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, "");
-                      updateProfileSection("personal", "aadhaar", val);
-                    }}
-                  />
-                  <span style={{ fontSize: "10px", color: "var(--faculty-muted)" }}>Masked display: {maskAadhaar(facultyProfile.personal?.aadhaar)}</span>
-                </div>
-                <div className="faculty-form-group">
-                  <label>PAN Card Number (10 Characters) <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    value={facultyProfile.personal?.pan || ""}
-                    placeholder="e.g. ABCPS1234F"
-                    onChange={(e) => updateProfileSection("personal", "pan", e.target.value.toUpperCase())}
-                  />
-                  <span style={{ fontSize: "10px", color: "var(--faculty-muted)" }}>Masked display: {maskPan(facultyProfile.personal?.pan)}</span>
-                </div>
-              </div>
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("overview")}>
-                  <ArrowLeft size={14} /> Back to Overview
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("contact")}>
-                  Next: Contact & Address <ArrowRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: CONTACT & ADDRESS */}
           {profileTab === "contact" && (
-            <div>
-              <div className="faculty-section-title">
-                <MapPin size={18} style={{ color: "var(--faculty-primary)" }} /> Contact & Residential Address
-              </div>
-
-              <div className="faculty-form-grid-2">
-                <div className="faculty-form-group">
-                  <label>Primary Mobile (Official - Read-Only)</label>
-                  <div className="faculty-field-readonly">+91 {facultyProfile.baseline?.primaryMobile}</div>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Official College Email (Read-Only)</label>
-                  <div className="faculty-field-readonly">{facultyProfile.baseline?.primaryEmail}</div>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Alternate / Personal Mobile (10 Digits)</label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    value={facultyProfile.contact?.altMobile || ""}
-                    placeholder="Enter 10 Digit Mobile"
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, "");
-                      updateProfileSection("contact", "altMobile", val);
-                    }}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Personal Email Address</label>
-                  <input
-                    type="email"
-                    value={facultyProfile.contact?.personalEmail || ""}
-                    placeholder="e.g. personal@gmail.com"
-                    onChange={(e) => updateProfileSection("contact", "personalEmail", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ margin: "20px 0 10px 0", fontWeight: 800, fontSize: "14px", color: "var(--faculty-text)" }}>
-                Current Residential Address
-              </div>
-              <div className="faculty-form-grid-3">
-                <div className="faculty-form-group" style={{ gridColumn: "span 2" }}>
-                  <label>Door / House / Flat & Street <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.contact?.currentAddress || ""}
-                    placeholder="House No, Apartment, Street"
-                    onChange={(e) => updateProfileSection("contact", "currentAddress", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>City <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.contact?.city || ""}
-                    onChange={(e) => updateProfileSection("contact", "city", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>District</label>
-                  <input
-                    type="text"
-                    value={facultyProfile.contact?.district || ""}
-                    onChange={(e) => updateProfileSection("contact", "district", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>State <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.contact?.state || ""}
-                    onChange={(e) => updateProfileSection("contact", "state", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Pincode (6 Digits) <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={facultyProfile.contact?.pincode || ""}
-                    placeholder="6 Digit PIN"
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/\D/g, "");
-                      updateProfileSection("contact", "pincode", val);
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ margin: "24px 0 10px 0", display: "flex", alignItems: "center", gap: "8px" }}>
-                <input
-                  type="checkbox"
-                  id="sameAddressCheck"
-                  style={{ width: "16px", height: "16px", accentColor: "var(--faculty-primary)" }}
-                  checked={facultyProfile.contact?.sameAsCurrent ?? true}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setFacultyProfile((prev) => ({
-                      ...prev,
-                      contact: {
-                        ...(prev.contact || {}),
-                        sameAsCurrent: checked,
-                        ...(checked
-                          ? {
-                              permAddress: prev.contact?.currentAddress,
-                              permCity: prev.contact?.city,
-                              permDistrict: prev.contact?.district,
-                              permState: prev.contact?.state,
-                              permPincode: prev.contact?.pincode,
-                            }
-                          : {}),
-                      },
-                    }));
-                  }}
-                />
-                <label htmlFor="sameAddressCheck" style={{ fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
-                  Permanent Address is same as Current Address
-                </label>
-              </div>
-
-              {!facultyProfile.contact?.sameAsCurrent && (
-                <div className="faculty-form-grid-3" style={{ marginTop: "12px" }}>
-                  <div className="faculty-form-group" style={{ gridColumn: "span 2" }}>
-                    <label>Permanent House & Street</label>
-                    <input
-                      type="text"
-                      value={facultyProfile.contact?.permAddress || ""}
-                      onChange={(e) => updateProfileSection("contact", "permAddress", e.target.value)}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Permanent City</label>
-                    <input
-                      type="text"
-                      value={facultyProfile.contact?.permCity || ""}
-                      onChange={(e) => updateProfileSection("contact", "permCity", e.target.value)}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Permanent State</label>
-                    <input
-                      type="text"
-                      value={facultyProfile.contact?.permState || ""}
-                      onChange={(e) => updateProfileSection("contact", "permState", e.target.value)}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Permanent Pincode</label>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={facultyProfile.contact?.permPincode || ""}
-                      onChange={(e) => updateProfileSection("contact", "permPincode", e.target.value.replace(/\D/g, ""))}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("personal")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("academic")}>
-                  Next: Academic Details <ArrowRight size={14} />
-                </button>
-              </div>
+            <div className="faculty-form-grid-2">
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Official Mobile</span><div><strong>+91 {mockFaculty.mobile}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Alternate Mobile</span><div><strong>+91 {mockFaculty.altMobile}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>College Email</span><div><strong>{mockFaculty.email}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Personal Email</span><div><strong>{mockFaculty.personalEmail}</strong></div></div>
+              <div style={{ gridColumn: "span 2" }}><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Residential Address</span><div><strong>{mockFaculty.address}</strong></div></div>
             </div>
           )}
 
-          {/* TAB 4: ACADEMIC & DOMAINS */}
-          {profileTab === "academic" && (
-            <div>
-              <div className="faculty-section-title">
-                <BookOpen size={18} style={{ color: "var(--faculty-primary)" }} /> Academic Specialization & Teaching Domains
-              </div>
-
-              <div className="faculty-form-grid-2">
-                <div className="faculty-form-group">
-                  <label>Primary Specialization / Teaching Domain <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.professional?.specialization || ""}
-                    placeholder="e.g. Pure & Applied Mathematics, Calculus"
-                    onChange={(e) => updateProfileSection("professional", "specialization", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Teaching Level / Secondary Domains</label>
-                  <input
-                    type="text"
-                    value={facultyProfile.professional?.primaryTeachingDomain || ""}
-                    placeholder="e.g. Senior Secondary & Intermediate MPC"
-                    onChange={(e) => updateProfileSection("professional", "primaryTeachingDomain", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Research Interests & Publications Summary</label>
-                  <textarea
-                    rows={2}
-                    value={facultyProfile.professional?.researchInterests || ""}
-                    placeholder="e.g. Differential Equations, Mathematical Modelling"
-                    onChange={(e) => updateProfileSection("professional", "researchInterests", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Professional Bodies & Memberships</label>
-                  <textarea
-                    rows={2}
-                    value={facultyProfile.professional?.memberships || ""}
-                    placeholder="e.g. AMTI, Indian Mathematical Society Life Member"
-                    onChange={(e) => updateProfileSection("professional", "memberships", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("contact")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("qual")}>
-                  Next: Educational Qualifications <ArrowRight size={14} />
-                </button>
-              </div>
+          {profileTab === "pro" && (
+            <div className="faculty-form-grid-3">
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Subjects Can Teach</span><div><strong>Mathematics, Statistics</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Specialization</span><div><strong>Calculus & Algebra</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Class Teacher</span><div><strong>MPC 1st Year Sec A</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Max Weekly Workload</span><div><strong>20 Hours / Week</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Research Interest</span><div><strong>Applied Differential Equations</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Memberships</span><div><strong>AMTI, IMS Life Member</strong></div></div>
             </div>
           )}
 
-          {/* TAB 5: QUALIFICATIONS */}
           {profileTab === "qual" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-                <div className="faculty-section-title" style={{ margin: 0 }}>
-                  <GraduationCap size={18} style={{ color: "var(--faculty-primary)" }} /> Educational Qualifications
-                </div>
-                <button
-                  type="button"
-                  className="faculty-btn faculty-btn-primary faculty-btn-sm"
-                  onClick={handleOpenAddQual}
-                >
-                  <Plus size={14} /> Add Degree / Qualification
-                </button>
-              </div>
-
-              {(!facultyProfile.education || facultyProfile.education.length === 0) ? (
-                <div style={{ textAlign: "center", padding: "32px", border: "1px dashed var(--faculty-border)", borderRadius: "10px" }}>
-                  <GraduationCap size={32} style={{ color: "var(--faculty-muted)", opacity: 0.5, margin: "0 auto 8px" }} />
-                  <div style={{ fontWeight: 700, fontSize: "14px" }}>No qualifications added yet</div>
-                  <p style={{ fontSize: "12px", color: "var(--faculty-muted)", margin: "4px 0 12px" }}>
-                    Please add your highest qualification, graduation, and professional certifications.
-                  </p>
-                  <button type="button" className="faculty-btn faculty-btn-primary faculty-btn-sm" onClick={handleOpenAddQual}>
-                    <Plus size={13} /> Add First Qualification
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {facultyProfile.education.map((q) => (
-                    <div key={q.id} className="faculty-repeatable-card">
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span className="faculty-pill-tag">{q.level}</span>
-                            <strong style={{ fontSize: "14px", color: "var(--faculty-text)" }}>{q.degree}</strong>
-                          </div>
-                          <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "4px" }}>
-                            Institution: <strong>{q.institution}</strong> • University/Board: {q.university || "—"}
-                          </div>
-                          <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "2px" }}>
-                            Specialization: {q.specialization || "General"} • Passing Year: <strong>{q.passingYear}</strong> • Score: <strong>{q.percentage}</strong> ({q.studyMode || "Full-Time"})
-                          </div>
-                          {q.docName && (
-                            <div style={{ fontSize: "11px", color: "var(--faculty-primary)", marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-                              <FileCheck size={12} /> Certificate: {q.docName}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          <button
-                            type="button"
-                            className="faculty-btn faculty-btn-ghost faculty-btn-sm"
-                            onClick={() => handleOpenEditQual(q)}
-                            title="Edit"
-                          >
-                            <Edit3 size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className="faculty-btn faculty-btn-ghost faculty-btn-sm"
-                            style={{ color: "var(--faculty-danger)" }}
-                            onClick={() => handleDeleteQual(q.id)}
-                            title="Delete"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("academic")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("exp")}>
-                  Next: Previous Experience <ArrowRight size={14} />
-                </button>
-              </div>
+            <div className="faculty-table-wrap">
+              <table className="faculty-table">
+                <thead>
+                  <tr>
+                    <th>Degree</th>
+                    <th>Specialization</th>
+                    <th>University / Board</th>
+                    <th>Year</th>
+                    <th>CGPA / %</th>
+                    <th>Document</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>M.Sc Mathematics</strong></td>
+                    <td>Pure & Applied Maths</td>
+                    <td>Osmania University</td>
+                    <td>2018</td>
+                    <td>8.8 CGPA</td>
+                    <td>{renderStatusBadge("Verified")}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>B.Ed Education</strong></td>
+                    <td>Mathematics Pedagogy</td>
+                    <td>Kakatiya University</td>
+                    <td>2019</td>
+                    <td>82.4%</td>
+                    <td>{renderStatusBadge("Verified")}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>CSIR NET Qualified</strong></td>
+                    <td>Mathematical Sciences</td>
+                    <td>NTA / CSIR</td>
+                    <td>2020</td>
+                    <td>AIR 142</td>
+                    <td>{renderStatusBadge("Verified")}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           )}
 
-          {/* TAB 6: PREVIOUS EXPERIENCE */}
           {profileTab === "exp" && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-                <div className="faculty-section-title" style={{ margin: 0 }}>
-                  <Briefcase size={18} style={{ color: "var(--faculty-primary)" }} /> Previous Teaching & Industry Experience
-                </div>
-                {!facultyProfile.experience?.isFresher && (
-                  <button
-                    type="button"
-                    className="faculty-btn faculty-btn-primary faculty-btn-sm"
-                    onClick={handleOpenAddExp}
-                  >
-                    <Plus size={14} /> Add Experience Record
-                  </button>
-                )}
-              </div>
-
-              {/* FRESHER TOGGLE */}
-              <div style={{ background: "var(--faculty-subtle)", padding: "14px 18px", borderRadius: "10px", border: "1px solid var(--faculty-border)", marginBottom: "16px", display: "flex", alignItems: "center", gap: "10px" }}>
-                <input
-                  type="checkbox"
-                  id="fresherToggleCheck"
-                  style={{ width: "18px", height: "18px", accentColor: "var(--faculty-primary)", cursor: "pointer" }}
-                  checked={!!facultyProfile.experience?.isFresher}
-                  onChange={(e) => handleFresherToggle(e.target.checked)}
-                />
-                <label htmlFor="fresherToggleCheck" style={{ fontSize: "13px", fontWeight: 700, cursor: "pointer" }}>
-                  I am a Fresher (No prior teaching or industry experience)
-                </label>
-              </div>
-
-              {facultyProfile.experience?.isFresher ? (
-                <div style={{ padding: "24px", background: "var(--faculty-primary-soft)", borderRadius: "10px", textAlign: "center", color: "var(--faculty-primary-dark)" }}>
-                  <CheckCircle size={28} style={{ margin: "0 auto 8px" }} />
-                  <div style={{ fontWeight: 800, fontSize: "14px" }}>Fresher Status Registered</div>
-                  <div style={{ fontSize: "12px", marginTop: "2px" }}>Total prior experience marked as 0 Years. PIRNAV College will be your primary institution of record.</div>
-                </div>
-              ) : (!facultyProfile.experience?.records || facultyProfile.experience.records.length === 0) ? (
-                <div style={{ textAlign: "center", padding: "32px", border: "1px dashed var(--faculty-border)", borderRadius: "10px" }}>
-                  <Briefcase size={32} style={{ color: "var(--faculty-muted)", opacity: 0.5, margin: "0 auto 8px" }} />
-                  <div style={{ fontWeight: 700, fontSize: "14px" }}>No previous experience records added</div>
-                  <p style={{ fontSize: "12px", color: "var(--faculty-muted)", margin: "4px 0 12px" }}>
-                    If you have prior teaching experience, click below to add your past institutions.
-                  </p>
-                  <button type="button" className="faculty-btn faculty-btn-primary faculty-btn-sm" onClick={handleOpenAddExp}>
-                    <Plus size={13} /> Add Experience
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {facultyProfile.experience.records.map((exp) => (
-                    <div key={exp.id} className="faculty-repeatable-card">
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <strong style={{ fontSize: "14px", color: "var(--faculty-text)" }}>{exp.institution}</strong>
-                            <span className="faculty-pill-tag">{exp.designation}</span>
-                          </div>
-                          <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "4px" }}>
-                            Department: {exp.department || "Academics"} • Period: <strong>{exp.fromDate}</strong> to <strong>{exp.isCurrent ? "Present" : exp.toDate || "—"}</strong>
-                          </div>
-                          {exp.responsibilities && (
-                            <div style={{ fontSize: "12px", color: "var(--faculty-text)", marginTop: "4px" }}>
-                              {exp.responsibilities}
-                            </div>
-                          )}
-                          {exp.reasonForLeaving && (
-                            <div style={{ fontSize: "11px", color: "var(--faculty-muted)", marginTop: "2px" }}>
-                              Reason for leaving: {exp.reasonForLeaving}
-                            </div>
-                          )}
-                          {exp.docName && (
-                            <div style={{ fontSize: "11px", color: "var(--faculty-primary)", marginTop: "4px", display: "flex", alignItems: "center", gap: "4px" }}>
-                              <FileCheck size={12} /> Relieving Letter: {exp.docName}
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          <button
-                            type="button"
-                            className="faculty-btn faculty-btn-ghost faculty-btn-sm"
-                            onClick={() => handleOpenEditExp(exp)}
-                            title="Edit"
-                          >
-                            <Edit3 size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className="faculty-btn faculty-btn-ghost faculty-btn-sm"
-                            style={{ color: "var(--faculty-danger)" }}
-                            onClick={() => handleDeleteExp(exp.id)}
-                            title="Delete"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("qual")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("bank")}>
-                  Next: Bank Details <ArrowRight size={14} />
-                </button>
-              </div>
+            <div className="faculty-table-wrap">
+              <table className="faculty-table">
+                <thead>
+                  <tr>
+                    <th>Institution</th>
+                    <th>Designation</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Total Exp</th>
+                    <th>Document</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Sri Chaitanya Junior College</strong></td>
+                    <td>Lecturer Mathematics</td>
+                    <td>Jul 2021</td>
+                    <td>May 2024</td>
+                    <td>2 Years 11 Months</td>
+                    <td>{renderStatusBadge("Verified")}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>PIRNAV College</strong></td>
+                    <td>Junior Lecturer</td>
+                    <td>Jun 2024</td>
+                    <td>Present</td>
+                    <td>1 Year</td>
+                    <td>{renderStatusBadge("Active")}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           )}
 
-          {/* TAB 7: BANK & STATUTORY */}
-          {profileTab === "bank" && (
-            <div>
-              <div className="faculty-section-title">
-                <CreditCard size={18} style={{ color: "var(--faculty-primary)" }} /> Bank & Statutory Details (For Payroll Processing)
-              </div>
-
-              <div className="faculty-form-grid-3">
-                <div className="faculty-form-group">
-                  <label>Bank Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.bank?.bankName || ""}
-                    placeholder="e.g. State Bank of India"
-                    onChange={(e) => updateProfileSection("bank", "bankName", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Account Holder Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.bank?.accountHolder || ""}
-                    placeholder="As per bank passbook"
-                    onChange={(e) => updateProfileSection("bank", "accountHolder", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Account Number <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="password"
-                    value={facultyProfile.bank?.accountNumber || ""}
-                    placeholder="Enter Account Number"
-                    onChange={(e) => updateProfileSection("bank", "accountNumber", e.target.value.replace(/\D/g, ""))}
-                  />
-                  <span style={{ fontSize: "10px", color: "var(--faculty-muted)" }}>Masked display: {maskAccount(facultyProfile.bank?.accountNumber)}</span>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Confirm Account Number <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.bank?.confirmAccountNumber || ""}
-                    placeholder="Re-enter Account Number"
-                    onChange={(e) => updateProfileSection("bank", "confirmAccountNumber", e.target.value.replace(/\D/g, ""))}
-                  />
-                  {facultyProfile.bank?.accountNumber && facultyProfile.bank?.confirmAccountNumber && (
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: facultyProfile.bank.accountNumber === facultyProfile.bank.confirmAccountNumber ? "var(--faculty-success)" : "var(--faculty-danger)" }}>
-                      {facultyProfile.bank.accountNumber === facultyProfile.bank.confirmAccountNumber ? "✓ Account numbers match" : "✕ Account numbers do not match"}
-                    </span>
-                  )}
-                </div>
-                <div className="faculty-form-group">
-                  <label>IFSC Code <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    maxLength={11}
-                    value={facultyProfile.bank?.ifsc || ""}
-                    placeholder="e.g. SBIN0001234"
-                    onChange={(e) => updateProfileSection("bank", "ifsc", e.target.value.toUpperCase())}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Branch Name</label>
-                  <input
-                    type="text"
-                    value={facultyProfile.bank?.branch || ""}
-                    placeholder="Branch Location"
-                    onChange={(e) => updateProfileSection("bank", "branch", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Account Type</label>
-                  <select
-                    value={facultyProfile.bank?.accountType || "Savings"}
-                    onChange={(e) => updateProfileSection("bank", "accountType", e.target.value)}
-                  >
-                    <option value="Savings">Savings Account</option>
-                    <option value="Salary">Salary Account</option>
-                    <option value="Current">Current Account</option>
-                  </select>
-                </div>
-                <div className="faculty-form-group">
-                  <label>UAN Number (12 Digits - Optional)</label>
-                  <input
-                    type="text"
-                    maxLength={12}
-                    value={facultyProfile.bank?.uanNumber || ""}
-                    placeholder="Universal Account Number"
-                    onChange={(e) => updateProfileSection("bank", "uanNumber", e.target.value.replace(/\D/g, ""))}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>PF / Provident Fund Number (Optional)</label>
-                  <input
-                    type="text"
-                    value={facultyProfile.bank?.pfNumber || ""}
-                    placeholder="e.g. AP/HYD/0098234/000/00027"
-                    onChange={(e) => updateProfileSection("bank", "pfNumber", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("exp")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("emergency")}>
-                  Next: Emergency Contact <ArrowRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 8: EMERGENCY CONTACT */}
-          {profileTab === "emergency" && (
-            <div>
-              <div className="faculty-section-title">
-                <Phone size={18} style={{ color: "var(--faculty-primary)" }} /> Emergency Contact Information
-              </div>
-
-              <div className="faculty-form-grid-3">
-                <div className="faculty-form-group">
-                  <label>Contact Person Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    value={facultyProfile.emergency?.name || ""}
-                    placeholder="e.g. Mrs. Sumathi Kumar"
-                    onChange={(e) => updateProfileSection("emergency", "name", e.target.value)}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Relationship <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <select
-                    value={facultyProfile.emergency?.relationship || "Spouse"}
-                    onChange={(e) => updateProfileSection("emergency", "relationship", e.target.value)}
-                  >
-                    <option value="Spouse">Spouse</option>
-                    <option value="Father">Father</option>
-                    <option value="Mother">Mother</option>
-                    <option value="Brother">Brother</option>
-                    <option value="Sister">Sister</option>
-                    <option value="Guardian">Guardian</option>
-                    <option value="Friend">Friend</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div className="faculty-form-group">
-                  <label>Emergency Primary Mobile <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    value={facultyProfile.emergency?.mobile || ""}
-                    placeholder="10 Digit Phone Number"
-                    onChange={(e) => updateProfileSection("emergency", "mobile", e.target.value.replace(/\D/g, ""))}
-                  />
-                </div>
-                <div className="faculty-form-group">
-                  <label>Alternate Mobile</label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    value={facultyProfile.emergency?.altMobile || ""}
-                    placeholder="Alternate Phone"
-                    onChange={(e) => updateProfileSection("emergency", "altMobile", e.target.value.replace(/\D/g, ""))}
-                  />
-                </div>
-                <div className="faculty-form-group" style={{ gridColumn: "span 2" }}>
-                  <label>Emergency Contact Address</label>
-                  <input
-                    type="text"
-                    value={facultyProfile.emergency?.address || ""}
-                    placeholder="Residential address of contact person"
-                    onChange={(e) => updateProfileSection("emergency", "address", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("bank")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("docs")}>
-                  Next: Document Uploads <ArrowRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 9: DOCUMENTS */}
           {profileTab === "docs" && (
-            <div>
-              <div className="faculty-section-title">
-                <FileText size={18} style={{ color: "var(--faculty-primary)" }} /> Mandatory & Supporting Documents
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--faculty-muted)", marginBottom: "16px" }}>
-                Upload clear scanned copies or photographs of your credentials (PDF, JPG, PNG under 5MB each).
-              </p>
-
-              <div className="faculty-form-grid-2">
-                {[
-                  { key: "photo", label: "Passport Size Photograph", req: true, hint: "Recent color photo (JPG/PNG)" },
-                  { key: "signature", label: "Signature Copy", req: true, hint: "Black ink on white paper" },
-                  { key: "aadhaar", label: "Aadhaar Card Copy", req: true, hint: "Front & back in PDF or image" },
-                  { key: "pan", label: "PAN Card Copy", req: true, hint: "Clear readable copy" },
-                  { key: "degreeCertificate", label: "Highest Degree Certificate", req: true, hint: "M.Sc / Ph.D / Post Graduation" },
-                  { key: "experienceLetter", label: "Relieving / Experience Letter", req: false, hint: "Past institution service letter" },
-                  { key: "resume", label: "Curriculum Vitae (Resume)", req: true, hint: "Updated academic CV (PDF)" },
-                  { key: "bankProof", label: "Cancelled Cheque / Passbook", req: true, hint: "Showing Account No & IFSC" },
-                ].map((item) => {
-                  const doc = facultyProfile.documents?.[item.key];
-                  const isUploading = uploadingKey === item.key;
-
-                  return (
-                    <div key={item.key} className="faculty-doc-card">
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <strong style={{ fontSize: "13px", color: "var(--faculty-text)" }}>{item.label}</strong>
-                          {item.req && <span style={{ color: "var(--faculty-primary)", fontSize: "12px", fontWeight: 800 }}>*</span>}
-                        </div>
-                        <div style={{ fontSize: "11px", color: "var(--faculty-muted)", marginTop: "2px" }}>
-                          {item.hint}
-                        </div>
-                        {doc ? (
-                          <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span className="faculty-pill-tag" style={{ background: "var(--faculty-success-soft)", color: "var(--faculty-success)", borderColor: "#bbf7d0" }}>
-                              <Check size={10} /> {doc.name} ({doc.size})
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                        {doc ? (
-                          <>
-                            <button
-                              type="button"
-                              className="faculty-btn faculty-btn-ghost faculty-btn-sm"
-                              title="Preview Document"
-                              onClick={() => setPreviewDoc(doc)}
-                            >
-                              <Eye size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              className="faculty-btn faculty-btn-ghost faculty-btn-sm"
-                              style={{ color: "var(--faculty-danger)" }}
-                              title="Remove"
-                              onClick={() => handleRemoveDoc(item.key)}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </>
-                        ) : (
-                          <label className="faculty-btn faculty-btn-ghost faculty-btn-sm" style={{ cursor: "pointer" }}>
-                            {isUploading ? <RefreshCw size={13} className="spin" /> : <Upload size={13} />}
-                            <span>{isUploading ? "Uploading..." : "Upload"}</span>
-                            <input
-                              type="file"
-                              accept=".pdf,.jpg,.jpeg,.png"
-                              style={{ display: "none" }}
-                              onChange={(e) => {
-                                if (e.target.files && e.target.files[0]) {
-                                  handleDocFileUpload(item.key, e.target.files[0]);
-                                }
-                              }}
-                            />
-                          </label>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid var(--faculty-border)", display: "flex", justifyContent: "space-between" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("emergency")}>
-                  <ArrowLeft size={14} /> Back
-                </button>
-                <button type="button" className="faculty-btn faculty-btn-primary" onClick={() => setProfileTab("review")}>
-                  Next: Review & Final Submission <ArrowRight size={14} />
-                </button>
-              </div>
+            <div className="faculty-form-grid-3">
+              {[
+                { name: "Aadhaar Card Copy", status: "Verified" },
+                { name: "PAN Card Copy", status: "Verified" },
+                { name: "M.Sc Degree Certificate", status: "Verified" },
+                { name: "NET Qualification Certificate", status: "Verified" },
+                { name: "Relieving & Exp Letter", status: "Verified" },
+                { name: "Recent Passport Photo", status: "Uploaded" },
+              ].map((doc) => (
+                <div key={doc.name} style={{ padding: "12px", border: "1px solid var(--faculty-border)", borderRadius: "10px", background: "var(--faculty-subtle)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <strong style={{ fontSize: "13px" }}>{doc.name}</strong>
+                    <div style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>PDF Document</div>
+                  </div>
+                  {renderStatusBadge(doc.status)}
+                </div>
+              ))}
             </div>
           )}
 
-          {/* TAB 10: REVIEW & SUBMIT */}
-          {profileTab === "review" && (
-            <div>
-              <div className="faculty-section-title">
-                <ShieldCheck size={18} style={{ color: "var(--faculty-primary)" }} /> Comprehensive Profile Review & Final Declaration
-              </div>
-              <p style={{ fontSize: "12px", color: "var(--faculty-muted)", marginBottom: "18px" }}>
-                Please review all information below carefully. Once submitted, your profile will be sent to the Principal Office for official employment verification.
-              </p>
-
-              {/* REVIEW SUMMARY CARDS */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {/* 1. Official Baseline */}
-                <div style={{ padding: "14px 18px", border: "1px solid var(--faculty-border)", borderRadius: "10px", background: "var(--faculty-subtle)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "13px" }}>1. Baseline Administrative Record</strong>
-                    <span className="faculty-pill-tag"><ShieldCheck size={10} /> Verified by Admin</span>
-                  </div>
-                  <div style={{ fontSize: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
-                    <div>ID: <strong>{facultyProfile.baseline?.employeeId}</strong></div>
-                    <div>Designation: <strong>{facultyProfile.baseline?.designation}</strong></div>
-                    <div>Department: <strong>{facultyProfile.baseline?.department}</strong></div>
-                    <div>Board: <strong>{facultyProfile.baseline?.board}</strong></div>
-                  </div>
-                </div>
-
-                {/* 2. Personal & Contact */}
-                <div style={{ padding: "14px 18px", border: "1px solid var(--faculty-border)", borderRadius: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "13px" }}>2. Personal & Contact Information</strong>
-                    <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setProfileTab("personal")}>
-                      <Edit3 size={12} /> Edit
-                    </button>
-                  </div>
-                  <div style={{ fontSize: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
-                    <div>Guardian: <strong>{facultyProfile.personal?.guardianName || "—"}</strong></div>
-                    <div>DOB / Gender: <strong>{facultyProfile.personal?.dob} ({facultyProfile.personal?.gender})</strong></div>
-                    <div>Blood Group: <strong>{facultyProfile.personal?.bloodGroup}</strong></div>
-                    <div>Aadhaar: <strong>{maskAadhaar(facultyProfile.personal?.aadhaar)}</strong></div>
-                    <div>PAN Card: <strong>{maskPan(facultyProfile.personal?.pan)}</strong></div>
-                    <div>Address: <strong>{facultyProfile.contact?.currentAddress}, {facultyProfile.contact?.city} - {facultyProfile.contact?.pincode}</strong></div>
-                  </div>
-                </div>
-
-                {/* 3. Qualifications */}
-                <div style={{ padding: "14px 18px", border: "1px solid var(--faculty-border)", borderRadius: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "13px" }}>3. Educational Qualifications ({facultyProfile.education?.length || 0} Records)</strong>
-                    <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setProfileTab("qual")}>
-                      <Edit3 size={12} /> Edit
-                    </button>
-                  </div>
-                  {(facultyProfile.education || []).map((q, idx) => (
-                    <div key={idx} style={{ fontSize: "12px", marginBottom: "4px" }}>
-                      • <strong>{q.degree}</strong> from {q.institution} ({q.passingYear}) — {q.percentage}
-                    </div>
-                  ))}
-                </div>
-
-                {/* 4. Experience */}
-                <div style={{ padding: "14px 18px", border: "1px solid var(--faculty-border)", borderRadius: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "13px" }}>4. Previous Experience</strong>
-                    <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setProfileTab("exp")}>
-                      <Edit3 size={12} /> Edit
-                    </button>
-                  </div>
-                  {facultyProfile.experience?.isFresher ? (
-                    <div style={{ fontSize: "12px", color: "var(--faculty-muted)" }}>Registered as Fresher (No prior teaching experience)</div>
-                  ) : (
-                    (facultyProfile.experience?.records || []).map((exp, idx) => (
-                      <div key={idx} style={{ fontSize: "12px", marginBottom: "4px" }}>
-                        • <strong>{exp.designation}</strong> at {exp.institution} ({exp.fromDate} to {exp.isCurrent ? "Present" : exp.toDate})
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* 5. Bank & Statutory */}
-                <div style={{ padding: "14px 18px", border: "1px solid var(--faculty-border)", borderRadius: "10px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "13px" }}>5. Bank & Statutory Information</strong>
-                    <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setProfileTab("bank")}>
-                      <Edit3 size={12} /> Edit
-                    </button>
-                  </div>
-                  <div style={{ fontSize: "12px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "8px" }}>
-                    <div>Bank: <strong>{facultyProfile.bank?.bankName || "—"}</strong></div>
-                    <div>Account Holder: <strong>{facultyProfile.bank?.accountHolder || "—"}</strong></div>
-                    <div>Account No: <strong>{maskAccount(facultyProfile.bank?.accountNumber)}</strong></div>
-                    <div>IFSC: <strong>{facultyProfile.bank?.ifsc || "—"}</strong></div>
-                  </div>
-                </div>
-              </div>
-
-              {/* MANDATORY LEGAL DECLARATION BOX */}
-              <div className="faculty-declaration-box">
-                <input
-                  type="checkbox"
-                  id="finalDeclarationCheckbox"
-                  checked={!!facultyProfile.isDeclared}
-                  onChange={(e) => updateProfileSection("isDeclared", "", e.target.checked)}
-                />
-                <label htmlFor="finalDeclarationCheckbox" style={{ fontSize: "12px", lineHeight: "1.6", cursor: "pointer" }}>
-                  <strong>Mandatory Faculty Declaration:</strong> I hereby solemnly declare and affirm that all the information, educational qualifications, previous experience records, and documents uploaded by me in this portal are true, genuine, complete, and accurate to the best of my knowledge and belief. I understand that any false statement, misrepresentation, or omission may result in immediate rejection of submission, disciplinary proceedings, or termination of appointment in accordance with PIRNAV College service regulations.
-                </label>
-              </div>
-
-              {/* ACTION BUTTONS */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-                <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setProfileTab("docs")}>
-                  <ArrowLeft size={14} /> Back to Documents
-                </button>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button type="button" className="faculty-btn faculty-btn-ghost" onClick={handleSaveProfileDraft}>
-                    <Save size={14} /> Save Draft
-                  </button>
-                  <button
-                    type="button"
-                    className="faculty-btn faculty-btn-primary"
-                    style={{ padding: "10px 24px", fontSize: "13px" }}
-                    onClick={handleSubmitProfile}
-                  >
-                    <CheckCircle size={15} /> Submit Profile for Administrative Review
-                  </button>
-                </div>
-              </div>
+          {profileTab === "bank" && (
+            <div className="faculty-form-grid-3">
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Bank Name</span><div><strong>{mockFaculty.bankName}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Account Holder</span><div><strong>{mockFaculty.accountHolder}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Account Number</span><div><strong>{mockFaculty.accountMasked}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>IFSC Code</span><div><strong>{mockFaculty.ifsc}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>Branch</span><div><strong>{mockFaculty.branch}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>UAN Number</span><div><strong>{mockFaculty.uan}</strong></div></div>
+              <div><span style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>PF Number</span><div><strong>{mockFaculty.pfNumber}</strong></div></div>
             </div>
           )}
         </div>
-
-        {/* MODAL: ADD / EDIT QUALIFICATION */}
-        {showQualModal && (
-          <div className="faculty-modal-overlay">
-            <div className="faculty-modal-box">
-              <div className="faculty-modal-header">
-                <h3 className="faculty-modal-title">
-                  {editingQualId ? "Edit Educational Qualification" : "Add Educational Qualification"}
-                </h3>
-                <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setShowQualModal(false)}>
-                  <X size={14} />
-                </button>
-              </div>
-              <form onSubmit={handleSaveQual}>
-                <div className="faculty-form-grid-2" style={{ gap: "12px" }}>
-                  <div className="faculty-form-group">
-                    <label>Qualification Level <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <select
-                      value={qualForm.level}
-                      onChange={(e) => setQualForm({ ...qualForm, level: e.target.value })}
-                    >
-                      <option value="Post Graduation">Post Graduation (M.Sc / M.Tech / M.A)</option>
-                      <option value="Graduation">Graduation (B.Sc / B.Tech / B.A)</option>
-                      <option value="B.Ed">B.Ed (Bachelor of Education)</option>
-                      <option value="Ph.D">Ph.D / Doctorate</option>
-                      <option value="M.Phil">M.Phil</option>
-                      <option value="NET / SET">CSIR / UGC NET / SET / GATE</option>
-                      <option value="Intermediate / 12th">Intermediate / 12th Standard</option>
-                      <option value="10th / SSC">10th / SSC</option>
-                      <option value="Other Certification">Other Certification</option>
-                    </select>
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Degree / Certificate Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <input
-                      type="text"
-                      placeholder="e.g. M.Sc Pure Mathematics"
-                      value={qualForm.degree}
-                      onChange={(e) => setQualForm({ ...qualForm, degree: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>College / Institution Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <input
-                      type="text"
-                      placeholder="e.g. University College of Science"
-                      value={qualForm.institution}
-                      onChange={(e) => setQualForm({ ...qualForm, institution: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>University / Board</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Osmania University"
-                      value={qualForm.university}
-                      onChange={(e) => setQualForm({ ...qualForm, university: e.target.value })}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Specialization / Subject</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Pure & Applied Mathematics"
-                      value={qualForm.specialization}
-                      onChange={(e) => setQualForm({ ...qualForm, specialization: e.target.value })}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Year of Passing <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <input
-                      type="text"
-                      maxLength={4}
-                      placeholder="e.g. 2018"
-                      value={qualForm.passingYear}
-                      onChange={(e) => setQualForm({ ...qualForm, passingYear: e.target.value.replace(/\D/g, "") })}
-                      required
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Score (Percentage / CGPA)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 88.5% or 8.85 CGPA"
-                      value={qualForm.percentage}
-                      onChange={(e) => setQualForm({ ...qualForm, percentage: e.target.value })}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Study Mode</label>
-                    <select
-                      value={qualForm.studyMode}
-                      onChange={(e) => setQualForm({ ...qualForm, studyMode: e.target.value })}
-                    >
-                      <option value="Full-Time">Full-Time Regular</option>
-                      <option value="Part-Time">Part-Time</option>
-                      <option value="Distance / Online">Distance / Correspondence</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "18px", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-                  <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setShowQualModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="faculty-btn faculty-btn-primary">
-                    <Save size={13} /> {editingQualId ? "Update Qualification" : "Add Qualification"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL: ADD / EDIT EXPERIENCE */}
-        {showExpModal && (
-          <div className="faculty-modal-overlay">
-            <div className="faculty-modal-box">
-              <div className="faculty-modal-header">
-                <h3 className="faculty-modal-title">
-                  {editingExpId ? "Edit Experience Record" : "Add Previous Experience Record"}
-                </h3>
-                <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setShowExpModal(false)}>
-                  <X size={14} />
-                </button>
-              </div>
-              <form onSubmit={handleSaveExp}>
-                <div className="faculty-form-grid-2" style={{ gap: "12px" }}>
-                  <div className="faculty-form-group" style={{ gridColumn: "span 2" }}>
-                    <label>Institution / Organization Name <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Sri Chaitanya Junior College"
-                      value={expForm.institution}
-                      onChange={(e) => setExpForm({ ...expForm, institution: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Designation / Role <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Lecturer in Mathematics"
-                      value={expForm.designation}
-                      onChange={(e) => setExpForm({ ...expForm, designation: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>Department</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Mathematics / Sciences"
-                      value={expForm.department}
-                      onChange={(e) => setExpForm({ ...expForm, department: e.target.value })}
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>From (Month / Year) <strong style={{ color: "var(--faculty-primary)" }}>*</strong></label>
-                    <input
-                      type="month"
-                      value={expForm.fromDate}
-                      onChange={(e) => setExpForm({ ...expForm, fromDate: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="faculty-form-group">
-                    <label>To (Month / Year)</label>
-                    <input
-                      type="month"
-                      disabled={expForm.isCurrent}
-                      value={expForm.toDate}
-                      onChange={(e) => setExpForm({ ...expForm, toDate: e.target.value })}
-                    />
-                  </div>
-                  <div className="faculty-form-group" style={{ gridColumn: "span 2" }}>
-                    <label>Key Responsibilities & Classes Taught</label>
-                    <textarea
-                      rows={2}
-                      placeholder="Curriculum delivery, intermediate batches mentored, exam results achieved..."
-                      value={expForm.responsibilities}
-                      onChange={(e) => setExpForm({ ...expForm, responsibilities: e.target.value })}
-                    />
-                  </div>
-                  <div className="faculty-form-group" style={{ gridColumn: "span 2" }}>
-                    <label>Reason for Leaving</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Joined PIRNAV College for career growth"
-                      value={expForm.reasonForLeaving}
-                      onChange={(e) => setExpForm({ ...expForm, reasonForLeaving: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "18px", display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-                  <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setShowExpModal(false)}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="faculty-btn faculty-btn-primary">
-                    <Save size={13} /> {editingExpId ? "Update Record" : "Save Experience Record"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL: DOCUMENT PREVIEW */}
-        {previewDoc && (
-          <div className="faculty-modal-overlay" onClick={() => setPreviewDoc(null)}>
-            <div className="faculty-modal-box" onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
-              <div className="faculty-modal-header">
-                <h3 className="faculty-modal-title"><FileText size={16} /> {previewDoc.name}</h3>
-                <button type="button" className="faculty-btn faculty-btn-ghost faculty-btn-sm" onClick={() => setPreviewDoc(null)}>
-                  <X size={14} />
-                </button>
-              </div>
-              <div style={{ padding: "30px 20px", background: "var(--faculty-subtle)", borderRadius: "10px", margin: "16px 0" }}>
-                <FileCheck size={48} style={{ color: "var(--faculty-primary)", margin: "0 auto 10px" }} />
-                <div style={{ fontWeight: 800, fontSize: "16px" }}>{previewDoc.name}</div>
-                <div style={{ fontSize: "12px", color: "var(--faculty-muted)", marginTop: "4px" }}>
-                  File Size: {previewDoc.size} • Uploaded On: {previewDoc.uploadedAt} • Status: {previewDoc.status || "Verified"}
-                </div>
-                <div style={{ marginTop: "16px" }}>
-                  <span className="faculty-badge paid">Document Authenticated</span>
-                </div>
-              </div>
-              <button type="button" className="faculty-btn faculty-btn-ghost" onClick={() => setPreviewDoc(null)}>
-                Close Preview
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -4084,16 +2158,10 @@ function FacultyDashboard() {
               {/* FACULTY PROFILE DROPDOWN */}
               <div style={{ position: "relative" }}>
                 <div className="faculty-user-menu" onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}>
-                  <div className="faculty-avatar">
-                    {facultyProfile.personal?.photoUrl ? (
-                      <img src={facultyProfile.personal.photoUrl} alt="User" style={{ width: "100%", height: "100%", borderRadius: "50%" }} />
-                    ) : (
-                      (facultyProfile.baseline?.fullName || "Ravi Kumar").split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase()
-                    )}
-                  </div>
+                  <div className="faculty-avatar">RK</div>
                   <div className="faculty-user-info">
-                    <span className="faculty-user-name">{facultyProfile.baseline?.fullName || mockFaculty.fullName}</span>
-                    <span className="faculty-user-role">{facultyProfile.baseline?.designation || mockFaculty.designation}</span>
+                    <span className="faculty-user-name">{mockFaculty.fullName}</span>
+                    <span className="faculty-user-role">{mockFaculty.designation}</span>
                   </div>
                   <ChevronDown size={14} style={{ color: "var(--faculty-muted)", marginLeft: "2px" }} />
                 </div>
@@ -4101,12 +2169,10 @@ function FacultyDashboard() {
                 {isProfileDropdownOpen && (
                   <div className="faculty-user-dropdown-menu">
                     <div className="faculty-dropdown-header">
-                      <div className="faculty-avatar" style={{ width: "32px", height: "32px", fontSize: "12px" }}>
-                        {(facultyProfile.baseline?.fullName || "Ravi Kumar").split(" ").map((n) => n[0]).join("").substring(0, 2).toUpperCase()}
-                      </div>
+                      <div className="faculty-avatar" style={{ width: "32px", height: "32px", fontSize: "12px" }}>RK</div>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: "13px" }}>{facultyProfile.baseline?.fullName || mockFaculty.fullName}</div>
-                        <div style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>{facultyProfile.baseline?.primaryEmail || mockFaculty.email}</div>
+                        <div style={{ fontWeight: 700, fontSize: "13px" }}>{mockFaculty.fullName}</div>
+                        <div style={{ fontSize: "11px", color: "var(--faculty-muted)" }}>{mockFaculty.email}</div>
                       </div>
                     </div>
                     <div className="faculty-dropdown-divider" />

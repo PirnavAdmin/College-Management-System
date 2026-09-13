@@ -10,13 +10,13 @@ import CourseGroupPage, { CourseGroupFormRoute, pageConfig as courseGroupConfig 
 import SubjectManagementPage from "@/components/pages/SubjectManagementPage.jsx";
 import SectionManagementPage, { pageConfig as sectionManagementConfig } from "@/components/pages/SectionManagementPage.jsx";
 import StaffManagementPage from "@/components/pages/StaffManagementPage.jsx";
-import StaffOnboardingForm from "@/components/pages/StaffOnboardingForm.jsx";
 import DepartmentManagementPage, { DepartmentDetailsPage, DesignationDetailsPage, MasterFormPage, MasterImportPage } from "@/components/pages/DepartmentManagementPage.jsx";
 import StudentAdmissionPage from "@/components/pages/StudentAdmissionPage.jsx";
 import StudentManagementPage, { pageConfig as studentManagementConfig } from "@/components/pages/StudentManagementPage.jsx";
 import SectionAllocationPage from "@/components/pages/SectionAllocationPage.jsx";
 import TimetablePage from "@/components/pages/TimetablePage.jsx";
 import AttendancePage from "@/components/pages/AttendancePage.jsx";
+import AttendanceOverviewPage from "@/components/pages/AttendanceOverviewPage.jsx";
 import LeaveManagementPage from "@/components/pages/LeaveManagementPage.jsx";
 import ExaminationPage, { pageConfig as examinationConfig } from "@/components/pages/ExaminationPage.jsx";
 import MarksEntryPage from "@/components/pages/MarksEntryPage.jsx";
@@ -138,6 +138,8 @@ export default function AppRoutes() {
         <Route path="/dashboard/timetable/generate" element={<TimetablePage screen="generate" />} />
         <Route path="/dashboard/timetable/faculty" element={<Navigate to="/dashboard/timetable/generate" replace />} />
         <Route path="/dashboard/attendance" element={<Navigate to="/dashboard/attendance/student" replace />} />
+        <Route path="/dashboard/attendance/student/:studentId/overview" element={<AttendanceOverviewPage />} />
+        <Route path="/dashboard/attendance/staff/:staffId/overview" element={<AttendanceOverviewPage />} />
         <Route path="/dashboard/attendance/:area" element={<AttendancePage />} />
         <Route path="/dashboard/leave-management" element={<LeaveManagementPage />} />
         <Route path="/dashboard/examinations" element={<ExaminationPage />} />
@@ -216,13 +218,12 @@ export default function AppRoutes() {
         <Route path="/student-dashboard" element={<StudentDashboard />} />
       </Route>
       <Route path="/faculty-dashboard" element={<FacultyDashboard />} />
-      {/* Public Faculty Self-Onboarding Routes (Token-Based) */}
-      <Route path="/staff/onboarding/:token" element={<StaffOnboardingForm />} />
-      <Route path="/staff/onboarding" element={<StaffOnboardingForm />} />
-      <Route path="/staff-portal/:token" element={<StaffOnboardingForm />} />
-      <Route path="/staff-portal" element={<StaffOnboardingForm />} />
-      <Route path="/faculty/onboarding/:token" element={<StaffOnboardingForm />} />
-      <Route path="/faculty/onboarding" element={<StaffOnboardingForm />} />
+      <Route path="/mock-staff-portal/:id" element={<StaffManagementPage />} />
+      <Route path="/mock-staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
+      <Route path="/mock-staff-portal/:id/review" element={<StaffManagementPage />} />
+      <Route path="/staff-portal/:id" element={<StaffManagementPage />} />
+      <Route path="/staff-portal/:id/complete-profile" element={<StaffManagementPage />} />
+      <Route path="/staff-portal/:id/review" element={<StaffManagementPage />} />
 
       {listSlugs.map((slug) => <Route key={`${slug}-redirect`} path={`/${slug}`} element={<Navigate to={`/dashboard/${slug}`} replace />} />)}
       {listSlugs.map((slug) => <Route key={`${slug}-add-redirect`} path={`/${slug}/add`} element={<Navigate to={`/dashboard/${slug}/add`} replace />} />)}

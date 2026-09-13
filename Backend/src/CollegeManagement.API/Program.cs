@@ -183,6 +183,8 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new DateOnlyJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new TimeSpanJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new NullableTimeSpanJsonConverter());
     });
 
 #endregion
@@ -329,7 +331,6 @@ builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
-
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<INumberSeriesService, NumberSeriesService>();
 builder.Services.AddScoped<ITemplateService, TemplateService>();
@@ -347,15 +348,6 @@ builder.Services.AddScoped<IDepartmentService, DepartmentService>();
 
 builder.Services.AddScoped<IFeeRepository, FeeRepository>();
 builder.Services.AddScoped<IFeeService, FeeService>();
-
-//SECTION ALLOCATION//
-builder.Services.AddScoped<ISectionRepository, SectionRepository>();
-builder.Services.AddScoped<
-    ISectionRollAllocationRepository,
-    SectionRollAllocationRepository>();
-
-builder.Services.AddScoped<ISectionRollAllocationRepository, SectionRollAllocationRepository>();
-builder.Services.AddScoped<ISectionRollAllocationService, SectionRollAllocationService>();
 
 // Group, Section & Subject
 builder.Services.AddScoped<IGroupService, GroupService>();

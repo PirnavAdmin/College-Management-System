@@ -502,20 +502,6 @@ namespace CollegeManagement.API.Repositories
         public async Task<bool> DeleteAsync(
             int groupId)
         {
-            // =========================================================
-            // VALIDATION: DO NOT DELETE GROUP IF STUDENTS ARE ASSIGNED
-            // =========================================================
-
-            var studentExists = await _context.Students
-                .AsNoTracking()
-                .AnyAsync(s => s.GroupId == groupId);
-
-            if (studentExists)
-            {
-                throw new InvalidOperationException(
-                    "Cannot delete this group because students are assigned to it.");
-            }
-
             try
             {
                 var connection =

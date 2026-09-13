@@ -33,18 +33,18 @@ namespace CollegeManagement.API.Services.Interfaces
 
 
         // Section
-      //  Task<bool> AllocateSectionAsync(
-          //  AllocateSectionRequest request);
+        Task<bool> AllocateSectionAsync(
+            AllocateSectionRequest request);
 
-       // Task<int> BulkAllocateSectionAsync(
-          //  BulkSectionAllocationRequest request);
+        Task<int> BulkAllocateSectionAsync(
+            BulkSectionAllocationRequest request);
 
         //option check box//
         Task<int> SaveAdmissionFeeSelectionsAsync(
     int admissionId,
     SaveAdmissionFeeSelectionsRequest request);
         // Roll Number
-       // Task<int> BulkAllocateRollNumbersAsync(
-          //  BulkRollNumberAllocationRequest request);
+        Task<int> BulkAllocateRollNumbersAsync(
+            BulkRollNumberAllocationRequest request);
     }
 }

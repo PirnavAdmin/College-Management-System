@@ -36,11 +36,6 @@ namespace CollegeManagement.API.Repositories.Implementations
         public async Task EnsureTableAndSeedsAsync()
         {
             if (_isInitialized) return;
-            lock (_initLock)
-            {
-                if (_isInitialized) return;
-                _isInitialized = true;
-            }
 
             var conn = await GetOpenConnectionAsync();
 
@@ -74,6 +69,7 @@ namespace CollegeManagement.API.Repositories.Implementations
                     ('RECEIPT_NO', 'Receipt No.', 'FEE', 'FEE-{YYYYMMDD}-{SEQ}', 6, 1, 11, 'Configure receipt number format for fee collections.', 1);";
 
             await conn.ExecuteAsync(seedSql);
+            _isInitialized = true;
         }
 
         public async Task<IEnumerable<NumberSeriesConfiguration>> GetAllAsync()
@@ -120,9 +116,15 @@ namespace CollegeManagement.API.Repositories.Implementations
                     new { p_SeriesCode = seriesCode },
                     commandType: CommandType.StoredProcedure);
 
-                if (result != null) return result;
+                if (result != null)
+                {
+                    return result;
+                }
             }
-            catch { }
+            catch
+            {
+                // Fallback to direct query
+            }
 
             var query = @"
                 SELECT `Id`, `SeriesCode`, `SeriesName`, `Prefix`, `FormatPattern`, 
@@ -136,7 +138,12 @@ namespace CollegeManagement.API.Repositories.Implementations
         }
 
         public async Task<NumberSeriesConfiguration?> UpdateByCodeAsync(
-            string seriesCode, string prefix, string formatPattern, int numberLength, int startNumber, string? description)
+            string seriesCode,
+            string prefix,
+            string formatPattern,
+            int numberLength,
+            int startNumber,
+            string? description)
         {
             await EnsureTableAndSeedsAsync();
             var conn = await GetOpenConnectionAsync();
@@ -145,20 +152,44 @@ namespace CollegeManagement.API.Repositories.Implementations
             {
                 await conn.ExecuteAsync(
                     "sp_UpdateNumberSeriesByCode",
-                    new { p_SeriesCode = seriesCode, p_Prefix = prefix, p_FormatPattern = formatPattern, p_NumberLength = numberLength, p_StartNumber = startNumber, p_Description = description },
+                    new
+                    {
+                        p_SeriesCode = seriesCode,
+                        p_Prefix = prefix,
+                        p_FormatPattern = formatPattern,
+                        p_NumberLength = numberLength,
+                        p_StartNumber = startNumber,
+                        p_Description = description
+                    },
                     commandType: CommandType.StoredProcedure);
+
+                return await GetByCodeAsync(seriesCode);
             }
             catch
             {
-                await conn.ExecuteAsync(@"
+                // Fallback to direct SQL execution
+                var updateSql = @"
                     UPDATE `NumberSeriesConfigurations`
-                    SET `Prefix` = @Prefix, `FormatPattern` = @FormatPattern, `NumberLength` = @NumberLength, 
-                        `StartNumber` = @StartNumber, `Description` = @Description, `UpdatedAt` = CURRENT_TIMESTAMP
-                    WHERE `SeriesCode` = @SeriesCode;",
-                    new { SeriesCode = seriesCode, Prefix = prefix, FormatPattern = formatPattern, NumberLength = numberLength, StartNumber = startNumber, Description = description });
-            }
+                    SET `Prefix` = @Prefix,
+                        `FormatPattern` = @FormatPattern,
+                        `NumberLength` = @NumberLength,
+                        `StartNumber` = @StartNumber,
+                        `Description` = @Description,
+                        `UpdatedAt` = CURRENT_TIMESTAMP
+                    WHERE `SeriesCode` = @SeriesCode;";
 
-            return await GetByCodeAsync(seriesCode);
+                await conn.ExecuteAsync(updateSql, new
+                {
+                    SeriesCode = seriesCode,
+                    Prefix = prefix,
+                    FormatPattern = formatPattern,
+                    NumberLength = numberLength,
+                    StartNumber = startNumber,
+                    Description = description
+                });
+
+                return await GetByCodeAsync(seriesCode);
+            }
         }
 
         public async Task<NumberSeriesConfiguration?> GenerateNextSequenceAsync(string seriesCode)
@@ -168,28 +199,49 @@ namespace CollegeManagement.API.Repositories.Implementations
 
             try
             {
-                await conn.ExecuteAsync("sp_GenerateNextNumberSeries", new { p_SeriesCode = seriesCode }, commandType: CommandType.StoredProcedure);
+                await conn.ExecuteAsync(
+                    "sp_GenerateNextNumberSeries",
+                    new { p_SeriesCode = seriesCode },
+                    commandType: CommandType.StoredProcedure);
+
+                return await GetByCodeAsync(seriesCode);
             }
             catch
             {
+                // Fallback to atomic SQL transaction
                 using var tran = await conn.BeginTransactionAsync();
                 try
                 {
+                    var selectSql = @"
+                        SELECT `CurrentSequence`, `StartNumber`
+                        FROM `NumberSeriesConfigurations`
+                        WHERE `SeriesCode` = @SeriesCode
+                        FOR UPDATE;";
+
                     var current = await conn.QueryFirstOrDefaultAsync<(int CurrentSequence, int StartNumber)>(
-                        "SELECT `CurrentSequence`, `StartNumber` FROM `NumberSeriesConfigurations` WHERE `SeriesCode` = @SeriesCode FOR UPDATE;",
-                        new { SeriesCode = seriesCode }, transaction: tran);
+                        selectSql, new { SeriesCode = seriesCode }, transaction: tran);
 
-                    var nextSeq = Math.Max(current.CurrentSequence + 1, current.StartNumber);
+                    var nextSeq = current.CurrentSequence < current.StartNumber
+                        ? current.StartNumber
+                        : current.CurrentSequence + 1;
 
-                    await conn.ExecuteAsync(
-                        "UPDATE `NumberSeriesConfigurations` SET `CurrentSequence` = @NextSeq, `UpdatedAt` = CURRENT_TIMESTAMP WHERE `SeriesCode` = @SeriesCode;",
-                        new { SeriesCode = seriesCode, NextSeq = nextSeq }, transaction: tran);
-                    
+                    var updateSql = @"
+                        UPDATE `NumberSeriesConfigurations`
+                        SET `CurrentSequence` = @NextSeq,
+                            `UpdatedAt` = CURRENT_TIMESTAMP
+                        WHERE `SeriesCode` = @SeriesCode;";
+
+                    await conn.ExecuteAsync(updateSql, new { SeriesCode = seriesCode, NextSeq = nextSeq }, transaction: tran);
                     await tran.CommitAsync();
+
+                    return await GetByCodeAsync(seriesCode);
                 }
-                catch { await tran.RollbackAsync(); throw; }
+                catch
+                {
+                    await tran.RollbackAsync();
+                    throw;
+                }
             }
-            return await GetByCodeAsync(seriesCode);
         }
     }
 }

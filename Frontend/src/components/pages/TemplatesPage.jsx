@@ -41,13 +41,10 @@ import {
   FolderKanban,
   Award,
   Lock,
-  Loader2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
-import { templateService } from "@/api/templateService.js";
-import { getApiErrorMessage } from "@/api/apiClient.js";
 import "./TemplatesPage.css";
 
 // Dynamic demo student details used for live real-time preview rendering
@@ -90,152 +87,18 @@ export const DEMO_STUDENT = {
   custom_body: "has actively participated in the College Annual Sports Meet 2026 and won First Place in the 100m Athletic Sprint",
 };
 
-export function formatTemplateTitle(title, code = "") {
-  let clean = String(title || "").trim();
-  if (!clean || clean.startsWith("TMP_") || clean.startsWith("UPLOAD_") || clean.startsWith("custom-") || clean.startsWith("cert-")) {
-    clean = String(code || "").trim();
-  }
-  
-  if (clean.toUpperCase() === "BC" || clean.toLowerCase() === "bonafide" || clean.toLowerCase() === "bonafide certificate") return "Bonafide Certificate";
-  if (clean.toUpperCase() === "SC" || clean.toLowerCase() === "study" || clean.toLowerCase() === "study certificate") return "Study Certificate";
-  if (clean.toUpperCase() === "CC" || clean.toLowerCase() === "conduct" || clean.toLowerCase() === "conduct certificate") return "Conduct Certificate";
-  if (clean.toUpperCase() === "TC" || clean.toLowerCase() === "transfer" || clean.toLowerCase() === "transfer certificate") return "Transfer Certificate";
-  if (clean.toUpperCase() === "OC" || clean.toLowerCase() === "other" || clean.toLowerCase() === "others") return "Other Certificate";
-
-  if (!clean || clean.startsWith("TMP_") || clean.startsWith("UPLOAD_") || clean.startsWith("custom-") || clean.startsWith("cert-")) {
-    return "Custom Certificate";
-  }
-
-  clean = clean.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  if (/^[a-z]/.test(clean)) {
-    clean = clean.charAt(0).toUpperCase() + clean.slice(1);
-  }
-  return clean;
-}
-
-export function getTodayFormattedDate() {
-  return new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-export function extractCleanCertificateBody(rawContent) {
-  if (!rawContent) return "";
-  let str = String(rawContent).trim();
-
-  // If contains HTML markup
-  if (/<[a-z][\s\S]*>/i.test(str)) {
-    if (typeof window !== "undefined" && typeof DOMParser !== "undefined") {
-      try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(str, "text/html");
-        
-        // Remove unwanted headers, badges, footers, scripts, styles
-        const elementsToRemove = doc.querySelectorAll(
-          "h1, h2, h3, h4, header, footer, style, script"
-        );
-        elementsToRemove.forEach((el) => el.remove());
-
-        // Find certifying paragraph
-        const allElements = Array.from(doc.body.querySelectorAll("p, div, span"));
-        const certifyElement = allElements.find((el) => {
-          const txt = el.textContent || "";
-          return /This is to certify|The student|has studied in this college|has been a student|bonafide student|certified that/i.test(txt);
-        });
-
-        if (certifyElement) {
-          const clone = certifyElement.cloneNode(true);
-          clone.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
-          str = clone.textContent || "";
-        } else {
-          doc.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
-          str = doc.body.textContent || "";
-        }
-      } catch {
-        str = str.replace(/<style[\s\S]*?<\/style>/gi, "");
-        str = str.replace(/<script[\s\S]*?<\/script>/gi, "");
-        str = str.replace(/<h[1-6][\s\S]*?<\/h[1-6]>/gi, "");
-        str = str.replace(/<br\s*[\/]?>/gi, "\n");
-        str = str.replace(/<\/p>|<\/div>/gi, "\n");
-        str = str.replace(/<[^>]+>/g, " ");
-      }
-    } else {
-      str = str.replace(/<style[\s\S]*?<\/style>/gi, "");
-      str = str.replace(/<script[\s\S]*?<\/script>/gi, "");
-      str = str.replace(/<h[1-6][\s\S]*?<\/h[1-6]>/gi, "");
-      str = str.replace(/<br\s*[\/]?>/gi, "\n");
-      str = str.replace(/<\/p>|<\/div>/gi, "\n");
-      str = str.replace(/<[^>]+>/g, " ");
-    }
-  }
-
-  // If the extracted text still contains header clutter before "This is to certify", extract from the certifying phrase
-  const certifyMatch = /(?:This is to certify|The student|Certified that|This is certified)[\s\S]*/i.exec(str);
-  if (certifyMatch) {
-    str = certifyMatch[0];
-  }
-
-  // Remove trailing footer artifacts
-  str = str.replace(/\s*Issued By[\s\S]*$/i, "");
-  str = str.replace(/\s*Principal\s*\/\s*Head[\s\S]*$/i, "");
-  str = str.replace(/\s*College Seal[\s\S]*$/i, "");
-  str = str.replace(/\s*OFFICE SEAL[\s\S]*$/i, "");
-
-  // Clean lines, eliminate header/footer artifacts
-  str = str
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => {
-      if (!line) return false;
-      const lower = line.toLowerCase();
-      if (
-        lower.startsWith("college name") ||
-        lower.startsWith("college address") ||
-        lower.includes("recognized by board") ||
-        lower.includes("office seal") ||
-        lower.includes("college seal") ||
-        lower.includes("principal / head") ||
-        lower.includes("certificate no:") ||
-        lower.startsWith("issued by")
-      ) {
-        return false;
-      }
-      return true;
-    })
-    .join("\n\n");
-
-  return str.trim();
-}
-
-// Helper: Interpolate dynamic token placeholders with demo student values without raw codes
+// Helper: Interpolate dynamic token placeholders with demo student values
 export function renderWithDemoData(text, template = {}, overrideDemo = {}) {
   if (!text) return "";
-  const cleanedText = extractCleanCertificateBody(text) || text;
   const refNo = `${template.refPrefix || "CERT"}/2026/001`;
   const merged = {
     ...DEMO_STUDENT,
     certificate_number: refNo,
     ...overrideDemo,
   };
-  let interpolated = cleanedText.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (match, key) => {
-    if (merged[key] !== undefined && merged[key] !== null && String(merged[key]).trim() !== "") {
-      return String(merged[key]);
-    }
-    if (DEMO_STUDENT[key] !== undefined) {
-      return String(DEMO_STUDENT[key]);
-    }
-    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return text.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (match, key) => {
+    return merged[key] !== undefined ? merged[key] : `[${key}]`;
   });
-
-  interpolated = interpolated.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
-    if (merged[key] !== undefined && merged[key] !== null && String(merged[key]).trim() !== "") {
-      return String(merged[key]);
-    }
-    if (DEMO_STUDENT[key] !== undefined) {
-      return String(DEMO_STUDENT[key]);
-    }
-    return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  });
-
-  return interpolated;
 }
 
 // 5 DEFAULT BUILT-IN CERTIFICATE TEMPLATES (Matching Certificate Types)
@@ -405,22 +268,7 @@ export function getStoredCertificateTemplates() {
     const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        let list = parsed.filter(
-          (t) =>
-            !(t.title || t.name || "").toLowerCase().includes("study and conduct") &&
-            !(t.title || t.name || "").toLowerCase().includes("study & conduct")
-        );
-        if (!list.some((t) => (t.title || t.name || "").toLowerCase() === "study certificate")) {
-          const studyDef = DEFAULT_CERTIFICATE_TEMPLATES.find((t) => t.id === "certificate-study");
-          if (studyDef) list.push(studyDef);
-        }
-        if (!list.some((t) => (t.title || t.name || "").toLowerCase() === "conduct certificate")) {
-          const conductDef = DEFAULT_CERTIFICATE_TEMPLATES.find((t) => t.id === "certificate-conduct");
-          if (conductDef) list.push(conductDef);
-        }
-        return list;
-      }
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch {}
   return DEFAULT_CERTIFICATE_TEMPLATES;
@@ -432,7 +280,11 @@ export function saveCertificateTemplates(templatesList) {
   } catch {}
 }
 
-export const DYNAMIC_FIELD_TOKENS = [
+const INITIAL_TEMPLATES = [
+  ...DEFAULT_CERTIFICATE_TEMPLATES,
+];
+
+const DYNAMIC_FIELD_TOKENS = [
   "{{student_name}}",
   "{{student_id}}",
   "{{admission_no}}",
@@ -459,139 +311,22 @@ export const DYNAMIC_FIELD_TOKENS = [
   "{{fee_type}}",
 ];
 
-/**
- * Normalizes backend template object to match UI presentation model while retaining visual properties
- */
-export function normalizeTemplate(item = {}) {
-  const code = item.templateCode || item.code || (typeof item.id === "string" ? item.id : `TMP_${item.id}`);
-  const rawTitle = item.title || item.name || "Untitled Template";
-  const title = formatTemplateTitle(rawTitle, code);
-  const category = item.category || "Certificate";
-
-  const catLower = category.toLowerCase();
-  const titleLower = title.toLowerCase();
-  const isBulkUpload = catLower.includes("bulk") || catLower.includes("upload") || titleLower.includes("bulk upload") || titleLower.includes("upload template");
-  const isDocument = catLower.includes("document") || titleLower.includes("id card") || titleLower.includes("card template");
-  const isReport = catLower.includes("report") || titleLower.includes("report");
-  const isLetter = catLower.includes("letter") || titleLower.includes("letter");
-
-  let type = "Certificate";
-  if (isBulkUpload) {
-    type = "Upload";
-  } else if (isDocument) {
-    type = "Document";
-  } else if (isReport) {
-    type = "Report";
-  } else if (isLetter) {
-    type = "Letter";
-  } else {
-    type = "Certificate";
-  }
-
-  const isActive = item.isActive !== undefined ? item.isActive : item.status === "Active" || item.status !== "Inactive";
-  const status = isActive ? "Active" : "Inactive";
-  const rawContent = item.contentBody || item.content || item.body || "";
-  const content = extractCleanCertificateBody(rawContent) || rawContent;
-  const dynamicFields = Array.isArray(item.placeholders)
-    ? item.placeholders
-    : Array.isArray(item.dynamicFields)
-    ? item.dynamicFields
-    : DYNAMIC_FIELD_TOKENS;
-
-  // Derive visual theme based on templateCode or title
-  let accent = "navy";
-  let borderColor = "#1e3a8a";
-  let badgeBgColor = "#1e3a8a";
-  let refPrefix = "CERT";
-
-  const lowerTitle = (title + " " + code).toLowerCase();
-  if (lowerTitle.includes("bonafide") || lowerTitle.includes("bonaf")) {
-    accent = "navy";
-    borderColor = "#1e3a8a";
-    badgeBgColor = "#1e3a8a";
-    refPrefix = "BC";
-  } else if (lowerTitle.includes("study") && !lowerTitle.includes("conduct")) {
-    accent = "green";
-    borderColor = "#15803d";
-    badgeBgColor = "#15803d";
-    refPrefix = "SC";
-  } else if (lowerTitle.includes("conduct")) {
-    accent = "maroon";
-    borderColor = "#991b1b";
-    badgeBgColor = "#991b1b";
-    refPrefix = "CC";
-  } else if (lowerTitle.includes("transfer") || lowerTitle.includes("leaving")) {
-    accent = "gold";
-    borderColor = "#b45309";
-    badgeBgColor = "#b45309";
-    refPrefix = "TC";
-  } else if (lowerTitle.includes("custom") || lowerTitle.includes("other")) {
-    accent = "teal";
-    borderColor = "#0f766e";
-    badgeBgColor = "#0f766e";
-    refPrefix = "OC";
-  }
-
-  return {
-    id: item.id !== undefined ? item.id : code,
-    templateCode: code,
-    name: title,
-    title: title,
-    type,
-    category,
-    status,
-    isActive,
-    format: item.format || (type === "Report" ? "Excel" : "PDF"),
-    version: item.version !== undefined ? String(item.version) : "1.0",
-    lastModified: item.updatedAt
-      ? new Date(item.updatedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-      : item.lastModified || "05 Sep 2026",
-    description: item.description || (item.contentBody ? item.contentBody.slice(0, 100) + "..." : ""),
-    orientation: item.orientation || "Landscape",
-    pageSize: item.pageSize || "A4",
-    borderStyle: item.borderStyle || (accent === "green" ? "Emerald Ornate" : accent === "maroon" ? "Maroon Ornate" : accent === "gold" ? "Gold Ornate" : "Navy Ornate"),
-    borderColor: item.borderColor || borderColor,
-    badgeBgColor: item.badgeBgColor || badgeBgColor,
-    badgeTextColor: item.badgeTextColor || "#ffffff",
-    seal: item.seal || "Principal Seal",
-    sealColor: item.sealColor || borderColor,
-    qrEnabled: item.qrEnabled !== undefined ? item.qrEnabled : true,
-    signatureType: item.signatureType || "Principal",
-    builtIn: item.builtIn !== undefined ? item.builtIn : typeof item.id === "number" ? false : true,
-    accent: item.accent || accent,
-    refPrefix: item.refPrefix || refPrefix,
-    content: content,
-    contentBody: content,
-    purpose: item.purpose || "Higher Education / Official Purpose",
-    placeholders: dynamicFields,
-    dynamicFields: dynamicFields,
-  };
-}
-
 export default function TemplatesPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
 
-  // Primary templates state loaded from API
-  const [templates, setTemplates] = useState([]);
-  const [categoriesList, setCategoriesList] = useState([
-    "All Categories",
-    "Student Certificate",
-    "Academic",
-    "Report",
-    "Letter",
-    "HR",
-    "Finance",
-    "Admission",
-  ]);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [apiError, setApiError] = useState("");
+  // Primary templates state loaded from localStorage or built-in defaults
+  const [templates, setTemplates] = useState(() => getStoredCertificateTemplates());
   const [toastMessage, setToastMessage] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
-  // Active Main Tab: "certificates" | "upload" | "reports" | "letters"
+  // Sync templates to localStorage whenever modified
+  useEffect(() => {
+    saveCertificateTemplates(templates);
+  }, [templates]);
+
+  // Active Main Tab: "certificates" | "upload"
   const [activeTab, setActiveTab] = useState(() => {
     if (location.pathname.includes("/upload")) return "upload";
     return "certificates";
@@ -616,378 +351,102 @@ export default function TemplatesPage() {
     return "dashboard";
   }, [location.pathname]);
 
-  // Toast notification helper
+  // Current active template target for editor or preview
+  const currentTemplate = useMemo(() => {
+    if (!id) return templates[0] || INITIAL_TEMPLATES[0];
+    return templates.find((t) => t.id === id) || INITIAL_TEMPLATES[0];
+  }, [id, templates]);
+
+  // Helper toast notification
   const notify = useCallback((msg) => {
     setToastMessage(msg);
   }, []);
 
-  // Fetch available template categories from API
-  const fetchCategories = useCallback(async () => {
-    try {
-      const response = await templateService.getCategories();
-      if (Array.isArray(response)) {
-        const unique = ["All Categories", ...new Set(response.filter(Boolean))];
-        setCategoriesList(unique);
-      } else if (response?.items && Array.isArray(response.items)) {
-        const unique = ["All Categories", ...new Set(response.items.filter(Boolean))];
-        setCategoriesList(unique);
-      }
-    } catch {
-      // Keep initial category list on network fallback
-    }
-  }, []);
-
-  // Fetch templates list from API
-  const fetchTemplates = useCallback(async () => {
-    try {
-      setLoading(true);
-      setApiError("");
-      const params = {
-        pageNumber: 1,
-        pageSize: 100,
-      };
-      if (searchQuery.trim()) params.search = searchQuery.trim();
-      if (selectedCategory !== "All Categories") params.category = selectedCategory;
-      if (selectedStatus !== "All") params.isActive = selectedStatus === "Active";
-
-      const data = await templateService.getTemplates(params);
-      const rawList = Array.isArray(data) ? data : data?.items || [];
-      if (rawList.length > 0) {
-        let normalized = rawList.map(normalizeTemplate);
-        // Replace any "Study and Conduct Certificate" with 2 separate templates: "Study Certificate" and "Conduct Certificate"
-        normalized = normalized.filter(
-          (t) =>
-            !(t.title || t.name || "").toLowerCase().includes("study and conduct") &&
-            !(t.title || t.name || "").toLowerCase().includes("study & conduct")
-        );
-        if (!normalized.some((t) => (t.title || t.name || "").toLowerCase() === "study certificate")) {
-          const studyDef = DEFAULT_CERTIFICATE_TEMPLATES.find((t) => t.id === "certificate-study");
-          if (studyDef) normalized.push(normalizeTemplate(studyDef));
-        }
-        if (!normalized.some((t) => (t.title || t.name || "").toLowerCase() === "conduct certificate")) {
-          const conductDef = DEFAULT_CERTIFICATE_TEMPLATES.find((t) => t.id === "certificate-conduct");
-          if (conductDef) normalized.push(normalizeTemplate(conductDef));
-        }
-        setTemplates(normalized);
-        saveCertificateTemplates(normalized);
-      } else {
-        const stored = getStoredCertificateTemplates();
-        const initial = Array.isArray(stored) && stored.length > 0 ? stored : DEFAULT_CERTIFICATE_TEMPLATES.map(normalizeTemplate);
-        setTemplates(initial);
-      }
-    } catch (err) {
-      const msg = getApiErrorMessage(err);
-      setApiError(msg || "Failed to load templates from server.");
-      const stored = getStoredCertificateTemplates();
-      const initial = Array.isArray(stored) && stored.length > 0 ? stored : DEFAULT_CERTIFICATE_TEMPLATES.map(normalizeTemplate);
-      setTemplates(initial);
-    } finally {
-      setLoading(false);
-    }
-  }, [searchQuery, selectedCategory, selectedStatus]);
-
-  // Initial load
-  useEffect(() => {
-    fetchCategories();
-    fetchTemplates();
-  }, [fetchCategories, fetchTemplates]);
-
-  // Current active template target for editor or preview
-  const currentTemplate = useMemo(() => {
-    if (!id) return templates[0] || DEFAULT_CERTIFICATE_TEMPLATES[0];
-    const found = templates.find((t) => String(t.id) === String(id) || t.templateCode === id);
-    return found || DEFAULT_CERTIFICATE_TEMPLATES[0];
-  }, [id, templates]);
-
-  // Handler: Mock or formatted download template
+  // Handler: Mock download template
   const handleDownloadTemplate = useCallback(
     (template) => {
       const target = template || currentTemplate;
       const renderedBody = renderWithDemoData(target.content || target.description, target);
-      const content = `PIRNAV COLLEGE MANAGEMENT SYSTEM\n=========================================\n${(target.name || "TEMPLATE").toUpperCase()}\nRef No: ${target.refPrefix || 'CERT'}/2026/001 | Date: 05 Sep 2026\nCategory: ${target.category}\nVersion: ${target.version}\nStatus: ${target.status}\n=========================================\n\n${renderedBody}\n\nPurpose: ${target.purpose || 'Official Use'}\nPlace: Vijayawada\nSignature: ${target.signatureType || 'Principal'}, Pirnav College\n`;
+      const content = `PIRNAV COLLEGE MANAGEMENT SYSTEM\n=========================================\n${target.name.toUpperCase()}\nRef No: ${target.refPrefix || 'CERT'}/2026/001 | Date: 05 Sep 2026\nCategory: ${target.category}\nVersion: ${target.version}\nStatus: ${target.status}\n=========================================\n\n${renderedBody}\n\nPurpose: ${target.purpose || 'Official Use'}\nPlace: Vijayawada\nSignature: ${target.signatureType || 'Principal'}, Pirnav College\n`;
       const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(target.name || "template").toLowerCase().replace(/[^a-z0-9]+/g, "_")}_template.txt`;
+      a.download = `${target.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_template.txt`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      notify(`Downloaded template file for "${target.name}".`);
+      notify(`Downloaded demo file for "${target.name}".`);
     },
     [currentTemplate, notify]
   );
 
-  // Handler: Duplicate template via API
+  // Handler: Duplicate template
   const handleDuplicateTemplate = useCallback(
-    async (template) => {
-      try {
-        setActionLoading(true);
-        const payload = {
-          templateCode: `${template.templateCode || "TMP"}_COPY_${Date.now()}`.slice(0, 30),
-          title: `Copy of ${template.name}`,
-          category: template.category || "Certificate",
-          contentBody: template.content || template.contentBody || "",
-          placeholders: template.placeholders || template.dynamicFields || [],
-          isActive: true,
-        };
-        const created = await templateService.createTemplate(payload);
-        const normalized = normalizeTemplate(created || payload);
-        const mergedCopy = { ...template, ...normalized, id: normalized.id || `custom-copy-${Date.now()}` };
-        setTemplates((prev) => {
-          const next = [mergedCopy, ...prev];
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`Duplicated template "${template.name}" successfully.`);
-      } catch (err) {
-        const copy = {
-          ...template,
-          id: `custom-copy-${Date.now()}`,
-          name: `Copy of ${template.name}`,
-          title: `Copy of ${template.name}`,
-          status: "Draft",
-          isActive: false,
-          version: "1.0",
-          builtIn: false,
-          lastModified: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-        };
-        setTemplates((prev) => {
-          const next = [copy, ...prev];
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`Duplicated template "${template.name}" as custom draft.`);
-      } finally {
-        setActionLoading(false);
-      }
-    },
-    [notify]
-  );
-
-  // Handler: Toggle active status via PATCH API
-  const handleToggleActive = useCallback(
-    async (template) => {
-      try {
-        setActionLoading(true);
-        if (typeof template.id === "number" || (!String(template.id).startsWith("certificate-") && !String(template.id).startsWith("custom-"))) {
-          await templateService.toggleActive(template.id);
-        }
-        setTemplates((prev) => {
-          const next = prev.map((t) => {
-            if (t.id === template.id) {
-              const nextActive = !t.isActive;
-              return {
-                ...t,
-                isActive: nextActive,
-                status: nextActive ? "Active" : "Inactive",
-              };
-            }
-            return t;
-          });
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`Updated status for "${template.name}".`);
-      } catch (err) {
-        notify(getApiErrorMessage(err) || "Could not toggle template status.");
-      } finally {
-        setActionLoading(false);
-      }
+    (template) => {
+      const copy = {
+        ...template,
+        id: `custom-copy-${Date.now()}`,
+        name: `Copy of ${template.name}`,
+        status: "Draft",
+        version: "1.0",
+        builtIn: false, // Duplicated template is Admin-created
+        lastModified: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+      };
+      setTemplates((prev) => [copy, ...prev]);
+      notify(`Duplicated template "${template.name}" as custom draft.`);
     },
     [notify]
   );
 
   // Handler: Reset built-in template to default design
   const handleResetToDefault = useCallback(
-    async (templateId) => {
-      const defaultVersion = DEFAULT_CERTIFICATE_TEMPLATES.find((t) => t.id === templateId || t.templateCode === templateId);
+    (templateId) => {
+      const defaultVersion = DEFAULT_CERTIFICATE_TEMPLATES.find((t) => t.id === templateId);
       if (!defaultVersion) {
         notify("Only built-in default templates can be reset to default.");
         return;
       }
       if (window.confirm(`Reset "${defaultVersion.name}" to its original built-in design? This will overwrite your custom changes for this template.`)) {
-        try {
-          if (typeof templateId === "number") {
-            await templateService.updateTemplate(templateId, {
-              title: defaultVersion.name,
-              category: defaultVersion.category,
-              contentBody: defaultVersion.content,
-              placeholders: defaultVersion.placeholders,
-              isActive: true,
-            });
-          }
-          setTemplates((prev) => {
-            const next = prev.map((t) => (t.id === templateId ? { ...defaultVersion } : t));
-            saveCertificateTemplates(next);
-            return next;
-          });
-          notify(`Reset "${defaultVersion.name}" to original default design.`);
-        } catch {
-          setTemplates((prev) => {
-            const next = prev.map((t) => (t.id === templateId ? { ...defaultVersion } : t));
-            saveCertificateTemplates(next);
-            return next;
-          });
-          notify(`Reset "${defaultVersion.name}" to original default design.`);
-        }
+        setTemplates((prev) => prev.map((t) => (t.id === templateId ? { ...defaultVersion } : t)));
+        notify(`Reset "${defaultVersion.name}" to original default design.`);
       }
     },
     [notify]
   );
 
-  // Handler: Delete template (Admin-created only) via DELETE API
+  // Handler: Delete template (Admin-created only)
   const handleDeleteTemplate = useCallback(
-    async (templateId) => {
+    (templateId) => {
       const target = templates.find((t) => t.id === templateId);
       if (target?.builtIn) {
         notify("Default system certificate templates cannot be deleted.");
         setDeleteConfirmId(null);
         return;
       }
-      try {
-        setActionLoading(true);
-        if (typeof templateId === "number" || (!String(templateId).startsWith("certificate-") && !String(templateId).startsWith("custom-"))) {
-          await templateService.deleteTemplate(templateId);
-        }
-        setTemplates((prev) => {
-          const next = prev.filter((t) => t.id !== templateId && t.templateCode !== templateId);
-          saveCertificateTemplates(next);
-          return next;
-        });
-        setDeleteConfirmId(null);
-        notify("Template deleted successfully.");
-      } catch (err) {
-        setTemplates((prev) => {
-          const next = prev.filter((t) => t.id !== templateId && t.templateCode !== templateId);
-          saveCertificateTemplates(next);
-          return next;
-        });
-        setDeleteConfirmId(null);
-        notify("Template deleted.");
-      } finally {
-        setActionLoading(false);
-      }
+      setTemplates((prev) => prev.filter((t) => t.id !== templateId));
+      setDeleteConfirmId(null);
+      notify("Template deleted successfully.");
     },
     [templates, notify]
   );
 
-  // Handler: Save / Update Template via API
-  const handleSaveTemplate = useCallback(
-    async (updated) => {
-      try {
-        setActionLoading(true);
-        let result = updated;
-        if (typeof updated.id === "number" || (updated.id && !String(updated.id).startsWith("certificate-") && !String(updated.id).startsWith("custom-"))) {
-          result = await templateService.updateTemplate(updated.id, {
-            title: updated.name || updated.title,
-            category: updated.category || "Certificate",
-            contentBody: updated.content || updated.contentBody || "",
-            placeholders: updated.dynamicFields || updated.placeholders || [],
-            isActive: updated.isActive !== undefined ? updated.isActive : updated.status === "Active",
-          });
-        }
-        const normalized = normalizeTemplate(result || updated);
-        const mergedObj = { ...updated, ...normalized };
-        setTemplates((prev) => {
-          const next = prev.map((t) => (t.id === updated.id || (t.templateCode && t.templateCode === updated.templateCode) ? { ...t, ...mergedObj } : t));
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`Template "${updated.name || updated.title}" saved successfully.`);
-      } catch (err) {
-        setTemplates((prev) => {
-          const next = prev.map((t) => (t.id === updated.id || (t.templateCode && t.templateCode === updated.templateCode) ? updated : t));
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`Template "${updated.name || updated.title}" saved.`);
-      } finally {
-        setActionLoading(false);
-      }
-    },
-    [notify]
-  );
-
-  // Handler: Create new template via POST API
-  const handleCreateTemplate = useCallback(
-    async (newTemp) => {
-      try {
-        setActionLoading(true);
-        const payload = {
-          templateCode: newTemp.templateCode || `TMP_${Date.now()}`.slice(0, 30),
-          title: newTemp.name || newTemp.title || "New Template",
-          category: newTemp.category || "Certificate",
-          contentBody: newTemp.content || newTemp.contentBody || newTemp.description || "",
-          placeholders: newTemp.dynamicFields || newTemp.placeholders || [],
-          isActive: newTemp.isActive !== undefined ? newTemp.isActive : true,
-        };
-        const created = await templateService.createTemplate(payload);
-        const normalized = normalizeTemplate(created || newTemp);
-        const mergedObj = { ...newTemp, ...normalized };
-        setTemplates((prev) => {
-          const next = [mergedObj, ...prev];
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`New template "${newTemp.name || newTemp.title}" created!`);
-        navigate("/dashboard/settings/templates");
-      } catch (err) {
-        const normalized = normalizeTemplate(newTemp);
-        setTemplates((prev) => {
-          const next = [normalized, ...prev];
-          saveCertificateTemplates(next);
-          return next;
-        });
-        notify(`New template "${newTemp.name || newTemp.title}" created!`);
-        navigate("/dashboard/settings/templates");
-      } finally {
-        setActionLoading(false);
-      }
-    },
-    [navigate, notify]
-  );
-
   // Filtered Templates calculation
   const filteredTemplates = useMemo(() => {
-    const excludedFromCertificates = [
-      "staff management bulk upload template",
-      "student admissions bulk upload template",
-      "student id card template",
-      "bulk upload",
-      "id card",
-    ];
-
     return templates
       .filter((t) => {
-        const titleLower = String(t.title || t.name || "").trim().toLowerCase();
-        const catLower = String(t.category || "").trim().toLowerCase();
-
         // Tab filter
-        if (activeTab === "certificates") {
-          if (t.type !== "Certificate") return false;
-          if (
-            catLower.includes("upload") ||
-            catLower.includes("bulk") ||
-            catLower.includes("document") ||
-            excludedFromCertificates.some((exc) => titleLower.includes(exc))
-          ) {
-            return false;
-          }
-        }
-        if (activeTab === "upload") {
-          if (t.type !== "Upload" && !catLower.includes("upload") && !catLower.includes("bulk")) return false;
-        }
+        if (activeTab === "certificates" && t.type !== "Certificate") return false;
         if (activeTab === "reports" && t.type !== "Report") return false;
         if (activeTab === "letters" && t.type !== "Letter") return false;
 
         // Search query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          const matchesName = (t.name || "").toLowerCase().includes(q);
-          const matchesCat = (t.category || "").toLowerCase().includes(q);
-          const matchesType = (t.type || "").toLowerCase().includes(q);
+          const matchesName = t.name.toLowerCase().includes(q);
+          const matchesCat = t.category.toLowerCase().includes(q);
+          const matchesType = t.type.toLowerCase().includes(q);
           if (!matchesName && !matchesCat && !matchesType) return false;
         }
 
@@ -999,17 +458,17 @@ export default function TemplatesPage() {
 
         // Cert type filter
         if (selectedCertType !== "All Certificate Types" && selectedCertType !== "All Types") {
-          if (!(t.name || "").toLowerCase().includes(selectedCertType.toLowerCase())) return false;
+          if (!t.name.toLowerCase().includes(selectedCertType.toLowerCase())) return false;
         }
 
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === "Name A-Z") return (a.name || "").localeCompare(b.name || "");
-        if (sortBy === "Name Z-A") return (b.name || "").localeCompare(a.name || "");
-        if (sortBy === "Category") return (a.category || "").localeCompare(b.category || "");
-        if (sortBy === "Status") return (a.status || "").localeCompare(b.status || "");
-        return 0; // Default Order preserves initial sequence
+        if (sortBy === "Name A-Z") return a.name.localeCompare(b.name);
+        if (sortBy === "Name Z-A") return b.name.localeCompare(a.name);
+        if (sortBy === "Category") return a.category.localeCompare(b.category);
+        if (sortBy === "Status") return a.status.localeCompare(b.status);
+        return 0; // Default Order preserves initial 1-9 built-in sequence
       });
   }, [templates, activeTab, searchQuery, selectedCategory, selectedStatus, selectedCertType, sortBy]);
 
@@ -1018,7 +477,10 @@ export default function TemplatesPage() {
     return (
       <CertificateEditorScreen
         template={currentTemplate}
-        onSave={handleSaveTemplate}
+        onSave={(updated) => {
+          setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          notify(`Template "${updated.name}" saved successfully.`);
+        }}
         onResetDefault={() => handleResetToDefault(currentTemplate.id)}
         onDownload={handleDownloadTemplate}
         notify={notify}
@@ -1030,7 +492,10 @@ export default function TemplatesPage() {
     return (
       <ReportEditorScreen
         template={currentTemplate}
-        onSave={handleSaveTemplate}
+        onSave={(updated) => {
+          setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          notify(`Report template "${updated.name}" saved.`);
+        }}
         notify={notify}
       />
     );
@@ -1040,7 +505,10 @@ export default function TemplatesPage() {
     return (
       <LetterEditorScreen
         template={currentTemplate}
-        onSave={handleSaveTemplate}
+        onSave={(updated) => {
+          setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          notify(`Letter template "${updated.name}" saved.`);
+        }}
         notify={notify}
       />
     );
@@ -1059,8 +527,11 @@ export default function TemplatesPage() {
   if (viewMode === "add-template") {
     return (
       <AddTemplateWizardScreen
-        onAdd={handleCreateTemplate}
-        categoriesList={categoriesList}
+        onAdd={(newTemp) => {
+          setTemplates((prev) => [...prev, newTemp]);
+          notify(`New template "${newTemp.name}" created!`);
+          navigate("/dashboard/settings/templates");
+        }}
       />
     );
   }
@@ -1093,8 +564,11 @@ export default function TemplatesPage() {
         {/* Upload Templates Screen when activeTab is upload */}
         {activeTab === "upload" ? (
           <UploadTemplateTabSection
-            onUploaded={handleCreateTemplate}
-            categoriesList={categoriesList}
+            onUploaded={(newTemp) => {
+              setTemplates((prev) => [...prev, newTemp]);
+              notify(`Uploaded new template "${newTemp.name}".`);
+              setActiveTab("certificates");
+            }}
             notify={notify}
           />
         ) : (
@@ -1122,9 +596,12 @@ export default function TemplatesPage() {
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="templates-select-filter"
                 >
-                  {categoriesList.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  <option value="All Categories">All Categories</option>
+                  <option value="Student Certificate">Student Certificate</option>
+                  <option value="Academic">Academic</option>
+                  <option value="HR">HR</option>
+                  <option value="Finance">Finance</option>
+                  <option value="Admission">Admission</option>
                 </select>
 
                 {activeTab === "certificates" && (
@@ -1158,7 +635,7 @@ export default function TemplatesPage() {
                   onChange={(e) => setSortBy(e.target.value)}
                   className="templates-select-filter"
                 >
-                  <option value="Default Order">Default Order</option>
+                  <option value="Default Order">Default Order (1-9)</option>
                   <option value="Recently Updated">Recently Updated</option>
                   <option value="Name A-Z">Name A-Z</option>
                   <option value="Name Z-A">Name Z-A</option>
@@ -1176,27 +653,8 @@ export default function TemplatesPage() {
               </div>
             </div>
 
-            {/* Error Message if API fails */}
-            {apiError && (
-              <div className="cms-alert cms-alert-warning" style={{ margin: "10px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <AlertTriangle size={16} />
-                  <span>{apiError} (Displaying offline templates)</span>
-                </div>
-                <button type="button" className="cms-btn cms-btn-ghost sm-btn" onClick={fetchTemplates}>
-                  <RefreshCw size={13} /> Retry
-                </button>
-              </div>
-            )}
-
-            {/* Loading Indicator */}
-            {loading ? (
-              <div style={{ padding: "60px 0", textAlign: "center", color: "var(--cms-muted)" }}>
-                <Loader2 size={32} className="spin-animate" style={{ margin: "0 auto 12px" }} />
-                <p>Loading templates from server...</p>
-              </div>
-            ) : activeTab === "reports" ? (
-              /* TAB 3: REPORTS TABLE VIEW */
+            {/* TAB 3: REPORTS TABLE VIEW */}
+            {activeTab === "reports" ? (
               <ReportsTableView
                 templates={filteredTemplates}
                 onEdit={(item) => navigate(`/dashboard/settings/templates/reports/${item.id}/edit`)}
@@ -1239,7 +697,6 @@ export default function TemplatesPage() {
                       onPreview={() => navigate(`/dashboard/settings/templates/${item.id}/preview`)}
                       onDownload={() => handleDownloadTemplate(item)}
                       onDuplicate={() => handleDuplicateTemplate(item)}
-                      onToggleActive={() => handleToggleActive(item)}
                       onResetDefault={() => handleResetToDefault(item.id)}
                       onDelete={() => setDeleteConfirmId(item.id)}
                     />
@@ -1279,14 +736,14 @@ export default function TemplatesPage() {
 }
 
 // Sub-Component: Individual Template Card
-function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, onToggleActive, onResetDefault, onDelete }) {
+function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, onResetDefault, onDelete }) {
   const [showMenu, setShowMenu] = useState(false);
 
   return (
     <article className={`templates-card accent-${template.accent || 'default'}`}>
       <div className="templates-card-thumb">
         <div
-          className={`mock-thumb-bg ${(template.type || "certificate").toLowerCase()}`}
+          className={`mock-thumb-bg ${template.type.toLowerCase()}`}
           style={{
             borderColor: template.borderColor || '#1e3a8a',
             borderStyle: 'double',
@@ -1305,7 +762,7 @@ function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, on
             </div>
             <div className="thumb-ref-line">
               <span>Ref: {template.refPrefix || "BC"}/2026/001</span>
-              <span>{getTodayFormattedDate()}</span>
+              <span>05 Sep 2026</span>
             </div>
           </div>
 
@@ -1318,7 +775,7 @@ function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, on
                 color: template.badgeTextColor || '#ffffff',
               }}
             >
-              {(template.name || "TEMPLATE").toUpperCase()}
+              {template.name.toUpperCase()}
             </span>
           </div>
 
@@ -1330,7 +787,7 @@ function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, on
           {/* Mini Footer: Place, QR, Seal, Signature */}
           <div className="thumb-mini-footer">
             <div className="thumb-footer-left">
-              <div className="thumb-mini-place">{template.place || "Vijayawada"}</div>
+              <div className="thumb-mini-place">Vijayawada</div>
               {template.qrEnabled !== false && <span className="thumb-mini-qr">QR</span>}
             </div>
             <div className="thumb-footer-center">
@@ -1347,15 +804,9 @@ function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, on
 
         <div className="thumb-badges-wrap">
           {template.builtIn && <span className="templates-builtin-badge">Default</span>}
-          <button
-            type="button"
-            className={`templates-status-badge status-${(template.status || "active").toLowerCase()}`}
-            onClick={onToggleActive}
-            title="Click to toggle active/inactive status"
-            style={{ border: "none", cursor: "pointer" }}
-          >
+          <span className={`templates-status-badge status-${template.status.toLowerCase()}`}>
             {template.status}
-          </button>
+          </span>
         </div>
       </div>
 
@@ -1385,9 +836,6 @@ function TemplateCard({ template, onEdit, onPreview, onDownload, onDuplicate, on
             <div className="more-menu-dropdown" onMouseLeave={() => setShowMenu(false)}>
               <button type="button" onClick={() => { setShowMenu(false); onDuplicate(); }}>
                 <Copy size={13} /> Duplicate
-              </button>
-              <button type="button" onClick={() => { setShowMenu(false); onToggleActive(); }}>
-                <CheckCircle2 size={13} /> Toggle Active
               </button>
               {template.builtIn ? (
                 <>
@@ -1486,11 +934,10 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
   const [tagline, setTagline] = useState("(Intermediate / Junior College)");
   const [addressText, setAddressText] = useState("D.No. 12-3-45, College Road, Vijayawada - 520 001, Andhra Pradesh");
   const [bodyText, setBodyText] = useState(
-    extractCleanCertificateBody(template.content || template.contentBody) ||
+    template.content ||
       "This is to certify that Mr./Ms. {{student_name}} (S/o / D/o {{father_name}}) bearing Student ID {{student_id}} is a bonafide student of Pirnav College (Intermediate / Junior College), Vijayawada."
   );
   const [purposeText, setPurposeText] = useState(template.purpose || "Higher Education");
-  const [placeText, setPlaceText] = useState(template.place || "Vijayawada");
 
   // Text Styling Live States
   const [fontFamily, setFontFamily] = useState("Georgia, serif");
@@ -1578,9 +1025,7 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
     onSave({
       ...template,
       name: templateName,
-      title: templateName,
       status: "Draft",
-      isActive: false,
       orientation,
       pageSize,
       borderStyle,
@@ -1590,9 +1035,7 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
       qrEnabled,
       signatureType,
       content: bodyText,
-      contentBody: bodyText,
       purpose: purposeText,
-      place: placeText,
       version,
     });
   };
@@ -1604,9 +1047,7 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
     onSave({
       ...template,
       name: templateName,
-      title: templateName,
       status: "Active",
-      isActive: true,
       orientation,
       pageSize,
       borderStyle,
@@ -1616,12 +1057,11 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
       qrEnabled,
       signatureType,
       content: bodyText,
-      contentBody: bodyText,
       purpose: purposeText,
-      place: placeText,
       version: nextVer,
       lastModified: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
     });
+    notify(`Template published as v${nextVer}!`);
   };
 
   return (
@@ -1711,10 +1151,6 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
                   <div className="form-group">
                     <label>Purpose Text</label>
                     <input type="text" value={purposeText} onChange={(e) => setPurposeText(e.target.value)} className="cms-input" />
-                  </div>
-                  <div className="form-group">
-                    <label>Place / City</label>
-                    <input type="text" value={placeText} onChange={(e) => setPlaceText(e.target.value)} className="cms-input" placeholder="e.g. Vijayawada" />
                   </div>
                   <div className="form-group">
                     <label>Font Family</label>
@@ -1961,7 +1397,7 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
 
                     <div className="cert-ref-row">
                       <span>Ref No: <strong>{template.refPrefix || "BC"}/2026/001</strong></span>
-                      <span>Date: <strong>{getTodayFormattedDate()}</strong></span>
+                      <span>Date: <strong>05 Sep 2026</strong></span>
                     </div>
                   </header>
 
@@ -1994,8 +1430,8 @@ function CertificateEditorScreen({ template, onSave, onResetDefault, onDownload,
                   {/* Footer Section: Date, QR, Seal & Signature */}
                   <footer className={`cert-footer-area sig-pos-${signaturePos.toLowerCase().replace(/\s+/g, "-")}`}>
                     <div className="cert-footer-col left">
-                      <p>Place: <strong>{placeText || "Vijayawada"}</strong></p>
-                      <p>Date: <strong>{getTodayFormattedDate()}</strong></p>
+                      <p>Place: <strong>Vijayawada</strong></p>
+                      <p>Date: <strong>05 Sep 2026</strong></p>
                       {qrEnabled && (
                         <div className="cert-qr-placeholder">
                           <div className="qr-box" style={{ width: qrSize, height: qrSize }}>QR</div>
@@ -2277,7 +1713,7 @@ function LetterEditorScreen({ template, onSave, notify }) {
 }
 
 // Sub-Component: Upload Templates Tab & Screen (Tab 5)
-function UploadTemplateTabSection({ onUploaded, categoriesList = [], notify }) {
+function UploadTemplateTabSection({ onUploaded, notify }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [templateName, setTemplateName] = useState("");
   const [templateType, setTemplateType] = useState("Certificate");
@@ -2314,19 +1750,16 @@ function UploadTemplateTabSection({ onUploaded, categoriesList = [], notify }) {
       return;
     }
     const newTemp = {
-      templateCode: `UPLOAD_${Date.now()}`.slice(0, 30),
+      id: `upload-${Date.now()}`,
       name: templateName,
-      title: templateName,
       type: templateType,
       category,
       status: "Active",
-      isActive: true,
       format: selectedFile.name.endsWith(".xlsx") ? "Excel" : selectedFile.name.endsWith(".docx") ? "Word" : "PDF",
       version,
       builtIn: false,
       lastModified: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
       description,
-      contentBody: description || `Uploaded template: ${templateName}`,
       orientation: "Landscape",
     };
     onUploaded(newTemp);
@@ -2387,9 +1820,11 @@ function UploadTemplateTabSection({ onUploaded, categoriesList = [], notify }) {
             <div className="form-group">
               <label>Category *</label>
               <select value={category} onChange={(e) => setCategory(e.target.value)} className="cms-input">
-                {categoriesList.filter((c) => c !== "All Categories").map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+                <option value="Student Certificate">Student Certificate</option>
+                <option value="Academic">Academic</option>
+                <option value="Report">Report</option>
+                <option value="HR">HR</option>
+                <option value="Finance">Finance</option>
               </select>
             </div>
           </div>
@@ -2459,7 +1894,7 @@ function UploadTemplateTabSection({ onUploaded, categoriesList = [], notify }) {
 }
 
 // Sub-Component: Add New Template Wizard Screen
-function AddTemplateWizardScreen({ onAdd, categoriesList = [] }) {
+function AddTemplateWizardScreen({ onAdd }) {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [type, setType] = useState("Certificate");
@@ -2477,19 +1912,16 @@ function AddTemplateWizardScreen({ onAdd, categoriesList = [] }) {
 
     onAdd({
       ...baseTemplate,
-      templateCode: `TMP_${Date.now()}`.slice(0, 30),
+      id: `custom-${Date.now()}`,
       name: name || baseTemplate.name || "Custom Template",
-      title: name || baseTemplate.name || "Custom Template",
       type,
       category,
       status: "Active",
-      isActive: true,
       format: "PDF",
       version: "1.0",
-      builtIn: false,
+      builtIn: false, // Custom templates are Admin-created
       lastModified: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
       description: description || baseTemplate.description || "",
-      contentBody: baseTemplate.content || baseTemplate.contentBody || description || "Certificate body content...",
       orientation: baseTemplate.orientation || "Landscape",
     });
   };
@@ -2547,9 +1979,10 @@ function AddTemplateWizardScreen({ onAdd, categoriesList = [] }) {
               <div className="form-group">
                 <label>Category</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value)} className="cms-input">
-                  {categoriesList.filter((c) => c !== "All Categories").map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  <option value="Student Certificate">Student Certificate</option>
+                  <option value="Academic">Academic</option>
+                  <option value="Report">Report</option>
+                  <option value="HR">HR</option>
                 </select>
               </div>
               <div className="form-group">
@@ -2579,40 +2012,10 @@ function AddTemplateWizardScreen({ onAdd, categoriesList = [] }) {
   );
 }
 
-// Sub-Component: Template Preview Screen (Visual Preview + Server HTML Preview)
+// Sub-Component: Template Preview Screen (Full Read-Only Visual Preview with Demo Student Data)
 function TemplatePreviewScreen({ template, onDownload, notify }) {
   const navigate = useNavigate();
-  const [serverRenderedHtml, setServerRenderedHtml] = useState(null);
-  const [previewMode, setPreviewMode] = useState("visual"); // "visual" | "html"
-  const [loadingPreview, setLoadingPreview] = useState(false);
-
-  // Fetch dynamic server preview if available
-  useEffect(() => {
-    let active = true;
-    async function loadServerPreview() {
-      try {
-        setLoadingPreview(true);
-        const res = await templateService.previewTemplate({
-          templateCode: template.templateCode || template.id,
-          templateId: typeof template.id === "number" ? template.id : 0,
-          ...DEMO_STUDENT,
-        });
-        if (active && res?.renderedHtml) {
-          setServerRenderedHtml(res.renderedHtml);
-        }
-      } catch {
-        // Continue with visual preview gracefully
-      } finally {
-        if (active) setLoadingPreview(false);
-      }
-    }
-    loadServerPreview();
-    return () => {
-      active = false;
-    };
-  }, [template]);
-
-  const renderedContent = useMemo(() => renderWithDemoData(template.content || template.contentBody, template), [template]);
+  const renderedContent = useMemo(() => renderWithDemoData(template.content, template), [template]);
   const renderedPurpose = useMemo(() => renderWithDemoData(template.purpose, template), [template]);
 
   return (
@@ -2629,18 +2032,9 @@ function TemplatePreviewScreen({ template, onDownload, notify }) {
           <div className="topbar-title-wrap">
             <h2>{template.name}</h2>
             {template.builtIn && <span className="templates-builtin-badge">Default</span>}
-            <span className={`templates-status-badge status-${(template.status || "active").toLowerCase()}`}>{template.status}</span>
+            <span className={`templates-status-badge status-${template.status.toLowerCase()}`}>{template.status}</span>
           </div>
           <div className="topbar-actions">
-            {serverRenderedHtml && (
-              <button
-                type="button"
-                className={`cms-btn ${previewMode === "html" ? "cms-btn-primary" : "cms-btn-ghost"}`}
-                onClick={() => setPreviewMode(previewMode === "html" ? "visual" : "html")}
-              >
-                {previewMode === "html" ? "Visual View" : "Server HTML View"}
-              </button>
-            )}
             <button type="button" className="cms-btn cms-btn-ghost" onClick={() => window.print()}>
               <Printer size={14} /> Print Preview
             </button>
@@ -2651,104 +2045,96 @@ function TemplatePreviewScreen({ template, onDownload, notify }) {
         </header>
 
         <main className="preview-canvas-box">
-          {previewMode === "html" && serverRenderedHtml ? (
+          <div
+            className={`visual-certificate-canvas ${template.orientation?.toLowerCase() || 'landscape'}`}
+            style={{ backgroundColor: template.bgCanvasColor || "#ffffff" }}
+          >
+            {/* Inner Decorative Border */}
             <div
-              className="server-html-preview-frame"
-              style={{ padding: "24px", background: "#ffffff", borderRadius: "12px", border: "1px solid var(--cms-border)", maxWidth: "900px", margin: "0 auto" }}
-              dangerouslySetInnerHTML={{ __html: serverRenderedHtml }}
-            />
-          ) : (
-            <div
-              className={`visual-certificate-canvas ${template.orientation?.toLowerCase() || 'landscape'}`}
-              style={{ backgroundColor: template.bgCanvasColor || "#ffffff" }}
+              className="cert-inner-border"
+              style={{
+                borderColor: template.borderColor || "#1e3a8a",
+                borderStyle: "double",
+                borderWidth: "4px",
+              }}
             >
-              {/* Inner Decorative Border */}
-              <div
-                className="cert-inner-border"
-                style={{
-                  borderColor: template.borderColor || "#1e3a8a",
-                  borderStyle: "double",
-                  borderWidth: "4px",
-                }}
-              >
-                {/* Header Branding */}
-                <header className="cert-header">
-                  <div className="cert-header-grid">
-                    <div className="cert-header-left">
-                      <div className="cert-default-logo" style={{ backgroundColor: template.borderColor || "#1e3a8a" }}>P</div>
-                    </div>
-                    <div className="cert-header-center">
-                      <h1 className="cert-institution-name" style={{ color: template.borderColor || "#1e3a8a" }}>
-                        PIRNAV COLLEGE
-                      </h1>
-                      <p className="cert-tagline" style={{ color: template.borderColor || "#b45309" }}>
-                        (Intermediate / Junior College)
-                      </p>
-                      <p className="cert-address">
-                        D.No. 12-3-45, College Road, Vijayawada - 520 001, Andhra Pradesh
-                      </p>
-                    </div>
-                    <div className="cert-header-right">
-                      <small>Affiliated to</small>
-                      <strong>Board of Intermediate Education</strong>
-                      <small>Andhra Pradesh (BIEAP)</small>
-                      <small>College Code: 12345</small>
-                    </div>
+              {/* Header Branding */}
+              <header className="cert-header">
+                <div className="cert-header-grid">
+                  <div className="cert-header-left">
+                    <div className="cert-default-logo" style={{ backgroundColor: template.borderColor || "#1e3a8a" }}>P</div>
                   </div>
-
-                  <div className="cert-ref-row">
-                    <span>Ref No: <strong>{template.refPrefix || "BC"}/2026/001</strong></span>
-                    <span>Date: <strong>{getTodayFormattedDate()}</strong></span>
+                  <div className="cert-header-center">
+                    <h1 className="cert-institution-name" style={{ color: template.borderColor || "#1e3a8a" }}>
+                      PIRNAV COLLEGE
+                    </h1>
+                    <p className="cert-tagline" style={{ color: template.borderColor || "#b45309" }}>
+                      (Intermediate / Junior College)
+                    </p>
+                    <p className="cert-address">
+                      D.No. 12-3-45, College Road, Vijayawada - 520 001, Andhra Pradesh
+                    </p>
                   </div>
-                </header>
-
-                {/* Title Badge */}
-                <div className="cert-title-badge">
-                  <h2 style={{ backgroundColor: template.badgeBgColor || template.borderColor || "#1e3a8a", color: "#ffffff" }}>
-                    {(template.name || "TEMPLATE").toUpperCase()}
-                  </h2>
+                  <div className="cert-header-right">
+                    <small>Affiliated to</small>
+                    <strong>Board of Intermediate Education</strong>
+                    <small>Andhra Pradesh (BIEAP)</small>
+                    <small>College Code: 12345</small>
+                  </div>
                 </div>
 
-                {/* Body Text Area */}
-                <div className="cert-body-area">
-                  <p className="cert-content-text">{renderedContent}</p>
-                  {renderedPurpose && (
-                    <p className="cert-purpose-text">This certificate is issued for the purpose of <strong>{renderedPurpose}</strong>.</p>
+                <div className="cert-ref-row">
+                  <span>Ref No: <strong>{template.refPrefix || "BC"}/2026/001</strong></span>
+                  <span>Date: <strong>05 Sep 2026</strong></span>
+                </div>
+              </header>
+
+              {/* Title Badge */}
+              <div className="cert-title-badge">
+                <h2 style={{ backgroundColor: template.badgeBgColor || template.borderColor || "#1e3a8a", color: "#ffffff" }}>
+                  {template.name.toUpperCase()}
+                </h2>
+              </div>
+
+              {/* Body Text Area */}
+              <div className="cert-body-area">
+                <p className="cert-content-text">{renderedContent}</p>
+                {renderedPurpose && (
+                  <p className="cert-purpose-text">This certificate is issued for the purpose of <strong>{renderedPurpose}</strong>.</p>
+                )}
+              </div>
+
+              {/* Footer Section */}
+              <footer className="cert-footer-area">
+                <div className="cert-footer-col left">
+                  <p>Place: <strong>Vijayawada</strong></p>
+                  <p>Date: <strong>05 Sep 2026</strong></p>
+                  {template.qrEnabled && (
+                    <div className="cert-qr-placeholder">
+                      <div className="qr-box">QR</div>
+                      <span>Scan to verify</span>
+                    </div>
                   )}
                 </div>
 
-                {/* Footer Section */}
-                <footer className="cert-footer-area">
-                  <div className="cert-footer-col left">
-                    <p>Place: <strong>{template.place || "Vijayawada"}</strong></p>
-                    <p>Date: <strong>{getTodayFormattedDate()}</strong></p>
-                    {template.qrEnabled && (
-                      <div className="cert-qr-placeholder">
-                        <div className="qr-box">QR</div>
-                        <span>Scan to verify</span>
-                      </div>
-                    )}
+                <div className="cert-footer-col center">
+                  <div className="cert-seal-stamp" style={{ borderColor: template.borderColor || "#1e3a8a", color: template.borderColor || "#1e3a8a" }}>
+                    <span>PIRNAV COLLEGE<br/>VIJAYAWADA</span>
                   </div>
+                </div>
 
-                  <div className="cert-footer-col center">
-                    <div className="cert-seal-stamp" style={{ borderColor: template.borderColor || "#1e3a8a", color: template.borderColor || "#1e3a8a" }}>
-                      <span>PIRNAV COLLEGE<br/>VIJAYAWADA</span>
-                    </div>
+                <div className="cert-footer-col right">
+                  <div className="cert-sig-line">
+                    <span className="sig-handwritten style-cursive-hand">
+                      {template.signatureType || "Principal"} Signature
+                    </span>
+                    <strong className="sig-title">{template.signatureType || "Principal"}</strong>
+                    <small>Pirnav College</small>
                   </div>
-
-                  <div className="cert-footer-col right">
-                    <div className="cert-sig-line">
-                      <span className="sig-handwritten style-cursive-hand">
-                        {template.signatureType || "Principal"} Signature
-                      </span>
-                      <strong className="sig-title">{template.signatureType || "Principal"}</strong>
-                      <small>Pirnav College</small>
-                    </div>
-                  </div>
-                </footer>
-              </div>
+                </div>
+              </footer>
             </div>
-          )}
+          </div>
         </main>
       </div>
     </DashboardLayout>

@@ -81,18 +81,9 @@ export default function BoardManagementPage() {
       setBoards((current) => [...current, { ...form, id: Math.max(0, ...current.map((board) => board.id)) + 1 }]);
       setPage(Math.ceil((boards.length + 1) / PAGE_SIZE));
     }
-    setToast(mode === "edit" ? "Board updated successfully" : "Board added successfully");
-    setSelected(null);
-    setMode("list");
-    window.dispatchEvent(new CustomEvent("cms_academic_masters_updated"));
+    setToast(mode === "edit" ? "Board updated successfully" : "Board added successfully"); setSelected(null); setMode("list");
   };
-  const remove = () => {
-    setBoards((current) => current.filter((board) => board.id !== deleting.id));
-    setDeleting(null);
-    setPage(1);
-    setToast("Board deleted successfully");
-    window.dispatchEvent(new CustomEvent("cms_academic_masters_updated"));
-  };
+  const remove = () => { setBoards((current) => current.filter((board) => board.id !== deleting.id)); setDeleting(null); setPage(1); setToast("Board deleted successfully"); };
   const exportRows = () => {
     const csv = [["Board Name", "Board Code", "Board Type", "State", "Level", "Duration", "Status"], ...filtered.map((board) => [board.name, board.code, board.type, board.state, board.level, board.duration, board.status])].map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); const link = document.createElement("a"); link.href = url; link.download = "boards-mock-data.csv"; link.click(); URL.revokeObjectURL(url);

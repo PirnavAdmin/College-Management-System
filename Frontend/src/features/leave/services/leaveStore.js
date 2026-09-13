@@ -52,10 +52,10 @@ export const getLeaveRequests = async (staffId = null, departmentId = null, stat
 
         const response = await apiClient.get(`/api/v1/staff-attendance/leave?${params.toString()}`);
         const data = response.data?.data || response.data?.Data || [];
-        return Array.isArray(data) ? data.map(mapLeaveRequest) : [];
+        return data.map(mapLeaveRequest);
     } catch (error) {
-        console.warn('Leave requests endpoint offline or unavailable (using fallback []):', error?.message || error);
-        return [];
+        console.error('Error fetching leave requests:', error);
+        throw error;
     }
 };
 

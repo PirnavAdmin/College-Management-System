@@ -17,6 +17,7 @@ namespace CollegeManagement.API.Controllers.V1;
 [EnableCors("AllowFrontend")]
 [AllowAnonymous]
 [Produces("application/json")]
+[Authorize]
 public class DashboardController : ControllerBase
 {
     private readonly IDashboardService _dashboardService;
@@ -27,10 +28,16 @@ public class DashboardController : ControllerBase
     }
 
     // =========================================================================
+    // =========================================================================
     // 1. DASHBOARD FILTER OPTIONS (ACADEMIC YEARS & BOARDS)
     // =========================================================================
+    /// <summary>
+    /// 1. GET /api/v1/dashboard/filters
+    /// Retrieves active Academic Years and Boards for global dashboard filtering.
+    /// </summary>
     [HttpGet("filters")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(DashboardFilterOptionsResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFilterOptions(CancellationToken ct = default)
     {
         var result = await _dashboardService.GetFilterOptionsAsync(ct);
@@ -40,9 +47,17 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 2. DASHBOARD SUMMARY / OVERVIEW (TOP 5 KPI CARDS + VS LAST YEAR METRICS)
     // =========================================================================
+    /// <summary>
+    /// 2. GET /api/v1/dashboard/summary and /api/v1/dashboard/stats
+    /// Retrieves top 5 Primary KPI Cards (Total Students, Teaching Staff, Non-Teaching Staff, Total Groups, Total Sections)
+    /// alongside Prior Academic Year baseline comparisons and Year-over-Year (YoY) percentage change metrics.
+    /// For baseline year 2026-2027 with no prior year, last year values and percentages return 0 and neutral trend.
+    /// When querying 2027-2028, prior year data is calculated against 2026-2027.
+    /// </summary>
     [HttpGet("summary")]
     [HttpGet("stats")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(DashboardSummaryResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Summary(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -56,8 +71,14 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 3. STUDENTS OVERVIEW (BREAKDOWN / GENDER / MONTHLY TREND)
     // =========================================================================
+    /// <summary>
+    /// 3. GET /api/v1/dashboard/students-overview
+    /// Retrieves student breakdown statistics including active/inactive status, gender distribution (Boys, Girls, Others),
+    /// academic level distribution (1st Year, 2nd Year), and monthly admission trajectory.
+    /// </summary>
     [HttpGet("students-overview")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(StudentsOverviewResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> StudentsOverview(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -71,8 +92,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 4. ADMISSION TREND ENDPOINT (/api/v1/dashboard/admission-trend)
     // =========================================================================
+    /// <summary>
+    /// 4. GET /api/v1/dashboard/admission-trend
+    /// Retrieves monthly student admissions timeline for area and bar chart visualizations.
+    /// </summary>
     [HttpGet("admission-trend")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(StudentsOverviewResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> AdmissionTrend(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -85,8 +111,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 5. GROUP DISTRIBUTION (DONUT / PIE CHART / BAR CHART)
     // =========================================================================
+    /// <summary>
+    /// 5. GET /api/v1/dashboard/group-distribution
+    /// Retrieves distribution of enrolled students per academic group/stream (e.g., MPC, BiPC, CEC, MEC, HEC).
+    /// </summary>
     [HttpGet("group-distribution")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(GroupDistributionResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GroupDistribution(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -99,8 +130,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 6. STUDENTS ATTENDANCE OVERVIEW TODAY (DONUT + VIEW BY FILTER)
     // =========================================================================
+    /// <summary>
+    /// 6. GET /api/v1/dashboard/students-attendance-today
+    /// Retrieves today's student attendance metrics and category breakdowns (Overall, Academic Level, Group, Section).
+    /// </summary>
     [HttpGet("students-attendance-today")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(StudentsAttendanceTodayResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> StudentsAttendanceToday(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -114,8 +150,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 7. STAFF ATTENDANCE OVERVIEW TODAY (DONUT + STAFF TYPE FILTER)
     // =========================================================================
+    /// <summary>
+    /// 7. GET /api/v1/dashboard/staff-attendance-today
+    /// Retrieves today's staff attendance metrics filtered by staff type (All Staff, Teaching Staff, Non-Teaching Staff).
+    /// </summary>
     [HttpGet("staff-attendance-today")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(StaffAttendanceTodayResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> StaffAttendanceToday(
         [FromQuery] int? boardId = null,
         [FromQuery] string? staffType = "All Staff",
@@ -128,8 +169,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 8. CERTIFICATE REQUESTS SUMMARY & RECENT LIST
     // =========================================================================
+    /// <summary>
+    /// 8. GET /api/v1/dashboard/certificate-requests
+    /// Retrieves certificate request counts categorized by type (Bonafide, Study, Conduct, Transfer, Others) and recent request records.
+    /// </summary>
     [HttpGet("certificate-requests")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(CertificateRequestsSummaryResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CertificateRequests(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -143,8 +189,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 9. UPCOMING EXAMINATIONS
     // =========================================================================
+    /// <summary>
+    /// 9. GET /api/v1/dashboard/upcoming-examinations
+    /// Retrieves scheduled and upcoming examinations with date ranges and countdown badges.
+    /// </summary>
     [HttpGet("upcoming-examinations")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(List<UpcomingExaminationItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpcomingExaminations(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,
@@ -157,8 +208,13 @@ public class DashboardController : ControllerBase
     // =========================================================================
     // 10. TODAY'S HIGHLIGHTS
     // =========================================================================
+    /// <summary>
+    /// 10. GET /api/v1/dashboard/todays-highlights
+    /// Retrieves summary counts of today's key events: admissions, certificate requests, examinations, and student birthdays.
+    /// </summary>
     [HttpGet("todays-highlights")]
     [AllowAnonymous]
+    [ProducesResponseType(typeof(TodaysHighlightsResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> TodaysHighlights(
         [FromQuery] int? academicYearId = null,
         [FromQuery] int? boardId = null,

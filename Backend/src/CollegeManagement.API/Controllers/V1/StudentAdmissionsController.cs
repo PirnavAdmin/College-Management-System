@@ -1,6 +1,7 @@
 ﻿using Asp.Versioning;
 using CollegeManagement.API.DTOs.StudentAdmission;
 using CollegeManagement.API.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CollegeManagement.API.Controllers.V1
@@ -8,6 +9,7 @@ namespace CollegeManagement.API.Controllers.V1
     [ApiController]
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/student-admissions")]
+    [Authorize]
     public class StudentAdmissionController : ControllerBase
     {
         private readonly IStudentAdmissionService _service;
@@ -376,55 +378,55 @@ namespace CollegeManagement.API.Controllers.V1
         // POST: api/v1/student-admissions/{id}/section
         // =========================================================
 
-        //  [HttpPost("{id:int}/section")]
-       // public async Task<IActionResult> AllocateSection(
-          //  int id,
-          //  [FromBody] AllocateSectionRequest request)
-     //   {
-           // try
-           // {
-                //request.AdmissionId = id;
+        [HttpPost("{id:int}/section")]
+        public async Task<IActionResult> AllocateSection(
+            int id,
+            [FromBody] AllocateSectionRequest request)
+        {
+            try
+            {
+                request.AdmissionId = id;
 
-                //var success =
-                   // await _service.AllocateSectionAsync(
-                      //  request);
+                var success =
+                    await _service.AllocateSectionAsync(
+                        request);
 
-              //  if (!success)
-               // {
-                   // return BadRequest(new
-                   // {
-                       // statusCode = 400,
-                       // message =
-                           // "Section could not be allocated."
-                  //  });
-              //  }
+                if (!success)
+                {
+                    return BadRequest(new
+                    {
+                        statusCode = 400,
+                        message =
+                            "Section could not be allocated."
+                    });
+                }
 
-                //return Ok(new
-               // {
-              //      statusCode = 200,
-                  //  message =
-                      //  "Section allocated successfully."
-              //  });
-           // }
-            //catch (ArgumentException ex)
-            //{
-               // return BadRequest(new
-               // {
-               //     statusCode = 400,
-                  //  message = ex.Message
-               // });
-           // }
-            //catch (Exception ex)
-            //{
-               // return StatusCode(500, new
-               // {
-                    //statusCode = 500,
-                  //  message =
-                   //     "An unexpected server error occurred.",
-                   // details = ex.Message
-               // });
-           // }
-       // }
+                return Ok(new
+                {
+                    statusCode = 200,
+                    message =
+                        "Section allocated successfully."
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new
+                {
+                    statusCode = 400,
+                    message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    statusCode = 500,
+                    message =
+                        "An unexpected server error occurred.",
+                    details = ex.Message
+                });
+            }
+        }
 
 
         // =========================================================
@@ -432,43 +434,43 @@ namespace CollegeManagement.API.Controllers.V1
         // POST: api/v1/student-admissions/bulk-section
         // =========================================================
 
-        // [HttpPost("bulk-section")]
-        // public async Task<IActionResult> BulkAllocateSection(
-        // [FromBody] BulkSectionAllocationRequest request)
-        // {
-        //  try
-        //  {
-        // var count =
-        // await _service
-        // .BulkAllocateSectionAsync(request);
+        [HttpPost("bulk-section")]
+        public async Task<IActionResult> BulkAllocateSection(
+            [FromBody] BulkSectionAllocationRequest request)
+        {
+            try
+            {
+                var count =
+                    await _service
+                        .BulkAllocateSectionAsync(request);
 
-        // return Ok(new
-        // {
-        // statusCode = 200,
-        // message =
-        // "Section allocated successfully.",
-        // allocatedCount = count
-        //  });
-        // }
-        // catch (ArgumentException ex)
-        // {
-        // return BadRequest(new
-        // {
-        // statusCode = 400,
-        //  message = ex.Message
-        // });
-        // }
-        // catch (Exception ex)
-        // {
-        // return StatusCode(500, new
-        // {
-        // statusCode = 500,
-        // message =
-        //   "An unexpected server error occurred.",
-        //  details = ex.Message
-        //  });
-        //  }
-        // }
+                return Ok(new
+                {
+                    statusCode = 200,
+                    message =
+                        "Section allocated successfully.",
+                    allocatedCount = count
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new
+                {
+                    statusCode = 400,
+                    message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    statusCode = 500,
+                    message =
+                        "An unexpected server error occurred.",
+                    details = ex.Message
+                });
+            }
+        }
         //optional check box//
         // POST: api/v1/admissions/5/fee-selections
         [HttpPost("{id:int}/fee-selections")]
@@ -498,47 +500,44 @@ namespace CollegeManagement.API.Controllers.V1
         // POST: api/v1/student-admissions/bulk-roll-numbers
         // =========================================================
 
-        //  [HttpPost("bulk-roll-numbers")]
-        // public async Task<IActionResult> BulkAllocateRollNumbers(
-        // [FromBody]
-        //  BulkRollNumberAllocationRequest request)
-        //
-        ///{
-        // try
-        //{
-        // var count =
-        //  await _service
-        //.BulkAllocateRollNumbersAsync(
-        //  request);
+        [HttpPost("bulk-roll-numbers")]
+        public async Task<IActionResult> BulkAllocateRollNumbers(
+            [FromBody]
+            BulkRollNumberAllocationRequest request)
+        {
+            try
+            {
+                var count =
+                    await _service
+                        .BulkAllocateRollNumbersAsync(
+                            request);
 
-        // return Ok(new
-        // {
-        // statusCode = 200,
-        // message =
-        //  "Roll numbers allocated successfully.",
-        // allocatedCount = count
-        // });
-        // }
-        // catch (ArgumentException ex)
-        //{
-        // return BadRequest(new
-        // {
-        // statusCode = 400,
-        // message = ex.Message
-        // });
-        //  }
-        // catch (Exception ex)
-        // {
-        //  return StatusCode(500, new
-        // {
-        // statusCode = 500,
-        // message =
-        //  //   "An unexpected server error occurred.",
-        //details = ex.Message
-        //   });
-        //  }
-        // }
-        // }
-        //}
+                return Ok(new
+                {
+                    statusCode = 200,
+                    message =
+                        "Roll numbers allocated successfully.",
+                    allocatedCount = count
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new
+                {
+                    statusCode = 400,
+                    message = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    statusCode = 500,
+                    message =
+                        "An unexpected server error occurred.",
+                    details = ex.Message
+                });
+            }
+        }
     }
 }

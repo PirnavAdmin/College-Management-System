@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using CollegeManagement.API.DTOs.Settings;
 using CollegeManagement.API.Helpers;

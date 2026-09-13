@@ -121,38 +121,7 @@ if (args.Contains("--test-number-series"))
     return;
 }
 
-if (args.Contains("--test-staff-attendance-module"))
-{
-    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
-    builder.Services.AddDbContext<AppDbContext>(opt =>
-        opt.UseMySql(connStr, ServerVersion.AutoDetect(connStr)));
-    builder.Services.AddScoped<IStaffAttendanceRepository, StaffAttendanceRepository>();
-    builder.Services.AddScoped<IStaffAttendanceService, StaffAttendanceService>();
-    var testApp = builder.Build();
-    var success = await StaffAttendanceModuleBackendTester.RunAsync(testApp.Services);
-    Environment.Exit(success ? 0 : 1);
-    return;
-}
 
-if (args.Contains("--test-sections-module"))
-{
-    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
-    var tester = new SectionModuleBackendTester(connStr!);
-    var success = await tester.RunAllTestsAsync();
-    Environment.Exit(success ? 0 : 1);
-    return;
-}
-
-if (args.Contains("--test-db-all"))
-{
-    var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
-    builder.Services.AddDbContext<AppDbContext>(opt =>
-        opt.UseMySql(connStr, ServerVersion.AutoDetect(connStr)));
-    var testApp = builder.Build();
-    var exitCode = await DbSchemaAndSpTester.RunAsync(testApp.Services);
-    Environment.Exit(exitCode);
-    return;
-}
 
 if (args.Contains("--validate-certificates-sql"))
 {
@@ -326,9 +295,11 @@ builder.Services.AddScoped<ITemplateRepository, TemplateRepository>();
 
 #region Services
 
+builder.Services.AddScoped<IJwtTokenHelper, JwtTokenHelper>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IRoleManagementService, RoleManagementService>();
 builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+builder.Services.AddScoped<IUserProvisioningService, UserProvisioningService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
@@ -538,6 +509,104 @@ builder.Services.AddSwaggerGen(c =>
 #endregion
 
 var app = builder.Build();
+
+if (args.Contains("--test-staff-attendance-module"))
+{
+    var pass = await StaffAttendanceModuleBackendTester.RunAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-db-all"))
+{
+    var exitCode = await DbSchemaAndSpTester.RunAsync(app.Services);
+    Environment.Exit(exitCode);
+    return;
+}
+
+if (args.Contains("--test-user-provisioning"))
+{
+    var pass = await UserProvisioningFoundationTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-student-provisioning"))
+{
+    var pass = await StudentUserProvisioningTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-staff-provisioning"))
+{
+    var pass = await StaffUserProvisioningTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-admin-provisioning"))
+{
+    var pass = await AdminUserProvisioningTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-jwt-claims") || args.Contains("--test-phase6a-jwt"))
+{
+    var pass = await JwtClaimsFoundationTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-auth-harmonization"))
+{
+    var pass = await AuthorizationHarmonizationTester.RunTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-centralized-login"))
+{
+    var pass = await CentralizedLoginTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-claim-consumers"))
+{
+    var pass = await ClaimConsumerMigrationTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-password-change"))
+{
+    var pass = await CentralizedPasswordChangeTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-forgot-reset"))
+{
+    var pass = await ForgotResetPasswordTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-admin-adapter") || args.Contains("--test-admin-login-adapter"))
+{
+    var pass = await AdminLoginAdapterTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
+
+if (args.Contains("--test-email-status-sync"))
+{
+    var pass = await EmailAndStatusSyncTester.RunAllTestsAsync(app.Services);
+    Environment.Exit(pass ? 0 : 1);
+    return;
+}
 
 #region Database Schema Initialization
 using (var scope = app.Services.CreateScope())

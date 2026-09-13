@@ -264,12 +264,13 @@ namespace CollegeManagement.API.Repositories.Implementations
             // Base query for students matching the criteria
             var studentsQuery = _context.Students.Where(s => s.IsActive);
 
-            if (request.BoardId.HasValue) studentsQuery = studentsQuery.Where(s => s.BoardId == request.BoardId);
-            if (request.AcademicYearId.HasValue) studentsQuery = studentsQuery.Where(s => s.AcademicYearId == request.AcademicYearId);
-            if (request.GroupId.HasValue) studentsQuery = studentsQuery.Where(s => s.GroupId == request.GroupId);
-            if (request.ProgramId.HasValue) studentsQuery = studentsQuery.Where(s => s.ProgramId == request.ProgramId);
-            if (request.SectionId.HasValue) studentsQuery = studentsQuery.Where(s => s.SectionId == request.SectionId);
-            if (request.StudentId.HasValue) studentsQuery = studentsQuery.Where(s => s.StudentId == request.StudentId);
+            if (request.BoardId.HasValue && request.BoardId.Value > 0) studentsQuery = studentsQuery.Where(s => s.BoardId == request.BoardId);
+            if (request.AcademicYearId.HasValue && request.AcademicYearId.Value > 0) studentsQuery = studentsQuery.Where(s => s.AcademicYearId == request.AcademicYearId);
+            if (request.AcademicLevelId.HasValue && request.AcademicLevelId.Value > 0) studentsQuery = studentsQuery.Where(s => s.AcademicLevelId == request.AcademicLevelId);
+            if (request.GroupId.HasValue && request.GroupId.Value > 0) studentsQuery = studentsQuery.Where(s => s.GroupId == request.GroupId);
+            if (request.ProgramId.HasValue && request.ProgramId.Value > 0) studentsQuery = studentsQuery.Where(s => s.ProgramId == request.ProgramId);
+            if (request.SectionId.HasValue && request.SectionId.Value > 0) studentsQuery = studentsQuery.Where(s => s.SectionId == request.SectionId);
+            if (request.StudentId.HasValue && request.StudentId.Value > 0) studentsQuery = studentsQuery.Where(s => s.StudentId == request.StudentId);
             
             if (!string.IsNullOrEmpty(request.SearchText))
             {

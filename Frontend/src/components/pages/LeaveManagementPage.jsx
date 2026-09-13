@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
-import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, History as HistoryIcon, ShieldCheck, UserRound, UsersRound, XCircle } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, History as HistoryIcon, Search, ShieldCheck, UserRound, UsersRound, XCircle } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
@@ -652,6 +653,7 @@ function RejectLeaveConfirmation({ leave, remark, setRemark, onCancel, onConfirm
 export default function LeaveManagementPage() {
   const [requests, setRequests] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [rejecting, setRejecting] = useState(null);
   const [affected, setAffected] = useState(null);
   const [assignment, setAssignment] = useState(null);
   const [records, setRecords] = useState([]);
@@ -659,8 +661,9 @@ export default function LeaveManagementPage() {
   const [message, setMessage] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [staffHistory, setStaffHistory] = useState(null);
-  const [rejecting, setRejecting] = useState(null);
-  const [activeTab, setActiveTab] = useState("all");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(tabParam === "today" ? "today" : "all");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -668,14 +671,14 @@ export default function LeaveManagementPage() {
   const todayIso = useMemo(() => todayDate.toISOString().split("T")[0], [todayDate]);
   const todayFormatted = useMemo(() => todayDate.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric" }), [todayDate]);
 
-  const isTodayActive = (req) => {
-    const s = req.fromDate || (req.startDate ? req.startDate.split("T")[0] : "");
-    const e = req.toDate || (req.endDate ? req.endDate.split("T")[0] : "");
-    if (!s) return false;
-    return todayIso >= s && (!e || todayIso <= e);
-  };
-
   const currentTabRequests = useMemo(() => {
+    const isTodayActive = (req) => {
+      const s = req.fromDate || (req.startDate ? req.startDate.split("T")[0] : "");
+      const e = req.toDate || (req.endDate ? req.endDate.split("T")[0] : "");
+      if (!s) return false;
+      return todayIso >= s && (!e || todayIso <= e);
+    };
+
     return activeTab === "today" ? requests.filter(isTodayActive) : requests;
   }, [requests, activeTab, todayIso]);
 

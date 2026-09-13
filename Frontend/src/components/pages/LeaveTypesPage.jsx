@@ -194,36 +194,26 @@ export default function LeaveTypesPage() {
       title="Leave Types & Policy Configuration"
       subtitle="Define leave quotas per academic year. Total allocated leaves reflect in the Leave History dashboard."
       breadcrumb={["Home", "Settings", "Leave Types"]}
+      actions={
+        <div className="leave-types-actions-group">
+          <button 
+            type="button" 
+            className="leave-btn-back" 
+            onClick={() => navigate("/dashboard/settings")}
+          >
+            <ArrowLeft size={16} /> Back to Settings
+          </button>
+          <button 
+            type="button" 
+            className="leave-btn-add" 
+            onClick={openAddModal}
+          >
+            <Plus size={16} /> Add Leave Type
+          </button>
+        </div>
+      }
     >
       <div className="leave-types-page">
-        {/* Top Bar Actions */}
-        <div className="leave-types-top-bar">
-          <div className="leave-types-header-info">
-            <div className="leave-types-icon-box">
-              <CalendarDays size={24} />
-            </div>
-            <div className="leave-types-title-group">
-              <h2>Leave Types & Policy Configuration</h2>
-              <p>Define leave quotas per academic year. Total allocated leaves reflect in the Leave History dashboard.</p>
-            </div>
-          </div>
-          <div className="leave-types-actions-group">
-            <button 
-              type="button" 
-              className="leave-btn-back" 
-              onClick={() => navigate("/dashboard/settings")}
-            >
-              <ArrowLeft size={16} /> Back to Settings
-            </button>
-            <button 
-              type="button" 
-              className="leave-btn-add" 
-              onClick={openAddModal}
-            >
-              <Plus size={16} /> Add Leave Type
-            </button>
-          </div>
-        </div>
 
         {/* Feedback Messages */}
         {successMessage && (
@@ -371,113 +361,11 @@ export default function LeaveTypesPage() {
       {/* Add / Edit Category Modal */}
       {modalOpen && (
         <Modal 
-          isOpen={modalOpen} 
+          title={editingCategory ? "Edit Leave Category" : "Add New Leave Category"}
           onClose={() => !saving && setModalOpen(false)}
           className="leave-category-modal"
-        >
-          <div className="cms-modal-head">
-            <h3>{editingCategory ? "Edit Leave Category" : "Add New Leave Category"}</h3>
-            <button 
-              type="button" 
-              className="cms-action-btn" 
-              onClick={() => !saving && setModalOpen(false)}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <form onSubmit={handleFormSubmit}>
-            <div className="cms-modal-body">
-              {error && (
-                <div style={{ padding: "8px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 12 }}>
-                  {error}
-                </div>
-              )}
-
-              <div className="leave-form-grid">
-                <div className="leave-form-field">
-                  <label>Leave Category Name <span className="required">*</span></label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. Sabbatical Leave" 
-                    value={formData.categoryName}
-                    onChange={(e) => setFormData({ ...formData, categoryName: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="leave-form-field">
-                  <label>Leave Code <span className="required">*</span></label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. SL / SAB" 
-                    value={formData.categoryCode}
-                    onChange={(e) => setFormData({ ...formData, categoryCode: e.target.value.toUpperCase() })}
-                    required
-                    maxLength={10}
-                  />
-                </div>
-                <div className="leave-form-field">
-                  <label>Annual Quota (Days) <span className="required">*</span></label>
-                  <input 
-                    type="number" 
-                    step="0.5" 
-                    min="1" 
-                    max="365"
-                    value={formData.annualQuota}
-                    onChange={(e) => setFormData({ ...formData, annualQuota: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="leave-form-field">
-                  <label>Applicable Staff Eligibility</label>
-                  <select 
-                    value={formData.applicableStaffType}
-                    onChange={(e) => setFormData({ ...formData, applicableStaffType: e.target.value })}
-                  >
-                    {staffEligibilityOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="leave-checkbox-cards">
-                <label className="checkbox-card">
-                  <input 
-                    type="checkbox" 
-                    checked={formData.allowCarryForward}
-                    onChange={(e) => setFormData({ ...formData, allowCarryForward: e.target.checked })}
-                  />
-                  <div className="checkbox-card-info">
-                    <strong>Allow Carry Forward</strong>
-                    <small>Unused balance carries forward into next cycle.</small>
-                  </div>
-                </label>
-
-                <label className="checkbox-card">
-                  <input 
-                    type="checkbox" 
-                    checked={formData.requiresProof}
-                    onChange={(e) => setFormData({ ...formData, requiresProof: e.target.checked })}
-                  />
-                  <div className="checkbox-card-info">
-                    <strong>Requires Documentation Proof</strong>
-                    <small>Supporting certificate or document must be attached.</small>
-                  </div>
-                </label>
-              </div>
-
-              <div className="leave-form-field">
-                <label>Category Description</label>
-                <textarea 
-                  placeholder="Details and purpose of this leave type..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="cms-modal-foot">
+          footer={
+            <>
               <button 
                 type="button" 
                 className="btn-modal-cancel" 
@@ -488,11 +376,102 @@ export default function LeaveTypesPage() {
               </button>
               <button 
                 type="submit" 
+                form="leave-category-form"
                 className="btn-modal-submit"
                 disabled={saving}
               >
                 {saving ? "Saving..." : editingCategory ? "Save Changes" : "+ Create Leave Category"}
               </button>
+            </>
+          }
+        >
+          <form id="leave-category-form" onSubmit={handleFormSubmit}>
+            {error && (
+              <div style={{ marginBottom: "16px", padding: "8px 12px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, color: "#b91c1c", fontSize: 12 }}>
+                {error}
+              </div>
+            )}
+
+            <div className="leave-form-grid">
+              <div className="leave-form-field">
+                <label>Leave Category Name <span className="required">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. Sabbatical Leave" 
+                  value={formData.categoryName}
+                  onChange={(e) => setFormData({ ...formData, categoryName: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="leave-form-field">
+                <label>Leave Code <span className="required">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. SL / SAB" 
+                  value={formData.categoryCode}
+                  onChange={(e) => setFormData({ ...formData, categoryCode: e.target.value.toUpperCase() })}
+                  required
+                  maxLength={10}
+                />
+              </div>
+              <div className="leave-form-field">
+                <label>Annual Quota (Days) <span className="required">*</span></label>
+                <input 
+                  type="number" 
+                  step="0.5" 
+                  min="1" 
+                  max="365"
+                  value={formData.annualQuota}
+                  onChange={(e) => setFormData({ ...formData, annualQuota: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="leave-form-field">
+                <label>Applicable Staff Eligibility</label>
+                <select 
+                  value={formData.applicableStaffType}
+                  onChange={(e) => setFormData({ ...formData, applicableStaffType: e.target.value })}
+                >
+                  {staffEligibilityOptions.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="leave-checkbox-cards">
+              <label className="checkbox-card">
+                <input 
+                  type="checkbox" 
+                  checked={formData.allowCarryForward}
+                  onChange={(e) => setFormData({ ...formData, allowCarryForward: e.target.checked })}
+                />
+                <div className="checkbox-card-info">
+                  <strong>Allow Carry Forward</strong>
+                  <small>Unused balance carries forward into next cycle.</small>
+                </div>
+              </label>
+
+              <label className="checkbox-card">
+                <input 
+                  type="checkbox" 
+                  checked={formData.requiresProof}
+                  onChange={(e) => setFormData({ ...formData, requiresProof: e.target.checked })}
+                />
+                <div className="checkbox-card-info">
+                  <strong>Requires Documentation Proof</strong>
+                  <small>Supporting certificate or document must be attached.</small>
+                </div>
+              </label>
+            </div>
+
+            <div className="leave-form-field">
+              <label>Category Description</label>
+              <textarea 
+                placeholder="Details and purpose of this leave type..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
             </div>
           </form>
         </Modal>
@@ -501,43 +480,36 @@ export default function LeaveTypesPage() {
       {/* Delete Confirmation Modal */}
       {deleteModalOpen && deletingCategory && (
         <Modal 
-          isOpen={deleteModalOpen} 
+          title="Delete Leave Category"
           onClose={() => !saving && setDeleteModalOpen(false)}
           className="leave-delete-modal"
+          size="sm"
+          footer={
+            <>
+              <button 
+                type="button" 
+                className="btn-modal-cancel" 
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="btn-modal-delete"
+                onClick={handleDeleteConfirm}
+                disabled={saving}
+              >
+                {saving ? "Deleting..." : "Delete Category"}
+              </button>
+            </>
+          }
         >
-          <div className="cms-modal-head">
-            <h3>Delete Leave Category</h3>
-            <button 
-              type="button" 
-              className="cms-action-btn" 
-              onClick={() => !saving && setDeleteModalOpen(false)}
-            >
-              <X size={18} />
-            </button>
-          </div>
-          <div className="delete-modal-body">
+          <div className="delete-modal-body" style={{ padding: 0 }}>
             <p>Are you sure you want to remove <strong>{deletingCategory.categoryName} ({deletingCategory.categoryCode})</strong>?</p>
             <div className="delete-warning-box">
               This category has an annual allocation of {deletingCategory.annualQuota} Days. Removing it will update the standard allowance calculations.
             </div>
-          </div>
-          <div className="cms-modal-foot">
-            <button 
-              type="button" 
-              className="btn-modal-cancel" 
-              onClick={() => setDeleteModalOpen(false)}
-              disabled={saving}
-            >
-              Cancel
-            </button>
-            <button 
-              type="button" 
-              className="btn-modal-delete"
-              onClick={handleDeleteConfirm}
-              disabled={saving}
-            >
-              {saving ? "Deleting..." : "Delete Category"}
-            </button>
           </div>
         </Modal>
       )}

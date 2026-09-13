@@ -124,7 +124,7 @@ namespace CollegeManagement.API.Controllers.V1
         public async Task<IActionResult> ExportStaffMonthlyCsv([FromQuery] StaffMonthlyReportRequest request)
         {
             var bytes = await _service.ExportStaffMonthlyReportToCsvAsync(request);
-            return File(bytes, "text/csv", $"StaffMonthlyReport_{request.StaffType}_{request.Year}_{request.Month:D2}.csv");
+            return File(bytes, "text/csv", $"StaffMonthlyReport_{request.StaffType?.ToString() ?? "All"}_{request.Year}_{request.Month:D2}.csv");
         }
 
         /// <summary>
@@ -136,7 +136,7 @@ namespace CollegeManagement.API.Controllers.V1
         public async Task<IActionResult> ExportStaffMonthlyExcel([FromQuery] StaffMonthlyReportRequest request)
         {
             var bytes = await _service.ExportStaffMonthlyReportToExcelAsync(request);
-            return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"StaffMonthlyReport_{request.StaffType}_{request.Year}_{request.Month:D2}.xlsx");
+            return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"StaffMonthlyReport_{request.StaffType?.ToString() ?? "All"}_{request.Year}_{request.Month:D2}.xlsx");
         }
 
         [HttpGet("staff/{staffId}/yearly-overview")]

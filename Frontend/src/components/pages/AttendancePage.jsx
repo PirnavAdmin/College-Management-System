@@ -17,8 +17,20 @@ const body = (r) => r?.data?.data ?? r?.data ?? r ?? {};
 const get = (o, ...keys) => keys.map((k) => o?.[k]).find((v) => v !== undefined && v !== null);
 const num = (v) => v === "" || v == null ? undefined : Number(v);
 const studentSessionStatus = (row, session) => status(get(row, `${session}Status`, `${session}AttendanceStatus`, `${session}SessionStatus`, session, `${session}Attendance`));
+const getTodayDate = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const status = (v) => LABEL[v] ?? v ?? "—";
-const staffType = (v) => v === "" || v == null ? undefined : String(v) === "1" || /non/i.test(v) ? 1 : 0;
+const staffType = (v) => {
+  if (v === "" || v == null) return undefined;
+  const n = Number(v);
+  if (n === 1 || n === 2) return n;
+  return /non/i.test(String(v)) ? 2 : 1;
+};
 const ATTENDANCE_PAGE_SIZE = 10;
 const Field = ({ label, children }) => <label className="att-field"><span>{label}</span>{children}</label>;
 function Select({ label, value, onChange, items = [], all, disabled = false }) { return <Field label={label}><select value={value} onChange={onChange} disabled={disabled}>{all ? <option value="">{all}</option> : null}{items.map((x) => { const id = get(x, "id", "Id", "sectionId", "programId", "groupId", "academicLevelId", "departmentId", "facultyId", "staffId", "academicYearId", "boardId") ?? x, name = get(x, "name", "Name", "sectionName", "programName", "programmeName", "groupName", "levelName", "departmentName", "staffName", "facultyName", "academicYearName", "boardName") ?? x; return <option key={String(id)} value={id}>{name}</option>; })}</select></Field>; }
@@ -143,45 +155,69 @@ function useStudentOptions(boardId, academicYearId, levelId, groupId, programId)
     return () => { active = false; };
   }, [boardId]);
   useEffect(() => {
-    if (!boardId || !levelId) { setOptions((value) => ({ ...value, groups: [], programs: [], sections: [], loadingGroups: false })); return undefined; }
+    if (!boardId) { setOptions((value) => ({ ...value, groups: [], loadingGroups: false })); return undefined; }
     let active = true;
-    setOptions((value) => ({ ...value, groups: [], programs: [], sections: [], loadingGroups: true }));
-    apiClient.get(apiEndpoints.groups.getByBoard(boardId), { params: { academicYearId, academicLevelId: levelId, isActive: true } }).then((response) => {
+    setOptions((value) => ({ ...value, groups: [], loadingGroups: true }));
+    const params = { academicYearId, isActive: true };
+    if (levelId) params.academicLevelId = levelId;
+    apiClient.get(apiEndpoints.groups.getByBoard(boardId), { params }).then((response) => {
       if (!active) return;
       const payload = body(response);
       const wrappers = asList(payload);
       let groupRows = Array.isArray(payload?.groups) ? payload.groups : Array.isArray(payload?.Groups) ? payload.Groups : wrappers.flatMap((item) => Array.isArray(item?.groups) ? item.groups : Array.isArray(item?.Groups) ? item.Groups : Array.isArray(item?.groupList) ? item.groupList : Array.isArray(item?.data) ? item.data : get(item, "groupId", "GroupId", "id", "Id") != null ? [item] : []);
-      groupRows = scoped(scoped(scoped(groupRows, boardId, ["boardId", "BoardId"]), academicYearId, ["academicYearId", "AcademicYearId"]), levelId, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"]);
+      groupRows = scoped(scoped(groupRows, boardId, ["boardId", "BoardId"]), academicYearId, ["academicYearId", "AcademicYearId"]);
+      if (levelId) {
+        groupRows = scoped(groupRows, levelId, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"]);
+      }
       setOptions((value) => ({ ...value, groups: unique(groupRows.filter((item) => item?.isActive !== false && item?.IsActive !== false), ["groupId", "GroupId", "id", "Id"]), loadingGroups: false }));
     }).catch(() => active && setOptions((value) => ({ ...value, groups: [], loadingGroups: false })));
     return () => { active = false; };
   }, [boardId, academicYearId, levelId]);
   useEffect(() => {
-    if (!groupId) { setOptions((value) => ({ ...value, programs: [], sections: [], loadingPrograms: false })); return undefined; }
     let active = true;
-    setOptions((value) => ({ ...value, programs: [], sections: [], loadingPrograms: true }));
-    apiClient.get(apiEndpoints.groups.programs(groupId))
-      .then((response) => active && setOptions((value) => ({ ...value, programs: unique(scoped(asList(body(response)), groupId, ["groupId", "GroupId"]), ["programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId", "id", "Id"]), loadingPrograms: false })))
+    setOptions((value) => ({ ...value, programs: [], loadingPrograms: true }));
+    const endpoint = groupId ? apiEndpoints.groups.programs(groupId) : apiEndpoints.programs.getAll;
+    apiClient.get(endpoint)
+      .then((response) => {
+        if (!active) return;
+        let progRows = asList(body(response));
+        if (groupId) {
+          progRows = scoped(progRows, groupId, ["groupId", "GroupId"]);
+        }
+        setOptions((value) => ({
+          ...value,
+          programs: unique(progRows, ["programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId", "id", "Id"]),
+          loadingPrograms: false
+        }));
+      })
       .catch(() => active && setOptions((value) => ({ ...value, programs: [], loadingPrograms: false })));
     return () => { active = false; };
   }, [groupId]);
   useEffect(() => {
-    if (!programId) { setOptions((value) => ({ ...value, sections: [], loadingSections: false })); return undefined; }
     let active = true;
     const selectedProgram = options.programs.find((program) => String(get(program, "id", "Id", "programId", "ProgramId", "programmeId", "ProgrammeId", "groupProgramId", "GroupProgramId")) === String(programId));
     const validProgramIds = new Set([programId, get(selectedProgram, "programId", "ProgramId", "programmeId", "ProgrammeId"), get(selectedProgram, "groupProgramId", "GroupProgramId")].filter((id) => id != null && id !== "").map(String));
     const selectedProgramName = String(get(selectedProgram, "programName", "ProgramName", "programmeName", "ProgrammeName", "name", "Name") ?? "").trim().toLowerCase();
     setOptions((value) => ({ ...value, sections: [], loadingSections: true }));
-    apiClient.get(apiEndpoints.sections.list, { params: { boardId, academicYearId, academicLevelId: levelId, groupId, programId, ProgramId: programId, isActive: true, IsActive: true } }).then((response) => {
+    const params = { boardId, academicYearId, isActive: true, IsActive: true };
+    if (levelId) params.academicLevelId = levelId;
+    if (groupId) params.groupId = groupId;
+    if (programId) {
+      params.programId = programId;
+      params.ProgramId = programId;
+    }
+    apiClient.get(apiEndpoints.sections.list, { params }).then((response) => {
       if (!active) return;
       let sectionRows = asList(body(response));
       sectionRows = scoped(scoped(scoped(scoped(sectionRows, boardId, ["boardId", "BoardId"]), academicYearId, ["academicYearId", "AcademicYearId"]), levelId, ["academicLevelId", "AcademicLevelId", "levelId", "LevelId"]), groupId, ["groupId", "GroupId"]);
-      sectionRows = sectionRows.filter((section) => {
-        const sectionProgramIds = [get(section, "programId", "ProgramId", "programmeId", "ProgrammeId"), get(section, "groupProgramId", "GroupProgramId")].filter((id) => id != null && id !== "").map(String);
-        if (sectionProgramIds.length) return sectionProgramIds.some((id) => validProgramIds.has(id));
-        const sectionProgramName = String(get(section, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "program", "Program") ?? "").trim().toLowerCase();
-        return Boolean(selectedProgramName && sectionProgramName === selectedProgramName);
-      });
+      if (programId) {
+        sectionRows = sectionRows.filter((section) => {
+          const sectionProgramIds = [get(section, "programId", "ProgramId", "programmeId", "ProgrammeId"), get(section, "groupProgramId", "GroupProgramId")].filter((id) => id != null && id !== "").map(String);
+          if (sectionProgramIds.length) return sectionProgramIds.some((id) => validProgramIds.has(id));
+          const sectionProgramName = String(get(section, "programName", "ProgramName", "programmeName", "ProgrammeName", "programme", "Programme", "program", "Program") ?? "").trim().toLowerCase();
+          return Boolean(selectedProgramName && sectionProgramName === selectedProgramName);
+        });
+      }
       setOptions((value) => ({ ...value, sections: unique(sectionRows.filter((section) => section?.isActive !== false && section?.IsActive !== false), ["sectionId", "SectionId", "id", "Id"]), loadingSections: false }));
     }).catch(() => active && setOptions((value) => ({ ...value, sections: [], loadingSections: false })));
     return () => { active = false; };
@@ -191,19 +227,26 @@ function useStudentOptions(boardId, academicYearId, levelId, groupId, programId)
 
 function Screen({ staff = false, say }) {
  const navigate = useNavigate();
- const { selectedBoardId: navbarBoardId, selectedAcademicYearId: navbarAcademicYearId } = useAcademicContext(); const [f, setF] = useState({ date: "2026-09-02", level: "", group: "", section: "", program: "", department: "", type: "", person: "", status: "", view: "Attendance" }), [rows, setRows] = useState([]), [report, setReport] = useState(null), [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false), [editing, setEditing] = useState(null), [search, setSearch] = useState(""), [page, setPage] = useState(1); const staffOptions = useOptions(staff), studentOptions = useStudentOptions(staff ? "" : navbarBoardId, navbarAcademicYearId, f.level, f.group, f.program); const options = staff ? staffOptions : studentOptions;
+ const { selectedBoardId: navbarBoardId, selectedAcademicYearId: navbarAcademicYearId } = useAcademicContext(); const [f, setF] = useState({ date: getTodayDate(), level: "", group: "", section: "", program: "", department: "", type: "", person: "", status: "", view: "Attendance" }), [rows, setRows] = useState([]), [report, setReport] = useState(null), [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false), [editing, setEditing] = useState(null), [search, setSearch] = useState(""), [page, setPage] = useState(1); const staffOptions = useOptions(staff), studentOptions = useStudentOptions(staff ? "" : navbarBoardId, navbarAcademicYearId, f.level, f.group, f.program); const options = staff ? staffOptions : studentOptions;
  const update = (key) => (e) => { setPage(1); setF((old) => ({ ...old, [key]: e.target.value, ...(key === "level" ? { group: "", program: "", section: "" } : {}), ...(key === "group" ? { program: "", section: "" } : {}), ...(key === "program" ? { section: "" } : {}) })); };
+ const switchView = (newView) => { setPage(1); setF((old) => ({ ...old, view: newView })); if (loaded) { load(newView); } };
  useEffect(() => { if (!staff) setF((old) => ({ ...old, level: "", group: "", program: "", section: "" })); }, [staff, navbarBoardId, navbarAcademicYearId]);
  const monthParams = () => { const [year, month] = f.date.slice(0, 7).split("-"); return staff ? { month: Number(month), year: Number(year), academicYearId: num(navbarAcademicYearId), departmentId: num(f.department), staffType: staffType(f.type), ...(f.person ? { facultyId: num(f.person) } : {}) } : { month: Number(month), year: Number(year), boardId: num(navbarBoardId), academicYearId: num(navbarAcademicYearId), academicLevelId: num(f.level), groupId: num(f.group), sectionId: num(f.section), ...(f.program ? { programId: num(f.program) } : {}) }; };
  const load = async (overrideView) => { const currentView = typeof overrideView === "string" ? overrideView : f.view; setPage(1); setBusy(true); try { if (currentView === "Monthly Report") { const r = await apiClient.get(staff ? apiEndpoints.staffAttendance.monthlyReport : apiEndpoints.attendance.studentMonthlyReport, { params: monthParams() }); setReport(body(r)); } else if (!staff && currentView === "Defaulters") { const r = await apiClient.get(apiEndpoints.attendance.studentDefaulters, { params: { ...monthParams(), threshold: 75 } }); setRows(asList(body(r))); } else if (staff) { const r = await apiClient.post(apiEndpoints.staffAttendance.load, { date: f.date, academicYearId: num(navbarAcademicYearId), departmentId: num(f.department), staffType: staffType(f.type), ...(f.status ? { status: VALUE[f.status] } : {}), ...(f.person ? { facultyId: num(f.person) } : {}) }); setRows(asList(body(r))); } else { const r = await apiClient.get(apiEndpoints.attendance.studentAdminDaily, { params: { date: f.date, boardId: num(navbarBoardId), academicYearId: num(navbarAcademicYearId), academicLevelId: num(f.level), groupId: num(f.group), sectionId: num(f.section), ...(f.program ? { programId: num(f.program) } : {}) } }); setRows(asList(body(r))); } setLoaded(true); } catch (e) { say(getApiErrorMessage(e) || `Failed to load ${staff ? "staff" : "student"} attendance.`, "error"); } finally { setBusy(false); } };
  const save = async () => { const r = editing.record; const changed = staff ? editing.status !== status(r.status) : editing.morning !== status(r.morningStatus) || editing.afternoon !== status(r.afternoonStatus); if (!changed) return setEditing(null); if (!editing.remarks.trim()) return say("Reason / remark is required when attendance changes.", "error"); setBusy(true); try { if (staff) await apiClient.put(apiEndpoints.staffAttendance.update, { facultyId: get(r, "facultyId", "staffId", "id"), attendanceDate: f.date, departmentId: num(f.department) ?? get(r, "departmentId"), staffType: staffType(f.type) ?? get(r, "staffType"), status: VALUE[editing.status], inTime: editing.inTime || null, outTime: editing.outTime || null, remarks: editing.remarks }); else await apiClient.put(apiEndpoints.attendance.studentUpdate, { studentId: get(r, "studentId", "id"), attendanceDate: f.date, morningStatus: editing.morning !== status(r.morningStatus) ? VALUE[editing.morning] : null, afternoonStatus: editing.afternoon !== status(r.afternoonStatus) ? VALUE[editing.afternoon] : null, boardId: num(navbarBoardId), academicYearId: num(navbarAcademicYearId), academicLevelId: num(f.level), groupId: num(f.group), sectionId: num(f.section), ...(f.program ? { programId: num(f.program) } : {}), remarks: editing.remarks }); setEditing(null); say(`${staff ? "Staff" : "Student"} attendance updated successfully.`); await load(); } catch (e) { say(getApiErrorMessage(e) || "Failed to update attendance.", "error"); } finally { setBusy(false); } };
  const exportReport = async (kind) => { setBusy(true); try { const endpoint = staff ? kind === "csv" ? apiEndpoints.staffAttendance.monthlyExportCsv : apiEndpoints.staffAttendance.monthlyExport : kind === "csv" ? apiEndpoints.attendance.studentMonthlyExportCsv : apiEndpoints.attendance.studentMonthlyExportExcel; const r = await apiClient.get(endpoint, { params: monthParams(), responseType: "blob" }); const url = URL.createObjectURL(r.data), a = document.createElement("a"); a.href = url; a.download = `${staff ? "staff" : "student"}-attendance-${f.date.slice(0, 7)}.${kind === "csv" ? "csv" : "xlsx"}`; a.click(); URL.revokeObjectURL(url); } catch (e) { say(getApiErrorMessage(e) || "Failed to export monthly report.", "error"); } finally { setBusy(false); } };
- const visible = rows.filter((r) => !staff || `${get(r, "staffName", "facultyName")} ${get(r, "facultyId", "staffId")}`.toLowerCase().includes(search.toLowerCase())).filter((r) => staff || !f.status || [status(r.morningStatus), status(r.afternoonStatus)].includes(f.status));
+ const normalizedSearch = search.trim().toLowerCase();
+ const visible = rows.filter((r) => {
+   if (!normalizedSearch) return true;
+   if (staff) return `${get(r, "staffName", "facultyName")} ${get(r, "facultyId", "staffId")}`.toLowerCase().includes(normalizedSearch);
+   return [get(r, "studentName", "name"), get(r, "rollNo", "rollNumber"), get(r, "admissionNo", "admissionNumber"), get(r, "studentId", "id")]
+     .some((value) => String(value ?? "").toLowerCase().includes(normalizedSearch));
+ }).filter((r) => staff || !f.status || [status(r.morningStatus), status(r.afternoonStatus)].includes(f.status));
  const totalPages = Math.max(1, Math.ceil(visible.length / ATTENDANCE_PAGE_SIZE));
  const currentPage = Math.min(page, totalPages);
  const pagedRows = visible.slice((currentPage - 1) * ATTENDANCE_PAGE_SIZE, currentPage * ATTENDANCE_PAGE_SIZE);
  useEffect(() => { setPage((current) => Math.min(current, totalPages)); }, [totalPages]);
-  return <><Filters f={f} update={update} o={options} staff={staff} busy={busy} load={load} exportReport={exportReport} /><AttendanceViewSection view={f.view} update={update} staff={staff} />{busy && !loaded ? <Loader label="Loading attendance..." /> : null}{loaded && (f.view === "Monthly Report" ? <Monthly data={report} staff={staff} monthValue={f.date} page={page} onPageChange={setPage} search={search} onSearchChange={setSearch} /> : !staff && f.view === "Defaulters" ? <Defaulters rows={rows} /> : <>{staff ? <StaffSummary rows={visible} /> : <StudentSummary rows={visible} />}<section className="att-card att-table-card"><div className="att-student-search"><div className="att-student-search-box"><Search size={21} aria-hidden="true" /><input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder={staff ? "Search by staff name or staff ID" : "Search by student name, roll no. or admission no."} /></div></div><DailyTable rows={pagedRows} staff={staff} emptyMessage={!staff && normalizedSearch ? "No students found matching your search." : undefined} edit={(record) => setEditing(staff ? { record, status: status(record.status), inTime: get(record, "inTime") || "", outTime: get(record, "outTime") || "", remarks: get(record, "remarks", "remark") || "" } : { record, morning: status(record.morningStatus), afternoon: status(record.afternoonStatus), remarks: get(record, "remarks", "remark") || "" })} view={(record) => { const personId = staff ? get(record, "facultyId", "staffId", "id") : get(record, "studentId", "id"); if (personId != null) navigate(`/dashboard/attendance/${staff ? "staff" : "student"}/${personId}/overview`); }} /><AttendancePagination page={currentPage} totalRows={visible.length} onPageChange={setPage} /></section></>) }{editing ? <Edit editing={editing} setEditing={setEditing} staff={staff} date={f.date} save={save} close={() => setEditing(null)} busy={busy} /> : null}</>;
+ return <><Filters f={f} update={update} o={options} staff={staff} busy={busy} load={load} exportReport={exportReport} /><AttendanceViewSection view={f.view} update={switchView} staff={staff} />{busy && !loaded ? <Loader label="Loading attendance..." /> : null}{loaded && (f.view === "Monthly Report" ? <Monthly data={report} staff={staff} monthValue={f.date} page={page} onPageChange={setPage} search={search} onSearchChange={setSearch} /> : !staff && f.view === "Defaulters" ? <Defaulters rows={rows} /> : <>{staff ? <StaffSummary rows={visible} /> : <StudentSummary rows={visible} />}<section className="att-card att-table-card"><div className="att-student-search"><div className="att-student-search-box"><Search size={21} aria-hidden="true" /><input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder={staff ? "Search by staff name or staff ID" : "Search by student name, roll no. or admission no."} /></div></div><DailyTable rows={pagedRows} staff={staff} emptyMessage={!staff && normalizedSearch ? "No students found matching your search." : undefined} edit={(record) => setEditing(staff ? { record, status: status(record.status), inTime: get(record, "inTime") || "", outTime: get(record, "outTime") || "", remarks: get(record, "remarks", "remark") || "" } : { record, morning: status(record.morningStatus), afternoon: status(record.afternoonStatus), remarks: get(record, "remarks", "remark") || "" })} view={(record) => { const personId = staff ? get(record, "facultyId", "staffId", "id") : get(record, "studentId", "id"); if (personId != null) navigate(`/dashboard/attendance/${staff ? "staff" : "student"}/${personId}/overview`); }} /><AttendancePagination page={currentPage} totalRows={visible.length} onPageChange={setPage} /></section></>) }{editing ? <Edit editing={editing} setEditing={setEditing} staff={staff} date={f.date} save={save} close={() => setEditing(null)} busy={busy} /> : null}</>;
 }
 
 function Filters({ f, update, o, staff, busy, load, exportReport }) {
@@ -215,30 +258,30 @@ function Filters({ f, update, o, staff, busy, load, exportReport }) {
     <div className={`att-filter-grid ${staff ? "att-staff-filter-grid" : "att-student-filter-grid"}`}>
       {isMonth ? <Field label="Month"><div className="att-month-picker"><span>{label}</span><CalendarDays size={18} /><input type="month" value={f.date.slice(0, 7)} onChange={(event) => update("date")({ target: { value: `${event.target.value}-01` } })} /></div></Field> : <Field label="Date"><input type="date" value={f.date} onChange={update("date")} /></Field>}
       {staff ? <>
-        <Select label="Staff Type" value={f.type} onChange={update("type")} items={[{ id: "0", name: "Teaching Staff" }, { id: "1", name: "Non-Teaching Staff" }]} all="All Staff" />
+        <Select label="Staff Type" value={f.type} onChange={update("type")} items={[{ id: "1", name: "Teaching Staff" }, { id: "2", name: "Non-Teaching Staff" }]} all="All Staff" />
         <Select label="Department" value={f.department} onChange={update("department")} items={o.departments} all="All Departments" />
         <Select label="Staff" value={f.person} onChange={update("person")} items={(o.faculty || []).map((item) => ({ id: get(item, "facultyId", "id"), name: `${get(item, "staffName", "name")} (${get(item, "facultyId", "id")})` }))} all="All Staff" />
       </> : <>
-        <Select label="Academic Level *" value={f.level} onChange={update("level")} items={o.levels} all={o.loadingLevels ? "Loading academic levels..." : "Select Academic Level"} disabled={o.loadingLevels} />
-        <Select label="Group *" value={f.group} onChange={update("group")} items={o.groups} all={o.loadingGroups ? "Loading groups..." : "Select Group"} disabled={!f.level || o.loadingGroups} />
-        <Select label="Program *" value={f.program} onChange={update("program")} items={o.programs} all={o.loadingPrograms ? "Loading programs..." : "Select Program"} disabled={!f.group || o.loadingPrograms} />
-        <Select label="Section *" value={f.section} onChange={update("section")} items={o.sections} all={o.loadingSections ? "Loading sections..." : "Select Section"} disabled={!f.program || o.loadingSections} />
+        <Select label="Academic Level" value={f.level} onChange={update("level")} items={o.levels} all={o.loadingLevels ? "Loading academic levels..." : "All Academic Levels"} disabled={o.loadingLevels} />
+        <Select label="Group" value={f.group} onChange={update("group")} items={o.groups} all={o.loadingGroups ? "Loading groups..." : "All Groups"} disabled={o.loadingGroups} />
+        <Select label="Program" value={f.program} onChange={update("program")} items={o.programs} all={o.loadingPrograms ? "Loading programs..." : "All Programs"} disabled={o.loadingPrograms} />
+        <Select label="Section" value={f.section} onChange={update("section")} items={o.sections} all={o.loadingSections ? "Loading sections..." : "All Sections"} disabled={o.loadingSections} />
       </>}
       <Select label="Status" value={f.status} onChange={update("status")} items={staff ? STAFF_STATUSES : STUDENT_STATUSES} all="All Status" />
-      <div className="att-filter-action"><button className="cms-btn cms-btn-primary" disabled={busy || (!staff && (!f.level || !f.group || !f.section))} onClick={() => load()}>{busy ? "Loading..." : "Get Records"}</button>{isMonth ? <button type="button" className="cms-btn cms-btn-ghost" disabled={busy} onClick={() => exportReport("excel")}>Export</button> : null}</div>
+      <div className="att-filter-action"><button className="cms-btn cms-btn-primary" disabled={busy} onClick={() => load()}>{busy ? "Loading..." : "Get Records"}</button>{isMonth ? <button type="button" className="cms-btn cms-btn-ghost" disabled={busy} onClick={() => exportReport("excel")}>Export</button> : null}</div>
     </div>
   </section>;
 }
 
 function AttendanceViewSection({ view, update, staff }) {
-  return <div className="attendance-view-section"><span className="attendance-view-label">View</span><div className="attendance-view-tabs" role="tablist" aria-label="Attendance view"><button type="button" role="tab" aria-selected={view === "Attendance"} className={view === "Attendance" ? "active" : ""} onClick={() => update("view")({ target: { value: "Attendance" } })}>Attendance</button><button type="button" role="tab" aria-selected={view === "Monthly Report"} className={view === "Monthly Report" ? "active" : ""} onClick={() => update("view")({ target: { value: "Monthly Report" } })}>Monthly Report</button>{!staff && <button type="button" role="tab" aria-selected={view === "Defaulters"} className={view === "Defaulters" ? "active" : ""} onClick={() => update("view")({ target: { value: "Defaulters" } })}>Defaulters</button>}</div></div>;
+  return <div className="attendance-view-section"><span className="attendance-view-label">View</span><div className="attendance-view-tabs" role="tablist" aria-label="Attendance view"><button type="button" role="tab" aria-selected={view === "Attendance"} className={view === "Attendance" ? "active" : ""} onClick={() => update("Attendance")}>Attendance</button><button type="button" role="tab" aria-selected={view === "Monthly Report"} className={view === "Monthly Report" ? "active" : ""} onClick={() => update("Monthly Report")}>Monthly Report</button>{!staff && <button type="button" role="tab" aria-selected={view === "Defaulters"} className={view === "Defaulters" ? "active" : ""} onClick={() => update("Defaulters")}>Defaulters</button>}</div></div>;
 }
 
 function StudentSummary({ rows }) { const perStudent = rows.map((r) => { const m = studentSessionStatus(r, "morning"), a = studentSessionStatus(r, "afternoon"); if (m === "Present" && a === "Present") return "Present"; if ((m === "Present" && a !== "Present" && a !== "—") || (a === "Present" && m !== "Present" && m !== "—")) return "Half-Day"; if (m === "Present" || a === "Present") return "Present"; if (m === "Absent" || a === "Absent") return "Absent"; return "—"; }).filter((x) => x !== "—"), p = perStudent.filter((x) => x === "Present").length, hd = perStudent.filter((x) => x === "Half-Day").length; return <Summary student data={[["Total Students", rows.length], ["Present", p], ["Absent", perStudent.filter((x) => x === "Absent").length], ["Half-Day", hd], ["Attendance %", perStudent.length ? `${Math.round((p + 0.5 * hd) * 100 / perStudent.length)}%` : "0%"]]} />; }
 function StaffSummary({ rows }) { return <Summary student data={[["Total Staff", rows.length], ...STAFF_STATUSES.map((x) => [x, rows.filter((r) => status(r.status) === x).length])]} />; }
 const studentSummaryIcons = { "Total Students": Users, "Total Staff": Users, Present: UserCheck, Absent: UserX, "Half-Day": ClipboardClock, Late: ClipboardClock, "Attendance %": PieChart };
 function Summary({ data, student = false }) { return <section className={`att-summary ${student ? "att-student-summary" : ""}`}>{data.map(([l, v]) => { const Icon = studentSummaryIcons[l]; return <div key={l} className={`att-summary-card att-summary-${String(l).toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, "")}`}>{student && Icon ? <span className="att-summary-icon"><Icon size={25} strokeWidth={2.1} /></span> : null}<div className="att-summary-copy"><span>{l}</span><b>{v}</b></div></div>; })}</section>; }
-function DailyTable({ rows, staff, edit }) { const roll = !staff && rows.some((r) => get(r, "rollNo", "rollNumber") != null), admission = !staff && rows.some((r) => get(r, "admissionNo", "admissionNumber") != null); return <div className="att-scroll"><table className="cms-table att-table"><thead><tr>{staff ? <><th>Staff ID</th><th>Staff Name</th><th>Department</th><th>Designation</th><th>Status</th><th>In Time</th><th>Out Time</th></> : <><th>Student Name</th>{roll ? <th>Roll No</th> : null}{admission ? <th>Admission No</th> : null}<th>Group</th><th>Section</th><th>Morning</th><th>Afternoon</th></>}<th>Action</th></tr></thead><tbody>{rows.length ? rows.map((r, i) => <tr key={get(r, staff ? "facultyId" : "studentId", "id") ?? i}>{staff ? <><td>{get(r, "facultyId", "staffId")}</td><td>{get(r, "staffName", "facultyName")}</td><td>{get(r, "departmentName", "department") || "—"}</td><td>{get(r, "designationName", "staffTypeName") || "—"}</td><td><Pill value={status(r.status)} /></td><td>{get(r, "inTime") || "—"}</td><td>{get(r, "outTime") || "—"}</td></> : <><td>{get(r, "studentName", "name")}</td>{roll ? <td>{get(r, "rollNo", "rollNumber") || "—"}</td> : null}{admission ? <td>{get(r, "admissionNo", "admissionNumber") || "—"}</td> : null}<td>{get(r, "groupName") || "—"}</td><td>{get(r, "sectionName") || "—"}</td><td><Pill value={studentSessionStatus(r, "morning")} /></td><td><Pill value={studentSessionStatus(r, "afternoon")} /></td></>}<td><button className="cms-action-btn" title="Edit Attendance" aria-label="Edit Attendance" onClick={() => edit(r)}><Pencil size={16} /></button></td></tr>) : <tr><td colSpan="9"><div className="cms-empty">No attendance records match the selected filters.</div></td></tr>}</tbody></table></div>; }
+function DailyTable({ rows, staff, edit, view, emptyMessage }) { const roll = !staff && rows.some((r) => get(r, "rollNo", "rollNumber") != null), admission = !staff && rows.some((r) => get(r, "admissionNo", "admissionNumber") != null); return <div className="att-scroll"><table className="cms-table att-table"><thead><tr>{staff ? <><th>Staff ID</th><th>Staff Name</th><th>Department</th><th>Designation</th><th>Status</th><th>In Time</th><th>Out Time</th></> : <><th>Student Name</th>{roll ? <th>Roll No</th> : null}{admission ? <th>Admission No</th> : null}<th>Group</th><th>Section</th><th>Morning</th><th>Afternoon</th></>}<th>Action</th></tr></thead><tbody>{rows.length ? rows.map((r, i) => <tr key={get(r, staff ? "facultyId" : "studentId", "id") ?? i}>{staff ? <><td>{get(r, "facultyId", "staffId")}</td><td>{get(r, "staffName", "facultyName")}</td><td>{get(r, "departmentName", "department") || "—"}</td><td>{get(r, "designationName", "staffTypeName") || "—"}</td><td><Pill value={status(r.status)} /></td><td>{get(r, "inTime") || "—"}</td><td>{get(r, "outTime") || "—"}</td></> : <><td>{get(r, "studentName", "name")}</td>{roll ? <td>{get(r, "rollNo", "rollNumber") || "—"}</td> : null}{admission ? <td>{get(r, "admissionNo", "admissionNumber") || "—"}</td> : null}<td>{get(r, "groupName") || "—"}</td><td>{get(r, "sectionName") || "—"}</td><td><Pill value={studentSessionStatus(r, "morning")} /></td><td><Pill value={studentSessionStatus(r, "afternoon")} /></td></>}<td>{view ? <button className="cms-action-btn" title="View Overview" aria-label="View Overview" onClick={() => view(r)}><PieChart size={16} /></button> : null}<button className="cms-action-btn" title="Edit Attendance" aria-label="Edit Attendance" onClick={() => edit(r)}><Pencil size={16} /></button></td></tr>) : <tr><td colSpan="9"><div className="cms-empty">{emptyMessage || "No attendance records match the selected filters."}</div></td></tr>}</tbody></table></div>; }
 function Pill({ value }) { const label = value === "Present" ? "P" : value === "Absent" ? "A" : value === "Leave" ? "L" : value === "Late" ? "LT" : "—"; return <span className={`att-status-pill ${value === "Present" ? "att-month-p" : value === "Absent" ? "att-month-a" : value === "Leave" ? "att-month-lv" : value === "Late" ? "att-month-l" : "att-month-off"}`}>{label}</span>; }
 function Edit({ editing, setEditing, staff, date, save, close, busy }) { const r = editing.record; return <Modal title={`Edit ${staff ? "Staff" : "Student"} Attendance`} onClose={close} footer={<><button className="cms-btn cms-btn-ghost" disabled={busy} onClick={close}>Cancel</button><button className="cms-btn cms-btn-primary" disabled={busy} onClick={save}>{busy ? "Saving..." : "Save Changes"}</button></>}><div className="att-modal-fields"><p><b>{get(r, staff ? "staffName" : "studentName", "name")}</b></p><p>{staff ? `Staff ID: ${get(r, "facultyId", "staffId")}` : `Roll No: ${get(r, "rollNo", "rollNumber") || "—"} · Admission No: ${get(r, "admissionNo", "admissionNumber") || "—"}`} · Date: {date}</p><p>{staff ? `Department: ${get(r, "departmentName") || "—"} · Designation: ${get(r, "designationName") || "—"}` : `Group: ${get(r, "groupName") || "—"} · Section: ${get(r, "sectionName") || "—"}`}</p>{staff ? <><p>Current Status: {status(r.status)}</p><Select label="New Status" value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })} items={STAFF_STATUSES} /><div className="att-time-fields"><Field label="In Time"><input type="time" value={editing.inTime} onChange={(e) => setEditing({ ...editing, inTime: e.target.value })} /></Field><Field label="Out Time"><input type="time" value={editing.outTime} onChange={(e) => setEditing({ ...editing, outTime: e.target.value })} /></Field></div></> : <><div className="att-detail-history"><b>Session Attendance</b><div className="att-time-fields"><Select label="Morning" value={editing.morning} onChange={(e) => setEditing({ ...editing, morning: e.target.value })} items={STUDENT_STATUSES} /><Select label="Afternoon" value={editing.afternoon} onChange={(e) => setEditing({ ...editing, afternoon: e.target.value })} items={STUDENT_STATUSES} /></div></div><div className="att-detail-history"><b>Period Attendance</b><p>Period details are not returned by the attendance API.</p></div></>}<Field label="Reason / Remark"><textarea value={editing.remarks} onChange={(e) => setEditing({ ...editing, remarks: e.target.value })} /></Field></div></Modal>; }
 function monthlyDate(header, index, monthValue) { const raw = get(header, "date", "Date") ?? header; const parsed = new Date(`${String(raw).slice(0, 10)}T00:00:00`); if (!Number.isNaN(parsed.getTime())) return parsed; const [year, month] = String(monthValue || "").slice(0, 7).split("-").map(Number); return new Date(year || new Date().getFullYear(), (month || 1) - 1, index + 1); }

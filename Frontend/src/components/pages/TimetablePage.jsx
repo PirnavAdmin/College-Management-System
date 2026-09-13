@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown, Copy, Download, Eye, FileSpreadsheet, FileText, Pencil, Power, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, CalendarDays, ChevronDown, Copy, Download, Eye, FileSpreadsheet, FileText, Pencil, Power, Search, Trash2, UserPlus, UsersRound } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
@@ -28,7 +29,7 @@ const list = (x) => {
   // Unwrap response envelopes until the collection is reached.
   for (let depth = 0; depth < 4 && value && !Array.isArray(value); depth += 1) {
     if (Array.isArray(value?.$values)) return value.$values;
-    const next = value?.data ?? value?.items ?? value?.result ?? value?.results
+    const next = value?.data ?? value?.Data ?? value?.items ?? value?.Items ?? value?.result ?? value?.results
       ?? value?.timetableSlots ?? value?.slots ?? value?.generatedSlots
       ?? value?.programs ?? value?.sections;
     if (next === undefined || next === value) break;
@@ -96,6 +97,23 @@ const optionize = (x, ids, labels) =>
       raw,
     }))
     .filter((item) => item.id && item.name);
+const facultyOptionLabel = (entry) => {
+  const source = entry?.raw ?? entry;
+  const identifier = pick(
+    source,
+    "staffCode", "StaffCode", "facultyCode", "FacultyCode", "employeeId", "EmployeeId",
+    "staffId", "StaffId", "facultyId", "FacultyId", "id", "Id",
+  ) ?? entry?.id;
+  return identifier ? `${identifier} - ${entry?.name ?? ""}` : (entry?.name ?? "");
+};
+const studentOptionLabel = (entry) => {
+  const admissionNumber = pick(
+    entry?.raw ?? entry,
+    "admissionNumber", "AdmissionNumber", "admissionNo", "AdmissionNo",
+    "admissionId", "AdmissionId",
+  );
+  return admissionNumber ? `${admissionNumber} - ${entry?.name ?? ""}` : (entry?.name ?? "");
+};
 const allocateWeeklyPeriods = (subjects, periodsPerDay) => {
   const initialPeriods = Math.max(0, Math.floor(Number(periodsPerDay) || 0));
   return Object.fromEntries(subjects.map((subject) => [subject.id, initialPeriods]));
@@ -232,10 +250,10 @@ function Field({ label, children }) {
     </label>
   );
 }
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, className = "" }) {
   return (
     <div className="ttm-overlay">
-      <section className="ttm-modal">
+      <section className={`ttm-modal ${className}`.trim()}>
         <header>
           <h2>{title}</h2>
           <button type="button" onClick={onClose}>
@@ -658,7 +676,7 @@ function StructureForm({ item, close, saved }) {
       })
       .catch((requestError) => setError(getApiErrorMessage(requestError)));
   }, [item]);
-  const validationMessage = () => {
+  const validationMessage = useCallback(() => {
     if (!form.name.trim()) return "Structure Name is required.";
     if (!/^\d{2}:\d{2}/.test(form.dayStartTime)) return "Day Start Time is required.";
     const periods = Number(form.totalTeachingPeriods), duration = Number(form.periodDurationMinutes);
@@ -674,7 +692,7 @@ function StructureForm({ item, close, saved }) {
       positions.add(after);
     }
     return "";
-  };
+  }, [form]);
   const preview = useMemo(() => {
     if (validationMessage()) return [];
     const [hour, minute] = form.dayStartTime.slice(0, 5).split(":").map(Number);
@@ -692,7 +710,7 @@ function StructureForm({ item, close, saved }) {
       if (breakItem) { const breakStart = cursor; cursor += Number(breakItem.durationMinutes); rows.push({ kind: "break", label: breakTypes.find((type) => String(type.id) === String(breakItem.breakTypeId))?.name || "Break", start: format(breakStart), end: format(cursor) }); }
       return rows;
     }).flat();
-  }, [form, breakTypes]);
+  }, [form, breakTypes, validationMessage]);
   const save = async () => {
     if (saving) return;
     const message = validationMessage();
@@ -977,16 +995,25 @@ function Structures({ notify, initial }) {
   };
   return (
     <Page
-      title="Period Structures"
-      subtitle="Manage reusable schedules for groups."
-      action={
-        <div className="ttm-page-actions">
-          <Btn onClick={() => { setItem(null); setModal("form"); }}>+ Create Structure</Btn>
-          <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable" state={{ timetableContext: initial }}>Back to Timetable</Link>
-        </div>
-      }
+  title="Period Structures"
+  subtitle="Manage reusable schedules for groups."
+>
+  <div className="ttm-period-structure-toolbar">
+    <Link
+      className="ttm-back-link"
+      to="/dashboard/timetable"
+      state={{ timetableContext: initial }}
     >
-      <section className="ttm-card">
+      <ArrowLeft size={15} />
+      Back to Timetable
+    </Link>
+
+    <Btn onClick={() => { setItem(null); setModal("form"); }}>
+      + Create Structure
+    </Btn>
+  </div>
+
+  <section className="ttm-card">
         {loading ? (
           <p className="ttm-empty">Loading period structures…</p>
         ) : !items.length ? (
@@ -1369,7 +1396,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
       })
       .then((r) =>
         setFaculty(
-          optionize(r.data, ["facultyId", "id", "Id"], ["facultyName", "name", "Name"])
+          optionize(r.data, ["facultyId", "FacultyId", "staffId", "StaffId", "id", "Id"], ["facultyName", "FacultyName", "staffName", "StaffName", "name", "Name"])
             .filter((entry) => isActiveRecord(entry.raw)),
         ),
       )
@@ -1427,20 +1454,20 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
       setSaving(false);
     }
   };
-  const select = (label, key, values) => (
+  const select = (label, key, values, optionLabel = (entry) => entry.name ?? entry.label) => (
     <Field label={label}>
       <select value={form[key]} onChange={set(key)}>
         <option value="">Select {label}</option>
         {values.map((entry) => (
           <option key={entry.id ?? entry.value} value={entry.id ?? entry.value}>
-            {entry.name ?? entry.label}
+            {optionLabel(entry)}
           </option>
         ))}
       </select>
     </Field>
   );
   return (
-    <Modal title={lab ? "Add Lab / Practical" : timetableId(slot) ? "Edit Timetable Slot" : "Add Timetable Slot"} onClose={close}>
+    <Modal title={lab ? "Add Lab / Practical" : timetableId(slot) ? "Edit Timetable Slot" : "Add Timetable Slot"} className="ttm-slot-editor-modal" onClose={close}>
       <div className="ttm-modal-body">
         <div className="ttm-form-grid">
           {select(
@@ -1450,7 +1477,7 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
           )}
           {select("Period", "periodId", data.periods.filter((period) => !isBreakPeriod(period)))}
           {select("Subject", "subjectId", data.subjects)}
-          {select("Staff", "facultyId", faculty)}
+          {select("Staff", "facultyId", faculty, facultyOptionLabel)}
           {select("Room", "roomId", data.rooms)}
           <Field label="Remarks">
             <input value={form.remarks} onChange={set("remarks")} />
@@ -1472,6 +1499,97 @@ function SlotEditor({ context, data, slot, workingDays, close, saved, notify, la
     </Modal>
   );
 }
+function SubstitutionPreview({ context, close, notify }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const sectionId = Number(context.sectionId);
+  const academicYearId = Number(context.academicYearId);
+
+  useEffect(() => {
+    if (!sectionId || !academicYearId) {
+      setRows([]);
+      setLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setRows([]);
+    setLoading(true);
+    setError("");
+    const params = { date, sectionId, academicYearId };
+    Promise.all([
+      apiClient.get(apiEndpoints.timetable.substitutions, { params }),
+      apiClient.get(apiEndpoints.timetable.effective, { params }),
+    ]).then(([substitutionsResponse, effectiveResponse]) => {
+      if (cancelled) return;
+      const effectiveByTimetableId = new Map(
+        list(effectiveResponse.data).map((slot) => [String(pick(slot, "timetableId", "TimetableId")), slot]),
+      );
+      setRows(list(substitutionsResponse.data).map((substitution) => {
+        const effective = effectiveByTimetableId.get(String(pick(substitution, "timetableId", "TimetableId")));
+        const substituteName = effective && pick(effective, "isSubstituted", "IsSubstituted")
+          ? pick(effective, "effectiveStaffName", "EffectiveStaffName")
+          : pick(substitution, "substituteStaffName", "SubstituteStaffName");
+        return {
+          id: pick(substitution, "substitutionId", "SubstitutionId", "id", "Id"),
+          period: pick(substitution, "periodName", "PeriodName") || `Period ${pick(substitution, "periodNumber", "PeriodNumber") || ""}`,
+          time: [pick(substitution, "startTime", "StartTime"), pick(substitution, "endTime", "EndTime")]
+            .filter(Boolean)
+            .map((time) => String(time).slice(0, 5))
+            .join(" - "),
+          subject: pick(substitution, "subjectName", "SubjectName"),
+          className: pick(substitution, "programName", "ProgramName", "groupName", "GroupName") || "—",
+          section: pick(substitution, "sectionName", "SectionName") || "—",
+          originalFaculty: pick(effective, "originalStaffName", "OriginalStaffName")
+            || pick(substitution, "originalStaffName", "OriginalStaffName"),
+          substituteFaculty: substituteName || "Not Assigned",
+          assigned: Boolean(substituteName),
+        };
+      }));
+    }).catch((requestError) => {
+      if (cancelled) return;
+      const message = getApiErrorMessage(requestError);
+      setRows([]);
+      setError(message);
+      notify(message);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [academicYearId, date, notify, sectionId]);
+
+  return (
+    <Modal title="Faculty Leave / Substitution Preview" className="ttm-substitution-modal" onClose={close}>
+      <div className="ttm-modal-body">
+        <div className="ttm-substitution-toolbar">
+          <Field label="Date">
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </Field>
+        </div>
+        {loading ? <p className="ttm-empty">Loading faculty substitutions...</p> : null}
+        {!loading && error ? <p className="ttm-validation-error">{error}</p> : null}
+        {!loading && !error && !rows.length ? <p className="ttm-empty">No faculty substitutions for this date.</p> : null}
+        {!loading && !error && rows.length ? (
+          <div className="ttm-substitution-table-wrap">
+            <table className="ttm-substitution-table">
+              <thead><tr><th>Period</th><th>Time</th><th>Subject</th><th>Class / Section</th><th>Original Faculty</th><th>Substitute Faculty</th><th>Status</th></tr></thead>
+              <tbody>{rows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.period}</td><td>{row.time || "—"}</td><td>{row.subject || "—"}</td>
+                  <td>{row.className} - {row.section}</td><td>{row.originalFaculty || "—"}</td>
+                  <td>{row.substituteFaculty}</td>
+                  <td><span className={`ttm-substitution-status${row.assigned ? " assigned" : ""}`}>{row.assigned ? "Substitute Assigned" : "Pending Substitute"}</span></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : null}
+        <footer><Btn className="cms-btn cms-btn-ghost" onClick={close}>Close</Btn></footer>
+      </div>
+    </Modal>
+  );
+}
 function Draft({ initial, notify }) {
   const state = useLookups(initial);
   const { value, data, setValue } = state;
@@ -1479,6 +1597,8 @@ function Draft({ initial, notify }) {
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [publishedSlotDetails, setPublishedSlotDetails] = useState(null);
+  const [substitutionPreviewOpen, setSubstitutionPreviewOpen] = useState(false);
   const [copying, setCopying] = useState(false);
   const [copyTarget, setCopyTarget] = useState({ academicYearId: "", sectionId: "" });
   const [actionBusy, setActionBusy] = useState(false);
@@ -1492,6 +1612,7 @@ function Draft({ initial, notify }) {
   const [validationOpen, setValidationOpen] = useState(false);
   const [studentChoices, setStudentChoices] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
   const [staffChoices, setStaffChoices] = useState([]);
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [publishedFilter, setPublishedFilter] = useState(
@@ -1552,7 +1673,7 @@ function Draft({ initial, notify }) {
     } finally {
       setSlotsLoading(false);
     }
-  }, [generatedSlots, notify, publishedFilter, value.academicYearId, value.sectionId]);
+  }, [generatedSlots, initial, notify, publishedFilter, value.academicYearId, value.sectionId]);
   useEffect(() => {
     load();
   }, [load]);
@@ -1566,10 +1687,30 @@ function Draft({ initial, notify }) {
   const published = workflowStatus === "published";
   const approved = workflowStatus === "approved";
   useEffect(() => {
+    if (!publishedSlotDetails) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (event.target.closest(".ttm-published-slot-details, .ttm-published-slot")) return;
+      setPublishedSlotDetails(null);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setPublishedSlotDetails(null);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [publishedSlotDetails]);
+  useEffect(() => {
+    setPublishedSlotDetails(null);
+  }, [published, publishedFilter, value.sectionId]);
+  useEffect(() => {
     if (!published || !value.sectionId) {
       setStudentChoices([]);
       setStaffChoices([]);
       setSelectedStudentId("");
+      setStudentSearch("");
       setSelectedStaffId("");
       return undefined;
     }
@@ -1596,6 +1737,7 @@ function Draft({ initial, notify }) {
           )
         : []);
       setSelectedStudentId("");
+      setStudentSearch("");
       setSelectedStaffId("");
     });
     return () => { cancelled = true; };
@@ -1607,7 +1749,30 @@ function Draft({ initial, notify }) {
           || String(pick(slot, "day", "Day")).toLowerCase() === String(DAYS[day]).toLowerCase()) &&
         String(pick(slot, "periodId", "PeriodId", "periodNumber", "PeriodNumber")) === String(periodId),
     );
-  const openSlotEditor = async (slot) => {
+  const openPublishedSlotDetails = (event, slot, period, dayOfWeek, interaction = "click") => {
+    const currentId = `${timetableId(slot) ?? "slot"}:${dayOfWeek}:${period.id}`;
+    if (interaction === "click" && publishedSlotDetails?.id === currentId && publishedSlotDetails.pinned) {
+      setPublishedSlotDetails(null);
+      return;
+    }
+    if (interaction === "hover" && publishedSlotDetails?.id === currentId && publishedSlotDetails.pinned) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const width = 190;
+    const height = 88;
+    const left = bounds.right + width + 8 <= window.innerWidth
+      ? bounds.right + 8
+      : Math.max(8, bounds.left - width - 8);
+    const top = Math.max(8, Math.min(bounds.top, window.innerHeight - height - 8));
+    setPublishedSlotDetails({ id: currentId, slot, style: { left, top }, pinned: interaction === "click" });
+  };
+  const openSlotEditor = async (slot, pendingSlot) => {
+    if (!slot) {
+      if (!pendingSlot || actionBusy) return;
+      // Reuse the existing SlotEditor in create mode, prefilled with the
+      // empty grid cell's day and teaching period.
+      setEditing(pendingSlot);
+      return;
+    }
     const id = timetableId(slot);
     if (!id || actionBusy) return;
     setActionBusy(true);
@@ -1776,27 +1941,37 @@ function Draft({ initial, notify }) {
     <Page
       title="Generated Draft Grid"
       subtitle="Review, validate, approve and publish the section timetable."
-      action={
-        <Link className="cms-btn cms-btn-ghost" to="/dashboard/timetable">
-          Back to Timetable
-        </Link>
-      }
     >
+      <Link className="cms-back-link" to="/dashboard/timetable">
+        <ArrowLeft size={15} /> Back to Timetable
+      </Link>
       <section className="ttm-card">
         <Context state={state} compact hideGlobalContext />
         {value.sectionId && (
           <>
             <div className="ttm-grid-head">
-              <b>Section timetable</b>
-              <div>
-                <label className="ttm-inline-filter">
-                  <span>Status</span>
-                  <select value={publishedFilter} onChange={(e) => setPublishedFilter(e.target.value)} disabled={actionBusy}>
-                    <option value="">All</option>
-                    <option value="false">Draft</option>
-                    <option value="true">Published</option>
-                  </select>
-                </label>
+              <div className="ttm-grid-title">
+                <div className="ttm-toolbar-heading">
+                  <i><CalendarDays size={20} aria-hidden="true" /></i>
+                  <div>
+                    <b>Section timetable</b>
+                    <span>View the published timetable for the selected section.</span>
+                  </div>
+                </div>
+                <Btn className="cms-btn cms-btn-ghost ttm-substitution-trigger" onClick={() => setSubstitutionPreviewOpen(true)}>
+                  <UsersRound size={17} aria-hidden="true" /> Faculty Leave / Substitutions
+                </Btn>
+              </div>
+              <div className="ttm-grid-workflow">
+                <div className="ttm-toolbar-workflow-actions">
+                  <label className="ttm-inline-filter">
+                    <span>Status</span>
+                    <select value={publishedFilter} onChange={(e) => setPublishedFilter(e.target.value)} disabled={actionBusy}>
+                      <option value="">All</option>
+                      <option value="false">Draft</option>
+                      <option value="true">Published</option>
+                    </select>
+                  </label>
                 <div ref={exportMenuRef} className={`ttm-export-menu${exportBusy ? " is-busy" : ""}`}>
                   <button type="button" className="cms-btn cms-btn-ghost" aria-haspopup="menu" aria-expanded={exportOpen} disabled={Boolean(exportBusy)} onClick={() => setExportOpen((open) => !open)}>
                     <Download size={15} aria-hidden="true" /> {exportBusy ? "Exporting…" : "Export"} <ChevronDown size={14} aria-hidden="true" />
@@ -1847,41 +2022,68 @@ function Draft({ initial, notify }) {
                 >
                   {activeAction === "publish" ? "Publishing…" : "Publish"}
                 </Btn>}
+                </div>
                 {published && (
-                  <>
+                  <div className="ttm-toolbar-searches">
                     <label className="ttm-inline-filter ttm-staff-select">
-                      <select
+                      <Search size={18} aria-hidden="true" />
+                      <input
+                        type="search"
+                        list="ttm-staff-options"
                         aria-label="Select staff"
                         value={selectedStaffId}
                         disabled={actionBusy || !staffChoices.length}
                         onChange={(event) => {
-                          const staffId = event.target.value;
-                          setSelectedStaffId(staffId);
-                          if (staffId) viewPublished("faculty", staffId);
-                          else load();
+                          const search = event.target.value;
+                          setStaffSearch(search);
+                          const staff = staffChoices.find(
+                            (entry) => facultyOptionLabel(entry).toLowerCase() === search.trim().toLowerCase(),
+                          );
+                          if (staff) {
+                            setSelectedStaffId(staff.id);
+                            setSelectedStudentId("");
+                            viewPublished("faculty", staff.id);
+                          } else if (!search) {
+                            setSelectedStaffId("");
+                            load();
+                          }
                         }}
-                      >
-                        <option value="">Select staff</option>
-                        {staffChoices.map((staff) => <option key={staff.id} value={staff.id}>{staff.name}</option>)}
-                      </select>
+                      />
+                      <datalist id="ttm-staff-options">
+                        {staffChoices.map((staff) => <option key={staff.id} value={facultyOptionLabel(staff)} />)}
+                      </datalist>
                     </label>
                     <label className="ttm-inline-filter ttm-person-select">
-                      <select
+                      <Search size={18} aria-hidden="true" />
+                      <input
+                        type="search"
+                        list="ttm-student-options"
                         aria-label="Select student"
-                        value={selectedStudentId}
+                        placeholder="Search student"
+                        autoComplete="off"
+                        value={studentSearch}
                         disabled={actionBusy || !studentChoices.length}
                         onChange={(event) => {
-                          const studentId = event.target.value;
-                          setSelectedStudentId(studentId);
-                          if (studentId) viewPublished("student", studentId);
-                          else load();
+                          const search = event.target.value;
+                          setStudentSearch(search);
+                          const student = studentChoices.find(
+                            (entry) => studentOptionLabel(entry).toLowerCase() === search.trim().toLowerCase(),
+                          );
+                          if (student) {
+                            setSelectedStudentId(student.id);
+                            setSelectedStaffId("");
+                            viewPublished("student", student.id);
+                          } else if (!search) {
+                            setSelectedStudentId("");
+                            load();
+                          }
                         }}
-                      >
-                        <option value="">Select student</option>
-                        {studentChoices.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
-                      </select>
+                      />
+                      <datalist id="ttm-student-options">
+                        {studentChoices.map((student) => <option key={student.id} value={studentOptionLabel(student)} />)}
+                      </datalist>
                     </label>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -1915,18 +2117,37 @@ function Draft({ initial, notify }) {
                         return (
                           <td className="slot" key={period.id}>
                             <button
-                              onClick={() => openSlotEditor(slot)}
-                              disabled={!slot || (actionBusy && activeAction === "slot")}
+                              className={published && slot ? "ttm-published-slot" : ""}
+                              onMouseEnter={(event) => {
+                                if (published && slot) openPublishedSlotDetails(event, slot, period, dayOfWeek, "hover");
+                              }}
+                              onMouseLeave={() => {
+                                setPublishedSlotDetails((current) => current && !current.pinned ? null : current);
+                              }}
+                              onClick={(event) => {
+                                if (published) {
+                                  if (slot) openPublishedSlotDetails(event, slot, period, dayOfWeek);
+                                  return;
+                                }
+                                openSlotEditor(slot, { dayOfWeek, periodId: period.id });
+                              }}
+                              disabled={published ? !slot : Boolean(selectedStaffId) || (actionBusy && activeAction === "slot")}
                             >
                               {slot ? (
-                                <>
-                                  <b>{slotSubjectName(slot, data.subjects)}</b>
-                                  <span>{slotFacultyName(slot)}</span>
-                                  <small>{slotRoomName(slot)}</small>
-                                  <i className="ttm-slot-edit">Edit</i>
-                                </>
+                                published ? <b>{slotSubjectName(slot, data.subjects)}</b> : (
+                                  <>
+                                    <b>{slotSubjectName(slot, data.subjects)}</b>
+                                    <span>{slotFacultyName(slot)}</span>
+                                    <small>{slotRoomName(slot)}</small>
+                                    <i className="ttm-slot-edit">Edit</i>
+                                  </>
+                                )
                               ) : (
-                                slotsLoading ? "Loading…" : "No generated subject"
+                                slotsLoading
+                                  ? "Loading…"
+                                  : selectedStaffId
+                                    ? <span className="ttm-empty-slot" aria-label="No class assigned">—</span>
+                                    : <span className="ttm-slot-add">+ Add Slot</span>
                               )}
                             </button>
                           </td>
@@ -1939,6 +2160,17 @@ function Draft({ initial, notify }) {
                 </tbody>
               </table>
             </div>
+            {publishedSlotDetails && createPortal((() => {
+              const { slot, style } = publishedSlotDetails;
+              return (
+                <aside className="ttm-published-slot-details" style={style} aria-label="Published timetable slot details">
+                  <button type="button" className="ttm-published-slot-close" aria-label="Close slot details" onClick={() => setPublishedSlotDetails(null)}>×</button>
+                  <h3>{slotSubjectName(slot, data.subjects)}</h3>
+                  <p>{slotFacultyName(slot)}</p>
+                  <p>{slotRoomName(slot)}</p>
+                </aside>
+              );
+            })(), document.body)}
           </>
         )}
       </section>
@@ -1972,6 +2204,9 @@ function Draft({ initial, notify }) {
             load();
           }}
         />
+      )}
+      {substitutionPreviewOpen && (
+        <SubstitutionPreview context={value} close={() => setSubstitutionPreviewOpen(false)} notify={notify} />
       )}
       {copying && (
         <Modal title="Copy Timetable" onClose={() => setCopying(false)}>
@@ -2051,10 +2286,10 @@ function MainTimetable({ notify }) {
       <section className="ttm-card">
         <div className="ttm-main-row">
           <Context state={state} hideGlobalContext />
-          <footer className="ttm-screen-actions ttm-main-actions">
-            <Btn disabled={!completeContext} onClick={() => navigate("/dashboard/timetable/setup", { state: { timetableContext: value } })}>Create Timetable</Btn>
-            <Btn className="cms-btn cms-btn-ghost" disabled={!completeContext || opening} onClick={openGenerated}>{opening ? "Opening…" : "Generated Timetable"}</Btn>
-          </footer>
+          <div className="ttm-view-tabs" role="group" aria-label="Timetable view actions">
+            <Btn className="ttm-view-tab is-active" aria-pressed="true" disabled={!completeContext} onClick={() => navigate("/dashboard/timetable/setup", { state: { timetableContext: value } })}>Create Timetable</Btn>
+            <Btn className="ttm-view-tab" aria-pressed="false" disabled={!completeContext || opening} onClick={openGenerated}>{opening ? "Opening…" : "Generated Timetable"}</Btn>
+          </div>
         </div>
       </section>
     </Page>

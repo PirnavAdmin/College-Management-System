@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import Search3DIcon from "@/components/common/Search3DIcon.jsx";
-import { useAcademicContext } from "@/context/AcademicContext.jsx";
-import { isStaffMatchingBoard } from "@/components/pages/StaffManagementPage.jsx";
 import {
   FiPlus,
   FiDownload,
@@ -98,6 +96,7 @@ const NON_TEACHING_DESIGNATIONS = [
   "Office Assistant",
   "Clerk",
   "Receptionist",
+  "other",
 ];
 
 const StaffList = () => {
@@ -113,8 +112,6 @@ const StaffList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
-
-  const { boards, selectedBoard } = useAcademicContext();
 
   // Data & Loading states
   const [staffList, setStaffList] = useState([]);
@@ -198,8 +195,6 @@ const StaffList = () => {
   const fetchStaffData = async () => {
     setLoading(true);
     try {
-      const activeBoardCode = selectedBoard?.code || selectedBoard?.boardCode || "";
-      const activeBoardId = selectedBoard?.id || selectedBoard?.boardId;
       const params = {
         pageNumber: currentPage,
         pageSize: pageSize,
@@ -207,16 +202,12 @@ const StaffList = () => {
         searchTerm: searchTerm.trim() || undefined,
         department: selectedDepartment !== "All Departments" ? selectedDepartment : undefined,
         status: selectedStatus !== "All Status" ? selectedStatus : undefined,
-        boardCode: activeBoardCode || undefined,
-        boardId: activeBoardId || undefined,
       };
 
       const res = await getStaffPaged(params);
       if (res.data) {
-        const rawItems = res.data.items || [];
-        const filtered = rawItems.filter((r) => isStaffMatchingBoard(r, selectedBoard, boards));
-        setStaffList(filtered);
-        setTotalCount(res.data.totalCount || filtered.length || 0);
+        setStaffList(res.data.items || []);
+        setTotalCount(res.data.totalCount || 0);
       }
     } catch (err) {
       console.error("Error fetching staff:", err);
@@ -226,11 +217,11 @@ const StaffList = () => {
     }
   };
 
-  // Refresh data when tab, filters, page, or board changes
+  // Refresh data when tab, filters, or page changes
   useEffect(() => {
     fetchStaffData();
     fetchLookups(activeTab);
-  }, [activeTab, currentPage, selectedDepartment, selectedStatus, selectedBoard]);
+  }, [activeTab, currentPage, selectedDepartment, selectedStatus]);
 
   // Debounced search
   useEffect(() => {

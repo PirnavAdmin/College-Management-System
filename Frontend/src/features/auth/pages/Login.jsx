@@ -4,19 +4,14 @@ import AuthLayout from "@/layouts/AuthLayout.jsx";
 import { Field, useForm } from "@/components/common/Ui.jsx";
 import { getApiErrorMessage } from "@/api/axios.js";
 import { clearPasswordResetContext, loginUser } from "@/features/auth/services/authService.js";
+import { clearAuthSession, saveAuthSession } from "@/features/authStorage.js";
 
 const fields = [
-  { name: "email", label: "Email or Mobile", type: "text", required: true, placeholder: "Admin@CMS.com", full: true },
-  { name: "password", label: "Password", type: "password", required: true, placeholder: "Password", full: true },
+  { name: "email", label: "Email or Mobile", type: "text", required: true, placeholder: "Admin@CMS.com", autoComplete: "username", full: true },
+  { name: "password", label: "Password", type: "password", required: true, placeholder: "Password", autoComplete: "current-password", full: true },
 ];
 
 const REMEMBER_KEY = "pirnav-remember-email";
-const clearStoredAuthentication = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
-  localStorage.removeItem("role");
-};
-
 export default function Login() {
   const { values, errors, setValue, validate } = useForm(fields, {});
   const [busy, setBusy] = useState(false);
@@ -40,10 +35,19 @@ export default function Login() {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
-    if (!validate()) return;
+    // Password managers can populate the DOM without dispatching the input
+    // event React uses to update controlled field state. Read the submitted
+    // controls so the credentials visible to the user are the ones we send.
+    const submitted = new FormData(e.currentTarget);
+    const emailOrMobile = String(submitted.get("email") || values.email || "").trim();
+    const password = String(submitted.get("password") || values.password || "");
+    if (!emailOrMobile || !password) {
+      validate();
+      return;
+    }
 
     try {
-      if (remember) window.localStorage.setItem(REMEMBER_KEY, String(values.email || ""));
+      if (remember) window.localStorage.setItem(REMEMBER_KEY, emailOrMobile);
       else window.localStorage.removeItem(REMEMBER_KEY);
     } catch {
       /* storage unavailable */
@@ -51,12 +55,11 @@ export default function Login() {
 
     setBusy(true);
     // A login attempt must not inherit authorization from an older session.
-    clearStoredAuthentication();
+    clearAuthSession();
     try {
-      const result = await loginUser({ emailOrMobile: String(values.email || "").trim(), password: values.password });
-      localStorage.setItem("token", result.token);
-      localStorage.setItem("user", JSON.stringify(result.user));
-      localStorage.setItem("role", result.user.role);
+      const result = await loginUser({ emailOrMobile, password });
+      if (!result.token) throw new Error("The login response did not include an access token.");
+      saveAuthSession({ token: result.token, user: result.user, role: result.user.role }, remember);
 
       const userRole = String(result.user.role || "").toLowerCase();
       if (userRole === "faculty" || userRole === "teacher") {
@@ -65,11 +68,11 @@ export default function Login() {
         navigate(result.user.isAdmin ? "/dashboard" : "/student-dashboard", { replace: true });
       }
     } catch (loginError) {
-      clearStoredAuthentication();
+      clearAuthSession();
       const status = Number(loginError?.response?.status || 0);
       setError(
         [400, 401, 403].includes(status) || loginError?.code === "INVALID_CREDENTIALS"
-          ? "Invalid email or password."
+          ? "Invalid username or password. Please try again."
           : getApiErrorMessage(loginError) || "Unable to sign in right now. Please try again.",
       );
     } finally {
@@ -79,7 +82,7 @@ export default function Login() {
 
   return (
     <AuthLayout title="Welcome back" subtitle="Sign in to the Pirnav College management system.">
-      <form onSubmit={submit} noValidate>
+      <form onSubmit={submit} noValidate autoComplete="on">
         {error ? <div className="cms-alert-error" role="alert">{error}</div> : null}
         <div className="cms-form-grid">
           {fields.map((f) => (
@@ -88,7 +91,7 @@ export default function Login() {
         </div>
         <div className="cms-auth-row">
           <label className="cms-check" htmlFor="remember-me">
-            <input id="remember-me" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+            <input id="remember-me" name="remember" type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             <span>Remember me</span>
           </label>
           <Link to="/forgot-password" state={{ email: String(values.email || "").trim() }} onClick={clearPasswordResetContext}>Forgot password?</Link>

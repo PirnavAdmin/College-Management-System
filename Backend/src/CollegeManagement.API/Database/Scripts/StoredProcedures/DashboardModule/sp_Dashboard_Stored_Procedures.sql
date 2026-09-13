@@ -21,6 +21,8 @@ CREATE PROCEDURE sp_GetDashboardKPIs(
 )
 BEGIN
     DECLARE v_TargetDate DATE;
+    DECLARE v_EffectiveAcademicYearId INT DEFAULT NULL;
+    DECLARE v_EffectiveBoardId INT DEFAULT NULL;
     DECLARE v_TotalStudents INT DEFAULT 0;
     DECLARE v_TeachingStaff INT DEFAULT 0;
     DECLARE v_NonTeachingStaff INT DEFAULT 0;
@@ -49,11 +51,43 @@ BEGIN
 
     SET v_TargetDate = COALESCE(p_TargetDate, CURDATE());
 
+    -- Resolve Effective Academic Year ID
+    IF p_AcademicYearId IS NOT NULL THEN
+        SET v_EffectiveAcademicYearId = p_AcademicYearId;
+    ELSE
+        SELECT AcademicYearId INTO v_EffectiveAcademicYearId
+        FROM `AcademicYears` ay
+        WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
+          AND (p_BoardId IS NULL OR ay.BoardId = p_BoardId)
+          AND (ay.StartDate <= v_TargetDate AND ay.EndDate >= v_TargetDate)
+        ORDER BY ay.StartDate DESC
+        LIMIT 1;
+
+        IF v_EffectiveAcademicYearId IS NULL THEN
+            SELECT AcademicYearId INTO v_EffectiveAcademicYearId
+            FROM `AcademicYears` ay
+            WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
+              AND (p_BoardId IS NULL OR ay.BoardId = p_BoardId)
+              AND ay.StartDate <= v_TargetDate
+            ORDER BY ay.StartDate DESC
+            LIMIT 1;
+        END IF;
+
+        IF v_EffectiveAcademicYearId IS NULL THEN
+            SELECT AcademicYearId INTO v_EffectiveAcademicYearId
+            FROM `AcademicYears` ay
+            WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
+              AND (p_BoardId IS NULL OR ay.BoardId = p_BoardId)
+            ORDER BY ay.StartDate ASC
+            LIMIT 1;
+        END IF;
+    END IF;
+
     -- 1. Current Active Student Count
     SELECT COUNT(*) INTO v_TotalStudents
     FROM `Students` s
     WHERE (s.IsActive = 1 OR s.IsActive IS NULL)
-      AND (p_AcademicYearId IS NULL OR s.AcademicYearId = p_AcademicYearId)
+      AND (v_EffectiveAcademicYearId IS NULL OR s.AcademicYearId = v_EffectiveAcademicYearId)
       AND (p_BoardId IS NULL OR s.BoardId = p_BoardId);
 
     -- 2. Teaching Staff Count
@@ -62,7 +96,7 @@ BEGIN
     WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
       AND (st.Status = 'Active' OR st.Status IS NULL)
       AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching')
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId);
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
 
     -- 3. Non-Teaching Staff Count
     SELECT COUNT(*) INTO v_NonTeachingStaff
@@ -70,40 +104,51 @@ BEGIN
     WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
       AND (st.Status = 'Active' OR st.Status IS NULL)
       AND (st.StaffType = 'Non-Teaching' OR (st.StaffType != 'Teaching' AND st.FacultyType != 'Teaching'))
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId);
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
 
     -- 4. Total Groups Count
     SELECT COUNT(*) INTO v_TotalGroups
     FROM `Groups` g
     WHERE (g.IsActive = 1 OR g.IsActive IS NULL)
-      AND (p_AcademicYearId IS NULL OR g.AcademicYearId = p_AcademicYearId)
+      AND (v_EffectiveAcademicYearId IS NULL OR g.AcademicYearId = v_EffectiveAcademicYearId)
       AND (p_BoardId IS NULL OR g.BoardId = p_BoardId);
 
     -- 5. Total Sections Count
     SELECT COUNT(*) INTO v_TotalSections
     FROM `Sections` sec
     WHERE (sec.IsActive = 1 OR sec.IsActive IS NULL)
-      AND (p_AcademicYearId IS NULL OR sec.AcademicYearId = p_AcademicYearId)
+      AND (v_EffectiveAcademicYearId IS NULL OR sec.AcademicYearId = v_EffectiveAcademicYearId)
       AND (p_BoardId IS NULL OR sec.BoardId = p_BoardId);
 
     -- 6. Dynamic Prior Academic Year Determination
-    IF p_AcademicYearId IS NOT NULL THEN
-        SELECT AcademicYearId, StartDate, EndDate 
-        INTO v_PriorAcademicYearId, v_PriorYearStartDate, v_PriorYearEndDate
-        FROM `AcademicYears` ay
-        WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
-          AND ay.StartDate < (SELECT StartDate FROM `AcademicYears` WHERE AcademicYearId = p_AcademicYearId LIMIT 1)
-          AND (p_BoardId IS NULL OR ay.BoardId = p_BoardId)
-        ORDER BY ay.StartDate DESC
-        LIMIT 1;
-    ELSE
-        SELECT AcademicYearId, StartDate, EndDate 
-        INTO v_PriorAcademicYearId, v_PriorYearStartDate, v_PriorYearEndDate
-        FROM `AcademicYears` ay
-        WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
-          AND (p_BoardId IS NULL OR ay.BoardId = p_BoardId)
-        ORDER BY ay.StartDate DESC
-        LIMIT 1 OFFSET 1;
+    IF v_EffectiveAcademicYearId IS NOT NULL THEN
+        SELECT AcademicYearName, BoardId INTO v_AcademicYearName, v_EffectiveBoardId
+        FROM `AcademicYears`
+        WHERE AcademicYearId = v_EffectiveAcademicYearId LIMIT 1;
+
+        -- 1. Look for exact prior academic year by parsed year name (e.g. '2026-2027' -> '2025-2026', '2027-2028' -> '2026-2027')
+        IF v_AcademicYearName LIKE '%-%' THEN
+            SELECT AcademicYearId, StartDate, EndDate
+            INTO v_PriorAcademicYearId, v_PriorYearStartDate, v_PriorYearEndDate
+            FROM `AcademicYears` ay
+            WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
+              AND ay.AcademicYearName = CONCAT(CAST(SUBSTRING_INDEX(v_AcademicYearName, '-', 1) AS UNSIGNED) - 1, '-', CAST(SUBSTRING_INDEX(v_AcademicYearName, '-', -1) AS UNSIGNED) - 1)
+              AND (v_EffectiveBoardId IS NULL OR ay.BoardId = v_EffectiveBoardId)
+            LIMIT 1;
+        END IF;
+
+        -- 2. Fallback: strictly prior EndDate < currentYear.StartDate AND distinct name
+        IF v_PriorAcademicYearId IS NULL THEN
+            SELECT AcademicYearId, StartDate, EndDate 
+            INTO v_PriorAcademicYearId, v_PriorYearStartDate, v_PriorYearEndDate
+            FROM `AcademicYears` ay
+            WHERE (ay.IsActive = 1 OR ay.IsActive IS NULL)
+              AND ay.AcademicYearName != v_AcademicYearName
+              AND ay.EndDate < (SELECT StartDate FROM `AcademicYears` WHERE AcademicYearId = v_EffectiveAcademicYearId LIMIT 1)
+              AND (v_EffectiveBoardId IS NULL OR ay.BoardId = v_EffectiveBoardId)
+            ORDER BY ay.StartDate DESC
+            LIMIT 1;
+        END IF;
     END IF;
 
     -- Prior Year Stats (Zero/Null handling when no prior year records exist)
@@ -114,41 +159,39 @@ BEGIN
           AND s.AcademicYearId = v_PriorAcademicYearId
           AND (p_BoardId IS NULL OR s.BoardId = p_BoardId);
 
-        SELECT COUNT(*) INTO v_LastYearGroups
-        FROM `Groups` g
-        WHERE (g.IsActive = 1 OR g.IsActive IS NULL)
-          AND g.AcademicYearId = v_PriorAcademicYearId
-          AND (p_BoardId IS NULL OR g.BoardId = p_BoardId);
+        -- Strict Rule: If no students exist in prior year, all prior year counts MUST BE 0
+        IF v_LastYearStudents > 0 THEN
+            SELECT COUNT(*) INTO v_LastYearGroups
+            FROM `Groups` g
+            WHERE (g.IsActive = 1 OR g.IsActive IS NULL)
+              AND g.AcademicYearId = v_PriorAcademicYearId
+              AND (p_BoardId IS NULL OR g.BoardId = p_BoardId);
 
-        SELECT COUNT(*) INTO v_LastYearSections
-        FROM `Sections` sec
-        WHERE (sec.IsActive = 1 OR sec.IsActive IS NULL)
-          AND sec.AcademicYearId = v_PriorAcademicYearId
-          AND (p_BoardId IS NULL OR sec.BoardId = p_BoardId);
+            SELECT COUNT(*) INTO v_LastYearSections
+            FROM `Sections` sec
+            WHERE (sec.IsActive = 1 OR sec.IsActive IS NULL)
+              AND sec.AcademicYearId = v_PriorAcademicYearId
+              AND (p_BoardId IS NULL OR sec.BoardId = p_BoardId);
 
-        IF v_PriorYearEndDate IS NOT NULL THEN
-            SELECT COUNT(*) INTO v_LastYearTeaching
+            SELECT COUNT(DISTINCT st.Id) INTO v_LastYearTeaching
             FROM `Staff` st
             WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
               AND (st.Status = 'Active' OR st.Status IS NULL)
               AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching')
-              AND (p_BoardId IS NULL OR st.BoardId = p_BoardId)
-              AND (
-                  (st.JoiningDate IS NOT NULL AND DATE(st.JoiningDate) <= v_PriorYearEndDate)
-                  OR (st.JoiningDate IS NULL AND DATE(st.CreatedAt) <= v_PriorYearEndDate)
-              );
+              AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0)
+              AND (v_PriorYearEndDate IS NOT NULL AND st.JoiningDate IS NOT NULL AND DATE(st.JoiningDate) <= v_PriorYearEndDate);
 
-            SELECT COUNT(*) INTO v_LastYearNonTeaching
+            SELECT COUNT(DISTINCT st.Id) INTO v_LastYearNonTeaching
             FROM `Staff` st
             WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
               AND (st.Status = 'Active' OR st.Status IS NULL)
               AND (st.StaffType = 'Non-Teaching' OR (st.StaffType != 'Teaching' AND st.FacultyType != 'Teaching'))
-              AND (p_BoardId IS NULL OR st.BoardId = p_BoardId)
-              AND (
-                  (st.JoiningDate IS NOT NULL AND DATE(st.JoiningDate) <= v_PriorYearEndDate)
-                  OR (st.JoiningDate IS NULL AND DATE(st.CreatedAt) <= v_PriorYearEndDate)
-              );
+              AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0)
+              AND (v_PriorYearEndDate IS NOT NULL AND st.JoiningDate IS NOT NULL AND DATE(st.JoiningDate) <= v_PriorYearEndDate);
         ELSE
+            SET v_LastYearStudents = 0;
+            SET v_LastYearGroups = 0;
+            SET v_LastYearSections = 0;
             SET v_LastYearTeaching = 0;
             SET v_LastYearNonTeaching = 0;
         END IF;
@@ -232,11 +275,12 @@ BEGIN
         SET v_AcademicYearName = CONCAT(YEAR(CURDATE()), '-', YEAR(CURDATE()) + 1);
     END IF;
 
-    -- 9. Upcoming Exams Count
+    -- 9. Upcoming Exams Count (Strictly active & future/ongoing exams)
     SELECT COUNT(*) INTO v_UpcomingExams
     FROM `Examinations` e
     WHERE (e.IsActive = 1 OR e.IsActive IS NULL)
-      AND (DATE(e.EndDate) >= v_TargetDate OR DATE(e.StartDate) >= v_TargetDate OR e.Status = 'Scheduled' OR e.Status = 'DRAFT')
+      AND DATE(e.EndDate) >= v_TargetDate
+      AND LOWER(COALESCE(e.Status, '')) NOT IN ('completed', 'cancelled', 'deleted')
       AND (p_AcademicYearId IS NULL OR e.AcademicYearId = p_AcademicYearId)
       AND (p_BoardId IS NULL OR e.BoardId = p_BoardId);
 
@@ -521,27 +565,28 @@ BEGIN
     DECLARE v_Absent INT DEFAULT 0;
     DECLARE v_Late INT DEFAULT 0;
     DECLARE v_OnLeave INT DEFAULT 0;
+    DECLARE v_TotalSessionMarks INT DEFAULT 0;
+    DECLARE v_AttendancePct DECIMAL(5,2) DEFAULT 0.0;
     DECLARE v_StaffType VARCHAR(50);
     DECLARE v_LeavesCount INT DEFAULT 0;
 
     SET v_TargetDate = COALESCE(p_TargetDate, CURDATE());
     SET v_StaffType = COALESCE(p_StaffType, 'All Staff');
 
+    SELECT COUNT(*) INTO v_TotalStaff
+    FROM `Staff` st
+    WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
+      AND (st.Status = 'Active' OR st.Status IS NULL)
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId);
+
     SELECT COUNT(*) INTO v_TeachingCount
     FROM `Staff` st
     WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
       AND (st.Status = 'Active' OR st.Status IS NULL)
       AND (st.StaffType = 'Teaching' OR st.FacultyType = 'Teaching')
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
+      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId);
 
-    SELECT COUNT(*) INTO v_NonTeachingCount
-    FROM `Staff` st
-    WHERE (st.IsDeleted = 0 OR st.IsDeleted IS NULL)
-      AND (st.Status = 'Active' OR st.Status IS NULL)
-      AND (st.StaffType = 'Non-Teaching' OR (st.StaffType != 'Teaching' AND st.FacultyType != 'Teaching'))
-      AND (p_BoardId IS NULL OR st.BoardId = p_BoardId OR st.BoardId IS NULL OR st.BoardId = 0);
-
-    SET v_TotalStaff = v_TeachingCount + v_NonTeachingCount;
+    SET v_NonTeachingCount = GREATEST(0, v_TotalStaff - v_TeachingCount);
 
     IF LOWER(v_StaffType) IN ('teaching staff', 'teaching') THEN
         SET v_FilteredTotal = v_TeachingCount;
@@ -569,24 +614,51 @@ BEGIN
       AND Status = 'Approved'
       AND DATE(StartDate) <= v_TargetDate AND DATE(EndDate) >= v_TargetDate;
 
-    IF v_LeavesCount > v_OnLeave THEN
-        SET v_OnLeave = v_LeavesCount;
+    -- Total session marks & normalized attendance calculation
+    SET v_TotalSessionMarks = v_Present + v_Absent + v_Late + v_OnLeave;
+
+    IF v_TotalSessionMarks > 0 THEN
+        SET v_AttendancePct = LEAST(100.0, ROUND((v_Present * 100.0) / v_TotalSessionMarks, 1));
+    ELSEIF v_FilteredTotal > 0 AND v_Present > 0 THEN
+        SET v_AttendancePct = LEAST(100.0, ROUND((LEAST(v_Present, v_FilteredTotal) * 100.0) / v_FilteredTotal, 1));
+    ELSE
+        SET v_AttendancePct = 0.0;
+    END IF;
+
+    -- Normalize Headcounts so Present/Absent never exceed Total Staff
+    IF v_FilteredTotal > 0 THEN
+        SET v_Present = LEAST(v_Present, v_FilteredTotal);
+        SET v_Absent = LEAST(v_Absent, v_FilteredTotal);
+        SET v_Late = LEAST(v_Late, v_FilteredTotal);
+        SET v_OnLeave = LEAST(v_OnLeave, v_FilteredTotal);
     END IF;
 
     SELECT 
         v_StaffType AS StaffType,
         v_FilteredTotal AS TotalStaff,
+        v_FilteredTotal AS Total,
+        v_FilteredTotal AS TotalCount,
         v_Present AS Present,
+        v_Present AS PresentCount,
         v_Absent AS Absent,
+        v_Absent AS AbsentCount,
         v_Late AS Late,
+        v_Late AS LateCount,
         v_OnLeave AS OnLeave,
-        ROUND(COALESCE((v_Present * 100.0) / NULLIF(v_FilteredTotal, 0), 0.0), 1) AS AttendancePercentage,
-        ROUND(COALESCE((v_Present * 100.0) / NULLIF(v_FilteredTotal, 0), 0.0), 1) AS PresentPercentage,
-        ROUND(COALESCE((v_Absent * 100.0) / NULLIF(v_FilteredTotal, 0), 0.0), 1) AS AbsentPercentage,
-        ROUND(COALESCE((v_Late * 100.0) / NULLIF(v_FilteredTotal, 0), 0.0), 1) AS LatePercentage,
-        ROUND(COALESCE((v_OnLeave * 100.0) / NULLIF(v_FilteredTotal, 0), 0.0), 1) AS OnLeavePercentage,
+        v_OnLeave AS OnLeaveCount,
+        v_OnLeave AS LeaveCount,
+        v_AttendancePct AS AttendancePercentage,
+        v_AttendancePct AS Percentage,
+        v_AttendancePct AS PresentPercentage,
+        CASE WHEN v_TotalSessionMarks > 0 THEN ROUND((v_Absent * 100.0) / v_TotalSessionMarks, 1) ELSE 0.0 END AS AbsentPercentage,
+        CASE WHEN v_TotalSessionMarks > 0 THEN ROUND((v_Late * 100.0) / v_TotalSessionMarks, 1) ELSE 0.0 END AS LatePercentage,
+        CASE WHEN v_TotalSessionMarks > 0 THEN ROUND((v_OnLeave * 100.0) / v_TotalSessionMarks, 1) ELSE 0.0 END AS OnLeavePercentage,
         v_TeachingCount AS TeachingCount,
-        v_NonTeachingCount AS NonTeachingCount;
+        v_TeachingCount AS TeachingStaffCount,
+        v_NonTeachingCount AS NonTeachingCount,
+        v_NonTeachingCount AS NonTeachingStaffCount,
+        v_TeachingCount AS TeachingStaff,
+        v_NonTeachingCount AS NonTeachingStaff;
 END //
 
 DELIMITER ;
@@ -698,7 +770,8 @@ BEGIN
     WHERE (e.IsActive = 1 OR e.IsActive IS NULL)
       AND (p_BoardId IS NULL OR e.BoardId = p_BoardId)
       AND (p_AcademicYearId IS NULL OR e.AcademicYearId = p_AcademicYearId)
-      AND (LOWER(COALESCE(e.Status, '')) NOT IN ('completed', 'cancelled') OR e.EndDate >= v_TargetDate)
+      AND DATE(e.EndDate) >= v_TargetDate
+      AND LOWER(COALESCE(e.Status, '')) NOT IN ('completed', 'cancelled', 'deleted')
     ORDER BY e.StartDate ASC
     LIMIT v_Limit;
 END //

@@ -14,11 +14,9 @@ namespace CollegeManagement.API.Controllers.V1
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/settings/number-series")]
     [Route("api/v{version:apiVersion}/number-series")]
-    [Route("api/v1/settings/number-series")]
-    [Route("api/v1/number-series")]
     [EnableCors("AllowFrontend")]
-    [AllowAnonymous]
     [Produces("application/json")]
+    [Authorize]
     public class NumberSeriesController : ControllerBase
     {
         private readonly INumberSeriesService _numberSeriesService;

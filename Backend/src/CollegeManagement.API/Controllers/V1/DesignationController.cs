@@ -16,6 +16,7 @@ namespace CollegeManagement.API.Controllers.V1
     [EnableCors("AllowFrontend")]
     [AllowAnonymous]
     [Produces("application/json")]
+    [Authorize]
     public class DesignationController : ControllerBase
     {
         private readonly IDesignationService _designationService;
@@ -175,7 +176,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// 10. POST /api/v1/designations/bulk & /api/v1/designations/bulk-import
+        /// 10. POST /api/v1/designations/bulk and /api/v1/designations/bulk-import
         /// Bulk create or update designations from JSON array.
         /// </summary>
         [HttpPost("bulk")]
@@ -192,7 +193,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// 11. GET /api/v1/designations/export-template & /api/v1/designations/template
+        /// 11. GET /api/v1/designations/export-template and /api/v1/designations/template
         /// Download sample Excel template for Designation bulk import.
         /// </summary>
         [HttpGet("export-template")]
@@ -205,7 +206,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// 12. GET /api/v1/designations/export-excel & /api/v1/designations/export
+        /// 12. GET /api/v1/designations/export-excel and /api/v1/designations/export
         /// Export all or filtered designations to Excel workbook (.xlsx).
         /// </summary>
         [HttpGet("export-excel")]

@@ -31,31 +31,43 @@ public class DashboardDbInspector
         Console.WriteLine($"Total tables in database: {allTables.Count}");
         Console.WriteLine("Tables: " + string.Join(", ", allTables));
 
-        // Search for any table containing certificate records
-        Console.WriteLine("\n--- SEARCHING FOR CERTIFICATE RECORDS ---");
-        foreach (var tbl in allTables)
+        Console.WriteLine("\n--- ACADEMIC YEARS ---");
+        var ayRows = await conn.QueryAsync<dynamic>("SELECT * FROM `AcademicYears`;");
+        foreach (IDictionary<string, object> r in ayRows)
         {
-            try
-            {
-                var cols = (await conn.QueryAsync<string>($"SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = '{tbl}';")).ToList();
-                if (cols.Any(c => c.Contains("cert", StringComparison.OrdinalIgnoreCase) || c.Contains("certificate", StringComparison.OrdinalIgnoreCase) || c.Contains("type", StringComparison.OrdinalIgnoreCase)))
-                {
-                    var count = await conn.ExecuteScalarAsync<int>($"SELECT COUNT(*) FROM `{tbl}`;");
-                    Console.WriteLine($"Found Candidate Table: `{tbl}` | Columns: {string.Join(", ", cols)} | Row Count: {count}");
-                    if (count > 0)
-                    {
-                        var rows = await conn.QueryAsync<dynamic>($"SELECT * FROM `{tbl}` LIMIT 10;");
-                        foreach (IDictionary<string, object> r in rows)
-                        {
-                            Console.WriteLine("  Row: " + string.Join(" | ", r.Select(kv => $"{kv.Key}: {kv.Value}")));
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error querying table `{tbl}`: {ex.Message}");
-            }
+            Console.WriteLine("  AY: " + string.Join(" | ", r.Select(kv => $"{kv.Key}: {kv.Value}")));
         }
+
+        Console.WriteLine("\n--- STUDENTS ATTENDANCE SESSIONS & ATTENDANCES TODAY ---");
+        try {
+            var attSessions = await conn.QueryAsync<dynamic>("SELECT * FROM `attendance_sessions` WHERE DATE(AttendanceDate) = CURDATE() OR DATE(CreatedAt) = CURDATE();");
+            foreach (IDictionary<string, object> r in attSessions) {
+                Console.WriteLine("  AttSession: " + string.Join(" | ", r.Select(kv => $"{kv.Key}: {kv.Value}")));
+            }
+        } catch (Exception ex) { Console.WriteLine("  Error querying attendance_sessions: " + ex.Message); }
+
+        try {
+            var attRecords = await conn.QueryAsync<dynamic>("SELECT a.*, s.StudentName, s.BoardId, s.AcademicYearId FROM `Attendances` a INNER JOIN `Students` s ON a.StudentId = s.StudentId WHERE DATE(a.AttendanceDate) = CURDATE();");
+            Console.WriteLine($"  Total Attendances today in Attendances table: {attRecords.Count()}");
+            foreach (IDictionary<string, object> r in attRecords.Take(10)) {
+                Console.WriteLine("  Attendance: " + string.Join(" | ", r.Select(kv => $"{kv.Key}: {kv.Value}")));
+            }
+        } catch (Exception ex) { Console.WriteLine("  Error querying Attendances: " + ex.Message); }
+
+        Console.WriteLine("\n--- STAFF ATTENDANCE SESSIONS TODAY ---");
+        try {
+            var staffAtt = await conn.QueryAsync<dynamic>("SELECT * FROM `StaffAttendanceSessions` WHERE DATE(AttendanceDate) = CURDATE();");
+            foreach (IDictionary<string, object> r in staffAtt) {
+                Console.WriteLine("  StaffAttSession: " + string.Join(" | ", r.Select(kv => $"{kv.Key}: {kv.Value}")));
+            }
+        } catch (Exception ex) { Console.WriteLine("  Error querying StaffAttendanceSessions: " + ex.Message); }
+
+        Console.WriteLine("\n--- EXAMINATIONS ---");
+        try {
+            var exams = await conn.QueryAsync<dynamic>("SELECT ExaminationId, ExamName, ExamCode, Status, StartDate, EndDate, IsActive, BoardId, AcademicYearId FROM `Examinations`;");
+            foreach (IDictionary<string, object> r in exams) {
+                Console.WriteLine("  Exam: " + string.Join(" | ", r.Select(kv => $"{kv.Key}: {kv.Value}")));
+            }
+        } catch (Exception ex) { Console.WriteLine("  Error querying Examinations: " + ex.Message); }
     }
 }

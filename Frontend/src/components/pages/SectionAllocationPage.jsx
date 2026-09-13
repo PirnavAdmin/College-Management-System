@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   Pencil,
   Search,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -1128,11 +1128,6 @@ export default function SectionAllocationPage() {
       subtitle="Allocate admitted students by admission order before generating roll numbers."
       breadcrumb={["People", "Section Allocation"]}
       excludeNotificationSources={EXCLUDED_NOTIFICATION_SOURCES}
-      actions={
-        <Link className="cms-btn cms-btn-ghost" to="/dashboard/students">
-          Student Management
-        </Link>
-      }
     >
       <section className="cms-card">
         <div className="cms-card-body student-management-filters">
@@ -1168,7 +1163,7 @@ export default function SectionAllocationPage() {
         <div className="allocation-toolbar">
           {/* Search bar on left */}
           <div className="allocation-search">
-            <Search size={16} color="var(--cms-muted, #7B8275)" />
+            <Search3DIcon size={16} />
             <input
               type="search"
               placeholder="Search by Name, Admission No,G..."

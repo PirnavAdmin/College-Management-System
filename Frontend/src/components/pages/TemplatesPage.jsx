@@ -44,6 +44,7 @@ import {
   Loader2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Toast } from "@/components/common/Ui.jsx";
 import { templateService } from "@/api/templateService.js";
 import { getApiErrorMessage } from "@/api/apiClient.js";
@@ -1101,7 +1102,7 @@ export default function TemplatesPage() {
             {/* Common Top Toolbar */}
             <div className="templates-toolbar">
               <div className="templates-search-box">
-                <Search size={15} className="templates-search-icon" />
+                <Search3DIcon size={15} className="templates-search-icon" />
                 <input
                   type="text"
                   placeholder="Search templates..."

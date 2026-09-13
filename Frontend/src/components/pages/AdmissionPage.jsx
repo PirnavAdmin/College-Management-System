@@ -24,6 +24,7 @@ import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
 import { env } from "@/config/env.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Field, Modal, Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import {
@@ -4093,7 +4094,7 @@ export default function AdmissionPage() {
         <div className="cms-card cms-admission-list-card">
           <div className="cms-admission-toolbar">
             <div className="cms-search cms-admission-search">
-              <Search size={16} />
+              <Search3DIcon size={16} />
               <input
                 value={search}
                 placeholder="Search by student name or admission number"

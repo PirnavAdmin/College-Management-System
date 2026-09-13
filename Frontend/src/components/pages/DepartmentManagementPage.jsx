@@ -16,6 +16,7 @@ import * as XLSX from "xlsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./DepartmentManagementPage.css";
 import departmentsIcon from "@/assets/dashboard-3d/total-sections.png";
@@ -171,91 +172,10 @@ export const isNonTeachingDesigName = (name) => {
   );
 };
 
-export const DEFAULT_TEACHING_DEPARTMENTS = [
-  { id: "td-1", name: "Accountancy", code: "ACC", staffType: "Teaching", status: "Active" },
-  { id: "td-2", name: "Biology", code: "BIO", staffType: "Teaching", status: "Active" },
-  { id: "td-3", name: "Biotechnology", code: "BT", staffType: "Teaching", status: "Active" },
-  { id: "td-4", name: "Botany", code: "BOT", staffType: "Teaching", status: "Active" },
-  { id: "td-5", name: "Business Studies", code: "BST", staffType: "Teaching", status: "Active" },
-  { id: "td-6", name: "Chemistry", code: "CHE", staffType: "Teaching", status: "Active" },
-  { id: "td-7", name: "Civics", code: "CIV", staffType: "Teaching", status: "Active" },
-  { id: "td-8", name: "Commerce", code: "COM", staffType: "Teaching", status: "Active" },
-  { id: "td-9", name: "Computer Science", code: "CSC", staffType: "Teaching", status: "Active" },
-  { id: "td-10", name: "Economics", code: "ECO", staffType: "Teaching", status: "Active" },
-  { id: "td-11", name: "Electronics", code: "ELE", staffType: "Teaching", status: "Active" },
-  { id: "td-12", name: "English", code: "ENG", staffType: "Teaching", status: "Active" },
-  { id: "td-13", name: "Geography", code: "GEO", staffType: "Teaching", status: "Active" },
-  { id: "td-14", name: "Hindi", code: "HIN", staffType: "Teaching", status: "Active" },
-  { id: "td-15", name: "History", code: "HIS", staffType: "Teaching", status: "Active" },
-  { id: "td-16", name: "Information Technology", code: "IT", staffType: "Teaching", status: "Active" },
-  { id: "td-17", name: "Languages", code: "LANG", staffType: "Teaching", status: "Active" },
-  { id: "td-18", name: "Mathematics", code: "MAT", staffType: "Teaching", status: "Active" },
-  { id: "td-19", name: "Physics", code: "PHY", staffType: "Teaching", status: "Active" },
-  { id: "td-20", name: "Political Science", code: "POL", staffType: "Teaching", status: "Active" },
-  { id: "td-21", name: "Sanskrit", code: "SAN", staffType: "Teaching", status: "Active" },
-  { id: "td-22", name: "Sociology", code: "SOC", staffType: "Teaching", status: "Active" },
-  { id: "td-23", name: "Statistics", code: "STA", staffType: "Teaching", status: "Active" },
-  { id: "td-24", name: "Telugu", code: "TEL", staffType: "Teaching", status: "Active" },
-  { id: "td-25", name: "Zoology", code: "ZOO", staffType: "Teaching", status: "Active" },
-];
-
-export const DEFAULT_NON_TEACHING_DEPARTMENTS = [
-  { id: "ntd-1", name: "Accounts & Finance", code: "ACC_FIN", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-2", name: "Administration", code: "ADMIN", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-3", name: "Admissions", code: "ADM", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-4", name: "Campus Operations", code: "OPS", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-5", name: "Examinations Cell", code: "EXAM", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-6", name: "Hostel Management", code: "HSTL", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-7", name: "Human Resources", code: "HR", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-8", name: "IT & Systems Support", code: "IT_SYS", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-9", name: "Library", code: "LIB", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-10", name: "Maintenance & Facilities", code: "MAINT", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-11", name: "Security", code: "SEC", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-12", name: "Student Affairs", code: "SA", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntd-13", name: "Transport", code: "TPT", staffType: "Non-Teaching", status: "Active" },
-];
-
-export const DEFAULT_TEACHING_DESIGNATIONS = [
-  { id: "tdes-1", name: "Principal", code: "PRN", staffType: "Teaching", status: "Active" },
-  { id: "tdes-2", name: "Vice Principal", code: "VPRN", staffType: "Teaching", status: "Active" },
-  { id: "tdes-3", name: "Dean", code: "DEAN", staffType: "Teaching", status: "Active" },
-  { id: "tdes-4", name: "Head of Department (HOD)", code: "HOD", staffType: "Teaching", status: "Active" },
-  { id: "tdes-5", name: "Professor", code: "PROF", staffType: "Teaching", status: "Active" },
-  { id: "tdes-6", name: "Associate Professor", code: "ASSO_PROF", staffType: "Teaching", status: "Active" },
-  { id: "tdes-7", name: "Assistant Professor", code: "ASST_PROF", staffType: "Teaching", status: "Active" },
-  { id: "tdes-8", name: "Senior Lecturer", code: "SR_LEC", staffType: "Teaching", status: "Active" },
-  { id: "tdes-9", name: "Lecturer", code: "LEC", staffType: "Teaching", status: "Active" },
-  { id: "tdes-10", name: "Junior Lecturer", code: "JR_LEC", staffType: "Teaching", status: "Active" },
-  { id: "tdes-11", name: "Academic Coordinator", code: "ACAD_COORD", staffType: "Teaching", status: "Active" },
-  { id: "tdes-12", name: "Subject Expert", code: "SUB_EXP", staffType: "Teaching", status: "Active" },
-  { id: "tdes-13", name: "Lab Incharge", code: "LAB_INC", staffType: "Teaching", status: "Active" },
-  { id: "tdes-14", name: "Guest Faculty", code: "GST_FAC", staffType: "Teaching", status: "Active" },
-  { id: "tdes-15", name: "Visiting Faculty", code: "VIS_FAC", staffType: "Teaching", status: "Active" },
-];
-
-export const DEFAULT_NON_TEACHING_DESIGNATIONS = [
-  { id: "ntdes-1", name: "Administrative Officer", code: "AO", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-2", name: "Office Administrator", code: "OFF_ADM", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-3", name: "Office Assistant", code: "OFF_AST", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-4", name: "Accountant", code: "ACCT", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-5", name: "Senior Accountant", code: "SR_ACCT", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-6", name: "Finance Executive", code: "FIN_EXEC", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-7", name: "Cashier", code: "CSH", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-8", name: "Librarian", code: "LIBN", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-9", name: "Assistant Librarian", code: "AST_LIB", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-10", name: "Library Assistant", code: "LIB_AST", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-11", name: "Maintenance Supervisor", code: "MAINT_SUP", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-12", name: "Electrician", code: "ELEC", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-13", name: "Plumber", code: "PLMB", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-14", name: "Attender / Peon", code: "ATTN", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-15", name: "Clerk", code: "CLRK", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-16", name: "Data Entry Operator", code: "DEO", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-17", name: "Driver", code: "DRV", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-18", name: "Receptionist", code: "RECP", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-19", name: "Security Guard", code: "SEC_GRD", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-20", name: "Transport Coordinator", code: "TPT_COORD", staffType: "Non-Teaching", status: "Active" },
-  { id: "ntdes-21", name: "Hostel Warden", code: "HSTL_WDN", staffType: "Non-Teaching", status: "Active" },
-];
+export const DEFAULT_TEACHING_DEPARTMENTS = [];
+export const DEFAULT_NON_TEACHING_DEPARTMENTS = [];
+export const DEFAULT_TEACHING_DESIGNATIONS = [];
+export const DEFAULT_NON_TEACHING_DESIGNATIONS = [];
 
 const unwrapRows = (payload) => {
   const value = payload?.data ?? payload?.Data ?? payload;
@@ -547,6 +467,9 @@ export default function DepartmentManagementPage() {
       }
     } catch (err) {
       console.warn("Failed to load departments:", err);
+      if (requestSeqRef.current === currentSeq) {
+        setDepartments([]);
+      }
     } finally {
       if (requestSeqRef.current === currentSeq) setDepartmentsLoading(false);
     }
@@ -564,6 +487,9 @@ export default function DepartmentManagementPage() {
       }
     } catch (err) {
       console.warn("Failed to load designations:", err);
+      if (requestSeqRef.current === currentSeq) {
+        setDesignations([]);
+      }
     } finally {
       if (requestSeqRef.current === currentSeq) {
         setDesignationsLoading(false);
@@ -587,7 +513,7 @@ export default function DepartmentManagementPage() {
     const seen = new Set();
     const result = [];
 
-    const sourceList = departments.length > 0 ? departments : (isTeaching ? DEFAULT_TEACHING_DEPARTMENTS : DEFAULT_NON_TEACHING_DEPARTMENTS);
+    const sourceList = Array.isArray(departments) ? departments : [];
 
     for (const item of sourceList) {
       if (!item || !item.name) continue;
@@ -628,7 +554,7 @@ export default function DepartmentManagementPage() {
     const seen = new Set();
     const result = [];
 
-    const sourceList = designations.length > 0 ? designations : (isTeaching ? DEFAULT_TEACHING_DESIGNATIONS : DEFAULT_NON_TEACHING_DESIGNATIONS);
+    const sourceList = Array.isArray(designations) ? designations : [];
 
     for (const item of sourceList) {
       if (!item || !item.name) continue;
@@ -797,7 +723,7 @@ export default function DepartmentManagementPage() {
               </div>
             </header>
             <label className="master-search">
-              <Search />
+              <Search3DIcon size={16} />
               <span className="sr-only">Search departments</span>
               <input
                 value={deptQuery}
@@ -896,7 +822,7 @@ export default function DepartmentManagementPage() {
               </div>
             </header>
             <label className="master-search">
-              <Search />
+              <Search3DIcon size={16} />
               <span className="sr-only">Search designations</span>
               <input
                 value={designationQuery}

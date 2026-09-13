@@ -8,6 +8,9 @@ import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import { getStoredCertificateTemplates, DEFAULT_CERTIFICATE_TEMPLATES } from "@/components/pages/TemplatesPage.jsx";
 import { certificates as mockCertificates, students as mockStudents } from "@/data/mockData.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
+import createCertificateIcon from "@/assets/sidebar-3d/certificates.png";
+import certificateRecordsIcon from "@/assets/settings-3d/audit-logs.png";
+import reviewIssueIcon from "@/assets/dashboard-3d/completed-profiles.png";
 import "./CertificatesPage.css";
 
 export const pageConfig = {
@@ -2670,13 +2673,13 @@ export default function CertificatesPage() {
       <div className="cert-page">
         <nav className="cert-primary-tabs" aria-label="Certificate sections">
           <button type="button" className={`cert-primary-tab ${activeTab === "generate" ? "is-active" : ""}`} title="Create Certificate" aria-label="Create Certificate" aria-current={activeTab === "generate" ? "page" : undefined} onClick={() => setActiveTab("generate")}>
-            <FaFileCirclePlus aria-hidden="true" /> <span>Create Certificate</span>
+            <img className="cert-tab-3d-icon" src={createCertificateIcon} alt="" aria-hidden="true" width={18} height={18} /> <span>Create Certificate</span>
           </button>
           <button type="button" className={`cert-primary-tab ${activeTab === "certificates" ? "is-active" : ""}`} title="Certificate Records" aria-label="Certificate Records" aria-current={activeTab === "certificates" ? "page" : undefined} onClick={() => { setActiveTab("certificates"); setShowRecordFilters(false); }}>
-            <FaFileLines aria-hidden="true" /> <span>Certificate Records</span>
+            <img className="cert-tab-3d-icon" src={certificateRecordsIcon} alt="" aria-hidden="true" width={18} height={18} /> <span>Certificate Records</span>
           </button>
           <button type="button" className={`cert-primary-tab ${activeTab === "actions" ? "is-active" : ""}`} title="Review & Issue" aria-label="Review and Issue" aria-current={activeTab === "actions" ? "page" : undefined} onClick={() => setActiveTab("actions")}>
-            <FaClipboardCheck aria-hidden="true" /> <span>Review &amp; Issue</span>
+            <img className="cert-tab-3d-icon" src={reviewIssueIcon} alt="" aria-hidden="true" width={18} height={18} /> <span>Review &amp; Issue</span>
           </button>
         </nav>
 

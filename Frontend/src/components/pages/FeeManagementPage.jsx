@@ -23,6 +23,7 @@ import {
   Tooltip,
 } from "recharts";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints, uniqueAcademicYearsByName } from "@/api/apiEndpoints.js";
@@ -1871,7 +1872,7 @@ function LedgerTab({ accounts, onView, onPrint, masters, loading = false, error 
       </div>
       <div className="cms-card-body cms-fee-toolbar cms-fee-controls">
         <div className="cms-fee-search">
-          <Search size={15} />
+          <Search3DIcon size={15} />
           <input value={search} placeholder="Search by student name or admission number" onChange={(event) => setSearchTerm(event.target.value)} />
         </div>
         <div className="cms-fee-filter-row">
@@ -1958,7 +1959,7 @@ function FeeCollectionTab({ accounts, onCollect, loading = false, error = "" }) 
       </div>
       <div className="cms-card-body cms-fee-toolbar cms-fee-controls cms-fee-search-only">
         <div className="cms-fee-search">
-          <Search size={15} />
+          <Search3DIcon size={15} />
           <input value={search} placeholder="Search by student name or admission number" onChange={(event) => setSearchTerm(event.target.value)} />
         </div>
       </div>
@@ -2965,7 +2966,7 @@ function HistoryTab({ transactions = [], onReceipt, loading = false, error = "" 
       </div>
       <div className="cms-card-body cms-fee-toolbar cms-fee-controls cms-fee-search-only">
         <div className="cms-fee-search">
-          <Search size={15} />
+          <Search3DIcon size={15} />
           <input value={search} placeholder="Search by student, admission number or receipt number" onChange={(event) => setSearchTerm(event.target.value)} />
         </div>
       </div>

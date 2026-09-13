@@ -29,19 +29,60 @@ import {
   AlertCircle,
   ExternalLink,
   UserCheck,
+  Lock,
+  KeyRound,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
-import { ConfirmDialog, Toast } from "@/components/common/Ui.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
+import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import { useAcademicContext } from "@/context/AcademicContext.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/axios.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import * as staffApi from "@/api/staffApi.js";
+import * as XLSX from "xlsx";
 import "./StaffManagementPage.css";
 import totalStaffIcon from "@/assets/dashboard-3d/total-staff.png";
 import teachingStaffIcon from "@/assets/dashboard-3d/teaching-staff.png";
 import nonTeachingStaffIcon from "@/assets/dashboard-3d/non-teaching-staff.png";
 import pendingProfilesIcon from "@/assets/dashboard-3d/pending-profiles.png";
 import completedProfilesIcon from "@/assets/dashboard-3d/completed-profiles.png";
+import credentialsGeneratorIcon from "@/assets/settings-3d/number-series.png";
+
+// Teaching Staff Excel Import Template Headers (15 required/specified fields)
+export const TEACHING_EXCEL_COLUMNS = [
+  "Board Name",
+  "Employee ID",
+  "First Name",
+  "Middle Name",
+  "Last Name",
+  "Date of Birth",
+  "Gender",
+  "Mobile",
+  "Email",
+  "Department",
+  "Designation",
+  "Subject Allocation",
+  "Date of Joining",
+  "Employment Type",
+  "Status"
+];
+
+export const NON_TEACHING_EXCEL_COLUMNS = [
+  "Board Name",
+  "Employee ID",
+  "First Name",
+  "Middle Name",
+  "Last Name",
+  "Date of Birth",
+  "Gender",
+  "Mobile",
+  "Email",
+  "Department",
+  "Designation",
+  "Date of Joining",
+  "Employment Type",
+  "Status"
+];
 
 // Session Storage Fallback Store Keys
 const STORE = "pjc-mock-staff-records",
@@ -306,13 +347,9 @@ const initialActivities = [];
 
 const read = (key, fallback = []) => {
   try {
-    const raw = sessionStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return fallback;
-    const valid = parsed.filter((item) => item && (item.id !== undefined || item.employeeId));
-    const realOnly = valid.filter((item) => !String(item.email || "").endsWith("@pirnav.edu"));
-    return realOnly;
+    sessionStorage.removeItem(STORE);
+    sessionStorage.removeItem(ACTIVITY_STORE);
+    return fallback;
   } catch {
     return fallback;
   }
@@ -1660,6 +1697,155 @@ function Badge({ value }) {
 }
 
 // ----------------------------------------------------------------------
+// STAFF CREDENTIALS GENERATOR MODAL (Configure Email format & Default Password)
+// ----------------------------------------------------------------------
+function StaffCredentialsGeneratorModal({ isOpen, onClose, onSave }) {
+  const n = useNavigate();
+  const [settings, setSettings] = useState(() => {
+    try {
+      const raw = localStorage.getItem("pjc-credential-settings");
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {
+      facultyEmailFormat: "{empid}@gmail.com",
+      defaultPassword: "Pirnav@123",
+      facultyPrefix: "EMP-",
+      pwdLength: 8,
+      forceChangeOnFirstLogin: true,
+      expiryDays: 90,
+    };
+  });
+
+  if (!isOpen) return null;
+
+  const sampleEmpId = "PCTCH0001";
+  const previewEmail = (settings.facultyEmailFormat || "{empid}@gmail.com")
+    .replace(/\{empid\}/gi, sampleEmpId.toLowerCase());
+  const previewPassword = settings.defaultPassword || "Pirnav@123";
+
+  const handleSave = () => {
+    try {
+      localStorage.setItem("pjc-credential-settings", JSON.stringify(settings));
+      window.dispatchEvent(new CustomEvent("credential-settings-updated", { detail: settings }));
+    } catch {}
+    if (onSave) onSave(settings);
+    onClose();
+  };
+
+  return (
+    <Modal
+      title="Credentials Generator & Format Settings"
+      onClose={onClose}
+      className="staff-cred-modal"
+    >
+      <div className="staff-cred-form">
+        <p style={{ margin: 0, fontSize: "12px", color: "var(--cms-muted)" }}>
+          Configure the auto-generation format and default login credentials for faculty & staff members.
+        </p>
+
+        <div className="staff-cred-field">
+          <label>Employee Login Email Format</label>
+          <input
+            type="text"
+            value={settings.facultyEmailFormat || "{empid}@gmail.com"}
+            onChange={(e) => setSettings((p) => ({ ...p, facultyEmailFormat: e.target.value }))}
+            placeholder="{empid}@gmail.com"
+          />
+          <div className="staff-cred-chips">
+            <span style={{ fontSize: "11px", color: "var(--cms-muted)", alignSelf: "center" }}>Presets:</span>
+            {["{empid}@gmail.com", "{empid}@pirnav.edu.in", "{empid}@college.edu"].map((format) => (
+              <button
+                key={format}
+                type="button"
+                className="staff-cred-chip"
+                onClick={() => setSettings((p) => ({ ...p, facultyEmailFormat: format }))}
+              >
+                {format}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="staff-cred-field">
+          <label>Default Initial Password</label>
+          <input
+            type="text"
+            value={settings.defaultPassword || "Pirnav@123"}
+            onChange={(e) => setSettings((p) => ({ ...p, defaultPassword: e.target.value }))}
+            placeholder="Pirnav@123"
+          />
+          <div className="staff-cred-chips">
+            <span style={{ fontSize: "11px", color: "var(--cms-muted)", alignSelf: "center" }}>Presets:</span>
+            {["Pirnav@123", "Welcome@2026", "Staff@123"].map((pwd) => (
+              <button
+                key={pwd}
+                type="button"
+                className="staff-cred-chip"
+                onClick={() => setSettings((p) => ({ ...p, defaultPassword: pwd }))}
+              >
+                {pwd}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="staff-cred-preview-card">
+          <div className="staff-cred-preview-header">
+            <Lock size={14} style={{ color: "var(--brand-primary, #6F8400)" }} /> Live Credentials Format Preview
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div>
+              <span style={{ color: "var(--cms-muted)" }}>Sample Staff ID: </span>
+              <strong>{sampleEmpId}</strong>
+            </div>
+            <div>
+              <span style={{ color: "var(--cms-muted)" }}>Generated Login Email: </span>
+              <strong style={{ color: "var(--brand-primary, #6F8400)", fontFamily: "monospace" }}>{previewEmail}</strong>
+            </div>
+            <div>
+              <span style={{ color: "var(--cms-muted)" }}>Default Password: </span>
+              <strong style={{ color: "#0f172a", fontFamily: "monospace" }}>{previewPassword}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={settings.forceChangeOnFirstLogin !== false}
+              onChange={(e) => setSettings((p) => ({ ...p, forceChangeOnFirstLogin: e.target.checked }))}
+            />
+            <span>Force user to change password on first login</span>
+          </label>
+        </div>
+
+        <div className="staff-import-footer" style={{ marginTop: "8px" }}>
+          <button
+            type="button"
+            className="cms-btn cms-btn-ghost"
+            onClick={() => {
+              onClose();
+              n("/dashboard/settings/credentials");
+            }}
+            title="Open comprehensive credentials generation & batch dispatch manager"
+          >
+            Open Full Credentials Manager
+          </button>
+          <div style={{ flex: 1 }} />
+          <button type="button" className="cms-btn cms-btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="cms-btn cms-btn-primary" onClick={handleSave}>
+            Save Format
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ----------------------------------------------------------------------
 // SCREEN 1 — DASHBOARD (Connected to GET /api/v1/staff/dashboard-stats)
 // ----------------------------------------------------------------------
 function Dashboard({ records = [] }) {
@@ -1667,6 +1853,8 @@ function Dashboard({ records = [] }) {
   const { boards, selectedBoard } = useAcademicContext();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [credModalOpen, setCredModalOpen] = useState(false);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -1726,9 +1914,20 @@ function Dashboard({ records = [] }) {
             ["Non-Teaching Staff", nonTeachingCount, nonTeachingStaffIcon, "/dashboard/staff/non-teaching"],
             ["Pending Profile Completion", pendingCount, pendingProfilesIcon, "/dashboard/staff/pending?tab=Link%20Sent"],
             ["Completed Profiles", completedCount, completedProfilesIcon, "/dashboard/staff/completed"],
+            ["Credentials Generator", "Format", credentialsGeneratorIcon, "modal:credentials"],
           ].map(([l, v, icon, to]) => (
-            <article key={l} onClick={() => n(to)}>
-              <img className="staff-kpi-icon" src={icon} alt="" aria-hidden="true" width={42} height={42} />
+            <article
+              key={l}
+              onClick={() => {
+                if (to === "modal:credentials") {
+                  setCredModalOpen(true);
+                } else {
+                  n(to);
+                }
+              }}
+              title={l === "Credentials Generator" ? "Click to configure employee credentials format and default password" : undefined}
+            >
+              <img className="staff-kpi-icon" src={icon} alt="" aria-hidden="true" width={32} height={32} />
               <span>
                 {l}
                 <strong>{v}</strong>
@@ -1772,11 +1971,21 @@ function Dashboard({ records = [] }) {
             {[
               ["Add Teaching Staff", "/dashboard/staff/add-teaching"],
               ["Add Non-Teaching Staff", "/dashboard/staff/add-non-teaching"],
+              ["Credentials Generator", "modal:credentials"],
               ["Send Profile Link", "/dashboard/staff/pending?tab=Link%20Sent"],
               ["View Pending Submissions", "/dashboard/staff/pending"],
               ["View All Staff", "/dashboard/staff/list"],
             ].map(([l, to]) => (
-              <button key={l} onClick={() => n(to)}>
+              <button
+                key={l}
+                onClick={() => {
+                  if (to === "modal:credentials") {
+                    setCredModalOpen(true);
+                  } else {
+                    n(to);
+                  }
+                }}
+              >
                 {l}
                 <ChevronRight />
               </button>
@@ -1784,7 +1993,214 @@ function Dashboard({ records = [] }) {
           </article>
         </section>
       </main>
+      <StaffCredentialsGeneratorModal
+        isOpen={credModalOpen}
+        onClose={() => setCredModalOpen(false)}
+        onSave={() => setToast("Credentials format settings updated successfully!")}
+      />
+      {toast ? <Toast message={toast} onClose={() => setToast("")} /> : null}
     </DashboardLayout>
+  );
+}
+
+// ----------------------------------------------------------------------
+// STAFF IMPORT VALIDATION MODAL
+// ----------------------------------------------------------------------
+function StaffImportValidationModal({ state, onClose, onConfirm, isSubmitting }) {
+  const [filter, setFilter] = useState("all"); // 'all' | 'valid' | 'invalid'
+  const [search, setSearch] = useState("");
+
+  if (!state.isOpen) return null;
+
+  const { rows, fileName, staffType } = state;
+  const totalCount = rows.length;
+  const validRows = rows.filter((r) => r.isValid);
+  const invalidRows = rows.filter((r) => !r.isValid);
+  const validCount = validRows.length;
+  const invalidCount = invalidRows.length;
+
+  const filteredRows = rows.filter((r) => {
+    if (filter === "valid" && !r.isValid) return false;
+    if (filter === "invalid" && r.isValid) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (
+        r.fullName?.toLowerCase().includes(q) ||
+        r.email?.toLowerCase().includes(q) ||
+        r.mobile?.includes(q) ||
+        r.employeeId?.toLowerCase().includes(q) ||
+        r.department?.toLowerCase().includes(q) ||
+        r.designation?.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  return (
+    <Modal
+      title={`Validate & Import ${staffType} Staff`}
+      onClose={onClose}
+      className="staff-import-modal"
+    >
+      <div className="staff-import-content" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {/* Metrics summary */}
+        <div className="staff-import-metrics">
+          <div className="metric-card">
+            <span>File Name</span>
+            <strong style={{ fontSize: "14px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {fileName}
+            </strong>
+          </div>
+          <div className="metric-card">
+            <span>Total Rows</span>
+            <strong>{totalCount}</strong>
+          </div>
+          <div className="metric-card valid">
+            <span>Valid Rows</span>
+            <strong>{validCount}</strong>
+          </div>
+          <div className="metric-card invalid">
+            <span>Errors / Invalid</span>
+            <strong>{invalidCount}</strong>
+          </div>
+        </div>
+
+        {/* Toolbar with tabs & search */}
+        <div className="staff-import-toolbar">
+          <div className="staff-import-tabs">
+            <button
+              type="button"
+              className={filter === "all" ? "is-active" : ""}
+              onClick={() => setFilter("all")}
+            >
+              All ({totalCount})
+            </button>
+            <button
+              type="button"
+              className={filter === "valid" ? "is-active" : ""}
+              onClick={() => setFilter("valid")}
+            >
+              Valid ({validCount})
+            </button>
+            <button
+              type="button"
+              className={filter === "invalid" ? "is-active" : ""}
+              onClick={() => setFilter("invalid")}
+            >
+              Errors ({invalidCount})
+            </button>
+          </div>
+          <div className="staff-import-search">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search in imported rows..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Table preview */}
+        <div className="staff-import-table-wrap">
+          <table className="staff-import-table">
+            <thead>
+              <tr>
+                <th style={{ width: "50px" }}>Row</th>
+                <th style={{ width: "90px" }}>Status</th>
+                <th>Employee ID</th>
+                <th>Staff Name</th>
+                <th>Email / Mobile</th>
+                <th>Department / Designation</th>
+                {staffType === "Teaching" ? <th>Subject Allocation</th> : null}
+                <th>Validation Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.length > 0 ? (
+                filteredRows.map((r) => (
+                  <tr key={r.rowNumber} className={!r.isValid ? "row-invalid" : ""}>
+                    <td>#{r.rowNumber}</td>
+                    <td>
+                      <span className={`staff-val-badge ${r.isValid ? "is-valid" : "is-invalid"}`}>
+                        {r.isValid ? "Valid" : "Error"}
+                      </span>
+                    </td>
+                    <td>
+                      {r.employeeId ? (
+                        <strong>{r.employeeId}</strong>
+                      ) : (
+                        <span style={{ color: "var(--cms-muted)", fontStyle: "italic" }}>Auto-generated</span>
+                      )}
+                    </td>
+                    <td>
+                      <strong>{r.fullName || "—"}</strong>
+                      {r.gender ? <span style={{ display: "block", fontSize: "11px", color: "var(--cms-muted)" }}>{r.gender}</span> : null}
+                    </td>
+                    <td>
+                      <div>{r.email || "—"}</div>
+                      <small style={{ color: "var(--cms-muted)" }}>{r.mobile || "—"}</small>
+                    </td>
+                    <td>
+                      <div>{r.department || "—"}</div>
+                      <small style={{ color: "var(--cms-muted)" }}>{r.designation || "—"}</small>
+                    </td>
+                    {staffType === "Teaching" ? (
+                      <td>
+                        <small>{r.subjectAllocation || "—"}</small>
+                      </td>
+                    ) : null}
+                    <td>
+                      {r.isValid ? (
+                        <span style={{ color: "#166534", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          <Check size={14} /> Ready to import
+                        </span>
+                      ) : (
+                        <ul className="staff-val-error-list">
+                          {r.errors.map((err, i) => (
+                            <li key={i}>{err}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={staffType === "Teaching" ? 8 : 7} style={{ textAlign: "center", padding: "24px", color: "var(--cms-muted)" }}>
+                    No rows match the selected filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer actions */}
+        <div className="staff-import-footer">
+          <button type="button" className="cms-btn cms-btn-ghost" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="cms-btn cms-btn-primary"
+            onClick={() => onConfirm(validRows)}
+            disabled={validCount === 0 || isSubmitting}
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+          >
+            {isSubmitting ? (
+              <>
+                <RefreshCw className="cms-spin" size={16} /> Importing...
+              </>
+            ) : (
+              <>
+                <Upload size={16} /> Import {validCount} Valid Record{validCount !== 1 ? "s" : ""}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1809,6 +2225,16 @@ function StaffList({ records = [], setRecords, forced }) {
   const [apiItems, setApiItems] = useState(null);
   const [totalApiCount, setTotalApiCount] = useState(0);
   const [loadingList, setLoadingList] = useState(true);
+
+  // Validation Import Modal State
+  const [importModalState, setImportModalState] = useState({
+    isOpen: false,
+    fileName: "",
+    staffType: "Teaching",
+    rows: [],
+    fileObject: null,
+  });
+  const [isImportSubmitting, setIsImportSubmitting] = useState(false);
 
   useEffect(() => {
     setTab(forced || "All");
@@ -1846,6 +2272,10 @@ function StaffList({ records = [], setRecords, forced }) {
         }
       } catch (err) {
         console.warn("GET /api/v1/staff API offline, using local filtered list");
+        if (isMounted) {
+          setApiItems([]);
+          setTotalApiCount(0);
+        }
       } finally {
         if (isMounted) setLoadingList(false);
       }
@@ -1854,45 +2284,259 @@ function StaffList({ records = [], setRecords, forced }) {
     return () => { isMounted = false; };
   }, [page, size, q, departmentFilter, designationFilter, staffTypeFilter, forced, tab, records, selectedBoard]);
 
-  // POST /api/v1/staff/import-excel Bulk Import
+  // Handle Client-side Excel Parsing & Row-by-Row Validation
   const handleBulkImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const staffKind = forced || tab || "Teaching";
+    const staffKind = forced === "Non-Teaching" || (!forced && tab === "Non-Teaching") ? "Non-Teaching" : "Teaching";
 
     try {
-      const formData = new FormData();
-      formData.append("File", file);
-      formData.append("DefaultStaffType", staffKind);
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target.result;
+          const wb = XLSX.read(bstr, { type: "binary", cellDates: true });
+          const firstSheetName = wb.SheetNames[0];
+          const ws = wb.Sheets[firstSheetName];
+          const rawRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-      const res = await apiClient.post(apiEndpoints.faculty.importExcel, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setToast(res.data?.summaryMessage || `Successfully imported bulk staff members from ${file.name}`);
+          if (!rawRows || rawRows.length === 0) {
+            setToast("The uploaded Excel file contains no data rows.");
+            return;
+          }
+
+          // Existing records lookup for duplicate prevention
+          const existingEmails = new Set(list.map((r) => String(r.email || "").trim().toLowerCase()).filter(Boolean));
+          const existingMobiles = new Set(list.map((r) => String(r.mobile || "").trim()).filter(Boolean));
+          const existingEmpIds = new Set(list.map((r) => String(r.employeeId || "").trim().toLowerCase()).filter(Boolean));
+
+          const seenEmailsInFile = new Set();
+          const seenMobilesInFile = new Set();
+          const seenEmpIdsInFile = new Set();
+
+          const validatedRows = rawRows.map((raw, idx) => {
+            // Case-insensitive / normalized key getter
+            const getVal = (aliases) => {
+              for (const key of Object.keys(raw)) {
+                const cleanKey = key.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+                for (const alias of aliases) {
+                  if (cleanKey === alias.toLowerCase().replace(/[^a-z0-9]/g, "")) {
+                    return String(raw[key] ?? "").trim();
+                  }
+                }
+              }
+              return "";
+            };
+
+            const boardName = getVal(["Board Name", "Board", "BoardName", "Campus"]) || selectedBoard?.name || selectedBoard?.code || "";
+            const employeeId = getVal(["Employee ID", "EmployeeID", "Emp ID", "Staff ID", "EmpId"]);
+            const firstName = getVal(["First Name", "FirstName", "First_Name", "Name"]);
+            const middleName = getVal(["Middle Name", "MiddleName", "Middle_Name"]);
+            const lastName = getVal(["Last Name", "LastName", "Last_Name", "Surname"]);
+            let dob = getVal(["Date of Birth", "DateOfBirth", "DOB", "Birth Date"]);
+            const gender = getVal(["Gender", "Sex"]) || "Male";
+            const mobile = getVal(["Mobile", "Mobile Number", "Phone", "Phone Number", "Contact Number"]);
+            const email = getVal(["Email", "Email ID", "Email Address"]);
+            const department = getVal(["Department", "Dept", "Department Name"]);
+            const designation = getVal(["Designation", "Role", "Designation Name"]);
+            const subjectAllocation = getVal(["Subject Allocation", "SubjectAllocation", "Subjects", "Allocated Subjects", "Subject"]);
+            let dateOfJoining = getVal(["Date of Joining", "DateOfJoining", "DOJ", "Joining Date", "Join Date"]);
+            const employmentType = getVal(["Employment Type", "EmploymentType", "Type"]) || "Full Time";
+            const status = getVal(["Status", "State"]) || "Active";
+
+            // Format date helper
+            const formatDate = (val) => {
+              if (!val) return "";
+              if (val instanceof Date && !isNaN(val)) {
+                return val.toISOString().split("T")[0];
+              }
+              const str = String(val).trim();
+              if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+              const parsed = new Date(str);
+              if (!isNaN(parsed.getTime())) return parsed.toISOString().split("T")[0];
+              return str;
+            };
+
+            const formattedDob = formatDate(dob);
+            const formattedDoj = formatDate(dateOfJoining) || new Date().toISOString().split("T")[0];
+
+            const errors = [];
+            const warnings = [];
+
+            if (!firstName) errors.push("First Name is required.");
+            if (!lastName) errors.push("Last Name is required.");
+
+            if (!mobile) {
+              errors.push("Mobile number is required.");
+            } else if (mobile.replace(/\D/g, "").length < 10) {
+              errors.push("Mobile number must have at least 10 digits.");
+            } else if (seenMobilesInFile.has(mobile)) {
+              errors.push(`Duplicate mobile '${mobile}' in this file.`);
+            } else if (existingMobiles.has(mobile)) {
+              errors.push(`Mobile '${mobile}' already exists in system.`);
+            } else {
+              seenMobilesInFile.add(mobile);
+            }
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!email) {
+              errors.push("Email address is required.");
+            } else if (!emailRegex.test(email)) {
+              errors.push(`Invalid email format: '${email}'.`);
+            } else if (seenEmailsInFile.has(email.toLowerCase())) {
+              errors.push(`Duplicate email '${email}' in this file.`);
+            } else if (existingEmails.has(email.toLowerCase())) {
+              errors.push(`Email '${email}' already exists in system.`);
+            } else {
+              seenEmailsInFile.add(email.toLowerCase());
+            }
+
+            if (!department) errors.push("Department is required.");
+            if (!designation) errors.push("Designation is required.");
+
+            if (employeeId) {
+              const lowEmp = employeeId.toLowerCase();
+              if (seenEmpIdsInFile.has(lowEmp)) {
+                errors.push(`Duplicate Employee ID '${employeeId}' in this file.`);
+              } else if (existingEmpIds.has(lowEmp)) {
+                errors.push(`Employee ID '${employeeId}' already exists in system.`);
+              } else {
+                seenEmpIdsInFile.add(lowEmp);
+              }
+            }
+
+            const subjectsArray = subjectAllocation
+              ? subjectAllocation.split(/[,;|]/).map((s) => s.trim()).filter(Boolean)
+              : [];
+
+            return {
+              rowNumber: idx + 2, // Excel row 2 (row 1 is header)
+              boardName,
+              employeeId,
+              firstName,
+              middleName,
+              lastName,
+              fullName: `${firstName} ${middleName ? middleName + " " : ""}${lastName}`.trim(),
+              dob: formattedDob,
+              gender,
+              mobile,
+              email,
+              department,
+              designation,
+              subjectAllocation,
+              allocatedSubjects: subjectsArray,
+              subjects: subjectsArray,
+              dateOfJoining: formattedDoj,
+              employmentType,
+              status,
+              staffType: staffKind,
+              profileStatus: staffKind === "Teaching" ? "Pending" : "Completed",
+              isValid: errors.length === 0,
+              errors,
+              warnings,
+              originalRaw: raw,
+            };
+          });
+
+          setImportModalState({
+            isOpen: true,
+            fileName: file.name,
+            staffType: staffKind,
+            rows: validatedRows,
+            fileObject: file,
+          });
+        } catch (err) {
+          console.error("Failed to parse Excel:", err);
+          setToast("Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.");
+        }
+      };
+      reader.readAsBinaryString(file);
     } catch (err) {
-      console.warn("POST /api/v1/staff/import-excel failed, fallback local import used");
-      const fallbackEmpId = generateNextNumber("employee-id");
-      const newStaff = [
-        {
-          id: Date.now() + "-1",
-          employeeId: fallbackEmpId,
-          fullName: "Bulk Imported Staff 1",
-          email: "bulk1@pirnav.edu",
-          mobile: "9876543210",
-          department: departmentFilter || (staffKind === "Non-Teaching" ? "Administration" : "Computer Science"),
-          designation: designationFilter || (staffKind === "Non-Teaching" ? "Office Assistant" : "Lecturer"),
-          staffType: staffKind === "Non-Teaching" ? "Non-Teaching" : "Teaching",
-          status: "Active",
-          profileStatus: staffKind === "Non-Teaching" ? "Completed" : "Link Sent",
-          profileCompletion: staffKind === "Non-Teaching" ? 100 : 30,
-        },
-      ];
-      if (setRecords) {
-        setRecords((prev) => [...newStaff, ...(Array.isArray(prev) ? prev : [])]);
-      }
-      setToast(`Successfully imported staff members from ${file.name}`);
+      console.error(err);
+      setToast("Failed to read file.");
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
+  // Confirm and Import Validated Rows
+  const handleConfirmImport = async (validRows) => {
+    if (!validRows || validRows.length === 0) return;
+    setIsImportSubmitting(true);
+    try {
+      let importedCount = 0;
+      const newRecordsToAdd = [];
+
+      for (const row of validRows) {
+        const activeBoardCode = selectedBoard?.code || selectedBoard?.boardCode || "";
+        const activeBoardName = selectedBoard?.name || selectedBoard?.boardName || row.boardName || activeBoardCode || "";
+        const activeBoardId = selectedBoard?.id || selectedBoard?.boardId;
+
+        const empId = row.employeeId || generateNextNumber(row.staffType === "Non-Teaching" ? "NON_TEACHING_STAFF" : "TEACHING_STAFF");
+        if (!row.employeeId) {
+          incrementSeriesSequence(row.staffType === "Non-Teaching" ? "NON_TEACHING_STAFF" : "TEACHING_STAFF");
+        }
+
+        const payload = {
+          employeeId: empId,
+          firstName: row.firstName,
+          middleName: row.middleName || "",
+          lastName: row.lastName,
+          fullName: row.fullName,
+          email: row.email,
+          mobile: row.mobile,
+          dob: row.dob,
+          gender: row.gender,
+          department: row.department,
+          designation: row.designation,
+          staffType: row.staffType,
+          profileStatus: row.profileStatus,
+          status: row.status || "Active",
+          employmentType: row.employmentType || "Full Time",
+          joiningDate: row.dateOfJoining,
+          dateOfJoining: row.dateOfJoining,
+          board: activeBoardName,
+          boardName: activeBoardName,
+          boardCode: activeBoardCode,
+          ...(activeBoardId ? { boardId: Number(activeBoardId) || activeBoardId } : {}),
+          allocatedSubjects: row.allocatedSubjects || [],
+          subjects: row.subjects || [],
+        };
+
+        try {
+          const res = await apiClient.post(apiEndpoints.faculty.create, payload);
+          if (res.data) {
+            newRecordsToAdd.push({ ...payload, ...res.data, id: res.data.id || Date.now() + Math.random() });
+          } else {
+            newRecordsToAdd.push({ ...payload, id: Date.now() + Math.random() });
+          }
+        } catch (err) {
+          // Fallback to local store if server is offline
+          newRecordsToAdd.push({ ...payload, id: Date.now() + Math.random() });
+        }
+        importedCount++;
+      }
+
+      // Update state & trigger sync event
+      setRecords((prev) => {
+        const updated = [...newRecordsToAdd, ...(Array.isArray(prev) ? prev : [])];
+        try {
+          sessionStorage.setItem(STORE, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent("staff-records-updated"));
+      } catch {}
+
+      setImportModalState((prev) => ({ ...prev, isOpen: false }));
+      setToast(`Successfully imported ${importedCount} ${importModalState.staffType || "staff"} record(s)!`);
+    } catch (err) {
+      console.error("Bulk import failed:", err);
+      setToast("Failed to complete bulk import.");
+    } finally {
+      setIsImportSubmitting(false);
     }
   };
 
@@ -1917,23 +2561,55 @@ function StaffList({ records = [], setRecords, forced }) {
     }
   };
 
-  // GET /api/v1/staff/export-template
-  const handleExportTemplate = async () => {
+  // Download Excel Template with full 15 headings for Teaching Staff or 14 headings for Non-Teaching Staff
+  const handleExportTemplate = (typeOverride) => {
     setExportOpen(false);
+    const targetType = typeOverride || (forced === "Non-Teaching" || (!forced && tab === "Non-Teaching") ? "Non-Teaching" : "Teaching");
+    const columns = targetType === "Non-Teaching" ? NON_TEACHING_EXCEL_COLUMNS : TEACHING_EXCEL_COLUMNS;
+
+    const sampleRow = targetType === "Non-Teaching" ? [
+      selectedBoard?.name || selectedBoard?.code || "Main Campus", // Board Name
+      "NTC-2026-001", // Employee ID
+      "Robert", // First Name
+      "E.", // Middle Name
+      "Smith", // Last Name
+      "1990-04-12", // Date of Birth
+      "Male", // Gender
+      "9876543210", // Mobile
+      "robert.smith@example.com", // Email
+      "Administration", // Department
+      "Administrative Officer", // Designation
+      "2024-01-15", // Date of Joining
+      "Full Time", // Employment Type
+      "Active" // Status
+    ] : [
+      selectedBoard?.name || selectedBoard?.code || "Main Campus", // Board Name
+      "TCH-2026-001", // Employee ID
+      "Sarah", // First Name
+      "M.", // Middle Name
+      "Johnson", // Last Name
+      "1988-08-20", // Date of Birth
+      "Female", // Gender
+      "9876543211", // Mobile
+      "sarah.johnson@example.com", // Email
+      "Computer Science", // Department
+      "Assistant Professor", // Designation
+      "Data Structures, Database Management", // Subject Allocation
+      "2024-06-01", // Date of Joining
+      "Full Time", // Employment Type
+      "Active" // Status
+    ];
+
     try {
-      const response = await apiClient.get(apiEndpoints.faculty.exportTemplate, {
-        params: { staffType: forced || "Teaching" },
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", `Staff_Import_Template_${forced || "Teaching"}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const ws = XLSX.utils.aoa_to_sheet([columns, sampleRow]);
+      ws["!cols"] = columns.map(() => ({ wch: 22 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `${targetType}_Template`);
+      XLSX.writeFile(wb, `${targetType}_Staff_Import_Template.xlsx`);
+      setToast(`Downloaded ${targetType} Staff Excel Template successfully.`);
     } catch (err) {
-      setToast("Downloaded sample Excel import template.");
+      console.error("Failed to generate Excel template:", err);
+      setToast("Failed to download Excel template.");
     }
   };
 
@@ -2066,7 +2742,6 @@ function StaffList({ records = [], setRecords, forced }) {
     return [...new Set([...apiFilterDesigs, ...fallback])];
   }, [apiFilterDesigs, list]);
   const showStaffType = forced !== "Teaching" && forced !== "Non-Teaching";
-  const isTypedStaffList = forced === "Teaching" || forced === "Non-Teaching";
   const shown = rows.slice((page - 1) * size, page * size);
   const totalRowsCount = totalApiCount || rows.length;
 
@@ -2104,7 +2779,7 @@ function StaffList({ records = [], setRecords, forced }) {
           <div className="staff-toolbar">
             <div className="staff-toolbar-filters">
               <label>
-                <Search />
+                <Search3DIcon size={15} />
                 <input
                   placeholder="Search staff..."
                   value={q}
@@ -2131,8 +2806,17 @@ function StaffList({ records = [], setRecords, forced }) {
               <button
                 type="button"
                 className="cms-btn cms-btn-ghost"
+                onClick={() => handleExportTemplate(forced === "Non-Teaching" || (!forced && tab === "Non-Teaching") ? "Non-Teaching" : "Teaching")}
+                title="Download Excel template for adding staff"
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <Download size={16} /> Download Template (Excel)
+              </button>
+              <button
+                type="button"
+                className="cms-btn cms-btn-ghost"
                 onClick={() => importInputRef.current?.click()}
-                title="POST /api/v1/staff/import-excel"
+                title="Upload Excel and validate records before importing"
                 style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
               >
                 <Upload size={16} /> Import Excel
@@ -2148,7 +2832,7 @@ function StaffList({ records = [], setRecords, forced }) {
                 {exportOpen ? (
                   <div className="staff-export-options">
                     <button type="button" onClick={handleExportExcel}>Export Excel (.xlsx)</button>
-                    <button type="button" onClick={handleExportTemplate}>Download Import Template</button>
+                    <button type="button" onClick={() => handleExportTemplate(forced || tab || "Teaching")}>Download Import Template</button>
                   </div>
                 ) : null}
               </div>
@@ -2262,6 +2946,12 @@ function StaffList({ records = [], setRecords, forced }) {
           onConfirm={handleConfirmDelete}
         />
       ) : null}
+      <StaffImportValidationModal
+        state={importModalState}
+        onClose={() => setImportModalState((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={handleConfirmImport}
+        isSubmitting={isImportSubmitting}
+      />
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </DashboardLayout>
   );
@@ -2758,7 +3448,28 @@ function SendLink({ record, update, activity }) {
   const [email, setEmail] = useState(record.email || "");
   const [mobile, setMobile] = useState(record.mobile || "");
   const [days, setDays] = useState("7 Days");
-  const [message, setMessage] = useState("Please complete your remaining profile details using the link below.");
+
+  // Load configured credential generator settings or fallback
+  const credSettings = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("pjc-credential-settings");
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return {
+      facultyEmailFormat: "{empid}@gmail.com",
+      defaultPassword: "Pirnav@123",
+    };
+  }, []);
+
+  const empIdClean = String(record?.employeeId || "empid").trim().toLowerCase();
+  const facultyLoginEmail = credSettings.facultyEmailFormat
+    ? credSettings.facultyEmailFormat.replace(/\{empid\}/gi, empIdClean)
+    : `${empIdClean}@gmail.com`;
+  const facultyPassword = credSettings.defaultPassword || "Pirnav@123";
+
+  const [message, setMessage] = useState(
+    `Please complete your remaining profile details using the link below.\n\nPortal Login Credentials:\nMail: ${facultyLoginEmail}\nPassword: ${facultyPassword}`
+  );
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(record.linkSent);
   const [feedback, setFeedback] = useState(null);
@@ -2906,7 +3617,7 @@ function SendLink({ record, update, activity }) {
                 <textarea
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  rows={3}
+                  rows={4}
                   placeholder="Personalized message to staff member..."
                 />
               </label>
@@ -2942,22 +3653,6 @@ function SendLink({ record, update, activity }) {
                 <Send /> {sending ? "Sending Link..." : sent ? "Resend Link" : "Send Link"}
               </button>
             </footer>
-            {currentActiveLink ? (
-              <div className="link-actions">
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(currentActiveLink);
-                    alert("Profile completion link copied to clipboard:\n" + currentActiveLink);
-                  }}
-                >
-                  <Copy /> Copy Link
-                </button>
-                <button type="button" onClick={() => window.open(currentActiveLink, "_blank")}>
-                  <Eye /> Preview Faculty Form
-                </button>
-              </div>
-            ) : null}
           </article>
           <article className="email-preview">
             <Mail />
@@ -2970,6 +3665,36 @@ function SendLink({ record, update, activity }) {
               Please use the secure link below to complete your remaining personal,
               educational, banking and document details.
             </p>
+
+            {/* Portal Login Credentials Section */}
+            <div style={{
+              background: "#f8fafc",
+              border: "1px solid var(--cms-border, #e2e8f0)",
+              borderRadius: "8px",
+              padding: "12px 14px",
+              margin: "14px 0",
+              fontSize: "0.88rem",
+              textAlign: "left"
+            }}>
+              <div style={{ fontWeight: "700", color: "#1e293b", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <Lock size={14} style={{ color: "var(--brand-primary, #6F8400)" }} /> Faculty Portal Login Credentials
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <div>
+                  <span style={{ color: "var(--cms-muted)" }}>Mail / Login: </span>
+                  <strong style={{ color: "var(--brand-primary, #6F8400)", fontFamily: "monospace", fontSize: "0.95rem" }}>
+                    {facultyLoginEmail}
+                  </strong>
+                </div>
+                <div>
+                  <span style={{ color: "var(--cms-muted)" }}>Password: </span>
+                  <strong style={{ color: "#0f172a", fontFamily: "monospace", fontSize: "0.95rem" }}>
+                    {facultyPassword}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
             <button
               type="button"
               className="cms-btn cms-btn-primary"
@@ -2980,7 +3705,7 @@ function SendLink({ record, update, activity }) {
                 gap: "8px",
                 width: "100%",
                 padding: "12px 20px",
-                margin: "16px 0",
+                margin: "12px 0",
                 background: "var(--brand-primary, #6F8400)",
                 color: "#ffffff",
                 border: "none",
@@ -3229,6 +3954,7 @@ function Pending({ records = [], setRecords, activity }) {
       }
     } catch (err) {
       console.warn("GET /api/v1/staff in Pending offline/fallback:", err);
+      setApiItems([]);
     } finally {
       setLoading(false);
     }
@@ -3245,7 +3971,7 @@ function Pending({ records = [], setRecords, activity }) {
     };
   }, [fetchPendingStaff]);
 
-  // Combine API items, records state, sessionStorage, and localStorage submitted faculty
+  // Combine API items, records state, and localStorage submitted faculty
   const mergedTeachingList = useMemo(() => {
     const map = new Map();
 
@@ -3258,21 +3984,7 @@ function Pending({ records = [], setRecords, activity }) {
       if (norm.employeeId) map.set(String(norm.employeeId).trim().toLowerCase(), norm);
     });
 
-    // 2. Session storage records
-    try {
-      const sessionStored = JSON.parse(sessionStorage.getItem("pjc-mock-staff-records") || "[]");
-      if (Array.isArray(sessionStored)) {
-        sessionStored.forEach((r) => {
-          if (!r) return;
-          const norm = normalizeStaffRecord(r);
-          const key = String(norm.id || norm.employeeId);
-          map.set(key, { ...(map.get(key) || {}), ...norm });
-          if (norm.employeeId) map.set(String(norm.employeeId).trim().toLowerCase(), { ...(map.get(key) || {}), ...norm });
-        });
-      }
-    } catch (e) {}
-
-    // 3. Local storage submitted faculty list
+    // 2. Local storage submitted faculty list
     try {
       const localSubmitted = JSON.parse(localStorage.getItem("pjc_submitted_faculty_list") || "[]");
       if (Array.isArray(localSubmitted)) {
@@ -3286,7 +3998,7 @@ function Pending({ records = [], setRecords, activity }) {
       }
     } catch (e) {}
 
-    // 4. API items
+    // 3. API items
     if (Array.isArray(apiItems)) {
       apiItems.forEach((apiItem) => {
         if (!apiItem) return;
@@ -4182,21 +4894,18 @@ export default function StaffManagementPage() {
   const n = useNavigate();
   const { id } = useParams();
 
-  const [records, setRaw] = useState(() => {
-    const data = read(STORE, seed);
-    return Array.isArray(data) && data.length > 0 ? data : seed;
-  });
-  const [activities, setActivityRaw] = useState(() => read(ACTIVITY_STORE, initialActivities));
+  const [records, setRaw] = useState(() => []);
+  const [activities, setActivityRaw] = useState(() => []);
   const [toast, setToast] = useState("");
   const [loadedStaff, setLoadedStaff] = useState(null);
   const [loadingStaff, setLoadingStaff] = useState(false);
 
   const safeRecords = useMemo(() => {
-    return Array.isArray(records) && records.length > 0 ? records : seed;
+    return Array.isArray(records) ? records : [];
   }, [records]);
 
   const setRecords = (next) => {
-    const rawList = Array.isArray(next) && next.length > 0 ? next : seed;
+    const rawList = Array.isArray(next) ? next : [];
     const seen = new Set();
     const list = [];
     for (const item of rawList) {

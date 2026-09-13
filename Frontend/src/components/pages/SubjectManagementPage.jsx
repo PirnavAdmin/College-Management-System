@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Trash2 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import apiClient, { getApiErrorMessage } from "@/api/apiClient.js";
 import { apiEndpoints } from "@/api/apiEndpoints.js";
@@ -581,7 +582,7 @@ export default function SubjectManagementPage() {
       <section className="subject-allocation-columns" aria-label="Group subject allocation">
         <section className="subject-table-card subject-allocation-panel">
           <header className="subject-table-head"><div><h2>Allocate Subjects — {selectedGroupName}</h2><p>Available curriculum subjects not yet saved for this group.</p></div></header>
-          <div className="subject-panel-search"><Search size={17} aria-hidden="true" /><input value={allocationSearch} onChange={(event) => setAllocationSearch(event.target.value)} placeholder={`Search ${selectedGroupName} subjects...`} disabled={!context.groupId} /></div>
+          <div className="subject-panel-search"><Search3DIcon size={17} aria-hidden="true" /><input value={allocationSearch} onChange={(event) => setAllocationSearch(event.target.value)} placeholder={`Search ${selectedGroupName} subjects...`} disabled={!context.groupId} /></div>
           <div className="subject-card-list">
             {!context.groupId ? <p className="subject-panel-empty">Select an Academic Level and Group to allocate subjects.</p> : subjectsLoading ? <p className="subject-panel-empty">Loading allocated subjects…</p> : filteredAllocateSubjects.length ? filteredAllocateSubjects.map((subject) => {
               const configuration = configurationFor(subject);
@@ -593,7 +594,7 @@ export default function SubjectManagementPage() {
         </section>
         <section className="subject-table-card subject-allocation-panel">
           <header className="subject-table-head"><div><h2>Allocated Subjects — {selectedGroupName}</h2><p>{allocatedGroupSubjects.length} Subject{allocatedGroupSubjects.length === 1 ? "" : "s"} Allocated</p></div></header>
-          <div className="subject-panel-search"><Search size={17} aria-hidden="true" /><input value={allocatedSearch} onChange={(event) => setAllocatedSearch(event.target.value)} placeholder="Search allocated subjects..." disabled={!context.groupId} /></div>
+          <div className="subject-panel-search"><Search3DIcon size={17} aria-hidden="true" /><input value={allocatedSearch} onChange={(event) => setAllocatedSearch(event.target.value)} placeholder="Search allocated subjects..." disabled={!context.groupId} /></div>
           <div className="subject-card-list">{!context.groupId ? <p className="subject-panel-empty">Select a group to view allocated subjects.</p> : subjectsLoading ? <p className="subject-panel-empty">Loading allocated subjects…</p> : filteredAllocatedSubjects.length ? filteredAllocatedSubjects.map((subject) => <article className="subject-allocation-row is-allocated" key={subject.id}><span><b>{displaySubjectName(subject.name)}</b><small>{subject.code} · {subject.type.join(" + ")}</small><em>Total: {total(subject.marks)} · Passing: {markValue(subject.marks.passing)}</em></span><div className="subject-master-actions"><button className="cms-action-btn" title="Edit subject" disabled={subjectBusy} onClick={() => openEdit(subject)}><Pencil size={16} /></button><button className="cms-action-btn subject-remove-btn" title="Delete/deactivate subject" disabled={subjectBusy} onClick={() => setRemoving(subject)}><Trash2 size={16} /></button></div></article>) : <p className="subject-panel-empty">No subjects have been allocated for this group.</p>}</div>
         </section>
       </section>
@@ -623,7 +624,7 @@ function GroupCombobox({ value, options, onChange, disabled }) {
     else if (event.key === "Enter" && open && matches[active]) { event.preventDefault(); choose(matches[active]); }
     else if (event.key === "Escape") setOpen(false);
   };
-  return <div className="subject-combobox subject-group-combobox" ref={root}><label className="subject-master-field"><span>Group</span><div className="subject-group-input"><Search size={17} aria-hidden="true" /><input role="combobox" aria-expanded={open} aria-controls="group-options" aria-autocomplete="list" value={query} disabled={disabled} placeholder="Search or select group..." onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={keyDown} /><ChevronDown size={17} aria-hidden="true" /></div></label>{open && !disabled && <div id="group-options" className="subject-combobox-options" role="listbox">{matches.length ? matches.map((group, index) => <button key={group.value} type="button" role="option" aria-selected={group.value === value} className={index === active ? "is-active" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(group)}><strong>{group.label}</strong></button>) : <div className="subject-combobox-empty">No groups found.</div>}</div>}</div>;
+  return <div className="subject-combobox subject-group-combobox" ref={root}><label className="subject-master-field"><span>Group</span><div className="subject-group-input"><Search3DIcon size={17} aria-hidden="true" /><input role="combobox" aria-expanded={open} aria-controls="group-options" aria-autocomplete="list" value={query} disabled={disabled} placeholder="Search or select group..." onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); setActive(0); }} onKeyDown={keyDown} /><ChevronDown size={17} aria-hidden="true" /></div></label>{open && !disabled && <div id="group-options" className="subject-combobox-options" role="listbox">{matches.length ? matches.map((group, index) => <button key={group.value} type="button" role="option" aria-selected={group.value === value} className={index === active ? "is-active" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(group)}><strong>{group.label}</strong></button>) : <div className="subject-combobox-empty">No groups found.</div>}</div>}</div>;
 }
 function SubjectCombobox({ options, value, onChange, newName, onNewName, onSearch }) {
   const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [active, setActive] = useState(0);

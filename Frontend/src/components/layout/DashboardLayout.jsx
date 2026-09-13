@@ -21,7 +21,7 @@ import feeManagementIcon from "@/assets/sidebar-3d/fee-management.png";
 import certificatesIcon from "@/assets/sidebar-3d/certificates.png";
 import reportsAnalyticsIcon from "@/assets/sidebar-3d/reports-analytics.png";
 import sectionsIcon from "@/assets/dashboard-3d/total-sections.png";
-import staffIcon from "@/assets/dashboard-3d/total-staff.png";
+import staffIcon from "@/assets/dashboard-3d/teaching-staff.png";
 import allocateSectionIcon from "@/assets/dashboard-3d/create-section.png";
 import studentsIcon from "@/assets/dashboard-3d/total-students.png";
 import attendanceIcon from "@/assets/dashboard-3d/mark-attendance.png";

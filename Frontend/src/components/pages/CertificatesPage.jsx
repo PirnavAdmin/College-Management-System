@@ -10,7 +10,7 @@ import { certificates as mockCertificates, students as mockStudents } from "@/da
 import { apiEndpoints } from "@/api/apiEndpoints.js";
 import createCertificateIcon from "@/assets/sidebar-3d/certificates.png";
 import certificateRecordsIcon from "@/assets/settings-3d/audit-logs.png";
-import reviewIssueIcon from "@/assets/dashboard-3d/completed-profiles.png";
+import reviewIssueIcon from "@/assets/reports-3d/toppers.png";
 import "./CertificatesPage.css";
 
 export const pageConfig = {

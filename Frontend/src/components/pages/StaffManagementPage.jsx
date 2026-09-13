@@ -41,11 +41,11 @@ import { apiEndpoints } from "@/api/apiEndpoints.js";
 import * as staffApi from "@/api/staffApi.js";
 import * as XLSX from "xlsx";
 import "./StaffManagementPage.css";
-import totalStaffIcon from "@/assets/dashboard-3d/total-staff.png";
+import totalStaffIcon from "@/assets/dashboard-3d/add-staff.png";
 import teachingStaffIcon from "@/assets/dashboard-3d/teaching-staff.png";
 import nonTeachingStaffIcon from "@/assets/dashboard-3d/non-teaching-staff.png";
-import pendingProfilesIcon from "@/assets/dashboard-3d/pending-profiles.png";
-import completedProfilesIcon from "@/assets/dashboard-3d/completed-profiles.png";
+import pendingProfilesIcon from "@/assets/reports-3d/admissions.png";
+import completedProfilesIcon from "@/assets/reports-3d/toppers.png";
 import credentialsGeneratorIcon from "@/assets/settings-3d/number-series.png";
 
 // Teaching Staff Excel Import Template Headers (15 required/specified fields)

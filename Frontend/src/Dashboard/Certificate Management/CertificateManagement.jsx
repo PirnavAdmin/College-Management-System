@@ -37,7 +37,7 @@ import {
 } from "../../api/certificateApi";
 import createCertificateIcon from "@/assets/sidebar-3d/certificates.png";
 import certificateRecordsIcon from "@/assets/settings-3d/audit-logs.png";
-import reviewIssueIcon from "@/assets/dashboard-3d/completed-profiles.png";
+import reviewIssueIcon from "@/assets/reports-3d/toppers.png";
 import "./CertificateManagement.css";
 
 // Supported Certificate Types

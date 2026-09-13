@@ -20,9 +20,9 @@ import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { ConfirmDialog, Modal, StatusBadge, Toast } from "@/components/common/Ui.jsx";
 import "./DepartmentManagementPage.css";
 import departmentsIcon from "@/assets/dashboard-3d/total-sections.png";
-import designationsIcon from "@/assets/dashboard-3d/total-staff.png";
-import refreshIcon from "@/assets/dashboard-3d/refresh.png";
-import importExcelIcon from "@/assets/dashboard-3d/import-excel.png";
+import designationsIcon from "@/assets/dashboard-3d/teaching-staff.png";
+import refreshIcon from "@/assets/settings-3d/board-academic-year.png";
+import importExcelIcon from "@/assets/settings-3d/templates.png";
 import addDepartmentIcon from "@/assets/dashboard-3d/create-section.png";
 import addDesignationIcon from "@/assets/dashboard-3d/add-staff.png";
 

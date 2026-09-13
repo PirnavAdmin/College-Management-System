@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  ChevronRight, ChevronDown, Settings, User, LogOut, CheckCircle2,
+  ChevronRight, ChevronDown, Settings, User, LogOut, CheckCircle2, ArrowLeft,
 } from "lucide-react";
 import ThemeToggle from "@/components/common/ThemeToggle.jsx";
 import apiClient from "@/api/axios.js";
@@ -142,7 +142,6 @@ export const menu = [
     section: "Finance",
     items: [
       { to: "/dashboard/fee-structure", label: "Fee Management", icon: feeManagementIcon },
-      { to: "/dashboard/staff-salary?tab=payroll", label: "Payroll", icon: generatedSidebarIcons.payroll },
     ],
   },
   {

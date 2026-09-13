@@ -129,21 +129,62 @@ namespace CollegeManagement.API.Data
             #endregion
 
             #region User
-            modelBuilder.Entity<User>()
-                .HasIndex(u => u.Email)
-                .IsUnique();
+            modelBuilder.Entity<User>(entity =>
+            {
+                entity.ToTable("Users");
+                entity.HasKey(u => u.UserId);
+
+                entity.HasIndex(u => u.Email)
+                    .IsUnique();
+
+                entity.Property(u => u.IsFirstLogin)
+                    .HasDefaultValue(true);
+
+                entity.Property(u => u.IsActive)
+                    .HasDefaultValue(true);
+
+                entity.Property(u => u.CreatedAt)
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+                entity.Property(u => u.UpdatedAt)
+                    .HasDefaultValueSql("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP")
+                    .ValueGeneratedOnAddOrUpdate();
+
+                entity.HasOne(u => u.Role)
+                    .WithMany(r => r.Users)
+                    .HasForeignKey(u => u.RoleId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(u => u.Student)
+                    .WithOne()
+                    .HasForeignKey<User>(u => u.StudentId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(u => u.StudentId)
+                    .IsUnique();
+
+                entity.HasOne(u => u.Staff)
+                    .WithOne()
+                    .HasForeignKey<User>(u => u.StaffId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(u => u.StaffId)
+                    .IsUnique();
+
+                entity.HasOne(u => u.Admin)
+                    .WithOne()
+                    .HasForeignKey<User>(u => u.AdminId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(u => u.AdminId)
+                    .IsUnique();
+            });
             #endregion
 
             #region Role
             modelBuilder.Entity<Role>()
                 .HasIndex(r => r.RoleName)
                 .IsUnique();
-
-            modelBuilder.Entity<User>()
-                .HasOne(u => u.Role)
-                .WithMany(r => r.Users)
-                .HasForeignKey(u => u.RoleId)
-                .OnDelete(DeleteBehavior.Restrict);
             #endregion
             #region Subject
 

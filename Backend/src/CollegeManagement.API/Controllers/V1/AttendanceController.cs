@@ -22,14 +22,19 @@ namespace CollegeManagement.API.Controllers.V1
     public class AttendanceController : ControllerBase
     {
         private readonly IAttendanceService _attendanceService;
+        private readonly CollegeManagement.API.Helpers.IJwtTokenHelper _jwtTokenHelper;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AttendanceController"/> class.
         /// </summary>
         /// <param name="attendanceService">The attendance service dependency.</param>
-        public AttendanceController(IAttendanceService attendanceService)
+        /// <param name="jwtTokenHelper">The JWT token helper dependency.</param>
+        public AttendanceController(
+            IAttendanceService attendanceService,
+            CollegeManagement.API.Helpers.IJwtTokenHelper jwtTokenHelper)
         {
             _attendanceService = attendanceService;
+            _jwtTokenHelper = jwtTokenHelper;
         }
 
         /// <summary>
@@ -216,7 +221,7 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         [HttpGet("defaulters")]
-        [Authorize(Roles = "Super Admin,College Admin,Admin,HOD")]
+        [Authorize(Roles = "Super Admin,Admin,HOD")]
         [ProducesResponseType(typeof(IEnumerable<AttendanceDefaulterResponse>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
@@ -318,12 +323,12 @@ namespace CollegeManagement.API.Controllers.V1
         }
 
         /// <summary>
-        /// Unlocks a locked attendance session (restricted to Super Admin and College Admin).
+        /// Unlocks a locked attendance session (restricted to Super Admin and Admin).
         /// </summary>
         /// <param name="sessionId">The session identifier.</param>
         /// <returns>A success indicator.</returns>
         [HttpPost("session/{sessionId}/unlock")]
-        [Authorize(Roles = "Super Admin,College Admin")]
+        [Authorize(Roles = "Super Admin,Admin")]
         [ProducesResponseType(typeof(bool), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -440,17 +445,17 @@ namespace CollegeManagement.API.Controllers.V1
 
         private bool IsCurrentUserAdmin()
         {
-            return User.IsInRole("Super Admin") || User.IsInRole("College Admin");
+            return User.IsInRole("Super Admin") || User.IsInRole("Admin");
         }
 
         private int GetCurrentUserId()
         {
-            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
-            if (string.IsNullOrEmpty(userIdClaim) || !int.TryParse(userIdClaim, out var userId))
+            var userId = _jwtTokenHelper.GetUserId(User);
+            if (!userId.HasValue || userId.Value <= 0)
             {
-                return 1;
+                throw new CollegeManagement.API.Exceptions.UnauthorizedException("User is not authenticated or user identifier claim is missing/invalid.");
             }
-            return userId;
+            return userId.Value;
         }
 
         private string GetCurrentUserName()
@@ -467,7 +472,7 @@ namespace CollegeManagement.API.Controllers.V1
             return userName;
         }
         [HttpPost("audit")]
-        [Authorize(Roles = "Super Admin,College Admin,Admin,HOD")]
+        [Authorize(Roles = "Super Admin,Admin,HOD")]
         public async Task<IActionResult> GetAuditHistory([FromBody] CollegeManagement.API.DTOs.Attendance.Requests.AuditHistorySearchRequest request)
         {
             var result = await _attendanceService.GetAuditHistoryAsync(request);

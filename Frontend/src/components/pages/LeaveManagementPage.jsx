@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
-import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, History as HistoryIcon, Search, ShieldCheck, UserRound, UsersRound, XCircle } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, Eye, FileText, History as HistoryIcon, ShieldCheck, UserRound, UsersRound, XCircle } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout.jsx";
+import Search3DIcon from "@/components/common/Search3DIcon.jsx";
 import { Modal, Toast } from "@/components/common/Ui.jsx";
 import { 
   LEAVE_STATUS,
@@ -469,7 +470,7 @@ function LeaveHistory({ onSelect }) {
           </div>
           <div className="leave-history-controls">
             <label>
-              <Search size={15} />
+              <Search3DIcon size={15} />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search faculty..." />
             </label>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>

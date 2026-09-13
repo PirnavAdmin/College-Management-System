@@ -15,6 +15,7 @@ namespace CollegeManagement.API.Controllers.V1
     [EnableCors("AllowFrontend")]
     [Authorize(Roles = "Faculty,Admin,Super Admin,HOD")]
     [Produces("application/json")]
+    
     public class LeaveManagementController : ControllerBase
     {
         private readonly ILeaveManagementService _service;

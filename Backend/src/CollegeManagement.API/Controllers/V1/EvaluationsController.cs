@@ -1,16 +1,18 @@
+using CollegeManagement.API.DTOs.Evaluations;
+using CollegeManagement.API.Models.Enums;
+using CollegeManagement.API.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using CollegeManagement.API.DTOs.Evaluations;
-using CollegeManagement.API.Models.Enums;
-using CollegeManagement.API.Services.Interfaces;
-using Microsoft.AspNetCore.Mvc;
 
 namespace CollegeManagement.API.Controllers
 {
     [ApiController]
+    [Authorize]
     public class EvaluationsController : ControllerBase
     {
         private readonly IEvaluationService _evaluationService;
